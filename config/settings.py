@@ -56,6 +56,27 @@ def _ensure_writable_hf_cache() -> None:
 
 _ensure_writable_hf_cache()
 
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    return int(value)
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    return float(value)
+
 # ---------------------------------------------------------------------------
 # Audio capture
 # ---------------------------------------------------------------------------
@@ -68,6 +89,8 @@ AUDIO_DEVICE = os.getenv("ULTRON_AUDIO_DEVICE")  # None → system default
 AUDIO_OUTPUT_DEVICE = os.getenv(
     "ULTRON_AUDIO_OUTPUT_DEVICE"
 )  # None -> system default output
+BARGE_IN_ENABLED = _env_bool("ULTRON_BARGE_IN_ENABLED", True)
+BARGE_IN_GRACE_SECONDS = _env_float("ULTRON_BARGE_IN_GRACE_SECONDS", 0.5)
 
 # Ring buffer of pre-speech audio so VAD-detected utterances aren't clipped.
 RING_BUFFER_SECONDS = 0.5
@@ -92,8 +115,10 @@ VAD_WINDOW_SAMPLES = 512        # Silero v5 expects 512-sample windows at 16k
 WAKE_WORD_NAME = "ultron"
 WAKE_WORD_MODEL_PATH = MODELS_DIR / "openwakeword" / "ultron.onnx"
 WAKE_WORD_FALLBACK = "hey_jarvis"   # one of openWakeWord's pretrained models
-WAKE_WORD_THRESHOLD = 0.5
-WAKE_WORD_COOLDOWN_SECONDS = 1.5    # debounce repeated triggers
+WAKE_WORD_THRESHOLD = _env_float("ULTRON_WAKE_WORD_THRESHOLD", 0.5)
+WAKE_WORD_COOLDOWN_SECONDS = _env_float(
+    "ULTRON_WAKE_WORD_COOLDOWN_SECONDS", 1.5
+)  # debounce repeated triggers
 
 # ---------------------------------------------------------------------------
 # Whisper STT
@@ -102,7 +127,11 @@ WAKE_WORD_COOLDOWN_SECONDS = 1.5    # debounce repeated triggers
 WHISPER_MODEL = "small.en"          # base.en for lower latency on weak GPUs
 WHISPER_DEVICE = "cuda"
 WHISPER_COMPUTE_TYPE = "float16"
-WHISPER_BEAM_SIZE = 1               # greedy is faster; raise for accuracy
+WHISPER_BEAM_SIZE = _env_int("ULTRON_WHISPER_BEAM_SIZE", 5)
+WHISPER_TEMPERATURE = _env_float("ULTRON_WHISPER_TEMPERATURE", 0.0)
+WHISPER_CONDITION_ON_PREVIOUS_TEXT = _env_bool(
+    "ULTRON_WHISPER_CONDITION_ON_PREVIOUS_TEXT", False
+)
 WHISPER_VAD_FILTER = False          # we already gated on VAD upstream
 
 # ---------------------------------------------------------------------------
@@ -134,7 +163,9 @@ TTS_VOICE_PATH = MODELS_DIR / "piper" / "en_US-ryan-medium.onnx"
 TTS_VOICE_CONFIG_PATH = MODELS_DIR / "piper" / "en_US-ryan-medium.onnx.json"
 TTS_OUTPUT_SAMPLE_RATE = 22050      # Piper's native rate for medium voices
 TTS_SENTENCE_FLUSH_CHARS = ".!?\n"  # tokens that flush a partial sentence
-TTS_LENGTH_SCALE = 1.25             # >1.0 slows Piper down; Ultron is measured
+TTS_LENGTH_SCALE = _env_float(
+    "ULTRON_TTS_LENGTH_SCALE", 0.92
+)  # <1.0 = faster speech cadence
 
 # ---------------------------------------------------------------------------
 # RVC (voice conversion: paint Piper output as Ultron)
@@ -147,15 +178,26 @@ RVC_ENABLED = True
 RVC_MODEL_DIR = PROJECT_ROOT / "ultron_james_spader_mcu_6941"
 RVC_MODEL_PATH = RVC_MODEL_DIR / "Ultron.pth"
 RVC_INDEX_PATH = RVC_MODEL_DIR / "added_IVF301_Flat_nprobe_1_Ultron_v2.index"
+RVC_SUPPORT_DIR = MODELS_DIR / "rvc"
+RVC_HUBERT_PATH = RVC_SUPPORT_DIR / "hubert_base.pt"
+RVC_RMVPE_PATH = RVC_SUPPORT_DIR / "rmvpe.pt"
 RVC_DEVICE = "cuda:0"
 
 # Inference knobs — edit these to taste, no retraining needed.
-RVC_PITCH_SHIFT = 0          # semitones; -2 deepens, +2 raises
-RVC_INDEX_RATE = 0.75        # 0-1; higher = stricter match to trained timbre
-RVC_PROTECT = 0.33           # 0-0.5; protects voiceless consonants from artifacts
+RVC_PITCH_SHIFT = _env_int("ULTRON_RVC_PITCH_SHIFT", -2)  # semitones; lower = deeper
+RVC_INDEX_RATE = _env_float(
+    "ULTRON_RVC_INDEX_RATE", 0.9
+)  # 0-1; higher = stricter match to trained timbre
+RVC_PROTECT = _env_float(
+    "ULTRON_RVC_PROTECT", 0.2
+)  # 0-0.5; lower lets RVC color consonants more
 RVC_F0_METHOD = "rmvpe"      # rmvpe is the most accurate pitch extractor
-RVC_RMS_MIX_RATE = 0.25      # how much of source loudness envelope to keep
-RVC_FILTER_RADIUS = 3        # median filter on F0 to smooth pitch jumps
+RVC_RMS_MIX_RATE = _env_float(
+    "ULTRON_RVC_RMS_MIX_RATE", 0.15
+)  # lower = less Piper envelope bleed-through
+RVC_FILTER_RADIUS = _env_int(
+    "ULTRON_RVC_FILTER_RADIUS", 2
+)  # median filter on F0 to smooth pitch jumps
 
 # ---------------------------------------------------------------------------
 # System prompt

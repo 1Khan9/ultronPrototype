@@ -26,6 +26,7 @@ import numpy as np
 import sounddevice as sd
 
 from config import settings
+from ultron.audio.devices import describe_device, resolve_device
 from ultron.tts.rvc import RvcConverter
 from ultron.utils.logging import get_logger
 
@@ -71,7 +72,7 @@ class TextToSpeech:
         self.flush_chars = set(flush_chars)
         self.length_scale = length_scale
         self.rvc = rvc
-        self.output_device = self._resolve_output_device(settings.AUDIO_OUTPUT_DEVICE)
+        self.output_device = resolve_device(settings.AUDIO_OUTPUT_DEVICE, "output")
         self._stop_event = threading.Event()
         self._playback_lock = threading.Lock()
 
@@ -87,14 +88,7 @@ class TextToSpeech:
             length_scale,
             "on" if rvc else "off",
         )
-        if self.output_device is None:
-            logger.info("TTS output device: system default")
-        else:
-            try:
-                dev = sd.query_devices(self.output_device, "output")
-                logger.info("TTS output device: %s (%s)", self.output_device, dev["name"])
-            except Exception:
-                logger.info("TTS output device: %s", self.output_device)
+        logger.info("TTS output device: %s", describe_device(self.output_device, "output"))
 
     def __enter__(self) -> "TextToSpeech":
         return self
@@ -204,17 +198,19 @@ class TextToSpeech:
         wav_buffer = io.BytesIO()
         try:
             with wave.open(wav_buffer, "wb") as wav:
-                wav.setnchannels(1)
-                wav.setsampwidth(2)
-                wav.setframerate(self.piper_sample_rate)
-                # length_scale is the modern Piper kwarg; older builds ignore
-                # unknown kwargs gracefully, but we wrap defensively anyway.
-                try:
-                    self._voice.synthesize(
-                        text, wav, length_scale=self.length_scale
-                    )
-                except TypeError:
-                    self._voice.synthesize(text, wav)
+                if hasattr(self._voice, "synthesize_wav"):
+                    syn_config = self._synthesis_config()
+                    self._voice.synthesize_wav(text, wav, syn_config=syn_config)
+                else:
+                    wav.setnchannels(1)
+                    wav.setsampwidth(2)
+                    wav.setframerate(self.piper_sample_rate)
+                    try:
+                        self._voice.synthesize(
+                            text, wav, length_scale=self.length_scale
+                        )
+                    except TypeError:
+                        self._voice.synthesize(text, wav)
         except Exception as e:
             logger.error("Piper synth failed for %r: %s", text[:60], e)
             return np.zeros(0, dtype=np.int16), self.piper_sample_rate
@@ -224,21 +220,18 @@ class TextToSpeech:
             frames = wav.readframes(wav.getnframes())
             sr = wav.getframerate()
         pcm = np.frombuffer(frames, dtype=np.int16)
+        if pcm.size == 0:
+            logger.warning("Piper produced no audio for %r", text[:60])
         return pcm, sr
 
-    def _resolve_output_device(self, configured: Optional[str]) -> Optional[str | int]:
-        """Resolve playback target to explicit output device or None for default."""
-        if configured:
-            return configured
+    def _synthesis_config(self):
+        """Build a Piper synthesis config when the installed API supports it."""
         try:
-            default_dev = sd.default.device
-            if isinstance(default_dev, (list, tuple)) and len(default_dev) >= 2:
-                return default_dev[1]
-            if isinstance(default_dev, int):
-                return default_dev
+            from piper.config import SynthesisConfig
+
+            return SynthesisConfig(length_scale=self.length_scale)
         except Exception:
-            pass
-        return None
+            return None
 
     def _play(self, clip: Clip) -> None:
         pcm, sr = clip
@@ -246,23 +239,33 @@ class TextToSpeech:
             if self._stop_event.is_set():
                 return
             try:
-                sd.play(
-                    pcm,
-                    samplerate=sr,
-                    blocking=False,
-                    device=self.output_device,
+                audio = self._stereo_pcm(pcm)
+                duration = audio.shape[0] / max(sr, 1)
+                logger.info(
+                    "Playing TTS clip: %.2fs @ %d Hz via %s",
+                    duration,
+                    sr,
+                    describe_device(self.output_device, "output"),
                 )
-                duration = len(pcm) / max(sr, 1)
-                deadline = time.monotonic() + duration + 0.5
-                while time.monotonic() < deadline:
-                    if self._stop_event.is_set():
-                        sd.stop()
-                        return
-                    try:
-                        if not sd.get_stream().active:
+
+                block_frames = max(1, int(sr * 0.05))
+                with sd.OutputStream(
+                    samplerate=sr,
+                    channels=2,
+                    dtype="int16",
+                    device=self.output_device,
+                ) as stream:
+                    for start in range(0, audio.shape[0], block_frames):
+                        if self._stop_event.is_set():
                             return
-                    except Exception:
-                        return
-                    time.sleep(0.02)
+                        stream.write(audio[start : start + block_frames])
             except Exception as e:
                 logger.warning("Playback error: %s", e)
+
+    @staticmethod
+    def _stereo_pcm(pcm: np.ndarray) -> np.ndarray:
+        """Return 2-channel int16 PCM for predictable headphone playback."""
+        mono = np.asarray(pcm, dtype=np.int16).reshape(-1)
+        if mono.size == 0:
+            return np.zeros((0, 2), dtype=np.int16)
+        return np.column_stack((mono, mono)).astype(np.int16, copy=False)
