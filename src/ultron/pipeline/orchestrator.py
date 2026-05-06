@@ -221,10 +221,14 @@ class Orchestrator:
     def _respond(self, user_text: str) -> None:
         """Stream LLM tokens into TTS and watch for wake-word interruption."""
         self._interrupt.clear()
-        watcher = threading.Thread(
-            target=self._interrupt_watcher, daemon=True, name="wake-watcher"
-        )
-        watcher.start()
+        watcher: Optional[threading.Thread] = None
+        if settings.BARGE_IN_ENABLED:
+            watcher = threading.Thread(
+                target=self._interrupt_watcher, daemon=True, name="wake-watcher"
+            )
+            watcher.start()
+        else:
+            logger.info("Barge-in wake watcher disabled")
 
         try:
             token_stream = self.llm.generate_stream(user_text)
@@ -245,12 +249,13 @@ class Orchestrator:
             print(f"\n  [error] {e}")
         finally:
             self._interrupt.set()  # release watcher
-            watcher.join(timeout=1.0)
+            if watcher is not None:
+                watcher.join(timeout=1.0)
 
     def _interrupt_watcher(self) -> None:
         """Run wake-word detection during TTS playback for barge-in."""
         # Brief grace so the watcher doesn't trigger on residual user audio.
-        time.sleep(0.3)
+        time.sleep(settings.BARGE_IN_GRACE_SECONDS)
         self.audio.drain()
         local_wake = self.wake  # share the model, single-threaded predict
         while not self._interrupt.is_set() and not self._shutdown.is_set():

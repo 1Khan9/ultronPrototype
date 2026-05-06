@@ -133,6 +133,8 @@ class LLMEngine:
         t0 = time.monotonic()
         first_token_time: Optional[float] = None
         accumulated: list[str] = []
+        completed = False
+        canceled = False
 
         stream = self._llm.create_chat_completion(
             messages=messages,
@@ -146,6 +148,7 @@ class LLMEngine:
         try:
             for chunk in stream:
                 if self._cancel.is_set():
+                    canceled = True
                     logger.info("LLM stream canceled by caller")
                     break
                 delta = chunk["choices"][0].get("delta", {}).get("content")
@@ -157,11 +160,15 @@ class LLMEngine:
                                 (first_token_time - t0) * 1000)
                 accumulated.append(delta)
                 yield delta
+            else:
+                completed = True
         finally:
             full = "".join(accumulated).strip()
-            if full:
+            if full and completed and not canceled:
                 self._history.append(("user", user_message))
                 self._history.append(("assistant", full))
+            elif full:
+                logger.info("Skipping interrupted LLM stream in chat history")
             logger.info(
                 "LLM stream: %d chars in %.2fs",
                 len(full),

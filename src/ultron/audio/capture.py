@@ -16,6 +16,7 @@ import numpy as np
 import sounddevice as sd
 
 from config import settings
+from ultron.audio.devices import describe_device, resolve_device
 from ultron.utils.logging import get_logger
 
 logger = get_logger("audio.capture")
@@ -45,7 +46,8 @@ class AudioCapture:
         self.sample_rate = sample_rate
         self.channels = channels
         self.blocksize = blocksize
-        self.device = device
+        self.configured_device = device
+        self.device: Optional[int] = None
         self._queue: queue.Queue[np.ndarray] = queue.Queue(maxsize=max_queue_size)
         self._stream: Optional[sd.InputStream] = None
         self._lock = threading.Lock()
@@ -68,6 +70,7 @@ class AudioCapture:
             if self._stream is not None:
                 return
             try:
+                self.device = resolve_device(self.configured_device, "input")
                 self._stream = sd.InputStream(
                     samplerate=self.sample_rate,
                     channels=self.channels,
@@ -85,7 +88,7 @@ class AudioCapture:
                 self.sample_rate,
                 self.channels,
                 self.blocksize,
-                self.device or "default",
+                describe_device(self.device, "input"),
             )
 
     def stop(self) -> None:

@@ -85,6 +85,8 @@ class WhisperEngine:
             audio,
             language=language,
             beam_size=self.beam_size,
+            temperature=settings.WHISPER_TEMPERATURE,
+            condition_on_previous_text=settings.WHISPER_CONDITION_ON_PREVIOUS_TEXT,
             vad_filter=settings.WHISPER_VAD_FILTER,
         )
         text = " ".join(seg.text.strip() for seg in segments).strip()

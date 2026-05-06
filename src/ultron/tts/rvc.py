@@ -16,6 +16,10 @@ from typing import Optional
 import numpy as np
 
 from config import settings
+from ultron.utils.fairseq_compat import (
+    patch_fairseq_dataclasses,
+    patch_torch_load_for_fairseq,
+)
 from ultron.utils.logging import get_logger
 
 logger = get_logger("tts.rvc")
@@ -36,6 +40,8 @@ class RvcConverter:
         self,
         model_path: Path = settings.RVC_MODEL_PATH,
         index_path: Path = settings.RVC_INDEX_PATH,
+        hubert_path: Path = settings.RVC_HUBERT_PATH,
+        rmvpe_path: Path = settings.RVC_RMVPE_PATH,
         device: str = settings.RVC_DEVICE,
     ) -> None:
         if not Path(model_path).is_file():
@@ -45,6 +51,8 @@ class RvcConverter:
 
         self.model_path = Path(model_path)
         self.index_path = Path(index_path)
+        self.hubert_path = Path(hubert_path)
+        self.rmvpe_path = Path(rmvpe_path)
         self.device = device
         self._converter = None
         self._load()
@@ -52,12 +60,18 @@ class RvcConverter:
     # --- model loading -------------------------------------------------------
 
     def _load(self) -> None:
+        patch_fairseq_dataclasses()
+        patch_torch_load_for_fairseq()
         from infer_rvc_python import BaseLoader
 
         logger.info("Loading RVC model (%s) on %s…", self.model_path.name, self.device)
         t0 = time.monotonic()
         try:
-            self._converter = BaseLoader(only_cpu=self.device.startswith("cpu"))
+            self._converter = BaseLoader(
+                only_cpu=self.device.startswith("cpu"),
+                hubert_path=str(self.hubert_path) if self.hubert_path.is_file() else None,
+                rmvpe_path=str(self.rmvpe_path) if self.rmvpe_path.is_file() else None,
+            )
             self._converter.apply_conf(
                 tag=_TAG,
                 file_model=str(self.model_path),
@@ -115,7 +129,7 @@ class RvcConverter:
                 tag=_TAG,
             )
         except Exception as e:
-            logger.error("RVC inference failed: %s", e)
+            logger.exception("RVC inference failed: %s", e)
             return pcm_int16, sample_rate  # fail soft
 
         # Normalize output to int16 PCM regardless of upstream dtype.

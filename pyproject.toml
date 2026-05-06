@@ -42,3 +42,7 @@ where = ["src"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
+addopts = "-p no:hydra_pytest"
+markers = [
+    "slow: loads local models or real hardware",
+]

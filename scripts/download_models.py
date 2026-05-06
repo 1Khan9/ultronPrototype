@@ -50,6 +50,9 @@ PIPER_CONFIG_URL = (
     "https://huggingface.co/rhasspy/piper-voices/resolve/main/"
     "en/en_US/ryan/medium/en_US-ryan-medium.onnx.json"
 )
+RVC_SUPPORT_BASE_URL = (
+    "https://huggingface.co/r3gm/sonitranslate_voice_models/resolve/main/"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +133,7 @@ def main() -> int:
     except Exception as e:
         print(f"  ✗ failed: {e}")
 
-    print("\n[4/4] openWakeWord pretrained models (downloads on first use)")
+    print("\n[4/6] openWakeWord pretrained models (downloads on first use)")
     try:
         import openwakeword.utils as ow_utils
 
@@ -139,7 +142,11 @@ def main() -> int:
     except Exception as e:
         print(f"  ✗ failed: {e}")
 
-    print("\n[5/5] RVC voice-conversion model (user-provided)")
+    print("\n[5/6] RVC support models")
+    _download(RVC_SUPPORT_BASE_URL + "hubert_base.pt", settings.RVC_HUBERT_PATH)
+    _download(RVC_SUPPORT_BASE_URL + "rmvpe.pt", settings.RVC_RMVPE_PATH)
+
+    print("\n[6/6] RVC voice-conversion model (user-provided)")
     if settings.RVC_MODEL_PATH.is_file() and settings.RVC_INDEX_PATH.is_file():
         print(f"  ✓ found: {settings.RVC_MODEL_PATH.name}")
         print(f"  ✓ found: {settings.RVC_INDEX_PATH.name}")
