@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ultron"
+version = "0.1.0"
+description = "Local voice-first AI assistant prototype"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Ultron Project" }]
+dependencies = [
+    "numpy>=1.24,<2.0",
+    "sounddevice>=0.4.6",
+    "silero-vad>=5.1",
+    "openwakeword>=0.6",
+    "faster-whisper>=1.0",
+    "llama-cpp-python>=0.3",
+    "piper-tts>=1.2",
+    "python-dotenv>=1.0",
+    "huggingface-hub>=0.23",
+    "onnxruntime>=1.17",
+    "torch>=2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+]
+
+[project.scripts]
+ultron = "ultron.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
