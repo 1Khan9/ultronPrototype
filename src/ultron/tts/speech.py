@@ -115,6 +115,17 @@ class TextToSpeech:
         if clip[0].size > 0 and not self._stop_event.is_set():
             self._play(clip)
 
+    def warmup(self, text: str = "System ready.") -> None:
+        """Prime Piper + optional RVC so first real response starts faster."""
+        if not text.strip():
+            return
+        t0 = time.monotonic()
+        try:
+            self._synthesize(text)
+            logger.info("TTS warmup complete in %.0fms", (time.monotonic() - t0) * 1000)
+        except Exception as e:
+            logger.warning("TTS warmup skipped: %s", e)
+
     def speak_stream(self, fragments: Iterable[str]) -> None:
         """Consume token fragments and play sentence-by-sentence.
 

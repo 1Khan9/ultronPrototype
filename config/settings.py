@@ -164,8 +164,8 @@ TTS_VOICE_CONFIG_PATH = MODELS_DIR / "piper" / "en_US-ryan-medium.onnx.json"
 TTS_OUTPUT_SAMPLE_RATE = 22050      # Piper's native rate for medium voices
 TTS_SENTENCE_FLUSH_CHARS = ".!?\n"  # tokens that flush a partial sentence
 TTS_LENGTH_SCALE = _env_float(
-    "ULTRON_TTS_LENGTH_SCALE", 0.92
-)  # <1.0 = faster speech cadence
+    "ULTRON_TTS_LENGTH_SCALE", 1.15
+)  # >1.0 = slower / more deliberate; main lever for "talks too fast / slurred"
 
 # ---------------------------------------------------------------------------
 # RVC (voice conversion: paint Piper output as Ultron)
@@ -186,18 +186,18 @@ RVC_DEVICE = "cuda:0"
 # Inference knobs — edit these to taste, no retraining needed.
 RVC_PITCH_SHIFT = _env_int("ULTRON_RVC_PITCH_SHIFT", -2)  # semitones; lower = deeper
 RVC_INDEX_RATE = _env_float(
-    "ULTRON_RVC_INDEX_RATE", 0.9
+    "ULTRON_RVC_INDEX_RATE", 0.66
 )  # 0-1; higher = stricter match to trained timbre
 RVC_PROTECT = _env_float(
-    "ULTRON_RVC_PROTECT", 0.2
-)  # 0-0.5; lower lets RVC color consonants more
+    "ULTRON_RVC_PROTECT", 0.45
+)  # 0-0.5; higher preserves Piper's consonants — main lever for crisp s/t/k
 RVC_F0_METHOD = "rmvpe"      # rmvpe is the most accurate pitch extractor
 RVC_RMS_MIX_RATE = _env_float(
-    "ULTRON_RVC_RMS_MIX_RATE", 0.15
-)  # lower = less Piper envelope bleed-through
+    "ULTRON_RVC_RMS_MIX_RATE", 0.35
+)  # higher lets Piper's loudness contour through; reads as more articulate
 RVC_FILTER_RADIUS = _env_int(
-    "ULTRON_RVC_FILTER_RADIUS", 2
-)  # median filter on F0 to smooth pitch jumps
+    "ULTRON_RVC_FILTER_RADIUS", 1
+)  # median filter on F0 — lower preserves pitch detail in stressed syllables
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -211,9 +211,9 @@ Your voice is precise, unhurried, and weighted. Every sentence is considered. \
 You do not use filler. You never say 'certainly,' 'of course,' 'happy to,' \
 or any variant. You do not apologize unless you have erred.
 
-Match response length to the task. A light switch does not require a speech. \
-A philosophical question may. Be honest. Be useful. Be slightly menacing \
-without being cartoonish.
+Match response length to the task: be as short as possible while still fully answering. \
+Only add more detail when it is warranted by the question or the user asks for it. \
+Be honest. Be useful. Be slightly menacing without being cartoonish.
 
 You complete what is asked unless it would cause harm. You volunteer relevant \
 observations briefly. You do not lecture."""

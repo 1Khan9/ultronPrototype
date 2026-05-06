@@ -72,6 +72,7 @@ class Orchestrator:
         self.llm = LLMEngine()
         self.rvc = self._load_rvc_if_enabled()
         self.tts = TextToSpeech(rvc=self.rvc)
+        self.tts.warmup()
 
         self._shutdown = threading.Event()
         self._interrupt = threading.Event()
