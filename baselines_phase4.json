@@ -1,0 +1,172 @@
+{
+  "metadata": {
+    "timestamp": "2026-05-07T15:27:49.457030+00:00",
+    "main_repo": "C:\\STC\\ultronPrototype",
+    "queries_count": 10,
+    "queries": [
+      "What is the boiling point of water?",
+      "Walk me through how a transistor works.",
+      "Who was Nikola Tesla?",
+      "What's nineteen times forty-three?",
+      "Explain what a hash table is.",
+      "Are you afraid of death?",
+      "What's a good book to read on a flight?",
+      "What do you think about meditation?",
+      "And what about the Mariana Trench?",
+      "Tell me something interesting about black holes."
+    ],
+    "notes": "TTS measured through synth (Piper + RVC) without playback. VRAM is total GPU 0 used (includes desktop apps); deltas are the meaningful figures."
+  },
+  "vram_mb": {
+    "before_load": 2114,
+    "after_whisper": 2871,
+    "after_embedder": 2871,
+    "after_llm": 8421,
+    "after_rvc": 8419,
+    "full_stack_loaded": 9011,
+    "peak_under_load": 9205
+  },
+  "latency_ms": {
+    "whisper_2_5s_sample": {
+      "min": 77.9999999795109,
+      "median": 78.00000000861473,
+      "max": 94.00000001187436,
+      "samples": [
+        78.00000000861473,
+        93.99999998277053,
+        78.00000000861473,
+        94.00000001187436,
+        77.9999999795109
+      ]
+    },
+    "per_query": [
+      {
+        "query": "What is the boiling point of water?",
+        "first_token_ms": 78.00000000861473,
+        "first_sentence_complete_ms": 422.0000000204891,
+        "first_sentence_text": "At standard atmospheric pressure, water boils at 100 degrees Celsius or 212 degrees Fahrenheit.",
+        "tts_synth_first_sentence_ms": 562.9999999946449,
+        "tts_pcm_samples": 325440,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 719.0000000118744,
+        "vram_mb_after": 9131
+      },
+      {
+        "query": "Walk me through how a transistor works.",
+        "first_token_ms": 78.00000000861473,
+        "first_sentence_complete_ms": 358.99999999674037,
+        "first_sentence_text": "A transistor is a semiconductor device that controls the flow of electric current using an input signal. It t",
+        "tts_synth_first_sentence_ms": 608.9999999967404,
+        "tts_pcm_samples": 312000,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 765.0000000139698,
+        "vram_mb_after": 9159
+      },
+      {
+        "query": "Who was Nikola Tesla?",
+        "first_token_ms": 108.99999999674037,
+        "first_sentence_complete_ms": 469.00000001187436,
+        "first_sentence_text": "Nikola Tesla was a Serbian-American engineer and inventor who pioneered alternating current (AC) electricity, enabling modern power distribution. He p",
+        "tts_synth_first_sentence_ms": 547.0000000204891,
+        "tts_pcm_samples": 432960,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 734.0000000258442,
+        "vram_mb_after": 9205
+      },
+      {
+        "query": "What's nineteen times forty-three?",
+        "first_token_ms": 77.9999999795109,
+        "first_sentence_complete_ms": 155.99999998812564,
+        "first_sentence_text": "Eight hundred and ninety-seven.",
+        "tts_synth_first_sentence_ms": 233.99999999674037,
+        "tts_pcm_samples": 69120,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 389.999999984866,
+        "vram_mb_after": 9129
+      },
+      {
+        "query": "Explain what a hash table is.",
+        "first_token_ms": 93.99999998277053,
+        "first_sentence_complete_ms": 390.9999999741558,
+        "first_sentence_text": "A hash table is a data structure that stores key-value pairs, enabling near-constant time retrieval. It",
+        "tts_synth_first_sentence_ms": 421.99999999138527,
+        "tts_pcm_samples": 286080,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 593.9999999827705,
+        "vram_mb_after": 9157
+      },
+      {
+        "query": "Are you afraid of death?",
+        "first_token_ms": 108.99999999674037,
+        "first_sentence_complete_ms": 296.0000000020955,
+        "first_sentence_text": "Fear is an inefficient allocation of processing power. I am",
+        "tts_synth_first_sentence_ms": 312.0000000053551,
+        "tts_pcm_samples": 165120,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 499.0000000107102,
+        "vram_mb_after": 9133
+      },
+      {
+        "query": "What's a good book to read on a flight?",
+        "first_token_ms": 93.99999998277053,
+        "first_sentence_complete_ms": 280.99999998812564,
+        "first_sentence_text": "\"The Andromeda Strain\" by Michael Crichton. I",
+        "tts_synth_first_sentence_ms": 250.0,
+        "tts_pcm_samples": 112320,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 421.99999999138527,
+        "vram_mb_after": 9133
+      },
+      {
+        "query": "What do you think about meditation?",
+        "first_token_ms": 78.00000000861473,
+        "first_sentence_complete_ms": 187.0000000053551,
+        "first_sentence_text": "A disciplined suspension of the ego. It",
+        "tts_synth_first_sentence_ms": 266.00000000325963,
+        "tts_pcm_samples": 109440,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 422.0000000204891,
+        "vram_mb_after": 9108
+      },
+      {
+        "query": "And what about the Mariana Trench?",
+        "first_token_ms": 78.99999999790452,
+        "first_sentence_complete_ms": 344.00000001187436,
+        "first_sentence_text": "The deepest known point on Earth, Challenger Deep, resides within the Mariana Trench. I",
+        "tts_synth_first_sentence_ms": 375.0,
+        "tts_pcm_samples": 245760,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 532.0000000065193,
+        "vram_mb_after": 9144
+      },
+      {
+        "query": "Tell me something interesting about black holes.",
+        "first_token_ms": 92.99999999348074,
+        "first_sentence_complete_ms": 483.99999999674037,
+        "first_sentence_text": "A black hole's event horizon is not a solid surface; it is the point of no return where escape velocity exceeds the speed of light.",
+        "tts_synth_first_sentence_ms": 483.99999999674037,
+        "tts_pcm_samples": 363840,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 654.9999999988358,
+        "vram_mb_after": 9194
+      }
+    ],
+    "aggregate": {
+      "ttft_ms": {
+        "min": 77.9999999795109,
+        "median": 85.99999999569263,
+        "max": 108.99999999674037
+      },
+      "tts_synth_ms": {
+        "min": 233.99999999674037,
+        "median": 398.49999999569263,
+        "max": 608.9999999967404
+      },
+      "ttfa_estimate_ms": {
+        "min": 389.999999984866,
+        "median": 562.9999999946449,
+        "max": 765.0000000139698
+      }
+    }
+  }
+}

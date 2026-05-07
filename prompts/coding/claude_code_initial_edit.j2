@@ -1,0 +1,89 @@
+{# Initial prompt for editing an existing project. #}
+{# Required context: refined_goal, user_intent, project_root, file_tree
+   (list of {path, size_bytes}), language (auto-detected, optional),
+   key_file_excerpts (dict path -> short excerpt, optional),
+   user_preferences (optional). #}
+# Coding task -- editing an existing project
+
+## Change requested
+{{ refined_goal | trim }}
+{% if user_intent and user_intent.strip() != refined_goal.strip() %}
+
+(Original user request: {{ user_intent | trim }})
+{% endif %}
+
+## Working directory
+**`{{ project_root }}`**
+
+This is an existing project. All edits must stay inside this directory.
+Do not create or modify files anywhere else.
+
+## Existing project context
+{% if language %}- Language: {{ language }}
+{% endif %}{% if framework %}- Framework: {{ framework }}
+{% endif %}- File tree (top-level + relevant):
+{%- for f in file_tree[:40] %}
+  - `{{ f.path }}` ({{ f.size_bytes }} bytes)
+{%- endfor %}
+{%- if file_tree | length > 40 %}
+  - ...and {{ (file_tree | length) - 40 }} more files
+{%- endif %}
+{% if key_file_excerpts %}
+
+Key files (excerpts):
+{%- for path, excerpt in key_file_excerpts.items() %}
+
+`{{ path }}`:
+```
+{{ excerpt | trim }}
+```
+{%- endfor %}
+{% endif %}
+
+## Preservation requirements
+- Do NOT change unrelated existing behavior.
+- Existing tests must continue to pass after your edits.
+- Match the project's existing style and structure -- do not refactor
+  the codebase to your preferences.
+- Do not delete files unless the change explicitly requires it.
+
+## Verification
+- Read enough of the existing code to understand the change before
+  editing. Use the Read tool, not assumptions.
+- Run the existing test suite BEFORE making changes (record the
+  baseline counts via `mcp__ultron_coding__report_test_results`).
+- Run it again AFTER making changes; both runs must come back clean.
+
+## Testing requirements for new code
+- Any new behavior gets new tests, in the project's existing test
+  framework and style.
+- Run the full test suite after writing new tests; all green before
+  declaring complete.
+
+## Reporting + clarification
+- Use `mcp__ultron_coding__report_progress` after each meaningful
+  unit of work; include files touched.
+- Use `mcp__ultron_coding__request_clarification` if the change
+  requires substantive input (scope, credentials, paid services,
+  breaking choices). For implementation details, use sensible defaults
+  consistent with the existing code.
+- Use `urgency: "blocking"` when you cannot proceed; `"preference"`
+  when you have a default.
+{% if user_preferences %}
+
+## Stored user preferences
+{%- for pref in user_preferences %}
+- {{ pref }}
+{%- endfor %}
+{% endif %}
+
+## Completion criteria
+- Existing tests still pass.
+- Any new tests pass.
+- The requested change is implemented end to end.
+- Entry point still runs (if applicable).
+
+Call `mcp__ultron_coding__declare_complete` only when ALL the above
+hold. List every file created or modified.
+
+## Now begin.

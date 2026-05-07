@@ -1,0 +1,30 @@
+{# Mid-session user adjustment, wrapped as a follow-up prompt. #}
+{# Required context: user_text, current_stage (str, may be "starting"),
+   stages_summary (str), files_summary (str), pivot_immediately (bool),
+   coordinator_followup (str, optional -- if the coordinator already
+   rendered a precise prompt, it goes here verbatim). #}
+{% if coordinator_followup %}
+{{ coordinator_followup | trim }}
+{% else %}
+# User adjustment
+
+The user has issued a change of direction mid-task.
+
+What's been done so far: {{ stages_summary | default("(nothing yet)", true) }}.
+Files touched: {{ files_summary | default("(none)", true) }}.
+
+User's adjustment: "{{ user_text | trim }}"
+
+{% if pivot_immediately %}
+Apply this adjustment immediately. Stop the current line of work, pivot
+to the new direction, and continue from there. Make the change consistent
+with what's already been built when possible; flag conflicts via
+`mcp__ultron_coding__request_clarification` if you'd have to redo
+substantial work.
+{% else %}
+Finish the current step you're on, then apply the adjustment. The new
+direction takes precedence for everything after the current step.
+{% endif %}
+
+Same testing + reporting protocol applies.
+{% endif %}

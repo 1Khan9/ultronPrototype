@@ -9,9 +9,10 @@ comes from one of two sources:
 - **legacy deque mode** (no memory passed): the engine keeps a small in-memory
   ``deque`` of recent turns. Used for tests / minimal setups.
 
-The engine also exposes :meth:`should_respond` — a fast addressee classifier
-used by the orchestrator's follow-up listening state to decide whether a
-non-wake-word-gated utterance is meant for Ultron.
+Addressee classification used to live here as ``should_respond``; that path
+was retired in Phase 2 in favor of a dedicated CPU classifier in
+:mod:`ultron.addressing`, which keeps the main 9 B LLM off the WARM-mode hot
+path entirely.
 """
 
 from __future__ import annotations
@@ -72,23 +73,6 @@ def _strip_thinking_blocks(stream: Iterator[str]) -> Iterator[str]:
         yield buf
 
 
-_ADDRESSEE_SYSTEM_PROMPT = """You decide whether a user's spoken utterance is \
-addressed to you (Ultron) or to someone or something else (another person, \
-themselves, the room, ambient speech).
-
-You ONLY classify. You do NOT reply, explain, or continue the conversation.
-
-Return exactly one token: YES, NO, or UNCLEAR.
-
-Use YES only when the utterance is clearly a continuation of the conversation \
-with you, a follow-up question to your last response, or directly addressed at \
-you. Use NO when the utterance is clearly directed elsewhere — talking to \
-another person, thinking aloud about an unrelated topic, asides. \
-When uncertain, return UNCLEAR.
-
-Default toward UNCLEAR rather than YES when the signal is weak."""
-
-
 class LLMEngine:
     """Wraps a llama-cpp-python ``Llama`` instance with chat history.
 
@@ -128,14 +112,24 @@ class LLMEngine:
         self._memory = memory
         self._cancel = Event()
 
-        logger.info("Loading LLM: %s (n_ctx=%d, n_gpu_layers=%d)…",
-                    model_path, n_ctx, n_gpu_layers)
+        logger.info(
+            "Loading LLM: %s (n_ctx=%d, n_gpu_layers=%d, flash_attn=%s, "
+            "kv_cache_type=%d)...",
+            model_path, n_ctx, n_gpu_layers,
+            settings.LLM_FLASH_ATTN, settings.LLM_KV_CACHE_TYPE,
+        )
         t0 = time.monotonic()
         try:
             self._llm = Llama(
                 model_path=str(model_path),
                 n_ctx=n_ctx,
                 n_gpu_layers=n_gpu_layers,
+                # Flash attention + quantized KV cache cut KV memory ~30 %
+                # each (combined ~50 %) at quality parity for inference.
+                # Flash attn is required for non-F16 KV cache types.
+                flash_attn=settings.LLM_FLASH_ATTN,
+                type_k=settings.LLM_KV_CACHE_TYPE,
+                type_v=settings.LLM_KV_CACHE_TYPE,
                 verbose=False,
             )
         except Exception as e:
@@ -168,11 +162,13 @@ class LLMEngine:
             self._history.append(("assistant", assistant_message))
 
     def _build_messages(self, user_message: str) -> List[dict]:
-        msgs: List[dict] = [{"role": "system", "content": self.system_prompt}]
+        # RAG snippets are folded into the leading system message rather than
+        # emitted as a second `system`-role entry: Qwen3's chat template
+        # rejects a second system message with "System message must be at
+        # the beginning."
+        system_content = self.system_prompt
 
         if self._memory is not None:
-            # RAG: surface semantically-relevant turns from before the
-            # recent window. Skipped if memory holds nothing yet.
             try:
                 snippets = self._memory.retrieve(
                     user_message,
@@ -183,11 +179,14 @@ class LLMEngine:
                 logger.warning("memory.retrieve failed: %s", e)
                 snippets = []
             if snippets:
-                lines = ["Relevant earlier context from prior conversations:"]
+                lines = ["", "Relevant earlier context from prior conversations:"]
                 for s in snippets:
                     lines.append(f"- {s.role}: {s.content}")
-                msgs.append({"role": "system", "content": "\n".join(lines)})
+                system_content = system_content + "\n".join(lines)
 
+        msgs: List[dict] = [{"role": "system", "content": system_content}]
+
+        if self._memory is not None:
             for turn in self._memory.recent(settings.MEMORY_RECENT_TURNS):
                 msgs.append({"role": turn.role, "content": turn.content})
         else:
@@ -285,66 +284,3 @@ class LLMEngine:
                 time.monotonic() - t0,
             )
 
-    # --- addressee classification --------------------------------------------
-
-    def should_respond(self, utterance: str) -> bool:
-        """Decide whether ``utterance`` is addressed to Ultron.
-
-        Used by the orchestrator's follow-up state to gate non-wake-word-gated
-        speech. Defaults to ``False`` on parse failure, on ambiguous classifier
-        output (when ``ADDRESSEE_DEFAULT_SILENT`` is set), and on errors —
-        false-positive responses to unrelated speech are worse than missing a
-        continuation that the user can re-trigger with the wake word.
-        """
-        utterance = utterance.strip()
-        if not utterance:
-            return False
-
-        # Build a tight prompt: addressee system prompt + last ~3 turns + the
-        # candidate utterance. Don't pollute conversation history with these.
-        msgs: List[dict] = [
-            {"role": "system", "content": _ADDRESSEE_SYSTEM_PROMPT},
-        ]
-        if self._memory is not None:
-            recent = self._memory.recent(3)
-            for turn in recent:
-                msgs.append({"role": turn.role, "content": turn.content})
-        else:
-            for role, content in list(self._history)[-6:]:
-                msgs.append({"role": role, "content": content})
-        msgs.append(
-            {
-                "role": "user",
-                "content": (
-                    f"Utterance just heard: {utterance!r}\n"
-                    "Was this addressed to you? Reply with one token only: "
-                    "YES, NO, or UNCLEAR."
-                ),
-            }
-        )
-
-        t0 = time.monotonic()
-        try:
-            out = self._llm.create_chat_completion(
-                messages=msgs,
-                temperature=settings.ADDRESSEE_CLASSIFIER_TEMPERATURE,
-                max_tokens=settings.ADDRESSEE_CLASSIFIER_MAX_TOKENS,
-            )
-        except Exception as e:
-            logger.warning("Addressee classifier call failed: %s", e)
-            return False
-
-        raw = out["choices"][0]["message"]["content"].strip().upper()
-        # Allow "YES.", "YES — ...", etc; first word is the verdict.
-        verdict = raw.split()[0].rstrip(".,!?:;") if raw else "UNCLEAR"
-        elapsed_ms = (time.monotonic() - t0) * 1000
-        logger.info(
-            "Addressee classifier: %r → %s (%.0fms)", utterance[:60], verdict, elapsed_ms
-        )
-
-        if verdict == "YES":
-            return True
-        if verdict == "NO":
-            return False
-        # UNCLEAR or anything weird
-        return not settings.ADDRESSEE_DEFAULT_SILENT

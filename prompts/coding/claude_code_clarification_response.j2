@@ -1,0 +1,13 @@
+{# Minimal wrapper around an answer to a clarification request. #}
+{# Required context: question (str -- what Claude originally asked),
+   answer (str -- the resolved answer text), source (str -- "user" or
+   "supervisor"). #}
+{% if source == "user" -%}
+The user answered your question "{{ question | trim }}":
+
+{{ answer | trim }}
+
+Continue from where you were.
+{%- else -%}
+{{ answer | trim }}
+{%- endif %}

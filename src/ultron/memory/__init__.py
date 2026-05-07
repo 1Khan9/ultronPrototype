@@ -1,11 +1,17 @@
-"""Conversation memory: rolling deque + JSONL persistence + embedding RAG.
+"""Conversation memory: Qdrant-backed hybrid retrieval (Phase 3).
 
-The orchestrator holds one :class:`ConversationMemory` for the lifetime of the
-process. Every user turn and assistant turn is appended to disk and embedded
-into an in-memory matrix. The LLM hydrates each new prompt with
-``recent(N)`` turns plus ``retrieve(query, k)`` snippets from older history.
+Each turn is written asynchronously to an embedded Qdrant store with both a
+dense bge-small embedding and a BM25 sparse vector. RAG retrieval combines
+the two via Reciprocal Rank Fusion. Recent turns are cached in process so
+``recent(n)`` is instant; older history is retrievable via ``retrieve()``.
+
+The legacy JSONL store at :mod:`ultron.memory.store` is kept around purely as
+the source for the one-time migration script
+(``scripts/migrate_memory_to_qdrant.py``); production code should not import
+it directly.
 """
 
-from ultron.memory.store import ConversationMemory, MemoryTurn
+from ultron.memory.embedder import HybridEmbedder
+from ultron.memory.qdrant_store import ConversationMemory, MemoryTurn
 
-__all__ = ["ConversationMemory", "MemoryTurn"]
+__all__ = ["ConversationMemory", "MemoryTurn", "HybridEmbedder"]

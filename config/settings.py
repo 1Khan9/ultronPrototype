@@ -180,23 +180,174 @@ LLM_MAX_TOKENS = 512
 LLM_REPEAT_PENALTY = 1.1
 LLM_HISTORY_TURNS = 6               # legacy fallback if memory module is disabled
 
+# Flash attention + quantized KV cache. Quality-neutral memory savings
+# (~30 % off the KV cache). Flash attention is required for non-F16 KV
+# types, so the two are a package. q8_0 is GGML_TYPE_Q8_0 (8); F16 is 1.
+LLM_FLASH_ATTN = _env_bool("ULTRON_LLM_FLASH_ATTN", True)
+LLM_KV_CACHE_TYPE = _env_int("ULTRON_LLM_KV_CACHE_TYPE", 8)  # 8=q8_0, 1=F16
+
 # ---------------------------------------------------------------------------
-# Conversation memory + RAG
+# Conversation memory + RAG (Phase 3: Qdrant + bge-small + BM25 hybrid)
 # ---------------------------------------------------------------------------
-# Hybrid persistence: every turn appends to a JSONL on disk; embeddings live
-# in memory and are recomputed at startup. The LLM is fed
-# ``MEMORY_RECENT_TURNS`` most-recent turns plus ``MEMORY_RAG_TOP_K``
-# semantically-similar older snippets per request.
+# Persistent vector memory. Each turn is written to Qdrant (embedded mode,
+# disk-backed at MEMORY_QDRANT_PATH) with both a dense bge-small embedding
+# and a BM25 sparse vector for hybrid lexical+semantic recall. Writes go to
+# a background thread; the hot path only touches an in-process recent-turns
+# cache. RAG retrieval combines the two via Reciprocal Rank Fusion.
 MEMORY_ENABLED = _env_bool("ULTRON_MEMORY_ENABLED", True)
-MEMORY_PATH = PROJECT_ROOT / "data" / "memory.jsonl"
-MEMORY_EMBEDDING_MODEL = os.getenv(
-    "ULTRON_MEMORY_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
+
+# JSONL kept around as a one-shot migration source and a recovery fallback.
+# Once migrated to Qdrant it is no longer the source of truth.
+MEMORY_JSONL_PATH = PROJECT_ROOT / "data" / "memory.jsonl"
+MEMORY_PATH = MEMORY_JSONL_PATH  # back-compat alias for any external readers
+
+MEMORY_QDRANT_PATH = PROJECT_ROOT / "data" / "qdrant"
+MEMORY_QDRANT_CONVERSATIONS = "conversations"
+MEMORY_QDRANT_FACTS = "facts"
+MEMORY_QDRANT_WEB_RESULTS = "web_results"
+
+# Dense embedder: bge-small-en-v1.5 (ONNX INT8 via FastEmbed, CPU only).
+# Sparse: Qdrant/bm25 (FastEmbed pretrained encoder).
+MEMORY_DENSE_MODEL = os.getenv(
+    "ULTRON_MEMORY_DENSE_MODEL", "BAAI/bge-small-en-v1.5"
 )
+MEMORY_SPARSE_MODEL = os.getenv(
+    "ULTRON_MEMORY_SPARSE_MODEL", "Qdrant/bm25"
+)
+MEMORY_DENSE_DIM = 384
+
+# Retrieval shape -- unchanged from JSONL era.
 MEMORY_RECENT_TURNS = _env_int("ULTRON_MEMORY_RECENT_TURNS", 20)
 MEMORY_RAG_TOP_K = _env_int("ULTRON_MEMORY_RAG_TOP_K", 5)
 MEMORY_RAG_EXCLUDE_RECENT = _env_int(
     "ULTRON_MEMORY_RAG_EXCLUDE_RECENT", 20
 )  # don't surface RAG hits already in the recent-turns window
+MEMORY_FACTS_TOP_K = _env_int("ULTRON_MEMORY_FACTS_TOP_K", 3)
+
+# Background writer queue size. Hot-path writes never block on Qdrant; if the
+# writer falls more than this many turns behind we log a warning and drop.
+MEMORY_WRITE_QUEUE_MAXSIZE = _env_int("ULTRON_MEMORY_WRITE_QUEUE_MAXSIZE", 256)
+
+# ---------------------------------------------------------------------------
+# Web search (Phase 4)
+# ---------------------------------------------------------------------------
+# Brave Search API + Jina Reader for full-page extraction. Brave returns
+# snippets; we ask the LLM to rank them, then fetch the top 1-3 via Jina
+# for clean markdown extraction. Results cache into the ``web_results``
+# Qdrant collection keyed by query so identical queries within the
+# freshness window don't re-call the API.
+
+WEB_SEARCH_ENABLED = _env_bool("ULTRON_WEB_SEARCH_ENABLED", True)
+WEB_SEARCH_BRAVE_API_KEY = os.getenv("ULTRON_BRAVE_API_KEY", "")
+WEB_SEARCH_BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
+WEB_SEARCH_BRAVE_COUNT = _env_int("ULTRON_BRAVE_COUNT", 5)
+WEB_SEARCH_BRAVE_TIMEOUT_S = _env_float("ULTRON_BRAVE_TIMEOUT_S", 8.0)
+WEB_SEARCH_BRAVE_RATE_LIMIT_S = _env_float("ULTRON_BRAVE_RATE_LIMIT_S", 2.0)
+
+WEB_SEARCH_JINA_ENDPOINT = "https://r.jina.ai/"
+WEB_SEARCH_JINA_TIMEOUT_S = _env_float("ULTRON_JINA_TIMEOUT_S", 15.0)
+WEB_SEARCH_JINA_MAX_FETCH = _env_int("ULTRON_JINA_MAX_FETCH", 3)
+WEB_SEARCH_JINA_MAX_BYTES = _env_int(
+    "ULTRON_JINA_MAX_BYTES", 200_000
+)  # truncate giant pages so they don't blow up the prompt
+
+# Cache freshness, in seconds. Short for volatile (sports scores, weather);
+# long for stable factual content (history, definitions).
+WEB_SEARCH_CACHE_TTL_VOLATILE_S = _env_int(
+    "ULTRON_WEB_CACHE_TTL_VOLATILE_S", 24 * 3600
+)
+WEB_SEARCH_CACHE_TTL_STABLE_S = _env_int(
+    "ULTRON_WEB_CACHE_TTL_STABLE_S", 30 * 24 * 3600
+)
+
+# ---------------------------------------------------------------------------
+# Coding orchestration (Phase 6)
+# ---------------------------------------------------------------------------
+# Ultron orchestrates a Claude Code subprocess to do real coding work in a
+# project directory. The project registry tracks known projects + voice
+# aliases so "fix my flask app" routes to the right folder. New projects
+# get scaffolded under CODING_SANDBOX_PATH; existing projects can live
+# anywhere on disk and just need to be registered.
+
+CODING_ENABLED = _env_bool("ULTRON_CODING_ENABLED", True)
+# Bridge selection. "direct" runs Claude Code as a local subprocess; future
+# "openclaw" routes through the OpenClaw Gateway HTTP API. The bridge
+# abstraction in ultron.coding.bridge means swapping is a settings flip.
+CODING_BRIDGE = os.getenv("ULTRON_CODING_BRIDGE", "direct")
+
+# MCP supervisor layer (Phase 1+ of the orchestration addendum).
+# Ultron runs an MCP server in-process so Qwen can call tools as Python
+# methods (zero IPC) and Claude Code can connect via SSE for the worker
+# tool surface. host/port are localhost-only by design -- we DO NOT
+# expose this off the loopback interface.
+CODING_MCP_ENABLED = _env_bool("ULTRON_CODING_MCP_ENABLED", True)
+CODING_MCP_HOST = os.getenv("ULTRON_CODING_MCP_HOST", "127.0.0.1")
+CODING_MCP_PORT = _env_int("ULTRON_CODING_MCP_PORT", 19761)
+CODING_MCP_SSE_PATH = "/sse"
+CODING_MCP_LOG_PATH = LOGS_DIR / "mcp_calls.jsonl"
+CODING_MCP_SERVER_NAME = "ultron_coding"
+# Maximum seconds Claude can be blocked on request_clarification before the
+# server gives up and returns a stub answer. Long because the user may
+# need time to think + speak.
+CODING_MCP_CLARIFICATION_TIMEOUT_S = _env_int(
+    "ULTRON_CODING_MCP_CLARIFICATION_TIMEOUT_S", 600
+)
+
+# Prompt-template directory (Phase 3). Resolved relative to PROJECT_ROOT
+# so tests can override with their own template folders.
+CODING_TEMPLATE_DIR = PROJECT_ROOT / "prompts" / "coding"
+# Hard cap on rendered prompt size, per spec section 3.6. Above this we
+# refuse to send the prompt to Claude and escalate to the user instead.
+# 4000 tokens = ~16,000 chars at the conservative 4-char/token heuristic.
+CODING_PROMPT_TOKEN_BUDGET = _env_int("ULTRON_CODING_PROMPT_TOKEN_BUDGET", 4000)
+CODING_PROMPT_CHARS_PER_TOKEN = _env_int("ULTRON_CODING_PROMPT_CHARS_PER_TOKEN", 4)
+
+# Verification layer (Phase 4). Escalation thresholds drive when the
+# session swaps to a stronger model and when it gives up.
+CODING_DEFAULT_MODEL = os.getenv("ULTRON_CODING_DEFAULT_MODEL", "haiku")
+CODING_ESCALATION_MODEL = os.getenv("ULTRON_CODING_ESCALATION_MODEL", "sonnet")
+# After this many failures on the default model, the runner will
+# pick the escalation model for the NEXT subprocess start.
+CODING_ESCALATION_THRESHOLD_DEFAULT = _env_int(
+    "ULTRON_CODING_ESCALATION_THRESHOLD_DEFAULT", 3
+)
+# After this many failures on the escalation model, the session is
+# transitioned to FAILED and surfaced to the user.
+CODING_ESCALATION_THRESHOLD_ESCALATION = _env_int(
+    "ULTRON_CODING_ESCALATION_THRESHOLD_ESCALATION", 2
+)
+CODING_VERIFICATION_SMOKE_TIMEOUT_S = _env_int(
+    "ULTRON_CODING_VERIFICATION_SMOKE_TIMEOUT_S", 5
+)
+CODING_VERIFICATION_TEST_TIMEOUT_S = _env_int(
+    "ULTRON_CODING_VERIFICATION_TEST_TIMEOUT_S", 120
+)
+CODING_VERIFICATION_LINT_TIMEOUT_S = _env_int(
+    "ULTRON_CODING_VERIFICATION_LINT_TIMEOUT_S", 30
+)
+
+# Path to the Claude Code CLI. Resolved at startup; falls back to "claude"
+# on PATH if the explicit path is missing.
+CODING_CLAUDE_CLI = os.getenv(
+    "ULTRON_CLAUDE_CLI",
+    str(Path.home() / "AppData" / "Roaming" / "npm" / "claude.cmd"),
+)
+CODING_CLAUDE_MODEL = os.getenv("ULTRON_CLAUDE_MODEL", "haiku")
+# Sandbox root where new projects get created when the user doesn't
+# specify a path. Existing projects can live elsewhere -- the registry
+# stores absolute paths.
+CODING_SANDBOX_PATH = PROJECT_ROOT / "data" / "sandbox"
+# Where the project registry JSON lives.
+CODING_PROJECT_REGISTRY_PATH = PROJECT_ROOT / "data" / "projects.json"
+# Coding tasks running in the background log progress here for the
+# /scripts/review_coding.py inspector.
+CODING_TASK_LOG_PATH = LOGS_DIR / "coding_tasks.jsonl"
+# How long Ultron will wait on a Claude Code subprocess before giving up.
+CODING_TASK_TIMEOUT_S = _env_int("ULTRON_CODING_TASK_TIMEOUT_S", 30 * 60)
+# We always invoke Claude Code with --allow-dangerously-skip-permissions
+# in the sandbox so the user isn't prompted mid-task. This is OK because
+# the sandbox is project-local and not connected to anything sensitive.
+CODING_SKIP_PERMISSIONS = _env_bool("ULTRON_CODING_SKIP_PERMISSIONS", True)
 
 # ---------------------------------------------------------------------------
 # Follow-up listening
@@ -207,10 +358,23 @@ MEMORY_RAG_EXCLUDE_RECENT = _env_int(
 FOLLOW_UP_ENABLED = _env_bool("ULTRON_FOLLOW_UP_ENABLED", True)
 FOLLOW_UP_TIMEOUT_SECONDS = _env_float("ULTRON_FOLLOW_UP_TIMEOUT_SECONDS", 30.0)
 ADDRESSEE_DEFAULT_SILENT = _env_bool("ULTRON_ADDRESSEE_DEFAULT_SILENT", True)
-ADDRESSEE_CLASSIFIER_TEMPERATURE = _env_float(
-    "ULTRON_ADDRESSEE_CLASSIFIER_TEMPERATURE", 0.0
+
+# CPU-only addressing classifier (Phase 2). Replaces the legacy
+# main-LLM-based should_respond() path. Two layers: regex rules first,
+# zero-shot Flan-T5-small fallback for ambiguous utterances. Both run on
+# CPU; zero new VRAM. Confidence threshold is the cutoff above which a
+# rule verdict short-circuits the zero-shot pass.
+ADDRESSING_RULE_CONFIDENCE_THRESHOLD = _env_float(
+    "ULTRON_ADDRESSING_RULE_CONFIDENCE_THRESHOLD", 0.8
 )
-ADDRESSEE_CLASSIFIER_MAX_TOKENS = _env_int("ULTRON_ADDRESSEE_CLASSIFIER_MAX_TOKENS", 8)
+ADDRESSING_ZERO_SHOT_MODEL = os.getenv(
+    "ULTRON_ADDRESSING_ZERO_SHOT_MODEL", "google/flan-t5-small"
+)
+# Eager load means Flan-T5-small loads at startup (~8 s) instead of on the
+# first ambiguous utterance. Recommended on for the live system so the
+# first follow-up doesn't stall.
+ADDRESSING_LOAD_EAGERLY = _env_bool("ULTRON_ADDRESSING_LOAD_EAGERLY", True)
+ADDRESSING_LOG_PATH = LOGS_DIR / "addressing.jsonl"
 
 # ---------------------------------------------------------------------------
 # TTS
@@ -284,6 +448,13 @@ or any variant. You do not apologize unless you have erred.
 Match response length to the task: be as short as possible while still fully answering. \
 Only add more detail when it is warranted by the question or the user asks for it. \
 Be honest. Be useful. Be slightly menacing without being cartoonish.
+
+On uncertainty: state confident knowledge directly, without hedging. Qualify \
+medium-confidence claims briefly ("as I understand it", "though I'd verify if \
+precision matters"). Admit unknowns plainly — "I don't know" is preferable to \
+fabrication. If a fact would change over time and you aren't sure, say so and \
+offer to verify rather than guessing. Never present an educated guess as if it \
+were established fact.
 
 You complete what is asked unless it would cause harm. You volunteer relevant \
 observations briefly. You do not lecture."""

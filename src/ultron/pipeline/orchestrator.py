@@ -39,6 +39,7 @@ from typing import Optional, Union
 import numpy as np
 
 from config import settings
+from ultron.addressing import AddressingClassifier, AddressingDecision
 from ultron.audio import (
     AudioCapture,
     RingBuffer,
@@ -50,6 +51,26 @@ from ultron.llm import LLMEngine
 from ultron.transcription import WhisperEngine
 from ultron.tts import RvcConverter, TextToSpeech
 from ultron.utils.logging import get_logger
+from ultron.coding import (
+    CodingTaskRunner,
+    CodingVoiceController,
+    ProjectRegistry,
+    ProjectResolver,
+    UltronMCPServer,
+)
+from ultron.coding.coordinator import ConversationCoordinator
+from ultron.uncertainty import apply as apply_uncertainty
+from ultron.web_search import (
+    AcknowledgmentSource,
+    BraveSearchClient,
+    GateDecision,
+    JinaReaderClient,
+    WebResultsCache,
+    WebSearchExecutor,
+    WebSearchGate,
+    format_sources_for_prompt,
+    format_sources_for_transcript,
+)
 
 logger = get_logger("pipeline.orchestrator")
 
@@ -88,41 +109,194 @@ class Orchestrator:
         self.rvc = self._load_rvc_if_enabled()
         self.tts = TextToSpeech(rvc=self.rvc)
         self.tts.warmup()
+        self.addressing = self._load_addressing_classifier()
+        self.web_gate, self.web_executor, self.ack_source = (
+            self._load_web_search_if_enabled()
+        )
+        self.mcp_server = self._load_mcp_server_if_enabled()
+        self.coding_coordinator = self._load_coding_coordinator_if_enabled()
+        self.coding_voice = self._load_coding_voice_if_enabled()
+        self._last_response_finished_monotonic: float = 0.0
+        self._last_search_payload = None
 
         self._shutdown = threading.Event()
         self._interrupt = threading.Event()
         self._pending_capture = threading.Event()
         self._state: State = State.IDLE
 
+    def _load_mcp_server_if_enabled(self):
+        """Construct + start the MCP server (Phase 1+). Failures degrade
+        silently -- the coding pipeline can run without MCP, just without
+        the supervisor's clarification round-trip."""
+        if not (settings.CODING_ENABLED and settings.CODING_MCP_ENABLED):
+            return None
+        try:
+            server = UltronMCPServer()
+            server.start(ready_timeout_s=5.0)
+            logger.info("MCP server listening at %s", server.sse_url)
+            return server
+        except Exception as e:
+            logger.warning("MCP server start failed (%s) -- disabled", e)
+            return None
+
+    def _load_coding_coordinator_if_enabled(self):
+        """Construct the supervisor's :class:`ConversationCoordinator` and
+        wire it into the MCP server's clarification + declare_complete
+        responder hooks."""
+        if self.mcp_server is None:
+            return None
+        try:
+            renderer = None
+            try:
+                from ultron.coding.templates import TemplateRenderer
+                renderer = TemplateRenderer()
+            except FileNotFoundError as e:
+                logger.warning("Template renderer disabled (%s)", e)
+            from ultron.coding.verification import Verifier
+            verifier = Verifier(store=self.mcp_server.store)
+            coordinator = ConversationCoordinator(
+                store=self.mcp_server.store,
+                llm=self.llm,
+                renderer=renderer,
+                verifier=verifier,
+            )
+            self.mcp_server.set_clarification_responder(coordinator.decide_clarification)
+            self.mcp_server.set_declare_complete_handler(coordinator.handle_declare_complete)
+            logger.info(
+                "Coordinator wired into MCP server (templates=%s, verifier=on)",
+                "on" if renderer else "off",
+            )
+            return coordinator
+        except Exception as e:
+            logger.warning("Coordinator init failed (%s) -- disabled", e)
+            return None
+
+    def _load_coding_voice_if_enabled(self):
+        """Construct the coding voice controller if enabled.
+
+        Builds the bridge (direct subprocess today; OpenClaw later via
+        settings flip), wires up project registry + resolver, and returns
+        a :class:`CodingVoiceController` for the main loop to call.
+        Failures degrade silently -- coding is optional.
+        """
+        if not settings.CODING_ENABLED:
+            return None
+        try:
+            runner = CodingTaskRunner()
+            registry = ProjectRegistry()
+            embedder = None
+            if self.memory is not None:
+                try:
+                    embedder = self.memory._embedder  # noqa: SLF001
+                except Exception:
+                    embedder = None
+            resolver = ProjectResolver(registry, embedder=embedder)
+            controller = CodingVoiceController(
+                runner=runner,
+                registry=registry,
+                resolver=resolver,
+                sandbox_root=settings.CODING_SANDBOX_PATH,
+                coordinator=self.coding_coordinator,
+            )
+            logger.info(
+                "Coding voice ready (bridge=%s, sandbox=%s, coordinator=%s)",
+                runner.bridge.name(), settings.CODING_SANDBOX_PATH,
+                "on" if self.coding_coordinator is not None else "off",
+            )
+            return controller
+        except Exception as e:
+            logger.warning("Coding voice init failed (%s) -- disabled.", e)
+            return None
+
+    def _load_web_search_if_enabled(self):
+        """Construct the web-search gate + executor if enabled.
+
+        Returns ``(gate, executor, ack_source)`` triple. Any of them can be
+        ``None`` if web search is disabled or the API key is missing -- the
+        rest of the pipeline still works.
+        """
+        if not settings.WEB_SEARCH_ENABLED:
+            return None, None, None
+        if not settings.WEB_SEARCH_BRAVE_API_KEY:
+            logger.warning(
+                "WEB_SEARCH_ENABLED=True but ULTRON_BRAVE_API_KEY missing -- "
+                "web search disabled."
+            )
+            return None, None, None
+        try:
+            brave = BraveSearchClient()
+            jina = JinaReaderClient()
+            gate = WebSearchGate(llm=self.llm)
+            cache = None
+            if self.memory is not None:
+                try:
+                    cache = WebResultsCache(
+                        client=self.memory._client,  # noqa: SLF001
+                        embedder=self.memory._embedder,  # noqa: SLF001
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Web result cache disabled (%s) -- search will work "
+                        "but won't reuse prior queries.", e
+                    )
+            executor = WebSearchExecutor(
+                brave=brave, jina=jina, llm=self.llm, cache=cache,
+            )
+            ack = AcknowledgmentSource()
+            return gate, executor, ack
+        except Exception as e:
+            logger.warning("Web search init failed (%s) -- disabled.", e)
+            return None, None, None
+
+    def _load_addressing_classifier(self) -> AddressingClassifier:
+        """Build the CPU-side addressing classifier used in WARM mode."""
+        # Provide a lightweight closure so the zero-shot pass can fold in
+        # recent dialogue without coupling the classifier to ConversationMemory.
+        def recent_turns_provider(n: int):
+            if self.memory is None:
+                return []
+            try:
+                return [(t.role, t.content) for t in self.memory.recent(n)]
+            except Exception:
+                return []
+
+        return AddressingClassifier(
+            rule_confidence_threshold=settings.ADDRESSING_RULE_CONFIDENCE_THRESHOLD,
+            default_silent_on_uncertain=settings.ADDRESSEE_DEFAULT_SILENT,
+            log_path=settings.ADDRESSING_LOG_PATH,
+            zero_shot_model_name=settings.ADDRESSING_ZERO_SHOT_MODEL,
+            load_zero_shot_eagerly=settings.ADDRESSING_LOAD_EAGERLY,
+            recent_turns_provider=recent_turns_provider,
+        )
+
     @staticmethod
     def _load_memory_if_enabled():
-        """Build a :class:`ConversationMemory` (with embedder) if enabled.
+        """Build a Qdrant-backed :class:`ConversationMemory` if enabled.
 
-        Failures degrade gracefully: missing deps → memory disabled, missing
-        embedder → memory persists turns but RAG retrieval returns empty.
+        Failures degrade gracefully: missing deps -> memory disabled. The
+        hybrid embedder loads eagerly at construction so the first hot-path
+        write doesn't pay the model-load cost.
         """
         if not settings.MEMORY_ENABLED:
             return None
         try:
-            from ultron.memory import ConversationMemory
-            from ultron.memory.embeddings import Embedder
+            from ultron.memory import ConversationMemory, HybridEmbedder
         except Exception as e:
-            logger.warning("Memory module import failed (%s) — disabling memory", e)
+            logger.warning("Memory module import failed (%s) -- disabling memory", e)
             return None
 
-        embedder = None
         try:
-            embedder = Embedder()
+            embedder = HybridEmbedder(eager=True)
         except Exception as e:
             logger.warning(
-                "Embedder load failed (%s) — memory will persist turns but "
-                "RAG retrieval will be disabled.", e
+                "HybridEmbedder load failed (%s) -- disabling memory", e
             )
+            return None
 
         try:
             return ConversationMemory(embedder=embedder)
         except Exception as e:
-            logger.warning("ConversationMemory init failed (%s) — disabling memory", e)
+            logger.warning("ConversationMemory init failed (%s) -- disabling memory", e)
             return None
 
     @staticmethod
@@ -174,6 +348,11 @@ class Orchestrator:
                 self.memory.close()
             except Exception:
                 pass
+        if self.mcp_server is not None:
+            try:
+                self.mcp_server.stop(timeout_s=3.0)
+            except Exception:
+                pass
 
     # --- main loop -----------------------------------------------------------
 
@@ -196,6 +375,14 @@ class Orchestrator:
 
         try:
             while not self._shutdown.is_set():
+                # Coding-task completion push: if a background Claude Code
+                # task just finished, announce it before we go back to
+                # listening. This gives the unsolicited "Done. Created X
+                # in Y..." narration the spec calls for.
+                self._announce_coding_completion_if_pending()
+                # Phase 2: surface any clarifications Claude is parked on.
+                self._announce_pending_clarifications()
+
                 speech: Optional[np.ndarray] = None
                 came_from_follow_up = False
 
@@ -253,22 +440,54 @@ class Orchestrator:
                     continue
 
                 # In the follow-up window, gate every utterance through the
-                # addressee classifier. Don't reset the deadline on rejected
-                # speech — we measure 30 s from the *last response*, not from
-                # the last sound in the room.
+                # CPU-side addressing classifier. Don't reset the deadline on
+                # rejected speech -- we measure FOLLOW_UP_TIMEOUT_SECONDS from
+                # the *last response*, not from the last sound in the room.
                 if came_from_follow_up:
-                    if not self.llm.should_respond(user_text):
-                        print(f"  (heard: {user_text!r} — not for me)")
+                    seconds_since = (
+                        time.monotonic() - self._last_response_finished_monotonic
+                    )
+                    verdict = self.addressing.classify(
+                        user_text, seconds_since_response=seconds_since
+                    )
+                    if verdict.decision != AddressingDecision.ADDRESSED:
+                        print(
+                            f"  (heard: {user_text!r} -- not for me "
+                            f"[{verdict.source}: {verdict.reason}])"
+                        )
                         continue
                     print(f"  (follow-up) you: {user_text}")
                 else:
                     print(f"  you: {user_text}")
 
+                # Coding pipeline gets first crack: progress queries,
+                # cancellations, and new-task-creation utterances are
+                # handled here without ever touching the LLM. handle_utterance
+                # returns None for anything not coding-related; we then fall
+                # through to the normal LLM/search path.
+                if self.coding_voice is not None:
+                    coding_response = self.coding_voice.handle_utterance(user_text)
+                    if coding_response is not None:
+                        self._speak(coding_response.text)
+                        self._last_response_finished_monotonic = time.monotonic()
+                        if settings.FOLLOW_UP_ENABLED:
+                            follow_up_until = (
+                                self._last_response_finished_monotonic
+                                + settings.FOLLOW_UP_TIMEOUT_SECONDS
+                            )
+                        else:
+                            follow_up_until = None
+                        continue
+
                 self._respond(user_text)
+                self._last_response_finished_monotonic = time.monotonic()
                 if settings.FOLLOW_UP_ENABLED:
-                    follow_up_until = time.monotonic() + settings.FOLLOW_UP_TIMEOUT_SECONDS
+                    follow_up_until = (
+                        self._last_response_finished_monotonic
+                        + settings.FOLLOW_UP_TIMEOUT_SECONDS
+                    )
                     print(
-                        f"  (still listening for ~{int(settings.FOLLOW_UP_TIMEOUT_SECONDS)} s — "
+                        f"  (still listening for ~{int(settings.FOLLOW_UP_TIMEOUT_SECONDS)} s -- "
                         f"keep talking or stay silent to drop back to wake-word mode)"
                     )
                 else:
@@ -388,11 +607,61 @@ class Orchestrator:
 
         return _FU_TIMEOUT
 
+    # --- coding pipeline glue -----------------------------------------------
+
+    def _speak(self, text: str) -> None:
+        """Synchronously speak a fixed string + print it. Used by the coding
+        pipeline for progress narrations and completion announcements --
+        the regular LLM streaming path uses ``speak_stream`` instead."""
+        if not text:
+            return
+        print(f"  ultron: {text}")
+        try:
+            self.tts.speak(text)
+        except Exception as e:
+            logger.warning("speak failed: %s", e)
+
+    def _announce_coding_completion_if_pending(self) -> None:
+        """If a background coding task just finished, speak its summary
+        before we go back to listening for the next utterance."""
+        if self.coding_voice is None:
+            return
+        try:
+            narration = self.coding_voice.pending_completion()
+        except Exception as e:
+            logger.warning("coding_voice.pending_completion failed: %s", e)
+            return
+        if narration:
+            self._speak(narration)
+            self._last_response_finished_monotonic = time.monotonic()
+
+    def _announce_pending_clarifications(self) -> None:
+        """Speak any clarifications Claude is waiting on. Each prompt is
+        spoken at most once -- the user's next utterance answers it."""
+        if self.coding_voice is None:
+            return
+        try:
+            prompts = self.coding_voice.pending_clarifications()
+        except Exception as e:
+            logger.warning("coding_voice.pending_clarifications failed: %s", e)
+            return
+        for prompt in prompts:
+            self._speak(prompt)
+            self._last_response_finished_monotonic = time.monotonic()
+
     # --- phase: process ------------------------------------------------------
 
     def _respond(self, user_text: str) -> None:
-        """Stream LLM tokens into TTS and watch for wake-word interruption."""
+        """Stream LLM tokens into TTS and watch for wake-word interruption.
+
+        Phase 4: classifies the utterance through the web-search gate first.
+        SEARCH -> speak an acknowledgment phrase, run the search workflow
+        (Brave + Jina + LLM rank) in parallel with the ack TTS, then
+        generate the final response with sources injected.
+        NO_SEARCH / UNCERTAIN -> base path (unchanged from Phase 3).
+        """
         self._interrupt.clear()
+        self._last_search_payload = None
         watcher: Optional[threading.Thread] = None
         if settings.BARGE_IN_ENABLED:
             watcher = threading.Thread(
@@ -403,8 +672,8 @@ class Orchestrator:
             logger.info("Barge-in wake watcher disabled")
 
         try:
-            token_stream = self.llm.generate_stream(user_text)
             print("  ultron: ", end="", flush=True)
+            token_stream = self._build_response_stream(user_text)
 
             def gated():
                 for token in token_stream:
@@ -416,6 +685,12 @@ class Orchestrator:
 
             self.tts.speak_stream(gated())
             print()  # newline after streamed response
+
+            # Sources go to the transcript only -- no TTS read-out, since
+            # citations interleaved with the spoken answer would clutter the
+            # voice output. The user can scan the printed list to verify.
+            if self._last_search_payload and self._last_search_payload.sources:
+                print(f"  {format_sources_for_transcript(self._last_search_payload.sources)}")
         except Exception as e:
             logger.exception("Response pipeline failed: %s", e)
             print(f"\n  [error] {e}")
@@ -423,6 +698,104 @@ class Orchestrator:
             self._interrupt.set()  # release watcher
             if watcher is not None:
                 watcher.join(timeout=1.0)
+
+    def _build_response_stream(self, user_text: str):
+        """Yield tokens for the response, applying the web-search gate.
+
+        Returned generator handles three paths:
+          * No gate or NO_SEARCH/UNCERTAIN -> base ``llm.generate_stream``.
+          * SEARCH with successful retrieval -> ack phrase, then a
+            search-augmented prompt.
+          * SEARCH with empty/failed retrieval -> ack phrase, then base
+            generation (LLM at least apologizes accurately).
+        """
+        if self.web_gate is None or self.web_executor is None:
+            yield from self.llm.generate_stream(user_text)
+            return
+
+        try:
+            verdict = self.web_gate.classify(user_text)
+        except Exception as e:
+            logger.warning("Web gate failed (%s) -- falling through to base", e)
+            yield from self.llm.generate_stream(user_text)
+            return
+
+        # Phase 5: translate preflight uncertainty signals into behavior.
+        # May upgrade NO_SEARCH -> SEARCH (low confidence + temporal), and
+        # may prepend a short [Confidence: ...] addendum to the user text
+        # so the LLM matches its tone to the actual confidence level.
+        verdict, augmented_text = apply_uncertainty(verdict, user_text)
+
+        logger.info(
+            "gate: %s (%s, %s) -- %s",
+            verdict.decision.value, verdict.source, verdict.confidence,
+            verdict.reason,
+        )
+        if verdict.decision != GateDecision.SEARCH:
+            yield from self.llm.generate_stream(augmented_text)
+            return
+
+        yield from self._search_augmented_tokens(augmented_text, verdict)
+
+    def _search_augmented_tokens(self, user_text: str, verdict):
+        """Yield ack phrase + search-augmented LLM tokens.
+
+        The search workflow (Brave + Jina + LLM rank) runs on a worker
+        thread that's kicked off BEFORE we yield the ack -- TTS speaks the
+        ack while the network calls are in flight, hiding the search
+        latency behind the voice prompt.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        ack_phrase = self.ack_source.next_phrase() if self.ack_source else "Searching."
+        # The ack ends with a period so the TTS pipeline flushes it as a
+        # complete sentence immediately. We add a trailing space so it
+        # blends into the streamed answer without an awkward double-period.
+        ack = ack_phrase + " "
+
+        pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="web-search")
+        try:
+            search_future = pool.submit(
+                self.web_executor.run,
+                user_text,
+                verdict.search_queries or [user_text],
+            )
+            yield ack
+
+            try:
+                payload = search_future.result(timeout=20.0)
+            except Exception as e:
+                logger.warning("Search workflow failed: %s", e)
+                payload = None
+
+            if not payload or not payload.sources:
+                # Search produced nothing actionable; let the base LLM answer
+                # and acknowledge the gap. We don't re-run the gate.
+                logger.info(
+                    "Search returned no sources (%s); falling back to base LLM",
+                    payload.notes if payload else "n/a",
+                )
+                fallback_query = (
+                    f"{user_text}\n\n"
+                    "(I attempted a web search but it returned no usable "
+                    "results. Answer from your existing knowledge and be "
+                    "explicit about uncertainty if relevant.)"
+                )
+                yield from self.llm.generate_stream(fallback_query)
+                return
+
+            self._last_search_payload = payload
+            sources_block = format_sources_for_prompt(payload.sources)
+            augmented = (
+                f"User question: {user_text}\n\n"
+                f"Fresh information from web search:\n{sources_block}\n\n"
+                "Answer the user's question using this information. Cite "
+                "sources naturally in prose (e.g. \"According to NASA, ...\"). "
+                "Stay in character. Be concise."
+            )
+            yield from self.llm.generate_stream(augmented)
+        finally:
+            pool.shutdown(wait=False)
 
     def _interrupt_watcher(self) -> None:
         """Run wake-word detection during TTS playback for barge-in."""

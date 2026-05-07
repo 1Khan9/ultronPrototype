@@ -1,0 +1,94 @@
+{# Initial prompt for a fresh project. #}
+{# Required context fields: refined_goal, user_intent, project_root,
+   stack (dict with language/framework/dependencies), test_framework,
+   user_preferences (list of strings, may be empty). #}
+# Coding task
+
+## Goal
+{{ refined_goal | trim }}
+{% if user_intent and user_intent.strip() != refined_goal.strip() %}
+
+(Original user request: {{ user_intent | trim }})
+{% endif %}
+
+## In scope
+- Building exactly what the goal describes, end to end.
+- Writing tests for each component you build.
+- Reporting progress and asking for clarification through the MCP tools.
+
+## Out of scope
+- Adding features the user did not ask for.
+- Refactoring code that exists outside the project root.
+- Committing to git, deploying, or pushing anywhere.
+- Calling external paid APIs, signing the user up for accounts, or using credentials you do not have.
+
+## Working directory
+**`{{ project_root }}`**
+
+All file operations must be inside this directory. Do not create or
+modify files anywhere else. Do not assume access to other paths on
+this machine.
+
+## Required stack
+- Language: {{ stack.language | default("Python", true) }}
+{%- if stack.framework %}
+- Framework / runtime: {{ stack.framework }}
+{%- endif %}
+{%- if stack.dependencies %}
+- Dependencies: {{ stack.dependencies | join(", ") }}
+{%- endif %}
+{%- if stack.notes %}
+- Notes: {{ stack.notes }}
+{%- endif %}
+
+## Testing requirements
+- Use **{{ test_framework | default("the language's standard test framework", true) }}**.
+- Write tests for each component as you build it.
+- Run tests after each component is implemented, before moving to the next.
+- Fix failures before proceeding -- do not weaken or delete tests to make them pass.
+- After each test run, call `mcp__ultron_coding__report_test_results`
+  with the passing/failing/skipped counts and a one-line `details` field.
+
+## Reporting requirements
+- Call `mcp__ultron_coding__report_progress` after every meaningful unit
+  of work (scaffolding done, module implemented, tests written, tests
+  passing, refactor complete).
+- Each call should have a clear `stage` label and the list of files
+  touched since the last report.
+
+## Clarification protocol
+- If you need information you don't have, call
+  `mcp__ultron_coding__request_clarification`. The user's supervisor
+  (Ultron) will answer if possible or escalate to the user.
+- DO call request_clarification for: scope additions beyond the goal,
+  external services or credentials, paid API tiers, breaking design
+  choices, deployment targets, anything that costs money.
+- DO NOT call request_clarification for: file naming, internal layout,
+  conventional defaults (test framework, linter, logging library),
+  routine implementation details. Make the call and proceed.
+- Use `urgency: "blocking"` if you cannot proceed without an answer;
+  use `urgency: "preference"` if you have a sensible default.
+
+## Code quality
+- Type hints on all function signatures (when the language supports them).
+- Concise docstrings on public functions.
+- Catch only what you handle; no bare `except`.
+- Configuration in environment variables or config files; never hardcoded credentials.
+{% if user_preferences %}
+- Stored user preferences:
+{%- for pref in user_preferences %}
+  - {{ pref }}
+{%- endfor %}
+{% endif %}
+
+## Completion criteria
+You may call `mcp__ultron_coding__declare_complete` only when:
+- All requested features are implemented.
+- All tests pass (zero failures).
+- The entry point (if applicable) runs without crashing on startup.
+
+When you call declare_complete, list every file you created and every
+file you modified, and provide a one-paragraph summary. The supervisor
+runs verification before accepting completion.
+
+## Now begin.

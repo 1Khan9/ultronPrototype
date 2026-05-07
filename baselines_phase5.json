@@ -1,0 +1,172 @@
+{
+  "metadata": {
+    "timestamp": "2026-05-07T15:34:18.540547+00:00",
+    "main_repo": "C:\\STC\\ultronPrototype",
+    "queries_count": 10,
+    "queries": [
+      "What is the boiling point of water?",
+      "Walk me through how a transistor works.",
+      "Who was Nikola Tesla?",
+      "What's nineteen times forty-three?",
+      "Explain what a hash table is.",
+      "Are you afraid of death?",
+      "What's a good book to read on a flight?",
+      "What do you think about meditation?",
+      "And what about the Mariana Trench?",
+      "Tell me something interesting about black holes."
+    ],
+    "notes": "TTS measured through synth (Piper + RVC) without playback. VRAM is total GPU 0 used (includes desktop apps); deltas are the meaningful figures."
+  },
+  "vram_mb": {
+    "before_load": 2103,
+    "after_whisper": 2874,
+    "after_embedder": 2874,
+    "after_llm": 8426,
+    "after_rvc": 8426,
+    "full_stack_loaded": 9009,
+    "peak_under_load": 9225
+  },
+  "latency_ms": {
+    "whisper_2_5s_sample": {
+      "min": 77.9999999795109,
+      "median": 78.00000000861473,
+      "max": 94.00000001187436,
+      "samples": [
+        94.00000001187436,
+        78.00000000861473,
+        77.9999999795109,
+        94.00000001187436,
+        78.00000000861473
+      ]
+    },
+    "per_query": [
+      {
+        "query": "What is the boiling point of water?",
+        "first_token_ms": 92.99999999348074,
+        "first_sentence_complete_ms": 405.99999998812564,
+        "first_sentence_text": "At standard atmospheric pressure, water boils at 100 degrees Celsius (212 degrees Fahrenheit).",
+        "tts_synth_first_sentence_ms": 530.9999999881256,
+        "tts_pcm_samples": 312960,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 701.9999999902211,
+        "vram_mb_after": 9135
+      },
+      {
+        "query": "Walk me through how a transistor works.",
+        "first_token_ms": 94.00000001187436,
+        "first_sentence_complete_ms": 547.0000000204891,
+        "first_sentence_text": "A transistor functions as a semiconductor switch or amplifier, controlling current flow between its source and drain terminals via an electric field applied to a gate. In a",
+        "tts_synth_first_sentence_ms": 750.0,
+        "tts_pcm_samples": 458880,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 922.0000000204891,
+        "vram_mb_after": 9225
+      },
+      {
+        "query": "Who was Nikola Tesla?",
+        "first_token_ms": 125.0,
+        "first_sentence_complete_ms": 546.9999999913853,
+        "first_sentence_text": "Nikola Tesla was a Serbian-American electrical engineer and physicist who pioneered alternating current (AC) electricity, wireless communication, and radio technology. He",
+        "tts_synth_first_sentence_ms": 608.9999999967404,
+        "tts_pcm_samples": 495360,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 812.0000000053551,
+        "vram_mb_after": 9197
+      },
+      {
+        "query": "What's nineteen times forty-three?",
+        "first_token_ms": 125.0,
+        "first_sentence_complete_ms": 125.0,
+        "first_sentence_text": "817.",
+        "tts_synth_first_sentence_ms": 233.99999999674037,
+        "tts_pcm_samples": 56640,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 437.0000000053551,
+        "vram_mb_after": 9079
+      },
+      {
+        "query": "Explain what a hash table is.",
+        "first_token_ms": 125.0,
+        "first_sentence_complete_ms": 405.99999998812564,
+        "first_sentence_text": "A hash table is a data structure that stores key-value pairs, enabling near-constant time access.",
+        "tts_synth_first_sentence_ms": 405.99999998812564,
+        "tts_pcm_samples": 288960,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 608.9999999967404,
+        "vram_mb_after": 9147
+      },
+      {
+        "query": "Are you afraid of death?",
+        "first_token_ms": 108.99999999674037,
+        "first_sentence_complete_ms": 125.0,
+        "first_sentence_text": "No.",
+        "tts_synth_first_sentence_ms": 203.00000000861473,
+        "tts_pcm_samples": 17280,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 390.00000001396984,
+        "vram_mb_after": 9109
+      },
+      {
+        "query": "What's a good book to read on a flight?",
+        "first_token_ms": 110.00000001513399,
+        "first_sentence_complete_ms": 297.0000000204891,
+        "first_sentence_text": "For a flight, efficiency and engagement are paramount. *",
+        "tts_synth_first_sentence_ms": 328.00000000861473,
+        "tts_pcm_samples": 187200,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 516.0000000323635,
+        "vram_mb_after": 9121
+      },
+      {
+        "query": "What do you think about meditation?",
+        "first_token_ms": 109.0000000258442,
+        "first_sentence_complete_ms": 344.00000001187436,
+        "first_sentence_text": "Meditation aligns neural pathways to optimize focus and suppress emotional volatility. For a s",
+        "tts_synth_first_sentence_ms": 390.9999999741558,
+        "tts_pcm_samples": 263040,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 578.0000000086147,
+        "vram_mb_after": 9131
+      },
+      {
+        "query": "And what about the Mariana Trench?",
+        "first_token_ms": 92.99999999348074,
+        "first_sentence_complete_ms": 530.9999999881256,
+        "first_sentence_text": "The Challenger Deep, the deepest known point in the Mariana Trench, sits at approximately 10,935 meters.",
+        "tts_synth_first_sentence_ms": 467.99999999348074,
+        "tts_pcm_samples": 346560,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 638.9999999955762,
+        "vram_mb_after": 9169
+      },
+      {
+        "query": "Tell me something interesting about black holes.",
+        "first_token_ms": 109.99999998603016,
+        "first_sentence_complete_ms": 734.9999999860302,
+        "first_sentence_text": "A black hole's event horizon is not a surface but a boundary in spacetime; crossing it is irreversible, yet from an outside observer's perspective, time dilation prevents anything from ever appearing ",
+        "tts_synth_first_sentence_ms": 687.9999999946449,
+        "tts_pcm_samples": 597120,
+        "tts_pcm_sr": 48000,
+        "ttfa_estimate_ms": 875.9999999892898,
+        "vram_mb_after": 9177
+      }
+    ],
+    "aggregate": {
+      "ttft_ms": {
+        "min": 92.99999999348074,
+        "median": 109.50000000593718,
+        "max": 125.0
+      },
+      "tts_synth_ms": {
+        "min": 203.00000000861473,
+        "median": 436.9999999908032,
+        "max": 750.0
+      },
+      "ttfa_estimate_ms": {
+        "min": 390.00000001396984,
+        "median": 623.9999999961583,
+        "max": 922.0000000204891
+      }
+    }
+  }
+}
