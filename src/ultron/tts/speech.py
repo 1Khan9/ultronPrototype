@@ -148,14 +148,32 @@ class TextToSpeech:
                         break
                     if not frag:
                         continue
-                    buffer.append(frag)
-                    if any(c in self.flush_chars for c in frag):
+
+                    # A single LLM token may contain a flush character followed
+                    # by the start of the next word (e.g. ". Th" where "is"
+                    # arrives in the next token). Naively appending the whole
+                    # token then flushing tears words in half. Walk the token
+                    # character by character: text up to and including the
+                    # flush char closes the current sentence; text after it
+                    # opens the next.
+                    remaining = frag
+                    while remaining:
+                        flush_pos = next(
+                            (i for i, c in enumerate(remaining) if c in self.flush_chars),
+                            -1,
+                        )
+                        if flush_pos == -1:
+                            buffer.append(remaining)
+                            break
+                        buffer.append(remaining[: flush_pos + 1])
                         sentence = "".join(buffer).strip()
                         buffer.clear()
+                        remaining = remaining[flush_pos + 1 :]
                         if sentence:
                             clip = self._synthesize(sentence)
                             if clip[0].size > 0:
                                 audio_q.put(clip)
+
                 tail = "".join(buffer).strip()
                 if tail and not self._stop_event.is_set():
                     clip = self._synthesize(tail)
