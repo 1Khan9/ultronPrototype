@@ -236,8 +236,93 @@ class UltronMCPServer:
         return session
 
     def get_session_state(self, session_id: str) -> ProjectSession:
-        """Spec: ``session.get_state``."""
+        """Spec: ``session.get_state``.
+
+        DEPRECATED in Phase C / Phase 1. Returns the full ProjectSession,
+        which on a long session will overflow Qwen's context budget.
+        Use the projection-based tools instead:
+
+          * :meth:`get_status_delta`
+          * :meth:`get_clarification_context`
+          * :meth:`get_adjustment_context`
+          * :meth:`get_correction_context`
+          * :meth:`get_completion_context`
+
+        For in-process Python callers (the runner / coordinator) that
+        legitimately need the full state, use :meth:`get_full_state`
+        instead -- it's the same data but explicitly marked as not for
+        MCP/Qwen exposure.
+
+        Will be removed in Phase D.
+        """
+        import warnings
+        warnings.warn(
+            "get_session_state is deprecated; use the projection-based "
+            "tools (get_status_delta, get_clarification_context, etc.) "
+            "or get_full_state for in-process Python callers.",
+            DeprecationWarning, stacklevel=2,
+        )
         return self.store.get(session_id)
+
+    def get_full_state(self, session_id: str) -> ProjectSession:
+        """In-process Python API for the runner / coordinator.
+
+        Returns the full :class:`ProjectSession`. Explicitly NOT exposed
+        as an MCP tool -- callers via Qwen must use the projection tools
+        which respect token budgets. Internal supervisor code that runs
+        in the same process and isn't subject to Qwen's context window
+        can use this freely.
+        """
+        return self.store.get(session_id)
+
+    # --- Phase C / Phase 1: projection-based state queries -----------------
+    # These replace get_session_state for any caller subject to Qwen's
+    # context budget. Each returns a bounded ProjectionResult; rendering
+    # and truncation logic lives in projections.py.
+
+    def get_status_delta(self, session_id: str):
+        from ultron.coding.projections import project_status_delta
+        return project_status_delta(self.store.get(session_id))
+
+    def get_clarification_context(
+        self, session_id: str, clarification_question: str,
+        options=None, facts_lookup=None,
+    ):
+        from ultron.coding.projections import project_clarification_context
+        return project_clarification_context(
+            self.store.get(session_id),
+            clarification_question=clarification_question,
+            options=options,
+            facts_lookup=facts_lookup,
+        )
+
+    def get_adjustment_context(
+        self, session_id: str, adjustment_text: str,
+        facts_lookup=None, conflict_detector=None,
+    ):
+        from ultron.coding.projections import project_adjustment_context
+        return project_adjustment_context(
+            self.store.get(session_id),
+            adjustment_text=adjustment_text,
+            facts_lookup=facts_lookup,
+            conflict_detector=conflict_detector,
+        )
+
+    def get_correction_context(
+        self, session_id: str, *, failures, failed_test_names=None,
+        failed_test_messages: str = "",
+    ):
+        from ultron.coding.projections import project_correction_context
+        return project_correction_context(
+            self.store.get(session_id),
+            failures=failures,
+            failed_test_names=failed_test_names,
+            failed_test_messages=failed_test_messages,
+        )
+
+    def get_completion_context(self, session_id: str):
+        from ultron.coding.projections import project_completion_context
+        return project_completion_context(self.store.get(session_id))
 
     def send_followup(
         self, session_id: str, prompt: str, kind: FollowupKind,

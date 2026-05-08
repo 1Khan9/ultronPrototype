@@ -34,6 +34,19 @@ from ultron.coding.mcp_server import (
     write_mcp_config,
 )
 from ultron.coding.narration import NarrationDelta, StatusNarrator
+from ultron.coding.projections import (
+    AdjustmentContextProjection,
+    ClarificationContextProjection,
+    CompletionContextProjection,
+    CorrectionContextProjection,
+    ProjectionResult,
+    StatusDeltaProjection,
+    project_adjustment_context,
+    project_clarification_context,
+    project_completion_context,
+    project_correction_context,
+    project_status_delta,
+)
 from ultron.coding.projects import (
     Project,
     ProjectRegistry,

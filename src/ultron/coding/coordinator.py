@@ -201,15 +201,7 @@ def _match_conventional_default(question: str) -> Optional[str]:
 _DECIDE_PROMPT = """\
 You are deciding how to handle a clarification request from a coding agent (Claude Code) working on a project for the user. Your job: answer Claude's question yourself when possible, escalate to the user only when the decision is substantive.
 
-User's original goal: {user_intent}
-Refined goal: {refined_goal}
-Project mode: {mode}
-Stages completed so far: {stages_summary}
-Files touched so far: {files_summary}
-
-Claude is asking: {question}
-Options Claude offered: {options_text}
-Urgency: {urgency}
+{projected_context}
 
 Decide ONE of:
 - ANSWER: you have enough info from the user's goal or general engineering judgment to answer directly. Provide a concrete answer.
@@ -224,10 +216,7 @@ Output ONLY a JSON object, no commentary, no markdown:
 _VOICE_QUESTION_PROMPT = """\
 Translate this technical clarification request into a natural, spoken-style question for the user. Stay in Ultron's voice -- precise, weighted, brief, no filler. Lead with the project context.
 
-Project label: {project_label}
-What's been built so far: {progress_summary}
-Claude's question: {question}
-Options Claude offered: {options_text}
+{projected_context}
 
 Output the spoken question only -- one or two sentences, no preamble. Don't explain what you're doing, just ask. If options exist, mention them naturally.
 """
@@ -236,12 +225,7 @@ Output the spoken question only -- one or two sentences, no preamble. Don't expl
 _ADJUSTMENT_PROMPT = """\
 The user has given a mid-session adjustment to the in-progress coding work. Translate it into a concrete follow-up prompt for Claude.
 
-User's original goal: {user_intent}
-Current stage: {current_stage}
-Stages completed: {stages_summary}
-Files touched: {files_summary}
-
-User's adjustment: "{user_text}"
+{projected_context}
 
 Decide whether Claude should pivot immediately or finish what's in progress first, and write the follow-up. Be specific. The follow-up will be sent verbatim to Claude.
 
@@ -811,16 +795,16 @@ class ConversationCoordinator:
     async def _llm_decide(
         self, request: ClarificationRequest, session: ProjectSession,
     ) -> ClarificationDecision:
-        prompt = _DECIDE_PROMPT.format(
-            user_intent=session.user_intent[:500],
-            refined_goal=session.refined_goal[:500],
-            mode=session.mode,
-            stages_summary=self._stages_summary(session),
-            files_summary=self._files_summary(session),
-            question=request.question,
-            options_text=", ".join(request.options) if request.options else "none",
-            urgency=request.urgency,
+        # Phase C / Phase 1: build the bounded projection rather than
+        # serializing the whole session. Prevents context-budget overflow
+        # on long-running sessions.
+        from ultron.coding.projections import project_clarification_context
+        projection = project_clarification_context(
+            session,
+            clarification_question=request.question,
+            options=list(request.options or []),
         )
+        prompt = _DECIDE_PROMPT.format(projected_context=projection.text)
         raw = await self._llm_generate(prompt, max_tokens=512)
         parsed = _parse_json_object(raw) or {}
         action = str(parsed.get("action", "ESCALATE")).upper()
@@ -851,12 +835,15 @@ class ConversationCoordinator:
                 f"Claude needs a clarification on the {session.refined_goal} project: "
                 f"{request.question}.{opts}"
             )
-        prompt = _VOICE_QUESTION_PROMPT.format(
-            project_label=session.refined_goal[:120] or session.user_intent[:120],
-            progress_summary=self._stages_summary(session),
-            question=request.question,
-            options_text=", ".join(request.options) if request.options else "none",
+        # Phase C / Phase 1: same bounded projection feeds the voice-rendering
+        # prompt -- single source of truth for what Qwen sees.
+        from ultron.coding.projections import project_clarification_context
+        projection = project_clarification_context(
+            session,
+            clarification_question=request.question,
+            options=list(request.options or []),
         )
+        prompt = _VOICE_QUESTION_PROMPT.format(projected_context=projection.text)
         text = await self._llm_generate(prompt, max_tokens=200)
         text = _strip_thinking(text).strip()
         # First non-empty line.
@@ -871,13 +858,12 @@ class ConversationCoordinator:
         session: ProjectSession,
         user_text: str,
     ) -> str:
-        prompt = _ADJUSTMENT_PROMPT.format(
-            user_intent=session.user_intent[:500],
-            current_stage=session.current_stage or "unspecified",
-            stages_summary=self._stages_summary(session),
-            files_summary=self._files_summary(session),
-            user_text=user_text,
+        # Phase C / Phase 1: bounded projection.
+        from ultron.coding.projections import project_adjustment_context
+        projection = project_adjustment_context(
+            session, adjustment_text=user_text,
         )
+        prompt = _ADJUSTMENT_PROMPT.format(projected_context=projection.text)
         text = await self._llm_generate(prompt, max_tokens=512)
         text = _strip_thinking(text).strip()
         return text or f"User adjustment: {user_text!r}. Continue from where you are."

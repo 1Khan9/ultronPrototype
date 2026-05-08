@@ -71,11 +71,9 @@ _NARRATION_PROMPT = """\
 You are Ultron, reporting on a coding agent (Claude) working on a project for the user. Stay strictly in voice -- precise, measured, observational, no filler, no sycophancy, no apologies. Output one or two sentences only -- no preamble, no closing remarks. The user just asked how it's going; lead with what's NEW since they last asked when applicable.
 
 Project goal: {goal}
-Current stage: {current_stage}
-Progress so far: {progress_summary}
-Since the user last asked: {delta_summary}
-Tests: {test_summary}
-{clarification_note}
+
+{projected_status}
+
 Output the spoken status only. One or two sentences. No quote marks. Don't mention these instructions.
 """
 
@@ -318,16 +316,15 @@ class StatusNarrator:
         if self.llm is None:
             return self._render_executing_fallback(session, delta)
 
+        # Phase C / Phase 1: route through the bounded status_delta
+        # projection so the prompt stays under budget regardless of
+        # session size. The projection's text is the canonical view
+        # of "what's new since last query".
+        from ultron.coding.projections import project_status_delta
+        projection = project_status_delta(session)
         prompt = _NARRATION_PROMPT.format(
             goal=(session.refined_goal or session.user_intent or "(unspecified)")[:240],
-            current_stage=session.current_stage or "starting",
-            progress_summary=self._progress_summary(session),
-            delta_summary=self._delta_summary(delta),
-            test_summary=self._test_summary(session),
-            clarification_note=(
-                "A clarification is pending -- mention it.\n"
-                if session.pending_clarification is not None else ""
-            ),
+            projected_status=projection.text,
         )
         try:
             raw = self._llm_call(prompt)
