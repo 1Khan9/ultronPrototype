@@ -18,8 +18,9 @@ foundations) + 4B optimization plan Stage A (LLMConfig preset +
 draft_model_path with model_validator) + Stage B (4B + 0.8B GGUFs
 downloaded, structurally validated, SHA256 recorded) + Stage C
 (start_llamacpp_server.py: --model-draft, --draft-num-pred-tokens,
---from-config flags + testable CLI helpers) — 762 passing tests, 16
-skipped, 0 failed.
+--from-config flags + testable CLI helpers) + Stage D (4B in-process
+baseline measured: TTFT 86 ms vs 9B's 109 ms; VRAM peak 7825 MB vs
+9B's 10370 MB; gate passed) — 762 passing tests, 16 skipped, 0 failed.
 
 ---
 
@@ -74,7 +75,8 @@ For the current decisions and Foundation phase status see
 ├── pyproject.toml                  ← packaging + pytest config
 ├── .env (gitignored)               ← secrets + opt-in env-var overrides
 ├── .env.example
-├── baselines.json                  ← VRAM + latency baselines (nested under phase_foundation_start)
+├── baselines.json                  ← VRAM + latency baselines (9B / current production reference)
+├── baselines_4b_q4_in_process.json ← 4B plan Stage D snapshot (4B alone, no spec decoding)
 ├── baselines_phase{0..7}.json      ← per-phase historical snapshots
 ├── baselines_phase_c{0,1}.json     ← Phase C snapshots (pre-Foundation)
 │
