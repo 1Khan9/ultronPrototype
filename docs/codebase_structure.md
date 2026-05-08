@@ -22,7 +22,10 @@ downloaded, structurally validated, SHA256 recorded) + Stage C
 baseline measured: TTFT 86 ms vs 9B's 109 ms; VRAM peak 7825 MB vs
 9B's 10370 MB; gate passed) + Stage F (LLMEngine.generate*:
 enable_thinking parameter wired through to chat_template_kwargs in both
-runtimes) — 773 passing tests, 16 skipped, 0 failed.
+runtimes) + Stage G (position-aware RAG injection: `llm.rag.position`
+config + LLMEngine._build_messages refactor; default flipped from
+"system" fold-in to "recency" prepend on user message — +10-20%
+recall expected) — 780 passing tests, 16 skipped, 0 failed.
 
 ---
 
@@ -1111,7 +1114,7 @@ All scripts assume venv active in main checkout (`C:\STC\ultronPrototype`). Work
 
 ### `tests/conftest.py` — Path setup so `from ultron.*` works.
 
-### Default suite (no env gate) — 773 tests, ~30 s wall
+### Default suite (no env gate) — 780 tests, ~30 s wall
 
 **Top-level (~25 files):**
 - `test_addressing.py` — rule-based addressing classifier
@@ -1145,6 +1148,7 @@ All scripts assume venv active in main checkout (`C:\STC\ultronPrototype`). Work
 - `test_llm_preset.py` (13, 4B plan Stage A) — `LLMConfig.preset` resolution: 9b/4b/custom defaults, explicit-override wins, YAML round-trip, invalid preset rejected
 - `test_start_llamacpp_server.py` (13, 4B plan Stage C) — launcher CLI: --help renders, default args back-compat, --model-draft attaches speculative decoding, --draft-num-pred-tokens override, --from-config overlay (4b/9b), CLI flags override overlay
 - `test_llm_enable_thinking.py` (11, 4B plan Stage F) — `enable_thinking` parameter plumbing: helper kwargs, in-process generate/generate_stream pass-through, HTTP payload pass-through, back-compat when default
+- `test_llm_rag_position.py` (7, 4B plan Stage G) — `_build_messages` honors `llm.rag.position`: recency mode prepends to user message, system mode folds into system message, no-snippets/retrieve-failure fallback, helper invariants
 
 **`tests/coding/`:**
 - `mock_bridge.py` — `ScriptedClaudeBridge` + `ClaudeScript` DSL

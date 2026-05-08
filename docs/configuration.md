@@ -139,6 +139,7 @@ new home. Below is the section-level overview with tuning notes.
 | `flash_attn` | true | Required for non-F16 KV cache. |
 | `kv_cache_type` | 8 | `8` = GGML_TYPE_Q8_0 (~½ VRAM vs F16); `1` = F16. |
 | `system_prompt` | (Ultron persona) | Multi-line block scalar. Edit to retune voice. |
+| `rag.position` | `"recency"` | One of `"system" \| "recency"`. Where retrieved Qdrant memories land in the LLM context. `"recency"` (Stage G default) prepends them to the user message — strongest-attention zone, +10–20% recall on the 4B. `"system"` folds them into the leading system message (legacy / rollback). |
 
 ### `embeddings`
 

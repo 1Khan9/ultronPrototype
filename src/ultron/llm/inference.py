@@ -345,27 +345,19 @@ class LLMEngine:
                 system_content,
             )
 
-        # RAG snippets are folded into the leading system message rather than
-        # emitted as a second `system`-role entry: Qwen3's chat template
-        # rejects a second system message with "System message must be at
-        # the beginning."
+        # 4B plan Stage G — RAG injection position is config-driven.
+        # Qwen3's chat template rejects a second system-role message, so
+        # the only two viable positions are:
+        #   "system": fold the RAG block into the leading system message
+        #   "recency": prepend the RAG block to the final user message
+        # The second is the default at Stage G — it puts retrieved
+        # context in the strongest-attention zone (right before the
+        # user query) and recovers +10-20% recall on the 4B.
+        rag_block = self._format_rag_block(self._retrieve_rag_snippets(user_message))
+        rag_position = get_config().llm.rag.position
 
-        if self._memory is not None:
-            mem_cfg = get_config().memory
-            try:
-                snippets = self._memory.retrieve(
-                    user_message,
-                    k=mem_cfg.rag_top_k,
-                    exclude_recent=mem_cfg.rag_exclude_recent,
-                )
-            except Exception as e:
-                logger.warning("memory.retrieve failed: %s", e)
-                snippets = []
-            if snippets:
-                lines = ["", "Relevant earlier context from prior conversations:"]
-                for s in snippets:
-                    lines.append(f"- {s.role}: {s.content}")
-                system_content = system_content + "\n".join(lines)
+        if rag_block and rag_position == "system":
+            system_content = system_content + rag_block
 
         msgs: List[dict] = [{"role": "system", "content": system_content}]
 
@@ -376,8 +368,48 @@ class LLMEngine:
             for role, content in self._history:
                 msgs.append({"role": role, "content": content})
 
-        msgs.append({"role": "user", "content": user_message})
+        if rag_block and rag_position == "recency":
+            user_content = rag_block.lstrip("\n") + "\n\n" + user_message
+        else:
+            user_content = user_message
+        msgs.append({"role": "user", "content": user_content})
         return msgs
+
+    # --- 4B plan Stage G: RAG retrieval + formatting helpers ---------------
+
+    def _retrieve_rag_snippets(self, user_message: str) -> List:
+        """Best-effort fetch of RAG snippets from the memory module.
+
+        Returns ``[]`` on failure or when memory is disabled. Logs a
+        warning on retrieval failure but never raises.
+        """
+        if self._memory is None:
+            return []
+        mem_cfg = get_config().memory
+        try:
+            return list(self._memory.retrieve(
+                user_message,
+                k=mem_cfg.rag_top_k,
+                exclude_recent=mem_cfg.rag_exclude_recent,
+            ))
+        except Exception as e:
+            logger.warning("memory.retrieve failed: %s", e)
+            return []
+
+    @staticmethod
+    def _format_rag_block(snippets: List) -> str:
+        """Render the retrieved snippets as a labelled text block.
+
+        Returns ``""`` when there are no snippets so the caller can do
+        a simple truthiness check. Same content shape as before Stage G
+        for back-compat with anything inspecting the rendered prompt.
+        """
+        if not snippets:
+            return ""
+        lines = ["", "Relevant earlier context from prior conversations:"]
+        for s in snippets:
+            lines.append(f"- {s.role}: {s.content}")
+        return "\n".join(lines)
 
     # --- generation ----------------------------------------------------------
 

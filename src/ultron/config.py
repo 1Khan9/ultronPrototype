@@ -139,6 +139,30 @@ class LLMServerConfig(_Strict):
     connect_timeout_s: float = 5.0
 
 
+class LLMRagConfig(_Strict):
+    """4B optimization plan Stage G — RAG-snippet injection position.
+
+    Where retrieved Qdrant memories land in the LLM context window:
+
+    - ``"system"`` (legacy): folded into the leading system message
+      (today's path until Stage G). Qwen3's chat template rejects a
+      second system-role message, so RAG content was concatenated to
+      the persona-system content.
+    - ``"recency"`` (new default at Stage G): emitted as a
+      ``[Relevant context]\\n…\\n\\n`` prefix on the user message,
+      placing it in the recency / strongest-attention zone right
+      before the user query. Qwen3's chat template accepts this
+      because the user role is unaffected. Per the optimization plan,
+      this gives +10–20% recall on injected memories on the 4B.
+
+    The system position is kept for back-compat (rollback path if the
+    recency injection regresses voice character or surfaces other
+    unforeseen issues).
+    """
+
+    position: Literal["system", "recency"] = "recency"
+
+
 class LLMPersonaConfig(_Strict):
     """Where the voice-path system prompt comes from.
 
@@ -229,6 +253,7 @@ class LLMConfig(_Strict):
     system_prompt: str = ""
     server: LLMServerConfig = Field(default_factory=LLMServerConfig)
     persona: LLMPersonaConfig = Field(default_factory=LLMPersonaConfig)
+    rag: LLMRagConfig = Field(default_factory=LLMRagConfig)
 
     @model_validator(mode="after")
     def _apply_preset(self) -> "LLMConfig":

@@ -167,17 +167,43 @@ cover the helper, both runtimes, both methods, and back-compat
 (default omits the kwarg). Full pytest sweep: 773 passed (+11 from
 Stage D 762), 16 skipped, 0 failed.
 
-### Stage G — Position-aware RAG injection
-Move retrieved Qdrant memories from the system-prompt fold-in
-(currently in `_build_messages`) to the position just before the user
-query. Recency bias makes this the strongest attention zone. Expected
-+10-20% recall improvement.
+### Stage G — Position-aware RAG injection ✅ DONE
+Refactored `LLMEngine._build_messages` to inject retrieved Qdrant
+memories at the position dictated by `cfg.llm.rag.position`:
 
-Composition order after the change:
+- `"system"` — legacy fold-in to the leading system message (preserved
+  for back-compat / rollback path).
+- `"recency"` — **new default** — prepended to the final user message,
+  putting RAG content in the strongest-attention zone right before
+  the user query. Per the plan, +10–20% recall on injected memories
+  on the 4B.
+
+Qwen3's chat template rejects a second `system` message ("System
+message must be at the beginning"), so the new path uses the user
+message rather than emitting a separate context message — sidesteps
+the template constraint while still placing content in the recency
+zone.
+
+Composition after the change (with `position: "recency"`):
 1. System prompt + persona (start)
 2. Conversation history (middle)
-3. Retrieved memories ranked by relevance (just before user query) — NEW
-4. Current user query (end / recency position)
+3. RAG-block + current user query (end / recency position)
+
+Verification:
+- 7 new tests in
+  [tests/test_llm_rag_position.py](../tests/test_llm_rag_position.py)
+  cover both positions, no-snippets fallback, retrieve-failure
+  fallback, helper invariants, and history-not-duplicated guard.
+- Existing `test_llm_persona_source.py` (which exercises
+  `_build_messages` for persona resolution) still passes — it doesn't
+  use memory so the RAG path isn't triggered.
+- Refactored `_retrieve_rag_snippets()` and `_format_rag_block()`
+  helpers extracted for testability + reuse if a third position is
+  ever added.
+- `python scripts/validate_config.py`: passes against the updated
+  `config.yaml` (which now has explicit `llm.rag.position: "recency"`).
+- Full pytest sweep: 780 passed (+7 from Stage F 773), 16 skipped,
+  0 failed.
 
 ### Stage H — End-to-end regression sweep
 Full pytest, full `measure_baseline.py`, full smoke test (16 steps from

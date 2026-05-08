@@ -82,6 +82,13 @@ llm:
   preset: "qwen3.5-9b"
   model_path: "models/Qwen3.5-9B-Q4_K_M.gguf"
   draft_model_path: null       # speculative-decoding draft (4b preset sets this; unused for 9b)
+  # 4B optimization plan Stage G — where retrieved Qdrant memories
+  # land in the LLM context.
+  #   "system":  legacy fold-in to the leading system message.
+  #   "recency": prepend to the user message (strongest-attention zone;
+  #              +10-20% recall on the 4B per the plan). Default.
+  rag:
+    position: "recency"
   n_ctx: 8192                  # context length
   gpu_layers: -1               # -1 = all layers on GPU
   default_temperature: 0.7
