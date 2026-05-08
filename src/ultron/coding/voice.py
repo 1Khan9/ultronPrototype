@@ -137,6 +137,16 @@ class CodingVoiceController:
         except Exception:
             return False
 
+    def pending_budget_warning(self) -> Optional[str]:
+        """Phase 7: voice-loop poll for token-budget warnings raised by
+        the runner. Returns once and clears, mirroring the
+        ``pending_completion`` / ``pending_clarifications`` pattern."""
+        try:
+            return self.runner.pop_budget_warning()
+        except Exception as e:
+            logger.debug("pop_budget_warning failed: %s", e)
+            return None
+
     def handle_utterance(self, text: str) -> Optional[VoiceResponse]:
         """Classify and (if coding-related) act on an utterance.
 
@@ -387,6 +397,39 @@ class CodingVoiceController:
         ))
 
     def _submit(self, project_path: Path, intent: CodingIntent, label: str) -> None:
+        # Phase 7: when the coordinator's session store is available,
+        # register a ProjectSession so token usage + audit-log entries
+        # have something to attach to. Falls back to the legacy
+        # bridge-only path when no coordinator is wired.
+        bound_session_id: Optional[str] = None
+        if self.coordinator is not None:
+            store = getattr(self.coordinator, "store", None)
+            if store is not None:
+                try:
+                    session = store.create(
+                        project_root=project_path,
+                        user_intent=intent.task_text,
+                        mode="edit" if not intent.is_new_project else "new",
+                        model=settings.CODING_CLAUDE_MODEL,
+                    )
+                    bound_session_id = session.session_id
+                    # Move from PLANNING -> EXECUTING so progress queries
+                    # render the right status.
+                    try:
+                        from ultron.coding.session import SessionStatus
+                        store.transition(
+                            bound_session_id, SessionStatus.EXECUTING,
+                        )
+                    except Exception:
+                        pass
+                except Exception as e:
+                    logger.warning(
+                        "session create failed (%s); proceeding without one", e,
+                    )
+        try:
+            self.runner.bind_session(bound_session_id)
+        except Exception:
+            pass
         request = TaskRequest(
             task_prompt=intent.task_text,
             cwd=project_path,

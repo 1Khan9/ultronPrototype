@@ -132,7 +132,11 @@ class Orchestrator:
         if not (settings.CODING_ENABLED and settings.CODING_MCP_ENABLED):
             return None
         try:
-            server = UltronMCPServer()
+            # Phase 7: pass the per-session audit dir so SessionStore
+            # auto-logs every state change to logs/sessions/<id>.jsonl.
+            server = UltronMCPServer(
+                session_audit_dir=settings.CODING_SESSION_AUDIT_DIR,
+            )
             server.start(ready_timeout_s=5.0)
             logger.info("MCP server listening at %s", server.sse_url)
             return server
@@ -391,6 +395,8 @@ class Orchestrator:
                 self._announce_coding_completion_if_pending()
                 # Phase 2: surface any clarifications Claude is parked on.
                 self._announce_pending_clarifications()
+                # Phase 7: surface token-budget warnings + halt notices.
+                self._announce_pending_budget_warning()
 
                 speech: Optional[np.ndarray] = None
                 came_from_follow_up = False
@@ -656,6 +662,20 @@ class Orchestrator:
             return
         for prompt in prompts:
             self._speak(prompt)
+            self._last_response_finished_monotonic = time.monotonic()
+
+    def _announce_pending_budget_warning(self) -> None:
+        """Phase 7: surface token-budget warnings (80%) and halt notices
+        (100%) raised by the runner. Spoken once per crossing."""
+        if self.coding_voice is None:
+            return
+        try:
+            warning = self.coding_voice.pending_budget_warning()
+        except Exception as e:
+            logger.warning("coding_voice.pending_budget_warning failed: %s", e)
+            return
+        if warning:
+            self._speak(warning)
             self._last_response_finished_monotonic = time.monotonic()
 
     # --- phase: process ------------------------------------------------------

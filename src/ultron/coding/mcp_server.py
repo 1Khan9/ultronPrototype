@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from config import settings
+from ultron.coding.audit import SessionAuditWriter
 from ultron.coding.session import (
     ClarificationRequest,
     CompletionClaim,
@@ -154,6 +155,7 @@ class UltronMCPServer:
         sse_path: str = settings.CODING_MCP_SSE_PATH,
         log_path: Optional[Path] = settings.CODING_MCP_LOG_PATH,
         clarification_timeout_s: float = float(settings.CODING_MCP_CLARIFICATION_TIMEOUT_S),
+        session_audit_dir: Optional[Path] = None,
     ) -> None:
         from mcp.server.fastmcp import FastMCP
 
@@ -163,7 +165,14 @@ class UltronMCPServer:
         self.audit = _AuditLog(log_path)
         self.clarification_timeout_s = clarification_timeout_s
 
-        self.store = SessionStore()
+        # Phase 7: per-session audit writer. Defaults to None so existing
+        # tests that bypass the orchestrator don't get filesystem writes;
+        # the orchestrator passes settings.CODING_SESSION_AUDIT_DIR.
+        self.session_audit = (
+            SessionAuditWriter(session_audit_dir)
+            if session_audit_dir is not None else None
+        )
+        self.store = SessionStore(audit_writer=self.session_audit)
         self._pending = _PendingRegistry()
 
         # The Qwen-facing supervisor (Phase 2) plugs in via this hook.

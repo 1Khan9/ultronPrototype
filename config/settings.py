@@ -326,6 +326,30 @@ CODING_VERIFICATION_LINT_TIMEOUT_S = _env_int(
     "ULTRON_CODING_VERIFICATION_LINT_TIMEOUT_S", 30
 )
 
+# Phase 7: per-session audit log + token usage tracking.
+# Per-session JSONL files at logs/sessions/<session_id>.jsonl record every
+# state transition, clarification, verification cycle, adjustment, and
+# prompt sent to Claude. Used for debugging + retrospective tuning.
+CODING_SESSION_AUDIT_DIR = LOGS_DIR / "sessions"
+# Token budget per session. When usage crosses TOKEN_WARNING_THRESHOLD (a
+# fraction of the budget), the supervisor surfaces a warning to the user;
+# at 100% it refuses to start any further follow-ups for the session.
+# 100k tokens covers a significant build but not an unbounded rabbit hole.
+CODING_TOKEN_BUDGET_PER_SESSION = _env_int(
+    "ULTRON_CODING_TOKEN_BUDGET_PER_SESSION", 100_000
+)
+CODING_TOKEN_WARNING_THRESHOLD = _env_float(
+    "ULTRON_CODING_TOKEN_WARNING_THRESHOLD", 0.8
+)
+# Max seconds of silence from Claude (no progress event, no tool call)
+# before the supervisor logs a stall warning. Default 5 minutes.
+CODING_PROGRESS_TIMEOUT_S = _env_int(
+    "ULTRON_CODING_PROGRESS_TIMEOUT_S", 300
+)
+# Phase 6 test sandbox -- separate from the production sandbox so tests
+# don't pollute user-created projects.
+CODING_TEST_SANDBOX_PATH = PROJECT_ROOT / "tests" / "coding" / "sandbox"
+
 # Path to the Claude Code CLI. Resolved at startup; falls back to "claude"
 # on PATH if the explicit path is missing.
 CODING_CLAUDE_CLI = os.getenv(

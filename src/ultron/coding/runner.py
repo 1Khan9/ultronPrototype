@@ -132,6 +132,15 @@ class CodingTaskRunner:
         self._narrator = narrator
         self._store = store
 
+        # Phase 7: ProjectSession this runner is tracking, when known.
+        # Set via :meth:`bind_session` so token-usage events from the
+        # bridge can be forwarded to the right session in the store.
+        self._bound_session_id: Optional[str] = None
+        # Latest budget-warning text the orchestrator should surface to
+        # the user (consumed once; voice loop polls + speaks).
+        self._pending_budget_warning: Optional[str] = None
+        self._budget_lock = threading.Lock()
+
     # --- task lifecycle -----------------------------------------------------
 
     def has_active_task(self) -> bool:
@@ -146,7 +155,26 @@ class CodingTaskRunner:
             return None
         return h.state()
 
+    def bind_session(self, session_id: Optional[str]) -> None:
+        """Phase 7: associate the runner with a :class:`ProjectSession`.
+
+        When set, every USAGE event the bridge emits is forwarded to
+        ``store.record_tokens(session_id, ...)`` so the session's
+        ``tokens_used`` total stays current without the bridge needing
+        a direct dependency on the store. Call this BEFORE
+        :meth:`start_task` so the listener catches early events.
+        """
+        self._bound_session_id = session_id
+
     def start_task(self, request: TaskRequest) -> TaskHandle:
+        # Budget check: refuse to start a new task if the bound session's
+        # budget is exhausted. The voice layer surfaces the same warning
+        # via :meth:`pop_budget_warning`; this is a hard backstop.
+        if self._is_session_halted():
+            raise RuntimeError(
+                "Coding session has hit its token budget. "
+                "Cannot start another task without user approval."
+            )
         with self._handle_lock:
             if self._handle is not None and self._handle.is_running():
                 raise RuntimeError(
@@ -167,6 +195,10 @@ class CodingTaskRunner:
         # Tee task lifecycle to a JSONL audit log -- one line per event.
         if self._log_path is not None:
             handle.add_listener(self._make_log_listener(handle.task_id()))
+        # Phase 7: forward USAGE events to the bound session (if any) +
+        # check the budget after each one.
+        if self._bound_session_id is not None and self._store is not None:
+            handle.add_listener(self._make_usage_listener())
         # Also log a structured "start" record for offline inspection.
         self._log_record({
             "ts": time.time(),
@@ -202,6 +234,12 @@ class CodingTaskRunner:
         """
         if not self._claude_session_id or not self._project_cwd:
             logger.warning("send_followup: no prior session to resume")
+            return None
+        # Phase 7: refuse to spend more tokens once the budget is hit.
+        if self._is_session_halted():
+            logger.warning(
+                "send_followup: session at token budget cap; refusing follow-up",
+            )
             return None
 
         with self._handle_lock:
@@ -393,6 +431,88 @@ class CodingTaskRunner:
             self._last_seen_step_index = 0
             self._last_seen_files_created = 0
             self._last_seen_files_modified = 0
+
+    # --- Phase 7: token budget --------------------------------------------
+
+    def _is_session_halted(self) -> bool:
+        if self._bound_session_id is None or self._store is None:
+            return False
+        try:
+            session = self._store.get(self._bound_session_id)
+        except Exception:
+            return False
+        return bool(session.budget_halted)
+
+    def _make_usage_listener(self):
+        """Return an event listener that forwards USAGE events to the
+        store and checks the budget."""
+        session_id = self._bound_session_id
+        store = self._store
+
+        def _listener(event: TaskEvent) -> None:
+            if event.kind != EventKind.USAGE:
+                return
+            if session_id is None or store is None:
+                return
+            try:
+                total = store.record_tokens(
+                    session_id,
+                    input_tokens=event.usage_input or 0,
+                    output_tokens=event.usage_output or 0,
+                    cache_creation_tokens=event.usage_cache_creation or 0,
+                    cache_read_tokens=event.usage_cache_read or 0,
+                )
+            except Exception as e:
+                logger.debug("record_tokens failed: %s", e)
+                return
+            self._check_budget(session_id, total)
+
+        return _listener
+
+    def _check_budget(self, session_id: str, tokens_used: int) -> None:
+        """Compare ``tokens_used`` against the configured budget; flip
+        the warning / halt fields on the session and queue a voice
+        warning if a threshold has just been crossed."""
+        if self._store is None:
+            return
+        try:
+            session = self._store.get(session_id)
+        except Exception:
+            return
+        budget = settings.CODING_TOKEN_BUDGET_PER_SESSION
+        if budget <= 0:
+            return
+        ratio = tokens_used / budget
+        warn_at = settings.CODING_TOKEN_WARNING_THRESHOLD
+        # Halt at 100%.
+        if ratio >= 1.0 and not session.budget_halted:
+            session.budget_halted = True
+            self._queue_warning(
+                f"Token budget exhausted on {self._project_label or 'this session'} "
+                f"({tokens_used} of {budget}). Pausing follow-ups; "
+                f"say continue if you want him to keep going."
+            )
+            return
+        # Warn at threshold.
+        if ratio >= warn_at and not session.budget_warning_emitted:
+            session.budget_warning_emitted = True
+            pct = int(ratio * 100)
+            self._queue_warning(
+                f"Heads up: he's at {pct}% of the token budget on "
+                f"{self._project_label or 'this session'}."
+            )
+
+    def _queue_warning(self, text: str) -> None:
+        with self._budget_lock:
+            self._pending_budget_warning = text
+
+    def pop_budget_warning(self) -> Optional[str]:
+        """Voice loop polls this each iteration to surface budget warnings.
+        Returns the queued text once, then clears."""
+        with self._budget_lock:
+            text = self._pending_budget_warning
+            self._pending_budget_warning = None
+        return text
 
     # --- audit log ----------------------------------------------------------
 

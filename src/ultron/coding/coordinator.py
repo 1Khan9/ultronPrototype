@@ -577,6 +577,19 @@ class ConversationCoordinator:
             duration_s=report.duration_s,
         )
 
+        # Phase 7: mirror the verification result into the per-session log.
+        self._session_audit(
+            session_id, "verification_completed",
+            passed=report.passed,
+            duration_s=report.duration_s,
+            checks=[
+                {
+                    "check": c.check.value, "passed": c.passed,
+                    "skipped": c.skipped, "duration_ms": c.duration_ms,
+                } for c in report.checks
+            ],
+        )
+
         if report.passed:
             self._safe_transition(session_id, SessionStatus.COMPLETE)
             return (
@@ -764,6 +777,14 @@ class ConversationCoordinator:
             answer=answer,
             reasoning=reasoning,
         )
+        # Phase 7: mirror the decision into the per-session audit log.
+        self._session_audit(
+            session_id, "clarification_decided",
+            request_id=request.request_id,
+            decision_path=decision_path.value,
+            answer=(answer or "")[:300],
+            reasoning=(reasoning or "")[:300],
+        )
         try:
             session = self.store.get(session_id)
             if session.status == SessionStatus.AWAITING_CLARIFICATION:
@@ -771,6 +792,17 @@ class ConversationCoordinator:
         except Exception:
             pass
         return answer
+
+    def _session_audit(self, session_id: str, event: str, **fields: Any) -> None:
+        """Phase 7 helper: write to the per-session audit log when the
+        store has one wired."""
+        writer = getattr(self.store, "audit_writer", None)
+        if writer is None:
+            return
+        try:
+            writer.write(session_id, event, **fields)
+        except Exception as e:
+            logger.debug("session audit write failed: %s", e)
 
     # -----------------------------------------------------------------------
     # Internals: LLM-driven decisions

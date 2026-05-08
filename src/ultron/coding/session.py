@@ -193,6 +193,16 @@ class ProjectSession:
     # Bridge handle for the active Claude subprocess; set by the runner,
     # not by the MCP layer.
     bridge_task_id: Optional[str] = None
+    # Phase 7: token usage tracking. ``tokens_used`` is the budget-relevant
+    # total (input + output + cache_creation; cache reads don't count).
+    # The other fields keep finer breakdowns for retrospective analysis.
+    tokens_used: int = 0
+    tokens_input_total: int = 0
+    tokens_output_total: int = 0
+    tokens_cache_creation_total: int = 0
+    tokens_cache_read_total: int = 0
+    budget_warning_emitted: bool = False
+    budget_halted: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -209,11 +219,29 @@ class SessionStore:
 
     Used by the MCP server (asyncio thread) and the runner / coordinator
     (main thread) to share session state safely.
+
+    Phase 7: an optional :class:`SessionAuditWriter` can be attached via
+    ``audit_writer=`` so every state-affecting method auto-logs to the
+    per-session JSONL. ``None`` (the default) keeps existing tests
+    silent and matches the prior constructor signature.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, audit_writer=None) -> None:
         self._sessions: Dict[str, ProjectSession] = {}
         self._lock = threading.RLock()
+        self._audit = audit_writer  # SessionAuditWriter or None
+
+    @property
+    def audit_writer(self):
+        return self._audit
+
+    def _log(self, session_id: str, event: str, **fields: Any) -> None:
+        if self._audit is not None:
+            try:
+                self._audit.write(session_id, event, **fields)
+            except Exception:
+                # Audit logging must never break the supervisor.
+                pass
 
     # --- CRUD ---------------------------------------------------------------
 
@@ -236,6 +264,12 @@ class SessionStore:
         )
         with self._lock:
             self._sessions[session.session_id] = session
+        self._log(
+            session.session_id, "session_created",
+            project_root=str(session.project_root),
+            user_intent=user_intent[:500], mode=mode, model=model,
+            refined_goal=session.refined_goal[:500],
+        )
         return session
 
     def get(self, session_id: str) -> ProjectSession:
@@ -269,6 +303,7 @@ class SessionStore:
     def transition(self, session_id: str, to_status: SessionStatus) -> ProjectSession:
         with self._lock:
             session = self.get(session_id)
+            from_status = session.status
             if not is_valid_transition(session.status, to_status):
                 raise StateTransitionError(
                     f"illegal transition for {session_id}: "
@@ -279,7 +314,11 @@ class SessionStore:
                 SessionStatus.COMPLETE, SessionStatus.FAILED, SessionStatus.TERMINATED
             ) and session.completed_at is None:
                 session.completed_at = time.time()
-            return session
+        self._log(
+            session_id, "transition",
+            **{"from": from_status.value, "to": to_status.value},
+        )
+        return session
 
     def record_stage(
         self,
@@ -309,7 +348,12 @@ class SessionStore:
                         session.files_modified.append(FileRecord(path=f))
                 else:
                     session.files_created.append(FileRecord(path=f))
-            return record
+        self._log(
+            session_id, "stage_recorded",
+            stage=stage, summary=summary[:500],
+            files_touched=list(files_touched),
+        )
+        return record
 
     def set_pending_clarification(
         self, session_id: str, request: ClarificationRequest
@@ -320,6 +364,11 @@ class SessionStore:
             # Don't enforce the transition here -- the MCP server may set
             # this from EXECUTING mid-run; coordinator will explicitly
             # transition the status as part of its decision flow.
+        self._log(
+            session_id, "clarification_asked",
+            request_id=request.request_id, question=request.question[:500],
+            options=list(request.options), urgency=request.urgency,
+        )
 
     def resolve_clarification(
         self, session_id: str, answer: str, decision_path: str
@@ -333,7 +382,12 @@ class SessionStore:
             request.answered_at = time.time()
             request.decision_path = decision_path
             session.pending_clarification = None
-            return request
+        self._log(
+            session_id, "clarification_resolved",
+            request_id=request.request_id, decision_path=decision_path,
+            answer=(answer or "")[:500],
+        )
+        return request
 
     def record_test_results(
         self, session_id: str, *, passing: int, failing: int, skipped: int, details: str
@@ -344,6 +398,11 @@ class SessionStore:
                 passing=passing, failing=failing, skipped=skipped,
                 details=details, last_updated=time.time(),
             )
+        self._log(
+            session_id, "test_results",
+            passing=passing, failing=failing, skipped=skipped,
+            details=details[:500],
+        )
 
     def record_completion_claim(
         self, session_id: str, claim: CompletionClaim
@@ -360,6 +419,14 @@ class SessionStore:
             for fp in claim.files_modified:
                 if fp not in existing_mod:
                     session.files_modified.append(FileRecord(path=fp))
+        self._log(
+            session_id, "completion_claimed",
+            summary=claim.summary[:500],
+            entry_point=claim.entry_point,
+            run_command=claim.run_command,
+            files_created=list(claim.files_created),
+            files_modified=list(claim.files_modified),
+        )
 
     def record_adjustment(
         self, session_id: str, text: str, rendered_prompt: str = ""
@@ -368,9 +435,51 @@ class SessionStore:
             session = self.get(session_id)
             record = AdjustmentRecord(text=text, rendered_prompt=rendered_prompt)
             session.user_adjustments.append(record)
-            return record
+        self._log(
+            session_id, "adjustment_recorded",
+            text=text[:500],
+            rendered_chars=len(rendered_prompt or ""),
+        )
+        return record
 
     def touch_status_query(self, session_id: str) -> None:
         with self._lock:
             session = self.get(session_id)
             session.last_user_status_query = time.time()
+
+    # --- Phase 7: token usage -------------------------------------------------
+
+    def record_tokens(
+        self,
+        session_id: str,
+        *,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cache_creation_tokens: int = 0,
+        cache_read_tokens: int = 0,
+    ) -> int:
+        """Add a usage delta to the session and return the new total.
+
+        ``total = input + output + cache_creation`` (cache reads are free
+        and not counted toward the budget). Called by the bridge whenever
+        Claude's stream-json reports a usage block.
+        """
+        with self._lock:
+            session = self.get(session_id)
+            delta = max(0, int(input_tokens)) \
+                + max(0, int(output_tokens)) \
+                + max(0, int(cache_creation_tokens))
+            session.tokens_used += delta
+            session.tokens_input_total += max(0, int(input_tokens))
+            session.tokens_output_total += max(0, int(output_tokens))
+            session.tokens_cache_creation_total += max(0, int(cache_creation_tokens))
+            session.tokens_cache_read_total += max(0, int(cache_read_tokens))
+            new_total = session.tokens_used
+        self._log(
+            session_id, "tokens_recorded",
+            input=int(input_tokens), output=int(output_tokens),
+            cache_creation=int(cache_creation_tokens),
+            cache_read=int(cache_read_tokens),
+            delta=delta, total=new_total,
+        )
+        return new_total

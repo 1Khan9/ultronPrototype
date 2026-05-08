@@ -52,6 +52,7 @@ class EventKind(str, Enum):
     FILE_CHANGE = "file_change"
     ERROR = "error"
     COMPLETE = "complete"
+    USAGE = "usage"  # Phase 7: token usage delta from Claude's stream-json
 
 
 class FileChangeKind(str, Enum):
@@ -107,6 +108,13 @@ class TaskEvent:
     files_created: Optional[List[Path]] = None
     files_modified: Optional[List[Path]] = None
     duration_s: Optional[float] = None
+    # Phase 7: token usage breakdown (set on EventKind.USAGE events).
+    # Cache reads are reported separately because they don't count toward
+    # the per-session budget but are useful for retrospective analysis.
+    usage_input: Optional[int] = None
+    usage_output: Optional[int] = None
+    usage_cache_creation: Optional[int] = None
+    usage_cache_read: Optional[int] = None
     raw: Optional[Dict[str, Any]] = None  # backend-specific payload, for debug logs
 
 

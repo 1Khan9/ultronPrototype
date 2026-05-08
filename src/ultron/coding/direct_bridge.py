@@ -503,6 +503,18 @@ class DirectTaskHandle(TaskHandle):
                 name = str(block.get("name") or "")
                 inp = block.get("input") or {}
                 self._record_tool_use(name, inp, raw=raw)
+        # Phase 7: forward Claude's per-message usage block to the runner.
+        # Claude API usage shape: {"input_tokens": int, "output_tokens": int,
+        # "cache_creation_input_tokens": int, "cache_read_input_tokens": int}
+        usage = message.get("usage") or {}
+        if usage:
+            self._emit(TaskEvent(
+                kind=EventKind.USAGE,
+                usage_input=int(usage.get("input_tokens") or 0),
+                usage_output=int(usage.get("output_tokens") or 0),
+                usage_cache_creation=int(usage.get("cache_creation_input_tokens") or 0),
+                usage_cache_read=int(usage.get("cache_read_input_tokens") or 0),
+            ))
 
     def _handle_tool_result(self, raw: Dict[str, Any]) -> None:
         message = raw.get("message") or {}

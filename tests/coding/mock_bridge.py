@@ -97,6 +97,23 @@ class ClaudeScript:
         }))
         return self
 
+    def tokens(
+        self,
+        input: int = 0,
+        output: int = 0,
+        cache_creation: int = 0,
+        cache_read: int = 0,
+    ) -> "ClaudeScript":
+        """Phase 7: emit a USAGE event so the runner forwards the delta
+        to the bound session's record_tokens. Mirrors what real Claude's
+        per-message usage block produces."""
+        self.steps.append(_Step("tokens", {
+            "input": int(input), "output": int(output),
+            "cache_creation": int(cache_creation),
+            "cache_read": int(cache_read),
+        }))
+        return self
+
     def write_file(self, relpath: str, content: str = "") -> "ClaudeScript":
         self.steps.append(_Step("write_file", {
             "relpath": relpath, "content": content, "kind": "create",
@@ -200,6 +217,12 @@ class _ScriptedHandle(TaskHandle):
         self._request = request
         self._listeners: List[EventListener] = []
         self._listeners_lock = threading.Lock()
+        # Replay buffer: events emitted before any listener attaches are
+        # held here and delivered to each new listener at attach time.
+        # The runner adds listeners synchronously after submit() returns,
+        # so without this buffer fast scripts can race ahead and the
+        # runner misses early events.
+        self._event_log: List[TaskEvent] = []
         self._state = TaskState(
             label=request.label or "scripted",
             task_prompt=request.task_prompt,
@@ -233,6 +256,13 @@ class _ScriptedHandle(TaskHandle):
     def add_listener(self, listener: EventListener) -> None:
         with self._listeners_lock:
             self._listeners.append(listener)
+            # Replay any events that fired before this listener attached.
+            backlog = list(self._event_log)
+        for ev in backlog:
+            try:
+                listener(ev)
+            except Exception as e:
+                logger.debug("listener replay error (ignored): %s", e)
 
     def cancel(self) -> None:
         self._cancelled.set()
@@ -265,6 +295,7 @@ class _ScriptedHandle(TaskHandle):
         if event.kind == EventKind.TOOL_USE:
             self._state.tool_use_count += 1
         with self._listeners_lock:
+            self._event_log.append(event)
             listeners = list(self._listeners)
         for listener in listeners:
             try:
@@ -549,6 +580,19 @@ def _step_callback(ctx: _ScriptContext, args: Dict[str, Any]) -> bool:
     return False
 
 
+def _step_tokens(ctx: _ScriptContext, args: Dict[str, Any]) -> bool:
+    """Emit a USAGE TaskEvent so the runner's listener forwards it to
+    the session's record_tokens."""
+    ctx.handle._emit(TaskEvent(
+        kind=EventKind.USAGE,
+        usage_input=int(args["input"]),
+        usage_output=int(args["output"]),
+        usage_cache_creation=int(args["cache_creation"]),
+        usage_cache_read=int(args["cache_read"]),
+    ))
+    return False
+
+
 _DISPATCH: Dict[str, Callable[[_ScriptContext, Dict[str, Any]], bool]] = {
     "progress": _step_progress,
     "write_file": _step_write_file,
@@ -558,4 +602,5 @@ _DISPATCH: Dict[str, Callable[[_ScriptContext, Dict[str, Any]], bool]] = {
     "fail": _step_fail,
     "sleep": _step_sleep,
     "callback": _step_callback,
+    "tokens": _step_tokens,
 }
