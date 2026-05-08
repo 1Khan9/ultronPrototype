@@ -126,8 +126,10 @@ new home. Below is the section-level overview with tuning notes.
 | Key | Default | Tuning notes |
 |---|---|---|
 | `provider` | "llama_cpp" | Pinned. See [feedback_llm_runtime_decision.md](C:\Users\alecf\.claude\projects\C--STC-ultronPrototype\memory\feedback_llm_runtime_decision.md). |
-| `model_path` | "models/Qwen3.5-9B-Q4_K_M.gguf" | Env override: `ULTRON_LLM_MODEL_PATH`. |
-| `n_ctx` | 8192 | Context length. Larger costs proportional KV cache; this is the budgeted size. |
+| `preset` | "qwen3.5-9b" | One of `"qwen3.5-9b" \| "qwen3.5-4b" \| "custom"`. The preset auto-fills `model_path`, `n_ctx`, and `draft_model_path` *only when those keys are absent from the YAML* — explicit user values always win. Use `"custom"` to disable auto-resolution. See [src/ultron/config.py:LLM_PRESETS](../src/ultron/config.py) and [docs/4b_optimization_plan.md](4b_optimization_plan.md). |
+| `model_path` | "models/Qwen3.5-9B-Q4_K_M.gguf" | Env override: `ULTRON_LLM_MODEL_PATH`. With non-`"custom"` preset, omitting this key inherits from the preset. |
+| `draft_model_path` | null | Optional speculative-decoding draft GGUF. Set by the `qwen3.5-4b` preset to `"models/Qwen3.5-0.8B-Q4_K_M.gguf"`. Wired into `scripts/start_llamacpp_server.py` in Stage C of the 4B plan. |
+| `n_ctx` | 8192 | Context length. Larger costs proportional KV cache; this is the budgeted size. The `qwen3.5-4b` preset bumps this to 16384. |
 | `gpu_layers` | -1 | -1 = all layers on GPU. Reduce (e.g. 30) to spill to CPU on small VRAM. |
 | `default_temperature` | 0.7 | |
 | `default_top_p` | 0.9 | |

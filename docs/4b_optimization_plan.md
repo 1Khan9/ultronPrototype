@@ -20,12 +20,23 @@ will be controlled by config.
 
 ## Migration plan (sequenced; verification gate at every step)
 
-### Stage A — Multi-model config schema
-Add `llm.preset: "qwen3.5-9b" | "qwen3.5-4b" | "custom"` (defaulting
-to `"qwen3.5-9b"` until 4B is verified). Preset resolves
-`model_path` + `draft_model_path` + `n_ctx` automatically. Keep
-`llm.model_path` working for `preset: "custom"` (back-compat for
-tests + advanced users).
+### Stage A — Multi-model config schema ✅ DONE
+Added `llm.preset: "qwen3.5-9b" | "qwen3.5-4b" | "custom"` (default
+`"qwen3.5-9b"`; flips to `"qwen3.5-4b"` after Stage H gate passes).
+Preset auto-resolves `model_path` + `draft_model_path` + `n_ctx` via
+the `LLM_PRESETS` table in
+[src/ultron/config.py](../src/ultron/config.py), but **only when those
+keys are absent from the YAML** — explicit user values always win
+(via `model_fields_set` check in the after-validator). `preset: "custom"`
+disables auto-resolution entirely (back-compat for tests + advanced
+users). Verification:
+- 13 new tests in [tests/test_llm_preset.py](../tests/test_llm_preset.py)
+  cover all three presets, mixed-mode override, YAML round-trip, and
+  invalid-preset rejection.
+- Full pytest sweep: 749 passed (+13 from baseline 736), 16 skipped, 0 failed.
+- `python scripts/validate_config.py`: passes against the updated
+  `config.yaml` (which now includes an explicit `preset: "qwen3.5-9b"`
+  key for clarity).
 
 ### Stage B — Download GGUFs
 Add to `scripts/download_models.py`:

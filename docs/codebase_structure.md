@@ -14,7 +14,9 @@ Last validated against HEAD: Foundation Phase 7 close + Phase 4 deferred
 wrappers + OpenClaw integration Phase 0 + 1 (llama-cpp-server launcher
 + supervisor, persona migration, PersonaLoader with mode-based
 composition + hot reload, LLMEngine HTTP-client opt-in, OpenClaw bridge
-foundations) — 736 passing tests, 15 skipped, 0 failed.
+foundations) + 4B optimization plan Stage A (LLMConfig preset +
+draft_model_path with model_validator) — 749 passing tests, 16 skipped,
+0 failed.
 
 ---
 
@@ -469,6 +471,13 @@ the loader path so llama-cpp / ctranslate2 find `cudart64_12.dll`,
 - `reload_config(path=None) -> UltronConfig` — clear cache, reload
 - `set_config(cfg) -> None` — test injection
 - `current_config_path() -> Path | None`
+- `LLM_PRESETS: dict[str, dict]` (4B plan Stage A) — preset table for
+  `LLMConfig.preset`. Two presets defined: `qwen3.5-9b` (default; 9B
+  GGUF, n_ctx=8192, no draft) and `qwen3.5-4b` (4B GGUF + 0.8B draft +
+  n_ctx=16384). `LLMConfig._apply_preset` (model_validator) fills
+  in `model_path` / `n_ctx` / `draft_model_path` from this table only
+  when those fields are absent from `model_fields_set`, so explicit
+  YAML values always win.
 
 **In:** `config.yaml`, `${ENV_VAR}` substitution from `os.environ`.
 **Out:** typed `UltronConfig` instance.
@@ -931,7 +940,7 @@ Sections:
 - `vad` (threshold, min_speech/silence durations, window_samples)
 - `wake_word` (name, model_path, fallback_model, threshold, cooldown)
 - `stt` (model, device, compute_type, beam_size, temperature, etc.)
-- `llm` (provider="llama_cpp", model_path, n_ctx, gpu_layers, temperature, top_p, max_tokens, repeat_penalty, history_turns, flash_attn, kv_cache_type, system_prompt)
+- `llm` (provider="llama_cpp", **preset** ["qwen3.5-9b"|"qwen3.5-4b"|"custom"; auto-fills model_path/n_ctx/draft_model_path when those keys are omitted — Stage A of the 4B plan], runtime ["in_process"|"http_server"], model_path, draft_model_path, n_ctx, gpu_layers, temperature, top_p, max_tokens, repeat_penalty, history_turns, flash_attn, kv_cache_type, system_prompt, server.{base_url,...}, persona.{source,...})
 - `embeddings` (dense_model, sparse_model, dense_dim)
 - `qdrant` (data_dir="data/qdrant", collections.{conversations,facts,web_results})
 - `memory` (enabled, jsonl_legacy_path, recent_turns, rag_top_k, rag_exclude_recent, facts_top_k, write_queue_maxsize)
@@ -1093,7 +1102,7 @@ All scripts assume venv active in main checkout (`C:\STC\ultronPrototype`). Work
 
 ### `tests/conftest.py` — Path setup so `from ultron.*` works.
 
-### Default suite (no env gate) — 673 tests, ~30 s wall
+### Default suite (no env gate) — 749 tests, ~30 s wall
 
 **Top-level (~25 files):**
 - `test_addressing.py` — rule-based addressing classifier
@@ -1124,6 +1133,7 @@ All scripts assume venv active in main checkout (`C:\STC\ultronPrototype`). Work
 - `test_persona_loader.py` (20, OpenClaw Phase 1) — `PersonaLoader` modes / hot-reload / HTML-comment-only files
 - `test_llm_persona_source.py` (8, OpenClaw Phase 1) — `LLMEngine` persona-source wiring + hot-reload + fallback
 - `test_llm_http_runtime.py` (9, OpenClaw Phase 0) — HTTP-runtime construction, request shape, SSE streaming, cancel mid-stream
+- `test_llm_preset.py` (13, 4B plan Stage A) — `LLMConfig.preset` resolution: 9b/4b/custom defaults, explicit-override wins, YAML round-trip, invalid preset rejected
 
 **`tests/coding/`:**
 - `mock_bridge.py` — `ScriptedClaudeBridge` + `ClaudeScript` DSL

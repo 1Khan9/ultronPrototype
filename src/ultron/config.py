@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import Any, List, Literal, Optional
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -164,9 +164,41 @@ class LLMPersonaConfig(_Strict):
     hot_reload: bool = True
 
 
+# 4B optimization plan Stage A — preset table.
+# Switching presets is a one-line config change. Each preset bundles the
+# model_path / n_ctx / draft_model_path that go together for that model
+# size. Users on `preset: "custom"` get no auto-resolution and must
+# specify `model_path` themselves (back-compat for tests + advanced
+# users). See docs/4b_optimization_plan.md.
+LLM_PRESETS: dict[str, dict[str, Any]] = {
+    "qwen3.5-9b": {
+        "model_path": "models/Qwen3.5-9B-Q4_K_M.gguf",
+        "n_ctx": 8192,
+        "draft_model_path": None,  # 9B doesn't pair well with a draft (diminishing returns)
+    },
+    "qwen3.5-4b": {
+        "model_path": "models/Qwen3.5-4B-Q4_K_M.gguf",
+        "n_ctx": 16384,
+        "draft_model_path": "models/Qwen3.5-0.8B-Q4_K_M.gguf",
+    },
+}
+
+
 class LLMConfig(_Strict):
     # Pinned to llama_cpp per feedback_llm_runtime_decision.md (2026-05-08).
     provider: Literal["llama_cpp"] = "llama_cpp"
+    # 4B optimization plan Stage A — model preset.
+    #   "qwen3.5-9b" — current default; resolves to the 9B GGUF + n_ctx=8192,
+    #                  no draft model.
+    #   "qwen3.5-4b" — 4B target + 0.8B draft for speculative decoding,
+    #                  n_ctx=16384. Flipped on after Stage H regression
+    #                  sweep passes.
+    #   "custom"     — no auto-resolution; raw model_path / n_ctx /
+    #                  draft_model_path fields are used as-is. For tests
+    #                  and ad-hoc model swaps.
+    # Preset defaults only fill in fields the user did NOT explicitly
+    # set in YAML — see ``_apply_preset``.
+    preset: Literal["qwen3.5-9b", "qwen3.5-4b", "custom"] = "qwen3.5-9b"
     # Where the model actually runs:
     #   "in_process"  — load via llama-cpp-python in this Python process
     #                   (current default; what the voice pipeline uses today).
@@ -179,6 +211,12 @@ class LLMConfig(_Strict):
     # through it.
     runtime: Literal["in_process", "http_server"] = "in_process"
     model_path: str = "models/Qwen3.5-9B-Q4_K_M.gguf"
+    # Optional draft model for speculative decoding. None = no spec
+    # decoding. Wired into ``scripts/start_llamacpp_server.py`` in
+    # Stage C of the 4B plan. The voice in_process path doesn't use it
+    # yet (llama-cpp-python's speculative API is server-only at the
+    # moment we're integrating).
+    draft_model_path: Optional[str] = None
     n_ctx: int = Field(default=8192, ge=1)
     gpu_layers: int = -1
     default_temperature: float = 0.7
@@ -191,6 +229,38 @@ class LLMConfig(_Strict):
     system_prompt: str = ""
     server: LLMServerConfig = Field(default_factory=LLMServerConfig)
     persona: LLMPersonaConfig = Field(default_factory=LLMPersonaConfig)
+
+    @model_validator(mode="after")
+    def _apply_preset(self) -> "LLMConfig":
+        """Fill in preset-derived fields the user didn't explicitly set.
+
+        Only fields absent from ``model_fields_set`` (i.e., left at
+        their factory defaults during instantiation) are touched.
+        Explicit user values in YAML always win — this is what makes
+        ``preset: "custom"`` + raw fields work for tests, and what lets
+        an advanced user override one knob (e.g., `n_ctx: 4096`) while
+        keeping the rest of the preset's defaults.
+
+        Raises ``ValueError`` for ``preset: "custom"`` only when no
+        ``model_path`` is supplied (impossible in practice because the
+        field has a default, but enforced for explicitness).
+        """
+        if self.preset == "custom":
+            if not self.model_path:
+                raise ValueError(
+                    "llm.preset='custom' requires llm.model_path to be set"
+                )
+            return self
+        defaults = LLM_PRESETS.get(self.preset)
+        if defaults is None:  # pragma: no cover — Literal narrows this away
+            return self
+        for field, value in defaults.items():
+            if field not in self.model_fields_set:
+                # Bypass pydantic's frozen-after-validation by going
+                # through __dict__ directly. Safe here because we're
+                # still inside model construction.
+                object.__setattr__(self, field, value)
+        return self
 
 
 class EmbeddingsConfig(_Strict):
