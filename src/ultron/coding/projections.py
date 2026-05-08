@@ -100,6 +100,7 @@ class ProjectionResult:
     token_count: int
     budget: int
     truncations_applied: List[str] = field(default_factory=list)
+    truncation_warning: Optional[str] = None  # set when budget unreachable
 
     @property
     def fits_budget(self) -> bool:
@@ -112,7 +113,67 @@ class ProjectionResult:
             "token_count": self.token_count,
             "budget": self.budget,
             "truncations_applied": list(self.truncations_applied),
+            "truncation_warning": self.truncation_warning,
         }
+
+
+def _finalize_projection(
+    proj: Any, text: str, token_count: int, budget: int,
+    truncations: List[str],
+) -> ProjectionResult:
+    """Common end-of-projection handling: log truncations, populate
+    ``truncation_warning`` when the budget is unreachable, and warn when
+    the result lands above ``truncation_warning_threshold * budget``
+    (close-call signal).
+
+    Reads its behavior from ``config.projections``:
+      * ``log_truncations`` — gates the INFO log when truncations apply
+      * ``truncation_warning_threshold`` — fraction of budget above which
+        we emit a WARNING even if we technically fit
+    """
+    from ultron.config import get_config
+
+    truncation_warning: Optional[str] = None
+    proj_name = type(proj).__name__
+    cfg = get_config().projections
+
+    if token_count > budget:
+        truncation_warning = (
+            f"projection over budget after exhaustive trimming: "
+            f"{token_count}/{budget} tokens "
+            f"(over by {token_count - budget})"
+        )
+        logger.error(
+            "projection over budget: name=%s tokens=%d budget=%d (over by %d); "
+            "truncations applied: %s",
+            proj_name, token_count, budget, token_count - budget,
+            truncations,
+        )
+    else:
+        if truncations and cfg.log_truncations:
+            logger.info(
+                "projection truncations applied: name=%s tokens=%d/%d count=%d items=%s",
+                proj_name, token_count, budget, len(truncations),
+                truncations[:5],
+            )
+        # Close-call warning: even though we fit, we landed above the
+        # threshold. Useful signal that the budget is tight in practice.
+        if (
+            cfg.log_truncations
+            and budget > 0
+            and token_count >= cfg.truncation_warning_threshold * budget
+        ):
+            logger.warning(
+                "projection near budget cap: name=%s tokens=%d/%d (%.0f%% of budget)",
+                proj_name, token_count, budget,
+                100.0 * token_count / budget,
+            )
+
+    return ProjectionResult(
+        projection=proj, text=text, token_count=token_count,
+        budget=budget, truncations_applied=truncations,
+        truncation_warning=truncation_warning,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -263,10 +324,7 @@ def project_clarification_context(
         text = _render_clarification_context(proj)
         token_count = count_tokens(text)
 
-    return ProjectionResult(
-        projection=proj, text=text, token_count=token_count,
-        budget=budget, truncations_applied=truncations,
-    )
+    return _finalize_projection(proj, text, token_count, budget, truncations)
 
 
 def _render_clarification_context(p: ClarificationContextProjection) -> str:
@@ -416,10 +474,7 @@ def project_status_delta(session: ProjectSession) -> ProjectionResult:
         text = _render_status_delta(proj)
         token_count = count_tokens(text)
 
-    return ProjectionResult(
-        projection=proj, text=text, token_count=token_count,
-        budget=budget, truncations_applied=truncations,
-    )
+    return _finalize_projection(proj, text, token_count, budget, truncations)
 
 
 def _render_status_delta(p: StatusDeltaProjection) -> str:
@@ -568,10 +623,7 @@ def project_adjustment_context(
         text = _render_adjustment_context(proj)
         token_count = count_tokens(text)
 
-    return ProjectionResult(
-        projection=proj, text=text, token_count=token_count,
-        budget=budget, truncations_applied=truncations,
-    )
+    return _finalize_projection(proj, text, token_count, budget, truncations)
 
 
 def _render_adjustment_context(p: AdjustmentContextProjection) -> str:
@@ -701,10 +753,7 @@ def project_correction_context(
         text = _render_correction_context(proj)
         token_count = count_tokens(text)
 
-    return ProjectionResult(
-        projection=proj, text=text, token_count=token_count,
-        budget=budget, truncations_applied=truncations,
-    )
+    return _finalize_projection(proj, text, token_count, budget, truncations)
 
 
 def _render_correction_context(p: CorrectionContextProjection) -> str:
@@ -730,12 +779,12 @@ def _render_correction_context(p: CorrectionContextProjection) -> str:
     if p.claimed_files_created:
         lines.append("")
         lines.append(
-            f"Claude claimed these files were created: "
+            "Claude claimed these files were created: "
             + ", ".join(p.claimed_files_created)
         )
     if p.claimed_files_modified:
         lines.append(
-            f"Claimed modified: " + ", ".join(p.claimed_files_modified)
+            "Claimed modified: " + ", ".join(p.claimed_files_modified)
         )
     return "\n".join(lines)
 
@@ -840,10 +889,7 @@ def project_completion_context(session: ProjectSession) -> ProjectionResult:
         text = _render_completion_context(proj)
         token_count = count_tokens(text)
 
-    return ProjectionResult(
-        projection=proj, text=text, token_count=token_count,
-        budget=budget, truncations_applied=truncations,
-    )
+    return _finalize_projection(proj, text, token_count, budget, truncations)
 
 
 def _render_completion_context(p: CompletionContextProjection) -> str:

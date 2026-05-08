@@ -11,10 +11,11 @@ to invoke :func:`configure_logging` themselves — the entrypoint owns that.
 from __future__ import annotations
 
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from config import settings
+from ultron.config import get_config, resolve_path
 
 
 _CONFIGURED = False
@@ -28,16 +29,17 @@ def configure_logging(
 
     Args:
         level: Override for the console log level. Defaults to
-            ``settings.LOG_LEVEL``.
+            ``config.logging.level`` (env var ``ULTRON_LOG_LEVEL`` overrides).
         log_file: Override for the file destination. Defaults to
-            ``settings.LOG_FILE``.
+            ``config.logging.file``.
     """
     global _CONFIGURED
     if _CONFIGURED:
         return
 
-    level = (level or settings.LOG_LEVEL).upper()
-    log_file = log_file or settings.LOG_FILE
+    cfg = get_config().logging
+    level = (level or os.getenv("ULTRON_LOG_LEVEL") or cfg.level).upper()
+    log_file = log_file or resolve_path(cfg.file)
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
     root = logging.getLogger()
@@ -46,7 +48,7 @@ def configure_logging(
     for handler in list(root.handlers):
         root.removeHandler(handler)
 
-    formatter = logging.Formatter(settings.LOG_FORMAT, settings.LOG_DATEFMT)
+    formatter = logging.Formatter(cfg.format, cfg.datefmt)
 
     file_handler = RotatingFileHandler(
         log_file, maxBytes=5_000_000, backupCount=3, encoding="utf-8"

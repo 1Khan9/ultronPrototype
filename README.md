@@ -4,30 +4,60 @@ A continuously-listening voice assistant that runs entirely on your hardware.
 Says "ultron" → captures your request → transcribes → asks a local LLM →
 speaks the response. No cloud round-trips, no telemetry.
 
-This is a **prototype** — the foundation for adding vision, memory, tool use,
-and home-control capabilities later.
+The Foundation phase has shipped: Qdrant memory + RAG, Brave web search
+with circuit-breaker resilience, addressing classifier (rule-based +
+flan-t5-small), context projections for long coding sessions, unified
+config.yaml, typed error handling, and a capability-routing layer with
+stubbed OpenClaw integration ready for the next phase.
+
+---
+
+## Documentation
+
+> **Start here:** [docs/codebase_structure.md](docs/codebase_structure.md) — single-source map of the project (file tree, every module's public API, every script with in/out and functions, every test directory, runtime artifacts, cross-cutting flows). The file a fresh Claude Code session should read first to be fully oriented.
+
+| Topic | Doc |
+|---|---|
+| **Codebase structure (read first)** | **[docs/codebase_structure.md](docs/codebase_structure.md)** |
+| Architecture overview + pipeline diagram | [docs/architecture.md](docs/architecture.md) |
+| Configuration reference | [docs/configuration.md](docs/configuration.md) |
+| Day-to-day operations + recovery | [docs/operations.md](docs/operations.md) |
+| Development guide | [docs/development.md](docs/development.md) |
+| Capability routing | [docs/routing.md](docs/routing.md) |
+| Error handling catalog | [docs/error_handling.md](docs/error_handling.md) |
+| System inventory snapshot (Foundation Phase 1) | [docs/system_inventory.md](docs/system_inventory.md) |
+| Smoke-test procedure (16 steps, real-stack) | [docs/smoke_test.md](docs/smoke_test.md) |
+| Phase 3.5 followup (unfinished migrations) | [docs/phase3_5_followup.md](docs/phase3_5_followup.md) |
 
 ---
 
 ## Hardware target
 
-Built for and tested against:
+Current target hardware:
 
 | Component | Spec                          |
 |-----------|-------------------------------|
 | CPU       | AMD Ryzen 7 5800X             |
-| GPU       | NVIDIA RTX 3060 Ti (8 GB)     |
-| RAM       | 32 GB DDR4                    |
+| GPU       | NVIDIA RTX 4070 Ti (12 GB)    |
+| RAM       | 32+ GB DDR4                   |
 | OS        | Windows 11                    |
 
-Resource budget the prototype is designed to fit inside:
+Observed VRAM profile under full load (LLM + Whisper + RVC + Piper
++ addressing classifier, all warm):
 
-- **VRAM:** ≤ 7 GB (LLM + Whisper + VAD + wake-word)
-- **System RAM:** ≤ 24 GB
-- **First-spoken-word latency:** < 2 s from end-of-speech to first TTS audio
+- **Idle:** ~2.6 GB (system / desktop apps)
+- **Voice stack loaded:** ~10.0 GB
+- **Peak under query load:** ~10.4 GB (regression target — must not
+  exceed)
+- **Hard cap (do-not-exceed):** 11.5 GB
 
-If you have a smaller GPU, drop `WHISPER_MODEL` to `base.en` and pick a
-smaller LLM in `config/settings.py`.
+Latency target: median ~742 ms first-token-to-first-audio for a non-
+search non-coding voice query (composite: VAD trailing silence +
+Whisper + LLM TTFT + Piper synth + RVC). See
+[docs/architecture.md](docs/architecture.md) for the per-stage budget.
+
+If you have a smaller GPU, drop `stt.model` to `base.en` and pick a
+smaller LLM (edit `config.yaml`'s `llm.model_path`).
 
 ---
 

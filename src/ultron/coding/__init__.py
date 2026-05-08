@@ -76,7 +76,11 @@ from ultron.coding.templates import (
     TemplateError,
     TemplateRenderer,
 )
-from ultron.coding.voice import CodingVoiceController, VoiceResponse
+from ultron.coding.voice import (
+    CapabilityVoiceController,
+    CodingVoiceController,
+    VoiceResponse,
+)
 
 __all__ = [
     "AdjustmentRecord",
@@ -84,6 +88,7 @@ __all__ = [
     "CodingBridge",
     "CodingIntent",
     "CodingIntentKind",
+    "CapabilityVoiceController",
     "CodingTaskRunner",
     "CodingVoiceController",
     "CompletionClaim",

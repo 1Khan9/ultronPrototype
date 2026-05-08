@@ -126,6 +126,19 @@ class AddressingClassifier:
             )
         except Exception as e:
             logger.warning("Zero-shot classifier failed: %s -- defaulting to silent", e)
+            from ultron.errors import AddressingClassifierError
+            from ultron.resilience import get_error_log
+            get_error_log().record(
+                AddressingClassifierError(
+                    f"zero-shot classify failed: {e}",
+                    context={"utterance_len": len(utterance)},
+                    recovery=(
+                        "default-silent verdict" if self.default_silent
+                        else "uncertain verdict"
+                    ),
+                ),
+                dependency="addressing_zero_shot",
+            )
             verdict = AddressingVerdict(
                 decision=AddressingDecision.NOT_ADDRESSED if self.default_silent
                 else AddressingDecision.UNCERTAIN,

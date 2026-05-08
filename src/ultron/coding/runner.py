@@ -10,9 +10,9 @@ bridge and folds them into a small running summary so progress queries
 are O(1) to answer.
 
 The runner is bridge-agnostic: it accepts any concrete
-:class:`CodingBridge` (today's :class:`DirectClaudeCodeBridge`, the
-future ``OpenClawBridge``, or a test mock). The :func:`build_default_bridge`
-helper picks one based on ``settings.CODING_BRIDGE``.
+:class:`CodingBridge` (today's :class:`DirectClaudeCodeBridge` or a
+test mock). The :func:`build_default_bridge` helper picks one based on
+``settings.CODING_BRIDGE`` — only ``"direct"`` is supported.
 """
 
 from __future__ import annotations
@@ -47,7 +47,15 @@ logger = get_logger("coding.runner")
 
 
 def build_default_bridge() -> CodingBridge:
-    """Construct the bridge selected by ``settings.CODING_BRIDGE``."""
+    """Construct the bridge selected by ``settings.CODING_BRIDGE``.
+
+    Only ``"direct"`` is supported. The previous Phase A foundation
+    reserved an ``"openclaw"`` slot here that pointed at a never-built
+    ``ultron.coding.openclaw_bridge`` module — the new architecture
+    treats OpenClaw as a peer Gateway via the routing layer
+    (``ultron.openclaw_routing``), NOT as a Claude-Code bridge
+    alternative. The reservation was removed in Foundation Part 5.
+    """
     name = (settings.CODING_BRIDGE or "direct").strip().lower()
     if name == "direct":
         from ultron.coding.direct_bridge import DirectClaudeCodeBridge
@@ -55,19 +63,10 @@ def build_default_bridge() -> CodingBridge:
             claude_cli=settings.CODING_CLAUDE_CLI,
             log_path=settings.CODING_TASK_LOG_PATH,
         )
-    if name == "openclaw":
-        # Slot reserved for the OpenClaw HTTP bridge. When implemented,
-        # importing will succeed and this raise will go away.
-        try:
-            from ultron.coding.openclaw_bridge import OpenClawBridge  # type: ignore
-        except ImportError:
-            raise NotImplementedError(
-                "OpenClaw bridge not yet implemented. "
-                "Set ULTRON_CODING_BRIDGE=direct."
-            )
-        return OpenClawBridge()
     raise ValueError(
-        f"Unknown coding bridge: {name!r}. Expected 'direct' or 'openclaw'."
+        f"Unknown coding bridge: {name!r}. Only 'direct' is supported. "
+        f"OpenClaw is a peer dispatcher (see ultron.openclaw_routing), "
+        f"not a coding bridge alternative."
     )
 
 
@@ -556,7 +555,6 @@ class CodingTaskRunner:
 
     def _make_log_listener(self, task_id: str):
         """Return an event listener that writes one JSON line per event."""
-        log_path = self._log_path
 
         def _listener(event: TaskEvent) -> None:
             try:

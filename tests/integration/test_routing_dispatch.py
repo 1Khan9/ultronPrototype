@@ -1,0 +1,186 @@
+"""Integration test category 5 — routing-stub dispatch through the controller.
+
+Verifies the full dispatch path:
+
+  utterance → classify_routing() → CapabilityVoiceController.handle_capability_intent()
+            → OpenClawDispatcher (stub) → VoiceResponse with stub message
+            → routing-decision log entry
+
+Each test uses the shared ``cap_stack`` and ``dispatch_utterance`` helper
+from conftest. No real model loads.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from tests.integration.conftest import dispatch_utterance
+
+
+# ---------------------------------------------------------------------------
+# 10 routing-stub utterances per the spec
+# ---------------------------------------------------------------------------
+
+
+def test_browser_navigate_dispatches_stub(cap_stack, routing_log, read_routing):
+    response = dispatch_utterance(cap_stack, "open hacker news")
+    assert response is not None
+    assert response.handled is True
+    assert "page" in response.text.lower() or "gateway" in response.text.lower()
+    rec = read_routing()[-1]
+    assert rec["intent"] == "browser_automation"
+    assert rec["outcome"] == "stub"
+    assert "OpenClaw" in rec.get("stub_reason", "")
+
+
+def test_media_generation_dispatches_stub(cap_stack, routing_log, read_routing):
+    response = dispatch_utterance(cap_stack, "make me an image of a cat")
+    assert response is not None
+    assert "generate" in response.text.lower() or "gateway" in response.text.lower()
+    rec = read_routing()[-1]
+    assert rec["intent"] == "media_generation"
+    assert rec["outcome"] == "stub"
+
+
+def test_messaging_dispatches_stub(cap_stack, routing_log, read_routing):
+    response = dispatch_utterance(cap_stack, "send a message to my phone")
+    assert response is not None
+    assert "send" in response.text.lower()
+    rec = read_routing()[-1]
+    assert rec["intent"] == "messaging"
+    assert rec["outcome"] == "stub"
+
+
+def test_file_operation_dispatches_stub(cap_stack, routing_log, read_routing):
+    response = dispatch_utterance(cap_stack, "read the file at C:/test.txt")
+    assert response is not None
+    assert "files" in response.text.lower()
+    rec = read_routing()[-1]
+    assert rec["intent"] == "file_operation"
+    assert rec["outcome"] == "stub"
+
+
+def test_shell_operation_dispatches_stub(cap_stack, routing_log, read_routing):
+    response = dispatch_utterance(cap_stack, "run dir on the desktop")
+    assert response is not None
+    assert "shell" in response.text.lower() or "command" in response.text.lower()
+    rec = read_routing()[-1]
+    assert rec["intent"] == "shell_operation"
+    assert rec["outcome"] == "stub"
+
+
+def test_hybrid_task_dispatches_stub(cap_stack, routing_log, read_routing):
+    response = dispatch_utterance(
+        cap_stack, "set up a development environment for this project",
+    )
+    assert response is not None
+    assert (
+        "coding" in response.text.lower() or "automation" in response.text.lower()
+        or "gateway" in response.text.lower()
+    )
+    rec = read_routing()[-1]
+    assert rec["intent"] == "hybrid_task"
+    assert rec["outcome"] == "stub"
+
+
+def test_hybrid_excel_workflow_dispatches_stub(cap_stack, routing_log, read_routing):
+    response = dispatch_utterance(cap_stack, "automate my excel workflow")
+    assert response is not None
+    rec = read_routing()[-1]
+    assert rec["intent"] == "hybrid_task"
+
+
+def test_hybrid_browser_script_dispatches_stub(cap_stack, routing_log, read_routing):
+    response = dispatch_utterance(
+        cap_stack, "write a script that opens chrome and clicks the login button",
+    )
+    assert response is not None
+    rec = read_routing()[-1]
+    assert rec["intent"] == "hybrid_task"
+
+
+# ---------------------------------------------------------------------------
+# Stub voice quality: every stub message stays in Ultron's voice
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("utt", [
+    "open wikipedia",
+    "make me a song about coding",
+    "text me when the build is done",
+    "list the files in C:/Projects",
+    "run git status",
+])
+def test_stub_voice_messages_in_character(cap_stack, routing_log, utt):
+    """The stub voice messages defined in OpenClawDispatcher must NOT
+    contain banned filler ('certainly', 'of course', 'happy to', etc.)
+    per Ultron's system prompt."""
+    response = dispatch_utterance(cap_stack, utt)
+    assert response is not None
+    msg = response.text.lower()
+    banned = [
+        "certainly", "of course", "happy to",
+        "i'd be happy", "i'd love to", "absolutely",
+    ]
+    for phrase in banned:
+        assert phrase not in msg, (
+            f"banned phrase {phrase!r} in stub response: {response.text!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Pass-through behavior: CONVERSATIONAL utterances return None, NOT a stub
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("utt", [
+    "good morning",
+    "what is the boiling point of water",
+    "tell me a joke",
+    "I'm tired",
+    "thanks",
+])
+def test_conversational_falls_through(cap_stack, routing_log, read_routing, utt):
+    """CONVERSATIONAL utterances return None — orchestrator handles
+    them via the normal LLM/TTS path, NOT via the dispatcher."""
+    response = dispatch_utterance(cap_stack, utt)
+    assert response is None, (
+        f"expected None for conversational {utt!r}, got: {response}"
+    )
+    rec = read_routing()[-1]
+    assert rec["intent"] == "conversational"
+    assert rec["outcome"] == "passthrough"
+
+
+# ---------------------------------------------------------------------------
+# Routing-decision log shape verification
+# ---------------------------------------------------------------------------
+
+
+def test_routing_log_records_full_metadata(cap_stack, routing_log, read_routing):
+    dispatch_utterance(cap_stack, "open hacker news")
+    rec = read_routing()[-1]
+    expected_keys = {
+        "timestamp", "utterance", "intent", "confidence", "source",
+        "reason", "rule_based", "handler", "outcome",
+        "needs_clarification", "clarification_question",
+    }
+    assert expected_keys.issubset(rec.keys())
+    assert rec["rule_based"] is True
+    assert rec["confidence"] > 0
+
+
+def test_routing_log_appends_across_dispatches(cap_stack, routing_log, read_routing):
+    """Multiple dispatches accumulate routing-decision rows in order."""
+    utterances = [
+        "open hacker news",
+        "good morning",
+        "make me an image of a sunset",
+    ]
+    for u in utterances:
+        dispatch_utterance(cap_stack, u)
+    records = read_routing()
+    assert len(records) == 3
+    assert records[0]["intent"] == "browser_automation"
+    assert records[1]["intent"] == "conversational"
+    assert records[2]["intent"] == "media_generation"

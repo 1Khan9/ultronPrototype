@@ -17,7 +17,7 @@ import time
 import uuid
 from typing import Iterable, List, Optional, Tuple
 
-from config import settings
+from ultron.config import get_config
 from ultron.utils.logging import get_logger
 from ultron.web_search.brave import BraveResult
 
@@ -45,9 +45,10 @@ def freshness_category_for(query: str) -> str:
 
 
 def ttl_for(freshness_category: str) -> int:
+    cache_cfg = get_config().web_search.cache
     if freshness_category == "volatile":
-        return settings.WEB_SEARCH_CACHE_TTL_VOLATILE_S
-    return settings.WEB_SEARCH_CACHE_TTL_STABLE_S
+        return cache_cfg.ttl_volatile_seconds
+    return cache_cfg.ttl_stable_seconds
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +92,7 @@ class WebResultsCache:
 
         try:
             points, _ = self._client.scroll(
-                collection_name=settings.MEMORY_QDRANT_WEB_RESULTS,
+                collection_name=get_config().qdrant.collections.web_results,
                 scroll_filter=Filter(
                     must=[FieldCondition(
                         key="query",
@@ -163,7 +164,7 @@ class WebResultsCache:
         # Replace any existing points for this exact (query, url) pair.
         try:
             existing, _ = self._client.scroll(
-                collection_name=settings.MEMORY_QDRANT_WEB_RESULTS,
+                collection_name=get_config().qdrant.collections.web_results,
                 scroll_filter=Filter(
                     must=[FieldCondition(
                         key="query",
@@ -178,7 +179,7 @@ class WebResultsCache:
             if old_ids:
                 from qdrant_client.models import PointIdsList
                 self._client.delete(
-                    collection_name=settings.MEMORY_QDRANT_WEB_RESULTS,
+                    collection_name=get_config().qdrant.collections.web_results,
                     points_selector=PointIdsList(points=old_ids),
                 )
         except Exception as e:
@@ -217,7 +218,7 @@ class WebResultsCache:
             ))
         try:
             self._client.upsert(
-                collection_name=settings.MEMORY_QDRANT_WEB_RESULTS,
+                collection_name=get_config().qdrant.collections.web_results,
                 points=points,
             )
         except Exception as e:

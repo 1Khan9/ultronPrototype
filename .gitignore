@@ -43,6 +43,8 @@ Thumbs.db
 .env
 models/
 logs/*.log
+logs/*.jsonl
+logs/sessions/
 *.wav
 *.mp3
 *.ogg

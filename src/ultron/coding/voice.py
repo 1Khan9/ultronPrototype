@@ -50,8 +50,21 @@ class VoiceResponse:
     cancelled: bool = False  # set when we cancelled a running task
 
 
-class CodingVoiceController:
-    """Voice-side facade over the coding pipeline.
+class CapabilityVoiceController:
+    """Voice-side facade over the capability layer.
+
+    Renamed from ``CodingVoiceController`` in Foundation Phase 5 — the
+    legacy name is preserved as a module-level alias at the bottom of
+    this file for backward compatibility, so existing imports
+    ``from ultron.coding import CodingVoiceController`` keep working.
+
+    The controller dispatches utterances across:
+      * coding intents (existing path; routes to :class:`CodingTaskRunner`)
+      * OpenClaw-bound capabilities (BROWSER / MEDIA / MESSAGING /
+        FILE / SHELL) — routed to :class:`OpenClawDispatcher` via the
+        :meth:`handle_capability_intent` method.
+      * conversational utterances (return None; orchestrator handles
+        normally)
 
     Args:
         runner: the :class:`CodingTaskRunner` that owns the bridge.
@@ -443,3 +456,120 @@ class CodingVoiceController:
         with self._lock:
             self._was_active = True
             self._pending_completion = None
+
+    # --- Phase 5 capability dispatch ---------------------------------------
+
+    def handle_capability_intent(self, routing_intent) -> Optional[VoiceResponse]:
+        """Dispatch a top-level :class:`RoutingIntent`.
+
+        For the openclaw-bound categories (BROWSER / MEDIA / MESSAGING /
+        FILE / SHELL) and HYBRID_TASK, this method calls into the
+        OpenClaw dispatcher (currently stubbed) and routes the resulting
+        voice message back to the orchestrator. For coding kinds it
+        delegates to :meth:`handle_utterance`. CONVERSATIONAL falls
+        through (returns ``None``).
+
+        Lazy-imported to avoid pulling in the openclaw_routing module
+        when the controller is constructed in tests that don't need it.
+        """
+        from ultron.openclaw_routing.intents import RoutingIntentKind
+        from ultron.openclaw_routing import (
+            AutomationTaskRunner,
+            OpenClawDispatcher,
+            get_routing_log,
+        )
+        import asyncio
+
+        kind = routing_intent.kind
+        if kind == RoutingIntentKind.CONVERSATIONAL:
+            get_routing_log().record(
+                routing_intent,
+                handler="voice.respond",
+                outcome="passthrough",
+            )
+            return None
+
+        # Coding kinds — delegate to the existing utterance pipeline.
+        coding_kinds = {
+            RoutingIntentKind.CODE_TASK,
+            RoutingIntentKind.PROGRESS_QUERY,
+            RoutingIntentKind.CANCEL,
+            RoutingIntentKind.MID_SESSION_ADJUSTMENT,
+            RoutingIntentKind.CLARIFICATION_RESPONSE,
+        }
+        if kind in coding_kinds:
+            response = self.handle_utterance(routing_intent.raw_text)
+            get_routing_log().record(
+                routing_intent,
+                handler="CodingTaskRunner.handle_utterance",
+                outcome="dispatched" if response else "passthrough",
+            )
+            return response
+
+        # Automation kinds — dispatch through the OpenClawDispatcher.
+        # The dispatcher is currently stubbed; the spoken response tells
+        # the user the gateway isn't connected yet.
+        if kind in {
+            RoutingIntentKind.BROWSER_AUTOMATION,
+            RoutingIntentKind.MEDIA_GENERATION,
+            RoutingIntentKind.MESSAGING,
+            RoutingIntentKind.FILE_OPERATION,
+            RoutingIntentKind.SHELL_OPERATION,
+        }:
+            # Build a per-call runner so each intent gets its own task id /
+            # audit row. The runner is cheap to construct.
+            runner = getattr(self, "_automation_runner", None)
+            if runner is None:
+                runner = AutomationTaskRunner(
+                    dispatcher=OpenClawDispatcher(),
+                )
+                self._automation_runner = runner
+
+            async def _go():
+                task_id = await runner.submit_task(routing_intent)
+                return await runner.completion_narration(task_id)
+
+            voice = asyncio.run(_go()) or "I couldn't run that yet."
+            get_routing_log().record(
+                routing_intent,
+                handler=f"OpenClawDispatcher.handle_{kind.value}",
+                outcome="stub",
+                extra={"stub_reason": "OpenClaw integration not yet complete"},
+            )
+            return VoiceResponse(text=voice, handled=True)
+
+        # Hybrid — without a wired-up decomposer + Anthropic, we can only
+        # tell the user we recognized it but can't run it yet.
+        if kind == RoutingIntentKind.HYBRID_TASK:
+            voice = (
+                "I can see that's a mix of coding and automation. "
+                "I'd split it up and run both, but the gateway isn't "
+                "connected yet."
+            )
+            get_routing_log().record(
+                routing_intent,
+                handler="HybridTaskDecomposer",
+                outcome="stub",
+                extra={"stub_reason": "OpenClaw integration not yet complete"},
+            )
+            return VoiceResponse(text=voice, handled=True)
+
+        # Unknown kind — log and fall through.
+        get_routing_log().record(
+            routing_intent,
+            handler="voice.unknown",
+            outcome="passthrough",
+        )
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatibility alias.
+#
+# Foundation Phase 5 renamed CodingVoiceController -> CapabilityVoiceController
+# because the controller now dispatches across capabilities, not just coding.
+# Existing imports `from ultron.coding import CodingVoiceController` keep
+# working via this alias. New code should prefer CapabilityVoiceController.
+# ---------------------------------------------------------------------------
+
+CodingVoiceController = CapabilityVoiceController

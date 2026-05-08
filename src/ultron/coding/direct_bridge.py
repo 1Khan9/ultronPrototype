@@ -5,9 +5,9 @@ subprocess in the project's cwd, parses the JSONL event stream into our
 standardized :class:`TaskEvent` vocabulary, and exposes a thread-safe
 :class:`TaskHandle` to the runner.
 
-When OpenClaw is wired up later, it gets its own ``OpenClawBridge`` that
-translates Gateway events into the same vocabulary; the runner stays
-unchanged.
+OpenClaw is NOT a coding-bridge alternative under the new architecture
+(Foundation Part 5) — it's a peer dispatcher reachable via
+``ultron.openclaw_routing``.
 """
 
 from __future__ import annotations

@@ -31,6 +31,7 @@ Three threads matter:
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from enum import Enum
@@ -228,12 +229,14 @@ class Orchestrator:
         ``None`` if web search is disabled or the API key is missing -- the
         rest of the pipeline still works.
         """
-        if not settings.WEB_SEARCH_ENABLED:
+        from ultron.config import get_config
+        ws_cfg = get_config().web_search
+        if not ws_cfg.enabled:
             return None, None, None
-        if not settings.WEB_SEARCH_BRAVE_API_KEY:
+        if not os.getenv(ws_cfg.brave_api_key_env, ""):
             logger.warning(
-                "WEB_SEARCH_ENABLED=True but ULTRON_BRAVE_API_KEY missing -- "
-                "web search disabled."
+                "web_search.enabled=true but %s missing in env -- "
+                "web search disabled.", ws_cfg.brave_api_key_env,
             )
             return None, None, None
         try:
@@ -273,12 +276,14 @@ class Orchestrator:
             except Exception:
                 return []
 
+        from ultron.config import get_config, resolve_path
+        addr_cfg = get_config().addressing
         return AddressingClassifier(
-            rule_confidence_threshold=settings.ADDRESSING_RULE_CONFIDENCE_THRESHOLD,
-            default_silent_on_uncertain=settings.ADDRESSEE_DEFAULT_SILENT,
-            log_path=settings.ADDRESSING_LOG_PATH,
-            zero_shot_model_name=settings.ADDRESSING_ZERO_SHOT_MODEL,
-            load_zero_shot_eagerly=settings.ADDRESSING_LOAD_EAGERLY,
+            rule_confidence_threshold=addr_cfg.rule_confidence_threshold,
+            default_silent_on_uncertain=addr_cfg.default_uncertain_to_not_addressed,
+            log_path=resolve_path(addr_cfg.log_path),
+            zero_shot_model_name=addr_cfg.zero_shot_model,
+            load_zero_shot_eagerly=addr_cfg.load_eagerly,
             recent_turns_provider=recent_turns_provider,
         )
 
@@ -371,6 +376,8 @@ class Orchestrator:
 
     def run(self) -> None:
         """Block forever, processing wake events until shutdown."""
+        from ultron.config import get_config
+        _addr_cfg = get_config().addressing
         self.audio.start()
         word = self.wake.active_word
         print(f"\n  Ultron is listening. Say '{word}' to wake.\n")
@@ -410,7 +417,7 @@ class Orchestrator:
                     follow_up_until = None
                 elif (
                     follow_up_until is not None
-                    and settings.FOLLOW_UP_ENABLED
+                    and _addr_cfg.follow_up_enabled
                     and time.monotonic() < follow_up_until
                 ):
                     self._state = State.FOLLOW_UP_LISTENING
@@ -475,20 +482,29 @@ class Orchestrator:
                 else:
                     print(f"  you: {user_text}")
 
-                # Coding pipeline gets first crack: progress queries,
-                # cancellations, and new-task-creation utterances are
-                # handled here without ever touching the LLM. handle_utterance
-                # returns None for anything not coding-related; we then fall
-                # through to the normal LLM/search path.
+                # Capability routing (Phase 5): classify the utterance into
+                # one of the routing kinds and let CapabilityVoiceController
+                # dispatch. Coding kinds (CODE_TASK / CANCEL / progress /
+                # adjustment / clarification) route through the existing
+                # CodingTaskRunner. OpenClaw-bound kinds (browser / media /
+                # messaging / file / shell / hybrid) get stub voice responses
+                # in this Foundation phase. CONVERSATIONAL falls through to
+                # the normal LLM path below.
                 if self.coding_voice is not None:
-                    coding_response = self.coding_voice.handle_utterance(user_text)
-                    if coding_response is not None:
-                        self._speak(coding_response.text)
+                    from ultron.openclaw_routing import classify_routing
+                    routing_intent = classify_routing(
+                        user_text,
+                        has_active_coding_task=self.coding_voice.runner.has_active_task(),
+                        has_pending_clarification=self.coding_voice.has_pending_clarification(),
+                    )
+                    capability_response = self.coding_voice.handle_capability_intent(routing_intent)
+                    if capability_response is not None:
+                        self._speak(capability_response.text)
                         self._last_response_finished_monotonic = time.monotonic()
-                        if settings.FOLLOW_UP_ENABLED:
+                        if _addr_cfg.follow_up_enabled:
                             follow_up_until = (
                                 self._last_response_finished_monotonic
-                                + settings.FOLLOW_UP_TIMEOUT_SECONDS
+                                + _addr_cfg.warm_mode_duration_seconds
                             )
                         else:
                             follow_up_until = None
@@ -496,13 +512,13 @@ class Orchestrator:
 
                 self._respond(user_text)
                 self._last_response_finished_monotonic = time.monotonic()
-                if settings.FOLLOW_UP_ENABLED:
+                if _addr_cfg.follow_up_enabled:
                     follow_up_until = (
                         self._last_response_finished_monotonic
-                        + settings.FOLLOW_UP_TIMEOUT_SECONDS
+                        + _addr_cfg.warm_mode_duration_seconds
                     )
                     print(
-                        f"  (still listening for ~{int(settings.FOLLOW_UP_TIMEOUT_SECONDS)} s -- "
+                        f"  (still listening for ~{int(_addr_cfg.warm_mode_duration_seconds)} s -- "
                         f"keep talking or stay silent to drop back to wake-word mode)"
                     )
                 else:

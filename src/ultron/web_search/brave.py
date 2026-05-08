@@ -11,15 +11,31 @@ minimum interval.
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from dataclasses import dataclass
 from typing import List, Optional
 
-from config import settings
+from ultron.config import get_config
+from ultron.errors import BraveAPIError
+from ultron.resilience import CircuitBreaker, CircuitOpenError, get_error_log
 from ultron.utils.logging import get_logger
 
 logger = get_logger("web_search.brave")
+
+
+# Single shared breaker — multiple BraveSearchClient instances all
+# coordinate through it. Threshold/window/cooldown reflect Brave's
+# free-tier behavior: typical failures are rate-limit (429) or 5xx
+# bursts; 3 in 5 minutes is enough to declare "unavailable for now".
+_BRAVE_BREAKER = CircuitBreaker(
+    name="brave",
+    failure_threshold=3,
+    window_seconds=300.0,
+    cooldown_seconds=300.0,
+    expected_exceptions=(BraveAPIError,),
+)
 
 
 @dataclass(frozen=True)
@@ -45,35 +61,72 @@ class BraveSearchClient:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        rate_limit_s: float = settings.WEB_SEARCH_BRAVE_RATE_LIMIT_S,
-        timeout_s: float = settings.WEB_SEARCH_BRAVE_TIMEOUT_S,
-        endpoint: str = settings.WEB_SEARCH_BRAVE_ENDPOINT,
+        rate_limit_s: Optional[float] = None,
+        timeout_s: Optional[float] = None,
+        endpoint: Optional[str] = None,
     ) -> None:
-        self.api_key = api_key or settings.WEB_SEARCH_BRAVE_API_KEY
+        cfg = get_config().web_search
+        self.api_key = api_key or os.getenv(cfg.brave_api_key_env, "")
         if not self.api_key:
             raise ValueError(
                 "Brave API key missing. Set ULTRON_BRAVE_API_KEY in your env "
                 "or pass api_key=... to BraveSearchClient."
             )
-        self.endpoint = endpoint
-        self.rate_limit_s = rate_limit_s
-        self.timeout_s = timeout_s
+        self.endpoint = endpoint if endpoint is not None else cfg.brave.endpoint
+        self.rate_limit_s = (
+            rate_limit_s if rate_limit_s is not None else cfg.brave.rate_limit_seconds
+        )
+        self.timeout_s = (
+            timeout_s if timeout_s is not None else cfg.brave.timeout_seconds
+        )
         self._last_call = 0.0
         self._lock = threading.Lock()
 
     def search(
         self,
         query: str,
-        count: int = settings.WEB_SEARCH_BRAVE_COUNT,
+        count: Optional[int] = None,
     ) -> List[BraveResult]:
         """Run a single Brave search.
 
-        Returns up to ``count`` :class:`BraveResult` rows. On API failure or
-        empty response, returns ``[]`` and logs the reason.
+        Returns up to ``count`` :class:`BraveResult` rows. On API failure
+        (timeout, HTTP error, malformed JSON, rate limit, circuit open)
+        returns ``[]`` and records the failure to ``logs/errors.jsonl``.
+        Caller falls back to base knowledge with an uncertainty caveat.
         """
         query = query.strip()
         if not query:
             return []
+        if count is None:
+            count = get_config().web_search.brave.count
+
+        try:
+            return _BRAVE_BREAKER.call(self._do_search, query, count)
+        except CircuitOpenError as e:
+            logger.warning(
+                "Brave circuit OPEN for %r — short-circuiting; %s",
+                query[:80], e,
+            )
+            get_error_log().record(
+                BraveAPIError(
+                    "circuit open",
+                    context={"query": query[:200], "circuit": "brave"},
+                    recovery="short-circuited; fell back to base knowledge",
+                ),
+                dependency="brave_api",
+                include_traceback=False,
+            )
+            return []
+        except BraveAPIError as e:
+            get_error_log().record(
+                e.with_recovery("returned empty results; caller falls back to base knowledge"),
+                dependency="brave_api",
+            )
+            return []
+
+    def _do_search(self, query: str, count: int) -> List[BraveResult]:
+        """Inner implementation. Raises :class:`BraveAPIError` on any
+        failure; the breaker counts those toward the threshold."""
         self._respect_rate_limit()
 
         import requests
@@ -86,7 +139,6 @@ class BraveSearchClient:
         params = {
             "q": query,
             "count": min(20, max(1, count)),
-            # Conservative defaults: keep results clean + recent.
             "safesearch": "moderate",
             "result_filter": "web",
         }
@@ -100,15 +152,28 @@ class BraveSearchClient:
             )
             resp.raise_for_status()
             data = resp.json()
-        except requests.exceptions.Timeout:
-            logger.warning("Brave timed out after %.1fs for %r", self.timeout_s, query)
-            return []
+        except requests.exceptions.Timeout as e:
+            raise BraveAPIError(
+                f"Brave timed out after {self.timeout_s:.1f}s",
+                context={"query": query[:200], "timeout_s": self.timeout_s},
+            ) from e
         except requests.exceptions.HTTPError as e:
-            logger.warning("Brave HTTP %s for %r", e.response.status_code if e.response else "?", query)
-            return []
-        except Exception as e:
-            logger.warning("Brave request failed for %r: %s", query, e)
-            return []
+            status = e.response.status_code if e.response is not None else None
+            raise BraveAPIError(
+                f"Brave HTTP {status}",
+                context={"query": query[:200], "status_code": status},
+            ) from e
+        except requests.exceptions.RequestException as e:
+            raise BraveAPIError(
+                f"Brave request failed: {e}",
+                context={"query": query[:200]},
+            ) from e
+        except ValueError as e:
+            # Malformed JSON.
+            raise BraveAPIError(
+                "Brave returned malformed JSON",
+                context={"query": query[:200]},
+            ) from e
 
         web_results = (data.get("web") or {}).get("results") or []
         results: List[BraveResult] = []

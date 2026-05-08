@@ -28,7 +28,7 @@ import time
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
-from config import settings
+from ultron.config import get_config
 from ultron.utils.logging import get_logger
 from ultron.web_search.brave import BraveResult, BraveSearchClient
 from ultron.web_search.cache import WebResultsCache
@@ -178,13 +178,17 @@ class WebSearchExecutor:
         jina: JinaReaderClient,
         llm,
         cache: Optional[WebResultsCache] = None,
-        max_fetch: int = settings.WEB_SEARCH_JINA_MAX_FETCH,
+        max_fetch: Optional[int] = None,
     ) -> None:
         self.brave = brave
         self.jina = jina
         self.llm = llm
         self.cache = cache
-        self.max_fetch = max_fetch
+        self.max_fetch = (
+            max_fetch
+            if max_fetch is not None
+            else get_config().web_search.jina.max_fetch
+        )
 
     def run(
         self,

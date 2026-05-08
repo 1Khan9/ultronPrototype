@@ -23,7 +23,9 @@ from pathlib import Path
 from threading import Event
 from typing import Deque, Iterator, List, Optional, Tuple
 
-from config import settings
+import os
+
+from ultron.config import get_config, resolve_path
 from ultron.utils.logging import get_logger
 
 logger = get_logger("llm.inference")
@@ -90,14 +92,29 @@ class LLMEngine:
 
     def __init__(
         self,
-        model_path: Path = settings.LLM_MODEL_PATH,
-        n_ctx: int = settings.LLM_CONTEXT_LENGTH,
-        n_gpu_layers: int = settings.LLM_GPU_LAYERS,
-        system_prompt: str = settings.ULTRON_SYSTEM_PROMPT,
-        history_turns: int = settings.LLM_HISTORY_TURNS,
+        model_path: Optional[Path] = None,
+        n_ctx: Optional[int] = None,
+        n_gpu_layers: Optional[int] = None,
+        system_prompt: Optional[str] = None,
+        history_turns: Optional[int] = None,
         memory=None,
     ) -> None:
         from llama_cpp import Llama
+
+        cfg = get_config().llm
+        if model_path is None:
+            # Env var override remains as an opt-in for swapping models without
+            # editing config.yaml; falls through to the configured path.
+            env_path = os.getenv("ULTRON_LLM_MODEL_PATH")
+            model_path = resolve_path(env_path or cfg.model_path)
+        if n_ctx is None:
+            n_ctx = cfg.n_ctx
+        if n_gpu_layers is None:
+            n_gpu_layers = cfg.gpu_layers
+        if system_prompt is None:
+            system_prompt = cfg.system_prompt
+        if history_turns is None:
+            history_turns = cfg.history_turns
 
         if not Path(model_path).is_file():
             raise FileNotFoundError(
@@ -112,11 +129,12 @@ class LLMEngine:
         self._memory = memory
         self._cancel = Event()
 
+        flash_attn = cfg.flash_attn
+        kv_cache_type = cfg.kv_cache_type
         logger.info(
             "Loading LLM: %s (n_ctx=%d, n_gpu_layers=%d, flash_attn=%s, "
             "kv_cache_type=%d)...",
-            model_path, n_ctx, n_gpu_layers,
-            settings.LLM_FLASH_ATTN, settings.LLM_KV_CACHE_TYPE,
+            model_path, n_ctx, n_gpu_layers, flash_attn, kv_cache_type,
         )
         t0 = time.monotonic()
         try:
@@ -127,9 +145,9 @@ class LLMEngine:
                 # Flash attention + quantized KV cache cut KV memory ~30 %
                 # each (combined ~50 %) at quality parity for inference.
                 # Flash attn is required for non-F16 KV cache types.
-                flash_attn=settings.LLM_FLASH_ATTN,
-                type_k=settings.LLM_KV_CACHE_TYPE,
-                type_v=settings.LLM_KV_CACHE_TYPE,
+                flash_attn=flash_attn,
+                type_k=kv_cache_type,
+                type_v=kv_cache_type,
                 verbose=False,
             )
         except Exception as e:
@@ -169,11 +187,12 @@ class LLMEngine:
         system_content = self.system_prompt
 
         if self._memory is not None:
+            mem_cfg = get_config().memory
             try:
                 snippets = self._memory.retrieve(
                     user_message,
-                    k=settings.MEMORY_RAG_TOP_K,
-                    exclude_recent=settings.MEMORY_RAG_EXCLUDE_RECENT,
+                    k=mem_cfg.rag_top_k,
+                    exclude_recent=mem_cfg.rag_exclude_recent,
                 )
             except Exception as e:
                 logger.warning("memory.retrieve failed: %s", e)
@@ -187,7 +206,7 @@ class LLMEngine:
         msgs: List[dict] = [{"role": "system", "content": system_content}]
 
         if self._memory is not None:
-            for turn in self._memory.recent(settings.MEMORY_RECENT_TURNS):
+            for turn in self._memory.recent(get_config().memory.recent_turns):
                 msgs.append({"role": turn.role, "content": turn.content})
         else:
             for role, content in self._history:
@@ -209,13 +228,14 @@ class LLMEngine:
     def generate(self, user_message: str) -> str:
         """Blocking generation. Returns the full response string."""
         messages = self._build_messages(user_message)
+        _llm_cfg = get_config().llm
         t0 = time.monotonic()
         out = self._llm.create_chat_completion(
             messages=messages,
-            temperature=settings.LLM_TEMPERATURE,
-            top_p=settings.LLM_TOP_P,
-            max_tokens=settings.LLM_MAX_TOKENS,
-            repeat_penalty=settings.LLM_REPEAT_PENALTY,
+            temperature=_llm_cfg.default_temperature,
+            top_p=_llm_cfg.default_top_p,
+            max_tokens=_llm_cfg.default_max_tokens,
+            repeat_penalty=_llm_cfg.default_repeat_penalty,
         )
         text = out["choices"][0]["message"]["content"].strip()
         logger.info(
@@ -236,6 +256,7 @@ class LLMEngine:
         """
         self._cancel.clear()
         messages = self._build_messages(user_message)
+        _llm_cfg = get_config().llm
         t0 = time.monotonic()
         first_token_time: Optional[float] = None
         accumulated: List[str] = []
@@ -244,10 +265,10 @@ class LLMEngine:
 
         stream = self._llm.create_chat_completion(
             messages=messages,
-            temperature=settings.LLM_TEMPERATURE,
-            top_p=settings.LLM_TOP_P,
-            max_tokens=settings.LLM_MAX_TOKENS,
-            repeat_penalty=settings.LLM_REPEAT_PENALTY,
+            temperature=_llm_cfg.default_temperature,
+            top_p=_llm_cfg.default_top_p,
+            max_tokens=_llm_cfg.default_max_tokens,
+            repeat_penalty=_llm_cfg.default_repeat_penalty,
             stream=True,
         )
 

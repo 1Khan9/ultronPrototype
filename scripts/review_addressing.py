@@ -1,6 +1,6 @@
 """Review recent addressing decisions made by the live classifier.
 
-Reads the JSONL log at ``settings.ADDRESSING_LOG_PATH`` and prints recent
+Reads the JSONL log at ``config.addressing.log_path`` and prints recent
 decisions in a compact, scannable form. Intended for tuning thresholds and
 catching false positives / negatives.
 
@@ -18,13 +18,13 @@ import json
 import sys
 from pathlib import Path
 
-# Reach the main checkout for settings + log path.
+# Reach the main checkout for config + log path.
 _HERE = Path(__file__).resolve()
 _REPO = _HERE.parent.parent
 sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "src"))
 
-from config import settings  # noqa: E402
+from ultron.config import get_config, resolve_path  # noqa: E402
 
 
 def _format_record(record: dict) -> str:
@@ -58,7 +58,7 @@ def main() -> int:
     parser.add_argument(
         "--log",
         type=Path,
-        default=settings.ADDRESSING_LOG_PATH,
+        default=resolve_path(get_config().addressing.log_path),
         help="path to the addressing log JSONL",
     )
     args = parser.parse_args()

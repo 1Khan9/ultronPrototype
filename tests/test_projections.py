@@ -499,3 +499,126 @@ def test_projection_token_count_matches_text_token_count():
     s = _small_session()
     r = project_status_delta(s)
     assert r.token_count == count_tokens(r.text)
+
+
+# ---------------------------------------------------------------------------
+# Truncation warning + logging contract
+# ---------------------------------------------------------------------------
+
+
+def test_truncation_warning_is_none_when_projection_fits():
+    """Normal cases: truncation_warning stays None even when truncations
+    are applied, as long as the result fits within budget."""
+    s = _huge_session()
+    for fn, kwargs in [
+        (project_clarification_context,
+         dict(clarification_question="what?", options=["a"])),
+        (project_status_delta, {}),
+        (project_adjustment_context, dict(adjustment_text="tweak")),
+        (project_correction_context,
+         dict(failures=[{"check": "TESTS", "detail": "nope"}])),
+        (project_completion_context, {}),
+    ]:
+        r = fn(s, **kwargs)
+        assert r.fits_budget, (
+            f"{fn.__name__}: setup expected to fit, got {r.token_count}/{r.budget}"
+        )
+        assert r.truncation_warning is None, (
+            f"{fn.__name__}: truncation_warning should be None when fits, "
+            f"got {r.truncation_warning!r}"
+        )
+
+
+def test_truncation_warning_set_when_budget_unreachable(caplog):
+    """Force a tiny budget and verify: (a) truncation_warning is set,
+    (b) ERROR is logged, (c) fits_budget is False, (d) the result
+    still returns rather than crashing."""
+    import logging
+    from ultron.coding import projections as _pmod
+
+    s = _small_session()
+    orig = _pmod.StatusDeltaProjection.BUDGET_TOKENS
+    _pmod.StatusDeltaProjection.BUDGET_TOKENS = 5  # impossible
+    try:
+        with caplog.at_level(logging.ERROR, logger="ultron.coding.projections"):
+            r = project_status_delta(s)
+    finally:
+        _pmod.StatusDeltaProjection.BUDGET_TOKENS = orig
+
+    assert not r.fits_budget, "test setup error: budget=5 should be unreachable"
+    assert r.truncation_warning is not None
+    assert "over budget" in r.truncation_warning.lower()
+    error_records = [
+        rec for rec in caplog.records
+        if rec.levelno == logging.ERROR and "over budget" in rec.getMessage()
+    ]
+    assert error_records, (
+        f"expected ERROR log for unreachable budget; got: "
+        f"{[(r.levelname, r.getMessage()) for r in caplog.records]}"
+    )
+
+
+def test_info_logged_when_truncations_applied_and_fits(caplog):
+    """When truncations engage but the projection still fits, we log
+    at INFO level so operators can see budget pressure happening."""
+    import logging
+    from ultron.coding import projections as _pmod
+
+    # Force the loop to engage: oversize options + small-ish budget.
+    s = _small_session()
+    orig = _pmod.ClarificationContextProjection.BUDGET_TOKENS
+    _pmod.ClarificationContextProjection.BUDGET_TOKENS = 250
+    try:
+        with caplog.at_level(logging.INFO, logger="ultron.coding.projections"):
+            r = project_clarification_context(
+                s, clarification_question="critical question",
+                options=[f"opt_{i}_" + "z" * 150 for i in range(8)],
+                facts_lookup=lambda q: ["fact_" + "y" * 180 for _ in range(5)],
+            )
+    finally:
+        _pmod.ClarificationContextProjection.BUDGET_TOKENS = orig
+
+    assert r.fits_budget, "test setup expected to fit after truncation"
+    assert r.truncations_applied, "test setup expected truncations to engage"
+    assert r.truncation_warning is None, "fits_budget => no warning"
+    info_records = [
+        rec for rec in caplog.records
+        if rec.levelno == logging.INFO and "truncations applied" in rec.getMessage()
+    ]
+    assert info_records, (
+        f"expected INFO log for applied truncations; got: "
+        f"{[(rec.levelname, rec.getMessage()) for rec in caplog.records]}"
+    )
+
+
+def test_no_info_log_when_no_truncations_applied(caplog):
+    """A clean projection that fits without trimming should NOT emit
+    the truncations-applied INFO log."""
+    import logging
+
+    s = _small_session()
+    with caplog.at_level(logging.INFO, logger="ultron.coding.projections"):
+        r = project_status_delta(s)
+    assert r.fits_budget
+    assert not r.truncations_applied
+    info_records = [
+        rec for rec in caplog.records
+        if rec.levelno == logging.INFO and "truncations applied" in rec.getMessage()
+    ]
+    assert not info_records, "no truncations -> no INFO truncation log"
+
+
+def test_truncation_warning_serialized_in_as_dict():
+    """The dataclass.as_dict() round-trip includes truncation_warning."""
+    from ultron.coding import projections as _pmod
+    s = _small_session()
+    orig = _pmod.StatusDeltaProjection.BUDGET_TOKENS
+    _pmod.StatusDeltaProjection.BUDGET_TOKENS = 5
+    try:
+        r = project_status_delta(s)
+    finally:
+        _pmod.StatusDeltaProjection.BUDGET_TOKENS = orig
+
+    d = r.as_dict()
+    assert "truncation_warning" in d
+    assert d["truncation_warning"] is not None

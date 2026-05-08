@@ -13,6 +13,8 @@ from typing import Optional
 import numpy as np
 
 from config import settings
+from ultron.errors import WhisperTranscriptionError
+from ultron.resilience import get_error_log
 from ultron.utils.logging import get_logger
 
 logger = get_logger("transcription.whisper")
@@ -74,6 +76,9 @@ class WhisperEngine:
 
         Returns:
             Stripped transcription text. May be empty for silence.
+            On Whisper failure, returns ``""`` and logs to errors.jsonl;
+            the orchestrator's repeated-failure counter takes over from
+            there ("Speech recognition is having trouble." after 3+).
         """
         if audio.size == 0:
             return ""
@@ -81,15 +86,34 @@ class WhisperEngine:
             audio = audio.astype(np.float32)
 
         t0 = time.monotonic()
-        segments, info = self._model.transcribe(
-            audio,
-            language=language,
-            beam_size=self.beam_size,
-            temperature=settings.WHISPER_TEMPERATURE,
-            condition_on_previous_text=settings.WHISPER_CONDITION_ON_PREVIOUS_TEXT,
-            vad_filter=settings.WHISPER_VAD_FILTER,
-        )
-        text = " ".join(seg.text.strip() for seg in segments).strip()
+        try:
+            segments, info = self._model.transcribe(
+                audio,
+                language=language,
+                beam_size=self.beam_size,
+                temperature=settings.WHISPER_TEMPERATURE,
+                condition_on_previous_text=settings.WHISPER_CONDITION_ON_PREVIOUS_TEXT,
+                vad_filter=settings.WHISPER_VAD_FILTER,
+            )
+            text = " ".join(seg.text.strip() for seg in segments).strip()
+        except Exception as e:
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            logger.error(
+                "Whisper transcribe failed in %.0fms: %s", elapsed_ms, e,
+            )
+            get_error_log().record(
+                WhisperTranscriptionError(
+                    f"transcribe failed: {e}",
+                    context={
+                        "audio_seconds": len(audio) / settings.SAMPLE_RATE,
+                        "model": self.model_name,
+                        "device": self.device,
+                    },
+                    recovery="returned empty transcription; orchestrator skips this turn",
+                ),
+                dependency="whisper",
+            )
+            return ""
         elapsed_ms = (time.monotonic() - t0) * 1000
         audio_seconds = len(audio) / settings.SAMPLE_RATE
         logger.info(

@@ -203,7 +203,6 @@ class TextToSpeech:
         sr = first_clip[1]
         block_frames = max(1, int(sr * 0.05))
         stream: Optional[sd.OutputStream] = None
-        last_clip = first_clip
         try:
             with self._playback_lock:
                 if self._stop_event.is_set():
@@ -228,7 +227,6 @@ class TextToSpeech:
                 # One-clip lookahead so we know which clip is last in time
                 # to fade out its tail before writing.
                 clip = first_clip
-                is_first = True
                 while True:
                     try:
                         nxt = audio_q.get(timeout=10.0)
@@ -301,6 +299,17 @@ class TextToSpeech:
                 pcm, sr = self.rvc.convert(pcm, sr)
             except Exception as e:
                 logger.warning("RVC convert failed (using raw Piper): %s", e)
+                # Late-binding imports to avoid circular bootstrap dependency.
+                from ultron.errors import RVCConversionError
+                from ultron.resilience import get_error_log
+                get_error_log().record(
+                    RVCConversionError(
+                        f"RVC convert failed: {e}",
+                        context={"sample_rate": int(sr), "pcm_samples": int(pcm.size)},
+                        recovery="fell back to raw Piper output (no Ultron filter)",
+                    ),
+                    dependency="rvc",
+                )
 
         logger.debug(
             "TTS pipeline: %d chars → %.2fs audio @ %d Hz in %.0fms",
@@ -331,6 +340,16 @@ class TextToSpeech:
                         self._voice.synthesize(text, wav)
         except Exception as e:
             logger.error("Piper synth failed for %r: %s", text[:60], e)
+            from ultron.errors import PiperSynthesisError
+            from ultron.resilience import get_error_log
+            get_error_log().record(
+                PiperSynthesisError(
+                    f"Piper synth failed: {e}",
+                    context={"text_preview": text[:60], "text_chars": len(text)},
+                    recovery="returned silent clip; orchestrator falls back to terminal print",
+                ),
+                dependency="piper_tts",
+            )
             return np.zeros(0, dtype=np.int16), self.piper_sample_rate
 
         wav_buffer.seek(0)

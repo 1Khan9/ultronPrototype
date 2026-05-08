@@ -28,8 +28,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
-from config import settings
+from ultron.config import get_config, resolve_path
+from ultron.errors import QdrantUnavailableError
 from ultron.memory.embedder import HybridEmbedder, _SparseVec
+from ultron.resilience import get_error_log
 from ultron.utils.logging import get_logger
 
 logger = get_logger("memory.qdrant_store")
@@ -76,7 +78,7 @@ class ConversationMemory:
 
     def __init__(
         self,
-        path: Path = settings.MEMORY_QDRANT_PATH,
+        path: Optional[Path] = None,
         embedder: Optional[HybridEmbedder] = None,
         recent_cache_size: int = 100,
         session_id: Optional[str] = None,
@@ -85,7 +87,8 @@ class ConversationMemory:
             raise ValueError(
                 "ConversationMemory needs a HybridEmbedder. Pass embedder=HybridEmbedder()."
             )
-        self.path = Path(path)
+        cfg = get_config()
+        self.path = Path(path) if path is not None else resolve_path(cfg.qdrant.data_dir)
         self.path.mkdir(parents=True, exist_ok=True)
         self._embedder = embedder
         self._recent_cache_size = recent_cache_size
@@ -108,7 +111,7 @@ class ConversationMemory:
 
         # Async writer.
         self._write_queue: "queue.Queue[Optional[MemoryTurn]]" = queue.Queue(
-            maxsize=settings.MEMORY_WRITE_QUEUE_MAXSIZE
+            maxsize=cfg.memory.write_queue_maxsize
         )
         self._writer_thread = threading.Thread(
             target=self._writer_loop, daemon=True, name="memory-writer"
@@ -135,27 +138,27 @@ class ConversationMemory:
         common_dense = {"dense": VectorParams(size=self._embedder.dim, distance=Distance.COSINE)}
         common_sparse = {"bm25": SparseVectorParams()}
 
-        if settings.MEMORY_QDRANT_CONVERSATIONS not in names:
+        if get_config().qdrant.collections.conversations not in names:
             self._client.create_collection(
-                collection_name=settings.MEMORY_QDRANT_CONVERSATIONS,
+                collection_name=get_config().qdrant.collections.conversations,
                 vectors_config=common_dense,
                 sparse_vectors_config=common_sparse,
             )
-            logger.info("Created Qdrant collection %s", settings.MEMORY_QDRANT_CONVERSATIONS)
-        if settings.MEMORY_QDRANT_FACTS not in names:
+            logger.info("Created Qdrant collection %s", get_config().qdrant.collections.conversations)
+        if get_config().qdrant.collections.facts not in names:
             self._client.create_collection(
-                collection_name=settings.MEMORY_QDRANT_FACTS,
+                collection_name=get_config().qdrant.collections.facts,
                 vectors_config=common_dense,
                 sparse_vectors_config=common_sparse,
             )
-            logger.info("Created Qdrant collection %s", settings.MEMORY_QDRANT_FACTS)
-        if settings.MEMORY_QDRANT_WEB_RESULTS not in names:
+            logger.info("Created Qdrant collection %s", get_config().qdrant.collections.facts)
+        if get_config().qdrant.collections.web_results not in names:
             self._client.create_collection(
-                collection_name=settings.MEMORY_QDRANT_WEB_RESULTS,
+                collection_name=get_config().qdrant.collections.web_results,
                 vectors_config=common_dense,
                 sparse_vectors_config=common_sparse,
             )
-            logger.info("Created Qdrant collection %s", settings.MEMORY_QDRANT_WEB_RESULTS)
+            logger.info("Created Qdrant collection %s", get_config().qdrant.collections.web_results)
 
     def _load_recent_cache_from_qdrant(self) -> None:
         """Pull the most-recent N turns into the in-process cache + set next id.
@@ -169,7 +172,7 @@ class ConversationMemory:
             # Newest-first scan, capped at recent_cache_size. The integer
             # turn-id we store in payload is the source of ordering.
             points, _ = self._client.scroll(
-                collection_name=settings.MEMORY_QDRANT_CONVERSATIONS,
+                collection_name=get_config().qdrant.collections.conversations,
                 limit=self._recent_cache_size,
                 with_payload=True,
                 with_vectors=False,
@@ -181,7 +184,7 @@ class ConversationMemory:
             logger.debug("Ordered scroll failed (%s); falling back", e)
             try:
                 points, _ = self._client.scroll(
-                    collection_name=settings.MEMORY_QDRANT_CONVERSATIONS,
+                    collection_name=get_config().qdrant.collections.conversations,
                     limit=self._recent_cache_size,
                     with_payload=True,
                     with_vectors=False,
@@ -284,7 +287,7 @@ class ConversationMemory:
             },
         )
         self._client.upsert(
-            collection_name=settings.MEMORY_QDRANT_CONVERSATIONS,
+            collection_name=get_config().qdrant.collections.conversations,
             points=[point],
         )
 
@@ -300,8 +303,8 @@ class ConversationMemory:
     def retrieve(
         self,
         query: str,
-        k: int = settings.MEMORY_RAG_TOP_K,
-        exclude_recent: int = settings.MEMORY_RAG_EXCLUDE_RECENT,
+        k: Optional[int] = None,
+        exclude_recent: Optional[int] = None,
     ) -> List[MemoryTurn]:
         """Top-``k`` turns by hybrid (dense + BM25, RRF-fused), excluding the
         last ``exclude_recent`` turn ids (the recent window the LLM already sees).
@@ -311,6 +314,11 @@ class ConversationMemory:
         """
         if not query.strip():
             return []
+        mem_cfg = get_config().memory
+        if k is None:
+            k = mem_cfg.rag_top_k
+        if exclude_recent is None:
+            exclude_recent = mem_cfg.rag_exclude_recent
         with self._lock:
             cutoff_id = max(0, self._next_id - exclude_recent)
         if cutoff_id <= 0:
@@ -332,6 +340,14 @@ class ConversationMemory:
             qsv: _SparseVec = self._embedder.encode_query_sparse(query)
         except Exception as e:
             logger.warning("Query embedding failed: %s", e)
+            get_error_log().record(
+                QdrantUnavailableError(
+                    f"query embedding failed: {e}",
+                    context={"query_len": len(query)},
+                    recovery="returned empty retrieval; LLM responds from base knowledge",
+                ),
+                dependency="qdrant_embedder",
+            )
             return []
 
         # Filter to turn_id < cutoff (the older-than-recent window).
@@ -341,7 +357,7 @@ class ConversationMemory:
 
         try:
             response = self._client.query_points(
-                collection_name=settings.MEMORY_QDRANT_CONVERSATIONS,
+                collection_name=get_config().qdrant.collections.conversations,
                 prefetch=[
                     Prefetch(
                         query=qdv.tolist(),
@@ -365,6 +381,18 @@ class ConversationMemory:
             )
         except Exception as e:
             logger.warning("Qdrant hybrid search failed: %s", e)
+            get_error_log().record(
+                QdrantUnavailableError(
+                    f"hybrid search failed: {e}",
+                    context={
+                        "query_len": len(query),
+                        "k": k,
+                        "cutoff_id": cutoff_id,
+                    },
+                    recovery="returned empty retrieval; LLM responds from base knowledge",
+                ),
+                dependency="qdrant",
+            )
             return []
 
         return [_payload_to_turn(pt.payload or {}) for pt in response.points]
@@ -374,7 +402,7 @@ class ConversationMemory:
     def __len__(self) -> int:
         try:
             return self._client.count(
-                collection_name=settings.MEMORY_QDRANT_CONVERSATIONS,
+                collection_name=get_config().qdrant.collections.conversations,
                 exact=False,
             ).count
         except Exception:

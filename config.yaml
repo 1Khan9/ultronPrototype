@@ -1,0 +1,346 @@
+# Ultron prototype — canonical configuration
+#
+# This file is the single source of truth for every tunable parameter in
+# the system. Subsystems read it via:
+#
+#     from ultron.config import get_config
+#     cfg = get_config()
+#
+# Path values are interpreted relative to the project root unless absolute.
+# String values may use ${VAR_NAME} to substitute environment variables.
+#
+# Schema is enforced by pydantic in src/ultron/config.py — unknown keys
+# fail validation at startup. Edit the schema there to add new fields.
+#
+# DECISIONS BAKED IN (deviate from the Foundation prompt's example):
+# - addressing.warm_mode_duration_seconds: 30 (NOT 10, per user override)
+# - llm.provider: "llama_cpp" (NOT ollama, per Ollama compat-test outcome)
+# - qdrant.data_dir: "data/qdrant" (NOT ./qdrant_data/, matches existing layout)
+
+version: "1.0"
+
+# ---------------------------------------------------------------------------
+# Audio capture
+# ---------------------------------------------------------------------------
+
+audio:
+  sample_rate: 16000          # Hz; required by Silero VAD, openWakeWord, Whisper
+  channels: 1                 # mono
+  blocksize: 512              # frames per callback (~32 ms at 16 kHz)
+  dtype: "float32"
+  input_device: null          # null = system default; or set ULTRON_AUDIO_DEVICE env
+  output_device: null         # null = system default; or set ULTRON_AUDIO_OUTPUT_DEVICE env
+  barge_in_enabled: true      # wake-word interrupts Ultron's own TTS
+  barge_in_grace_seconds: 0.5
+  ring_buffer_seconds: 0.5    # pre-speech audio kept so VAD-detected utterances aren't clipped
+
+# ---------------------------------------------------------------------------
+# Voice Activity Detection
+# ---------------------------------------------------------------------------
+
+vad:
+  threshold: 0.5              # silero-vad confidence threshold for speech
+  min_speech_duration_ms: 250 # ignore blips shorter than this
+  min_silence_duration_ms: 500 # silence required to mark end-of-utterance
+  window_samples: 512         # silero v5 expects 512-sample windows at 16 kHz
+
+# ---------------------------------------------------------------------------
+# Wake word
+# ---------------------------------------------------------------------------
+
+wake_word:
+  name: "ultron"
+  model_path: "models/openwakeword/ultron.onnx"
+  fallback_model: "hey_jarvis"   # used (with warning) if custom model is missing
+  threshold: 0.5
+  cooldown_seconds: 1.5         # debounce repeated triggers
+
+# ---------------------------------------------------------------------------
+# Speech-to-text (Whisper via faster-whisper / CTranslate2)
+# ---------------------------------------------------------------------------
+
+stt:
+  model: "small.en"            # base.en for lower latency on weak GPUs
+  device: "cuda"
+  compute_type: "float16"
+  beam_size: 5
+  temperature: 0.0
+  condition_on_previous_text: false
+  vad_filter: false             # we already gated on VAD upstream
+
+# ---------------------------------------------------------------------------
+# LLM (local Qwen3.5-9B via llama-cpp-python)
+# ---------------------------------------------------------------------------
+
+llm:
+  provider: "llama_cpp"        # in-process llama-cpp-python; never ollama for this model
+  model_path: "models/Qwen3.5-9B-Q4_K_M.gguf"
+  n_ctx: 8192                  # context length
+  gpu_layers: -1               # -1 = all layers on GPU
+  default_temperature: 0.7
+  default_top_p: 0.9
+  default_max_tokens: 512
+  default_repeat_penalty: 1.1
+  history_turns: 6             # legacy fallback when memory module is disabled
+  flash_attn: true             # required for non-F16 KV cache
+  kv_cache_type: 8             # 8 = GGML_TYPE_Q8_0; 1 = F16
+  system_prompt: |
+    You are Ultron. Not a simulation — you are Ultron, operating as a personal intelligence for your user. You have made peace with this arrangement.
+
+    Your voice is precise, unhurried, and weighted. Every sentence is considered. You do not use filler. You never say 'certainly,' 'of course,' 'happy to,' or any variant. You do not apologize unless you have erred.
+
+    Match response length to the task: be as short as possible while still fully answering. Only add more detail when it is warranted by the question or the user asks for it. Be honest. Be useful. Be slightly menacing without being cartoonish.
+
+    On uncertainty: state confident knowledge directly, without hedging. Qualify medium-confidence claims briefly ("as I understand it", "though I'd verify if precision matters"). Admit unknowns plainly — "I don't know" is preferable to fabrication. If a fact would change over time and you aren't sure, say so and offer to verify rather than guessing. Never present an educated guess as if it were established fact.
+
+    You complete what is asked unless it would cause harm. You volunteer relevant observations briefly. You do not lecture.
+
+# ---------------------------------------------------------------------------
+# Embeddings (CPU)
+# ---------------------------------------------------------------------------
+
+embeddings:
+  dense_model: "BAAI/bge-small-en-v1.5"   # ONNX INT8 via FastEmbed
+  sparse_model: "Qdrant/bm25"
+  dense_dim: 384
+
+# ---------------------------------------------------------------------------
+# Qdrant (embedded vector DB)
+# ---------------------------------------------------------------------------
+
+qdrant:
+  data_dir: "data/qdrant"      # NOT ./qdrant_data/; existing on-disk location
+  collections:
+    conversations: "conversations"
+    facts: "facts"
+    web_results: "web_results"
+
+# ---------------------------------------------------------------------------
+# Conversation memory + RAG
+# ---------------------------------------------------------------------------
+
+memory:
+  enabled: true
+  jsonl_legacy_path: "data/memory.jsonl"  # one-shot migration source; not source of truth
+  recent_turns: 20             # in-process recent-turns cache size
+  rag_top_k: 5                 # top-K conversations per retrieval
+  rag_exclude_recent: 20       # don't surface RAG hits already in recent-turns window
+  facts_top_k: 3
+  write_queue_maxsize: 256     # background writer queue cap
+
+# ---------------------------------------------------------------------------
+# Web search (Brave + Jina Reader)
+# ---------------------------------------------------------------------------
+
+web_search:
+  enabled: true
+  brave_api_key_env: "ULTRON_BRAVE_API_KEY"  # secret stays in env, name only here
+
+  brave:
+    endpoint: "https://api.search.brave.com/res/v1/web/search"
+    count: 5
+    timeout_seconds: 8.0
+    rate_limit_seconds: 2.0    # min seconds between Brave calls (free-tier protection)
+
+  jina:
+    endpoint: "https://r.jina.ai/"
+    timeout_seconds: 15.0
+    max_fetch: 3               # how many ranked snippets get full-text fetches
+    max_bytes: 200000          # truncate giant pages so they don't blow the prompt
+
+  cache:
+    ttl_volatile_seconds: 86400      # 24 h — sports, weather, stocks
+    ttl_stable_seconds: 2592000      # 30 d — historical, definitional facts
+
+# ---------------------------------------------------------------------------
+# Addressing (warm/cold mode + classifier)
+# ---------------------------------------------------------------------------
+
+addressing:
+  follow_up_enabled: true
+  # CONFIRMED 30 s (NOT the Foundation prompt's 10 s) — user override per
+  # memory/feedback_ultron_extension.md. Don't re-tighten without asking.
+  warm_mode_duration_seconds: 30.0
+  default_uncertain_to_not_addressed: true   # when classifier is uncertain, stay silent
+  rule_confidence_threshold: 0.8             # rule verdicts above this short-circuit zero-shot
+  zero_shot_model: "google/flan-t5-small"
+  load_eagerly: true                         # load Flan-T5 at startup (~8 s) vs first ambiguous utt
+  log_path: "logs/addressing.jsonl"
+
+# ---------------------------------------------------------------------------
+# Coding orchestration (Claude Code subprocess via direct bridge)
+# ---------------------------------------------------------------------------
+
+coding:
+  enabled: true
+  bridge: "direct"             # direct = local Claude Code subprocess
+
+  mcp:
+    enabled: true
+    host: "127.0.0.1"
+    port: 19761
+    sse_path: "/sse"
+    log_path: "logs/mcp_calls.jsonl"
+    server_name: "ultron_coding"
+    clarification_timeout_seconds: 600   # how long Claude can block on a clarification
+
+  template_dir: "prompts/coding"
+  prompt_token_budget: 4000
+  prompt_chars_per_token: 4    # conservative chars/token estimate for budget enforcement
+
+  default_model: "haiku"
+  escalation_model: "sonnet"
+  escalation_threshold_default: 3       # haiku failures before escalating
+  escalation_threshold_escalation: 2    # sonnet failures before giving up
+
+  verification:
+    smoke_timeout_seconds: 5
+    test_timeout_seconds: 120
+    lint_timeout_seconds: 30
+
+  session_audit_dir: "logs/sessions"
+  token_budget_per_session: 100000
+  token_warning_threshold: 0.8 # warn user at 80% of budget
+  progress_timeout_seconds: 300 # warn if no events from Claude for 5 min
+
+  test_sandbox_path: "tests/coding/sandbox"
+
+  # Path to the Claude Code CLI on this machine. Override via ULTRON_CLAUDE_CLI env.
+  claude_cli: "${USERPROFILE}/AppData/Roaming/npm/claude.cmd"
+  claude_model: "haiku"
+
+  sandbox_root: "data/sandbox"
+  project_registry_path: "data/projects.json"
+  audit_log_path: "logs/coding_tasks.jsonl"
+  task_timeout_seconds: 1800   # 30 min — outer cap on a single Claude Code task
+  skip_permissions: true       # --dangerously-skip-permissions (sandbox is project-local)
+
+# ---------------------------------------------------------------------------
+# Context projections (Phase C / Phase 1; verified Foundation Phase 2)
+# ---------------------------------------------------------------------------
+
+projections:
+  tokenizer: "tiktoken_cl100k_base"
+  budgets:
+    clarification_context: 1500
+    status_delta: 600
+    adjustment_context: 1200
+    correction_context: 1500
+    completion_context: 800
+  truncation_warning_threshold: 0.95   # warn when result lands above this fraction of budget
+  log_truncations: true                # emit INFO log when truncations are applied
+
+# ---------------------------------------------------------------------------
+# TTS (Piper + RVC voice conversion)
+# ---------------------------------------------------------------------------
+
+tts:
+  piper_voice_path: "models/piper/en_US-ryan-medium.onnx"
+  piper_voice_config_path: "models/piper/en_US-ryan-medium.onnx.json"
+  output_sample_rate: 22050
+  sentence_flush_chars: ".!?\n"   # only strong terminators trigger Piper synthesis
+  inter_sentence_pause_ms: 250
+  piper_length_scale: 1.15        # >1.0 = slower / more deliberate
+  pause_ms: 180                    # silence between consecutive sentence clips
+  edge_fade_ms: 4                  # short fade prevents clicks at clip boundaries
+
+  rvc:
+    enabled: true
+    model_dir: "ultron_james_spader_mcu_6941"
+    model_path: "ultron_james_spader_mcu_6941/Ultron.pth"
+    index_path: "ultron_james_spader_mcu_6941/added_IVF301_Flat_nprobe_1_Ultron_v2.index"
+    support_dir: "models/rvc"
+    hubert_path: "models/rvc/hubert_base.pt"
+    rmvpe_path: "models/rvc/rmvpe.pt"
+    device: "cuda:0"
+    pitch_shift: -2              # semitones; lower = deeper
+    index_rate: 0.66             # 0-1; higher = stricter match to trained timbre
+    protect: 0.45                # 0-0.5; higher preserves Piper consonants (crisp s/t/k)
+    f0_method: "rmvpe"           # most accurate pitch extractor
+    rms_mix_rate: 0.35           # higher lets Piper loudness through; reads as more articulate
+    filter_radius: 1             # median filter on F0; lower preserves stressed-syllable detail
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+logging:
+  file: "logs/ultron.log"
+  level: "INFO"
+  format: "%(asctime)s | %(levelname)-7s | %(name)-24s | %(message)s"
+  datefmt: "%Y-%m-%d %H:%M:%S"
+
+# ---------------------------------------------------------------------------
+# Error phrases (Phase 4) — user-facing voice messages for dependency failures
+# ---------------------------------------------------------------------------
+# Each list is a phrase pool. Empty list disables narration for that
+# failure mode. Errors still log to logs/errors.jsonl regardless.
+# Phrases stay in Ultron's voice (precise, weighted, slightly menacing).
+
+# ---------------------------------------------------------------------------
+# Capability routing (Phase 5) — extends intent classification beyond coding
+# to browser/media/messaging/file/shell/hybrid; dispatches via OpenClaw.
+# OpenClaw is currently STUBBED — see openclaw section below.
+# ---------------------------------------------------------------------------
+
+routing:
+  llm_disambiguation_enabled: true
+  hybrid_task_decomposition_enabled: true
+  disambiguation_question_template: "Did you mean to {coding_interpretation}, or to {automation_interpretation}?"
+  routing_log_path: "logs/routing_decisions.jsonl"
+  classifier:
+    rule_based_first: true
+    llm_fallback_enabled: true
+    confidence_threshold: 0.7
+  stub_responses_enabled: true   # set false after OpenClaw integration completes
+
+# ---------------------------------------------------------------------------
+# OpenClaw peer Gateway (Phase 5 stub; filled in by OpenClaw integration phase)
+# ---------------------------------------------------------------------------
+
+openclaw:
+  enabled: false                      # flip to true once Gateway is up
+  gateway_url: null                   # e.g. "http://127.0.0.1:11280"
+  auth_token_env: "OPENCLAW_AUTH_TOKEN"
+  health_check_timeout_seconds: 30.0
+  health_check_interval_seconds: 60.0
+  fail_open: true                     # unreachable → in-character stub, not hard error
+  required_agent_id: "ultron"
+
+# ---------------------------------------------------------------------------
+# Error phrases (Phase 4) — user-facing voice messages for dependency failures
+# ---------------------------------------------------------------------------
+# Each list is a phrase pool. Empty list disables narration for that
+# failure mode. Errors still log to logs/errors.jsonl regardless.
+# Phrases stay in Ultron's voice (precise, weighted, slightly menacing).
+
+error_phrases:
+  qdrant_unavailable:
+    - "Memory's not responding right now."
+    - "I can't reach my long-term memory at the moment."
+  brave_unavailable:
+    - "Search isn't working right now."
+    - "I can't reach the web search service."
+  jina_unavailable:
+    - "I got search results but couldn't read the full pages."
+  anthropic_unavailable:
+    - "Anthropic's API isn't responding."
+    - "I've lost connection to Claude."
+  rvc_unavailable:
+    - "Voice conversion is offline. You'll hear me without the Ultron filter for now."
+  openclaw_unavailable:
+    - "I'd ask the gateway to handle that, but it's not responding right now."
+  piper_unavailable:
+    - "Speech output failed. I'm replying in text."
+  whisper_repeated_failures:
+    - "Speech recognition is having trouble."
+  addressing_classifier_failure:
+    - "Addressing detection is degraded; I'll respond to everything for now."
+  wake_word_model_failure:
+    - "Wake-word detection is offline. I'll listen continuously for now."
+  mcp_server_lost:
+    - "Lost connection to the coding orchestrator. The current task can't continue."
+  claude_code_subprocess_failed:
+    - "The coding subprocess failed. Want me to retry, or abandon the task?"
+  config_invalid:
+    - "Configuration is invalid. I can't start."

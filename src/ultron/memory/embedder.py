@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Iterable, List, Sequence
+from typing import Iterable, List, Optional, Sequence
 
 import numpy as np
 
-from config import settings
+from ultron.config import get_config
 from ultron.utils.logging import get_logger
 
 logger = get_logger("memory.embedder")
@@ -54,12 +54,13 @@ class HybridEmbedder:
 
     def __init__(
         self,
-        dense_model: str = settings.MEMORY_DENSE_MODEL,
-        sparse_model: str = settings.MEMORY_SPARSE_MODEL,
+        dense_model: Optional[str] = None,
+        sparse_model: Optional[str] = None,
         eager: bool = False,
     ) -> None:
-        self.dense_model_name = dense_model
-        self.sparse_model_name = sparse_model
+        emb_cfg = get_config().embeddings
+        self.dense_model_name = dense_model or emb_cfg.dense_model
+        self.sparse_model_name = sparse_model or emb_cfg.sparse_model
         self._dense = None
         self._sparse = None
         self._lock = threading.Lock()
@@ -106,7 +107,7 @@ class HybridEmbedder:
 
     @property
     def dim(self) -> int:
-        return settings.MEMORY_DENSE_DIM
+        return get_config().embeddings.dense_dim
 
     def encode_dense(self, texts: Iterable[str] | str) -> np.ndarray:
         """Return ``(N, 384)`` (or ``(384,)`` for a single string) float32 array."""

@@ -1,9 +1,11 @@
 """Abstract bridge to a Claude Code execution backend.
 
-Phase 6 ships with one concrete implementation -- :class:`DirectClaudeCodeBridge`,
-a local subprocess wrapper -- but the architecture is built so an
-``OpenClawBridge`` (HTTP -> Gateway -> exec tool) can drop in later
-without touching the rest of Ultron.
+Ships with one concrete implementation -- :class:`DirectClaudeCodeBridge`,
+a local subprocess wrapper. The abstraction is preserved for future
+backend variants (test mocks, alternate subprocess wrappers) but
+**OpenClaw is NOT a bridge alternative** — under the new architecture
+(Foundation Part 5) OpenClaw is a peer dispatcher reachable via
+``ultron.openclaw_routing``, NOT a swap-in for the coding bridge.
 
 Anything in :mod:`ultron.coding.runner` and the orchestrator's voice
 glue depends on the abstract :class:`CodingBridge` and the standardized
@@ -12,7 +14,7 @@ glue depends on the abstract :class:`CodingBridge` and the standardized
 translates whatever its backend produces into ``TaskEvent`` instances.
 
 Event vocabulary (kept deliberately small so it's easy to translate
-either subprocess output or a Gateway event stream into):
+subprocess output into):
 
   * ``status``      -- coarse stage: "starting", "running", "finishing"
   * ``text``        -- assistant text delta (incremental)
@@ -23,9 +25,6 @@ either subprocess output or a Gateway event stream into):
   * ``error``       -- a fatal-to-the-task error
   * ``complete``    -- the task finished; ``summary`` carries the model's
                       final text
-
-Direct and OpenClaw bridges produce the same event types. The runner
-doesn't care which one fired the event.
 """
 
 from __future__ import annotations
@@ -256,7 +255,7 @@ class CodingBridge(ABC):
 
     Concrete bridges:
       * :class:`ultron.coding.direct_bridge.DirectClaudeCodeBridge`
-      * (future) ``ultron.coding.openclaw_bridge.OpenClawBridge``
+      * Test mocks (e.g. ``ScriptedClaudeBridge`` in tests/coding/mock_bridge.py)
     """
 
     @abstractmethod
@@ -267,8 +266,7 @@ class CodingBridge(ABC):
 
     @abstractmethod
     def name(self) -> str:
-        """Short backend name for logs / status messages, e.g. ``"direct"``
-        or ``"openclaw"``."""
+        """Short backend name for logs / status messages, e.g. ``"direct"``."""
 
 
 # ---------------------------------------------------------------------------
