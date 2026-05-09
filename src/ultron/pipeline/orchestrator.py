@@ -211,6 +211,11 @@ class Orchestrator:
                 resolver=resolver,
                 sandbox_root=settings.CODING_SANDBOX_PATH,
                 coordinator=self.coding_coordinator,
+                # 4B plan: voice-driven model swap. The voice controller
+                # calls ``self.llm.reload_for_preset(...)`` on a
+                # MODEL_SWITCH intent. Hot-reload happens in the same
+                # process; no orchestrator restart required.
+                llm_engine=self.llm,
             )
             logger.info(
                 "Coding voice ready (bridge=%s, sandbox=%s, coordinator=%s)",

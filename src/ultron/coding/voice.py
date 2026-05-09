@@ -81,6 +81,7 @@ class CapabilityVoiceController:
         resolver: ProjectResolver,
         sandbox_root: Path = settings.CODING_SANDBOX_PATH,
         coordinator=None,
+        llm_engine=None,
     ) -> None:
         self.runner = runner
         self.registry = registry
@@ -88,6 +89,10 @@ class CapabilityVoiceController:
         self.sandbox_root = Path(sandbox_root)
         self.sandbox_root.mkdir(parents=True, exist_ok=True)
         self.coordinator = coordinator
+        # 4B plan voice-driven swap — when set, MODEL_SWITCH intents
+        # call ``llm_engine.reload_for_preset(target)``. None disables
+        # the feature (returns a clear voice error rather than crash).
+        self.llm_engine = llm_engine
         self._lock = threading.Lock()
         # State machine for completion-push: when has_active_task() goes
         # from True to False, we capture the completion narration so the
@@ -457,6 +462,80 @@ class CapabilityVoiceController:
             self._was_active = True
             self._pending_completion = None
 
+    # --- 4B plan: voice-driven LLM model switch ----------------------------
+
+    def _handle_model_switch(self, routing_intent) -> "VoiceResponse":
+        """Handle a MODEL_SWITCH routing intent.
+
+        Calls ``self.llm_engine.reload_for_preset(target)`` and shapes
+        the result into a single VoiceResponse. When ``llm_engine`` is
+        None (e.g. tests that don't construct a real engine), reports
+        the misconfiguration via voice rather than crashing.
+        """
+        from ultron.openclaw_routing import get_routing_log
+
+        target = None
+        if routing_intent.model_switch_intent is not None:
+            target = routing_intent.model_switch_intent.target_preset
+
+        if target is None:
+            get_routing_log().record(
+                routing_intent,
+                handler="voice.model_switch",
+                outcome="failed",
+                extra={"error": "no target preset on intent"},
+            )
+            return VoiceResponse(
+                text="I couldn't tell which model you meant.",
+                handled=True,
+            )
+
+        if self.llm_engine is None:
+            get_routing_log().record(
+                routing_intent,
+                handler="voice.model_switch",
+                outcome="failed",
+                extra={"error": "llm_engine not wired", "target": target},
+            )
+            return VoiceResponse(
+                text=(
+                    "I can't switch models — my engine isn't wired to "
+                    "accept reloads. Restart Ultron with the new preset "
+                    "instead."
+                ),
+                handled=True,
+            )
+
+        # Pretty label for the spoken response — "the 4B" / "the 9B".
+        label = self._preset_voice_label(target)
+
+        ok, msg = self.llm_engine.reload_for_preset(target)
+        get_routing_log().record(
+            routing_intent,
+            handler="voice.model_switch",
+            outcome="reloaded" if ok else "failed",
+            extra={"target": target, "engine_message": msg},
+        )
+
+        if ok:
+            if "already on" in msg:
+                voice = f"I'm already running {label}."
+            else:
+                voice = f"Switched to {label}."
+        else:
+            voice = (
+                f"I couldn't switch to {label}. "
+                f"Reason: {msg}."
+            )
+        return VoiceResponse(text=voice, handled=True)
+
+    @staticmethod
+    def _preset_voice_label(preset: str) -> str:
+        return {
+            "qwen3.5-9b": "the 9B",
+            "qwen3.5-4b": "the 4B",
+        }.get(preset, preset)
+
     # --- Phase 5 capability dispatch ---------------------------------------
 
     def handle_capability_intent(self, routing_intent) -> Optional[VoiceResponse]:
@@ -488,6 +567,16 @@ class CapabilityVoiceController:
                 outcome="passthrough",
             )
             return None
+
+        # 4B plan — voice-driven model swap. Handled in-process by
+        # calling reload_for_preset on the live LLMEngine. The reload
+        # blocks (~1-3s for 4B, ~3-5s for 9B) so the user hears a brief
+        # silence then a confirmation. The orchestrator's barge-in
+        # semantics are unaffected: the wake word will still fire on
+        # subsequent utterances even if the user changes their mind
+        # mid-load.
+        if kind == RoutingIntentKind.MODEL_SWITCH:
+            return self._handle_model_switch(routing_intent)
 
         # Coding kinds — delegate to the existing utterance pipeline.
         coding_kinds = {

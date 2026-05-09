@@ -233,7 +233,43 @@ Verification:
   test passed unchanged after Stages A–G.
 
 **On-the-fly switching infrastructure (4B plan late addition):**
-The flip is now a single switch via any of three paths:
+The flip is now a single switch via any of **four** paths:
+
+```text
+4. Voice command (no keyboard / file edit needed):
+   "Ultron, switch to the 4B"
+   "Ultron, use the 9B model"
+   "Ultron, load 4B"
+   "Ultron, swap to nine B"
+```
+
+The voice command:
+1. Routes to `RoutingIntentKind.MODEL_SWITCH` (rule-based classifier;
+   54 patterns covered including Whisper homophones like "for B"
+   for "four B").
+2. The `CapabilityVoiceController` calls
+   `LLMEngine.reload_for_preset(target)`, which builds the new
+   `Llama` instance BEFORE releasing the old one (failure-safe — a
+   missing GGUF leaves the engine intact). On success the env var
+   `ULTRON_LLM_PRESET` is updated so subsequent reload paths agree;
+   in-memory history is cleared (different `n_ctx`); the cancel
+   flag is reset.
+3. Ultron speaks the result: `"Switched to the 4B."` or
+   `"I couldn't switch to the 4B. Reason: …"`.
+
+Mid-clarification utterances are suppressed — model-swap commands
+during an active clarification dialogue would interrupt work-in-
+progress, so the classifier requires `has_pending_clarification ==
+False` to fire MODEL_SWITCH. Active coding tasks DO permit a swap
+(the user explicitly asked).
+
+The reload blocks ~1.7 s for 4B, ~3–5 s for 9B (in-process load
+times measured in Stage D). VRAM peaks briefly at `old + new` size
+during the swap (e.g. 4B → 9B: 2.5 + 5.3 = 7.8 GB) before the old
+instance is released — comfortably under the 11.5 GB cap.
+
+The other three paths (file edit, env var, swap helper) remain
+available for non-voice contexts:
 
 ```yaml
 # 1. Edit config.yaml — ONE line

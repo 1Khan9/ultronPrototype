@@ -41,6 +41,9 @@ class RoutingIntentKind(str, Enum):
     # Hybrid (coding + automation; needs decomposition)
     HYBRID_TASK = "hybrid_task"
 
+    # Self-management — voice-driven runtime model swap. 4B plan addition.
+    MODEL_SWITCH = "model_switch"
+
 
 # ---------------------------------------------------------------------------
 # Per-category structured intents (for openclaw-bound ones)
@@ -91,6 +94,20 @@ class ShellOpIntent:
 
 
 @dataclass
+class ModelSwitchIntent:
+    """Voice-driven LLM preset switch.
+
+    The orchestrator's voice controller picks this up, calls
+    :meth:`LLMEngine.reload_for_preset` with ``target_preset``, and
+    speaks an acknowledgment + completion. The 9B GGUF stays on disk
+    for the reverse swap. 4B plan addition — see
+    docs/4b_optimization_plan.md.
+    """
+    target_preset: str  # e.g. "qwen3.5-4b" / "qwen3.5-9b"
+    raw_text: str = ""
+
+
+@dataclass
 class HybridSubtask:
     """One step in a HYBRID_TASK decomposition."""
     order: int
@@ -128,6 +145,7 @@ class RoutingIntent:
     coding_intent: Optional[Any] = None  # avoid hard import; Any = CodingIntent
     automation_intent: Optional[AutomationIntent] = None
     subtasks: List[HybridSubtask] = field(default_factory=list)
+    model_switch_intent: Optional[ModelSwitchIntent] = None  # MODEL_SWITCH only
 
     # Disambiguation: when the rule-based + LLM disambiguator can't decide,
     # the orchestrator asks the user a clarifying question.

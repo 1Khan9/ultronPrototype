@@ -34,6 +34,7 @@ from ultron.openclaw_routing.intents import (
     FileOpIntent,
     MediaGenIntent,
     MessagingIntent,
+    ModelSwitchIntent,
     RoutingIntent,
     RoutingIntentKind,
     ShellOpIntent,
@@ -53,6 +54,50 @@ _CODING_KIND_MAP = {
     CodingIntentKind.MID_SESSION_ADJUSTMENT: RoutingIntentKind.MID_SESSION_ADJUSTMENT,
     CodingIntentKind.CLARIFICATION_RESPONSE: RoutingIntentKind.CLARIFICATION_RESPONSE,
 }
+
+
+# ---------------------------------------------------------------------------
+# MODEL_SWITCH — voice-driven LLM preset swap (4B plan addition).
+#
+# Conservative regex: requires an action verb + an unambiguous model
+# identifier so passing remarks like "the 4B should be faster" don't
+# trigger an unwanted swap. Whisper homophones ("for B" / "four B")
+# and spacing variants ("4 B", "4B", "4-B") are accepted because STT
+# transcription of spoken letters/digits is inconsistent.
+# ---------------------------------------------------------------------------
+
+
+_MODEL_SWITCH_VERBS = (
+    r"switch(?:\s+over)?|swap(?:\s+over)?|change(?:\s+over)?|"
+    r"go|move|use|load|run|activate|engage|select"
+)
+_MODEL_SWITCH_4B_TOKEN = r"(?:4\s*[Bb]|four\s*[Bb]|for\s*[Bb]|4\s*-\s*[Bb])"
+_MODEL_SWITCH_9B_TOKEN = r"(?:9\s*[Bb]|nine\s*[Bb]|9\s*-\s*[Bb])"
+_MODEL_SWITCH_TOKEN = (
+    rf"(?P<model>{_MODEL_SWITCH_4B_TOKEN}|{_MODEL_SWITCH_9B_TOKEN})"
+)
+_MODEL_SWITCH_PATTERNS = re.compile(
+    rf"\b(?:{_MODEL_SWITCH_VERBS})\s+(?:over\s+)?(?:to\s+|on\s+to\s+|onto\s+)?"
+    rf"(?:the\s+)?{_MODEL_SWITCH_TOKEN}"
+    r"(?:\s+(?:model|llm|qwen))?\b",
+    re.IGNORECASE,
+)
+
+
+def _resolve_model_switch_target(matched_token: str) -> str:
+    """Map the matched-text variant back to the canonical preset name.
+
+    ``matched_token`` is the contents of the ``(?P<model>...)`` group —
+    e.g. "4B", "four B", "9 b", "for B". Returns one of the canonical
+    preset names: ``"qwen3.5-4b"`` / ``"qwen3.5-9b"``.
+    """
+    t = matched_token.lower().replace("-", "").replace(" ", "")
+    if t.startswith("4") or t.startswith("four") or t.startswith("for"):
+        return "qwen3.5-4b"
+    if t.startswith("9") or t.startswith("nine"):
+        return "qwen3.5-9b"
+    # Defensive — regex shouldn't allow other tokens through.
+    raise ValueError(f"Unrecognised model token: {matched_token!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -276,6 +321,26 @@ def classify_routing(
             reason=coding.reason,
             coding_intent=coding,
         )
+
+    # 1.5) MODEL_SWITCH — must come BEFORE hybrid / automation rules so
+    #      "switch to 4B" doesn't get pulled into a different category.
+    #      We ignore these mid-task: an active coding task with a
+    #      pending clarification has higher precedence; honoring them
+    #      here would interrupt work-in-progress mid-flight.
+    if not has_pending_clarification:
+        m = _MODEL_SWITCH_PATTERNS.search(text)
+        if m:
+            return RoutingIntent(
+                kind=RoutingIntentKind.MODEL_SWITCH,
+                raw_text=text,
+                confidence=0.95,
+                source="rule",
+                reason="model-switch pattern matched",
+                model_switch_intent=ModelSwitchIntent(
+                    target_preset=_resolve_model_switch_target(m.group("model")),
+                    raw_text=text,
+                ),
+            )
 
     # 2) HYBRID signals next — these often contain coding-trigger keywords
     #    ("write a script", "build a tool") so we have to win the race

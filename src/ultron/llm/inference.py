@@ -178,6 +178,25 @@ class LLMEngine:
         n_ctx: Optional[int],
         n_gpu_layers: Optional[int],
     ) -> None:
+        llama, resolved_path = self._build_llama(cfg, model_path, n_ctx, n_gpu_layers)
+        self._llm = llama
+        self.model_path = resolved_path
+
+    def _build_llama(
+        self,
+        cfg,
+        model_path: Optional[Path],
+        n_ctx: Optional[int],
+        n_gpu_layers: Optional[int],
+    ) -> "tuple":
+        """Construct + return a fresh ``Llama`` instance per ``cfg``.
+
+        Returns ``(llama, resolved_model_path)``. Does NOT mutate
+        ``self`` — used by both ``_init_in_process`` (sets ``self._llm``
+        from the result) and ``reload_for_preset`` (constructs the new
+        instance before releasing the old one so VRAM is recoverable
+        on failure).
+        """
         from llama_cpp import Llama
 
         if model_path is None:
@@ -196,7 +215,6 @@ class LLMEngine:
                 f"Run `python scripts/download_models.py` first."
             )
 
-        self.model_path = Path(model_path)
         flash_attn = cfg.flash_attn
         kv_cache_type = cfg.kv_cache_type
         logger.info(
@@ -206,7 +224,7 @@ class LLMEngine:
         )
         t0 = time.monotonic()
         try:
-            self._llm = Llama(
+            llama = Llama(
                 model_path=str(model_path),
                 n_ctx=n_ctx,
                 n_gpu_layers=n_gpu_layers,
@@ -221,9 +239,12 @@ class LLMEngine:
         except Exception as e:
             logger.error("LLM load failed: %s", e)
             raise
-        logger.info("LLM ready in %.2fs (memory=%s)",
-                    time.monotonic() - t0,
-                    "on" if self._memory is not None else "off")
+        logger.info(
+            "LLM ready in %.2fs (memory=%s)",
+            time.monotonic() - t0,
+            "on" if self._memory is not None else "off",
+        )
+        return llama, Path(model_path)
 
     @staticmethod
     def _maybe_build_persona_loader(cfg):
@@ -420,6 +441,99 @@ class LLMEngine:
         finishes — but the iterator will exit immediately afterward.
         """
         self._cancel.set()
+
+    # --- 4B plan: voice-driven on-the-fly model reload ---------------------
+
+    def reload_for_preset(self, preset: str) -> "tuple[bool, str]":
+        """Hot-swap the loaded LLM to ``preset`` without restarting Ultron.
+
+        Implementation strategy: load the NEW ``Llama`` instance FIRST,
+        then release the old one only on success. This means a failed
+        swap (missing GGUF, invalid preset) leaves the engine in its
+        original working state — no broken-pipeline window.
+
+        Cost: peak VRAM during the swap is roughly ``old + new`` GGUF
+        size, briefly. For 4B (2.5 GB) ↔ 9B (5.3 GB) on a 12 GB card,
+        7.8 GB peak is comfortably under the 11.5 GB hard cap.
+
+        Returns ``(success, message)``. On failure, ``self._llm`` and
+        ``self.model_path`` are unchanged. On success, history is
+        reset (different model = different context budget; carrying
+        over recent turns risks exceeding the new ``n_ctx``).
+
+        Only supports ``runtime == "in_process"``. The HTTP-server
+        path requires restarting llama-cpp-server with the new ``--from-config``
+        flags — that's a separate orchestrator-level concern.
+        """
+        from ultron.config import LLM_PRESETS, get_config, reload_config
+
+        if self._runtime != "in_process":
+            return False, "reload_for_preset only supports in_process runtime"
+        if preset not in LLM_PRESETS and preset != "custom":
+            return False, f"unknown preset {preset!r}"
+
+        current = get_config().llm.preset
+        if current == preset:
+            return True, f"already on {preset}"
+
+        # Make the env override authoritative for the upcoming reload —
+        # this is the same path the user would take from the shell.
+        # Save originals so we can restore on failure.
+        prior_env_preset = os.environ.get("ULTRON_LLM_PRESET")
+        prior_env_model = os.environ.get("ULTRON_LLM_MODEL_PATH")
+        os.environ["ULTRON_LLM_PRESET"] = preset
+        # A stale model-path override would clobber the preset's table.
+        os.environ.pop("ULTRON_LLM_MODEL_PATH", None)
+
+        # Cancel any in-flight stream so the old generator's clean-up
+        # finishes before we drop the Llama instance.
+        self._cancel.set()
+
+        try:
+            new_cfg = reload_config().llm
+            new_llm, new_path = self._build_llama(
+                new_cfg, model_path=None, n_ctx=None, n_gpu_layers=None,
+            )
+        except Exception as e:
+            # Restore env (so a subsequent get_config() doesn't drift)
+            # and reload to recover the prior config.
+            if prior_env_preset is None:
+                os.environ.pop("ULTRON_LLM_PRESET", None)
+            else:
+                os.environ["ULTRON_LLM_PRESET"] = prior_env_preset
+            if prior_env_model is not None:
+                os.environ["ULTRON_LLM_MODEL_PATH"] = prior_env_model
+            try:
+                reload_config()
+            except Exception:
+                pass  # don't compound failures
+            self._cancel.clear()
+            logger.error("reload_for_preset(%s) failed: %s", preset, e)
+            return False, f"failed to load {preset}: {e}"
+
+        # Success — release old, swap in new.
+        old_llm = self._llm
+        self._llm = new_llm
+        self.model_path = new_path
+        del old_llm
+        try:
+            import gc
+            gc.collect()
+        except Exception:
+            pass
+        try:  # pragma: no cover — torch import may fail in CPU-only test envs
+            import torch  # noqa: WPS433
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+        # Reset history — different n_ctx + different tokenizer state.
+        # Memory turns persist on disk; only the in-memory deque clears.
+        self._history.clear()
+        self._cancel.clear()
+        logger.info("reload_for_preset(%s) succeeded; model=%s", preset, new_path)
+        return True, f"loaded {preset}"
 
     def generate(self, user_message: str, *, enable_thinking: Optional[bool] = None) -> str:
         """Blocking generation. Returns the full response string.

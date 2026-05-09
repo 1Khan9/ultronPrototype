@@ -612,6 +612,8 @@ pre-flight gate's uncertainty signals.
   - `_resolve_system_prompt()` (Phase 1) — sources from `PersonaLoader.get_system_prompt("user_facing")` when `llm.persona.source == "workspace"` (default), else `cfg.system_prompt`. Falls back to config when workspace is empty.
   - `_http_chat_completion(...)` / `_http_stream(...)` — OpenAI-compat HTTP client (uses `requests`, SSE for streaming, cancel-aware).
   - `_chat_completion_kwargs(_llm_cfg, enable_thinking, *, stream)` (4B plan Stage F) — static helper that builds the kwargs dict for `Llama.create_chat_completion`. When `enable_thinking` is `None` (default), no `chat_template_kwargs` is emitted (back-compat). When `True` / `False`, sets `chat_template_kwargs={"enable_thinking": <value>}` — Qwen3.5's template toggle that suppresses or requests the `<think>...</think>` block. Applied to both in-process and HTTP runtimes via the same helper.
+  - `_build_llama(cfg, model_path, n_ctx, n_gpu_layers) -> (Llama, Path)` (4B plan voice-swap) — pure constructor that builds + returns a fresh `Llama` instance per `cfg`. Does NOT mutate `self`. Used by `_init_in_process` and `reload_for_preset`.
+  - `reload_for_preset(preset: str) -> (bool, str)` (4B plan voice-swap) — hot-swap the loaded LLM to `preset` without restarting Ultron. Builds the new `Llama` FIRST so a failed swap (missing GGUF, invalid preset) leaves the engine in its working state. On success: history cleared, `ULTRON_LLM_PRESET` env updated, stale `ULTRON_LLM_MODEL_PATH` cleared. On failure: env vars restored. Idempotent (`already on X` returns success without rebuild). `in_process` runtime only.
   - `generate(user_message, *, enable_thinking=None)` and `generate_stream(user_message, *, enable_thinking=None)` (4B plan Stage F) — per-call thinking mode parameter.
 
 **In:** user text + (optional) `ConversationMemory` for RAG. **Out:** generated text.
@@ -802,7 +804,7 @@ pre-flight gate's uncertainty signals.
 
 #### `coding/voice.py`
 - `class VoiceResponse` — dataclass: text, handled, cancelled
-- `class CapabilityVoiceController` (Phase 5 rename; alias = CodingVoiceController)
+- `class CapabilityVoiceController` (Phase 5 rename; alias = CodingVoiceController). `__init__` accepts an optional `llm_engine` (the live `LLMEngine`) so MODEL_SWITCH intents can call `llm_engine.reload_for_preset(...)` for in-process model hot-swap.
   - `pending_completion()` / `pending_clarifications()` / `pending_budget_warning()`
   - `has_pending_clarification() -> bool`
   - `handle_utterance(text) -> Optional[VoiceResponse]` — coding-only (delegated by capability dispatch)
@@ -811,7 +813,7 @@ pre-flight gate's uncertainty signals.
 ### `src/ultron/openclaw_routing/` (Phase 5)
 
 #### `openclaw_routing/intents.py`
-- `class RoutingIntentKind(str, Enum)` — 12 values: CONVERSATIONAL, CODE_TASK, PROGRESS_QUERY, CANCEL, MID_SESSION_ADJUSTMENT, CLARIFICATION_RESPONSE, BROWSER_AUTOMATION, MEDIA_GENERATION, MESSAGING, FILE_OPERATION, SHELL_OPERATION, HYBRID_TASK
+- `class RoutingIntentKind(str, Enum)` — 13 values: CONVERSATIONAL, CODE_TASK, PROGRESS_QUERY, CANCEL, MID_SESSION_ADJUSTMENT, CLARIFICATION_RESPONSE, BROWSER_AUTOMATION, MEDIA_GENERATION, MESSAGING, FILE_OPERATION, SHELL_OPERATION, HYBRID_TASK, MODEL_SWITCH (4B plan voice-driven LLM swap)
 - Per-category dataclasses: `BrowserIntent`, `MediaGenIntent`, `MessagingIntent`, `FileOpIntent`, `ShellOpIntent`
 - `HybridSubtask` — dataclass: order, type, subtype, description
 - `RoutingIntent` — top-level dataclass: kind, raw_text, confidence, source, reason, coding_intent, automation_intent, subtasks, needs_user_clarification, clarification_question
@@ -1119,7 +1121,7 @@ All scripts assume venv active in main checkout (`C:\STC\ultronPrototype`). Work
 
 ### `tests/conftest.py` — Path setup so `from ultron.*` works.
 
-### Default suite (no env gate) — 796 tests, ~30 s wall
+### Default suite (no env gate) — 870 tests, ~30 s wall
 
 **Top-level (~25 files):**
 - `test_addressing.py` — rule-based addressing classifier
@@ -1155,6 +1157,9 @@ All scripts assume venv active in main checkout (`C:\STC\ultronPrototype`). Work
 - `test_llm_enable_thinking.py` (11, 4B plan Stage F) — `enable_thinking` parameter plumbing: helper kwargs, in-process generate/generate_stream pass-through, HTTP payload pass-through, back-compat when default
 - `test_llm_rag_position.py` (7, 4B plan Stage G) — `_build_messages` honors `llm.rag.position`: recency mode prepends to user message, system mode folds into system message, no-snippets/retrieve-failure fallback, helper invariants
 - `test_on_the_fly_preset_switching.py` (16, 4B plan Stage H infra) — `ULTRON_LLM_PRESET` env-var override (clears overrides by default, opt-in keep-overrides flag), minimal-YAML preset-only config, `check_vram._resolve_target_mb` (table + CLI override + env var + unknown fallback), `_format_line` shows preset label, `swap_llm_preset._rewrite_preset` (basic / preserves comment / first-match / missing-line raises)
+- `tests/routing/test_model_switch_classifier.py` (54, 4B plan voice-swap) — classifier maps "switch to 4B/9B/four B/for B/nine B/4 B/4-B" + verb variants (switch/swap/change/use/load/go/move/activate/engage/run/select) to `RoutingIntentKind.MODEL_SWITCH`; rejects passing mentions ("the 4B is faster") and conversational utterances; pending clarification suppresses (mid-dialogue safety); active coding task does not block; `_resolve_model_switch_target` helper
+- `test_llm_reload_for_preset.py` (9, 4B plan voice-swap) — `LLMEngine.reload_for_preset` rejects http_server runtime + unknown preset; idempotent on same-preset; success path replaces `_llm` and clears history; sets `ULTRON_LLM_PRESET` env + clears stale `ULTRON_LLM_MODEL_PATH`; failure path keeps old engine, restores env vars (whether they were set or unset originally)
+- `test_voice_model_switch.py` (11, 4B plan voice-swap) — `CapabilityVoiceController._handle_model_switch` calls `llm_engine.reload_for_preset(target)`, speaks "Switched to the 4B/9B" on success, "I'm already running the X" on idempotent, "I couldn't switch ..." on failure with reason; "I can't switch models — engine isn't wired" when llm_engine is None; missing payload says "couldn't tell which model"; end-to-end classifier-then-controller for utterances
 
 **`tests/coding/`:**
 - `mock_bridge.py` — `ScriptedClaudeBridge` + `ClaudeScript` DSL
