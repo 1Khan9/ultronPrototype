@@ -115,7 +115,9 @@ For the current decisions and Foundation phase status see
 │       │   └── whisper_engine.py   ← WhisperEngine (faster-whisper, CUDA fp16)
 │       │
 │       ├── llm/
-│       │   └── inference.py        ← LLMEngine (llama-cpp-python; Qwen3.5-9B Q4_K_M)
+│       │   ├── inference.py        ← LLMEngine (llama-cpp-python; Qwen3.5-4B Q4_K_M active, 9B kept; reload_for_preset for hot swap)
+│       │   ├── compression.py      ← 4B plan Item 4: heuristic + perplexity-scorer-hook compressor for RAG/web/history (default OFF)
+│       │   └── self_consistency.py ← 4B plan Item 6: N-sample majority-vote driver + aggregators (text/JSON/label) (default OFF)
 │       │
 │       ├── memory/                 ← Phase 3 (original) Qdrant memory
 │       │   ├── embedder.py         ← HybridEmbedder (FastEmbed dense + BM25 sparse)
@@ -136,6 +138,7 @@ For the current decisions and Foundation phase status see
 │       ├── coding/                 ← Phase A coding orchestration + Coding Addendum
 │       │   ├── audit.py            ← SessionAuditWriter (per-session JSONL)
 │       │   ├── bridge.py           ← Abstract CodingBridge + TaskEvent vocabulary
+│       │   ├── canonical_monitor.py ← 4B plan Item 7: per-session tool-call canonical-path monitor (default OFF)
 │       │   ├── coordinator.py      ← ConversationCoordinator (clarification + correction loops)
 │       │   ├── direct_bridge.py    ← DirectClaudeCodeBridge (claude --print --stream-json)
 │       │   ├── intent.py           ← Coding-pipeline intent classifier (CODE_TASK etc.)
@@ -147,18 +150,20 @@ For the current decisions and Foundation phase status see
 │       │   ├── session.py          ← ProjectSession state model + SessionStore
 │       │   ├── templates.py        ← TemplateRenderer (Jinja2 prompts + budget enforcement)
 │       │   ├── verification.py     ← Verifier (six checks + corrective loop)
-│       │   └── voice.py            ← CapabilityVoiceController (Phase 5 rename; alias preserved)
+│       │   └── voice.py            ← CapabilityVoiceController (handles MODEL_SWITCH for voice-driven LLM swap; Phase 5 rename; alias preserved)
 │       │
 │       ├── pipeline/
 │       │   └── orchestrator.py     ← Main event loop / state machine
 │       │
 │       ├── openclaw_routing/       ← Phase 5 capability-routing layer
-│       │   ├── classifier.py       ← classify_routing() - top-level intent classifier
+│       │   ├── block_and_revise.py ← 4B plan Item 8: ToolCallValidator pre-flight gate on OpenClaw tool calls (default OFF; fails open)
+│       │   ├── classifier.py       ← classify_routing() - top-level intent classifier (incl. MODEL_SWITCH for voice-driven LLM swap)
 │       │   ├── decision_log.py     ← RoutingDecisionLog (logs/routing_decisions.jsonl)
-│       │   ├── decomposer.py       ← HybridTaskDecomposer (Qwen-driven JSON output)
-│       │   ├── disambiguator.py    ← IntentDisambiguator (CODING/AUTOMATION/HYBRID/UNCLEAR)
+│       │   ├── decomposer.py       ← HybridTaskDecomposer (Qwen-driven JSON output; opt-in self-consistency)
+│       │   ├── disambiguator.py    ← IntentDisambiguator (CODING/AUTOMATION/HYBRID/UNCLEAR; opt-in IRMA enrichment)
 │       │   ├── dispatcher.py       ← OpenClawDispatcher (5 stub methods)
-│       │   ├── intents.py          ← RoutingIntentKind enum, RoutingIntent + per-category dataclasses
+│       │   ├── intents.py          ← RoutingIntentKind enum (incl. MODEL_SWITCH), RoutingIntent + per-category dataclasses (incl. ModelSwitchIntent)
+│       │   ├── irma.py             ← 4B plan Item 5: InputReformulator + ReformulationContext (default OFF)
 │       │   └── runner.py           ← AutomationTaskRunner (mirror of CodingTaskRunner)
 │       │
 │       ├── openclaw_bridge/        ← OpenClaw integration Phase 1 + 3 foundations

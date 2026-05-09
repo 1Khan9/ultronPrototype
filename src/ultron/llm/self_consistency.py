@@ -246,11 +246,26 @@ def _extract_first_json(text: str) -> Optional[Any]:
         return None
 
 
+def json_winner_aggregator(samples: List[str]) -> "tuple[str, Dict[str, int]]":
+    """Adapter: ``run_self_consistency`` expects ``(answer:str, votes)``;
+    ``majority_vote_json`` returns ``(parsed_dict|None, votes)``.
+
+    Re-serialise the winning dict so callers can re-parse it with the
+    same code path that handles a single greedy call. Empty when no
+    sample parsed.
+    """
+    parsed_winner, votes = majority_vote_json(samples)
+    if parsed_winner is None:
+        return "", votes
+    return json.dumps(parsed_winner), votes
+
+
 __all__ = [
     "ConsistencyResult",
     "should_apply_self_consistency",
     "majority_vote_text",
     "majority_vote_json",
     "majority_vote_label",
+    "json_winner_aggregator",
     "run_self_consistency",
 ]

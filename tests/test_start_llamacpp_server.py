@@ -133,18 +133,19 @@ def _args_with_argv(launcher, argv: list[str]):
 
 def test_from_config_4b_overlay(launcher) -> None:
     """Overlay simulates a config with preset='qwen3.5-4b': model points
-    at the 4B GGUF, n_ctx=16384, draft_model points at 0.8B."""
+    at the 4B GGUF, n_ctx=8192 (matches the live preset), draft_model
+    points at 0.8B."""
     argv = ["--from-config"]
     args = _args_with_argv(launcher, argv)
     overlay: dict[str, Any] = {
         "model": "/abs/models/Qwen3.5-4B-Q4_K_M.gguf",
-        "n_ctx": 16384,
+        "n_ctx": 8192,
         "model_draft": "/abs/models/Qwen3.5-0.8B-Q4_K_M.gguf",
     }
     kwargs = launcher._resolve_kwargs(args, overlay=overlay)
     # model + draft come from overlay; n_ctx too
     assert kwargs["model"].endswith("Qwen3.5-4B-Q4_K_M.gguf")
-    assert kwargs["n_ctx"] == 16384
+    assert kwargs["n_ctx"] == 8192
     assert kwargs["draft_model"].endswith("Qwen3.5-0.8B-Q4_K_M.gguf")
     assert kwargs["draft_model_num_pred_tokens"] == 8
 

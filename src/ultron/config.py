@@ -258,7 +258,14 @@ LLM_PRESETS: dict[str, dict[str, Any]] = {
     },
     "qwen3.5-4b": {
         "model_path": "models/Qwen3.5-4B-Q4_K_M.gguf",
-        "n_ctx": 16384,
+        # n_ctx pinned at 8192 to match the 9B-era voice-path TTFT
+        # baseline. The 4B + 16384 ctx the original plan recipe
+        # specified is for the HTTP-server launcher (`--n-ctx 16384`),
+        # not the in-process voice path — a larger context measurably
+        # raises TTFT (86 ms → 125 ms in live measurement) because the
+        # KV cache is twice as big. Users who want the 16384 context
+        # can override `n_ctx: 16384` explicitly in config.yaml.
+        "n_ctx": 8192,
         "draft_model_path": "models/Qwen3.5-0.8B-Q4_K_M.gguf",
     },
 }

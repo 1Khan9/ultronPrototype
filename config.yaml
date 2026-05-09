@@ -99,6 +99,25 @@ llm:
   #              +10-20% recall on the 4B per the plan). Default.
   rag:
     position: "recency"
+  # 4B plan Item 4 — context compression for RAG / web before injection.
+  # Heuristic compressor (no extra model). Default ON; flip to false to
+  # disable globally. Per-surface flags below control individual surfaces.
+  # See docs/4b_optimization_plan.md.
+  compression:
+    enabled: true
+    target_ratio: 1.5
+    compress_rag: true
+    compress_web: true
+    compress_history: false   # off — has user voice; mangling risk
+  # 4B plan Item 6 — self-consistency on high-stakes projection-driven
+  # calls (decomposer + web-gating preflight). Voice hot path is NOT
+  # routed through this; only off-hot-path calls pay the 3x token cost.
+  # See docs/4b_optimization_plan.md.
+  self_consistency:
+    enabled: true
+    n: 3
+    temperature: 0.8
+    disabled_sites: []        # per-site opt-out list, e.g. ["decomposer"]
   gpu_layers: -1               # -1 = all layers on GPU
   default_temperature: 0.7
   default_top_p: 0.9
@@ -197,6 +216,17 @@ addressing:
 coding:
   enabled: true
   bridge: "direct"             # direct = local Claude Code subprocess
+
+  # 4B plan Item 7 — canonical-path monitor for coding sessions.
+  # Aborts a session when too many off-canonical tool calls land in the
+  # early window. Conservative defaults — false-positive aborts are
+  # real, so the threshold is loose. Default ON; the abort is logged +
+  # voice-narrated, then the user can re-issue with a clearer
+  # description.
+  canonical_monitor:
+    enabled: true
+    off_canonical_threshold: 3
+    early_window_calls: 10
 
   mcp:
     enabled: true
@@ -315,6 +345,14 @@ routing:
     rule_based_first: true
     llm_fallback_enabled: true
     confidence_threshold: 0.7
+  # 4B plan Item 5 — IRMA-style input reformulation for the
+  # IntentDisambiguator. Default ON so the disambiguator gets the
+  # context (recent intents, active session, routing hints) it
+  # otherwise has to guess at. Voice hot path is unaffected — only
+  # the disambiguator pass uses this.
+  irma:
+    enabled: true
+    max_recent_decisions: 5
   stub_responses_enabled: true   # set false after OpenClaw integration completes
 
 # ---------------------------------------------------------------------------
@@ -329,6 +367,16 @@ openclaw:
   health_check_interval_seconds: 60.0
   fail_open: true                     # unreachable → in-character stub, not hard error
   required_agent_id: "ultron"
+  # 4B plan Item 8 — block-and-revise validator on tool calls. When ON,
+  # the dispatcher runs a short pre-flight LLM check before each
+  # handle_* method: "does this tool call advance the user's stated
+  # goal?" — short-circuits with the validator's reason on BLOCK. The
+  # validator fails OPEN on LLM errors so a flaky LLM never paralyses
+  # the dispatcher. Currently the dispatcher itself is stubbed
+  # (Phase 5); the validator's interface stays the same when OpenClaw
+  # is wired live in a later phase.
+  block_and_revise:
+    enabled: true
 
 # ---------------------------------------------------------------------------
 # Error phrases (Phase 4) — user-facing voice messages for dependency failures

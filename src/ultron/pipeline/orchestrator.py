@@ -409,6 +409,8 @@ class Orchestrator:
                 self._announce_pending_clarifications()
                 # Phase 7: surface token-budget warnings + halt notices.
                 self._announce_pending_budget_warning()
+                # 4B plan Item 7: surface canonical-path-monitor aborts.
+                self._announce_pending_canonical_abort()
 
                 speech: Optional[np.ndarray] = None
                 came_from_follow_up = False
@@ -694,6 +696,25 @@ class Orchestrator:
             warning = self.coding_voice.pending_budget_warning()
         except Exception as e:
             logger.warning("coding_voice.pending_budget_warning failed: %s", e)
+            return
+        if warning:
+            self._speak(warning)
+            self._last_response_finished_monotonic = time.monotonic()
+
+    def _announce_pending_canonical_abort(self) -> None:
+        """4B plan Item 7: surface canonical-path-monitor aborts.
+
+        When the monitor cancels a coding session for going off the
+        rails, the runner queues a one-line voice narration; this
+        method speaks it once. Mirrors
+        :meth:`_announce_pending_budget_warning`.
+        """
+        if self.coding_voice is None:
+            return
+        try:
+            warning = self.coding_voice.pending_canonical_abort()
+        except Exception as e:
+            logger.warning("coding_voice.pending_canonical_abort failed: %s", e)
             return
         if warning:
             self._speak(warning)

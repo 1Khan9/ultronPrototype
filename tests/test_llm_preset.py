@@ -3,7 +3,9 @@
 Verifies ``LLMConfig.preset`` behaviour:
 - Default preset ``qwen3.5-9b`` resolves to today's exact config
   (back-compat — every existing test must keep passing).
-- ``qwen3.5-4b`` resolves to the 4B GGUF + 0.8B draft + n_ctx=16384.
+- ``qwen3.5-4b`` resolves to the 4B GGUF + 0.8B draft + n_ctx=8192.
+  (n_ctx pinned to match the 9B-era voice-path TTFT baseline; users
+  who want a larger context override n_ctx explicitly in YAML.)
 - ``custom`` does not touch any field; raw user values pass through.
 - Explicit user fields always win over preset defaults (mixed mode).
 
@@ -31,7 +33,7 @@ def test_4b_preset_resolves_paths_and_ctx() -> None:
     cfg = LLMConfig(preset="qwen3.5-4b")
     assert cfg.preset == "qwen3.5-4b"
     assert cfg.model_path == "models/Qwen3.5-4B-Q4_K_M.gguf"
-    assert cfg.n_ctx == 16384
+    assert cfg.n_ctx == 8192
     assert cfg.draft_model_path == "models/Qwen3.5-0.8B-Q4_K_M.gguf"
 
 
@@ -52,7 +54,7 @@ def test_explicit_model_path_overrides_4b_preset() -> None:
     """Mixed mode — preset gives n_ctx + draft, user pins model_path."""
     cfg = LLMConfig(preset="qwen3.5-4b", model_path="models/custom-4b.gguf")
     assert cfg.model_path == "models/custom-4b.gguf"  # user wins
-    assert cfg.n_ctx == 16384  # preset still applies to non-overridden
+    assert cfg.n_ctx == 8192  # preset still applies to non-overridden
     assert cfg.draft_model_path == "models/Qwen3.5-0.8B-Q4_K_M.gguf"
 
 
@@ -94,7 +96,7 @@ def test_preset_table_contents() -> None:
     assert nine["n_ctx"] == 8192
     assert four["model_path"].endswith("Qwen3.5-4B-Q4_K_M.gguf")
     assert four["draft_model_path"].endswith("Qwen3.5-0.8B-Q4_K_M.gguf")
-    assert four["n_ctx"] == 16384
+    assert four["n_ctx"] == 8192
 
 
 def test_yaml_load_with_4b_preset(tmp_path: Path) -> None:
@@ -110,7 +112,7 @@ llm:
     cfg = load_config(cfg_path)
     assert cfg.llm.preset == "qwen3.5-4b"
     assert cfg.llm.model_path == "models/Qwen3.5-4B-Q4_K_M.gguf"
-    assert cfg.llm.n_ctx == 16384
+    assert cfg.llm.n_ctx == 8192
     assert cfg.llm.draft_model_path == "models/Qwen3.5-0.8B-Q4_K_M.gguf"
 
 

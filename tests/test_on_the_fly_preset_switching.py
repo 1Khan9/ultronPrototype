@@ -40,7 +40,7 @@ llm:
         cfg = load_config(cfg_path)
     assert cfg.llm.preset == "qwen3.5-4b"
     assert cfg.llm.model_path == "models/Qwen3.5-4B-Q4_K_M.gguf"
-    assert cfg.llm.n_ctx == 16384
+    assert cfg.llm.n_ctx == 8192
     assert cfg.llm.draft_model_path == "models/Qwen3.5-0.8B-Q4_K_M.gguf"
 
 
@@ -54,13 +54,15 @@ version: "1.0"
 llm:
   preset: "qwen3.5-9b"
   model_path: "models/Qwen3.5-9B-Q4_K_M.gguf"
-  n_ctx: 8192
+  n_ctx: 4096
 """)
     with patch.dict(os.environ, {"ULTRON_LLM_PRESET": "qwen3.5-4b"}, clear=False):
         cfg = load_config(cfg_path)
     assert cfg.llm.preset == "qwen3.5-4b"
     assert cfg.llm.model_path == "models/Qwen3.5-4B-Q4_K_M.gguf"  # preset wins
-    assert cfg.llm.n_ctx == 16384
+    # 4b preset's n_ctx is 8192 — different from the user's 4096 override
+    # (which was cleared by the env-var switch).
+    assert cfg.llm.n_ctx == 8192
 
 
 def test_env_var_keep_overrides_flag(tmp_path: Path) -> None:
@@ -111,7 +113,7 @@ llm:
 """)
     cfg = load_config(cfg_path)
     assert cfg.llm.model_path == "models/Qwen3.5-4B-Q4_K_M.gguf"
-    assert cfg.llm.n_ctx == 16384
+    assert cfg.llm.n_ctx == 8192
     assert cfg.llm.draft_model_path == "models/Qwen3.5-0.8B-Q4_K_M.gguf"
 
 

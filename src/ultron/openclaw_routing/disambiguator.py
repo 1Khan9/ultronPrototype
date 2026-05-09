@@ -95,6 +95,23 @@ class IntentDisambiguator:
 
     def __init__(self, llm: Any, *, reformulator: Optional[Any] = None) -> None:
         self._llm = llm
+        # 4B plan Item 5: default-construct the IRMA reformulator when
+        # none is passed so callers get IRMA-ready disambiguators
+        # automatically. Activation is still gated by
+        # ``routing.irma.enabled``; this just removes the wiring step.
+        if reformulator is None:
+            try:
+                from ultron.openclaw_routing.irma import build_default_reformulator
+                reformulator = build_default_reformulator()
+            except Exception as e:
+                # Never fail construction because of IRMA setup —
+                # disambiguation must always be available.
+                logger.debug(
+                    "default IRMA reformulator construction failed (%s); "
+                    "disambiguator continues without IRMA support",
+                    e,
+                )
+                reformulator = None
         self._reformulator = reformulator
 
     async def disambiguate(

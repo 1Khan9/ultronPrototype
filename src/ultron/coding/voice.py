@@ -165,6 +165,16 @@ class CapabilityVoiceController:
             logger.debug("pop_budget_warning failed: %s", e)
             return None
 
+    def pending_canonical_abort(self) -> Optional[str]:
+        """4B plan Item 7: voice-loop poll for canonical-path-monitor
+        abort narration raised by the runner. Returns once and clears.
+        Mirrors :meth:`pending_budget_warning`."""
+        try:
+            return self.runner.pop_canonical_abort_warning()
+        except Exception as e:
+            logger.debug("pop_canonical_abort_warning failed: %s", e)
+            return None
+
     def handle_utterance(self, text: str) -> Optional[VoiceResponse]:
         """Classify and (if coding-related) act on an utterance.
 
@@ -609,8 +619,13 @@ class CapabilityVoiceController:
             # audit row. The runner is cheap to construct.
             runner = getattr(self, "_automation_runner", None)
             if runner is None:
+                # 4B plan Item 8 — thread the live LLMEngine into the
+                # dispatcher so the block-and-revise validator can run
+                # its pre-flight check. When llm_engine is None (tests
+                # / not yet wired), the validator fails open and
+                # dispatch behaves exactly as before.
                 runner = AutomationTaskRunner(
-                    dispatcher=OpenClawDispatcher(),
+                    dispatcher=OpenClawDispatcher(llm=self.llm_engine),
                 )
                 self._automation_runner = runner
 

@@ -161,6 +161,49 @@ _CREATIVE_TASKS = re.compile(
 )
 
 
+def _preflight_call(llm, prompt: str, max_tokens: int) -> str:
+    """Single greedy call OR self-consistency N-vote on the JSON output.
+
+    Centralised so the verdict-parsing code below sees one ``raw`` string
+    regardless of whether self-consistency was used. Returns ``""`` on
+    error (callers treat that as "preflight failed -> default NO_SEARCH").
+    """
+    from ultron.config import get_config
+    from ultron.llm.self_consistency import (
+        json_winner_aggregator,
+        run_self_consistency,
+        should_apply_self_consistency,
+    )
+
+    cfg = get_config()
+    use_consistency = should_apply_self_consistency("web_gating_preflight", cfg)
+
+    def _one_call(temperature: float) -> str:
+        try:
+            out = llm._llm.create_chat_completion(  # noqa: SLF001
+                messages=[{"role": "user", "content": prompt}],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            return (out["choices"][0]["message"]["content"] or "").strip()
+        except Exception as e:
+            logger.warning("preflight LLM call failed: %s", e)
+            return ""
+
+    if not use_consistency:
+        # Single greedy call (temperature=0.0 — same as before).
+        return _one_call(0.0)
+
+    sc = cfg.llm.self_consistency
+    result = run_self_consistency(
+        _one_call,
+        n=sc.n,
+        temperature=sc.temperature,
+        aggregator=json_winner_aggregator,
+    )
+    return result.answer or ""
+
+
 def classify_by_rules(utterance: str) -> Optional[GateVerdict]:
     """Stage-1 hard-rule classification.
 
@@ -287,6 +330,14 @@ def classify_by_preflight(
     On parse failure or empty answer, defaults to NO_SEARCH (the safer
     side -- a missed search adds a follow-up turn; a false-positive
     search burns API quota and adds latency).
+
+    4B plan Item 6: when ``llm.self_consistency.enabled`` is True and
+    site ``"web_gating_preflight"`` isn't disabled, the JSON output is
+    sampled N times (at the configured non-zero temperature, since
+    self-consistency requires diverse samples) and majority-voted via
+    :func:`ultron.llm.self_consistency.json_winner_aggregator`. The
+    winning JSON is parsed identically to the single-greedy path.
+    Default OFF preserves byte-for-byte single-call behaviour.
     """
     t0 = time.monotonic()
     prompt = _PREFLIGHT_PROMPT.format(
@@ -294,20 +345,11 @@ def classify_by_preflight(
         memory_block=_build_memory_block(memory_snippets),
     )
 
-    try:
-        # Use _llm directly so we can override max_tokens without touching
-        # the global settings. The pre-flight is short by design.
-        out = llm._llm.create_chat_completion(  # noqa: SLF001
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
-            max_tokens=max_tokens,
-        )
-        raw = (out["choices"][0]["message"]["content"] or "").strip()
-    except Exception as e:
-        logger.warning("preflight LLM call failed: %s", e)
+    raw = _preflight_call(llm, prompt, max_tokens)
+    if not raw:
         return GateVerdict(
             GateDecision.NO_SEARCH, "low", "default",
-            f"preflight error: {e}",
+            "preflight error",
             latency_ms=(time.monotonic() - t0) * 1000,
         )
 

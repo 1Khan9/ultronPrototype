@@ -147,6 +147,11 @@ class CodingTaskRunner:
         # the user (consumed once; voice loop polls + speaks).
         self._pending_budget_warning: Optional[str] = None
         self._budget_lock = threading.Lock()
+        # 4B plan Item 7 — canonical-path-monitor abort message.
+        # Mirrors the budget-warning pattern: queued once when the
+        # monitor signals abort, consumed once by the voice loop.
+        self._pending_canonical_abort: Optional[str] = None
+        self._canonical_lock = threading.Lock()
 
     # --- task lifecycle -----------------------------------------------------
 
@@ -220,6 +225,12 @@ class CodingTaskRunner:
         # check the budget after each one.
         if self._bound_session_id is not None and self._store is not None:
             handle.add_listener(self._make_usage_listener())
+        # 4B plan Item 7 — canonical-path-monitor listener (off when
+        # ``coding.canonical_monitor.enabled`` is False; build_default_monitor
+        # returns None so this is a cheap no-op in that case).
+        canonical_listener = self._make_canonical_monitor_listener(handle)
+        if canonical_listener is not None:
+            handle.add_listener(canonical_listener)
         # Also log a structured "start" record for offline inspection.
         self._log_record({
             "ts": time.time(),
@@ -557,6 +568,68 @@ class CodingTaskRunner:
         with self._budget_lock:
             text = self._pending_budget_warning
             self._pending_budget_warning = None
+        return text
+
+    # --- 4B plan Item 7: canonical-path-monitor wiring --------------------
+
+    def _make_canonical_monitor_listener(self, handle):
+        """Build a per-task canonical-path-monitor listener.
+
+        Returns ``None`` when the feature is disabled in config —
+        callers treat that as "no listener to add". When enabled:
+
+        - The listener observes each TaskEvent.
+        - On the first abort verdict, it cancels the active handle,
+          queues a voice narration via ``_pending_canonical_abort``
+          (consumed by ``pop_canonical_abort_warning`` in the voice
+          loop), and logs the reason.
+        - Aborts latch — subsequent events on the same handle are
+          ignored, so the listener doesn't re-cancel.
+        """
+        from ultron.coding.canonical_monitor import build_default_monitor
+
+        monitor = build_default_monitor("CODE_TASK")
+        if monitor is None:
+            return None
+        # Per-handle latch so a single monitor instance cancels at most
+        # once. ``state["fired"]`` is checked + set inside the
+        # listener; the lock guards the queued voice message.
+        state = {"fired": False}
+
+        def _listener(event):
+            try:
+                verdict = monitor.observe(event)
+                if not verdict.should_abort or state["fired"]:
+                    return
+                state["fired"] = True
+                logger.warning(
+                    "CanonicalPathMonitor abort: %s", verdict.reason,
+                )
+                with self._canonical_lock:
+                    self._pending_canonical_abort = (
+                        f"I'm stopping that task — it was going off the rails. "
+                        f"{verdict.off_canonical_count} unexpected tool calls in "
+                        f"the first {verdict.total_tool_calls}. "
+                        f"Ask me to try again with a clearer description."
+                    )
+                try:
+                    handle.cancel()
+                except Exception as e:
+                    logger.warning("canonical-monitor cancel failed: %s", e)
+            except Exception as e:
+                # The listener must NEVER raise back into the bridge —
+                # would break event delivery.
+                logger.debug("canonical monitor listener error: %s", e)
+
+        return _listener
+
+    def pop_canonical_abort_warning(self) -> Optional[str]:
+        """Voice loop polls this each iteration to surface canonical-
+        monitor abort narration. Returns the queued text once, then
+        clears. Mirrors :meth:`pop_budget_warning`."""
+        with self._canonical_lock:
+            text = self._pending_canonical_abort
+            self._pending_canonical_abort = None
         return text
 
     # --- audit log ----------------------------------------------------------

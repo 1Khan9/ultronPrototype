@@ -108,7 +108,7 @@ class HybridTaskDecomposer:
         if self._llm is None:
             return ""
         from ultron.llm.self_consistency import (
-            majority_vote_json,
+            json_winner_aggregator,
             run_self_consistency,
             should_apply_self_consistency,
         )
@@ -137,7 +137,7 @@ class HybridTaskDecomposer:
 
         result = run_self_consistency(
             _sampler, n=sc.n, temperature=sc.temperature,
-            aggregator=lambda samples: _serialise_json_winner(majority_vote_json(samples)),
+            aggregator=json_winner_aggregator,
         )
         return result.answer or ""
 
@@ -206,18 +206,6 @@ def _parse_subtasks(text: str) -> List[HybridSubtask]:
         except (json.JSONDecodeError, ValueError, TypeError):
             continue
     return []
-
-
-def _serialise_json_winner(vote_result):
-    """Adapter: ``majority_vote_json`` returns ``(parsed_dict, votes)``.
-    ``run_self_consistency`` expects ``(answer, votes)`` where answer is
-    a string. Re-serialise the winning dict so downstream
-    :func:`_parse_subtasks` can re-parse it uniformly with the
-    single-call code path."""
-    parsed_winner, votes = vote_result
-    if parsed_winner is None:
-        return "", votes
-    return json.dumps(parsed_winner), votes
 
 
 def _coding_only_fallback(

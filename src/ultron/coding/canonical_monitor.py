@@ -144,11 +144,16 @@ class CanonicalPathMonitor:
         ``event`` is duck-typed — anything with a ``kind`` attribute /
         key that equals ``"tool_use"`` (case-insensitive) and a
         ``tool_name`` field is processed; everything else is ignored.
-        Mirrors the existing ``TaskEvent`` shape without importing it
-        (so tests can drive simple dicts).
+        Handles both raw strings ("tool_use") and ``EventKind`` enum
+        members so the listener can be driven by the real
+        ``TaskEvent`` dataclass and by simple dict mocks in tests.
         """
         kind = self._read(event, "kind", "")
-        if str(kind).lower() != "tool_use":
+        # str-Enums (EventKind) have a ``value`` attribute holding the
+        # canonical string. Strings have no ``value`` — fall through to
+        # the raw kind. Then lowercase + compare.
+        kind_str = getattr(kind, "value", kind)
+        if str(kind_str).lower() != "tool_use":
             return self._verdict()
         tool_name = self._read(event, "tool_name", "") or ""
         if not tool_name:
@@ -210,6 +215,12 @@ class CanonicalPathMonitor:
         return default
 
 
+# Imported at module level so test patches against
+# ``ultron.coding.canonical_monitor.get_config`` are stable. Same
+# rationale as ``ultron.llm.compression``.
+from ultron.config import get_config  # noqa: E402  — see module docstring
+
+
 def build_default_monitor(intent_type: str = "CODE_TASK", cfg: Any = None) -> Optional[CanonicalPathMonitor]:
     """Construct the monitor only if enabled in config; else ``None``.
 
@@ -217,7 +228,6 @@ def build_default_monitor(intent_type: str = "CODE_TASK", cfg: Any = None) -> Op
     so callers can use the result as a truthy short-circuit.
     """
     if cfg is None:
-        from ultron.config import get_config
         cfg = get_config()
     cm_cfg = cfg.coding.canonical_monitor
     if not cm_cfg.enabled:
