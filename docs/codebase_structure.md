@@ -10,7 +10,7 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 
-Last validated against `main` HEAD `2fb0988` (V1-spec gap fill Phases 1–6 + default-flag tuning + classifier gating + comprehensive end-to-end test pass classifier extensions). All 12 enhancements wired; defaults chosen on net-benefit grounds:
+Last validated against `main` HEAD `429ed3e` (comprehensive end-to-end functional + quality test passes; classifier coverage extensions; prompt-injection defense layer in `src/ultron/llm/inference.py`). All 12 V1-gap enhancements wired; defaults chosen on net-benefit grounds:
 
 | Flag | Default | Why |
 |---|---|---|
