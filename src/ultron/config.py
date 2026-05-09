@@ -549,6 +549,31 @@ class RoutingConfig(_Strict):
     stub_responses_enabled: bool = True
 
 
+class OpenClawBlockAndReviseConfig(_Strict):
+    """4B optimization plan Item 8 — block-and-revise on OpenClaw tool calls.
+
+    Per the runtime-verifier-mediation paper, a pre-flight LLM check
+    asking "does this tool call advance the user's stated goal?" can
+    intercept misdirected actions before they fire. When the validator
+    rejects, the dispatcher returns the validator's reason as the
+    voice message rather than executing the tool — analogous to the
+    coding pipeline's verification + corrective-prompt loop, but for
+    the automation side.
+
+    Default OFF. The validator adds one short LLM call per dispatch
+    (~50 tokens output) so it's not free; flip after live measurement
+    shows the validator catches enough mis-dispatches to justify the
+    overhead.
+
+    The validator falls open: if the LLM call fails or the response
+    is unparseable, the dispatcher proceeds as if the validator wasn't
+    there. Better to occasionally allow a borderline call than to
+    block legitimate work on a transient LLM failure.
+    """
+
+    enabled: bool = False
+
+
 class OpenClawConfig(_Strict):
     """Phase 5 placeholder for the OpenClaw peer Gateway. The dispatcher
     reads this to decide whether to attempt real calls or return stubs."""
@@ -559,6 +584,10 @@ class OpenClawConfig(_Strict):
     health_check_interval_seconds: float = 60.0
     fail_open: bool = True              # treat unreachable as a stub, not a hard error
     required_agent_id: str = "ultron"
+    # 4B plan Item 8 — block-and-revise pre-flight validator on tool calls.
+    block_and_revise: OpenClawBlockAndReviseConfig = Field(
+        default_factory=OpenClawBlockAndReviseConfig,
+    )
 
 
 class ErrorPhrasesConfig(_Strict):
