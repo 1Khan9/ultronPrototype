@@ -380,6 +380,36 @@ class AddressingConfig(_Strict):
     log_path: str = "logs/addressing.jsonl"
 
 
+class CodingCanonicalMonitorConfig(_Strict):
+    """4B optimization plan Item 7 — canonical-path monitor.
+
+    Tracks per-session tool-call sequences. When too many off-canonical
+    tool calls land in the early window, signals abort so the runner
+    can reset the session with a cleaner prompt instead of letting it
+    fail at verification.
+
+    Per the underlying paper (Each off-canonical call raises the next
+    one's probability of being off-canonical by 22.7 pp), restarting
+    the bottom tercile of runs lifts success rates by +8.8 pp. Tuning
+    the thresholds aggressively risks restarting healthy sessions —
+    leave defaults conservative, default OFF, and turn on after live
+    measurement.
+
+    Canonical tools per task type are defined in
+    :mod:`ultron.coding.canonical_monitor`; they cover the standard
+    coding actions (Read / Write / Edit / Glob / Grep / Bash /
+    TodoWrite). Anything outside that set in a CODE_TASK session is
+    counted as off-canonical.
+    """
+
+    enabled: bool = False
+    # Trigger abort when this many off-canonical calls land in the
+    # early window.
+    off_canonical_threshold: int = Field(default=3, ge=1)
+    # Window size: count over the FIRST N tool calls of a session.
+    early_window_calls: int = Field(default=10, ge=1)
+
+
 class CodingMCPConfig(_Strict):
     enabled: bool = True
     host: str = "127.0.0.1"
@@ -408,6 +438,10 @@ class CodingConfig(_Strict):
     escalation_threshold_default: int = Field(default=3, ge=1)
     escalation_threshold_escalation: int = Field(default=2, ge=1)
     verification: CodingVerificationConfig = Field(default_factory=CodingVerificationConfig)
+    # 4B plan Item 7 — canonical-path monitor (off by default).
+    canonical_monitor: CodingCanonicalMonitorConfig = Field(
+        default_factory=CodingCanonicalMonitorConfig,
+    )
     session_audit_dir: str = "logs/sessions"
     token_budget_per_session: int = Field(default=100_000, ge=1)
     token_warning_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
