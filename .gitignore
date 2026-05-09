@@ -45,6 +45,16 @@ models/
 logs/*.log
 logs/*.jsonl
 logs/sessions/
+# Per-run harness JSON outputs (regeneratable; bloat the repo)
+logs/quality_harness_*.json
+logs/quality_q3_*.json
+logs/quality_q6_claude_*.json
+logs/quality_q6q9_*.json
+logs/quality_q10_iter*_verify_*.json
+logs/comprehensive_harness_*.json
+logs/real_api_smoke_*.json
+# Quality test pass-generated sandbox apps (regeneratable; not source code)
+data/sandbox/quality_q*/
 *.wav
 *.mp3
 *.ogg
