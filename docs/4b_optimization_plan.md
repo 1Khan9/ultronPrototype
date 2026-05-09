@@ -232,30 +232,53 @@ Verification:
 - Schema, paths, kwargs, and config all back-compat: every existing
   test passed unchanged after Stages A–G.
 
+**On-the-fly switching infrastructure (4B plan late addition):**
+The flip is now a single switch via any of three paths:
+
+```yaml
+# 1. Edit config.yaml — ONE line
+llm:
+  preset: "qwen3.5-4b"   # was "qwen3.5-9b"
+```
+
+```powershell
+# 2. Env var, no file edit needed
+$env:ULTRON_LLM_PRESET = "qwen3.5-4b"; python -m ultron
+
+# 3. Swap helper script (validates GGUFs exist + atomic write)
+python scripts/swap_llm_preset.py qwen3.5-4b
+python scripts/swap_llm_preset.py --status   # show current preset
+python scripts/swap_llm_preset.py --list     # show all presets + paths
+```
+
+The env-var path also clears any explicit `model_path` /
+`draft_model_path` / `n_ctx` overrides in YAML so the preset's table
+values fully take effect. Override that with
+`ULTRON_LLM_PRESET_KEEP_OVERRIDES=1` if you want YAML-pinned values to
+survive the env-var preset switch.
+
+VRAM target follows the preset: `check_vram.py` now reads
+`ULTRON_LLM_PRESET` / `config.yaml:llm.preset` and reports the matching
+soft target (`qwen3.5-9b → 9216 MB`, `qwen3.5-4b → 6700 MB`,
+`custom → 9216 MB` fallback). The hard cap (11500 MB) is unchanged —
+it's the GPU physics.
+
 **User-led steps remaining:**
 1. Run [scripts/verify_voice_character_4b.py](../scripts/verify_voice_character_4b.py)
    (Stage E). If Ultron sounds unchanged on the five A/B queries → continue.
 2. Run the 16-step real-stack smoke test in [docs/smoke_test.md](smoke_test.md).
-3. **Flip** `config.yaml`:
-   ```yaml
-   llm:
-     preset: "qwen3.5-4b"                                  # <<< change
-     model_path: "models/Qwen3.5-4B-Q4_K_M.gguf"           # <<< change
-     draft_model_path: "models/Qwen3.5-0.8B-Q4_K_M.gguf"   # <<< change (was null)
-     n_ctx: 16384                                          # <<< change (was 8192)
-   ```
-   (preset alone is insufficient — explicit YAML values win over preset
-   defaults via `model_fields_set`. Update all four for clarity.)
+3. Flip via any of the three paths above. Recommended:
+   `python scripts/swap_llm_preset.py qwen3.5-4b` (validates GGUFs,
+   atomic write, re-validates schema).
 4. Re-run pytest sweep + `validate_config.py` to confirm.
 5. Optional: start `scripts/start_llamacpp_server.py --from-config` and
    run the speculative-decoding bench (`scripts/_bench_llm_http.py`)
    for an additional throughput measurement.
 
-**Rollback path:** revert the four lines above to the current
-`qwen3.5-9b` values. The 9B GGUF stays in `models/` for swap-back at
-any time. `llm.rag.position` and the `enable_thinking` parameter
-remain available regardless of preset (they're orthogonal to the
-model swap).
+**Rollback path:** swap back via the same three paths (e.g.
+`python scripts/swap_llm_preset.py qwen3.5-9b`). The 9B GGUF stays in
+`models/`. `llm.rag.position` and the `enable_thinking` parameter
+remain available regardless of preset (orthogonal to the model swap).
 
 ## Items 4-8 — second-pass optimization
 

@@ -637,6 +637,23 @@ def load_config(path: Optional[Path] = None) -> UltronConfig:
         ) from e
 
     raw = _substitute_env_vars(raw)
+
+    # 4B optimization plan — on-the-fly preset switching via env var.
+    # ``ULTRON_LLM_PRESET=qwen3.5-4b python -m ultron`` picks the preset
+    # without editing config.yaml. The env var also clears any explicit
+    # ``model_path`` / ``draft_model_path`` / ``n_ctx`` overrides in the
+    # YAML so the preset's table values win — that's what makes the
+    # switch a single env-var change rather than a four-line YAML edit.
+    # If you DO want the env-var preset to inherit your YAML overrides,
+    # set ``ULTRON_LLM_PRESET_KEEP_OVERRIDES=1``.
+    env_preset = os.environ.get("ULTRON_LLM_PRESET")
+    if env_preset:
+        llm_block = raw.setdefault("llm", {})
+        llm_block["preset"] = env_preset
+        if not os.environ.get("ULTRON_LLM_PRESET_KEEP_OVERRIDES"):
+            for key in ("model_path", "draft_model_path", "n_ctx"):
+                llm_block.pop(key, None)
+
     try:
         _CONFIG_INSTANCE = UltronConfig.model_validate(raw)
     except Exception as e:

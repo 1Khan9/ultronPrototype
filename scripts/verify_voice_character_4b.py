@@ -1,27 +1,26 @@
 """4B optimization plan Stage E — voice-character verification helper.
 
-Runs the same five representative queries through the live LLM stack
-twice (once with the 4B model, once with the 9B for direct comparison)
-so the user can A/B the voice character. Output is written to stdout
-in a side-by-side table — the user listens / reads to confirm the 4B
-sounds like Ultron.
+Runs the same five representative queries through the live voice stack
+twice (once with the 4B LLM, once with the 9B for direct comparison)
+**and speaks each response through Piper + RVC** so you can A/B the
+actual cadence/timbre/prosody — not just read the text. The first
+2-3 sentences of each response are synthesised; if both models sound
+like Ultron, Stage E passes.
 
 The plan's verification criterion is qualitative ("user confirms
-Ultron sounds unchanged"), so this script just collects the data; the
-gate is the user's judgement.
+Ultron sounds unchanged"), so this script just collects + plays the
+data; the gate is your ear.
 
 Run from the main checkout (where models/ lives):
 
     cd C:\\STC\\ultronPrototype
-    .venv\\Scripts\\python.exe scripts/verify_voice_character_4b.py [--no-9b]
+    .venv\\Scripts\\python.exe scripts/verify_voice_character_4b.py [--no-9b] [--no-audio]
 
-The script does NOT modify config.yaml. It instantiates LLMEngine
-twice with explicit model_path overrides, so the active config stays
-on whatever it currently points at. Each model is loaded sequentially
-(not concurrently) so peak VRAM is bounded by the larger of the two.
+``--no-audio`` runs text-only (the original Stage E v1 mode).
 
-Stops at first sentence per query (matches measure_baseline.py
-methodology) so each run is fast — 5 queries × 2 models ~= 1 minute.
+The script does NOT modify config.yaml. It instantiates LLMEngine +
+TextToSpeech (with RVC) twice — once per model — and unloads VRAM
+between runs so peak VRAM is bounded by the larger model + TTS stack.
 """
 
 from __future__ import annotations
@@ -31,6 +30,15 @@ import sys
 import time
 from pathlib import Path
 from typing import Iterator, Optional
+
+# Make `config` (legacy shim) and `ultron` importable when running
+# the script directly from any cwd. Mirrors download_models.py /
+# measure_baseline.py.
+_HERE = Path(__file__).resolve().parent.parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+if str(_HERE / "src") not in sys.path:
+    sys.path.insert(0, str(_HERE / "src"))
 
 # 5 representative queries — pulled from the full 10-query baseline set
 # to span: factual recall (1), conceptual explanation (2), arithmetic
@@ -44,37 +52,60 @@ QUERIES = [
 ]
 
 
-def _first_sentence(stream: Iterator[str], t0: float) -> tuple[float, str]:
-    flush = ".!?\n"
+def _take_n_sentences(stream: Iterator[str], n: int = 3) -> tuple[float, str]:
+    """Collect the first N sentences from the stream, return (TTFT_ms, text)."""
+    flush = ".!?"
     parts: list[str] = []
     first_token_ms: Optional[float] = None
+    sentences = 0
+    t0 = time.monotonic()
     for tok in stream:
         if first_token_ms is None:
             first_token_ms = (time.monotonic() - t0) * 1000
         parts.append(tok)
-        if any(c in flush for c in tok):
+        for c in tok:
+            if c in flush:
+                sentences += 1
+                if sentences >= n:
+                    break
+        if sentences >= n:
             break
     if first_token_ms is None:
         first_token_ms = (time.monotonic() - t0) * 1000
     return first_token_ms, "".join(parts).strip()
 
 
-def _run_one_model(label: str, model_path: Path) -> list[dict]:
+def _run_one_model(
+    label: str,
+    model_path: Path,
+    *,
+    play_audio: bool,
+) -> list[dict]:
     print(f"\n=== {label} : {model_path.name} ===", flush=True)
     import os
     os.environ["ULTRON_LLM_MODEL_PATH"] = str(model_path)
     os.environ["ULTRON_LOG_LEVEL"] = "WARNING"
 
-    # Import lazily so each iteration picks up the env override.
+    # Lazy imports so each call picks up the env override + reloads config.
     from ultron.llm import LLMEngine  # noqa: WPS433
     from ultron.config import reload_config  # noqa: WPS433
     reload_config()
 
     t = time.monotonic()
     llm = LLMEngine(memory=None)
-    print(f"  loaded in {time.monotonic() - t:.1f}s", flush=True)
+    print(f"  LLM loaded in {time.monotonic() - t:.1f}s", flush=True)
 
-    # Warmup
+    tts = None
+    rvc = None
+    if play_audio:
+        from ultron.tts import RvcConverter, TextToSpeech  # noqa: WPS433
+        t = time.monotonic()
+        rvc = RvcConverter()
+        tts = TextToSpeech(rvc=rvc)
+        tts.warmup()
+        print(f"  TTS+RVC ready in {time.monotonic() - t:.1f}s", flush=True)
+
+    # Warm the LLM.
     s = llm.generate_stream("Say 'ready' and nothing else.")
     for _ in s:
         llm.cancel()
@@ -84,28 +115,40 @@ def _run_one_model(label: str, model_path: Path) -> list[dict]:
 
     rows: list[dict] = []
     for i, q in enumerate(QUERIES, 1):
-        t0 = time.monotonic()
-        ttft_ms, first_sentence = _first_sentence(llm.generate_stream(q), t0)
+        ttft_ms, response = _take_n_sentences(llm.generate_stream(q), n=3)
+        # Drain remainder cleanly.
         llm.cancel()
-        for _ in llm.generate_stream(q):  # type: ignore  # already cancelled, drains
-            pass
         rows.append({
             "query": q,
             "ttft_ms": ttft_ms,
-            "first_sentence": first_sentence,
+            "response": response,
         })
         print(
-            f"  [{i}/{len(QUERIES)}] ttft={ttft_ms:.0f}ms  "
-            f"\"{first_sentence[:200]}\"",
+            f"\n  [{i}/{len(QUERIES)}] {label}  Q: {q}",
             flush=True,
         )
+        print(f"      ttft={ttft_ms:.0f}ms", flush=True)
+        print(f"      A: {response}", flush=True)
+        if tts is not None and response:
+            print("      [speaking...]", flush=True)
+            tts.speak(response)
 
     # Free VRAM before next model loads.
+    if tts is not None:
+        try:
+            tts.stop()
+        except Exception:
+            pass
+    if rvc is not None:
+        try:
+            rvc.close()
+        except Exception:
+            pass
     try:
         llm.cancel()
     except Exception:
         pass
-    del llm
+    del llm, tts, rvc
     import gc
     gc.collect()
     try:
@@ -121,6 +164,10 @@ def main() -> int:
     ap.add_argument(
         "--no-9b", action="store_true",
         help="Skip the 9B comparison run (4B only).",
+    )
+    ap.add_argument(
+        "--no-audio", action="store_true",
+        help="Skip TTS playback (text-only output, faster).",
     )
     ap.add_argument(
         "--models-dir", type=str, default="models",
@@ -141,21 +188,24 @@ def main() -> int:
     print("4B optimization plan — Stage E voice-character A/B")
     print("=" * 60)
     print("Listen for: cadence, terseness, character (slightly menacing,")
-    print("no filler, no apology). Both models should sound the same.\n")
+    print("no filler, no apology). Both models should sound like Ultron.\n")
 
-    results = {"4B": _run_one_model("4B", paths["4B"])}
+    play = not args.no_audio
+    results = {"4B": _run_one_model("4B", paths["4B"], play_audio=play)}
     if not args.no_9b:
-        results["9B"] = _run_one_model("9B (reference)", paths["9B"])
+        results["9B"] = _run_one_model(
+            "9B (reference)", paths["9B"], play_audio=play,
+        )
 
     print("\n" + "=" * 60)
-    print("Side-by-side first sentences (Stage E judgement)")
+    print("Side-by-side responses (Stage E judgement)")
     print("=" * 60)
     for i, q in enumerate(QUERIES):
         print(f"\nQ{i+1}: {q}")
         for label, rows in results.items():
             r = rows[i]
-            print(f"  {label}: ({r['ttft_ms']:.0f}ms) {r['first_sentence']}")
-    print("\nIf the 4B answers are character-equivalent, Stage E PASSES.")
+            print(f"  {label}: ({r['ttft_ms']:.0f}ms) {r['response']}")
+    print("\nIf the 4B sounds character-equivalent, Stage E PASSES.")
     print("If they sound different, surface the discrepancy and decide:")
     print("  - tune SOUL.md for 4B / re-record character")
     print("  - keep 9B (revert preset) and pursue throughput differently")

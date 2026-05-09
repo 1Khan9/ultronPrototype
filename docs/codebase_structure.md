@@ -25,7 +25,10 @@ enable_thinking parameter wired through to chat_template_kwargs in both
 runtimes) + Stage G (position-aware RAG injection: `llm.rag.position`
 config + LLMEngine._build_messages refactor; default flipped from
 "system" fold-in to "recency" prepend on user message — +10-20%
-recall expected) — 780 passing tests, 16 skipped, 0 failed.
+recall expected) + Stage H infra (on-the-fly preset switching:
+ULTRON_LLM_PRESET env var, scripts/swap_llm_preset.py helper,
+preset-aware check_vram.py target, preset-only YAML works) —
+796 passing tests, 16 skipped, 0 failed.
 
 ---
 
@@ -211,6 +214,7 @@ For the current decisions and Foundation phase status see
 │   ├── run_integration_tests.py    ← pytest wrapper for tests/integration|routing|error_recovery
 │   ├── run_orchestration_tests.py  ← Run 10 orchestration scenarios with reporting
 │   ├── validate_config.py          ← Schema-validate config.yaml without starting Ultron
+│   ├── swap_llm_preset.py          ← 4B plan: edit config.yaml in place to swap LLM preset (validates GGUFs, atomic write)
 │   ├── verify_voice_character_4b.py ← 4B plan Stage E: A/B voice-character helper (5 queries × 4B/9B)
 │   ├── start_llamacpp_server.py    ← OpenClaw Phase 0 + 4B plan Stage C: launch llama-cpp-server with voice-pipeline params (+ --model-draft / --draft-num-pred-tokens / --from-config)
 │   ├── supervised_llamacpp_server.py ← OpenClaw Phase 0: supervisor wrapper with auto-restart
@@ -1115,7 +1119,7 @@ All scripts assume venv active in main checkout (`C:\STC\ultronPrototype`). Work
 
 ### `tests/conftest.py` — Path setup so `from ultron.*` works.
 
-### Default suite (no env gate) — 780 tests, ~30 s wall
+### Default suite (no env gate) — 796 tests, ~30 s wall
 
 **Top-level (~25 files):**
 - `test_addressing.py` — rule-based addressing classifier
@@ -1150,6 +1154,7 @@ All scripts assume venv active in main checkout (`C:\STC\ultronPrototype`). Work
 - `test_start_llamacpp_server.py` (13, 4B plan Stage C) — launcher CLI: --help renders, default args back-compat, --model-draft attaches speculative decoding, --draft-num-pred-tokens override, --from-config overlay (4b/9b), CLI flags override overlay
 - `test_llm_enable_thinking.py` (11, 4B plan Stage F) — `enable_thinking` parameter plumbing: helper kwargs, in-process generate/generate_stream pass-through, HTTP payload pass-through, back-compat when default
 - `test_llm_rag_position.py` (7, 4B plan Stage G) — `_build_messages` honors `llm.rag.position`: recency mode prepends to user message, system mode folds into system message, no-snippets/retrieve-failure fallback, helper invariants
+- `test_on_the_fly_preset_switching.py` (16, 4B plan Stage H infra) — `ULTRON_LLM_PRESET` env-var override (clears overrides by default, opt-in keep-overrides flag), minimal-YAML preset-only config, `check_vram._resolve_target_mb` (table + CLI override + env var + unknown fallback), `_format_line` shows preset label, `swap_llm_preset._rewrite_preset` (basic / preserves comment / first-match / missing-line raises)
 
 **`tests/coding/`:**
 - `mock_bridge.py` — `ScriptedClaudeBridge` + `ClaudeScript` DSL
