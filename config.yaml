@@ -418,7 +418,7 @@ tts:
   # (~375 ms TTFT but dramatically better voice naturalness; user
   # accepted the latency trade-off 2026-05-10). Switching engines
   # requires a process restart.
-  engine: "piper_rvc"
+  engine: "xtts_v3"
   piper_voice_path: "models/piper/en_US-ryan-medium.onnx"
   piper_voice_config_path: "models/piper/en_US-ryan-medium.onnx.json"
   output_sample_rate: 22050
