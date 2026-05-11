@@ -77,3 +77,40 @@ htmlcov/
 .pyre/
 baselines.json.*-bak
 baselines.json.*_bak
+
+# ---------------------------------------------------------------------------
+# Voice TTS swap project (2026-05-10) — local audio prep + working artifacts
+# ---------------------------------------------------------------------------
+# Isolated venvs created during the voice swap. Each is ~1.5-3 GB.
+ultronVoiceAudio/.venv-*/
+# Model caches (torch hub, HuggingFace) for the audio prep tools.
+ultronVoiceAudio/.torch_cache/
+ultronVoiceAudio/.hf_cache*/
+# Demucs source-separation outputs (regenerable; large WAVs).
+ultronVoiceAudio/demucs_out/
+# Working sample directories (manual review staging, sanity batches,
+# filter A/B variants, post-clean copies). All regenerable from the
+# scripts in ultronVoiceAudio/scripts/.
+ultronVoiceAudio/for_review/
+ultronVoiceAudio/sanity_*/
+ultronVoiceAudio/smoke_*/
+ultronVoiceAudio/synth_audio/
+# Bulk synthetic Kokoro training corpus (deferred to Kokoro phase;
+# regenerable via generate_bulk_synthetic.py once we revisit).
+ultronVoiceAudio/manifest.csv
+ultronVoiceAudio/manifest.jsonl
+ultronVoiceAudio/generation_log.jsonl
+# Per-run logs from voice-prep tools.
+ultronVoiceAudio/*.log
+ultronVoiceAudio/smoke_*.wav
+# Audio source assets (large + personal-content; user supplies these).
+ultronVoiceAudio/*.wav
+ultronVoiceAudio/*.mp3
+# Working subdirectory created by the smoke test path-resolution bug
+# (writes to worktrees/.../ultronVoiceAudio/ in dev). Don't commit.
+.claude/worktrees/ultronVoiceAudio/
+
+# F5-TTS detour artifacts (TTS engine abandoned 2026-05-10 due to
+# native ffmpeg / segfault issues on Windows; venv removed).
+ultronVoiceAudio/scripts/generate_f5_samples.py
+ultronVoiceAudio/scripts/process_f5_samples.py

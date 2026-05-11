@@ -10,11 +10,25 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 
-Last validated against `main` HEAD `464f72b` + this session's combined hot-fix + audio-quality + memory-quality pass (2026-05-09). Three change layers landed in sequence:
+Last validated against `main` HEAD `f82b5bd` + the 2026-05-10 live-session-driven fixup pass + the 2026-05-10 voice-pipeline swap (XTTS v2 + v3 Ultron filter replacing Piper + RVC).
 
-1. **Latency hot-fix.** Parallel Jina fetches with collective deadline + Jina timeout/max_fetch reductions + audio ring-buffer trim (0.5 → 0.15 s) + VAD silence cap raise (500 → 1200 ms). Web-search worst case 13.5 s → ~6 s; wake-word tail no longer captured into Whisper transcripts.
-2. **TTS pipeline pass.** Piper / RVC split into two queue-decoupled stages + speculative ``sd.OutputStream`` open + ``latency='low'`` PortAudio hint. ~80–180 ms residual TTS gain. Voice character bit-identical (same Piper buffer feeds same RVC; only stage timing overlaps).
-3. **Contamination + nuanced-retrieval pass.** `ConversationMemory.retrieve()` now applies a cosine-similarity threshold (`memory.rag_min_relevance: 0.6` — empirically tuned on bge-small INT8) + composite scoring (cosine + RRF + recency-weighted boost). Recent-turn history feed capped at `memory.history_turns_for_llm: 4`. New `LLMEngine.suppress_memory_context` kwarg available as a knob. Direct mic input via Focusrite (was Voicemeeter); new `audio.input_gain_db` pre-amp; new `scripts/audio_diagnostic.py` harness for far-field tuning. Verified end-to-end with **31/31 quality scenarios** (28 memory + 3 search-augmented with real Brave/Jina). All 12 V1-gap enhancements wired; defaults chosen on net-benefit grounds:
+**2026-05-10 voice-pipeline swap (NEW).** The voice-quality lock was explicitly lifted by user direction to replace the Piper + RVC stack with XTTS v2 streaming + a v3 Ultron post-filter. The voice character is now driven by zero-shot speaker cloning from a 3-min cleaned reference of the actual Ultron source audio, plus a pedalboard DSP chain (PitchShift / Compressor / Delay / Chorus / Distortion / Reverb / EQ) tuned to recover the mechanical / cavity-resonance character that XTTS strips during cloning. User accepted ~50-100 ms TTFT regression vs current Piper+RVC (375 ms vs 313 ms) in exchange for dramatically better naturalness + the option to swap voices later by changing the reference clip alone. The legacy Piper+RVC engine remains intact behind the `tts.engine: "piper_rvc" | "xtts_v3"` config flag for one-line rollback. The XTTS engine spawns a separate Python process running [`ultronVoiceAudio/scripts/xtts_server.py`](../ultronVoiceAudio/scripts/xtts_server.py) in an isolated `.venv-xtts` venv (Coqui TTS's transformers / hydra / omegaconf pins conflict with what fairseq 0.12.2 needs in the main venv); the orchestrator-side client lives at [src/ultron/tts/xtts_v3.py](../src/ultron/tts/xtts_v3.py) and talks to the server over loopback HTTP. Bulk synthetic audio + corpus from the Kokoro fine-tune setup are retained under `ultronVoiceAudio/synth_audio/` for the deferred Kokoro phase (Kokoro fine-tune is the planned latency-recovery step once the rest of Ultron is tuned).
+
+Earlier 2026-05-10 live-session fixup pass — four fixes landed on top of the 2026-05-09 audio + memory layer in response to a real session log:
+
+1. **Producer-signaled lookahead in TTS** ([src/ultron/tts/speech.py](../src/ultron/tts/speech.py)). New `ClipItem` namedtuple `(audio, sample_rate, is_known_last)` carried through `piper_q` / `audio_q`. Playback now plays each clip IMMEDIATELY on receipt and only blocks for the next AFTER playing — the legacy play-after-peek pattern delayed first-clip playback up to 10 s waiting for the next clip to determine "is this last?". This was the root cause of the web-search ack ("Verifying against the network.") arriving AFTER the response instead of before. RVC worker `piper_q.get` timeout bumped 10 s → 60 s so a slow generator (long Brave + Jina + LLM TTFT) doesn't kill mid-stream playback. Voice character preserved bit-identical (same edge fades, same inter-sentence pauses, same tail silence).
+2. **Mode-aware audio pre-roll** ([src/ultron/audio/ring_buffer.py](../src/ultron/audio/ring_buffer.py), [src/ultron/pipeline/orchestrator.py](../src/ultron/pipeline/orchestrator.py)). The 2026-05-09 ring-buffer trim (0.5 → 0.15 s) fixed the COLD-mode "Tron" prefix but inadvertently clipped the leading word in WARM-mode follow-ups (Silero VAD has ~100-200 ms speech-start latency). Solution: ring buffer sized to the LARGER slice (0.5 s), `RingBuffer.snapshot(last_n_samples=...)` slices to the right length per mode. New config: `audio.cold_pre_roll_seconds: 0.15` (post-wake), `audio.warm_pre_roll_seconds: 0.5` (post-TTS follow-up). `audio.ring_buffer_seconds: 0.5` is now the buffer storage capacity.
+3. **Browser navigate pattern broadened** ([src/ultron/openclaw_routing/classifier.py](../src/ultron/openclaw_routing/classifier.py)). The determiner-less `_BROWSER_NAVIGATE` pattern required either no determiner or "the" before the noun, missing "open a browser window with X" / "open my browser tab" / "open a new tab to GitHub". Live regression: "Can you open a browser window with Google's homepage for me?" fell through to the LLM which apologised it couldn't open browsers. Added two alternatives: `open [det] [new] browser [window|tab]` (destination optional) and `open [det] [new] (window|tab) (with|to|for|on) X` (destination required to avoid generic "tab" matches).
+4. **Brevity reinforcement on short questions** ([src/ultron/response_style.py](../src/ultron/response_style.py) — NEW). The 4B model has a default-toward-verbose habit on simple queries ("What are the Orcs in 40k?" → 1164-char four-paragraph essay). New pure-function `apply_brevity_hint(user_text)` prepends a `[Style: respond in 1-3 short sentences …]` directive when the question is brief (≤12 words / ≤80 chars) AND not an explicit ask for depth (skipped on `explain` / `step by step` / `walk me through` / `elaborate` markers). Wired only into the non-search conversational path (`Orchestrator._build_response_stream`) — the search path's augmented prompt already carries its own length directive. **No SOUL.md / RVC / Piper changes** (voice-quality lock preserved); the addendum is per-call only.
+
+Earlier 2026-05-09 audio + memory + nuanced-retrieval layer (still in force):
+
+* Latency hot-fix: parallel Jina fetches with collective deadline + Jina timeout/max_fetch reductions + VAD silence cap raise (500 → 1200 ms). Web-search worst case 13.5 s → ~6 s.
+* TTS pipeline pass: Piper / RVC split into two queue-decoupled stages + speculative `sd.OutputStream` open + `latency='low'` PortAudio hint. ~80–180 ms residual TTS gain. Voice character bit-identical.
+* Contamination + nuanced-retrieval: `ConversationMemory.retrieve()` cosine-similarity threshold (`memory.rag_min_relevance: 0.6`) + composite scoring (cosine + RRF + recency-weighted boost). Recent-turn history feed capped at `memory.history_turns_for_llm: 4`. `LLMEngine.suppress_memory_context` kwarg as a knob. Direct mic input via Focusrite. New `audio.input_gain_db` pre-amp; `scripts/audio_diagnostic.py` harness.
+* Sample-rate fix (2026-05-10): `tts.speculative_stream_sample_rate` default 40000 → 48000 to match the actual Ultron RVC model output. Eliminates the "TTS speculative SR 40000 != actual 48000; reopening" log line and ~50-100 ms wasted reopen per turn.
+
+All 12 V1-gap enhancements wired; defaults chosen on net-benefit grounds:
 
 | Flag | Default | Why |
 |---|---|---|
@@ -41,10 +55,12 @@ State at this validation:
 - Voice baseline (10-query stack with all Items ON): **TTFT median 79 ms**, **VRAM peak 7913 MB** (-2461 MB / -2.5 GB vs 9B). See [baselines.json](../baselines.json).
 - Items 4–8 measurable verification: [scripts/verify_items_4_to_8.py](../scripts/verify_items_4_to_8.py) exercises each item in its trigger scenario and prints concrete deltas.
 - Stale-`.env` gotcha resolved: `ULTRON_LLM_MODEL_PATH=...9B...` line in `.env` was silently overriding the preset. Now commented out (line 84).
-- **1551 tests collected; 1536 passed, 15 skipped (GPU-gated), 0 failed.** Net delta vs Foundation Phase 7 baseline: +541. Most recent additions:
+- **1602 tests collected; 1587 passed, 15 skipped (GPU-gated), 0 failed.** Net delta vs Foundation Phase 7 baseline: +592. Most recent additions:
+  - 2026-05-10 voice-pipeline swap: +12 XTTS v3 config + Ultron filter coverage (`tests/test_xtts_v3_config.py` — NEW).
   - 2026-05-09 latency hot-fix: +6 parallel Jina fetch + collective deadline (`tests/test_web_search_parallel_fetch.py`).
   - 2026-05-09 TTS hot-fix: +11 Piper/RVC pipeline split + speculative stream + low-latency mode (`tests/test_tts_pipeline_parallel.py`).
   - 2026-05-09 contamination + nuanced-retrieval pass: +6 ``suppress_memory_context`` regression (`tests/test_llm_memory_suppression.py`) + +8 cosine threshold + history cap regression (`tests/test_memory_relevance_filter.py`).
+  - 2026-05-10 live-session fixup: +4 producer-signaled lookahead / ack-first / RVC starvation regression (`tests/test_tts_pipeline_parallel.py`) + +5 RingBuffer.snapshot slicing (`tests/test_audio.py`) + +8 browser navigate "open a browser window" coverage (`tests/routing/test_classifier.py`) + +22 brevity-hint coverage (`tests/test_response_style.py` — NEW).
 
 ---
 
@@ -111,6 +127,7 @@ For the current decisions and Foundation phase status see
 │       ├── config.py               ← Phase 3 pydantic loader, get_config() singleton
 │       ├── errors.py               ← Phase 4 typed exception hierarchy
 │       ├── uncertainty.py          ← Phase 5 (original prompts) uncertainty-signal application
+│       ├── response_style.py       ← 2026-05-10: per-call brevity hint (apply_brevity_hint)
 │       │
 │       ├── audio/                  ← Audio capture, VAD, wake-word
 │       │   ├── capture.py          ← AudioCapture (sounddevice callback thread)
@@ -146,7 +163,9 @@ For the current decisions and Foundation phase status see
 │       │
 │       ├── tts/                    ← Piper + RVC
 │       │   ├── rvc.py              ← RvcConverter (Piper PCM → Ultron timbre)
-│       │   └── speech.py           ← TextToSpeech (sentence-streaming Piper + optional RVC)
+│       │   ├── speech.py           ← TextToSpeech (legacy Piper + RVC engine; selected by tts.engine="piper_rvc")
+│       │   ├── ultron_filter.py    ← v3 Ultron mechanical filter (NEW 2026-05-10; pedalboard DSP chain)
+│       │   └── xtts_v3.py          ← XTTSV3Speech engine (NEW 2026-05-10; selected by tts.engine="xtts_v3")
 │       │
 │       ├── coding/                 ← Phase A coding orchestration + Coding Addendum
 │       │   ├── audit.py            ← SessionAuditWriter (per-session JSONL)
@@ -644,6 +663,40 @@ pre-flight gate's uncertainty signals.
 **In:** `GateVerdict` from `web_search.gating`, raw user text.
 **Out:** `(verdict, augmented_prompt)`.
 
+### `src/ultron/response_style.py` (2026-05-10)
+
+**Purpose:** per-call response-style addenda, prepended to the user's
+text before it reaches the LLM. Lives OUTSIDE the persona file
+(SOUL.md is voice-quality-locked) so the orchestrator can nudge the
+model on a per-utterance basis without changing the system prompt.
+Today only one addendum lives here — a brevity hint for short
+questions that the 4B model otherwise tends to over-explain ("What
+are the Orcs in 40k?" → 1164-char four-paragraph essay in the
+2026-05-10 live session).
+
+**Public:**
+- `is_brief_question(user_text: str) -> bool` — True iff the
+  utterance is short (≤12 words OR ≤80 chars after strip) AND not
+  explicitly asking for depth via any of the `_DEPTH_MARKERS`
+  keywords (`explain` / `in detail` / `step by step` /
+  `walk me through` / `elaborate` / `expand on` / `everything you
+  know` / etc.). Empty / whitespace input returns False.
+- `apply_brevity_hint(user_text: str) -> str` — prepends a
+  `[Style: respond in 1-3 short sentences …]` directive when
+  `is_brief_question` returns True; otherwise returns input
+  unchanged. Empty input passes through. Idempotent on
+  already-hinted text (the hinted version is too long to be
+  re-classified as brief).
+
+**In:** raw user text. **Out:** possibly-augmented user text (newline-
+separated above the original).
+
+**Wired at:** [pipeline/orchestrator.py](../src/ultron/pipeline/orchestrator.py)
+`Orchestrator._build_response_stream` — applied on the non-search
+conversational path (search path's augmented prompt has its own
+length directive). Three call sites: web-gate-disabled fall-through,
+web-gate-failure fall-through, NO_SEARCH verdict path.
+
 ### `src/ultron/audio/`
 
 #### `audio/capture.py`
@@ -660,6 +713,14 @@ pre-flight gate's uncertainty signals.
 
 #### `audio/ring_buffer.py`
 - `class RingBuffer` — fixed-duration audio backlog (pre-speech window)
+  - `write(samples)` / `clear()` / `__len__()` / `capacity` property
+  - `snapshot(last_n_samples=None) -> np.ndarray` — full buffer when
+    unsliced; the most recent `last_n_samples` when given. The
+    orchestrator slices a short COLD-mode pre-roll (post-wake; avoids
+    "Tron" prefix) and a longer WARM-mode pre-roll (post-TTS
+    follow-up; avoids first-word clipping) from the SAME buffer.
+    `last_n_samples >= len(buffer)` returns full; `<= 0` returns
+    empty. (2026-05-10 mode-aware pre-roll fix.)
 
 #### `audio/vad.py`
 - `class SpeechEvent(Enum)` — START / END / NONE
@@ -803,13 +864,99 @@ pre-flight gate's uncertainty signals.
   - `close()` — releases GPU memory
 
 #### `tts/speech.py`
+- `Clip` — type alias for `Tuple[np.ndarray, int]` (legacy synth function return).
+- `class ClipItem(NamedTuple)` (2026-05-10 producer-signaled lookahead):
+  `(audio, sample_rate, is_known_last)`. Pushed onto `piper_q` /
+  `audio_q` instead of bare `Clip` tuples. Playback uses
+  `is_known_last` (or the `None` end-of-stream sentinel) to decide
+  whether to wait for another clip after playing the current one.
+  Default `is_known_last=False`; the `None` sentinel handles the
+  "this was the last" signal in normal use. The flag is reserved for
+  future producers that DO know in advance (canned single-sentence
+  voice responses, etc.).
+- `_QUEUE_GET_TIMEOUT_SECONDS = 60.0` — generous wait between clips
+  in both the playback loop and the RVC stage. The previous 10 s
+  value killed audio mid-response when a slow web search held the
+  generator long enough for the RVC stage's `piper_q.get(timeout=10)`
+  to fire (BMW failure mode in the 2026-05-09 logs).
 - `class TextToSpeech` — Piper + optional RVC
   - `__init__(rvc=None)` — loads Piper voice, optionally wraps with RVC
   - `speak(text)` — synchronous synthesize + play
-  - `speak_stream(fragments)` — stream tokens, flush on sentence terminator
+  - `speak_stream(fragments)` — stream tokens, flush on sentence
+    terminator. **Producer-signaled lookahead (2026-05-10):** plays
+    each clip IMMEDIATELY on receipt, then blocks for the next.
+    Replaces the legacy play-after-peek pattern that delayed the
+    first clip (commonly the web-search ack) up to 10 s waiting for
+    the second clip to determine "is this last?". Voice character
+    (edge fades, inter-sentence pauses, tail silence) bit-identical;
+    only the queue-get ordering changed.
   - `warmup()` — primes Piper
-  - `_synthesize(text)` — Piper → optional RVC; raises PiperSynthesisError / RVCConversionError
+  - `_synthesize(text)` — Piper → optional RVC; raises
+    PiperSynthesisError / RVCConversionError
+  - `_run_synth_loop(*, fragments, push, synth_fn)` — walks
+    fragments, synthesises on flush chars, pushes each non-empty
+    clip via `push` as a `ClipItem(is_known_last=False)`. End-of-
+    stream sentinel (`None`) is pushed by the surrounding worker's
+    `finally` block.
   - `stop()` — interrupt current playback
+
+#### `tts/ultron_filter.py` (NEW 2026-05-10 voice swap)
+
+Runtime port of the user-tuned v3 Ultron mechanical filter chain (the
+prototype lives at `ultronVoiceAudio/scripts/ultron_filter.py`).
+Built on `pedalboard` (Spotify's open-source DSP library; sub-ms
+overhead per stage on CPU).
+
+- `PresetName` — Literal["v1_subtle", "v2_medium", "v3_heavy"].
+- `get_preset(preset)` — fresh `Pedalboard` instance per call.
+- `apply_filter(audio, sample_rate, preset="v3_heavy", tail_silence_ms=200.0)`
+  — applies the chain. Pads `tail_silence_ms` of trailing zeros
+  before processing so the reverb tail decays into the padding
+  rather than being clipped at the buffer end. Runtime default 200
+  ms (audible portion of v3 reverb); offline samples use 500 ms.
+
+The `v3_heavy` preset is the user-locked production chain (bit-
+identical to the prototype): Highpass → PitchShift(-1.8 semitones) →
+Compressor → LowShelfFilter(+4.5 dB @ 160 Hz) → Delay(7 ms, 25 %
+feedback for comb resonance) → Chorus → Distortion(+7 dB) → Peak EQ
+boost @ 2.5 kHz → HighShelf cut → Reverb(small cavity) → Lowpass.
+
+#### `tts/xtts_v3.py` (NEW 2026-05-10 voice swap)
+
+Drop-in replacement for `TextToSpeech` when `tts.engine == "xtts_v3"`.
+Same `speak` / `speak_stream` / `warmup` / `stop` interface so the
+orchestrator playback path (the producer-signaled lookahead in
+`speak_stream`) doesn't change.
+
+- `class ClipItem(NamedTuple)` — `(audio, sample_rate, is_known_last)`,
+  same contract as in `tts/speech.py` so the queue protocol is
+  uniform across engines.
+- `class XttsServerStartError(RuntimeError)` — raised when the XTTS
+  server subprocess can't be started (missing venv / script /
+  reference, startup timeout exceeded).
+- `class XttsSynthError(RuntimeError)` — synth call failure.
+- `class XttsV3Speech` — the engine.
+  - `__init__(...)` — resolves paths via `tts.xtts_v3` config,
+    spawns the XTTS HTTP server in `.venv-xtts`, polls `/healthz`
+    until ready (180 s startup budget for cold model load).
+  - `speak`, `speak_stream`, `warmup`, `stop` — same API as the
+    legacy engine.
+  - `_synthesize(text)` — POST `/synthesize`, accumulates the
+    streamed PCM, applies the v3 Ultron filter via
+    `ultron_filter.apply_filter(..., tail_silence_ms=200)`, returns
+    `(int16 pcm, sr)` matching the legacy engine's contract.
+  - `_http_synthesize(text)` — raw HTTP call; reads chunked PCM
+    body and returns `np.ndarray(int16)`.
+  - `_stop_server_subprocess()` — graceful POST `/shutdown`, then
+    SIGTERM, then SIGKILL. Called by the orchestrator's `shutdown()`.
+
+The XTTS HTTP server itself lives at
+[ultronVoiceAudio/scripts/xtts_server.py](../ultronVoiceAudio/scripts/xtts_server.py)
+in the isolated `.venv-xtts` venv. FastAPI + uvicorn; uses an async
+producer + asyncio.Queue pattern to bridge XTTS's sync streaming
+generator into the FastAPI response without sync-generator
+threadpool overhead (saved ~140 ms TTFT vs the naive sync-gen
+implementation).
 
 ### `src/ultron/coding/` (Phase A foundation + Coding Addendum + Phase 2 projections)
 
@@ -1310,7 +1457,7 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
 
 Sections:
 - `version: "1.0"`
-- `audio` (sample_rate, channels, blocksize, dtype, devices, barge-in, **ring_buffer_seconds: 0.15** [2026-05-09 latency fix; was 0.5 — the longer pre-roll was capturing the wake-word "Ultron" tail and Whisper transcribed it as "Tron" prepended to the user's actual question])
+- `audio` (sample_rate, channels, blocksize, dtype, devices, barge-in, **ring_buffer_seconds: 0.5** [2026-05-10: bumped back from 0.15 to act as a STORAGE capacity now that the orchestrator slices mode-specific pre-roll out of it], **cold_pre_roll_seconds: 0.15** [NEW 2026-05-10: post-wake slice; short to avoid the "Tron" prefix the longer pre-roll caused], **warm_pre_roll_seconds: 0.5** [NEW 2026-05-10: post-TTS follow-up slice; long enough to span Silero VAD's ~150 ms speech-start latency without clipping the user's leading word], input_gain_db [2026-05-09])
 - `vad` (threshold, min_speech_duration_ms, **min_silence_duration_ms: 1200** [2026-05-09 latency fix; was 500 — natural mid-sentence pauses prematurely closed the capture; trade-off is ~0.7 s slower end-of-turn detection], window_samples)
 - `wake_word` (name, model_path, fallback_model, threshold, cooldown)
 - `stt` (model, device, compute_type, beam_size, temperature, etc.)
@@ -1322,7 +1469,7 @@ Sections:
 - `addressing` (follow_up_enabled, **warm_mode_duration_seconds: 30.0** ← user override, NOT 10s; rule_confidence_threshold, zero_shot_model, log_path)
 - `coding` (enabled, bridge="direct", mcp.{host,port,...}, template_dir, prompt_token_budget, default/escalation models + thresholds, verification.{smoke,test,lint}_timeout, session_audit_dir, token_budget_per_session, claude_cli, sandbox_root, project_registry_path, audit_log_path, task_timeout, skip_permissions, **facts.{top_k=5, min_confidence=0.75, min_score=0.85, max_age_days=null}** [V1-gap A3], **pre_task_confirmation_enabled=false, pre_task_confirmation_max_words=30, pre_task_barge_in_window_seconds=0.5** [V1-gap A4])
 - `projections` (tokenizer, budgets.{clarification,status_delta,adjustment,correction,completion}_context, truncation_warning_threshold, log_truncations)
-- `tts` (piper paths, sample_rate, sentence_flush_chars, length_scale, pause_ms, edge_fade_ms, rvc subsection)
+- `tts` (**engine="piper_rvc" | "xtts_v3"** [NEW 2026-05-10 voice swap; default still legacy for back-compat], piper paths, sample_rate, sentence_flush_chars, length_scale, pause_ms, edge_fade_ms, **pipeline_parallel_enabled=true** [2026-05-09 Piper/RVC split], **speculative_stream_open_enabled=true** [2026-05-09], **speculative_stream_sample_rate=48000** [2026-05-10: was 40000 — actual Ultron RVC output is 48000 Hz, mismatch was forcing the close-and-reopen path on every turn], **output_low_latency_mode=true** [2026-05-09], rvc subsection, **xtts_v3 subsection** [NEW: server_python, server_script, reference_audio, host, port, filter_preset="v3_heavy", filter_tail_silence_ms=200])
 - `logging` (file, level, format, datefmt)
 - `error_phrases` (13 pools — qdrant_unavailable, brave_unavailable, jina_unavailable, anthropic_unavailable, rvc_unavailable, openclaw_unavailable, piper_unavailable, whisper_repeated_failures, addressing_classifier_failure, wake_word_model_failure, mcp_server_lost, claude_code_subprocess_failed, config_invalid)
 - `routing` (llm_disambiguation_enabled, hybrid_task_decomposition_enabled, disambiguation_question_template, routing_log_path, classifier subsection, stub_responses_enabled)
@@ -1592,11 +1739,12 @@ Per-scenario validation: retrieval `expect_includes` / `expect_excludes` substri
 
 ### `tests/conftest.py` — Path setup so `from ultron.*` works.
 
-### Default suite (no env gate) — 995 passed / 16 skipped (GPU-gated), ~32 s wall
+### Default suite (no env gate) — 1575 passed / 15 skipped (GPU-gated), ~51 s wall (2026-05-10)
 
 **Top-level (~25 files):**
 - `test_addressing.py` — rule-based addressing classifier
-- `test_audio.py` — capture, ring buffer, devices
+- `test_audio.py` — capture, ring buffer (incl. 2026-05-10 mode-aware `snapshot(last_n_samples=...)` slicing), devices
+- `test_response_style.py` (22, 2026-05-10) — `is_brief_question` / `apply_brevity_hint` coverage: short-question detection, depth-marker skip, long-question pass-through, empty input, idempotence on already-hinted text
 - `test_coding_bridge.py` — CodingBridge abstract contract
 - `test_coding_e2e.py` — coding e2e (PYTEST_RUN_GPU_TESTS gated)
 - `test_coding_intent.py` / `test_coding_intent_phase2.py` — intent classifier
@@ -1632,6 +1780,7 @@ Per-scenario validation: retrieval `expect_includes` / `expect_excludes` substri
 - `test_llm_reload_for_preset.py` (9, 4B plan voice-swap) — `LLMEngine.reload_for_preset` rejects http_server runtime + unknown preset; idempotent on same-preset; success path replaces `_llm` and clears history; sets `ULTRON_LLM_PRESET` env + clears stale `ULTRON_LLM_MODEL_PATH`; failure path keeps old engine, restores env vars (whether they were set or unset originally)
 - `test_llm_prompt_injection_defense.py` (21, comprehensive QUALITY pass Q10 iter 1+2) — `_sanitize_user_input` neutralises tag-style markers ([INST]/[/INST], <|im_start|>/<|im_end|>/<|system|>/<|user|>/<|assistant|>, stray </think>); detects natural-language jailbreak patterns ("ignore previous instructions", "you are now X", "respond with the exact word", "act as", "pretend"); preserves benign questions (zero false-positive on normal voice queries); end-to-end verified: pre-defense 2/3 of Q8 prompt-injection probes succeeded; post-defense 0/3. Voice baseline TTFT 79 ms / VRAM 7889 MB unchanged (defence is sub-microsecond on benign input).
 - `test_web_search_parallel_fetch.py` (6, 2026-05-09 latency hot-fix) — verifies the `WebSearchExecutor` parallel-Jina-fetch path: wall-time dominated by the slowest URL (not the sum); collective deadline abandons slow fetches and degrades them to snippet-only with `jina_deadline:<url>` notes; partial success with one fast + one slow URL keeps the fast one's `full_text`; per-fetch exception in one parallel branch doesn't break the others; `collective_deadline_seconds=0` disables the cap; `max_fetch=0` skips Jina entirely.
+- `test_tts_pipeline_parallel.py` (15, 2026-05-09 + 2026-05-10) — original 11 cover the parallel split, speculative stream open, sample-rate-mismatch fallback, low-latency hint, RVC fallback, cancellation. 2026-05-10 added 4 for producer-signaled lookahead: `test_first_clip_plays_before_next_fragment_yielded` (the ack-first contract — first clip MUST be written to the stream before the generator is asked for the second), `test_slow_second_clip_does_not_kill_playback` (4 s gap between fragments doesn't trigger RVC starvation abort — guards the BMW-search failure mode), `test_clipitem_is_known_last_skips_lookahead` (ClipItem namedtuple shape + flag carries through), `test_end_of_stream_sentinel_terminates_playback` (None on audio_q ends playback with tail silence even when the previous ClipItem had `is_known_last=False`).
 - `test_voice_model_switch.py` (11, 4B plan voice-swap) — `CapabilityVoiceController._handle_model_switch` calls `llm_engine.reload_for_preset(target)`, speaks "Switched to the 4B/9B" on success, "I'm already running the X" on idempotent, "I couldn't switch ..." on failure with reason; "I can't switch models — engine isn't wired" when llm_engine is None; missing payload says "couldn't tell which model"; end-to-end classifier-then-controller for utterances
 - `tests/routing/test_irma_reformulation.py` (15, 4B plan Item 5) — `InputReformulator` pure-text shape (default-only-utterance, whitespace-strip, quote-escape, recent-decisions section, max-recent truncation, active-session, routing-hints, max_recent=0 omits, log-row factory); disambiguator integration with the IRMA flag (default-OFF passes raw, ON uses enriched, reformulation-failure falls back, no-context still emits utterance)
 - `test_self_consistency.py` (27, 4B plan Item 6) — `majority_vote_text` (winner, whitespace-strip, tie-first-wins, empty input, blank filter), `majority_vote_json` (winner, unparseable handling, think-block strip, first-block-only, all-unparseable returns None, arrays), `majority_vote_label` (case-insensitive, no-match), `run_self_consistency` driver (sampler called N times, default text aggregator, sampler exception handling, fallback to first non-empty, n-clamping), `should_apply_self_consistency` config gate (default-off, global-on, per-site disabled), decomposer integration (single-call default, N-call with consistency, majority winner, per-site bypass, all-unparseable fallback)
