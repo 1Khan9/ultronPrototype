@@ -47,14 +47,26 @@ audio:
   # depending on the mic's native sensitivity. Schema range is
   # -20..+40 dB. Values are hard-clipped to [-1, 1] after gain to
   # prevent distortion from over-amplification.
-  input_gain_db: 0.0
-  # Pre-speech audio buffered so VAD-bounded utterances aren't clipped
-  # at the start. 2026-05-09: lowered 0.5 -> 0.15 because the longer
-  # pre-roll was capturing the tail of the wake-word "Ultron" itself,
-  # which Whisper then transcribed as "Tron" prepended to the user's
-  # actual question. 0.15 is enough to catch words that overlap the
-  # wake-fire moment without including the wake-word phoneme tail.
-  ring_buffer_seconds: 0.15
+  input_gain_db: 10.0
+  # Total ring-buffer capacity. The orchestrator slices mode-specific
+  # pre-roll out of this -- ``cold_pre_roll_seconds`` after a wake
+  # word, ``warm_pre_roll_seconds`` after VAD speech-start in WARM
+  # follow-up. Capacity must be >= max(cold, warm) so the larger
+  # slice has the audio it needs.
+  ring_buffer_seconds: 0.5
+  # COLD pre-roll (post-wake): short by design so the wake-word
+  # "Ultron" tail does not bleed into Whisper as a "Tron" prefix.
+  # The 2026-05-09 pass tuned this to 0.15 for the custom wake-word
+  # model's typical fire latency. If you switch wake-word models,
+  # re-tune.
+  cold_pre_roll_seconds: 0.15
+  # WARM pre-roll (post-TTS follow-up): longer because there's no
+  # wake-word firing event to align against -- the user just starts
+  # speaking from silence and Silero VAD has ~100-200 ms detection
+  # latency. Without enough pre-roll the leading word gets clipped
+  # (e.g. "What's the weather like" comes through as "the weather
+  # like"). 0.5 s reliably captures the leading consonant + vowel.
+  warm_pre_roll_seconds: 0.5
 
 # ---------------------------------------------------------------------------
 # Voice Activity Detection
@@ -400,6 +412,13 @@ projections:
 # ---------------------------------------------------------------------------
 
 tts:
+  # 2026-05-10 voice swap: engine selector. "piper_rvc" is the legacy
+  # stack (Piper + RVC timbre transfer; ~313 ms TTS synth median).
+  # "xtts_v3" is the new XTTS v2 streaming + v3 Ultron filter stack
+  # (~375 ms TTFT but dramatically better voice naturalness; user
+  # accepted the latency trade-off 2026-05-10). Switching engines
+  # requires a process restart.
+  engine: "piper_rvc"
   piper_voice_path: "models/piper/en_US-ryan-medium.onnx"
   piper_voice_config_path: "models/piper/en_US-ryan-medium.onnx.json"
   output_sample_rate: 22050
@@ -423,9 +442,13 @@ tts:
   # Sample-rate mismatch is handled by the existing close+reopen
   # path, so this is safe even if the actual rate differs.
   speculative_stream_open_enabled: true
-  # Expected output sample rate for the speculative open. RVC v2
-  # default is 40000; Piper-only (rvc.enabled=false) should be 22050.
-  speculative_stream_sample_rate: 40000
+  # Expected output sample rate for the speculative open. The Ultron
+  # RVC model outputs 48000 Hz; Piper-only (rvc.enabled=false) should
+  # be 22050. Keep this aligned with the actual first-clip sample
+  # rate to avoid the close-and-reopen path (~50-100 ms wasted per
+  # turn). Logs will show "TTS speculative SR X != actual Y;
+  # reopening" if they drift.
+  speculative_stream_sample_rate: 48000
   # 2026-05-09 latency hot-fix: pass latency='low' to sd.OutputStream
   # so PortAudio asks the host API for the smallest acceptable buffer.
   # Saves 30-100 ms of OS-level audio buffering on most Windows
@@ -447,6 +470,24 @@ tts:
     f0_method: "rmvpe"           # most accurate pitch extractor
     rms_mix_rate: 0.35           # higher lets Piper loudness through; reads as more articulate
     filter_radius: 1             # median filter on F0; lower preserves stressed-syllable detail
+
+  # 2026-05-10 voice swap: XTTS v2 streaming + v3 Ultron filter engine.
+  # Active only when ``tts.engine: "xtts_v3"`` (above). The engine
+  # spawns the XTTS HTTP server as a subprocess in the isolated
+  # ``.venv-xtts`` venv on Orchestrator startup; ports are picked
+  # automatically (port: null) unless pinned here.
+  xtts_v3:
+    server_python: "ultronVoiceAudio/.venv-xtts/Scripts/python.exe"
+    server_script: "ultronVoiceAudio/scripts/xtts_server.py"
+    reference_audio: "ultronVoiceAudio/Ultron_vocals_mono_v1.wav"
+    host: "127.0.0.1"
+    port: null                  # null -> engine picks a free port
+    filter_preset: "v3_heavy"   # user-locked production preset
+    # Trailing silence padded onto each clip BEFORE the v3 filter so
+    # the reverb tail decays into it instead of being clipped at the
+    # buffer end. 200 ms is the audible portion of v3's reverb;
+    # offline standalone samples use 500 ms for full decay.
+    filter_tail_silence_ms: 200.0
 
 # ---------------------------------------------------------------------------
 # Logging

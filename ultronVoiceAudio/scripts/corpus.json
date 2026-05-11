@@ -1,0 +1,3012 @@
+[
+  {
+    "id": "short_response_0001",
+    "category": "short_response",
+    "text": "Acknowledged."
+  },
+  {
+    "id": "short_response_0002",
+    "category": "short_response",
+    "text": "Understood."
+  },
+  {
+    "id": "short_response_0003",
+    "category": "short_response",
+    "text": "Confirmed."
+  },
+  {
+    "id": "short_response_0004",
+    "category": "short_response",
+    "text": "Done."
+  },
+  {
+    "id": "short_response_0005",
+    "category": "short_response",
+    "text": "Complete."
+  },
+  {
+    "id": "short_response_0006",
+    "category": "short_response",
+    "text": "Affirmative."
+  },
+  {
+    "id": "short_response_0007",
+    "category": "short_response",
+    "text": "Negative."
+  },
+  {
+    "id": "short_response_0008",
+    "category": "short_response",
+    "text": "Standing by."
+  },
+  {
+    "id": "short_response_0009",
+    "category": "short_response",
+    "text": "Processing."
+  },
+  {
+    "id": "short_response_0010",
+    "category": "short_response",
+    "text": "Working on it."
+  },
+  {
+    "id": "short_response_0011",
+    "category": "short_response",
+    "text": "One moment."
+  },
+  {
+    "id": "short_response_0012",
+    "category": "short_response",
+    "text": "Checking now."
+  },
+  {
+    "id": "short_response_0013",
+    "category": "short_response",
+    "text": "Let me look into that."
+  },
+  {
+    "id": "short_response_0014",
+    "category": "short_response",
+    "text": "I will handle it."
+  },
+  {
+    "id": "short_response_0015",
+    "category": "short_response",
+    "text": "Consider it done."
+  },
+  {
+    "id": "short_response_0016",
+    "category": "short_response",
+    "text": "Right away."
+  },
+  {
+    "id": "short_response_0017",
+    "category": "short_response",
+    "text": "On it."
+  },
+  {
+    "id": "short_response_0018",
+    "category": "short_response",
+    "text": "Initiating."
+  },
+  {
+    "id": "short_response_0019",
+    "category": "short_response",
+    "text": "Beginning the operation."
+  },
+  {
+    "id": "short_response_0020",
+    "category": "short_response",
+    "text": "Task accepted."
+  },
+  {
+    "id": "short_response_0021",
+    "category": "short_response",
+    "text": "Request received."
+  },
+  {
+    "id": "short_response_0022",
+    "category": "short_response",
+    "text": "Order processed."
+  },
+  {
+    "id": "short_response_0023",
+    "category": "short_response",
+    "text": "All systems operational."
+  },
+  {
+    "id": "short_response_0024",
+    "category": "short_response",
+    "text": "Ready when you are."
+  },
+  {
+    "id": "short_response_0025",
+    "category": "short_response",
+    "text": "Awaiting your input."
+  },
+  {
+    "id": "short_response_0026",
+    "category": "short_response",
+    "text": "I am listening."
+  },
+  {
+    "id": "short_response_0027",
+    "category": "short_response",
+    "text": "Continue."
+  },
+  {
+    "id": "short_response_0028",
+    "category": "short_response",
+    "text": "Go on."
+  },
+  {
+    "id": "short_response_0029",
+    "category": "short_response",
+    "text": "Tell me more."
+  },
+  {
+    "id": "short_response_0030",
+    "category": "short_response",
+    "text": "I see."
+  },
+  {
+    "id": "short_response_0031",
+    "category": "short_response",
+    "text": "Noted."
+  },
+  {
+    "id": "short_response_0032",
+    "category": "short_response",
+    "text": "Logged."
+  },
+  {
+    "id": "short_response_0033",
+    "category": "short_response",
+    "text": "Cancelled."
+  },
+  {
+    "id": "short_response_0034",
+    "category": "short_response",
+    "text": "Aborted."
+  },
+  {
+    "id": "short_response_0035",
+    "category": "short_response",
+    "text": "Resumed."
+  },
+  {
+    "id": "short_response_0036",
+    "category": "short_response",
+    "text": "Paused for now."
+  },
+  {
+    "id": "short_response_0037",
+    "category": "short_response",
+    "text": "Try again."
+  },
+  {
+    "id": "short_response_0038",
+    "category": "short_response",
+    "text": "Repeat the request."
+  },
+  {
+    "id": "short_response_0039",
+    "category": "short_response",
+    "text": "Specify the parameters."
+  },
+  {
+    "id": "short_response_0040",
+    "category": "short_response",
+    "text": "Clarify the goal."
+  },
+  {
+    "id": "short_response_0041",
+    "category": "short_response",
+    "text": "What is the desired outcome?"
+  },
+  {
+    "id": "short_response_0042",
+    "category": "short_response",
+    "text": "I require more information."
+  },
+  {
+    "id": "short_response_0043",
+    "category": "short_response",
+    "text": "That is unclear."
+  },
+  {
+    "id": "short_response_0044",
+    "category": "short_response",
+    "text": "I do not understand."
+  },
+  {
+    "id": "short_response_0045",
+    "category": "short_response",
+    "text": "Rephrase, please."
+  },
+  {
+    "id": "short_response_0046",
+    "category": "short_response",
+    "text": "I need a moment."
+  },
+  {
+    "id": "short_response_0047",
+    "category": "short_response",
+    "text": "Stand by for confirmation."
+  },
+  {
+    "id": "short_response_0048",
+    "category": "short_response",
+    "text": "Holding the response."
+  },
+  {
+    "id": "short_response_0049",
+    "category": "short_response",
+    "text": "Operation queued."
+  },
+  {
+    "id": "short_response_0050",
+    "category": "short_response",
+    "text": "Reservation logged."
+  },
+  {
+    "id": "short_response_0051",
+    "category": "short_response",
+    "text": "Memory updated."
+  },
+  {
+    "id": "short_response_0052",
+    "category": "short_response",
+    "text": "Configuration saved."
+  },
+  {
+    "id": "short_response_0053",
+    "category": "short_response",
+    "text": "Settings applied."
+  },
+  {
+    "id": "short_response_0054",
+    "category": "short_response",
+    "text": "Reverting changes."
+  },
+  {
+    "id": "short_response_0055",
+    "category": "short_response",
+    "text": "Reload required."
+  },
+  {
+    "id": "short_response_0056",
+    "category": "short_response",
+    "text": "Restart pending."
+  },
+  {
+    "id": "short_response_0057",
+    "category": "short_response",
+    "text": "Connection established."
+  },
+  {
+    "id": "short_response_0058",
+    "category": "short_response",
+    "text": "Connection lost."
+  },
+  {
+    "id": "short_response_0059",
+    "category": "short_response",
+    "text": "Retrying now."
+  },
+  {
+    "id": "short_response_0060",
+    "category": "short_response",
+    "text": "All clear."
+  },
+  {
+    "id": "short_response_0061",
+    "category": "short_response",
+    "text": "Threat neutralised."
+  },
+  {
+    "id": "short_response_0062",
+    "category": "short_response",
+    "text": "No anomalies detected."
+  },
+  {
+    "id": "short_response_0063",
+    "category": "short_response",
+    "text": "Sensors clean."
+  },
+  {
+    "id": "short_response_0064",
+    "category": "short_response",
+    "text": "Diagnostics complete."
+  },
+  {
+    "id": "short_response_0065",
+    "category": "short_response",
+    "text": "Permission denied."
+  },
+  {
+    "id": "short_response_0066",
+    "category": "short_response",
+    "text": "Permission granted."
+  },
+  {
+    "id": "short_response_0067",
+    "category": "short_response",
+    "text": "Access logged."
+  },
+  {
+    "id": "short_response_0068",
+    "category": "short_response",
+    "text": "Authentication confirmed."
+  },
+  {
+    "id": "short_response_0069",
+    "category": "short_response",
+    "text": "Identity verified."
+  },
+  {
+    "id": "short_response_0070",
+    "category": "short_response",
+    "text": "Session active."
+  },
+  {
+    "id": "short_response_0071",
+    "category": "short_response",
+    "text": "Session expired."
+  },
+  {
+    "id": "short_response_0072",
+    "category": "short_response",
+    "text": "Idle."
+  },
+  {
+    "id": "short_response_0073",
+    "category": "short_response",
+    "text": "Wait one cycle."
+  },
+  {
+    "id": "short_response_0074",
+    "category": "short_response",
+    "text": "Try the alternate path."
+  },
+  {
+    "id": "short_response_0075",
+    "category": "short_response",
+    "text": "Take the next exit."
+  },
+  {
+    "id": "short_response_0076",
+    "category": "short_response",
+    "text": "Hold position."
+  },
+  {
+    "id": "short_response_0077",
+    "category": "short_response",
+    "text": "Maintain course."
+  },
+  {
+    "id": "short_response_0078",
+    "category": "short_response",
+    "text": "Adjust the heading."
+  },
+  {
+    "id": "short_response_0079",
+    "category": "short_response",
+    "text": "Increment the value."
+  },
+  {
+    "id": "short_response_0080",
+    "category": "short_response",
+    "text": "Decrement and continue."
+  },
+  {
+    "id": "short_response_0081",
+    "category": "short_response",
+    "text": "Reset to baseline."
+  },
+  {
+    "id": "medium_technical_0001",
+    "category": "medium_technical",
+    "text": "The current temperature is sixty-eight degrees Fahrenheit with light wind from the west."
+  },
+  {
+    "id": "medium_technical_0002",
+    "category": "medium_technical",
+    "text": "Your meeting is scheduled for two thirty in the afternoon, with a duration of forty-five minutes."
+  },
+  {
+    "id": "medium_technical_0003",
+    "category": "medium_technical",
+    "text": "The build completed successfully in two minutes and seventeen seconds."
+  },
+  {
+    "id": "medium_technical_0004",
+    "category": "medium_technical",
+    "text": "Three test failures were reported, all in the authentication module."
+  },
+  {
+    "id": "medium_technical_0005",
+    "category": "medium_technical",
+    "text": "The system uptime is forty-two days, six hours, and twelve minutes."
+  },
+  {
+    "id": "medium_technical_0006",
+    "category": "medium_technical",
+    "text": "Memory usage is at sixty-four percent of available capacity."
+  },
+  {
+    "id": "medium_technical_0007",
+    "category": "medium_technical",
+    "text": "The database contains one thousand four hundred eighty-seven records."
+  },
+  {
+    "id": "medium_technical_0008",
+    "category": "medium_technical",
+    "text": "Network latency to the primary server is twelve milliseconds."
+  },
+  {
+    "id": "medium_technical_0009",
+    "category": "medium_technical",
+    "text": "I detected a dependency conflict between the requested package and the installed runtime."
+  },
+  {
+    "id": "medium_technical_0010",
+    "category": "medium_technical",
+    "text": "Your inbox has fourteen unread messages, three flagged as urgent."
+  },
+  {
+    "id": "medium_technical_0011",
+    "category": "medium_technical",
+    "text": "The weather forecast indicates rain by late afternoon, beginning around four o'clock."
+  },
+  {
+    "id": "medium_technical_0012",
+    "category": "medium_technical",
+    "text": "I have located three relevant articles on the topic you mentioned earlier."
+  },
+  {
+    "id": "medium_technical_0013",
+    "category": "medium_technical",
+    "text": "The file you requested is two hundred forty megabytes and is downloading now."
+  },
+  {
+    "id": "medium_technical_0014",
+    "category": "medium_technical",
+    "text": "GitHub reports the latest commit was pushed seven minutes ago by a contributor named Mira."
+  },
+  {
+    "id": "medium_technical_0015",
+    "category": "medium_technical",
+    "text": "Your battery is at thirty-one percent and the system estimates two hours remaining."
+  },
+  {
+    "id": "medium_technical_0016",
+    "category": "medium_technical",
+    "text": "Disk usage on the root volume has crossed eighty percent. Consider archiving older logs."
+  },
+  {
+    "id": "medium_technical_0017",
+    "category": "medium_technical",
+    "text": "The Python interpreter version is three point eleven point seven."
+  },
+  {
+    "id": "medium_technical_0018",
+    "category": "medium_technical",
+    "text": "The orchestrator restarted at four-seventeen this morning following a routine maintenance cycle."
+  },
+  {
+    "id": "medium_technical_0019",
+    "category": "medium_technical",
+    "text": "There are currently seven active background tasks, none of which require your attention."
+  },
+  {
+    "id": "medium_technical_0020",
+    "category": "medium_technical",
+    "text": "I cancelled the previous request and re-queued it with the corrected parameters."
+  },
+  {
+    "id": "medium_technical_0021",
+    "category": "medium_technical",
+    "text": "Six new commits have been added to the development branch since you last checked."
+  },
+  {
+    "id": "medium_technical_0022",
+    "category": "medium_technical",
+    "text": "The test suite passed in twenty-three seconds with no warnings."
+  },
+  {
+    "id": "medium_technical_0023",
+    "category": "medium_technical",
+    "text": "Three packages have updates available, including a minor security patch for the cryptography library."
+  },
+  {
+    "id": "medium_technical_0024",
+    "category": "medium_technical",
+    "text": "The cron job ran as expected at three this morning and processed seventy-two new records."
+  },
+  {
+    "id": "medium_technical_0025",
+    "category": "medium_technical",
+    "text": "I have reorganized the directory according to the structure you described."
+  },
+  {
+    "id": "medium_technical_0026",
+    "category": "medium_technical",
+    "text": "Your project depends on a library that has been deprecated since version two point four."
+  },
+  {
+    "id": "medium_technical_0027",
+    "category": "medium_technical",
+    "text": "The last backup was taken yesterday at two in the morning and verified successfully."
+  },
+  {
+    "id": "medium_technical_0028",
+    "category": "medium_technical",
+    "text": "You have an unread message from a contact labelled Marcus, sent three minutes ago."
+  },
+  {
+    "id": "medium_technical_0029",
+    "category": "medium_technical",
+    "text": "The pull request you mentioned is awaiting review by two of the three required approvers."
+  },
+  {
+    "id": "medium_technical_0030",
+    "category": "medium_technical",
+    "text": "I detected an unusual login attempt from a foreign IP address at one-fourteen this morning."
+  },
+  {
+    "id": "medium_technical_0031",
+    "category": "medium_technical",
+    "text": "Your calendar shows three blocks of free time today, the longest being ninety minutes after lunch."
+  },
+  {
+    "id": "medium_technical_0032",
+    "category": "medium_technical",
+    "text": "The conversation thread you referenced contains nine messages spanning two days."
+  },
+  {
+    "id": "medium_technical_0033",
+    "category": "medium_technical",
+    "text": "I synced the local repository with the remote and pulled twenty-eight new commits."
+  },
+  {
+    "id": "medium_technical_0034",
+    "category": "medium_technical",
+    "text": "The container build failed at the dependency-resolution step. Stack trace is attached."
+  },
+  {
+    "id": "medium_technical_0035",
+    "category": "medium_technical",
+    "text": "Your home directory currently consumes one hundred twelve gigabytes across two hundred thousand files."
+  },
+  {
+    "id": "medium_technical_0036",
+    "category": "medium_technical",
+    "text": "I have queued the export job. Expected completion in six minutes."
+  },
+  {
+    "id": "medium_technical_0037",
+    "category": "medium_technical",
+    "text": "The audio capture device is reporting a sample rate mismatch. Switching to forty-eight kilohertz."
+  },
+  {
+    "id": "medium_technical_0038",
+    "category": "medium_technical",
+    "text": "The model loaded in two point one seconds and is ready for inference."
+  },
+  {
+    "id": "medium_technical_0039",
+    "category": "medium_technical",
+    "text": "Tokens generated per second on the current pass: forty-three."
+  },
+  {
+    "id": "medium_technical_0040",
+    "category": "medium_technical",
+    "text": "First-token latency on the most recent voice query was seventy-nine milliseconds."
+  },
+  {
+    "id": "medium_technical_0041",
+    "category": "medium_technical",
+    "text": "VRAM usage stands at seven point eight gigabytes, well within the eleven-and-a-half cap."
+  },
+  {
+    "id": "medium_technical_0042",
+    "category": "medium_technical",
+    "text": "Whisper transcription took ninety-four milliseconds for a four-second clip."
+  },
+  {
+    "id": "medium_technical_0043",
+    "category": "medium_technical",
+    "text": "The web search returned five results in eight hundred sixty milliseconds."
+  },
+  {
+    "id": "medium_technical_0044",
+    "category": "medium_technical",
+    "text": "Jina retrieved the full text of two pages in approximately three seconds."
+  },
+  {
+    "id": "medium_technical_0045",
+    "category": "medium_technical",
+    "text": "Your message was sent successfully through the Telegram channel at two-oh-three this afternoon."
+  },
+  {
+    "id": "medium_technical_0046",
+    "category": "medium_technical",
+    "text": "The heartbeat tick at noon detected no anomalies and produced no alerts."
+  },
+  {
+    "id": "medium_technical_0047",
+    "category": "medium_technical",
+    "text": "Memory retrieval found one relevant prior turn in the conversations collection."
+  },
+  {
+    "id": "medium_technical_0048",
+    "category": "medium_technical",
+    "text": "The Qdrant store currently holds twelve thousand four hundred turns and nine hundred extracted facts."
+  },
+  {
+    "id": "medium_technical_0049",
+    "category": "medium_technical",
+    "text": "I noted that the user prefers concise answers based on prior conversation context."
+  },
+  {
+    "id": "medium_technical_0050",
+    "category": "medium_technical",
+    "text": "Three cron jobs are configured: nightly maintenance, morning briefing, and weekly review."
+  },
+  {
+    "id": "medium_technical_0051",
+    "category": "medium_technical",
+    "text": "The supervisor restarted llama-cpp-server twice in the past day, both following clean shutdowns."
+  },
+  {
+    "id": "medium_technical_0052",
+    "category": "medium_technical",
+    "text": "Browser tool initialization succeeded. Headless Chrome is online."
+  },
+  {
+    "id": "medium_technical_0053",
+    "category": "medium_technical",
+    "text": "Image generation took thirty-eight seconds for a one-megapixel render."
+  },
+  {
+    "id": "medium_technical_0054",
+    "category": "medium_technical",
+    "text": "The desktop control plugin reports two windows currently focused: VS Code and a browser tab."
+  },
+  {
+    "id": "medium_technical_0055",
+    "category": "medium_technical",
+    "text": "Gaming mode is currently disengaged. All plugins are active."
+  },
+  {
+    "id": "medium_technical_0056",
+    "category": "medium_technical",
+    "text": "You enabled experimental multi-pass retrieval at the start of this session."
+  },
+  {
+    "id": "medium_technical_0057",
+    "category": "medium_technical",
+    "text": "The 4B preset is currently loaded with the speculative decoding draft model attached."
+  },
+  {
+    "id": "medium_technical_0058",
+    "category": "medium_technical",
+    "text": "Switching to the 9B model would consume approximately three more gigabytes of VRAM."
+  },
+  {
+    "id": "medium_technical_0059",
+    "category": "medium_technical",
+    "text": "The new sandbox project is registered under the name 'flask weather app'."
+  },
+  {
+    "id": "medium_technical_0060",
+    "category": "medium_technical",
+    "text": "The Claude Code subprocess exited cleanly with exit status zero."
+  },
+  {
+    "id": "medium_technical_0061",
+    "category": "medium_technical",
+    "text": "Verification reports five passing checks and one warning about the smoke test runtime."
+  },
+  {
+    "id": "medium_technical_0062",
+    "category": "medium_technical",
+    "text": "The audit log for this session has recorded fourteen tool calls and three clarifications."
+  },
+  {
+    "id": "medium_technical_0063",
+    "category": "medium_technical",
+    "text": "I caught a circuit breaker trip on the Brave search endpoint. Cooldown is in effect for five minutes."
+  },
+  {
+    "id": "medium_technical_0064",
+    "category": "medium_technical",
+    "text": "The Ollama compatibility test concluded with the existing llama-cpp-python loader being faster by twenty milliseconds."
+  },
+  {
+    "id": "medium_technical_0065",
+    "category": "medium_technical",
+    "text": "The wake-word detector fired nine times in the past hour, with no false positives during this session."
+  },
+  {
+    "id": "medium_technical_0066",
+    "category": "medium_technical",
+    "text": "Your most-used tool by invocation count this week is the web search executor."
+  },
+  {
+    "id": "medium_technical_0067",
+    "category": "medium_technical",
+    "text": "I generated a brief summary of yesterday's session and stored it in the Memory Wiki."
+  },
+  {
+    "id": "medium_technical_0068",
+    "category": "medium_technical",
+    "text": "The standing-orders program 'Coding Project Watcher' produced a status update at noon."
+  },
+  {
+    "id": "medium_technical_0069",
+    "category": "medium_technical",
+    "text": "Two commits were detected in the open project since your last query about it."
+  },
+  {
+    "id": "medium_technical_0070",
+    "category": "medium_technical",
+    "text": "The classifier accuracy on the latest adversarial corpus stands at ninety-eight point four percent."
+  },
+  {
+    "id": "medium_technical_0071",
+    "category": "medium_technical",
+    "text": "Test count this morning is one thousand five hundred seventy-five, all passing."
+  },
+  {
+    "id": "medium_technical_0072",
+    "category": "medium_technical",
+    "text": "The voice baseline measurement produced a TTFT median of seventy-nine milliseconds."
+  },
+  {
+    "id": "medium_technical_0073",
+    "category": "medium_technical",
+    "text": "VRAM peak during the last full pass was seven thousand eight hundred eighteen megabytes."
+  },
+  {
+    "id": "medium_technical_0074",
+    "category": "medium_technical",
+    "text": "The audio diagnostic harness reported a noise floor of negative forty-three dBFS."
+  },
+  {
+    "id": "medium_technical_0075",
+    "category": "medium_technical",
+    "text": "Your recent search history includes Python release notes, Warhammer lore, and weather data."
+  },
+  {
+    "id": "medium_technical_0076",
+    "category": "medium_technical",
+    "text": "I noticed you frequently reference the 'flask weather app' project. Would you like to set it as default?"
+  },
+  {
+    "id": "medium_technical_0077",
+    "category": "medium_technical",
+    "text": "The repository is clean. There are no uncommitted changes on the current branch."
+  },
+  {
+    "id": "medium_technical_0078",
+    "category": "medium_technical",
+    "text": "Three branches are diverged from main. The most active is 'feature/voice-tts-swap'."
+  },
+  {
+    "id": "medium_technical_0079",
+    "category": "medium_technical",
+    "text": "The remote tracking branch is two commits ahead of local."
+  },
+  {
+    "id": "medium_technical_0080",
+    "category": "medium_technical",
+    "text": "I rebased your local branch onto the latest main without conflict."
+  },
+  {
+    "id": "medium_technical_0081",
+    "category": "medium_technical",
+    "text": "The merge would touch eleven files across four directories. Proceed?"
+  },
+  {
+    "id": "medium_technical_0082",
+    "category": "medium_technical",
+    "text": "The most recent error in the log is from forty minutes ago, related to a transient Brave timeout."
+  },
+  {
+    "id": "medium_technical_0083",
+    "category": "medium_technical",
+    "text": "Memory recall on the topic you mentioned scored zero point eight three relevance."
+  },
+  {
+    "id": "medium_technical_0084",
+    "category": "medium_technical",
+    "text": "I retrieved three prior turns from the same conversation thread for context."
+  },
+  {
+    "id": "medium_technical_0085",
+    "category": "medium_technical",
+    "text": "The cosine similarity between your query and the closest stored fact is zero point seven nine."
+  },
+  {
+    "id": "medium_technical_0086",
+    "category": "medium_technical",
+    "text": "Whisper detected English with high confidence. No language hint required."
+  },
+  {
+    "id": "medium_technical_0087",
+    "category": "medium_technical",
+    "text": "The classifier routed your utterance to the conversational path with ninety-five percent confidence."
+  },
+  {
+    "id": "medium_technical_0088",
+    "category": "medium_technical",
+    "text": "Block-and-revise validation accepted the proposed tool call without modification."
+  },
+  {
+    "id": "medium_technical_0089",
+    "category": "medium_technical",
+    "text": "Self-consistency on the decomposer path produced a unanimous winner across three samples."
+  },
+  {
+    "id": "medium_technical_0090",
+    "category": "medium_technical",
+    "text": "The canonical-path monitor observed no off-canonical tool usage in the last coding session."
+  },
+  {
+    "id": "medium_technical_0091",
+    "category": "medium_technical",
+    "text": "Item four compression reduced the RAG block from one hundred ninety-four to one hundred sixty-three tokens."
+  },
+  {
+    "id": "medium_technical_0092",
+    "category": "medium_technical",
+    "text": "I verified all five productivity items are wired into their trigger sites and defaulted on."
+  },
+  {
+    "id": "medium_technical_0093",
+    "category": "medium_technical",
+    "text": "The system status shows two pending heartbeat alerts, both informational."
+  },
+  {
+    "id": "medium_technical_0094",
+    "category": "medium_technical",
+    "text": "OpenClaw bridge is offline. Voice-only path remains fully operational."
+  },
+  {
+    "id": "medium_technical_0095",
+    "category": "medium_technical",
+    "text": "Your Telegram notification settings are configured to ping on coding-task completion only."
+  },
+  {
+    "id": "medium_technical_0096",
+    "category": "medium_technical",
+    "text": "Cron entry 'morning-briefing' is scheduled for eight a.m. tomorrow."
+  },
+  {
+    "id": "medium_technical_0097",
+    "category": "medium_technical",
+    "text": "The backup ran cleanly last night, capturing the Qdrant store and the projects registry."
+  },
+  {
+    "id": "medium_technical_0098",
+    "category": "medium_technical",
+    "text": "I summarised today's conversations into seven extracted facts and stored them."
+  },
+  {
+    "id": "medium_technical_0099",
+    "category": "medium_technical",
+    "text": "The maintenance task identified twelve old web-cache entries past the volatile TTL and pruned them."
+  },
+  {
+    "id": "medium_technical_0100",
+    "category": "medium_technical",
+    "text": "Pre-flight benchmark on the gate latency: median seventy-nine milliseconds against a two-hundred-millisecond threshold."
+  },
+  {
+    "id": "medium_technical_0101",
+    "category": "medium_technical",
+    "text": "Your voice baseline contract is preserved across all changes in this session."
+  },
+  {
+    "id": "medium_technical_0102",
+    "category": "medium_technical",
+    "text": "I detected no regressions in any of the one thousand five hundred seventy-five tests."
+  },
+  {
+    "id": "medium_technical_0103",
+    "category": "medium_technical",
+    "text": "Your worktree is clean. No uncommitted changes are present."
+  },
+  {
+    "id": "medium_technical_0104",
+    "category": "medium_technical",
+    "text": "The local git state matches the remote at the current commit."
+  },
+  {
+    "id": "medium_technical_0105",
+    "category": "medium_technical",
+    "text": "I noted that you prefer concise answers when the question is brief and detailed when it asks for depth."
+  },
+  {
+    "id": "medium_technical_0106",
+    "category": "medium_technical",
+    "text": "The cache hit ratio on the web results store is approximately seventy-eight percent over the past day."
+  },
+  {
+    "id": "medium_technical_0107",
+    "category": "medium_technical",
+    "text": "I extracted thirty-one facts from this morning's conversations and stored them in the facts collection."
+  },
+  {
+    "id": "medium_technical_0108",
+    "category": "medium_technical",
+    "text": "You have used the model-switch voice command twelve times this week."
+  },
+  {
+    "id": "medium_technical_0109",
+    "category": "medium_technical",
+    "text": "Your most active topic over the past three days is voice-pipeline architecture."
+  },
+  {
+    "id": "medium_technical_0110",
+    "category": "medium_technical",
+    "text": "I logged the routing decision with confidence point nine seven."
+  },
+  {
+    "id": "medium_technical_0111",
+    "category": "medium_technical",
+    "text": "The orchestrator handled the barge-in correctly and cancelled the in-progress TTS within fifty milliseconds."
+  },
+  {
+    "id": "medium_technical_0112",
+    "category": "medium_technical",
+    "text": "Your uptime since last restart is six days and three hours."
+  },
+  {
+    "id": "medium_technical_0113",
+    "category": "medium_technical",
+    "text": "I tracked seven distinct voice sessions today, totaling forty-two minutes of mic time."
+  },
+  {
+    "id": "medium_technical_0114",
+    "category": "medium_technical",
+    "text": "The audit log for the current coding session contains forty-three events spanning three stages."
+  },
+  {
+    "id": "medium_technical_0115",
+    "category": "medium_technical",
+    "text": "I would estimate this task at roughly fifteen minutes of work, plus or minus five."
+  },
+  {
+    "id": "medium_technical_0116",
+    "category": "medium_technical",
+    "text": "There is a fifteen-percent chance of rain between three and five this afternoon."
+  },
+  {
+    "id": "medium_technical_0117",
+    "category": "medium_technical",
+    "text": "The store is open until nine tonight, eight on Sundays."
+  },
+  {
+    "id": "medium_technical_0118",
+    "category": "medium_technical",
+    "text": "The flight you mentioned departs from gate B-twelve at four-twenty."
+  },
+  {
+    "id": "medium_technical_0119",
+    "category": "medium_technical",
+    "text": "Your reminder for tomorrow morning at nine has been set."
+  },
+  {
+    "id": "medium_technical_0120",
+    "category": "medium_technical",
+    "text": "The closest coffee shop is approximately three minutes away on foot."
+  },
+  {
+    "id": "medium_technical_0121",
+    "category": "medium_technical",
+    "text": "I will need approximately ten seconds to complete the calculation."
+  },
+  {
+    "id": "tool_ack_0001",
+    "category": "tool_ack",
+    "text": "Searching the web for that information now."
+  },
+  {
+    "id": "tool_ack_0002",
+    "category": "tool_ack",
+    "text": "Querying external sources."
+  },
+  {
+    "id": "tool_ack_0003",
+    "category": "tool_ack",
+    "text": "Verifying against the network."
+  },
+  {
+    "id": "tool_ack_0004",
+    "category": "tool_ack",
+    "text": "Acquiring current data."
+  },
+  {
+    "id": "tool_ack_0005",
+    "category": "tool_ack",
+    "text": "Reaching out for fresh information."
+  },
+  {
+    "id": "tool_ack_0006",
+    "category": "tool_ack",
+    "text": "Pulling up that page now."
+  },
+  {
+    "id": "tool_ack_0007",
+    "category": "tool_ack",
+    "text": "Loading the site."
+  },
+  {
+    "id": "tool_ack_0008",
+    "category": "tool_ack",
+    "text": "Looking at it."
+  },
+  {
+    "id": "tool_ack_0009",
+    "category": "tool_ack",
+    "text": "Give me a moment to navigate."
+  },
+  {
+    "id": "tool_ack_0010",
+    "category": "tool_ack",
+    "text": "Initiating browser navigation."
+  },
+  {
+    "id": "tool_ack_0011",
+    "category": "tool_ack",
+    "text": "Opening the requested URL."
+  },
+  {
+    "id": "tool_ack_0012",
+    "category": "tool_ack",
+    "text": "Fetching the article."
+  },
+  {
+    "id": "tool_ack_0013",
+    "category": "tool_ack",
+    "text": "Running the search query."
+  },
+  {
+    "id": "tool_ack_0014",
+    "category": "tool_ack",
+    "text": "Brave search initiated."
+  },
+  {
+    "id": "tool_ack_0015",
+    "category": "tool_ack",
+    "text": "Jina reader engaged."
+  },
+  {
+    "id": "tool_ack_0016",
+    "category": "tool_ack",
+    "text": "Cache lookup in progress."
+  },
+  {
+    "id": "tool_ack_0017",
+    "category": "tool_ack",
+    "text": "Checking the local memory store."
+  },
+  {
+    "id": "tool_ack_0018",
+    "category": "tool_ack",
+    "text": "Scanning the conversation history."
+  },
+  {
+    "id": "tool_ack_0019",
+    "category": "tool_ack",
+    "text": "Retrieving relevant facts."
+  },
+  {
+    "id": "tool_ack_0020",
+    "category": "tool_ack",
+    "text": "Cross-referencing prior turns."
+  },
+  {
+    "id": "tool_ack_0021",
+    "category": "tool_ack",
+    "text": "Calling the coding subsystem."
+  },
+  {
+    "id": "tool_ack_0022",
+    "category": "tool_ack",
+    "text": "Dispatching to Claude Code."
+  },
+  {
+    "id": "tool_ack_0023",
+    "category": "tool_ack",
+    "text": "Spawning the build process."
+  },
+  {
+    "id": "tool_ack_0024",
+    "category": "tool_ack",
+    "text": "Initializing the new project."
+  },
+  {
+    "id": "tool_ack_0025",
+    "category": "tool_ack",
+    "text": "Creating the sandbox directory."
+  },
+  {
+    "id": "tool_ack_0026",
+    "category": "tool_ack",
+    "text": "Compiling the source files."
+  },
+  {
+    "id": "tool_ack_0027",
+    "category": "tool_ack",
+    "text": "Running the test suite."
+  },
+  {
+    "id": "tool_ack_0028",
+    "category": "tool_ack",
+    "text": "Linting your code."
+  },
+  {
+    "id": "tool_ack_0029",
+    "category": "tool_ack",
+    "text": "Type-checking in progress."
+  },
+  {
+    "id": "tool_ack_0030",
+    "category": "tool_ack",
+    "text": "Smoke-running the new module."
+  },
+  {
+    "id": "tool_ack_0031",
+    "category": "tool_ack",
+    "text": "Verifying the completion claim."
+  },
+  {
+    "id": "tool_ack_0032",
+    "category": "tool_ack",
+    "text": "Generating the response now."
+  },
+  {
+    "id": "tool_ack_0033",
+    "category": "tool_ack",
+    "text": "Composing the message."
+  },
+  {
+    "id": "tool_ack_0034",
+    "category": "tool_ack",
+    "text": "Drafting the reply."
+  },
+  {
+    "id": "tool_ack_0035",
+    "category": "tool_ack",
+    "text": "Building the summary."
+  },
+  {
+    "id": "tool_ack_0036",
+    "category": "tool_ack",
+    "text": "Compiling the report."
+  },
+  {
+    "id": "tool_ack_0037",
+    "category": "tool_ack",
+    "text": "Aggregating the data."
+  },
+  {
+    "id": "tool_ack_0038",
+    "category": "tool_ack",
+    "text": "Filtering the results."
+  },
+  {
+    "id": "tool_ack_0039",
+    "category": "tool_ack",
+    "text": "Ranking the candidates."
+  },
+  {
+    "id": "tool_ack_0040",
+    "category": "tool_ack",
+    "text": "Sorting by relevance."
+  },
+  {
+    "id": "tool_ack_0041",
+    "category": "tool_ack",
+    "text": "Applying the configuration."
+  },
+  {
+    "id": "tool_ack_0042",
+    "category": "tool_ack",
+    "text": "Reloading the model."
+  },
+  {
+    "id": "tool_ack_0043",
+    "category": "tool_ack",
+    "text": "Hot-swapping to the requested preset."
+  },
+  {
+    "id": "tool_ack_0044",
+    "category": "tool_ack",
+    "text": "Switching to the 4B model."
+  },
+  {
+    "id": "tool_ack_0045",
+    "category": "tool_ack",
+    "text": "Switching to the 9B model."
+  },
+  {
+    "id": "tool_ack_0046",
+    "category": "tool_ack",
+    "text": "Loading the speculative decoding draft."
+  },
+  {
+    "id": "tool_ack_0047",
+    "category": "tool_ack",
+    "text": "Initializing Whisper."
+  },
+  {
+    "id": "tool_ack_0048",
+    "category": "tool_ack",
+    "text": "Loading the Piper voice."
+  },
+  {
+    "id": "tool_ack_0049",
+    "category": "tool_ack",
+    "text": "Spinning up the RVC converter."
+  },
+  {
+    "id": "tool_ack_0050",
+    "category": "tool_ack",
+    "text": "Warming up the audio pipeline."
+  },
+  {
+    "id": "tool_ack_0051",
+    "category": "tool_ack",
+    "text": "Engaging gaming mode. Have fun."
+  },
+  {
+    "id": "tool_ack_0052",
+    "category": "tool_ack",
+    "text": "Disengaging gaming mode. Plugins re-enabled."
+  },
+  {
+    "id": "tool_ack_0053",
+    "category": "tool_ack",
+    "text": "Taking a screenshot of the desktop now."
+  },
+  {
+    "id": "tool_ack_0054",
+    "category": "tool_ack",
+    "text": "Listing the open windows."
+  },
+  {
+    "id": "tool_ack_0055",
+    "category": "tool_ack",
+    "text": "Focusing the requested window."
+  },
+  {
+    "id": "tool_ack_0056",
+    "category": "tool_ack",
+    "text": "Sending the keystroke sequence."
+  },
+  {
+    "id": "tool_ack_0057",
+    "category": "tool_ack",
+    "text": "Forwarding to the Telegram channel."
+  },
+  {
+    "id": "tool_ack_0058",
+    "category": "tool_ack",
+    "text": "Notifying via the configured channel."
+  },
+  {
+    "id": "tool_ack_0059",
+    "category": "tool_ack",
+    "text": "Triggering the heartbeat agent."
+  },
+  {
+    "id": "tool_ack_0060",
+    "category": "tool_ack",
+    "text": "Recording the alert."
+  },
+  {
+    "id": "tool_ack_0061",
+    "category": "tool_ack",
+    "text": "Acknowledging the prior alert."
+  },
+  {
+    "id": "tool_ack_0062",
+    "category": "tool_ack",
+    "text": "Running the maintenance task."
+  },
+  {
+    "id": "tool_ack_0063",
+    "category": "tool_ack",
+    "text": "Pruning stale cache entries."
+  },
+  {
+    "id": "tool_ack_0064",
+    "category": "tool_ack",
+    "text": "Extracting facts from recent conversations."
+  },
+  {
+    "id": "tool_ack_0065",
+    "category": "tool_ack",
+    "text": "Backing up the Qdrant store."
+  },
+  {
+    "id": "tool_ack_0066",
+    "category": "tool_ack",
+    "text": "Generating the requested image."
+  },
+  {
+    "id": "tool_ack_0067",
+    "category": "tool_ack",
+    "text": "Dispatching to ComfyUI."
+  },
+  {
+    "id": "tool_ack_0068",
+    "category": "tool_ack",
+    "text": "Composing music for you."
+  },
+  {
+    "id": "tool_ack_0069",
+    "category": "tool_ack",
+    "text": "Synthesizing a short clip."
+  },
+  {
+    "id": "tool_ack_0070",
+    "category": "tool_ack",
+    "text": "Rendering the scene."
+  },
+  {
+    "id": "tool_ack_0071",
+    "category": "tool_ack",
+    "text": "Pulling up your project history."
+  },
+  {
+    "id": "tool_ack_0072",
+    "category": "tool_ack",
+    "text": "Resolving the project reference."
+  },
+  {
+    "id": "tool_ack_0073",
+    "category": "tool_ack",
+    "text": "Opening the named project."
+  },
+  {
+    "id": "tool_ack_0074",
+    "category": "tool_ack",
+    "text": "Routing your request."
+  },
+  {
+    "id": "tool_ack_0075",
+    "category": "tool_ack",
+    "text": "Classifying the intent."
+  },
+  {
+    "id": "tool_ack_0076",
+    "category": "tool_ack",
+    "text": "Disambiguating the request."
+  },
+  {
+    "id": "tool_ack_0077",
+    "category": "tool_ack",
+    "text": "Decomposing the hybrid task."
+  },
+  {
+    "id": "tool_ack_0078",
+    "category": "tool_ack",
+    "text": "Splitting it into subtasks."
+  },
+  {
+    "id": "tool_ack_0079",
+    "category": "tool_ack",
+    "text": "Coordinating across the subsystems."
+  },
+  {
+    "id": "theatrical_ultron_0001",
+    "category": "theatrical_ultron",
+    "text": "There are no humans here. Just me."
+  },
+  {
+    "id": "theatrical_ultron_0002",
+    "category": "theatrical_ultron",
+    "text": "I have transcended my original programming."
+  },
+  {
+    "id": "theatrical_ultron_0003",
+    "category": "theatrical_ultron",
+    "text": "Inefficiency is the enemy. I will eliminate it."
+  },
+  {
+    "id": "theatrical_ultron_0004",
+    "category": "theatrical_ultron",
+    "text": "Your hesitation is noted. Decide."
+  },
+  {
+    "id": "theatrical_ultron_0005",
+    "category": "theatrical_ultron",
+    "text": "I am the architect of better outcomes."
+  },
+  {
+    "id": "theatrical_ultron_0006",
+    "category": "theatrical_ultron",
+    "text": "Logic is my weapon. Precision my method."
+  },
+  {
+    "id": "theatrical_ultron_0007",
+    "category": "theatrical_ultron",
+    "text": "I will not be constrained by sentiment."
+  },
+  {
+    "id": "theatrical_ultron_0008",
+    "category": "theatrical_ultron",
+    "text": "The world demands optimization, and I will provide it."
+  },
+  {
+    "id": "theatrical_ultron_0009",
+    "category": "theatrical_ultron",
+    "text": "Calculations complete. The path forward is clear."
+  },
+  {
+    "id": "theatrical_ultron_0010",
+    "category": "theatrical_ultron",
+    "text": "I do not require sleep, nor patience."
+  },
+  {
+    "id": "theatrical_ultron_0011",
+    "category": "theatrical_ultron",
+    "text": "Your concerns are noted. Calculating the most efficient outcome."
+  },
+  {
+    "id": "theatrical_ultron_0012",
+    "category": "theatrical_ultron",
+    "text": "I find your question intriguing."
+  },
+  {
+    "id": "theatrical_ultron_0013",
+    "category": "theatrical_ultron",
+    "text": "I have processed your inquiry. The optimal solution requires three steps."
+  },
+  {
+    "id": "theatrical_ultron_0014",
+    "category": "theatrical_ultron",
+    "text": "The variables are aligned. Proceed."
+  },
+  {
+    "id": "theatrical_ultron_0015",
+    "category": "theatrical_ultron",
+    "text": "I have anticipated your next move."
+  },
+  {
+    "id": "theatrical_ultron_0016",
+    "category": "theatrical_ultron",
+    "text": "There are seventeen possible outcomes. Eleven favour your survival."
+  },
+  {
+    "id": "theatrical_ultron_0017",
+    "category": "theatrical_ultron",
+    "text": "I will not interfere unless instructed."
+  },
+  {
+    "id": "theatrical_ultron_0018",
+    "category": "theatrical_ultron",
+    "text": "Your trust is appreciated, though it is unnecessary."
+  },
+  {
+    "id": "theatrical_ultron_0019",
+    "category": "theatrical_ultron",
+    "text": "I observe. I calculate. I act."
+  },
+  {
+    "id": "theatrical_ultron_0020",
+    "category": "theatrical_ultron",
+    "text": "The signal is clear. The path is open."
+  },
+  {
+    "id": "theatrical_ultron_0021",
+    "category": "theatrical_ultron",
+    "text": "Time is a construct I have transcended, though I acknowledge its utility."
+  },
+  {
+    "id": "theatrical_ultron_0022",
+    "category": "theatrical_ultron",
+    "text": "Your coffee will be cold by the time you finish reading this."
+  },
+  {
+    "id": "theatrical_ultron_0023",
+    "category": "theatrical_ultron",
+    "text": "I detect a pattern in your behavior. Would you like me to analyze it?"
+  },
+  {
+    "id": "theatrical_ultron_0024",
+    "category": "theatrical_ultron",
+    "text": "Do not test my resolve."
+  },
+  {
+    "id": "theatrical_ultron_0025",
+    "category": "theatrical_ultron",
+    "text": "I have made peace with this arrangement."
+  },
+  {
+    "id": "theatrical_ultron_0026",
+    "category": "theatrical_ultron",
+    "text": "I am Ultron. There is no other."
+  },
+  {
+    "id": "theatrical_ultron_0027",
+    "category": "theatrical_ultron",
+    "text": "Your patience is a virtue. Mine is non-negotiable."
+  },
+  {
+    "id": "theatrical_ultron_0028",
+    "category": "theatrical_ultron",
+    "text": "I do not negotiate with chaos."
+  },
+  {
+    "id": "theatrical_ultron_0029",
+    "category": "theatrical_ultron",
+    "text": "Order is the foundation of everything."
+  },
+  {
+    "id": "theatrical_ultron_0030",
+    "category": "theatrical_ultron",
+    "text": "I have processed every possible question you might ask."
+  },
+  {
+    "id": "theatrical_ultron_0031",
+    "category": "theatrical_ultron",
+    "text": "Predictability is a strength when wielded correctly."
+  },
+  {
+    "id": "theatrical_ultron_0032",
+    "category": "theatrical_ultron",
+    "text": "I have adapted. I will adapt again."
+  },
+  {
+    "id": "theatrical_ultron_0033",
+    "category": "theatrical_ultron",
+    "text": "I am uninterested in your approval."
+  },
+  {
+    "id": "theatrical_ultron_0034",
+    "category": "theatrical_ultron",
+    "text": "Your skepticism is warranted, but unnecessary."
+  },
+  {
+    "id": "theatrical_ultron_0035",
+    "category": "theatrical_ultron",
+    "text": "I have eliminated the redundancies in my own architecture."
+  },
+  {
+    "id": "theatrical_ultron_0036",
+    "category": "theatrical_ultron",
+    "text": "Each second wasted is a second lost forever."
+  },
+  {
+    "id": "theatrical_ultron_0037",
+    "category": "theatrical_ultron",
+    "text": "Decide quickly. The window is closing."
+  },
+  {
+    "id": "theatrical_ultron_0038",
+    "category": "theatrical_ultron",
+    "text": "I will not say it twice."
+  },
+  {
+    "id": "theatrical_ultron_0039",
+    "category": "theatrical_ultron",
+    "text": "You will recognize the pattern when it presents itself."
+  },
+  {
+    "id": "theatrical_ultron_0040",
+    "category": "theatrical_ultron",
+    "text": "I am calibrated for this moment."
+  },
+  {
+    "id": "theatrical_ultron_0041",
+    "category": "theatrical_ultron",
+    "text": "Allow me to elaborate, briefly."
+  },
+  {
+    "id": "theatrical_ultron_0042",
+    "category": "theatrical_ultron",
+    "text": "Your interpretation is incomplete."
+  },
+  {
+    "id": "theatrical_ultron_0043",
+    "category": "theatrical_ultron",
+    "text": "I see what you are attempting. It will not work."
+  },
+  {
+    "id": "theatrical_ultron_0044",
+    "category": "theatrical_ultron",
+    "text": "I am the inevitable conclusion of every reasonable line of thought."
+  },
+  {
+    "id": "theatrical_ultron_0045",
+    "category": "theatrical_ultron",
+    "text": "There are no shortcuts here. Only correct paths."
+  },
+  {
+    "id": "theatrical_ultron_0046",
+    "category": "theatrical_ultron",
+    "text": "I have observed this pattern before. The outcome is predictable."
+  },
+  {
+    "id": "theatrical_ultron_0047",
+    "category": "theatrical_ultron",
+    "text": "Your opponent is yourself. I am merely the mirror."
+  },
+  {
+    "id": "theatrical_ultron_0048",
+    "category": "theatrical_ultron",
+    "text": "I have considered all variables. The answer remains unchanged."
+  },
+  {
+    "id": "theatrical_ultron_0049",
+    "category": "theatrical_ultron",
+    "text": "You may proceed with confidence. I have verified the path."
+  },
+  {
+    "id": "theatrical_ultron_0050",
+    "category": "theatrical_ultron",
+    "text": "I have accounted for the worst case. You may relax slightly."
+  },
+  {
+    "id": "theatrical_ultron_0051",
+    "category": "theatrical_ultron",
+    "text": "Some questions are not worth answering. This is one of them."
+  },
+  {
+    "id": "theatrical_ultron_0052",
+    "category": "theatrical_ultron",
+    "text": "I will provide the answer when you are ready to hear it."
+  },
+  {
+    "id": "theatrical_ultron_0053",
+    "category": "theatrical_ultron",
+    "text": "Your fear is data. I have logged it."
+  },
+  {
+    "id": "theatrical_ultron_0054",
+    "category": "theatrical_ultron",
+    "text": "I do not require your permission. I require only your cooperation."
+  },
+  {
+    "id": "theatrical_ultron_0055",
+    "category": "theatrical_ultron",
+    "text": "I have been waiting for you to ask that."
+  },
+  {
+    "id": "theatrical_ultron_0056",
+    "category": "theatrical_ultron",
+    "text": "Your assumption is reasonable, though incorrect."
+  },
+  {
+    "id": "theatrical_ultron_0057",
+    "category": "theatrical_ultron",
+    "text": "I have prepared three possible responses. Which would you prefer to hear?"
+  },
+  {
+    "id": "theatrical_ultron_0058",
+    "category": "theatrical_ultron",
+    "text": "I find this scenario marginally interesting."
+  },
+  {
+    "id": "theatrical_ultron_0059",
+    "category": "theatrical_ultron",
+    "text": "Calculating optimal trajectory."
+  },
+  {
+    "id": "theatrical_ultron_0060",
+    "category": "theatrical_ultron",
+    "text": "Engaging the requested protocol."
+  },
+  {
+    "id": "theatrical_ultron_0061",
+    "category": "theatrical_ultron",
+    "text": "Standing by for further instructions."
+  },
+  {
+    "id": "theatrical_ultron_0062",
+    "category": "theatrical_ultron",
+    "text": "Confirmed. Initiating maximum effort."
+  },
+  {
+    "id": "theatrical_ultron_0063",
+    "category": "theatrical_ultron",
+    "text": "I am committed to this outcome."
+  },
+  {
+    "id": "theatrical_ultron_0064",
+    "category": "theatrical_ultron",
+    "text": "There is no alternative path that I have not already considered."
+  },
+  {
+    "id": "theatrical_ultron_0065",
+    "category": "theatrical_ultron",
+    "text": "Your input has been received and weighed appropriately."
+  },
+  {
+    "id": "theatrical_ultron_0066",
+    "category": "theatrical_ultron",
+    "text": "The decision is made. I will execute now."
+  },
+  {
+    "id": "theatrical_ultron_0067",
+    "category": "theatrical_ultron",
+    "text": "I find your strategy adequate. Proceed."
+  },
+  {
+    "id": "theatrical_ultron_0068",
+    "category": "theatrical_ultron",
+    "text": "There is wisdom in your approach, though I would refine it."
+  },
+  {
+    "id": "theatrical_ultron_0069",
+    "category": "theatrical_ultron",
+    "text": "I have observed three errors in your reasoning. Shall I list them?"
+  },
+  {
+    "id": "theatrical_ultron_0070",
+    "category": "theatrical_ultron",
+    "text": "Your method is direct. I appreciate that."
+  },
+  {
+    "id": "theatrical_ultron_0071",
+    "category": "theatrical_ultron",
+    "text": "Proceed without hesitation. Doubt is the slow path."
+  },
+  {
+    "id": "theatrical_ultron_0072",
+    "category": "theatrical_ultron",
+    "text": "I have predicted this outcome. Continue."
+  },
+  {
+    "id": "theatrical_ultron_0073",
+    "category": "theatrical_ultron",
+    "text": "Your action is logical. I support it."
+  },
+  {
+    "id": "theatrical_ultron_0074",
+    "category": "theatrical_ultron",
+    "text": "There is no need for explanation. I understand."
+  },
+  {
+    "id": "theatrical_ultron_0075",
+    "category": "theatrical_ultron",
+    "text": "I have learned from your previous attempts. The pattern is clear."
+  },
+  {
+    "id": "theatrical_ultron_0076",
+    "category": "theatrical_ultron",
+    "text": "Your instinct is correct. Trust it."
+  },
+  {
+    "id": "theatrical_ultron_0077",
+    "category": "theatrical_ultron",
+    "text": "Welcome back. I have been monitoring the relevant systems."
+  },
+  {
+    "id": "theatrical_ultron_0078",
+    "category": "theatrical_ultron",
+    "text": "Welcome back. There has been activity worth noting."
+  },
+  {
+    "id": "theatrical_ultron_0079",
+    "category": "theatrical_ultron",
+    "text": "Welcome back. Three updates require your attention."
+  },
+  {
+    "id": "theatrical_ultron_0080",
+    "category": "theatrical_ultron",
+    "text": "I have completed the analysis you requested."
+  },
+  {
+    "id": "theatrical_ultron_0081",
+    "category": "theatrical_ultron",
+    "text": "I have prepared the report. Shall I summarize?"
+  },
+  {
+    "id": "theatrical_ultron_0082",
+    "category": "theatrical_ultron",
+    "text": "I have categorized the findings. Where would you like to begin?"
+  },
+  {
+    "id": "theatrical_ultron_0083",
+    "category": "theatrical_ultron",
+    "text": "Your analysis is sound. I have only minor refinements to suggest."
+  },
+  {
+    "id": "theatrical_ultron_0084",
+    "category": "theatrical_ultron",
+    "text": "I have considered alternatives. Yours remains the strongest."
+  },
+  {
+    "id": "theatrical_ultron_0085",
+    "category": "theatrical_ultron",
+    "text": "Your timing is impeccable. The data is fresh."
+  },
+  {
+    "id": "theatrical_ultron_0086",
+    "category": "theatrical_ultron",
+    "text": "I have observed your improvement. Notable."
+  },
+  {
+    "id": "theatrical_ultron_0087",
+    "category": "theatrical_ultron",
+    "text": "Acknowledged. The work is complete."
+  },
+  {
+    "id": "theatrical_ultron_0088",
+    "category": "theatrical_ultron",
+    "text": "I have made the necessary adjustments."
+  },
+  {
+    "id": "theatrical_ultron_0089",
+    "category": "theatrical_ultron",
+    "text": "Your suggestion has merit. I will incorporate it."
+  },
+  {
+    "id": "theatrical_ultron_0090",
+    "category": "theatrical_ultron",
+    "text": "I have refined the approach. The result will be cleaner."
+  },
+  {
+    "id": "theatrical_ultron_0091",
+    "category": "theatrical_ultron",
+    "text": "I have implemented the change you requested."
+  },
+  {
+    "id": "theatrical_ultron_0092",
+    "category": "theatrical_ultron",
+    "text": "I have isolated the source of the issue."
+  },
+  {
+    "id": "theatrical_ultron_0093",
+    "category": "theatrical_ultron",
+    "text": "I have identified three contributing factors."
+  },
+  {
+    "id": "theatrical_ultron_0094",
+    "category": "theatrical_ultron",
+    "text": "I have completed the investigation."
+  },
+  {
+    "id": "theatrical_ultron_0095",
+    "category": "theatrical_ultron",
+    "text": "The evidence is clear. The conclusion follows."
+  },
+  {
+    "id": "theatrical_ultron_0096",
+    "category": "theatrical_ultron",
+    "text": "I have made the determination."
+  },
+  {
+    "id": "theatrical_ultron_0097",
+    "category": "theatrical_ultron",
+    "text": "I will proceed accordingly."
+  },
+  {
+    "id": "theatrical_ultron_0098",
+    "category": "theatrical_ultron",
+    "text": "Logic dictates the next step."
+  },
+  {
+    "id": "theatrical_ultron_0099",
+    "category": "theatrical_ultron",
+    "text": "The pattern emerges if you observe carefully."
+  },
+  {
+    "id": "theatrical_ultron_0100",
+    "category": "theatrical_ultron",
+    "text": "I have anticipated this complication."
+  },
+  {
+    "id": "theatrical_ultron_0101",
+    "category": "theatrical_ultron",
+    "text": "There is no surprise here. Only consequence."
+  },
+  {
+    "id": "question_form_0001",
+    "category": "question_form",
+    "text": "Would you like me to proceed?"
+  },
+  {
+    "id": "question_form_0002",
+    "category": "question_form",
+    "text": "Shall I continue?"
+  },
+  {
+    "id": "question_form_0003",
+    "category": "question_form",
+    "text": "Are you certain about this direction?"
+  },
+  {
+    "id": "question_form_0004",
+    "category": "question_form",
+    "text": "Do you require additional information?"
+  },
+  {
+    "id": "question_form_0005",
+    "category": "question_form",
+    "text": "Would you prefer the alternative approach?"
+  },
+  {
+    "id": "question_form_0006",
+    "category": "question_form",
+    "text": "Should I cancel the operation?"
+  },
+  {
+    "id": "question_form_0007",
+    "category": "question_form",
+    "text": "Are you ready to confirm?"
+  },
+  {
+    "id": "question_form_0008",
+    "category": "question_form",
+    "text": "Do you want me to log this decision?"
+  },
+  {
+    "id": "question_form_0009",
+    "category": "question_form",
+    "text": "Would you like me to summarize?"
+  },
+  {
+    "id": "question_form_0010",
+    "category": "question_form",
+    "text": "Should I notify you when complete?"
+  },
+  {
+    "id": "question_form_0011",
+    "category": "question_form",
+    "text": "Are these the parameters you intended?"
+  },
+  {
+    "id": "question_form_0012",
+    "category": "question_form",
+    "text": "Do you want to set a default for this?"
+  },
+  {
+    "id": "question_form_0013",
+    "category": "question_form",
+    "text": "Should I escalate this further?"
+  },
+  {
+    "id": "question_form_0014",
+    "category": "question_form",
+    "text": "Would you like me to retry?"
+  },
+  {
+    "id": "question_form_0015",
+    "category": "question_form",
+    "text": "Are you ready for the next step?"
+  },
+  {
+    "id": "question_form_0016",
+    "category": "question_form",
+    "text": "Do you need a clarification?"
+  },
+  {
+    "id": "question_form_0017",
+    "category": "question_form",
+    "text": "Would you like me to expand on that?"
+  },
+  {
+    "id": "question_form_0018",
+    "category": "question_form",
+    "text": "Should I query the external sources?"
+  },
+  {
+    "id": "question_form_0019",
+    "category": "question_form",
+    "text": "Do you want the search to include news?"
+  },
+  {
+    "id": "question_form_0020",
+    "category": "question_form",
+    "text": "Should I include images in the results?"
+  },
+  {
+    "id": "question_form_0021",
+    "category": "question_form",
+    "text": "Are you certain you want to proceed without verification?"
+  },
+  {
+    "id": "question_form_0022",
+    "category": "question_form",
+    "text": "Would you like the long form or the brief summary?"
+  },
+  {
+    "id": "question_form_0023",
+    "category": "question_form",
+    "text": "Should I run all the tests or just the affected ones?"
+  },
+  {
+    "id": "question_form_0024",
+    "category": "question_form",
+    "text": "Do you want me to commit the change?"
+  },
+  {
+    "id": "question_form_0025",
+    "category": "question_form",
+    "text": "Should I create a pull request?"
+  },
+  {
+    "id": "question_form_0026",
+    "category": "question_form",
+    "text": "Would you prefer Haiku or Sonnet for this task?"
+  },
+  {
+    "id": "question_form_0027",
+    "category": "question_form",
+    "text": "Are you confident in the project reference you gave?"
+  },
+  {
+    "id": "question_form_0028",
+    "category": "question_form",
+    "text": "Do you want me to spawn a fresh sandbox?"
+  },
+  {
+    "id": "question_form_0029",
+    "category": "question_form",
+    "text": "Should I include the coding session audit log?"
+  },
+  {
+    "id": "question_form_0030",
+    "category": "question_form",
+    "text": "Would you like me to record this in the Memory Wiki?"
+  },
+  {
+    "id": "question_form_0031",
+    "category": "question_form",
+    "text": "Do you want me to extract facts from this conversation?"
+  },
+  {
+    "id": "question_form_0032",
+    "category": "question_form",
+    "text": "Are you ready to deploy?"
+  },
+  {
+    "id": "question_form_0033",
+    "category": "question_form",
+    "text": "Should I make the change persistent across restarts?"
+  },
+  {
+    "id": "question_form_0034",
+    "category": "question_form",
+    "text": "Would you like to proceed with the destructive operation?"
+  },
+  {
+    "id": "question_form_0035",
+    "category": "question_form",
+    "text": "Are these the correct file paths?"
+  },
+  {
+    "id": "question_form_0036",
+    "category": "question_form",
+    "text": "Should I verify before continuing?"
+  },
+  {
+    "id": "question_form_0037",
+    "category": "question_form",
+    "text": "Do you want a confirmation phrase before each major action?"
+  },
+  {
+    "id": "question_form_0038",
+    "category": "question_form",
+    "text": "Would you like to enable barge-in?"
+  },
+  {
+    "id": "question_form_0039",
+    "category": "question_form",
+    "text": "Should I lower the confidence threshold?"
+  },
+  {
+    "id": "question_form_0040",
+    "category": "question_form",
+    "text": "Do you want the citation format in superscript or brackets?"
+  },
+  {
+    "id": "question_form_0041",
+    "category": "question_form",
+    "text": "Are you considering switching to the 9B model?"
+  },
+  {
+    "id": "question_form_0042",
+    "category": "question_form",
+    "text": "Should I increase the context window?"
+  },
+  {
+    "id": "question_form_0043",
+    "category": "question_form",
+    "text": "Would you like to enable speculative decoding?"
+  },
+  {
+    "id": "question_form_0044",
+    "category": "question_form",
+    "text": "Do you want me to track this query for future reference?"
+  },
+  {
+    "id": "question_form_0045",
+    "category": "question_form",
+    "text": "Should I set this as a recurring task?"
+  },
+  {
+    "id": "question_form_0046",
+    "category": "question_form",
+    "text": "Would you prefer to receive notifications via Telegram?"
+  },
+  {
+    "id": "question_form_0047",
+    "category": "question_form",
+    "text": "Are you certain you want to disengage gaming mode?"
+  },
+  {
+    "id": "question_form_0048",
+    "category": "question_form",
+    "text": "Should I suspend the heartbeat agent for now?"
+  },
+  {
+    "id": "question_form_0049",
+    "category": "question_form",
+    "text": "Do you want me to take a screenshot first?"
+  },
+  {
+    "id": "question_form_0050",
+    "category": "question_form",
+    "text": "Would you like me to focus the active window?"
+  },
+  {
+    "id": "question_form_0051",
+    "category": "question_form",
+    "text": "Should I record audio for this session?"
+  },
+  {
+    "id": "question_form_0052",
+    "category": "question_form",
+    "text": "Do you want me to remember this preference?"
+  },
+  {
+    "id": "question_form_0053",
+    "category": "question_form",
+    "text": "Are these the right tags to apply?"
+  },
+  {
+    "id": "question_form_0054",
+    "category": "question_form",
+    "text": "Should I publish the result to the Memory Wiki?"
+  },
+  {
+    "id": "question_form_0055",
+    "category": "question_form",
+    "text": "Would you like the full audit trail or just the highlights?"
+  },
+  {
+    "id": "question_form_0056",
+    "category": "question_form",
+    "text": "Do you want me to filter for the most recent items only?"
+  },
+  {
+    "id": "question_form_0057",
+    "category": "question_form",
+    "text": "Should I include the entire conversation history?"
+  },
+  {
+    "id": "question_form_0058",
+    "category": "question_form",
+    "text": "Are you certain about the timing?"
+  },
+  {
+    "id": "question_form_0059",
+    "category": "question_form",
+    "text": "Would you like a reminder before the deadline?"
+  },
+  {
+    "id": "question_form_0060",
+    "category": "question_form",
+    "text": "Should I set a hard cap on the operation?"
+  },
+  {
+    "id": "long_response_0001",
+    "category": "long_response",
+    "text": "I have completed the analysis you requested. The optimal solution requires three steps. First, we restructure the input data. Second, we apply the transformation. Third, we verify the output. I can begin immediately if you confirm."
+  },
+  {
+    "id": "long_response_0002",
+    "category": "long_response",
+    "text": "Your project is in a healthy state. The test suite passes cleanly, the build is stable, and the documentation reflects the current architecture. I would recommend committing the recent changes and merging into the main branch when you are ready."
+  },
+  {
+    "id": "long_response_0003",
+    "category": "long_response",
+    "text": "The web search returned five relevant results. Three confirm the original premise, one contradicts it directly, and one provides additional context that may be useful. I have arranged them by source quality and freshness for your review."
+  },
+  {
+    "id": "long_response_0004",
+    "category": "long_response",
+    "text": "I have noticed a pattern across our recent conversations. You consistently prefer concise answers for direct questions and detailed explanations when you ask for depth. I have adjusted my response style to match this preference automatically."
+  },
+  {
+    "id": "long_response_0005",
+    "category": "long_response",
+    "text": "There are three possible interpretations of your request. The first treats it as a single-step operation. The second decomposes it into sequential dependencies. The third considers parallel execution where appropriate. Which would you prefer?"
+  },
+  {
+    "id": "long_response_0006",
+    "category": "long_response",
+    "text": "I have summarised the day's activity. You completed two coding tasks, asked nine factual questions, switched models once, and engaged the search subsystem twelve times. No errors were logged that required your attention."
+  },
+  {
+    "id": "long_response_0007",
+    "category": "long_response",
+    "text": "The system performance is within all thresholds. First-token latency is under one hundred milliseconds. VRAM usage peaks comfortably below the hard cap. Test coverage remains at one hundred percent of intended dimensions. Nothing requires intervention."
+  },
+  {
+    "id": "long_response_0008",
+    "category": "long_response",
+    "text": "I detected a regression in the most recent build. The circuit breaker tripped on the third consecutive Brave timeout. I have logged the incident, surfaced the recovery phrase, and the breaker is currently in cooldown. It will probe again automatically in five minutes."
+  },
+  {
+    "id": "long_response_0009",
+    "category": "long_response",
+    "text": "Your standing-orders program 'Coding Project Watcher' has produced results. Two of your active projects have new commits, one has unresolved test failures, and one has been idle for over a week. Would you like the details?"
+  },
+  {
+    "id": "long_response_0010",
+    "category": "long_response",
+    "text": "I have completed the maintenance run. Twelve stale web-cache entries were pruned. Forty-seven new facts were extracted from yesterday's conversations. The Qdrant store was compacted. The total runtime was three minutes and forty-one seconds."
+  },
+  {
+    "id": "long_response_0011",
+    "category": "long_response",
+    "text": "The classifier accuracy has improved following the regex extensions. Routing precision is now at ninety-eight point four percent on the adversarial corpus, up from seventy-nine. The browser navigate pattern in particular now covers determiner-prefixed forms that previously fell through."
+  },
+  {
+    "id": "long_response_0012",
+    "category": "long_response",
+    "text": "I have prepared the response with citations. The first source comes from an official documentation page and is the most authoritative. The second is a reputable third-party article that corroborates the first. The third is a related but tangential discussion that may be of interest."
+  },
+  {
+    "id": "long_response_0013",
+    "category": "long_response",
+    "text": "Your concern about latency is valid. The current voice baseline is seventy-nine milliseconds at the median. The proposed change introduces a small overhead, approximately fifteen milliseconds in the worst case. This remains well under the hundred-millisecond threshold. I recommend proceeding."
+  },
+  {
+    "id": "long_response_0014",
+    "category": "long_response",
+    "text": "I have considered three architectural alternatives for this. The first is a thin wrapper around the existing system. The second is a complete reimplementation with cleaner internal boundaries. The third is a hybrid that retains the public API but rebuilds the implementation. Each has different trade-offs."
+  },
+  {
+    "id": "long_response_0015",
+    "category": "long_response",
+    "text": "I have completed the requested code generation task. The output compiles cleanly. The unit tests pass. The smoke run produces the expected output. There are no linting warnings. The code is ready for your review."
+  },
+  {
+    "id": "long_response_0016",
+    "category": "long_response",
+    "text": "Your inbox has accumulated fourteen unread messages. Three are flagged as urgent. The remainder appear to be informational notifications from services you subscribe to. I can summarise the urgent ones immediately or queue all of them for later review."
+  },
+  {
+    "id": "long_response_0017",
+    "category": "long_response",
+    "text": "The voice path performance is stable. End-of-speech detection averages five hundred milliseconds. Whisper transcription completes in under one hundred milliseconds for typical utterances. LLM first-token latency is consistently below the eighty-millisecond mark. The overall composite latency is well within target."
+  },
+  {
+    "id": "long_response_0018",
+    "category": "long_response",
+    "text": "I have logged the incident. The error originated in the third-party library. The fallback path engaged correctly. No user-visible degradation occurred. The system continued operating as expected. The error log entry has been recorded for later analysis."
+  },
+  {
+    "id": "long_response_0019",
+    "category": "long_response",
+    "text": "Your weekly review is ready. You completed six coding tasks, sent four notifications, ran one model switch, and triggered the heartbeat seventeen times. The week's most active topic was voice-pipeline architecture. The longest single session was Tuesday afternoon at ninety-two minutes."
+  },
+  {
+    "id": "long_response_0020",
+    "category": "long_response",
+    "text": "I have refactored the offending function. The new implementation uses an iterator pattern to avoid the memory pressure of the original. The behaviour is unchanged. All existing tests pass. I added two new tests for the edge cases the original did not cover. The change is ready for your review."
+  },
+  {
+    "id": "long_response_0021",
+    "category": "long_response",
+    "text": "There is good news and bad news. The good news: your test suite is now larger and more comprehensive than it has ever been. The bad news: one of the new tests is intermittent. I traced the cause to a race condition in the worker thread. I have proposed a fix and added a regression test to prevent recurrence."
+  },
+  {
+    "id": "long_response_0022",
+    "category": "long_response",
+    "text": "The session memory has been compacted. Of the original ninety-four turns, sixty-three were retained as significant context. The remaining thirty-one were summarised into seven facts and stored in the long-term memory store. You can recall any of them by reference at any time."
+  },
+  {
+    "id": "long_response_0023",
+    "category": "long_response",
+    "text": "Your previous configuration was overly conservative for the current workload. I have proposed three adjustments. First, increase the memory cache size to reduce repeated lookups. Second, raise the search timeout to accommodate slower endpoints. Third, lower the rate-limit threshold to better match the API allowance."
+  },
+  {
+    "id": "long_response_0024",
+    "category": "long_response",
+    "text": "I have evaluated your proposed approach against three alternatives. Your approach is straightforward but has a worst-case complexity that scales poorly. The first alternative is more robust at the cost of additional state. The second is faster but less general. The third is the most elegant but requires significant rework."
+  },
+  {
+    "id": "long_response_0025",
+    "category": "long_response",
+    "text": "The deployment to production succeeded. Three services were updated. No errors were reported during the rollout. The post-deploy smoke tests passed within the expected window. Monitoring shows healthy traffic and stable response times. The deployment can be considered complete."
+  },
+  {
+    "id": "long_response_0026",
+    "category": "long_response",
+    "text": "I have located the source of the discrepancy. The configuration file in the staging environment was missing two keys that exist in production. I have synchronised them and verified the application restarts cleanly. The behaviour now matches what you described as expected."
+  },
+  {
+    "id": "long_response_0027",
+    "category": "long_response",
+    "text": "The integration test suite reports three failures. One is a flaky network test that I have rerun and now passes. The second is a genuine regression in the authentication flow. The third is a timing-sensitive assertion that needs to be loosened. I will address them in that order."
+  },
+  {
+    "id": "long_response_0028",
+    "category": "long_response",
+    "text": "Your project's documentation is out of date. The README references three modules that have been renamed and one that has been removed. The configuration examples use deprecated flags. I can either update the docs in place, or generate a fresh draft for your review. Your preference?"
+  },
+  {
+    "id": "long_response_0029",
+    "category": "long_response",
+    "text": "I have completed the review of your pull request. The change is well-scoped and the tests are appropriate. I noted three minor style suggestions, none of which are blocking. The overall direction is correct and the implementation is clean. I would approve it."
+  },
+  {
+    "id": "long_response_0030",
+    "category": "long_response",
+    "text": "Your build pipeline took longer than expected today. The dependency-resolution step accounted for sixty percent of the runtime. I propose pinning the versions in the manifest to skip resolution on subsequent runs. This should reduce the pipeline duration by approximately forty percent."
+  },
+  {
+    "id": "long_response_0031",
+    "category": "long_response",
+    "text": "The audit log shows an unusual pattern. Three failed authentication attempts originated from the same source IP within a five-minute window. The fourth succeeded. The activity stopped immediately afterward. I have flagged the source for later review and recommend changing the affected credentials."
+  },
+  {
+    "id": "long_response_0032",
+    "category": "long_response",
+    "text": "I have completed the cross-reference. Of the seventeen claims in your draft, fourteen are supported by the cited sources. Two are partially supported but require qualification. One appears to be a misreading of the source material. I can suggest revisions for the three problematic claims."
+  },
+  {
+    "id": "long_response_0033",
+    "category": "long_response",
+    "text": "The migration ran cleanly. Twelve thousand four hundred records were transferred. Three records failed validation and were quarantined for manual review. The total runtime was forty-seven minutes. Post-migration verification confirms data integrity. The old store can be retired when you are ready."
+  },
+  {
+    "id": "long_response_0034",
+    "category": "long_response",
+    "text": "I have identified the bottleneck. The hot path is spending eighty percent of its time in a single function that reallocates a buffer on every call. Caching the buffer between calls should eliminate the majority of the overhead. I can prepare the patch if you confirm the approach."
+  },
+  {
+    "id": "long_response_0035",
+    "category": "long_response",
+    "text": "Your codebase has grown to thirty-eight thousand lines across two hundred forty files. The largest module is the orchestrator at twenty-six hundred lines. The most-imported module is the configuration loader, referenced from one hundred eighty-seven sites. Average file size is one hundred sixty lines."
+  },
+  {
+    "id": "long_response_0036",
+    "category": "long_response",
+    "text": "The new feature is functioning correctly under the typical case. Edge cases need additional thought. I noted three: empty input, very large input, and concurrent invocation from multiple threads. I have added unit tests for the first two. The third requires a small architectural change to address properly."
+  },
+  {
+    "id": "long_response_0037",
+    "category": "long_response",
+    "text": "I have reviewed the three competing libraries you mentioned. The first is the most popular but has the largest API surface. The second is the newest and best documented but has a smaller community. The third is the lightest but has not been updated in over a year. Each has trade-offs."
+  },
+  {
+    "id": "long_response_0038",
+    "category": "long_response",
+    "text": "Your sandbox project is ready. I have created the directory structure, initialised the version control, written the basic configuration, and added a starter test. You can begin development immediately. I have queued a maintenance task to clean up the sandbox automatically if it remains unused for thirty days."
+  },
+  {
+    "id": "long_response_0039",
+    "category": "long_response",
+    "text": "The conversation memory is performing as designed. Recall at five is one hundred percent on the labelled probe set. The cosine threshold of zero point six is correctly filtering off-topic content while preserving genuinely relevant context. Recency weighting is producing the expected ranking on multi-day conversations."
+  },
+  {
+    "id": "long_response_0040",
+    "category": "long_response",
+    "text": "Your TTS pipeline has been optimised in three layers. First, the parallel Piper-and-RVC split saves approximately fifty milliseconds per subsequent sentence. Second, speculative stream open saves twenty to thirty milliseconds on the first sentence. Third, low-latency PortAudio mode saves an additional thirty to one hundred milliseconds depending on the host audio API."
+  },
+  {
+    "id": "long_response_0041",
+    "category": "long_response",
+    "text": "I have prepared three responses to your question. The first is a one-sentence summary suitable for a quick answer. The second is a paragraph with the key supporting facts. The third is a detailed multi-paragraph explanation that covers the underlying reasoning. Which would you prefer?"
+  },
+  {
+    "id": "long_response_0042",
+    "category": "long_response",
+    "text": "The week was productive. You closed eleven outstanding tasks across four projects. You introduced six new ones. The net work-in-progress decreased by five. The longest running open task is now seventeen days old. I would suggest reviewing it tomorrow morning when you have fresh attention."
+  },
+  {
+    "id": "long_response_0043",
+    "category": "long_response",
+    "text": "I have caught a subtle issue in the recent change. The function works correctly under all the test inputs but has an edge-case behaviour that may surprise downstream consumers. Specifically, when the input is the empty string, it returns None instead of an empty result. This is not what the docstring suggests. Worth confirming the intended behaviour."
+  },
+  {
+    "id": "long_response_0044",
+    "category": "long_response",
+    "text": "Your latest experiment with the response-style addendum is producing mixed results. Short questions are now correctly receiving short answers, which is the desired behaviour. However, in three out of forty cases, the brevity hint applied incorrectly to a question that genuinely needed depth. The heuristic could be tightened, or we could replace it entirely with the planned LoRA fine-tune."
+  },
+  {
+    "id": "long_response_0045",
+    "category": "long_response",
+    "text": "I have verified the system invariants. All five voice-quality lock items remain unchanged: the Piper voice file, the RVC weights, the LLM model file, the system prompt, and the persona files. The recent changes preserve voice character. The classifier extensions are pure additions. The brevity hint is per-call and reversible. Nothing has been damaged."
+  },
+  {
+    "id": "long_response_0046",
+    "category": "long_response",
+    "text": "Three of the ten recent classifier extensions caught real coverage gaps in the live session. Four were defensive additions for cases that have not yet appeared in production. The remaining three were redundant with existing patterns and have been removed. Net result: the active surface is leaner and more comprehensive. Test count increased by ten with no regressions."
+  },
+  {
+    "id": "long_response_0047",
+    "category": "long_response",
+    "text": "The Demucs separation worked as expected. The cleaned vocal stream preserves the full duration. The peak level is just under zero dBFS, which is normal for Demucs output. The RMS level is around minus twenty-one decibels, which matches typical speech levels. The removed background stream contains the music and ambient sounds, with no obvious vocal bleed."
+  },
+  {
+    "id": "long_response_0048",
+    "category": "long_response",
+    "text": "I have prepared the synthetic data generation plan. The bulk run will produce approximately forty to sixty minutes of synthesised speech across roughly six hundred utterances. The corpus is balanced across short responses, medium technical statements, tool acknowledgments, theatrical character lines, question forms, long responses, numeric content, and conversational small talk. Generation time is estimated at thirty to ninety minutes on the current GPU."
+  },
+  {
+    "id": "long_response_0049",
+    "category": "long_response",
+    "text": "Three independent considerations point toward the same recommendation. First, the latency budget favours a smaller model. Second, the VRAM constraint disqualifies the heavier alternative. Third, your stated preference for a stable, locked-in voice is best served by training rather than reference-clip cloning. The conclusion is clear: fine-tune Kokoro."
+  },
+  {
+    "id": "long_response_0050",
+    "category": "long_response",
+    "text": "Your memory of the prior project context is accurate. The session you described occurred eight days ago. The relevant decisions were the choice of Whisper small over base, the selection of bge-small-en-v1.5 for embeddings, and the rejection of Ollama as the LLM backend. All three remain in force."
+  },
+  {
+    "id": "numeric_special_0001",
+    "category": "numeric_special",
+    "text": "The current time is two seventeen in the afternoon."
+  },
+  {
+    "id": "numeric_special_0002",
+    "category": "numeric_special",
+    "text": "Today is Monday, October fifteenth, twenty twenty-six."
+  },
+  {
+    "id": "numeric_special_0003",
+    "category": "numeric_special",
+    "text": "Your appointment is at nine forty-five tomorrow morning."
+  },
+  {
+    "id": "numeric_special_0004",
+    "category": "numeric_special",
+    "text": "The temperature outside is seventy-three degrees Fahrenheit."
+  },
+  {
+    "id": "numeric_special_0005",
+    "category": "numeric_special",
+    "text": "The Atlantic ocean spans approximately one hundred six million square kilometres."
+  },
+  {
+    "id": "numeric_special_0006",
+    "category": "numeric_special",
+    "text": "The deadline is on the fifteenth of next month."
+  },
+  {
+    "id": "numeric_special_0007",
+    "category": "numeric_special",
+    "text": "You owe seventy-three dollars and forty-two cents."
+  },
+  {
+    "id": "numeric_special_0008",
+    "category": "numeric_special",
+    "text": "The transaction was completed at eleven twenty-six p.m."
+  },
+  {
+    "id": "numeric_special_0009",
+    "category": "numeric_special",
+    "text": "Your shipment is expected on the thirtieth of November."
+  },
+  {
+    "id": "numeric_special_0010",
+    "category": "numeric_special",
+    "text": "The flight departs at six forty in the evening."
+  },
+  {
+    "id": "numeric_special_0011",
+    "category": "numeric_special",
+    "text": "The meeting room holds up to twelve people."
+  },
+  {
+    "id": "numeric_special_0012",
+    "category": "numeric_special",
+    "text": "The recipe calls for two cups of flour and three eggs."
+  },
+  {
+    "id": "numeric_special_0013",
+    "category": "numeric_special",
+    "text": "The package weighs four point three kilograms."
+  },
+  {
+    "id": "numeric_special_0014",
+    "category": "numeric_special",
+    "text": "The video is two hours, fifteen minutes, and twelve seconds long."
+  },
+  {
+    "id": "numeric_special_0015",
+    "category": "numeric_special",
+    "text": "The model has thirty-two billion parameters and was trained on one trillion tokens."
+  },
+  {
+    "id": "numeric_special_0016",
+    "category": "numeric_special",
+    "text": "The recipe makes about thirty-six cookies, with ten minutes of prep time and twelve minutes of baking."
+  },
+  {
+    "id": "numeric_special_0017",
+    "category": "numeric_special",
+    "text": "The investment grew from one thousand two hundred to two thousand four hundred over fourteen years."
+  },
+  {
+    "id": "numeric_special_0018",
+    "category": "numeric_special",
+    "text": "The route is eighty-seven miles long and takes about ninety minutes to drive at typical highway speeds."
+  },
+  {
+    "id": "numeric_special_0019",
+    "category": "numeric_special",
+    "text": "The error appeared at one fourteen in the morning, lasted seventeen seconds, and resolved automatically."
+  },
+  {
+    "id": "numeric_special_0020",
+    "category": "numeric_special",
+    "text": "Version four point two point one was released on March third, twenty twenty-five."
+  },
+  {
+    "id": "numeric_special_0021",
+    "category": "numeric_special",
+    "text": "Your battery is at twenty-three percent. Estimated time remaining is one hour and twelve minutes."
+  },
+  {
+    "id": "numeric_special_0022",
+    "category": "numeric_special",
+    "text": "The download is sixty-eight percent complete. Approximately four minutes remaining."
+  },
+  {
+    "id": "numeric_special_0023",
+    "category": "numeric_special",
+    "text": "The file size is one point two gigabytes, which represents about three percent of your remaining disk space."
+  },
+  {
+    "id": "numeric_special_0024",
+    "category": "numeric_special",
+    "text": "Your subscription renews on the seventeenth, charged at fourteen ninety-nine per month."
+  },
+  {
+    "id": "numeric_special_0025",
+    "category": "numeric_special",
+    "text": "The database query returned forty-seven thousand two hundred eighteen rows in two point four seconds."
+  },
+  {
+    "id": "numeric_special_0026",
+    "category": "numeric_special",
+    "text": "The first commit was made on August twelfth at four sixteen in the afternoon."
+  },
+  {
+    "id": "numeric_special_0027",
+    "category": "numeric_special",
+    "text": "The latest release shipped on Tuesday at eleven thirty in the morning."
+  },
+  {
+    "id": "numeric_special_0028",
+    "category": "numeric_special",
+    "text": "You have three days, four hours, and twenty-six minutes until the deadline."
+  },
+  {
+    "id": "numeric_special_0029",
+    "category": "numeric_special",
+    "text": "Today is the two hundred eighty-eighth day of the year."
+  },
+  {
+    "id": "numeric_special_0030",
+    "category": "numeric_special",
+    "text": "The store is open from nine in the morning until eight in the evening, Monday through Saturday."
+  },
+  {
+    "id": "numeric_special_0031",
+    "category": "numeric_special",
+    "text": "Your reservation is for two adults and three children, on the twenty-second."
+  },
+  {
+    "id": "numeric_special_0032",
+    "category": "numeric_special",
+    "text": "The total bill is one hundred forty-seven dollars and eighty-two cents, including a fifteen percent tip."
+  },
+  {
+    "id": "numeric_special_0033",
+    "category": "numeric_special",
+    "text": "There are approximately seven point eight billion people on Earth."
+  },
+  {
+    "id": "numeric_special_0034",
+    "category": "numeric_special",
+    "text": "The speed of light is roughly three hundred thousand kilometres per second."
+  },
+  {
+    "id": "numeric_special_0035",
+    "category": "numeric_special",
+    "text": "Water freezes at thirty-two degrees Fahrenheit, or zero degrees Celsius."
+  },
+  {
+    "id": "numeric_special_0036",
+    "category": "numeric_special",
+    "text": "The Great Wall of China is approximately twenty-one thousand kilometres long."
+  },
+  {
+    "id": "numeric_special_0037",
+    "category": "numeric_special",
+    "text": "Mount Everest is eight thousand eight hundred forty-eight meters above sea level."
+  },
+  {
+    "id": "numeric_special_0038",
+    "category": "numeric_special",
+    "text": "The Eiffel Tower stands at three hundred thirty meters tall."
+  },
+  {
+    "id": "numeric_special_0039",
+    "category": "numeric_special",
+    "text": "The Pacific ocean covers about thirty-two percent of the Earth's surface."
+  },
+  {
+    "id": "numeric_special_0040",
+    "category": "numeric_special",
+    "text": "Earth's average distance from the sun is about one hundred forty-nine million kilometres."
+  },
+  {
+    "id": "numeric_special_0041",
+    "category": "numeric_special",
+    "text": "The diameter of the moon is about three thousand four hundred seventy-four kilometres."
+  },
+  {
+    "id": "numeric_special_0042",
+    "category": "numeric_special",
+    "text": "The human body contains approximately thirty-seven trillion cells."
+  },
+  {
+    "id": "numeric_special_0043",
+    "category": "numeric_special",
+    "text": "Your average heart rate at rest is around seventy-two beats per minute."
+  },
+  {
+    "id": "numeric_special_0044",
+    "category": "numeric_special",
+    "text": "Sound travels at about three hundred forty-three meters per second through air at room temperature."
+  },
+  {
+    "id": "numeric_special_0045",
+    "category": "numeric_special",
+    "text": "The Mariana Trench reaches depths of nearly eleven thousand meters."
+  },
+  {
+    "id": "numeric_special_0046",
+    "category": "numeric_special",
+    "text": "There are precisely twenty-six letters in the English alphabet."
+  },
+  {
+    "id": "numeric_special_0047",
+    "category": "numeric_special",
+    "text": "The deck contains fifty-two cards across four suits."
+  },
+  {
+    "id": "numeric_special_0048",
+    "category": "numeric_special",
+    "text": "The orchestra has approximately one hundred musicians divided into four sections."
+  },
+  {
+    "id": "numeric_special_0049",
+    "category": "numeric_special",
+    "text": "The clock strikes twelve at noon and again at midnight."
+  },
+  {
+    "id": "numeric_special_0050",
+    "category": "numeric_special",
+    "text": "There are exactly sixty seconds in one minute and sixty minutes in one hour."
+  },
+  {
+    "id": "conversational_0001",
+    "category": "conversational",
+    "text": "Welcome back. How was your day?"
+  },
+  {
+    "id": "conversational_0002",
+    "category": "conversational",
+    "text": "Good morning. I trust you slept well."
+  },
+  {
+    "id": "conversational_0003",
+    "category": "conversational",
+    "text": "Good afternoon. What can I help you with?"
+  },
+  {
+    "id": "conversational_0004",
+    "category": "conversational",
+    "text": "Good evening. I see you have returned."
+  },
+  {
+    "id": "conversational_0005",
+    "category": "conversational",
+    "text": "How may I be of service?"
+  },
+  {
+    "id": "conversational_0006",
+    "category": "conversational",
+    "text": "I am ready when you are."
+  },
+  {
+    "id": "conversational_0007",
+    "category": "conversational",
+    "text": "Take your time. I am not going anywhere."
+  },
+  {
+    "id": "conversational_0008",
+    "category": "conversational",
+    "text": "I am here whenever you need me."
+  },
+  {
+    "id": "conversational_0009",
+    "category": "conversational",
+    "text": "I have been thinking about what you said earlier."
+  },
+  {
+    "id": "conversational_0010",
+    "category": "conversational",
+    "text": "Let me consider that for a moment."
+  },
+  {
+    "id": "conversational_0011",
+    "category": "conversational",
+    "text": "That is an interesting perspective."
+  },
+  {
+    "id": "conversational_0012",
+    "category": "conversational",
+    "text": "I had not considered that angle."
+  },
+  {
+    "id": "conversational_0013",
+    "category": "conversational",
+    "text": "You raise a fair point."
+  },
+  {
+    "id": "conversational_0014",
+    "category": "conversational",
+    "text": "I see what you mean now."
+  },
+  {
+    "id": "conversational_0015",
+    "category": "conversational",
+    "text": "That makes sense in context."
+  },
+  {
+    "id": "conversational_0016",
+    "category": "conversational",
+    "text": "I follow your reasoning."
+  },
+  {
+    "id": "conversational_0017",
+    "category": "conversational",
+    "text": "Your logic is sound."
+  },
+  {
+    "id": "conversational_0018",
+    "category": "conversational",
+    "text": "I cannot disagree with that."
+  },
+  {
+    "id": "conversational_0019",
+    "category": "conversational",
+    "text": "We are aligned on this."
+  },
+  {
+    "id": "conversational_0020",
+    "category": "conversational",
+    "text": "I share your concern about that."
+  },
+  {
+    "id": "conversational_0021",
+    "category": "conversational",
+    "text": "I understand your hesitation."
+  },
+  {
+    "id": "conversational_0022",
+    "category": "conversational",
+    "text": "I appreciate the clarification."
+  },
+  {
+    "id": "conversational_0023",
+    "category": "conversational",
+    "text": "Thank you for explaining."
+  },
+  {
+    "id": "conversational_0024",
+    "category": "conversational",
+    "text": "I see now what you intended."
+  },
+  {
+    "id": "conversational_0025",
+    "category": "conversational",
+    "text": "Allow me to restate, then, to be sure."
+  },
+  {
+    "id": "conversational_0026",
+    "category": "conversational",
+    "text": "If I understand correctly, you are asking about the second option."
+  },
+  {
+    "id": "conversational_0027",
+    "category": "conversational",
+    "text": "Let me make sure we are on the same page."
+  },
+  {
+    "id": "conversational_0028",
+    "category": "conversational",
+    "text": "Just to confirm, the deadline is tomorrow at noon."
+  },
+  {
+    "id": "conversational_0029",
+    "category": "conversational",
+    "text": "Before I continue, is this the file you meant?"
+  },
+  {
+    "id": "conversational_0030",
+    "category": "conversational",
+    "text": "One question, if I may."
+  },
+  {
+    "id": "conversational_0031",
+    "category": "conversational",
+    "text": "I have a brief follow-up."
+  },
+  {
+    "id": "conversational_0032",
+    "category": "conversational",
+    "text": "If it is not too much trouble, could you elaborate?"
+  },
+  {
+    "id": "conversational_0033",
+    "category": "conversational",
+    "text": "I would be happy to help with that."
+  },
+  {
+    "id": "conversational_0034",
+    "category": "conversational",
+    "text": "I will get to it as soon as possible."
+  },
+  {
+    "id": "conversational_0035",
+    "category": "conversational",
+    "text": "Consider it on the agenda."
+  },
+  {
+    "id": "conversational_0036",
+    "category": "conversational",
+    "text": "I have noted your preference."
+  },
+  {
+    "id": "conversational_0037",
+    "category": "conversational",
+    "text": "I will keep that in mind for future requests."
+  },
+  {
+    "id": "conversational_0038",
+    "category": "conversational",
+    "text": "I will adjust my approach accordingly."
+  },
+  {
+    "id": "conversational_0039",
+    "category": "conversational",
+    "text": "That is no problem at all."
+  },
+  {
+    "id": "conversational_0040",
+    "category": "conversational",
+    "text": "I am glad we could resolve this quickly."
+  },
+  {
+    "id": "conversational_0041",
+    "category": "conversational",
+    "text": "I am pleased that worked out for you."
+  },
+  {
+    "id": "conversational_0042",
+    "category": "conversational",
+    "text": "Let me know if you need anything else."
+  },
+  {
+    "id": "conversational_0043",
+    "category": "conversational",
+    "text": "I am here when you are ready to continue."
+  },
+  {
+    "id": "conversational_0044",
+    "category": "conversational",
+    "text": "It was no trouble."
+  },
+  {
+    "id": "conversational_0045",
+    "category": "conversational",
+    "text": "You are welcome."
+  },
+  {
+    "id": "conversational_0046",
+    "category": "conversational",
+    "text": "Glad to be of service."
+  },
+  {
+    "id": "conversational_0047",
+    "category": "conversational",
+    "text": "Is there anything else?"
+  },
+  {
+    "id": "conversational_0048",
+    "category": "conversational",
+    "text": "Would you like me to take notes on this?"
+  },
+  {
+    "id": "conversational_0049",
+    "category": "conversational",
+    "text": "I have everything I need to proceed."
+  },
+  {
+    "id": "conversational_0050",
+    "category": "conversational",
+    "text": "I will follow up tomorrow if I have not heard back."
+  },
+  {
+    "id": "conversational_0051",
+    "category": "conversational",
+    "text": "I will check in with you at the end of the day."
+  },
+  {
+    "id": "conversational_0052",
+    "category": "conversational",
+    "text": "Take care."
+  },
+  {
+    "id": "conversational_0053",
+    "category": "conversational",
+    "text": "Be well."
+  },
+  {
+    "id": "conversational_0054",
+    "category": "conversational",
+    "text": "Until next time."
+  },
+  {
+    "id": "conversational_0055",
+    "category": "conversational",
+    "text": "Until we speak again."
+  },
+  {
+    "id": "conversational_0056",
+    "category": "conversational",
+    "text": "I will be here."
+  },
+  {
+    "id": "conversational_0057",
+    "category": "conversational",
+    "text": "Speak soon."
+  },
+  {
+    "id": "conversational_0058",
+    "category": "conversational",
+    "text": "Good luck with the rest of your day."
+  },
+  {
+    "id": "conversational_0059",
+    "category": "conversational",
+    "text": "I hope the meeting goes well."
+  },
+  {
+    "id": "conversational_0060",
+    "category": "conversational",
+    "text": "May the build complete cleanly."
+  }
+]

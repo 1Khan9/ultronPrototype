@@ -92,7 +92,24 @@ class AudioConfig(_Strict):
     output_device: Optional[str] = None       # env: ULTRON_AUDIO_OUTPUT_DEVICE
     barge_in_enabled: bool = True
     barge_in_grace_seconds: float = 0.5
+    # Total capacity of the audio ring buffer. The orchestrator slices
+    # mode-specific pre-roll out of this -- see ``cold_pre_roll_seconds``
+    # and ``warm_pre_roll_seconds``. Capacity should be >= max(cold, warm)
+    # so the largest slice has the audio it needs.
     ring_buffer_seconds: float = 0.5
+    # COLD path pre-roll (post-wake-word capture). Short by design so
+    # the wake-word "Ultron" tail does not bleed into Whisper as a
+    # "Tron" prefix. The 2026-05-09 latency hot-fix sized this for the
+    # custom wake-word model's typical fire latency. If you switch
+    # wake-word models, re-tune.
+    cold_pre_roll_seconds: float = Field(default=0.15, ge=0.0)
+    # WARM path pre-roll (post-TTS follow-up listening). Longer than
+    # COLD because there is no wake-word firing event to align against
+    # -- the user just starts talking from silence and Silero VAD has
+    # ~100-200 ms detection latency. Without enough pre-roll the
+    # leading word gets clipped (e.g. "What's the weather like" comes
+    # through as "the weather like").
+    warm_pre_roll_seconds: float = Field(default=0.5, ge=0.0)
     # 2026-05-09 audio-quality pass: linear gain applied in dB to the
     # captured audio chunk BEFORE it reaches VAD / wake-word / Whisper.
     # 0.0 dB = no-op (legacy behaviour). Use a positive value when the
@@ -665,7 +682,47 @@ class RVCConfig(_Strict):
     filter_radius: int = Field(default=1, ge=0)
 
 
+class XttsV3Config(_Strict):
+    """Configuration for the XTTS v2 + v3 Ultron filter TTS engine.
+
+    Selected when ``tts.engine == "xtts_v3"``. The engine spawns the
+    XTTS HTTP server as a subprocess in its own isolated venv (so
+    Coqui TTS's transformers / hydra / omegaconf pins don't conflict
+    with what fairseq / RVC needs in the main venv).
+    """
+    # Path to the Python interpreter inside the isolated XTTS venv.
+    # Defaults to the layout established during the 2026-05-10 voice
+    # swap: a ``.venv-xtts`` next to the audio prep work.
+    server_python: str = "ultronVoiceAudio/.venv-xtts/Scripts/python.exe"
+    # The XTTS HTTP server entry script. Lives outside ``src/ultron/``
+    # because it has to import Coqui's TTS package which only exists
+    # in the isolated venv.
+    server_script: str = "ultronVoiceAudio/scripts/xtts_server.py"
+    # Reference WAV used as the speaker conditioning source. The
+    # cleaned mono Ultron reference is the production default.
+    reference_audio: str = "ultronVoiceAudio/Ultron_vocals_mono_v1.wav"
+    # Bind details for the local-only HTTP server.
+    host: str = "127.0.0.1"
+    # ``null`` -> the engine picks a free port at startup.
+    port: Optional[int] = None
+    # v3_heavy is the user-locked production preset (2026-05-10).
+    # Other valid presets: ``v1_subtle``, ``v2_medium``.
+    filter_preset: str = "v3_heavy"
+    # Trailing silence padded onto each synthesised clip BEFORE the
+    # filter, so the reverb tail can decay into it without being
+    # clipped at the buffer end. Runtime default 200 ms (audible
+    # portion of the v3 reverb); offline standalone samples use
+    # 500 ms for full decay.
+    filter_tail_silence_ms: float = Field(default=200.0, ge=0.0, le=2000.0)
+
+
 class TTSConfig(_Strict):
+    # 2026-05-10 voice swap: ``"piper_rvc"`` is the legacy stack
+    # (Piper voice + RVC timbre transfer); ``"xtts_v3"`` is the new
+    # XTTS v2 streaming + v3 filter stack. Switching engines requires
+    # a process restart (the chosen engine is loaded once at
+    # orchestrator construction).
+    engine: str = Field(default="piper_rvc", pattern="^(piper_rvc|xtts_v3)$")
     piper_voice_path: str = "models/piper/en_US-ryan-medium.onnx"
     piper_voice_config_path: str = "models/piper/en_US-ryan-medium.onnx.json"
     output_sample_rate: int = 22050
@@ -675,6 +732,7 @@ class TTSConfig(_Strict):
     pause_ms: int = Field(default=180, ge=0)
     edge_fade_ms: int = Field(default=4, ge=0)
     rvc: RVCConfig = Field(default_factory=RVCConfig)
+    xtts_v3: XttsV3Config = Field(default_factory=XttsV3Config)
     # 2026-05-09 latency hot-fix: split Piper and RVC into two separate
     # worker stages connected by a bounded queue. With the legacy
     # single-worker shape, sentence N+1's Piper synthesis only began
@@ -693,10 +751,13 @@ class TTSConfig(_Strict):
     # rate differs from the speculative one. Saves ~20-30 ms first-
     # sentence latency.
     speculative_stream_open_enabled: bool = True
-    # Expected output sample rate for speculative open. RVC v2 models
-    # output 40000 Hz by default; Piper-only stacks should set this to
-    # match ``output_sample_rate`` (22050 by default).
-    speculative_stream_sample_rate: int = Field(default=40000, ge=8000)
+    # Expected output sample rate for speculative open. The Ultron RVC
+    # model outputs 48000 Hz (verified against live captures);
+    # Piper-only stacks (``rvc.enabled=false``) should set this to
+    # match ``output_sample_rate`` (22050 by default). Mismatch falls
+    # back to the close-and-reopen path (~50-100 ms wasted per turn);
+    # keep this aligned to the actual first-clip rate.
+    speculative_stream_sample_rate: int = Field(default=48000, ge=8000)
     # 2026-05-09 latency hot-fix: pass ``latency='low'`` to
     # ``sd.OutputStream`` so PortAudio asks the host audio API for the
     # smallest acceptable buffer. Saves 30-100 ms of OS-level audio
