@@ -258,16 +258,48 @@ def test_voice_alerts_limit_clamped(isolated_paths: Path):
 
 
 def test_build_server_registers_all_tools():
-    """Ensure all five tools are present in the FastMCP instance."""
+    """Ensure all tools are present in the FastMCP instance.
+
+    2026-05-12 Phase 7: heartbeat/coding (5) + desktop automation (9) = 14.
+    Phase 7 polish: window-actions + UIA + input primitives (10 more) = 24.
+    """
     import asyncio
 
     server = mcp_tools.build_server()
     tools = asyncio.run(server.list_tools())
     names = {t.name for t in tools}
-    assert names == {
+    # Original heartbeat / coding / maintenance tools.
+    core_tools = {
         "get_heartbeat_alerts",
         "acknowledge_alert",
         "run_maintenance",
         "list_active_coding_sessions",
         "get_recent_voice_alerts",
     }
+    # Phase 7 desktop automation tools.
+    desktop_tools = {
+        "enumerate_monitors",
+        "list_windows",
+        "take_screenshot",
+        "describe_screen",
+        "get_screen_context",
+        "launch_app",
+        "launch_chrome_url",
+        "open_image_search",
+        "move_window_to_monitor",
+    }
+    # Phase 7 polish: extended window / UIA / input tools.
+    extended_tools = {
+        "focus_window",
+        "window_action",
+        "click_uia",
+        "type_into_uia",
+        "get_window_text",
+        "mouse_click",
+        "mouse_move",
+        "type_text",
+        "press_hotkey",
+        "scroll",
+    }
+    expected = core_tools | desktop_tools | extended_tools
+    assert names == expected, f"missing: {expected - names}; extra: {names - expected}"

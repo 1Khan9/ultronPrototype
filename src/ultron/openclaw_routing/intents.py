@@ -65,6 +65,20 @@ class RoutingIntentKind(str, Enum):
     # specific window via UI Automation.
     WINDOW_AUTOMATION = "window_automation"
 
+    # App launch (desktop automation, 2026-05-12 Phase 8) — "open
+    # <X> on monitor <N>", "launch Cursor on my left monitor",
+    # "pull up YouTube fullscreen on monitor 2". Routes natively
+    # via :mod:`ultron.desktop.launcher` (NOT OpenClaw plugins).
+    APP_LAUNCH = "app_launch"
+
+    # Screen-context query (desktop automation, 2026-05-12 Phase 8) --
+    # "explain what I'm looking at", "what's on my screen", "help me
+    # with what I'm doing". Routes natively via
+    # :mod:`ultron.desktop.screen_context` -- captures the foreground
+    # monitor + UIA tree text + optional VLM description and injects
+    # into the next LLM call as context.
+    SCREEN_CONTEXT_QUERY = "screen_context_query"
+
 
 # ---------------------------------------------------------------------------
 # Per-category structured intents (for openclaw-bound ones)
@@ -180,6 +194,65 @@ class WindowIntent:
 
 
 @dataclass
+class AppLaunchIntent:
+    """Native app launch (2026-05-12 Phase 8 desktop automation).
+
+    Routes via :class:`ultron.desktop.launcher.AppLauncher`. Distinct
+    from BROWSER_AUTOMATION (which goes through the OpenClaw browser
+    plugin's isolated Playwright instance): this opens the user's
+    REAL application binary with their REAL profile / sessions.
+
+    Attributes:
+        app_name: registry name or alias (``chrome``, ``cursor``,
+            ``discord``, ``edge``, etc.) or a free-form name resolved
+            via the launcher's substring fallback.
+        url: optional URL to pass (Chrome opens to this URL via
+            ``--new-window``; ignored for non-browser apps).
+        monitor_index: target monitor index (None = wherever it lands).
+        monitor_query: original monitor phrase from the user
+            (``"my second monitor"``, ``"the left screen"``); kept
+            for audit + diagnostic narration.
+        fullscreen: place the launched window to fill the target monitor.
+        maximize: ``SW_MAXIMIZE`` after placement (mutually exclusive
+            with fullscreen).
+    """
+
+    app_name: str
+    url: Optional[str] = None
+    monitor_index: Optional[int] = None
+    monitor_query: str = ""
+    fullscreen: bool = False
+    maximize: bool = False
+    raw_text: str = ""
+
+
+@dataclass
+class ScreenContextIntent:
+    """Screen-context query (2026-05-12 Phase 8 desktop automation).
+
+    Routes via :func:`ultron.desktop.screen_context.build_screen_context`.
+    The handler captures the relevant monitor + UIA text + optional
+    VLM description and feeds the result back to the LLM as injected
+    context so Ultron can answer about what's actually on the user's
+    screen.
+
+    Attributes:
+        question: the user's actual question ("what does this error
+            mean", "what am I looking at", etc.). Defaults to the
+            raw_text when not parsed out specifically.
+        include_vlm: when True, runs moondream2 on the capture. Slow
+            (~5-8 s on CPU) but answers "describe the image" / "what
+            does this picture show" cleanly.
+        monitor_index: optional explicit monitor target.
+    """
+
+    question: str = ""
+    include_vlm: bool = True
+    monitor_index: Optional[int] = None
+    raw_text: str = ""
+
+
+@dataclass
 class SystemStatusIntent:
     """A voice query about Ultron's overall state.
 
@@ -237,6 +310,8 @@ class RoutingIntent:
     gaming_mode_intent: Optional[GamingModeIntent] = None     # GAMING_MODE only (V1-gap A1)
     desktop_intent: Optional[DesktopIntent] = None            # DESKTOP_AUTOMATION only (V1-gap C3)
     window_intent: Optional[WindowIntent] = None              # WINDOW_AUTOMATION only (V1-gap C3)
+    app_launch_intent: Optional[AppLaunchIntent] = None       # APP_LAUNCH only (Phase 8)
+    screen_context_intent: Optional[ScreenContextIntent] = None  # SCREEN_CONTEXT_QUERY only (Phase 8)
 
     # Disambiguation: when the rule-based + LLM disambiguator can't decide,
     # the orchestrator asks the user a clarifying question.

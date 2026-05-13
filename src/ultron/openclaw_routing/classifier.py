@@ -47,6 +47,7 @@ def _safe_get_config():
     except Exception:
         return None
 from ultron.openclaw_routing.intents import (
+    AppLaunchIntent,
     BrowserIntent,
     DesktopIntent,
     FileOpIntent,
@@ -56,6 +57,7 @@ from ultron.openclaw_routing.intents import (
     ModelSwitchIntent,
     RoutingIntent,
     RoutingIntentKind,
+    ScreenContextIntent,
     ShellOpIntent,
     WindowIntent,
 )
@@ -729,6 +731,41 @@ def classify_routing(
                 ),
             )
 
+    # 1.9) SCREEN_CONTEXT_QUERY (Phase 8) -- "explain what I'm looking at",
+    #      "what's on my screen". Native (no OpenClaw dependency); always
+    #      fires when phrasing matches. Higher priority than the bare
+    #      coding/browser rules below because the phrasing is specific.
+    if not has_pending_clarification:
+        sc = _classify_screen_context(text)
+        if sc is not None:
+            return RoutingIntent(
+                kind=RoutingIntentKind.SCREEN_CONTEXT_QUERY,
+                raw_text=text,
+                confidence=0.9,
+                source="rule",
+                reason="screen-context query pattern matched",
+                screen_context_intent=sc,
+            )
+
+    # 2.0) APP_LAUNCH (Phase 8) -- "open YouTube on monitor 2",
+    #      "launch Cursor on my left monitor", "show me a picture of X".
+    #      Native via :mod:`ultron.desktop.launcher`; routes to user's
+    #      real Chrome / Cursor / etc. (NOT the OpenClaw Playwright
+    #      plugin). Must fire BEFORE the BROWSER_AUTOMATION rule below
+    #      so "open google.com" doesn't go to the isolated Playwright
+    #      profile.
+    if not has_pending_clarification:
+        al = _classify_app_launch(text)
+        if al is not None:
+            return RoutingIntent(
+                kind=RoutingIntentKind.APP_LAUNCH,
+                raw_text=text,
+                confidence=0.9,
+                source="rule",
+                reason="app-launch pattern matched",
+                app_launch_intent=al,
+            )
+
     # 2) HYBRID signals next — these often contain coding-trigger keywords
     #    ("write a script", "build a tool") so we have to win the race
     #    against CODE_TASK rules below.
@@ -820,6 +857,326 @@ def classify_routing(
 
 
 _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+
+
+# ---------------------------------------------------------------------------
+# Phase 8 (2026-05-12): Desktop automation native classifier patterns.
+#
+# These fire BEFORE the OpenClaw-gated BROWSER / DESKTOP / WINDOW patterns
+# because they route to native modules (ultron.desktop.*) that don't
+# depend on the OpenClaw Gateway being enabled. The user's specific use
+# cases:
+#   - "open YouTube on my 2nd monitor" -> APP_LAUNCH with Chrome+URL+monitor
+#   - "show me a picture of golden retriever" -> APP_LAUNCH (image search)
+#   - "open Cursor on my left monitor" -> APP_LAUNCH
+#   - "explain what I'm looking at" -> SCREEN_CONTEXT_QUERY
+# ---------------------------------------------------------------------------
+
+
+# Monitor target tokens: ordinal words, digits with "monitor"/"screen",
+# directional. Captures the matched text for downstream parsing.
+_MONITOR_TARGET_RE = re.compile(
+    r"\bon\s+(?:my\s+|the\s+)?"
+    r"(?:"
+    r"(?:1st|first|2nd|second|3rd|third|4th|fourth|primary|main|"
+    r"left|right|center|centre|middle|top|bottom)"
+    r"\s+(?:monitor|screen|display)"
+    r"|"
+    r"monitor\s+(?:1|2|3|4|one|two|three|four)"
+    r"|"
+    r"screen\s+(?:1|2|3|4|one|two|three|four)"
+    r"|"
+    r"display\s+(?:1|2|3|4|one|two|three|four)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Ordinal-words map for monitor extraction.
+_MONITOR_ORDINAL_TO_INDEX = {
+    "first": 0, "1st": 0, "one": 0, "primary": 0, "main": 0,
+    "second": 1, "2nd": 1, "two": 1,
+    "third": 2, "3rd": 2, "three": 2,
+    "fourth": 3, "4th": 3, "four": 3,
+}
+# Directional words preserved as strings; resolved by find_monitor.
+_MONITOR_DIRECTIONAL_WORDS = (
+    "left", "right", "center", "centre", "middle", "top", "bottom",
+)
+
+
+def _extract_monitor_target(text: str) -> tuple[Optional[int], str]:
+    """Extract a monitor target from the utterance.
+
+    Returns ``(monitor_index, monitor_query)`` -- when an explicit
+    digit ("monitor 2") or ordinal ("second monitor", "primary
+    monitor") is found, ``monitor_index`` is the zero-based index and
+    ``monitor_query`` is the matched phrase. Directional words
+    ("left monitor", "right screen") yield ``monitor_index=None``
+    and the directional word as ``monitor_query`` so the launcher's
+    :func:`find_monitor` can resolve at dispatch time.
+
+    No match returns ``(None, "")``.
+    """
+    m = _MONITOR_TARGET_RE.search(text or "")
+    if not m:
+        return None, ""
+    raw = m.group(0)
+    raw_lower = raw.lower()
+
+    # Ordinal/cardinal words (preferred -- explicit index).
+    for word, idx in _MONITOR_ORDINAL_TO_INDEX.items():
+        if word in raw_lower:
+            return idx, raw
+
+    # Explicit digit (monitor 2 / screen 3 / display 4).
+    digit_match = re.search(
+        r"(?:monitor|screen|display)\s+(?:(\d)|"
+        r"(one|two|three|four))",
+        raw_lower,
+    )
+    if digit_match:
+        digit, word = digit_match.group(1), digit_match.group(2)
+        if digit:
+            return int(digit) - 1, raw  # "monitor 2" -> index 1
+        if word in _MONITOR_ORDINAL_TO_INDEX:
+            return _MONITOR_ORDINAL_TO_INDEX[word], raw
+
+    # Directional: defer resolution.
+    for d in _MONITOR_DIRECTIONAL_WORDS:
+        if d in raw_lower:
+            return None, d
+
+    return None, raw
+
+
+# SCREEN_CONTEXT_QUERY: utterances asking about the current screen state.
+# Higher priority than BROWSER -- "show me my screen" shouldn't route
+# to browser. Tight regex so it doesn't swallow general "what is X" queries.
+_SCREEN_CONTEXT_PATTERNS = re.compile(
+    r"\b(?:"
+    # "explain what I'm/I am looking at"
+    r"explain\s+(?:what\s+)?(?:i'm|i\s+am|im)\s+(?:looking\s+at|seeing|doing|working\s+on)|"
+    # "what(s) on my screen", "what's on screen"
+    r"what(?:'s|\s+is)?\s+(?:on\s+)?(?:my\s+)?(?:screen|display|monitor)|"
+    # "what am I looking at", "what are you seeing"
+    r"what\s+am\s+i\s+(?:looking\s+at|seeing)|"
+    r"what\s+(?:do|can)\s+you\s+(?:see|see\s+(?:right\s+)?now)|"
+    # "look at my screen and ...", "look at what I'm doing"
+    r"look\s+at\s+(?:my\s+)?(?:screen|what\s+i'm\s+doing|this)|"
+    # "tell me about (what's) on my screen"
+    r"tell\s+me\s+(?:about\s+)?(?:what(?:'s|\s+is)\s+on\s+)?my\s+screen|"
+    # "describe (what's on) my screen"
+    r"describe\s+(?:what(?:'s|\s+is)\s+on\s+)?my\s+screen|"
+    # "what is this (on the screen)" -- requires "this" alone or with screen context
+    r"what(?:'s|\s+is)\s+this\s+(?:on\s+(?:my\s+|the\s+)?screen|here)|"
+    # "help me with this", "help me with what I'm working on"
+    r"help\s+me\s+(?:with\s+)?(?:this|what\s+i'm\s+(?:working\s+on|doing)|"
+    r"my\s+screen)|"
+    # "explain this (code|error|page|screen)" — high-specificity
+    r"explain\s+this\s+(?:code|error|page|screen|window|message|dialog|"
+    r"window|app|application)|"
+    # "what does this (error|message|dialog) mean"
+    r"what\s+does\s+this\s+(?:error|message|dialog|notification|alert|"
+    r"button|window|popup|prompt)\s+(?:mean|say|do)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+# APP_LAUNCH: "open <X>", "launch <X>", "pull up <X>", "start <X>",
+# "fire up <X>", "throw up <X>", "bring up <X>". Combined with monitor
+# targeting from _MONITOR_TARGET_RE.
+_APP_LAUNCH_VERB_PATTERN = (
+    r"(?:open(?:\s+up)?|launch|start|run|fire\s+up|pull\s+up|"
+    r"bring\s+up|throw\s+(?:up|on)|show\s+me)"
+)
+
+# Apps the launcher's default registry knows about. Match against the
+# user's phrase; the launcher's substring-fallback handles slight
+# variants ("google chrome" → chrome, "vs code" → vscode).
+_KNOWN_APP_PATTERN = (
+    r"(?:"
+    r"chrome|google\s+chrome|"
+    r"edge|microsoft\s+edge|msedge|"
+    r"firefox|mozilla|"
+    r"cursor|"
+    r"vscode|vs\s+code|visual\s+studio\s+code|code|"
+    r"discord|"
+    r"slack|"
+    r"spotify|"
+    r"obs|obs\s+studio|"
+    r"notepad|"
+    r"terminal|windows\s+terminal|wt|"
+    r"explorer|file\s+explorer|files|"
+    # Sites that go via Chrome with a URL (we synthesise the URL).
+    r"youtube|gmail|twitter|x\.com|reddit|github|netflix|"
+    r"hacker\s+news|hn"
+    # Open-ended: arbitrary single word after the verb is harvested
+    # by the AppLauncher's substring search. We pattern-match the
+    # named cases explicitly so the dispatch doesn't waste a substring
+    # search on every utterance.
+    r")"
+)
+
+_APP_LAUNCH_PATTERNS = re.compile(
+    rf"\b{_APP_LAUNCH_VERB_PATTERN}\s+"
+    rf"(?:the\s+|my\s+|a\s+|an\s+|some\s+)?"
+    rf"(?P<app>{_KNOWN_APP_PATTERN})\b",
+    re.IGNORECASE,
+)
+
+# Image search: "show me a picture of X", "show me what X looks like",
+# "find an image of X". Distinct from MEDIA_GENERATION (which creates
+# images via ComfyUI) -- this just opens Google Images in a new Chrome
+# window.
+_IMAGE_SEARCH_PATTERNS = re.compile(
+    r"\b(?:"
+    r"show\s+me\s+(?:an?\s+)?(?:picture|image|photo)\s+of\s+(?P<q1>.+?)(?:\s+on\s+|\s*[.?]|\s*$)|"
+    r"show\s+me\s+what\s+(?P<q2>.+?)\s+looks?\s+like(?:\s+on\s+|\s*[.?]|\s*$)|"
+    r"find\s+(?:me\s+)?(?:an?\s+)?(?:picture|image|photo)\s+of\s+(?P<q3>.+?)(?:\s+on\s+|\s*[.?]|\s*$)|"
+    r"i\s+want\s+to\s+see\s+(?:an?\s+)?(?:picture|image|photo)\s+of\s+(?P<q4>.+?)(?:\s+on\s+|\s*[.?]|\s*$)"
+    r")",
+    re.IGNORECASE,
+)
+
+# URL-only quick-open (so "open youtube.com" routes to APP_LAUNCH for Chrome).
+_BARE_URL_OPEN_PATTERNS = re.compile(
+    r"\b(?:open|pull\s+up|bring\s+up|launch|go\s+to|visit)\s+"
+    r"(?P<dom>(?:[\w-]+\.)+(?:com|net|org|io|app|dev|ai|co|edu|gov|me|tv|gg|xyz|info))"
+    r"(?:/\S*)?\b",
+    re.IGNORECASE,
+)
+
+
+# Map known site words to URLs.
+_SITE_TO_URL = {
+    "youtube": "https://www.youtube.com",
+    "gmail": "https://mail.google.com",
+    "twitter": "https://twitter.com",
+    "x.com": "https://x.com",
+    "reddit": "https://www.reddit.com",
+    "github": "https://github.com",
+    "netflix": "https://www.netflix.com",
+    "hacker news": "https://news.ycombinator.com",
+    "hn": "https://news.ycombinator.com",
+}
+
+
+# Map matched app phrase to launcher-registry name.
+_APP_PHRASE_TO_NAME = {
+    "google chrome": "chrome",
+    "microsoft edge": "edge", "msedge": "edge",
+    "mozilla": "firefox",
+    "vs code": "vscode", "visual studio code": "vscode", "code": "vscode",
+    "windows terminal": "terminal", "wt": "terminal",
+    "file explorer": "explorer", "files": "explorer",
+    "obs studio": "obs",
+    "x.com": "chrome",  # site, routed via Chrome
+    "hacker news": "chrome", "hn": "chrome",
+}
+
+
+def _classify_screen_context(text: str) -> Optional[ScreenContextIntent]:
+    """Match SCREEN_CONTEXT_QUERY patterns. Returns the intent or None."""
+    if not _SCREEN_CONTEXT_PATTERNS.search(text or ""):
+        return None
+    mon_idx, _ = _extract_monitor_target(text)
+    return ScreenContextIntent(
+        question=text.strip(),
+        include_vlm=True,
+        monitor_index=mon_idx,
+        raw_text=text,
+    )
+
+
+def _classify_app_launch(text: str) -> Optional[AppLaunchIntent]:
+    """Match APP_LAUNCH patterns (including image-search shortcut).
+
+    Returns the intent or None when no pattern matches.
+    """
+    if not text:
+        return None
+
+    # Image search: "show me a picture of X".
+    img = _IMAGE_SEARCH_PATTERNS.search(text)
+    if img:
+        query = (img.group("q1") or img.group("q2")
+                 or img.group("q3") or img.group("q4") or "").strip()
+        if query:
+            mon_idx, mon_q = _extract_monitor_target(text)
+            url = (
+                "https://www.google.com/search?tbm=isch&q="
+                + _url_quote(query)
+            )
+            return AppLaunchIntent(
+                app_name="chrome",
+                url=url,
+                monitor_index=mon_idx,
+                monitor_query=mon_q,
+                fullscreen=False,
+                maximize=False,
+                raw_text=text,
+            )
+
+    # Explicit app match.
+    m = _APP_LAUNCH_PATTERNS.search(text)
+    if m:
+        phrase = m.group("app").lower().strip()
+        mon_idx, mon_q = _extract_monitor_target(text)
+        is_site = phrase in _SITE_TO_URL
+        # Sites (youtube / gmail / github / reddit / etc.) only fire on
+        # APP_LAUNCH when an explicit monitor target is present. Without
+        # one, defer to the existing BROWSER_AUTOMATION path so the
+        # routing baseline is preserved. "open youtube" -> BROWSER, but
+        # "open youtube on monitor 2" -> APP_LAUNCH (native Chrome).
+        if is_site and mon_idx is None and not mon_q:
+            return None
+        app_name = _APP_PHRASE_TO_NAME.get(phrase, phrase)
+        url = _SITE_TO_URL.get(phrase) or _SITE_TO_URL.get(app_name)
+        fullscreen = bool(re.search(r"\bfull[- ]?screen\b", text, re.IGNORECASE))
+        maximize = bool(re.search(
+            r"\bmaximize|maximised|maximized|full(?:\s+window)?\b",
+            text, re.IGNORECASE,
+        ))
+        if is_site:
+            app_name = "chrome"
+        return AppLaunchIntent(
+            app_name=app_name,
+            url=url,
+            monitor_index=mon_idx,
+            monitor_query=mon_q,
+            fullscreen=fullscreen,
+            maximize=maximize,
+            raw_text=text,
+        )
+
+    # Bare URL ("open youtube.com"). Like the named-site case above,
+    # only fires when a monitor target is present -- without one,
+    # defer to the existing BROWSER_AUTOMATION path.
+    bare = _BARE_URL_OPEN_PATTERNS.search(text)
+    if bare:
+        mon_idx, mon_q = _extract_monitor_target(text)
+        if mon_idx is None and not mon_q:
+            return None
+        domain = bare.group("dom")
+        url = f"https://{domain}"
+        return AppLaunchIntent(
+            app_name="chrome",
+            url=url,
+            monitor_index=mon_idx,
+            monitor_query=mon_q,
+            fullscreen=False,
+            maximize=False,
+            raw_text=text,
+        )
+
+    return None
+
+
+def _url_quote(s: str) -> str:
+    """Lazy import urllib.parse.quote_plus for URL-encoding."""
+    from urllib.parse import quote_plus
+    return quote_plus(s)
 
 
 def _build_browser_intent(text: str) -> BrowserIntent:

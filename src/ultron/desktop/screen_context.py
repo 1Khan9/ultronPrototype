@@ -38,7 +38,7 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Optional, Sequence
 
 from ultron.desktop.capture import Screenshot, get_screen_capture

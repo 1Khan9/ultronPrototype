@@ -876,6 +876,173 @@ class CapabilityVoiceController:
             handled=True,
         )
 
+    # --- 2026-05-12 Phase 8: native desktop automation handlers ------------
+
+    def _handle_app_launch(self, routing_intent) -> "VoiceResponse":
+        """Native APP_LAUNCH: spawn an app via :class:`AppLauncher`.
+
+        Routes through the safety validator's Cap-2 rules (launch path,
+        debug-flag detection, Temp/Downloads block). Records a learned
+        preference on success so next time the same phrase is said,
+        the default placement matches what worked.
+
+        Fail-open: missing launcher module, app-not-found, validator
+        block all return a clear voice message rather than raising.
+        """
+        from ultron.openclaw_routing import get_routing_log
+
+        intent = routing_intent.app_launch_intent
+        if intent is None:
+            return VoiceResponse(
+                text="I didn't catch which app you wanted opened.",
+                handled=True,
+            )
+
+        # Preference lookup: if we've handled a similar phrase before,
+        # use the previous placement as a fallback default when the
+        # current utterance has no explicit monitor target.
+        if intent.monitor_index is None and not intent.monitor_query:
+            try:
+                from ultron.desktop.preferences import find_preference_for_phrase
+
+                prior = find_preference_for_phrase(intent.raw_text)
+                if prior is not None and prior.monitor_index is not None:
+                    # Use the prior preference's monitor + flags.
+                    intent = type(intent)(
+                        app_name=intent.app_name,
+                        url=intent.url,
+                        monitor_index=prior.monitor_index,
+                        monitor_query=intent.monitor_query,
+                        fullscreen=intent.fullscreen or prior.fullscreen,
+                        maximize=intent.maximize or prior.maximize,
+                        raw_text=intent.raw_text,
+                    )
+            except Exception as e:                                # noqa: BLE001
+                logger.debug("preference lookup failed: %s", e)
+
+        try:
+            from ultron.desktop.voice import handle_app_launch
+
+            result = handle_app_launch(intent)
+        except Exception as e:                                    # noqa: BLE001
+            get_routing_log().record(
+                routing_intent,
+                handler="voice.app_launch",
+                outcome="failed",
+                extra={"error": str(e)},
+            )
+            return VoiceResponse(
+                text="The desktop launcher isn't available right now.",
+                handled=True,
+            )
+
+        get_routing_log().record(
+            routing_intent,
+            handler="voice.app_launch",
+            outcome="dispatched" if result.success else "failed",
+            extra={
+                "app_name": result.app_name,
+                "monitor_index": result.monitor_index,
+                "success": result.success,
+            },
+        )
+        return VoiceResponse(text=result.voice_message, handled=True)
+
+    def _handle_screen_context_query(self, routing_intent) -> "VoiceResponse":
+        """Native SCREEN_CONTEXT_QUERY: build a screen snapshot, fold it
+        into an LLM prompt, return the LLM's response.
+
+        The prompt is the user's original utterance prefixed with the
+        snapshot's ``render_for_llm()`` text. Latency is dominated by
+        the VLM call (when ``include_vlm=True``) -- typically 5-8 s on
+        CPU. The orchestrator hears a single text block back; streaming
+        would require deeper wiring.
+
+        Fail-open: snapshot build failure, missing LLM, or LLM error
+        all return a clear voice message.
+        """
+        from ultron.openclaw_routing import get_routing_log
+
+        intent = routing_intent.screen_context_intent
+        if intent is None:
+            return VoiceResponse(
+                text="I didn't catch what you wanted me to look at.",
+                handled=True,
+            )
+
+        if self.llm_engine is None:
+            return VoiceResponse(
+                text="I can see your screen but my language model isn't wired.",
+                handled=True,
+            )
+
+        try:
+            from ultron.desktop.voice import handle_screen_context_query
+
+            sc_result = handle_screen_context_query(intent)
+        except Exception as e:                                    # noqa: BLE001
+            get_routing_log().record(
+                routing_intent,
+                handler="voice.screen_context",
+                outcome="failed",
+                extra={"error": str(e)},
+            )
+            return VoiceResponse(
+                text="I couldn't read your screen just now.",
+                handled=True,
+            )
+
+        if not sc_result.success:
+            get_routing_log().record(
+                routing_intent,
+                handler="voice.screen_context",
+                outcome="failed",
+                extra={"error": sc_result.error or "no injection"},
+            )
+            return VoiceResponse(
+                text="I couldn't see your screen clearly.",
+                handled=True,
+            )
+
+        # Compose the LLM prompt: screen context first, then the user's
+        # actual question. Ultron's system prompt + persona apply
+        # normally on top.
+        question = intent.question or routing_intent.raw_text
+        augmented_prompt = (
+            f"{sc_result.injection_text}\n\n"
+            f"User question: {question}\n\n"
+            "Answer the user concisely, in your normal voice, "
+            "grounded in the visual context above."
+        )
+
+        try:
+            response_text = self.llm_engine.generate(augmented_prompt)
+        except Exception as e:                                    # noqa: BLE001
+            get_routing_log().record(
+                routing_intent,
+                handler="voice.screen_context",
+                outcome="failed",
+                extra={"error": f"llm failed: {e}"},
+            )
+            return VoiceResponse(
+                text="I can see what you're working on but I can't put it into words right now.",
+                handled=True,
+            )
+
+        get_routing_log().record(
+            routing_intent,
+            handler="voice.screen_context",
+            outcome="dispatched",
+            extra={
+                "used_vlm": sc_result.used_vlm,
+                "elapsed_ms": round(sc_result.elapsed_ms, 1),
+            },
+        )
+        return VoiceResponse(
+            text=(response_text or "").strip(),
+            handled=True,
+        )
+
     # --- Phase 5 capability dispatch ---------------------------------------
 
     def handle_capability_intent(self, routing_intent) -> Optional[VoiceResponse]:
@@ -941,6 +1108,18 @@ class CapabilityVoiceController:
             RoutingIntentKind.WINDOW_AUTOMATION,
         }:
             return self._dispatch_via_automation_runner(routing_intent)
+
+        # 2026-05-12 Phase 8 -- native desktop automation (NOT via
+        # ClawHub plugins). APP_LAUNCH routes to the native
+        # AppLauncher (Chrome with default profile, app registry,
+        # monitor placement). SCREEN_CONTEXT_QUERY assembles a
+        # snapshot of what the user is looking at and folds it into
+        # the LLM context for the next response. Both bypass
+        # OpenClaw entirely so they work without a Gateway online.
+        if kind == RoutingIntentKind.APP_LAUNCH:
+            return self._handle_app_launch(routing_intent)
+        if kind == RoutingIntentKind.SCREEN_CONTEXT_QUERY:
+            return self._handle_screen_context_query(routing_intent)
 
         # Coding kinds — delegate to the existing utterance pipeline.
         coding_kinds = {

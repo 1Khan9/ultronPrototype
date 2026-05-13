@@ -15,6 +15,8 @@ the surfaces decoupled.
 
 Tools registered:
 
+System / heartbeat / coding:
+
 - ``get_heartbeat_alerts`` — read recent heartbeat alerts.
 - ``acknowledge_alert`` — mark a heartbeat alert seen.
 - ``run_maintenance`` — kick the maintenance pipeline via
@@ -25,18 +27,51 @@ Tools registered:
   the data the OpenClaw heartbeat agent needs to avoid
   re-surfacing acknowledged items.
 
+Desktop automation (Phase 7 -- native primitives surfaced to
+OpenClaw agents for multi-step task delegation):
+
+- ``enumerate_monitors`` — list connected displays.
+- ``list_windows`` — visible top-level windows with monitor index.
+- ``take_screenshot`` — capture a monitor (returns base64 PNG +
+  metadata; optionally also returns a VLM description).
+- ``describe_screen`` — capture + VLM in one call (text only;
+  smaller MCP payload than the full screenshot).
+- ``get_screen_context`` — assembled "what the user is looking at"
+  snapshot for agent reasoning.
+- ``launch_app`` — spawn a registered app (Chrome / Cursor /
+  Discord / etc.) on a chosen monitor.
+- ``launch_chrome_url`` — open a URL in the user's default Chrome
+  on a chosen monitor (reuses real session + cookies).
+- ``open_image_search`` — Chrome → Google Images for a query
+  (the "show me a picture of X" convenience).
+- ``move_window_to_monitor`` — move an existing window to a
+  monitor (semantic-find via title / process substring).
+- ``focus_window`` — bring a window to the foreground.
+- ``window_action`` — maximize / minimize / restore.
+- ``click_uia`` — semantic click on a UI element by name /
+  automation_id (Cap-3 safety gated).
+- ``type_into_uia`` — semantic type into an edit element.
+- ``get_window_text`` — collect visible UIA text from a window.
+- ``mouse_click`` / ``mouse_move`` / ``type_text`` / ``press_hotkey`` /
+  ``scroll`` — pixel-coordinate / keyboard primitives via pyautogui
+  (validator + rate-limit gated).
+
 All tools fail-open: missing files, malformed JSONL, subprocess
-errors all translate to structured error payloads rather than
-crashing the MCP server. Read-only tools never modify on-disk
-state outside their explicit write paths (``acknowledge_alert``).
+errors, missing pywin32 / mss / pywinauto / transformers all
+translate to structured error payloads rather than crashing the
+MCP server. Read-only tools never modify on-disk state outside
+their explicit write paths.
 
 Process startup is ephemeral — OpenClaw spawns a new instance per
-MCP call. Imports stay minimal to keep cold start under ~1 s
-(no torch / no LLM model loading).
+MCP call. Heavy imports (pywin32, mss, pywinauto, transformers /
+torch) are deferred to per-tool call sites so cold start stays
+under ~1 s on the heartbeat / acknowledge / maintenance paths.
+The desktop tools pay their own per-call import cost.
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import subprocess
@@ -318,6 +353,749 @@ def get_recent_voice_alerts_impl(*, limit: int = 5) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Desktop automation tool implementations (Phase 7)
+#
+# Every function lazy-imports ultron.desktop so cold start of the MCP
+# server stays light on the heartbeat / coding / maintenance paths.
+# pywin32 / mss / pywinauto / transformers all load on first desktop
+# tool call only.
+# ---------------------------------------------------------------------------
+
+
+def enumerate_monitors_impl() -> Dict[str, Any]:
+    """List connected monitors. Returns ``{"count": N, "monitors": [...]}``.
+
+    Each monitor entry contains: index, name, x, y, width, height, and
+    is_primary. Fail-open: returns ``{"count": 0, "monitors": []}`` when
+    pywin32 is unavailable.
+    """
+    try:
+        from ultron.desktop.monitors import enumerate_monitors
+    except Exception as e:                                       # noqa: BLE001
+        return {"count": 0, "monitors": [], "error": f"import failed: {e}"}
+    mons = enumerate_monitors()
+    return {
+        "count": len(mons),
+        "monitors": [
+            {
+                "index": m.index, "name": m.name,
+                "x": m.x, "y": m.y, "width": m.width, "height": m.height,
+                "work_x": m.work_x, "work_y": m.work_y,
+                "work_width": m.work_width, "work_height": m.work_height,
+                "is_primary": m.is_primary,
+            }
+            for m in mons
+        ],
+    }
+
+
+def list_windows_impl(
+    *,
+    include_minimized: bool = False,
+    include_invisible: bool = False,
+    limit: int = 40,
+) -> Dict[str, Any]:
+    """List visible top-level windows. ``limit`` caps the response."""
+    try:
+        from ultron.desktop.windows import enumerate_windows
+    except Exception as e:                                       # noqa: BLE001
+        return {"count": 0, "windows": [], "error": f"import failed: {e}"}
+    wins = enumerate_windows(
+        include_minimized=bool(include_minimized),
+        include_invisible=bool(include_invisible),
+    )
+    if limit > 0:
+        wins = wins[:limit]
+    return {
+        "count": len(wins),
+        "windows": [
+            {
+                "hwnd": w.hwnd, "title": w.title,
+                "class_name": w.class_name,
+                "process_name": w.process_name, "pid": w.pid,
+                "rect": list(w.rect),
+                "monitor_index": w.monitor_index,
+                "is_minimized": w.is_minimized,
+                "is_foreground": w.is_foreground,
+            }
+            for w in wins
+        ],
+    }
+
+
+def take_screenshot_impl(
+    *,
+    monitor_index: Optional[int] = None,
+    include_image: bool = True,
+    include_description: bool = False,
+) -> Dict[str, Any]:
+    """Capture a monitor screenshot.
+
+    Args:
+        monitor_index: which monitor to capture; None = foreground monitor
+            (or monitor 0 when no foreground).
+        include_image: when True, embed the PNG as base64. Set False for
+            metadata-only responses (much smaller payload).
+        include_description: when True, also run the VLM on the capture
+            and return the description text. Adds ~5-8 s.
+
+    Returns ``{"success": bool, "monitor_index": int, "width": int,
+    "height": int, ..., "image_base64": Optional[str], "description":
+    Optional[str]}``.
+    """
+    try:
+        from ultron.desktop.capture import get_screen_capture
+        from ultron.desktop.monitors import enumerate_monitors
+        from ultron.desktop.windows import get_foreground_window
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+
+    # Resolve target monitor index.
+    if monitor_index is None:
+        fg = get_foreground_window()
+        if fg is not None and fg.monitor_index is not None:
+            target = fg.monitor_index
+        else:
+            target = 0
+    else:
+        target = int(monitor_index)
+
+    mons = enumerate_monitors()
+    if not mons:
+        return {"success": False, "error": "no monitors detected"}
+    if not (0 <= target < len(mons)):
+        return {
+            "success": False,
+            "error": f"monitor_index {target} out of range (have {len(mons)})",
+        }
+
+    cap = get_screen_capture()
+    shot = cap.capture_monitor(target)
+    if shot is None:
+        return {"success": False, "error": "capture failed"}
+
+    payload: Dict[str, Any] = {
+        "success": True,
+        "monitor_index": shot.monitor_index,
+        "width": shot.width,
+        "height": shot.height,
+        "timestamp": shot.timestamp,
+    }
+    if include_image:
+        payload["image_base64"] = base64.b64encode(shot.image_bytes).decode("ascii")
+        payload["image_bytes_length"] = len(shot.image_bytes)
+
+    if include_description:
+        try:
+            from ultron.desktop.vlm import get_vlm
+        except Exception as e:                                   # noqa: BLE001
+            payload["description_error"] = f"VLM import failed: {e}"
+        else:
+            vlm = get_vlm()
+            if vlm is None:
+                payload["description_error"] = "VLM not configured"
+            else:
+                result = vlm.describe(shot.image_bytes)
+                if result.success:
+                    payload["description"] = result.description
+                    payload["description_elapsed_ms"] = result.elapsed_ms
+                else:
+                    payload["description_error"] = result.error
+
+    return payload
+
+
+def describe_screen_impl(
+    *,
+    monitor_index: Optional[int] = None,
+    prompt: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Capture + VLM in one call. Returns text-only payload.
+
+    Convenience for agents that only want the description (small
+    response, no base64 image bytes). Equivalent to ``take_screenshot``
+    with ``include_image=False, include_description=True``.
+    """
+    payload = take_screenshot_impl(
+        monitor_index=monitor_index,
+        include_image=False,
+        include_description=True,
+    )
+    if not payload.get("success"):
+        return payload
+    # If a custom prompt is supplied, re-run with it (the bundled call
+    # used the default prompt).
+    if prompt:
+        try:
+            from ultron.desktop.capture import get_screen_capture
+            from ultron.desktop.vlm import get_vlm
+        except Exception as e:                                   # noqa: BLE001
+            payload["description_error"] = f"VLM import failed: {e}"
+            return payload
+        vlm = get_vlm()
+        if vlm is None:
+            payload["description_error"] = "VLM not configured"
+            return payload
+        # We need the bytes again; re-capture is cheap.
+        cap = get_screen_capture()
+        shot = cap.capture_monitor(int(payload["monitor_index"]))
+        if shot is None:
+            payload["description_error"] = "recapture for prompt failed"
+            return payload
+        result = vlm.describe(shot.image_bytes, prompt=prompt)
+        if result.success:
+            payload["description"] = result.description
+            payload["description_elapsed_ms"] = result.elapsed_ms
+            payload.pop("description_error", None)
+        else:
+            payload["description_error"] = result.error
+    return payload
+
+
+def get_screen_context_impl(
+    *,
+    include_uia: bool = True,
+    include_vlm: bool = False,
+    window_list_cap: int = 12,
+) -> Dict[str, Any]:
+    """Assembled screen-context snapshot ready for agent reasoning.
+
+    Returns the structured view the orchestrator uses for "explain
+    what I'm looking at" -- foreground app + window list + visible
+    UIA text + optional VLM description. Does NOT include the
+    screenshot image bytes (use ``take_screenshot`` for that).
+    """
+    try:
+        from ultron.desktop.screen_context import build_screen_context
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+
+    snap = build_screen_context(
+        capture=bool(include_vlm),                              # only capture if VLM will read it
+        include_uia=bool(include_uia),
+        include_vlm=bool(include_vlm),
+        window_list_cap=int(window_list_cap),
+    )
+
+    fg = snap.foreground
+    return {
+        "success": True,
+        "timestamp": snap.timestamp,
+        "elapsed_ms": snap.elapsed_ms,
+        "foreground": (
+            None if fg is None else {
+                "hwnd": fg.hwnd, "title": fg.title,
+                "process_name": fg.process_name,
+                "monitor_index": fg.monitor_index,
+            }
+        ),
+        "monitors": [
+            {"index": m.index, "is_primary": m.is_primary,
+             "width": m.width, "height": m.height}
+            for m in snap.monitors
+        ],
+        "windows": [
+            {"title": w.title, "process_name": w.process_name,
+             "monitor_index": w.monitor_index,
+             "is_foreground": w.is_foreground}
+            for w in snap.windows
+        ],
+        "ui_text": list(snap.ui_text),
+        "vlm_description": snap.vlm_description,
+        "render_for_llm": snap.render_for_llm(),
+    }
+
+
+def _resolve_monitor(monitor_index: Optional[int]):
+    """Look up a :class:`Monitor` by index. Returns ``(monitor, error_dict)``.
+
+    On success ``error_dict`` is None. On failure ``monitor`` is None
+    and ``error_dict`` is a ready-to-return MCP payload.
+    """
+    if monitor_index is None:
+        return None, None
+    try:
+        from ultron.desktop.monitors import enumerate_monitors
+    except Exception as e:                                       # noqa: BLE001
+        return None, {"success": False, "error": f"import failed: {e}"}
+    mons = enumerate_monitors()
+    if not (0 <= int(monitor_index) < len(mons)):
+        return None, {
+            "success": False,
+            "error": f"monitor_index {monitor_index} out of range",
+        }
+    return mons[int(monitor_index)], None
+
+
+def launch_app_impl(
+    *,
+    app_name: str,
+    monitor_index: Optional[int] = None,
+    fullscreen: bool = False,
+    maximize: bool = False,
+    extra_args: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Launch a registered app, optionally on a target monitor.
+
+    Args:
+        app_name: registry name or alias (``"chrome"``, ``"cursor"``,
+            ``"discord"``, ``"vscode"``, etc.).
+        monitor_index: when set, move the launched window to this monitor.
+        fullscreen: fill the monitor as a regular window.
+        maximize: ``ShowWindow(SW_MAXIMIZE)`` after placement.
+        extra_args: appended to the launcher's args.
+    """
+    if not app_name or not isinstance(app_name, str):
+        return {"success": False, "error": "app_name is required"}
+    mon, err = _resolve_monitor(monitor_index)
+    if err is not None:
+        return err
+    try:
+        from ultron.desktop.launcher import get_app_launcher
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+    launcher = get_app_launcher()
+    result = launcher.launch_app(
+        app_name=app_name,
+        monitor=mon,
+        extra_args=list(extra_args or []),
+        fullscreen=bool(fullscreen),
+        maximize=bool(maximize),
+        wait_for_window=mon is not None,
+    )
+    return {
+        "success": result.success,
+        "app_name": result.app_name,
+        "exe_path": str(result.exe_path) if result.exe_path else None,
+        "pid": result.pid,
+        "hwnd": result.hwnd,
+        "monitor_index": result.monitor_index,
+        "error": result.error,
+    }
+
+
+def launch_chrome_url_impl(
+    *,
+    url: str,
+    monitor_index: Optional[int] = None,
+    fullscreen: bool = False,
+    maximize: bool = False,
+    window_width: Optional[int] = None,
+    window_height: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Open a URL in the user's real Chrome (default profile, signed-in)."""
+    if not url or not isinstance(url, str):
+        return {"success": False, "error": "url is required"}
+    mon, err = _resolve_monitor(monitor_index)
+    if err is not None:
+        return err
+    try:
+        from ultron.desktop.launcher import get_app_launcher
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+    size = None
+    if window_width and window_height:
+        size = (int(window_width), int(window_height))
+    launcher = get_app_launcher()
+    result = launcher.launch_chrome(
+        url=url, monitor=mon,
+        fullscreen=bool(fullscreen),
+        maximize=bool(maximize),
+        window_size=size,
+    )
+    return {
+        "success": result.success,
+        "url": url,
+        "pid": result.pid,
+        "hwnd": result.hwnd,
+        "monitor_index": result.monitor_index,
+        "error": result.error,
+    }
+
+
+def open_image_search_impl(
+    *,
+    query: str,
+    monitor_index: Optional[int] = None,
+    small_window: bool = True,
+) -> Dict[str, Any]:
+    """Open Google Images for a query in a new Chrome window."""
+    if not query or not isinstance(query, str) or not query.strip():
+        return {"success": False, "error": "query is required"}
+    mon, err = _resolve_monitor(monitor_index)
+    if err is not None:
+        return err
+    try:
+        from ultron.desktop.launcher import get_app_launcher
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+    launcher = get_app_launcher()
+    result = launcher.open_image_search(
+        query=query, monitor=mon, small_window=bool(small_window),
+    )
+    return {
+        "success": result.success,
+        "query": query,
+        "pid": result.pid,
+        "hwnd": result.hwnd,
+        "monitor_index": result.monitor_index,
+        "error": result.error,
+    }
+
+
+def move_window_to_monitor_impl(
+    *,
+    window_query: str,
+    monitor_index: int,
+    fullscreen: bool = False,
+    maximize: bool = False,
+) -> Dict[str, Any]:
+    """Move an existing window to a target monitor.
+
+    ``window_query`` is a substring match on title or process name
+    (same semantics as :func:`ultron.desktop.windows.find_window`).
+    """
+    if not window_query or not isinstance(window_query, str):
+        return {"success": False, "error": "window_query is required"}
+    mon, err = _resolve_monitor(monitor_index)
+    if err is not None:
+        return err
+    if mon is None:
+        return {"success": False, "error": "monitor_index is required"}
+    try:
+        from ultron.desktop.placement import move_window_to_monitor
+        from ultron.desktop.windows import find_window
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+    win = find_window(window_query)
+    if win is None:
+        return {
+            "success": False,
+            "error": f"no window matching {window_query!r}",
+        }
+    result = move_window_to_monitor(
+        hwnd=win.hwnd, monitor=mon,
+        fullscreen=bool(fullscreen), maximize=bool(maximize),
+    )
+    return {
+        "success": result.success,
+        "hwnd": result.hwnd,
+        "window_title": win.title,
+        "monitor_index": result.monitor_index,
+        "error": result.error,
+    }
+
+
+def focus_window_impl(*, window_query: str) -> Dict[str, Any]:
+    """Bring a window to the foreground."""
+    if not window_query or not isinstance(window_query, str):
+        return {"success": False, "error": "window_query is required"}
+    try:
+        from ultron.desktop.placement import focus_window
+        from ultron.desktop.windows import find_window
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+    win = find_window(window_query)
+    if win is None:
+        return {
+            "success": False,
+            "error": f"no window matching {window_query!r}",
+        }
+    result = focus_window(win.hwnd)
+    return {
+        "success": result.success,
+        "hwnd": result.hwnd,
+        "window_title": win.title,
+        "error": result.error,
+    }
+
+
+def window_action_impl(
+    *,
+    window_query: str,
+    action: str,
+) -> Dict[str, Any]:
+    """Maximize / minimize / restore an existing window.
+
+    ``action`` is one of ``maximize`` / ``minimize`` / ``restore``.
+    """
+    if not window_query or not isinstance(window_query, str):
+        return {"success": False, "error": "window_query is required"}
+    action = (action or "").strip().lower()
+    if action not in ("maximize", "minimize", "restore"):
+        return {
+            "success": False,
+            "error": f"unknown action {action!r}; "
+                     f"expected maximize/minimize/restore",
+        }
+    try:
+        from ultron.desktop.placement import (
+            maximize_window, minimize_window, restore_window,
+        )
+        from ultron.desktop.windows import find_window
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+    win = find_window(window_query)
+    if win is None:
+        return {
+            "success": False,
+            "error": f"no window matching {window_query!r}",
+        }
+    fn = {
+        "maximize": maximize_window,
+        "minimize": minimize_window,
+        "restore": restore_window,
+    }[action]
+    result = fn(win.hwnd)
+    return {
+        "success": result.success,
+        "hwnd": result.hwnd,
+        "window_title": win.title,
+        "action": action,
+        "error": result.error,
+    }
+
+
+def click_uia_impl(
+    *,
+    window_query: str,
+    element_query: str,
+    automation_id: Optional[str] = None,
+    control_type: Optional[str] = None,
+    exact: bool = False,
+    user_text: str = "",
+) -> Dict[str, Any]:
+    """UIA semantic click: find a window, find an element by name /
+    automation_id within it, invoke the click.
+
+    Goes through the safety validator (Cap-3 action-verb-click rule
+    flags ``Submit`` / ``Pay`` / ``Send Money`` / etc.).
+    """
+    if not window_query or not isinstance(window_query, str):
+        return {"success": False, "error": "window_query is required"}
+    if not element_query or not isinstance(element_query, str):
+        return {"success": False, "error": "element_query is required"}
+    try:
+        from ultron.desktop.uia import click_element
+        from ultron.desktop.windows import find_window
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+    win = find_window(window_query)
+    if win is None:
+        return {
+            "success": False,
+            "error": f"no window matching {window_query!r}",
+        }
+    result = click_element(
+        win, element_query,
+        automation_id=automation_id,
+        control_type=control_type,
+        exact=bool(exact),
+        user_text=user_text,
+    )
+    return {
+        "success": result.success,
+        "element_name": result.element_name,
+        "window_title": win.title,
+        "error": result.error,
+    }
+
+
+def type_into_uia_impl(
+    *,
+    window_query: str,
+    element_query: str,
+    text: str,
+    automation_id: Optional[str] = None,
+    control_type: Optional[str] = None,
+    exact: bool = False,
+    clear_first: bool = True,
+    user_text: str = "",
+) -> Dict[str, Any]:
+    """UIA semantic type: find a window, find an edit element, type ``text``."""
+    if not window_query or not isinstance(window_query, str):
+        return {"success": False, "error": "window_query is required"}
+    if not element_query or not isinstance(element_query, str):
+        return {"success": False, "error": "element_query is required"}
+    if not isinstance(text, str):
+        return {"success": False, "error": "text must be a string"}
+    try:
+        from ultron.desktop.uia import type_text_into_element
+        from ultron.desktop.windows import find_window
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+    win = find_window(window_query)
+    if win is None:
+        return {
+            "success": False,
+            "error": f"no window matching {window_query!r}",
+        }
+    result = type_text_into_element(
+        win, element_query, text,
+        automation_id=automation_id,
+        control_type=control_type,
+        exact=bool(exact),
+        clear_first=bool(clear_first),
+        user_text=user_text,
+    )
+    return {
+        "success": result.success,
+        "element_name": result.element_name,
+        "window_title": win.title,
+        "error": result.error,
+    }
+
+
+def get_window_text_impl(*, window_query: str) -> Dict[str, Any]:
+    """Collect visible UIA text strings from a window.
+
+    Useful for "what does this dialog say" without spinning up the VLM.
+    """
+    if not window_query or not isinstance(window_query, str):
+        return {"success": False, "error": "window_query is required"}
+    try:
+        from ultron.desktop.uia import collect_window_text
+        from ultron.desktop.windows import find_window
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+    win = find_window(window_query)
+    if win is None:
+        return {
+            "success": False,
+            "error": f"no window matching {window_query!r}",
+        }
+    text_lines = collect_window_text(win)
+    return {
+        "success": True,
+        "window_title": win.title,
+        "text_lines": list(text_lines),
+        "count": len(text_lines),
+    }
+
+
+def mouse_click_impl(
+    *,
+    x: Optional[int] = None,
+    y: Optional[int] = None,
+    button: str = "left",
+    clicks: int = 1,
+    user_text: str = "",
+) -> Dict[str, Any]:
+    """Pixel-coordinate mouse click via pyautogui (validator-gated).
+
+    When ``x``/``y`` are null, clicks at current cursor location.
+    """
+    try:
+        from ultron.desktop.input_control import get_input_controller
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+    ctrl = get_input_controller()
+    result = ctrl.click(
+        x=x, y=y, button=button, clicks=int(clicks),
+        user_text=user_text,
+    )
+    return {
+        "success": result.success,
+        "action": "mouse_click",
+        "error": result.error,
+    }
+
+
+def mouse_move_impl(
+    *,
+    x: int,
+    y: int,
+    duration_s: float = 0.1,
+    user_text: str = "",
+) -> Dict[str, Any]:
+    """Move the cursor to absolute (x, y) coordinates."""
+    try:
+        from ultron.desktop.input_control import get_input_controller
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+    ctrl = get_input_controller()
+    result = ctrl.move_mouse(
+        x=int(x), y=int(y), duration_s=float(duration_s),
+        user_text=user_text,
+    )
+    return {
+        "success": result.success,
+        "action": "mouse_move",
+        "error": result.error,
+    }
+
+
+def type_text_impl(
+    *,
+    text: str,
+    interval_s: float = 0.0,
+    user_text: str = "",
+) -> Dict[str, Any]:
+    """Type text at the current keyboard focus (validator-gated)."""
+    try:
+        from ultron.desktop.input_control import get_input_controller
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+    ctrl = get_input_controller()
+    result = ctrl.type_text(
+        text=text, interval_s=float(interval_s),
+        user_text=user_text,
+    )
+    return {
+        "success": result.success,
+        "action": "type_text",
+        "error": result.error,
+    }
+
+
+def press_hotkey_impl(
+    *,
+    keys: List[str],
+    user_text: str = "",
+) -> Dict[str, Any]:
+    """Press a hotkey combination (``["ctrl", "s"]``, ``["alt", "tab"]``).
+
+    Keys are pressed in order then released in reverse.
+    """
+    if not keys or not isinstance(keys, list):
+        return {"success": False, "error": "keys must be a non-empty list"}
+    try:
+        from ultron.desktop.input_control import get_input_controller
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+    ctrl = get_input_controller()
+    result = ctrl.press_hotkey(*keys, user_text=user_text)
+    return {
+        "success": result.success,
+        "action": "press_hotkey",
+        "error": result.error,
+    }
+
+
+def scroll_impl(
+    *,
+    amount: int,
+    x: Optional[int] = None,
+    y: Optional[int] = None,
+    user_text: str = "",
+) -> Dict[str, Any]:
+    """Scroll the wheel at ``(x, y)`` (or current cursor location)."""
+    try:
+        from ultron.desktop.input_control import get_input_controller
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+    ctrl = get_input_controller()
+    result = ctrl.scroll(
+        amount=int(amount), x=x, y=y, user_text=user_text,
+    )
+    return {
+        "success": result.success,
+        "action": "scroll",
+        "error": result.error,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -420,6 +1198,347 @@ def build_server():
     def get_recent_voice_alerts(limit: int = 5) -> Dict[str, Any]:
         return get_recent_voice_alerts_impl(limit=limit)
 
+    # --- Desktop automation tools (Phase 7) -----------------------------
+
+    @mcp.tool(
+        name="enumerate_monitors",
+        description=(
+            "List connected monitors with their virtual-screen "
+            "coordinates and primary flag."
+        ),
+    )
+    def enumerate_monitors() -> Dict[str, Any]:
+        return enumerate_monitors_impl()
+
+    @mcp.tool(
+        name="list_windows",
+        description=(
+            "List visible top-level windows with title, process name, "
+            "monitor index, and foreground state. Default skips "
+            "minimized windows."
+        ),
+    )
+    def list_windows(
+        include_minimized: bool = False,
+        include_invisible: bool = False,
+        limit: int = 40,
+    ) -> Dict[str, Any]:
+        return list_windows_impl(
+            include_minimized=include_minimized,
+            include_invisible=include_invisible,
+            limit=limit,
+        )
+
+    @mcp.tool(
+        name="take_screenshot",
+        description=(
+            "Capture a monitor (or the foreground monitor when "
+            "monitor_index is null). Returns base64 PNG + metadata. "
+            "Set include_description=true to also run the VLM "
+            "(adds ~5-8 s)."
+        ),
+    )
+    def take_screenshot(
+        monitor_index: Optional[int] = None,
+        include_image: bool = True,
+        include_description: bool = False,
+    ) -> Dict[str, Any]:
+        return take_screenshot_impl(
+            monitor_index=monitor_index,
+            include_image=include_image,
+            include_description=include_description,
+        )
+
+    @mcp.tool(
+        name="describe_screen",
+        description=(
+            "Capture + VLM in one call. Returns text description "
+            "only (no image bytes). Use 'prompt' to override the "
+            "default 'describe what's visible' prompt with a "
+            "specific question."
+        ),
+    )
+    def describe_screen(
+        monitor_index: Optional[int] = None,
+        prompt: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return describe_screen_impl(
+            monitor_index=monitor_index, prompt=prompt,
+        )
+
+    @mcp.tool(
+        name="get_screen_context",
+        description=(
+            "Assembled 'what the user is looking at' snapshot: "
+            "foreground app + window list + visible UIA text + "
+            "optional VLM description. Returns structured payload "
+            "plus a render_for_llm string ready for prompt injection."
+        ),
+    )
+    def get_screen_context(
+        include_uia: bool = True,
+        include_vlm: bool = False,
+        window_list_cap: int = 12,
+    ) -> Dict[str, Any]:
+        return get_screen_context_impl(
+            include_uia=include_uia,
+            include_vlm=include_vlm,
+            window_list_cap=window_list_cap,
+        )
+
+    @mcp.tool(
+        name="launch_app",
+        description=(
+            "Launch a registered app (chrome / cursor / discord / "
+            "vscode / edge / firefox / notepad / explorer / terminal "
+            "/ spotify / slack / obs) with optional monitor "
+            "targeting + fullscreen / maximize placement."
+        ),
+    )
+    def launch_app(
+        app_name: str,
+        monitor_index: Optional[int] = None,
+        fullscreen: bool = False,
+        maximize: bool = False,
+        extra_args: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        return launch_app_impl(
+            app_name=app_name,
+            monitor_index=monitor_index,
+            fullscreen=fullscreen,
+            maximize=maximize,
+            extra_args=extra_args,
+        )
+
+    @mcp.tool(
+        name="launch_chrome_url",
+        description=(
+            "Open a URL in the user's real Chrome (default profile, "
+            "signed-in sessions preserved). Use this for 'open "
+            "YouTube on my second monitor' rather than the generic "
+            "browser plugin which uses an isolated profile."
+        ),
+    )
+    def launch_chrome_url(
+        url: str,
+        monitor_index: Optional[int] = None,
+        fullscreen: bool = False,
+        maximize: bool = False,
+        window_width: Optional[int] = None,
+        window_height: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        return launch_chrome_url_impl(
+            url=url,
+            monitor_index=monitor_index,
+            fullscreen=fullscreen,
+            maximize=maximize,
+            window_width=window_width,
+            window_height=window_height,
+        )
+
+    @mcp.tool(
+        name="open_image_search",
+        description=(
+            "Open a Google Images search for a query in a new Chrome "
+            "window. Convenience for 'show me a picture of X'."
+        ),
+    )
+    def open_image_search(
+        query: str,
+        monitor_index: Optional[int] = None,
+        small_window: bool = True,
+    ) -> Dict[str, Any]:
+        return open_image_search_impl(
+            query=query, monitor_index=monitor_index,
+            small_window=small_window,
+        )
+
+    @mcp.tool(
+        name="move_window_to_monitor",
+        description=(
+            "Move an existing window to a target monitor. "
+            "window_query is a substring match on title or process "
+            "name (e.g. 'chrome', 'cursor', 'discord')."
+        ),
+    )
+    def move_window_to_monitor(
+        window_query: str,
+        monitor_index: int,
+        fullscreen: bool = False,
+        maximize: bool = False,
+    ) -> Dict[str, Any]:
+        return move_window_to_monitor_impl(
+            window_query=window_query,
+            monitor_index=monitor_index,
+            fullscreen=fullscreen,
+            maximize=maximize,
+        )
+
+    # --- Extended desktop tools (window actions, UIA, input) -----------
+
+    @mcp.tool(
+        name="focus_window",
+        description=(
+            "Bring a window to the foreground. window_query is a "
+            "substring match on title or process name."
+        ),
+    )
+    def focus_window(window_query: str) -> Dict[str, Any]:
+        return focus_window_impl(window_query=window_query)
+
+    @mcp.tool(
+        name="window_action",
+        description=(
+            "Maximize / minimize / restore a window. "
+            "action must be one of 'maximize', 'minimize', 'restore'."
+        ),
+    )
+    def window_action(window_query: str, action: str) -> Dict[str, Any]:
+        return window_action_impl(window_query=window_query, action=action)
+
+    @mcp.tool(
+        name="click_uia",
+        description=(
+            "Click a UI element by name or automation_id within a "
+            "window using UI Automation (semantic, not pixel-based). "
+            "Subject to Cap-3 action-verb safety rule "
+            "(Submit/Pay/Send/Transfer return NEEDS_EXPLICIT_INTENT)."
+        ),
+    )
+    def click_uia(
+        window_query: str,
+        element_query: str,
+        automation_id: Optional[str] = None,
+        control_type: Optional[str] = None,
+        exact: bool = False,
+        user_text: str = "",
+    ) -> Dict[str, Any]:
+        return click_uia_impl(
+            window_query=window_query,
+            element_query=element_query,
+            automation_id=automation_id,
+            control_type=control_type,
+            exact=exact,
+            user_text=user_text,
+        )
+
+    @mcp.tool(
+        name="type_into_uia",
+        description=(
+            "Type text into a UI element by name or automation_id "
+            "via UI Automation. clear_first wipes existing content."
+        ),
+    )
+    def type_into_uia(
+        window_query: str,
+        element_query: str,
+        text: str,
+        automation_id: Optional[str] = None,
+        control_type: Optional[str] = None,
+        exact: bool = False,
+        clear_first: bool = True,
+        user_text: str = "",
+    ) -> Dict[str, Any]:
+        return type_into_uia_impl(
+            window_query=window_query,
+            element_query=element_query,
+            text=text,
+            automation_id=automation_id,
+            control_type=control_type,
+            exact=exact,
+            clear_first=clear_first,
+            user_text=user_text,
+        )
+
+    @mcp.tool(
+        name="get_window_text",
+        description=(
+            "Collect visible UI Automation text from a window. "
+            "Useful for reading dialog content / form labels / status "
+            "bars without spinning up the VLM."
+        ),
+    )
+    def get_window_text(window_query: str) -> Dict[str, Any]:
+        return get_window_text_impl(window_query=window_query)
+
+    @mcp.tool(
+        name="mouse_click",
+        description=(
+            "Pixel-coordinate mouse click via pyautogui (validator + "
+            "rate-limit gated). When x/y are null, clicks at current "
+            "cursor location. button is 'left'/'right'/'middle'."
+        ),
+    )
+    def mouse_click(
+        x: Optional[int] = None,
+        y: Optional[int] = None,
+        button: str = "left",
+        clicks: int = 1,
+        user_text: str = "",
+    ) -> Dict[str, Any]:
+        return mouse_click_impl(
+            x=x, y=y, button=button, clicks=clicks, user_text=user_text,
+        )
+
+    @mcp.tool(
+        name="mouse_move",
+        description=(
+            "Move the cursor to absolute (x, y) coordinates over "
+            "duration_s seconds."
+        ),
+    )
+    def mouse_move(
+        x: int, y: int, duration_s: float = 0.1, user_text: str = "",
+    ) -> Dict[str, Any]:
+        return mouse_move_impl(
+            x=x, y=y, duration_s=duration_s, user_text=user_text,
+        )
+
+    @mcp.tool(
+        name="type_text",
+        description=(
+            "Type a string at the current keyboard focus. For semantic "
+            "targeting use type_into_uia. Validator + rate-limit gated."
+        ),
+    )
+    def type_text(
+        text: str, interval_s: float = 0.0, user_text: str = "",
+    ) -> Dict[str, Any]:
+        return type_text_impl(
+            text=text, interval_s=interval_s, user_text=user_text,
+        )
+
+    @mcp.tool(
+        name="press_hotkey",
+        description=(
+            "Press a hotkey combination (['ctrl', 's'], ['alt', 'tab'], "
+            "['ctrl', 'shift', 't']). Keys pressed in order, released "
+            "in reverse."
+        ),
+    )
+    def press_hotkey(
+        keys: List[str], user_text: str = "",
+    ) -> Dict[str, Any]:
+        return press_hotkey_impl(keys=keys, user_text=user_text)
+
+    @mcp.tool(
+        name="scroll",
+        description=(
+            "Scroll the mouse wheel. Positive amount scrolls up; "
+            "negative down. amount is in OS-specific scroll units "
+            "(~120 per notch)."
+        ),
+    )
+    def scroll(
+        amount: int,
+        x: Optional[int] = None,
+        y: Optional[int] = None,
+        user_text: str = "",
+    ) -> Dict[str, Any]:
+        return scroll_impl(
+            amount=amount, x=x, y=y, user_text=user_text,
+        )
+
     return mcp
 
 
@@ -437,6 +1556,7 @@ def run_stdio() -> None:
 
 
 __all__ = [
+    # heartbeat / coding / maintenance
     "acknowledge_alert_impl",
     "build_server",
     "get_heartbeat_alerts_impl",
@@ -444,4 +1564,25 @@ __all__ = [
     "list_active_coding_sessions_impl",
     "run_maintenance_impl",
     "run_stdio",
+    # desktop automation (Phase 7)
+    "describe_screen_impl",
+    "enumerate_monitors_impl",
+    "get_screen_context_impl",
+    "launch_app_impl",
+    "launch_chrome_url_impl",
+    "list_windows_impl",
+    "move_window_to_monitor_impl",
+    "open_image_search_impl",
+    "take_screenshot_impl",
+    # extended desktop tools (Phase 7 polish)
+    "click_uia_impl",
+    "focus_window_impl",
+    "get_window_text_impl",
+    "mouse_click_impl",
+    "mouse_move_impl",
+    "press_hotkey_impl",
+    "scroll_impl",
+    "type_into_uia_impl",
+    "type_text_impl",
+    "window_action_impl",
 ]

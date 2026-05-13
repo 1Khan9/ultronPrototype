@@ -87,6 +87,12 @@ from ultron.desktop.vlm import (
     get_vlm,
     set_vlm,
 )
+from ultron.desktop.voice import (
+    AppLaunchVoiceResult,
+    ScreenContextVoiceResult,
+    handle_app_launch,
+    handle_screen_context_query,
+)
 
 __all__ = [
     # monitors
@@ -146,4 +152,9 @@ __all__ = [
     "build_vlm_from_config",
     "get_vlm",
     "set_vlm",
+    # voice (Phase 8 intent handlers)
+    "AppLaunchVoiceResult",
+    "ScreenContextVoiceResult",
+    "handle_app_launch",
+    "handle_screen_context_query",
 ]
