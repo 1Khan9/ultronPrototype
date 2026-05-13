@@ -85,6 +85,129 @@ class XttsSynthError(RuntimeError):
     to fall back to silent clip vs propagate)."""
 
 
+def trim_phantom_tail(
+    audio_f32: np.ndarray,
+    sample_rate: int,
+    *,
+    silence_threshold: float = 0.005,
+    max_event_ms: float = 200.0,
+    min_lead_silence_ms: float = 150.0,
+    trailing_grace_ms: float = 80.0,
+    window_ms: float = 20.0,
+) -> Tuple[np.ndarray, bool]:
+    """Detect and trim an XTTS phantom-token tail.
+
+    XTTS-v2's GPT duration head sometimes emits a fragmentary syllable
+    after the stop-token, producing a short isolated audio event in
+    the otherwise-silent tail of the synthesised clip. This function
+    detects that specific signature and trims everything after the
+    last sustained-speech region.
+
+    Pattern detected (walking the RMS envelope from end backwards):
+
+        ...sustained_speech...silence(>= min_lead_silence_ms)...
+        short_event(<max_event_ms)...silence_to_end
+
+    Trimming preserves the sustained-speech region plus a
+    ``trailing_grace_ms`` cushion so natural speech-end decay isn't
+    cut off. Returns ``(possibly-trimmed audio, True/False)`` where
+    the bool indicates whether a phantom was detected. When no phantom
+    pattern is present the audio is returned unchanged.
+
+    Pure function -- no config import, no logger. Inputs are float32
+    in [-1, 1] (typical XTTS post-scaling) but the function operates
+    on the raw amplitude so other ranges work too. Safe to call on
+    very short clips: anything shorter than two analysis windows is
+    returned unchanged.
+
+    Args:
+        audio_f32: 1-D mono audio. Other shapes are flattened.
+        sample_rate: Hz.
+        silence_threshold: RMS threshold below which a window counts
+            as silence.
+        max_event_ms: trailing audio events shorter than this are
+            phantom candidates; longer events are legitimate.
+        min_lead_silence_ms: required silent gap between the
+            sustained-speech region and the phantom candidate.
+        trailing_grace_ms: amount of audio preserved after the last
+            sustained-speech window (to keep natural decay).
+        window_ms: analysis window size.
+
+    Returns:
+        ``(audio, trimmed)`` -- ``audio`` is the (possibly shorter)
+        clip; ``trimmed`` is True iff a phantom was detected and a
+        trim occurred.
+    """
+    if audio_f32.ndim != 1:
+        audio_f32 = audio_f32.reshape(-1)
+    n = audio_f32.shape[0]
+    if n == 0:
+        return audio_f32, False
+
+    win = max(1, int(sample_rate * window_ms / 1000.0))
+    n_win = n // win
+    if n_win < 4:
+        # Too short to reliably detect a phantom pattern.
+        return audio_f32, False
+
+    trimmed_buf = audio_f32[: n_win * win].reshape(n_win, win)
+    # float64 in the RMS reduction to avoid catastrophic cancellation
+    # on quiet windows; coerce back to float32 result.
+    rms = np.sqrt(np.mean(trimmed_buf.astype(np.float64) ** 2, axis=1)).astype(np.float32)
+    speech_mask = rms >= silence_threshold
+
+    if not speech_mask.any():
+        return audio_f32, False
+
+    speech_indices = np.where(speech_mask)[0]
+    last_idx = int(speech_indices[-1])
+    if last_idx == 0:
+        return audio_f32, False
+
+    # Find the trailing event (contiguous speech windows ending at
+    # last_idx).
+    trailing_start = last_idx
+    while trailing_start > 0 and speech_mask[trailing_start - 1]:
+        trailing_start -= 1
+    trailing_event_windows = last_idx - trailing_start + 1
+    trailing_event_ms = trailing_event_windows * window_ms
+
+    # If the trailing event is itself long, it's legitimate end-of-
+    # sentence audio -- nothing to trim.
+    if trailing_event_ms > max_event_ms:
+        return audio_f32, False
+
+    # Find the previous sustained-speech region's end.
+    prior_indices = np.where(speech_mask[:trailing_start])[0]
+    if prior_indices.size == 0:
+        # Only the (short) trailing event was detected as speech. Not
+        # a phantom -- could be a clip that contains only a brief
+        # word. Leave alone.
+        return audio_f32, False
+
+    prior_end = int(prior_indices[-1])
+    gap_windows = trailing_start - prior_end - 1
+    gap_ms = gap_windows * window_ms
+
+    if gap_ms < min_lead_silence_ms:
+        # Not enough silent gap -- this is probably the natural pause
+        # between two words inside a sentence, not a phantom tail.
+        return audio_f32, False
+
+    # Phantom signature matched. Trim to the end of the prior speech
+    # region plus the trailing grace cushion.
+    grace_windows = max(1, int(trailing_grace_ms / window_ms))
+    cut_window = prior_end + 1 + grace_windows
+    cut_samples = min(cut_window * win, n)
+    if cut_samples <= 0 or cut_samples >= n:
+        # Edge case: grace would extend past the buffer end. Cut
+        # exactly at the prior region's end + minimal grace.
+        cut_samples = min((prior_end + 1) * win, n)
+        if cut_samples <= 0:
+            return audio_f32, False
+    return audio_f32[:cut_samples], True
+
+
 def _find_free_port() -> int:
     """Bind to port 0 to let the OS assign a free port, then close."""
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -115,6 +238,11 @@ class XttsV3Speech:
         filter_preset: str = "v3_heavy",
         filter_tail_silence_ms: float = 200.0,
         speed: Optional[float] = None,
+        temperature: Optional[float] = None,
+        phantom_tail_trim_enabled: Optional[bool] = None,
+        phantom_tail_silence_threshold: Optional[float] = None,
+        phantom_tail_max_event_ms: Optional[float] = None,
+        phantom_tail_min_lead_silence_ms: Optional[float] = None,
         rvc=None,  # accepted-but-ignored for legacy ctor compat
     ) -> None:
         # Resolve paths via config when not explicitly passed. Defaults
@@ -166,6 +294,37 @@ class XttsV3Speech:
         if speed is None:
             speed = float(xtts_cfg.speed) if xtts_cfg is not None else 1.0
         self._synth_speed = float(speed)
+        # 2026-05-12 phantom-token mitigation: lower temperature than
+        # XTTS-v2's library default (0.75) cuts the rate at which the
+        # GPT duration head emits fragmentary syllables at sentence
+        # ends. Forwarded in the HTTP body.
+        if temperature is None:
+            temperature = float(xtts_cfg.temperature) if xtts_cfg is not None else 0.65
+        self._synth_temperature = float(temperature)
+        # Phantom-tail trim parameters (defence-in-depth on top of the
+        # temperature reduction). Disabled here means the audio passes
+        # straight from server PCM into the v3 filter; useful for A/B
+        # comparison against the unfiltered output.
+        if phantom_tail_trim_enabled is None:
+            phantom_tail_trim_enabled = (
+                bool(xtts_cfg.phantom_tail_trim_enabled) if xtts_cfg is not None else True
+            )
+        self._phantom_tail_trim_enabled = bool(phantom_tail_trim_enabled)
+        if phantom_tail_silence_threshold is None:
+            phantom_tail_silence_threshold = (
+                float(xtts_cfg.phantom_tail_silence_threshold) if xtts_cfg is not None else 0.005
+            )
+        self._phantom_tail_silence_threshold = float(phantom_tail_silence_threshold)
+        if phantom_tail_max_event_ms is None:
+            phantom_tail_max_event_ms = (
+                float(xtts_cfg.phantom_tail_max_event_ms) if xtts_cfg is not None else 200.0
+            )
+        self._phantom_tail_max_event_ms = float(phantom_tail_max_event_ms)
+        if phantom_tail_min_lead_silence_ms is None:
+            phantom_tail_min_lead_silence_ms = (
+                float(xtts_cfg.phantom_tail_min_lead_silence_ms) if xtts_cfg is not None else 150.0
+            )
+        self._phantom_tail_min_lead_silence_ms = float(phantom_tail_min_lead_silence_ms)
         # 2026-05-11 chunk-streaming investigation: was prototyped but
         # not shipped. Pedalboard's PitchShift (Rubber Band offline
         # mode) buffers ~25 000 samples internally with ``reset=False``,
@@ -540,6 +699,28 @@ class XttsV3Speech:
         # convert back. The filter pads tail_silence_ms of trailing
         # zeros so reverb decay isn't clipped at the buffer end.
         pcm_f32 = pcm_i16.astype(np.float32) / 32768.0
+
+        # 2026-05-12 phantom-tail trim: catches the residual XTTS-v2
+        # phantom syllables that slip past the lower temperature.
+        # Runs BEFORE the filter so the reverb tail decays normally
+        # into its tail_silence_ms padding rather than into a phantom.
+        if self._phantom_tail_trim_enabled:
+            try:
+                pcm_f32, was_trimmed = trim_phantom_tail(
+                    pcm_f32,
+                    self._sample_rate,
+                    silence_threshold=self._phantom_tail_silence_threshold,
+                    max_event_ms=self._phantom_tail_max_event_ms,
+                    min_lead_silence_ms=self._phantom_tail_min_lead_silence_ms,
+                )
+                if was_trimmed:
+                    logger.debug(
+                        "Phantom-tail trimmed on %r (clip=%d samples)",
+                        text[:40], pcm_f32.size,
+                    )
+            except Exception as e:
+                logger.warning("Phantom-tail trim failed (using raw PCM): %s", e)
+
         try:
             filtered_f32 = apply_ultron_filter(
                 pcm_f32,
@@ -566,7 +747,12 @@ class XttsV3Speech:
     def _http_synthesize(self, text: str) -> np.ndarray:
         """POST /synthesize, accumulate streamed PCM, return int16 array."""
         body = json.dumps(
-            {"text": text, "language": "en", "speed": self._synth_speed}
+            {
+                "text": text,
+                "language": "en",
+                "speed": self._synth_speed,
+                "temperature": self._synth_temperature,
+            }
         ).encode("utf-8")
         req = urllib.request.Request(
             self.base_url + "/synthesize",

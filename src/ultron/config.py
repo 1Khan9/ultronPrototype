@@ -120,6 +120,66 @@ class AudioConfig(_Strict):
     input_gain_db: float = Field(default=0.0, ge=-20.0, le=40.0)
 
 
+class SmartTurnConfig(_Strict):
+    """Smart Turn V3 -- semantic end-of-turn confirmation (CPU-only).
+
+    Runs AFTER Silero VAD declares end-of-speech. When enabled with
+    a present model file, the orchestrator uses
+    ``fast_path_silence_duration_ms`` as the baseline VAD silence
+    requirement (typically much shorter than the legacy value); on
+    SPEECH_END the captured audio is fed to the model and the verdict
+    determines whether to submit immediately (complete) or keep
+    listening (incomplete). Long utterances beyond ``window_seconds``
+    of speech bypass the model -- the existing adaptive long-utterance
+    backstop already handles that case at the VAD layer.
+
+    Fail-open at every level: model file missing -> orchestrator
+    silently falls back to legacy VAD-only behaviour; inference
+    failure mid-call -> verdict treated as undecided -> caller trusts
+    VAD. Voice baseline is preserved when this is disabled or the
+    model is missing.
+    """
+
+    # 2026-05-12 Smart Turn V3 default ON: production-grade fail-open
+    # at every layer; missing model file degrades to legacy behaviour
+    # without any UX change. Operators can flip false to opt out.
+    enabled: bool = True
+    # Path to ``smart-turn-v3.2-cpu.onnx`` (or compatible newer revision).
+    # Relative paths resolve against PROJECT_ROOT.
+    model_path: str = "models/smart_turn/smart-turn-v3.2-cpu.onnx"
+    # Sigmoid output threshold above which the model declares the
+    # turn complete. Pipecat's production-tested default is 0.5;
+    # tightening (0.6-0.7) reduces false-positive cut-offs at the
+    # cost of longer perceived latency on confidently-done turns.
+    # Loosening (0.3-0.4) is rarely useful -- it just trusts VAD more.
+    completion_threshold: float = Field(default=0.5, ge=0.05, le=0.95)
+    # Reduced VAD ``min_silence_duration_ms`` baseline when smart-turn
+    # is active. Smart Turn confirms or rejects the early end-of-speech
+    # so we can declare SPEECH_END much sooner and rely on the model
+    # to catch trailed-off mid-thought cases. 500 ms strikes a balance:
+    # short enough to capture most of the perceived-latency win, long
+    # enough that obvious mid-word breaths don't trigger an inference
+    # cycle on every pause.
+    fast_path_silence_duration_ms: int = Field(default=500, ge=100, le=2000)
+    # Additional silence required AFTER smart-turn says "incomplete"
+    # before the orchestrator finally accepts end-of-turn. This is the
+    # second-chance grace window for the user to resume speaking; if
+    # they don't, we submit anyway so we don't hang indefinitely. The
+    # default 700 ms takes the total from fast_path (500) to roughly
+    # the legacy 1200 ms backstop.
+    incomplete_extension_ms: int = Field(default=700, ge=0, le=3000)
+    # Audio window cap (seconds). Smart Turn V3 was trained on the
+    # LAST 8 seconds of speech; longer utterances are truncated head-
+    # first by the wrapper. Beyond this duration of contiguous speech,
+    # the orchestrator bypasses smart-turn entirely and uses the
+    # existing adaptive long-utterance silence bump.
+    window_seconds: float = Field(default=8.0, ge=1.0, le=30.0)
+    # ONNX runtime intra-op thread count. 1 is the recommended default;
+    # the model is small enough that threading overhead exceeds the
+    # parallelism win on typical CPUs.
+    num_threads: int = Field(default=1, ge=1, le=16)
+
+
 class VADConfig(_Strict):
     threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     min_speech_duration_ms: int = Field(default=250, ge=0)
@@ -145,6 +205,9 @@ class VADConfig(_Strict):
     # cut off at "a button with a box show"). 30 s comfortably covers
     # detailed one-breath asks while still bounding pathological cases.
     max_utterance_seconds: float = Field(default=30.0, ge=5.0, le=120.0)
+    # 2026-05-12 Smart Turn V3 semantic end-of-turn confirmation
+    # (CPU-only, ~12 ms inference). See SmartTurnConfig docstring.
+    smart_turn: SmartTurnConfig = Field(default_factory=SmartTurnConfig)
 
 
 class WakeWordConfig(_Strict):
@@ -765,6 +828,43 @@ class XttsV3Config(_Strict):
     # untouched and processes the shorter audio buffer identically.
     # Below ~0.7 sounds drawn out; above ~1.4 starts to slur consonants.
     speed: float = Field(default=1.0, ge=0.5, le=2.0)
+    # 2026-05-12 phantom-token mitigation: XTTS-v2's GPT duration head
+    # is stochastic and occasionally produces fragmentary syllables at
+    # sentence boundaries. The server-library default temperature of
+    # 0.75 is on the high side -- 0.65 keeps the speaker character bit-
+    # identical (timbre is set by the locked speaker embedding + the
+    # v3 filter chain) while sharpening the duration-token distribution
+    # so phantom-token rate drops dramatically. Passed in the HTTP body
+    # to the server, which forwards it to ``model.inference_stream``.
+    # Range [0.4, 1.0] -- below 0.4 prosody collapses; above 1.0 the
+    # model becomes unstable.
+    temperature: float = Field(default=0.65, ge=0.4, le=1.0)
+    # 2026-05-12 phantom-token mitigation, defence in depth: even with
+    # temperature lowered, a small residual rate of phantom tokens can
+    # slip through. This client-side post-process detects the specific
+    # XTTS phantom-tail signature -- a short audio fragment isolated by
+    # silence on both sides at the end of a synthesised clip -- and
+    # trims everything after the last sustained-speech region. Runs
+    # BEFORE the v3 filter so the reverb tail decays normally into its
+    # tail_silence_ms padding. When no phantom pattern is detected the
+    # audio passes through unchanged. Set false to disable (e.g. for
+    # A/B comparison against the unfiltered output).
+    phantom_tail_trim_enabled: bool = True
+    # The RMS threshold below which a window counts as silence when
+    # detecting the phantom pattern. 0.005 corresponds to roughly
+    # -46 dBFS which is comfortably below typical XTTS speech RMS
+    # (-15 to -25 dBFS post-normalisation) and above the inherent
+    # noise floor of the generation.
+    phantom_tail_silence_threshold: float = Field(default=0.005, ge=0.0001, le=0.05)
+    # A trailing audio event shorter than this is a phantom candidate;
+    # longer events are legitimate tail-end speech. 200 ms is the
+    # empirical ceiling -- XTTS phantoms are typically 20-150 ms.
+    phantom_tail_max_event_ms: float = Field(default=200.0, ge=50.0, le=500.0)
+    # The minimum silent gap that must precede a phantom-candidate
+    # event for it to qualify as a phantom (rather than a brief pause
+    # between two legitimate utterances). 150 ms is well below normal
+    # inter-word pauses and well above mid-word micro-pauses.
+    phantom_tail_min_lead_silence_ms: float = Field(default=150.0, ge=50.0, le=500.0)
 
 
 class TTSConfig(_Strict):

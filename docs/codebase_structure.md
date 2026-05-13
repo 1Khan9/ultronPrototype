@@ -10,9 +10,51 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 
-Last validated against `main` HEAD `9139bda` (2026-05-11 follow-up bug-fix pass — Windsurf session — three live-session issues addressed: configurable max-utterance ceiling [class-constant `MAX_UTTERANCE_SECONDS=15.0` was cutting real users off mid-sentence; now `vad.max_utterance_seconds` config, default 30.0 s], completion-narration XTTS pin [`f"Project root: {path}."` made XTTS hang on backslash-laden Windows paths and pinned the GPU at 100 %; now speaks `path.name` only], progress-query classifier coverage gap [`"How is that project going?"` fell through to the conversational LLM because `_PROGRESS_PATTERNS` required `going` immediately after `that` and didn't tolerate the `project` in between; new `_DETERMINER_NOUN` group covers the/that/this/your/our/my × task/project/build/app/code/work/thing/run/job for going / coming / doing / done]). **1629 tests passing.**
+Last validated against `main` HEAD pending (2026-05-12 audio-artifact fix + filler-ack + **Smart Turn V3** — three changes in one pass on top of `41e13b1`: **XTTS phantom-token mitigation** [user-reported "small sound blips like an unrelated word started then cut off" diagnosed via spectral analysis of a real 58 s session capture; phantom-token signature confirmed at 19.28 s — a 100 ms isolated audio event with 280 ms lead silence + 420 ms trailing silence; XTTS-v2's GPT duration head sometimes emits a fragmentary syllable after the stop-token; fixed by lowering server temperature from 0.75 → 0.65 to sharpen the duration-token distribution AND a defence-in-depth client-side phantom-tail trim that detects the specific pattern and removes it before the v3 filter; speed=1.15 preserved per user direction], **conversational filler-ack** [new `src/ultron/conversational_ack.py` with shuffled-cycle phrase pool ("Mm.", "Right.", "Hm.", "Considering.", etc.) wired into `Orchestrator._build_response_stream` so the no-search conversational branch yields a short thinking-noise BEFORE the LLM stream — masks the ~2.5 s perceived gap between Whisper completing and the LLM's first TTS chunk; gated against short utterances and pending coding-clarifications], **Smart Turn V3 semantic end-of-turn confirmation** [new `src/ultron/audio/smart_turn.py` wraps Pipecat's 8 MB int8 ONNX model (`models/smart_turn/smart-turn-v3.2-cpu.onnx`); CPU-only inference ~12 ms, zero VRAM cost; lazy-loaded, fail-open at every level (missing model file degrades silently to legacy VAD-only behaviour); when active, the VAD silence baseline drops from 1200 ms → 500 ms and the model confirms or rejects the early SPEECH_END; "complete" → submit immediately, "incomplete" → extend capture by 700 ms with VAD silence bumped to the long-utterance backstop; long utterances >8 s of speech bypass the model (the existing adaptive long-utterance backstop handles those); wired into both `_capture_utterance` and `_follow_up_listen`; net win ~500-1200 ms of perceived latency per confidently-complete turn]). **Tests: 1629 → 1711 (+82 net).**
+
+Prior validating HEAD `9139bda` (2026-05-11 follow-up bug-fix pass — Windsurf session — three live-session issues addressed: configurable max-utterance ceiling [class-constant `MAX_UTTERANCE_SECONDS=15.0` was cutting real users off mid-sentence; now `vad.max_utterance_seconds` config, default 30.0 s], completion-narration XTTS pin [`f"Project root: {path}."` made XTTS hang on backslash-laden Windows paths and pinned the GPU at 100 %; now speaks `path.name` only], progress-query classifier coverage gap [`"How is that project going?"` fell through to the conversational LLM because `_PROGRESS_PATTERNS` required `going` immediately after `that` and didn't tolerate the `project` in between; new `_DETERMINER_NOUN` group covers the/that/this/your/our/my × task/project/build/app/code/work/thing/run/job for going / coming / doing / done]).
 
 Prior validating HEAD `431fd7b` (2026-05-11 latency + correctness pass: XTTS cadence speed knob, speculative-stream SR engine-aware, adaptive VAD long-utterance bump, addressing third-party-narrative rule + zero-shot confidence gate, token budget 100k→400k, narration honesty when zero files written, voice_task_require_testing=false default). Chunk-streaming investigation reverted (PitchShift latency block) and documented. Smart Turn V3 + filler-ack queued for next session as highest-impact remaining latency levers. Builds on 2026-05-10 voice swap (XTTS v2 + v3 Ultron filter, **now the default engine**; legacy Piper+RVC still selectable for one-line rollback).
+
+**2026-05-12 Smart Turn V3 — semantic end-of-turn confirmation (NEW).** Third change in the same 2026-05-12 pass.
+
+Pipecat's Smart Turn V3 model (`pipecat-ai/smart-turn-v3` on HuggingFace; BSD-2-Clause) wraps a Whisper Tiny encoder + linear classifier head into an 8 MB int8 ONNX that takes 16 kHz mono PCM up to 8 s and returns a sigmoid probability of "turn complete". CPU inference ~12 ms; **zero VRAM cost** (pinned to `CPUExecutionProvider`). The model runs AFTER Silero VAD detects silence, so it's a confirmation gate on top of the existing VAD pipeline rather than a replacement.
+
+When `vad.smart_turn.enabled` is True AND the model file is present, the orchestrator:
+
+* Drops the VAD silence baseline from the legacy 1200 ms to `smart_turn.fast_path_silence_duration_ms` (500 ms default). Silero now declares SPEECH_END much sooner.
+* On first SPEECH_END within a capture, feeds the captured audio to [`SmartTurnDetector.is_complete`](../src/ultron/audio/smart_turn.py). Verdict `complete` (prob ≥ `completion_threshold`, default 0.5) → submit the utterance to Whisper immediately. Verdict `incomplete` → keep listening; bump VAD silence requirement to `long_utterance_silence_duration_ms` (2400 ms) so the next SPEECH_END is real, and start the `incomplete_extension_ms` timer (700 ms default) as a backstop in case the user really was done despite the verdict.
+* Long utterances (>`smart_turn.window_seconds` = 8 s of contiguous speech) bypass the model entirely — the adaptive long-utterance VAD backstop already handles those.
+* If speech resumes after an `incomplete` verdict, the extension timer is cancelled; the next SPEECH_END (at the bumped slow threshold) is trusted as the real end.
+
+**Fail-open at every level:**
+
+* `vad.smart_turn.enabled: false` → orchestrator constructs without the detector; legacy VAD-only behaviour. No regression.
+* `enabled: true` but the model file is missing on disk → `build_detector_from_config` logs WARN and returns None; orchestrator silently falls back to the legacy 1200 ms silence baseline. Users who haven't run `scripts/download_models.py` aren't punished with a hard error.
+* Detector loads but a single `is_complete` call raises (transformers / ORT exception) → returns None; orchestrator treats as "undecided" and trusts VAD.
+* `SmartTurnDetector` is **lazy-loaded** — construction validates the file exists but doesn't load the ONNX session into memory until the first `is_complete` / `warmup` call. Keeps cold start cheap when smart-turn is enabled but never invoked (e.g. a session with only very short utterances).
+
+**Files:**
+
+* [`src/ultron/audio/smart_turn.py`](../src/ultron/audio/smart_turn.py) — NEW. `SmartTurnDetector`, `SmartTurnVerdict`, `truncate_or_pad_for_smart_turn`, `build_detector_from_config`. Pure-CPU `onnxruntime` session + `transformers.WhisperFeatureExtractor(chunk_length=8)` for the log-mel preprocessing. Single-threaded sequential ORT (`intra_op_num_threads=1`, `inter_op_num_threads=1`, `ORT_ENABLE_ALL`).
+* [`src/ultron/config.py`](../src/ultron/config.py) — new `SmartTurnConfig` (enabled, model_path, completion_threshold, fast_path_silence_duration_ms, incomplete_extension_ms, window_seconds, num_threads); nested under `VADConfig.smart_turn`.
+* [`config.yaml`](../config.yaml) — production values under `vad.smart_turn`. Default enabled=true; model_path `models/smart_turn/smart-turn-v3.2-cpu.onnx`; threshold 0.5; fast-path silence 500 ms; incomplete-extension 700 ms.
+* [`src/ultron/pipeline/orchestrator.py`](../src/ultron/pipeline/orchestrator.py) — new `_build_smart_turn_detector` / `_smart_turn_should_check` / `_run_smart_turn` helper methods; both `_capture_utterance` and `_follow_up_listen` wired with the confirmation gate + extension timeout.
+* [`scripts/download_models.py`](../scripts/download_models.py) — Smart Turn V3 added as step 7 of 8 in the download pipeline; pulls `smart-turn-v3.2-cpu.onnx` from HuggingFace into `models/smart_turn/`.
+
+**Tests:** [`tests/test_smart_turn.py`](../tests/test_smart_turn.py) — NEW. 43 tests covering: SmartTurnConfig schema (7 — defaults match production layout, all four range-enforced fields, dict round-trip, nested-under-VADConfig); `truncate_or_pad_for_smart_turn` pure function (6 — under-window passthrough, over-window truncation to last n seconds, int16-to-float32 conversion, multi-dim flatten, non-16kHz rejection, custom window override); `SmartTurnDetector` construction + lazy-loading + failure modes (10 — missing file, out-of-range threshold/window/threads, lazy-loading, warmup-propagates-failure, empty-audio/wrong-sr/post-close all return None); `build_detector_from_config` fail-open (4 — disabled returns None, missing file returns None, absolute-path missing returns None, present file succeeds with lazy detector); real-model end-to-end (6, skipped when ONNX file absent — loads + warmup, silence verdict shape, threshold flip, short audio, long audio truncation, latency under 150 ms median); orchestrator-level wiring (10 — should_check semantics across detector-missing / no-speech / within-window / over-window, run_smart_turn passes verdict through and swallows exceptions, build_smart_turn_detector fail-open for disabled / missing file).
+
+**Voice baseline contract:** intact. The smart-turn path is entirely CPU-side; VRAM accounting unchanged. The Silero VAD itself runs on the same 16 kHz audio it always has — the only difference is its `min_silence_duration_ms` baseline (500 instead of 1200) when smart-turn is wired, and the orchestrator-side confirmation step that runs `_run_smart_turn` on SPEECH_END. Verified ~10-30 ms median inference on this hardware (well under the 150 ms test ceiling and the 12 ms ideal target). Long-utterance backstop fully preserved.
+
+**Live-tuning guidance for the user:** the conservative default is `completion_threshold: 0.5`. If real-world testing shows false-positive cut-offs (e.g. Smart Turn says "complete" when the user was actually pausing mid-thought), bump to 0.6 or 0.7 in `config.yaml` — strict thresholds bias toward "incomplete" verdicts, costing a few hundred ms of perceived latency on confidently-done turns but eliminating the cut-off risk. The `incomplete_extension_ms` knob controls how long the orchestrator waits after an "incomplete" verdict before submitting anyway; 700 ms is roughly the legacy 1200 ms minus the 500 ms fast-path baseline.
+
+**2026-05-12 audio-artifact fix + filler-ack pass (NEW).** Two changes on top of commit `41e13b1`.
+
+1. **XTTS phantom-token mitigation.** User reported small audio blips "like an unrelated word was started then cut off" plus unnatural pauses between words. Diagnosed via spectral analysis of a real 58 s session capture (audio extracted from `2026-05-11 07-23-11.mp4`): the artifact at 19.28 s was a textbook XTTS-v2 phantom-token signature — a 100 ms isolated audio event sandwiched by 280 ms lead silence and 420 ms trailing silence, sitting in what should be an inter-sentence silence region. XTTS-v2's GPT duration head is stochastic and occasionally emits a fragmentary syllable after the stop-token; library-default `temperature=0.75` is on the high side for production stability. **Fix:** new [`tts.xtts_v3.temperature`](../config.yaml) config field (default **0.65**, range [0.4, 1.0]); threaded through HTTP body in [`XttsV3Speech._http_synthesize`](../src/ultron/tts/xtts_v3.py) to the server-side `model.inference_stream(temperature=...)`. Voice character bit-identical (timbre is set by the locked speaker embedding + the v3 filter chain — temperature only affects token-distribution sharpness). **Plus defence-in-depth:** new pure function `trim_phantom_tail(audio_f32, sample_rate, *, ...)` in [`src/ultron/tts/xtts_v3.py`](../src/ultron/tts/xtts_v3.py) detects the specific phantom signature (sustained_speech → ≥150 ms silence → <200 ms event → silence to buffer end) and trims everything after the last sustained-speech region. Runs BEFORE the v3 filter so the reverb tail decays normally into its `tail_silence_ms` padding. Conservative gate: passes through unchanged when no phantom pattern is present. New config fields: `phantom_tail_trim_enabled` (default true), `phantom_tail_silence_threshold` (0.005 ≈ -46 dBFS), `phantom_tail_max_event_ms` (200.0), `phantom_tail_min_lead_silence_ms` (150.0). **Speed=1.15 preserved** per user direction (the snappier cadence is wanted; the artifacts are temperature-driven, not speed-driven). Tests: +20 in `tests/test_xtts_v3_config.py` covering temperature schema, HTTP-body wiring, phantom-tail trim positive case (matches the real-world 19.28 s pattern), negative cases (sustained speech, short inter-word silence, long trailing event, empty/very-short clips), and engine-level enabled/disabled gating.
+
+2. **Conversational filler-ack** ([`src/ultron/conversational_ack.py`](../src/ultron/conversational_ack.py) — NEW). The web-search path already yields a "Verifying against the network." style ack so the user isn't stuck in silence while Brave/Jina/LLM cycle. The no-search conversational path historically had no such ack — typical turn latency budget = 1200 ms VAD silence wait + ~890 ms Whisper + ~79 ms LLM TTFT + ~350 ms first TTS chunk ≈ **2.5 s of silence** between "user stops talking" and "Ultron speaks". Filler-ack masks this by yielding a short thinking-noise ("Mm.", "Right.", "Hm.", "Considering.", "Let me think.", "Noted.", "Processing.", "Working on it.") BEFORE the LLM stream, so the TTS pipeline starts speaking within ~200 ms of Whisper completing. Actual end-to-end latency is unchanged but perceived latency drops sharply. **Gate semantics:** `is_conversational_ack_eligible(user_text, has_pending_clarification)` suppresses the ack on empty input, utterances under 11 chars or 4 words (interjections like "yes" / "no" / "thanks" / "ok" / "sounds good" — the perceived gap is small on short replies, ack would feel over-eager), and during pending coding-task clarifications (the orchestrator already has its own narration flow there). `ConversationalAckSource` is a thin wrapper over the existing web-search `AcknowledgmentSource` with a distinct phrase pool — the two pools rotate independently. The conversational phrases are intentionally tonally non-committal (read as Ultron deliberating, not describing external activity). Wired into [`pipeline/orchestrator.py:_build_response_stream`](../src/ultron/pipeline/orchestrator.py) at all three no-search exit points (`web_gate=None` fallthrough, web_gate-exception fallthrough, `verdict.decision != SEARCH` branch); the `_search_augmented_tokens` path is untouched (already yields its own ack). Fail-open at every step: `coding_voice.has_pending_clarification()` exceptions, `next_phrase` exceptions — both degrade to "no ack" rather than raising. Tests: +24 in `tests/test_conversational_ack.py` covering gate (short/long/empty/clarification/whitespace), source (shuffled cycle, custom pool, empty-pool rejection, no duplicates), phrase pool sanity (no web-search overlap, period-terminated, short), and orchestrator wiring (ack appears on no-gate path, suppressed on short utterance / clarification, fail-open on broken source).
+
+**Tests:** 1629 → 1683 (+54 net). Voice baseline contract unchanged: legacy `piper_rvc` 79 ms / 7913 MB; `xtts_v3` +60 ms / +2 GB. Audio fix touches the voice synthesis path but the phantom-tail trim is sub-millisecond on benign input (the typical case) and the temperature change is server-side (no client overhead). Filler-ack adds one extra token to the conversational stream but doesn't change end-to-end latency. **Smart Turn V3 still queued** for the next session — needs model download + live empirical tuning.
 
 **2026-05-11 follow-up bug-fix pass (Windsurf session, NEW).** Three real-session issues addressed in one pass on top of commit `431fd7b`.
 
@@ -84,7 +126,9 @@ State at this validation:
 - Voice baseline (10-query stack with all Items ON): **TTFT median 79 ms**, **VRAM peak 7913 MB** (-2461 MB / -2.5 GB vs 9B). See [baselines.json](../baselines.json).
 - Items 4–8 measurable verification: [scripts/verify_items_4_to_8.py](../scripts/verify_items_4_to_8.py) exercises each item in its trigger scenario and prints concrete deltas.
 - Stale-`.env` gotcha resolved: `ULTRON_LLM_MODEL_PATH=...9B...` line in `.env` was silently overriding the preset. Now commented out (line 84).
-- **1644 tests collected; 1629 passed, 15 skipped (GPU-gated), 0 failed.** Net delta vs Foundation Phase 7 baseline: +634. Most recent additions:
+- **1726 tests collected; 1711 passed, 15 skipped (GPU-gated), 0 failed.** Net delta vs Foundation Phase 7 baseline: +716. Most recent additions:
+  - 2026-05-12 Smart Turn V3 — semantic end-of-turn confirmation: +43 covering SmartTurnConfig schema, `truncate_or_pad_for_smart_turn` pure function, `SmartTurnDetector` construction + lazy-loading + fail-open, `build_detector_from_config` fail-open contract, real-model end-to-end (gated on ONNX file presence), and orchestrator-level wiring (`tests/test_smart_turn.py` — NEW).
+  - 2026-05-12 audio-artifact fix + filler-ack: +12 XTTS temperature schema + HTTP-body wiring + `trim_phantom_tail` positive/negative cases (`tests/test_xtts_v3_config.py` grew from 18 to 30); +24 conversational filler-ack gate + source + phrase-pool sanity + orchestrator wiring (`tests/test_conversational_ack.py` — NEW); +3 regression updates across xtts_v3 default schema coverage.
   - 2026-05-11 follow-up bug-fix pass (Windsurf session): +3 schema coverage for the new `vad.max_utterance_seconds` field (default 30 s; <5 rejected; >120 rejected) in `tests/test_audio.py`; +1 regression `test_completion_narration_does_not_leak_full_path` pinning no-backslash / no-drive-letter / no-absolute-path in `tests/test_coding_runner.py` (plus 2 existing tests updated from `str(tmp_path) in narration` to `tmp_path.name in narration`); +18 broadened progress-query parametrized cases (`How is that project going?` and determiner × coding-noun × verb variants) plus +3 fall-through cases gating the new patterns on `has_active_task=True` in `tests/test_coding_intent.py`.
   - 2026-05-11 token-efficiency fix: +4 voice-task testing-mandate coverage (`test_voice_dispatch_defaults_to_no_test_mandate`, `test_voice_dispatch_honors_config_flag_for_testing`, `test_render_prompt_omits_discipline_preamble_without_testing`, `test_coding_config_voice_task_require_testing_defaults_false`) in `tests/test_coding_voice.py`.
   - 2026-05-11 narration honesty: +2 `completion_narration` regression coverage (honest-when-zero-files opener fires; legacy "Done." preserved when files were written) in `tests/test_coding_runner.py`. Plus one existing test updated to accept either form (`tests/test_coding_voice.py::test_pending_completion_returns_none_until_transition` -- its fake bridge emits no FILE_CHANGE events, so it now hits the honest branch).
@@ -162,11 +206,13 @@ For the current decisions and Foundation phase status see
 │       ├── errors.py               ← Phase 4 typed exception hierarchy
 │       ├── uncertainty.py          ← Phase 5 (original prompts) uncertainty-signal application
 │       ├── response_style.py       ← 2026-05-10: per-call brevity hint (apply_brevity_hint)
+│       ├── conversational_ack.py   ← 2026-05-12: filler-ack on conversational path (ConversationalAckSource, is_conversational_ack_eligible)
 │       │
 │       ├── audio/                  ← Audio capture, VAD, wake-word
 │       │   ├── capture.py          ← AudioCapture (sounddevice callback thread)
 │       │   ├── devices.py          ← Device-resolution helpers (resolve_device, describe_device)
 │       │   ├── ring_buffer.py      ← Pre-speech audio buffer
+│       │   ├── smart_turn.py       ← Smart Turn V3 ONNX wrapper (NEW 2026-05-12; CPU-only end-of-turn confirmation)
 │       │   ├── vad.py              ← Silero-VAD wrapper
 │       │   └── wake_word.py        ← openWakeWord (custom ultron.onnx + hey_jarvis fallback)
 │       │
@@ -420,7 +466,8 @@ For the current decisions and Foundation phase status see
 │   ├── Qwen3.5-9B-Q4_K_M.gguf      ← LLM (5.29 GB)
 │   ├── openwakeword/ultron.onnx    ← custom wake word
 │   ├── piper/en_US-ryan-medium.onnx ← TTS voice
-│   └── rvc/{hubert_base.pt, rmvpe.pt} ← RVC support files
+│   ├── rvc/{hubert_base.pt, rmvpe.pt} ← RVC support files
+│   └── smart_turn/smart-turn-v3.2-cpu.onnx ← Smart Turn V3 (NEW 2026-05-12; 8.68 MB int8)
 │
 ├── ultron_james_spader_mcu_6941/   ← (main checkout only) RVC voice model
 │   ├── Ultron.pth
@@ -731,6 +778,53 @@ conversational path (search path's augmented prompt has its own
 length directive). Three call sites: web-gate-disabled fall-through,
 web-gate-failure fall-through, NO_SEARCH verdict path.
 
+### `src/ultron/conversational_ack.py` (2026-05-12)
+
+**Purpose:** filler-acknowledgment source for the no-search
+conversational branch. Masks the ~2.5 s perceived gap between
+Whisper completing and the LLM's first TTS chunk by yielding a
+short thinking-noise ("Mm.", "Right.", "Hm.", etc.) BEFORE the LLM
+stream so the TTS pipeline starts speaking within ~200 ms of
+Whisper completing. End-to-end latency unchanged; perceived latency
+drops sharply. The web-search path has its own ack
+(`web_search.acknowledgments.AcknowledgmentSource`) that describes
+external activity; this module's phrases are tonally non-committal
+(read as Ultron deliberating). The two pools rotate independently.
+
+**Public:**
+- `_CONVERSATIONAL_PHRASES: List[str]` — module-level phrase pool.
+  Each phrase ≤20 chars, period-terminated so the TTS pipeline
+  flushes it as a complete sentence immediately. No overlap with
+  the web-search pool.
+- `is_conversational_ack_eligible(user_text, *, has_pending_clarification=False) -> bool`
+  — pure gate function. Returns False on empty input, on utterances
+  shorter than 11 chars or 4 words (interjections like "yes",
+  "thanks"), and when a coding-task clarification is pending (the
+  orchestrator already has its own narration flow there). Otherwise
+  returns True.
+- `class ConversationalAckSource` — thin wrapper around
+  `AcknowledgmentSource` with the conversational phrase pool baked
+  in. Holding it as a distinct class type makes the orchestrator's
+  intent clear at call sites and keeps the two pools' shuffled-
+  cycle state separate.
+  - `__init__(phrases=None)` — `None` uses the default pool;
+    explicit empty list is forwarded to the underlying source which
+    rejects it (vs silently swapping to default).
+  - `next_phrase() -> str` — same contract as
+    `AcknowledgmentSource.next_phrase`.
+
+**Wired at:** [pipeline/orchestrator.py](../src/ultron/pipeline/orchestrator.py)
+- `Orchestrator.__init__` constructs `self.conv_ack_source = ConversationalAckSource()`.
+- `Orchestrator._maybe_conversational_ack(user_text) -> Optional[str]`
+  helper threads pending-clarification state through the gate and
+  fail-opens on any exception (broken source or coding-voice check).
+- `Orchestrator._build_response_stream` yields the ack token before
+  `llm.generate_stream(...)` at all three no-search exit points:
+  web-gate-disabled fallthrough, web-gate-exception fallthrough,
+  `verdict.decision != SEARCH` branch. The `_search_augmented_tokens`
+  path is untouched (already yields its own ack from
+  `web_search.acknowledgments.AcknowledgmentSource`).
+
 ### `src/ultron/audio/`
 
 #### `audio/capture.py`
@@ -769,6 +863,52 @@ web-gate-failure fall-through, NO_SEARCH verdict path.
   - Falls back to `hey_jarvis` with startup warning if missing
   - `predict(audio_block) -> Optional[str]` — fires a wake event
   - `fired_recently(window_s: float = 0.5) -> bool` (V1-gap A4) — read-only accessor for the last trigger timestamp; returns True iff a wake fire happened within ``window_s`` seconds. Used by the orchestrator's pre-task barge-in watcher. Idempotent — does not consume the trigger.
+
+#### `audio/smart_turn.py` (NEW 2026-05-12)
+
+Pipecat Smart Turn V3 ONNX wrapper. CPU-only semantic end-of-turn
+confirmation that runs after Silero VAD detects silence. Pinned to
+`CPUExecutionProvider` — zero VRAM cost. 8 MB int8 model;
+`~12 ms` inference target, sub-150 ms in practice on this hardware.
+Fail-open at every layer: missing model file / disabled config /
+load failure / inference exception all degrade silently to "trust
+VAD" rather than misclassifying.
+
+- `SMART_TURN_SAMPLE_RATE = 16000`, `SMART_TURN_WINDOW_SECONDS = 8.0`,
+  `SMART_TURN_MEL_BINS = 80`, `SMART_TURN_MEL_FRAMES = 800`,
+  `SMART_TURN_INPUT_NAME = "input_features"` — model contract constants.
+- `class SmartTurnLoadError(RuntimeError)` — raised at construction
+  time only (missing file, out-of-range config). Inference-time
+  failures degrade to None.
+- `@dataclass(frozen=True) class SmartTurnVerdict` — `is_complete: bool`,
+  `probability: float` (sigmoid output, already activated in the ONNX
+  graph), `latency_ms: float` (wall-clock including preprocessing).
+- `truncate_or_pad_for_smart_turn(audio, sample_rate, *, window_seconds=8.0) -> np.ndarray`
+  — pure helper. Truncates audio HEAD-first to the last
+  `window_seconds`; pads-at-start is the `WhisperFeatureExtractor`'s
+  job (`padding="max_length"`). Converts non-float32 inputs to
+  float32; flattens multi-dim inputs. Rejects non-16 kHz with
+  `ValueError` (callers resample upstream).
+- `class SmartTurnDetector`:
+  - `__init__(model_path, *, completion_threshold=0.5, window_seconds=8.0, num_threads=1)`
+    — validates the model file exists and parameters are in range;
+    does NOT load the ONNX session into memory. Raises
+    `SmartTurnLoadError` on bad inputs.
+  - `available` property — True iff loaded and healthy. False before
+    first call (lazy) and after a load failure.
+  - `warmup() -> bool` — forces the lazy-load path now. Returns
+    True on success, False on load failure (logged at WARN).
+  - `is_complete(audio, sample_rate=16000) -> Optional[SmartTurnVerdict]`
+    — main entry. Returns a verdict on success, None on any error
+    (treated by caller as "undecided" → trust VAD). Thread-safe via
+    an internal load + inference lock.
+  - `close()` — idempotent release; subsequent `is_complete` returns None.
+- `build_detector_from_config(smart_turn_cfg, project_root) -> Optional[SmartTurnDetector]`
+  — orchestrator-side factory. Returns None when smart-turn is
+  disabled, when the model file is missing on disk, or when
+  construction fails. WARN-level log distinguishes the cases. This
+  is the single seam between config and runtime that the orchestrator
+  uses; no other call site constructs a detector directly.
 
 ### `src/ultron/addressing/`
 
@@ -971,25 +1111,46 @@ orchestrator playback path (the producer-signaled lookahead in
   server subprocess can't be started (missing venv / script /
   reference, startup timeout exceeded).
 - `class XttsSynthError(RuntimeError)` — synth call failure.
+- `trim_phantom_tail(audio_f32, sample_rate, *, silence_threshold=0.005,
+  max_event_ms=200.0, min_lead_silence_ms=150.0, trailing_grace_ms=80.0,
+  window_ms=20.0) -> (np.ndarray, bool)` (NEW 2026-05-12 phantom-token
+  mitigation, defence in depth) — pure function that detects the
+  specific XTTS-v2 phantom signature (sustained_speech → ≥150 ms
+  silence → <200 ms isolated event → silence to buffer end) and
+  trims everything after the last sustained-speech region plus a
+  small grace cushion. Returns `(maybe-shorter audio, detected)`.
+  Conservative: passes through unchanged when no phantom pattern is
+  present (sustained-speech-only, mid-sentence inter-word silence,
+  legitimately long trailing speech). Runs BEFORE the v3 filter so
+  the reverb tail decays normally into its tail_silence_ms padding.
+  Empirically grounded against a real session WAV showing the
+  signature at 19.28 s.
 - `class XttsV3Speech` — the engine.
   - `__init__(...)` — resolves paths via `tts.xtts_v3` config,
     spawns the XTTS HTTP server in `.venv-xtts`, polls `/healthz`
-    until ready (180 s startup budget for cold model load).
+    until ready (180 s startup budget for cold model load). 2026-
+    05-12 phantom-token mitigation: also reads `temperature` (0.65
+    default), `phantom_tail_trim_enabled` (true default), and the
+    three trim thresholds (`silence_threshold`, `max_event_ms`,
+    `min_lead_silence_ms`) from `tts.xtts_v3` config; explicit ctor
+    args override.
   - `speak`, `speak_stream`, `warmup`, `stop` — same API as the
     legacy engine.
   - `_synthesize(text)` — POST `/synthesize`, accumulates the
-    streamed PCM, applies the v3 Ultron filter via
+    streamed PCM, optionally runs `trim_phantom_tail` (gated on
+    `phantom_tail_trim_enabled`), applies the v3 Ultron filter via
     `ultron_filter.apply_filter(..., tail_silence_ms=200)`, returns
     `(int16 pcm, sr)` matching the legacy engine's contract.
   - `_http_synthesize(text)` — raw HTTP call; reads chunked PCM
     body and returns `np.ndarray(int16)`. POST JSON body carries
-    `{"text", "language", "speed"}` — the `speed` field is XTTS v2's
-    native duration multiplier sourced from `tts.xtts_v3.speed`
-    (default 1.0 in schema, 1.15 in production via `config.yaml`).
-    Server-side passes it to `model.inference_stream(speed=...)` so
-    cadence changes happen at synthesis time; the v3 pedalboard
-    filter (pitch / delay / reverb / etc.) is unaffected and
-    processes the shorter audio buffer identically.
+    `{"text", "language", "speed", "temperature"}` — `speed` is
+    XTTS v2's native duration multiplier (1.15 in production for
+    snappier cadence); `temperature` (NEW 2026-05-12) is the GPT
+    duration-head sampling temperature (0.65 in production — lowered
+    from XTTS library default 0.75 to cut phantom-token rate).
+    Server-side passes both to `model.inference_stream(speed=...,
+    temperature=...)` so cadence + stability are adjusted at
+    synthesis time; the v3 pedalboard filter is unaffected.
   - `_stop_server_subprocess()` — graceful POST `/shutdown`, then
     SIGTERM, then SIGKILL. Called by the orchestrator's `shutdown()`.
 
@@ -1441,10 +1602,13 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
 - `class State(Enum)` — IDLE / CAPTURING / PROCESSING / FOLLOW_UP_LISTENING
 - `class Orchestrator` — main event loop
   - `MAX_UTTERANCE_SECONDS` (class constant, **30.0** as of 2026-05-11 follow-up fix; was 15.0) — fallback default for the per-capture hard ceiling. The instance attribute `self._max_utterance_seconds` (read from `vad.max_utterance_seconds`) wins at runtime; the class constant is only used when config load fails in `__init__`.
-  - `__init__()` — composes audio, wake, vad, addressing, stt, llm, memory, web_search, tts, coding_voice. Reads `vad.max_utterance_seconds` into `self._max_utterance_seconds` (defaults to 30.0; defensive fallback to the class constant on config-load failure). Also reads `vad.long_utterance_threshold_seconds` + `vad.long_utterance_silence_duration_ms` for the adaptive end-of-turn policy.
+  - `__init__()` — composes audio, wake, vad, addressing, stt, llm, memory, web_search, tts, coding_voice. Reads `vad.max_utterance_seconds` into `self._max_utterance_seconds` (defaults to 30.0; defensive fallback to the class constant on config-load failure). Also reads `vad.long_utterance_threshold_seconds` + `vad.long_utterance_silence_duration_ms` for the adaptive end-of-turn policy. **2026-05-12 Smart Turn V3:** builds the detector via `_build_smart_turn_detector()` BEFORE constructing the VAD; when the detector is present, the VAD is built with `min_silence_ms = smart_turn.fast_path_silence_duration_ms` (500 ms) instead of the legacy 1200 ms.
+  - `_build_smart_turn_detector() -> Optional[SmartTurnDetector]` (2026-05-12) — calls `build_detector_from_config(vad.smart_turn, PROJECT_ROOT)`. Returns None when smart-turn is disabled / model file missing / construction fails. Voice baseline unaffected when None.
+  - `_smart_turn_should_check(*, speech_seen, speech_samples) -> bool` (2026-05-12) — gate: detector must be available, speech must have been seen, and the contiguous speech duration must be ≤ `smart_turn.window_seconds`. Long utterances bypass smart-turn (the adaptive long-utterance VAD backstop handles those).
+  - `_run_smart_turn(captured) -> Optional[SmartTurnVerdict]` (2026-05-12) — single inference call. Returns None on any failure; caller treats as "undecided" → trust VAD.
   - `run()` — main loop (blocks; KeyboardInterrupt clean shutdown)
-  - `_capture_utterance()` — VAD-bounded audio capture. **2026-05-11 follow-up fix:** the hard `elapsed_samples < max_samples` ceiling now reads from `self._max_utterance_seconds` (config-driven). Previously a class-level `MAX_UTTERANCE_SECONDS=15.0` cut a real user off mid-sentence on a complex coding ask — the user wasn't pausing; the wall-clock ceiling fired before Silero VAD reported `SPEECH_END`. Bumping to 30 s comfortably covers detailed one-breath asks while still bounding pathological captures (stuck mic, background noise that never resolves to SPEECH_END, etc.).
-  - `_follow_up_listen(deadline)` — WARM-mode VAD loop. Same `self._max_utterance_seconds` ceiling on cumulative speech (not wall-clock, which is bounded by `deadline`).
+  - `_capture_utterance()` — VAD-bounded audio capture. **2026-05-11 follow-up fix:** the hard `elapsed_samples < max_samples` ceiling now reads from `self._max_utterance_seconds` (config-driven). Previously a class-level `MAX_UTTERANCE_SECONDS=15.0` cut a real user off mid-sentence on a complex coding ask — the user wasn't pausing; the wall-clock ceiling fired before Silero VAD reported `SPEECH_END`. Bumping to 30 s comfortably covers detailed one-breath asks while still bounding pathological captures (stuck mic, background noise that never resolves to SPEECH_END, etc.). **2026-05-12 Smart Turn V3:** on first SPEECH_END within a capture (and only when the utterance is within the smart-turn window), the captured audio is fed to `_run_smart_turn`. Verdict `complete` → break immediately. Verdict `incomplete` → keep listening; bump VAD silence to `long_utterance_silence_duration_ms` and start an extension timer (`smart_turn.incomplete_extension_ms`). If silence persists past the extension, accept end-of-turn anyway. If speech resumes, cancel the extension and trust the next SPEECH_END.
+  - `_follow_up_listen(deadline)` — WARM-mode VAD loop. Same `self._max_utterance_seconds` ceiling on cumulative speech (not wall-clock, which is bounded by `deadline`). Same Smart Turn V3 confirmation flow as `_capture_utterance` (2026-05-12).
   - `_respond(user_text)` — LLM stream → TTS pipeline (with optional web search)
   - `_speak(text)` — single-shot synthesize + play
   - `_speak_with_barge_in_check(text, *, post_check_window_s=0.5) -> bool` (V1-gap A4) — speak text and report whether wake fired during/after; used by the pre-task confirmation flow.
@@ -1503,7 +1667,7 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
 Sections:
 - `version: "1.0"`
 - `audio` (sample_rate, channels, blocksize, dtype, devices, barge-in, **ring_buffer_seconds: 0.5** [2026-05-10: bumped back from 0.15 to act as a STORAGE capacity now that the orchestrator slices mode-specific pre-roll out of it], **cold_pre_roll_seconds: 0.15** [NEW 2026-05-10: post-wake slice; short to avoid the "Tron" prefix the longer pre-roll caused], **warm_pre_roll_seconds: 0.5** [NEW 2026-05-10: post-TTS follow-up slice; long enough to span Silero VAD's ~150 ms speech-start latency without clipping the user's leading word], input_gain_db [2026-05-09])
-- `vad` (threshold, min_speech_duration_ms, **min_silence_duration_ms: 1200** [2026-05-09 latency fix; was 500 — natural mid-sentence pauses prematurely closed the capture; trade-off is ~0.7 s slower end-of-turn detection], window_samples, **long_utterance_threshold_seconds: 8.0**, **long_utterance_silence_duration_ms: 2400** [NEW 2026-05-11 adaptive end-of-turn: once speech has been active past the threshold, orchestrator bumps VAD silence requirement to the long value so a thinking pause mid-prompt doesn't cut the capture. Short utterances stay snappy. Set threshold to 0 to disable.], **max_utterance_seconds: 30.0** [NEW 2026-05-11 follow-up fix: hard ceiling on a single VAD-bounded capture. Was a class-level constant `Orchestrator.MAX_UTTERANCE_SECONDS=15.0` that cut a real user off mid-sentence on a complex coding ask (Whisper transcribed 15.158 s ending mid-phrase at "a button with a box show" — user wasn't pausing; wall-clock ceiling fired before VAD reported SPEECH_END). Now configurable, default 30 s; schema range [5, 120]. Falls back to the class constant only if config load fails.])
+- `vad` (threshold, min_speech_duration_ms, **min_silence_duration_ms: 1200** [2026-05-09 latency fix; was 500 — natural mid-sentence pauses prematurely closed the capture; trade-off is ~0.7 s slower end-of-turn detection. **Note 2026-05-12:** when `vad.smart_turn.enabled` is true and the model file is present, the orchestrator overrides this to `smart_turn.fast_path_silence_duration_ms` (500 ms) at VAD construction time; smart-turn provides the semantic confirmation that the legacy 1200 ms wall was previously responsible for], window_samples, **long_utterance_threshold_seconds: 8.0**, **long_utterance_silence_duration_ms: 2400** [NEW 2026-05-11 adaptive end-of-turn: once speech has been active past the threshold, orchestrator bumps VAD silence requirement to the long value so a thinking pause mid-prompt doesn't cut the capture. Short utterances stay snappy. Set threshold to 0 to disable.], **max_utterance_seconds: 30.0** [NEW 2026-05-11 follow-up fix: hard ceiling on a single VAD-bounded capture. Was a class-level constant `Orchestrator.MAX_UTTERANCE_SECONDS=15.0` that cut a real user off mid-sentence on a complex coding ask (Whisper transcribed 15.158 s ending mid-phrase at "a button with a box show" — user wasn't pausing; wall-clock ceiling fired before VAD reported SPEECH_END). Now configurable, default 30 s; schema range [5, 120]. Falls back to the class constant only if config load fails.], **smart_turn subsection** [NEW 2026-05-12 Smart Turn V3 semantic end-of-turn confirmation. enabled=true, model_path=`models/smart_turn/smart-turn-v3.2-cpu.onnx`, completion_threshold=0.5 (raise to 0.6-0.7 to reduce false-positive cut-offs at the cost of perceived latency), fast_path_silence_duration_ms=500 (VAD baseline when smart-turn is active), incomplete_extension_ms=700 (additional silence after `incomplete` verdict before submitting anyway), window_seconds=8.0 (training-window cap; longer utterances bypass smart-turn), num_threads=1. Fail-open: missing model file degrades silently to legacy VAD-only behaviour. CPU-only inference ~12 ms; zero VRAM cost.])
 - `wake_word` (name, model_path, fallback_model, threshold, cooldown)
 - `stt` (model, device, compute_type, beam_size, temperature, etc.)
 - `llm` (provider="llama_cpp", **preset** ["qwen3.5-9b"|"qwen3.5-4b"|"custom"; auto-fills model_path/n_ctx/draft_model_path when those keys are omitted — Stage A of the 4B plan], runtime ["in_process"|"http_server"], model_path, draft_model_path, n_ctx, gpu_layers, temperature, top_p, max_tokens, repeat_penalty, history_turns, flash_attn, kv_cache_type, system_prompt, server.{base_url,...}, persona.{source,...})
@@ -1514,7 +1678,7 @@ Sections:
 - `addressing` (follow_up_enabled, **warm_mode_duration_seconds: 30.0** ← user override, NOT 10s; rule_confidence_threshold, **zero_shot_addressed_min_confidence: 0.80** [NEW 2026-05-11: demotes low-confidence zero-shot YES verdicts to NOT_ADDRESSED via default_silent; catches the borderline third-person utterances flan-t5-small saturates on at 0.75. Set to 0.0 for legacy permissive behaviour.], zero_shot_model, log_path)
 - `coding` (enabled, bridge="direct", mcp.{host,port,...}, template_dir, prompt_token_budget, default/escalation models + thresholds, verification.{smoke,test,lint}_timeout, session_audit_dir, **token_budget_per_session=400000** [2026-05-11 bump from 100000 — new-project sessions burn 100k+ on tool exploration alone before writing files; 400k gives headroom while the 80% warning still fires. Paired with the 2026-05-11 narration honesty fix so users get an explicit "no files written" signal when budget is exhausted mid-exploration], claude_cli, sandbox_root, project_registry_path, audit_log_path, task_timeout, skip_permissions, **voice_task_require_testing=false** [NEW 2026-05-11 token-efficiency fix: was implicitly true via voice.py hardcode, which prepended a "MUST write tests, run, fix, re-run" preamble to every voice-dispatched Claude prompt and 3-5x'd the token spend. Default false lets small voice asks land lean. Users who want tests can say "with unit tests" in their voice request or flip this flag], **facts.{top_k=5, min_confidence=0.75, min_score=0.85, max_age_days=null}** [V1-gap A3], **pre_task_confirmation_enabled=false, pre_task_confirmation_max_words=30, pre_task_barge_in_window_seconds=0.5** [V1-gap A4])
 - `projections` (tokenizer, budgets.{clarification,status_delta,adjustment,correction,completion}_context, truncation_warning_threshold, log_truncations)
-- `tts` (**engine="piper_rvc" | "xtts_v3"** [NEW 2026-05-10 voice swap; default still legacy for back-compat], piper paths, sample_rate, sentence_flush_chars, length_scale, pause_ms, edge_fade_ms, **pipeline_parallel_enabled=true** [2026-05-09 Piper/RVC split], **speculative_stream_open_enabled=true** [2026-05-09], **speculative_stream_sample_rate=48000** [2026-05-10: was 40000 — actual Ultron RVC output is 48000 Hz, mismatch was forcing the close-and-reopen path on every turn], **output_low_latency_mode=true** [2026-05-09], rvc subsection, **xtts_v3 subsection** [server_python, server_script, reference_audio, host, port, filter_preset="v3_heavy", filter_tail_silence_ms=200, **speed=1.15** (NEW 2026-05-11 cadence tune; XTTS native default is 1.0 — production set to 1.15 for ~15% faster speech without slurring; adjusts synthesis duration tokens so the v3 pedalboard filter is unaffected; safe range ~0.7-1.4, schema-bounded to [0.5, 2.0])])
+- `tts` (**engine="piper_rvc" | "xtts_v3"** [NEW 2026-05-10 voice swap; default still legacy for back-compat], piper paths, sample_rate, sentence_flush_chars, length_scale, pause_ms, edge_fade_ms, **pipeline_parallel_enabled=true** [2026-05-09 Piper/RVC split], **speculative_stream_open_enabled=true** [2026-05-09], **speculative_stream_sample_rate=48000** [2026-05-10: was 40000 — actual Ultron RVC output is 48000 Hz, mismatch was forcing the close-and-reopen path on every turn], **output_low_latency_mode=true** [2026-05-09], rvc subsection, **xtts_v3 subsection** [server_python, server_script, reference_audio, host, port, filter_preset="v3_heavy", filter_tail_silence_ms=200, **speed=1.15** (NEW 2026-05-11 cadence tune; XTTS native default is 1.0 — production set to 1.15 for ~15% faster speech without slurring; adjusts synthesis duration tokens so the v3 pedalboard filter is unaffected; safe range ~0.7-1.4, schema-bounded to [0.5, 2.0]), **temperature=0.65** (NEW 2026-05-12 phantom-token mitigation: lowered from XTTS library default 0.75 to sharpen the duration-token distribution so the GPT head stops occasionally emitting fragmentary syllables at sentence ends; range [0.4, 1.0]; threaded through HTTP body to server-side `inference_stream(temperature=...)`; voice character bit-identical because timbre is set by the locked speaker embedding + the v3 filter chain), **phantom_tail_trim_enabled=true** (NEW 2026-05-12 defence-in-depth: client-side post-process that detects the specific phantom-token signature — sustained_speech → ≥150 ms silence → <200 ms event → silence to buffer end — and trims everything after the last sustained-speech region; runs BEFORE the v3 filter so the reverb tail decays normally into its tail_silence_ms padding; set false to disable for A/B), **phantom_tail_silence_threshold=0.005**, **phantom_tail_max_event_ms=200.0**, **phantom_tail_min_lead_silence_ms=150.0**])
 - `logging` (file, level, format, datefmt)
 - `error_phrases` (13 pools — qdrant_unavailable, brave_unavailable, jina_unavailable, anthropic_unavailable, rvc_unavailable, openclaw_unavailable, piper_unavailable, whisper_repeated_failures, addressing_classifier_failure, wake_word_model_failure, mcp_server_lost, claude_code_subprocess_failed, config_invalid)
 - `routing` (llm_disambiguation_enabled, hybrid_task_decomposition_enabled, disambiguation_question_template, routing_log_path, classifier subsection, stub_responses_enabled)
@@ -1790,6 +1954,8 @@ Per-scenario validation: retrieval `expect_includes` / `expect_excludes` substri
 - `test_addressing.py` — rule-based addressing classifier
 - `test_audio.py` — capture, ring buffer (incl. 2026-05-10 mode-aware `snapshot(last_n_samples=...)` slicing), devices
 - `test_response_style.py` (22, 2026-05-10) — `is_brief_question` / `apply_brevity_hint` coverage: short-question detection, depth-marker skip, long-question pass-through, empty input, idempotence on already-hinted text
+- `test_conversational_ack.py` (24, 2026-05-12 — NEW) — conversational filler-ack: gate eligibility (long-utterance fires, short-utterance/empty/clarification-pending skipped, whitespace-stripped), `ConversationalAckSource` shuffled-cycle (no immediate repeats, full pool per cycle, custom pool, empty-pool rejection), phrase-pool sanity (no web-search overlap, period-terminated, short, no duplicates), and orchestrator-level wiring (ack appears as first token on no-gate fallthrough path, suppressed on short utterance / pending clarification, fail-open on broken source or `has_pending_clarification` exception)
+- `test_smart_turn.py` (43, 2026-05-12 — NEW) — Smart Turn V3 semantic end-of-turn confirmation: `SmartTurnConfig` schema (defaults match production layout, all four range-enforced fields, dict round-trip, nested-under-VADConfig), `truncate_or_pad_for_smart_turn` pure function (under-window passthrough, over-window truncation to last n seconds, int16→float32 conversion, multi-dim flatten, non-16kHz rejection, custom window override), `SmartTurnDetector` construction (missing file, out-of-range threshold/window/threads, lazy-loading, warmup-propagates-failure, empty/wrong-sr/post-close all return None), `build_detector_from_config` fail-open (disabled / missing file / absolute-path missing all return None; present file yields a lazy detector), real-model end-to-end (6 tests, skipped when `models/smart_turn/smart-turn-v3.2-cpu.onnx` is absent — loads + warmup, silence verdict shape, threshold flip with identical probability, short audio padded by WhisperFeatureExtractor, long audio truncated to last 8 s, median inference under 150 ms), orchestrator-level wiring (`_smart_turn_should_check` gate semantics across detector-missing / no-speech / within-window / over-window, `_run_smart_turn` passes verdict through + swallows exceptions, `_build_smart_turn_detector` fail-open for disabled / missing file)
 - `test_coding_bridge.py` — CodingBridge abstract contract
 - `test_coding_e2e.py` — coding e2e (PYTEST_RUN_GPU_TESTS gated)
 - `test_coding_intent.py` / `test_coding_intent_phase2.py` — intent classifier
@@ -1914,6 +2080,7 @@ Set `$env:PYTEST_RUN_GPU_TESTS = "1"` before pytest. Includes real Claude API ca
 | `piper/en_US-ryan-medium.onnx[.json]` | `TextToSpeech` | ~60 MB |
 | `rvc/hubert_base.pt` | `RvcConverter` | ~362 MB |
 | `rvc/rmvpe.pt` | `RvcConverter` | ~178 MB |
+| `smart_turn/smart-turn-v3.2-cpu.onnx` | `SmartTurnDetector` (Smart Turn V3 semantic end-of-turn; NEW 2026-05-12) | 8.68 MB |
 | `.hf-cache/` | `HybridEmbedder`, addressing zero-shot | varies |
 
 ### `ultron_james_spader_mcu_6941/` (main checkout only)

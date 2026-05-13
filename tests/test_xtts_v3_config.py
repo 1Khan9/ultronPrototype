@@ -66,6 +66,17 @@ def test_xtts_v3_config_defaults_match_audio_prep_layout():
     # tests) stay back-compat. The production value lives in
     # config.yaml.
     assert cfg.speed == 1.0
+    # 2026-05-12 phantom-token mitigation: schema default 0.65 (vs
+    # the XTTS library's 0.75). Tightens the duration-token
+    # distribution so the model emits fewer phantom syllables.
+    assert cfg.temperature == 0.65
+    # Phantom-tail trim is defence-in-depth on top of the temperature
+    # reduction. Default ON: trim is conservative (only fires when
+    # the specific phantom pattern is matched).
+    assert cfg.phantom_tail_trim_enabled is True
+    assert cfg.phantom_tail_silence_threshold == 0.005
+    assert cfg.phantom_tail_max_event_ms == 200.0
+    assert cfg.phantom_tail_min_lead_silence_ms == 150.0
 
 
 def test_xtts_v3_config_speed_range_enforced():
@@ -158,6 +169,320 @@ def test_xtts_v3_client_forwards_speed_in_http_body(monkeypatch, tmp_path):
     assert body["text"] == "hello there"
     assert body["language"] == "en"
     assert body["speed"] == 1.15
+
+
+# ---------------------------------------------------------------------------
+# Temperature schema + HTTP-body wiring (2026-05-12 phantom-token mitigation)
+# ---------------------------------------------------------------------------
+
+
+def test_xtts_v3_config_temperature_range_enforced():
+    """Bounded so callers can't ship a setting that destroys the
+    duration-token distribution. Below ~0.4 prosody collapses; above
+    ~1.0 the model becomes unstable."""
+    from pydantic import ValidationError
+    XttsV3Config(temperature=0.4)
+    XttsV3Config(temperature=0.65)  # schema default
+    XttsV3Config(temperature=1.0)
+    with pytest.raises(ValidationError):
+        XttsV3Config(temperature=0.39)
+    with pytest.raises(ValidationError):
+        XttsV3Config(temperature=1.01)
+
+
+def test_xtts_v3_config_temperature_round_trips_through_dict():
+    cfg = XttsV3Config(temperature=0.65)
+    cfg2 = XttsV3Config.model_validate(cfg.model_dump())
+    assert cfg2.temperature == 0.65
+
+
+def test_xtts_v3_client_forwards_temperature_in_http_body(monkeypatch, tmp_path):
+    """Pure wiring test: confirms ``XttsV3Speech._http_synthesize``
+    sends the configured temperature in the POST JSON body. If the
+    client ever silently drops the temperature field, the server
+    falls back to its library default of 0.75 and the phantom-token
+    rate goes back up. This test pins that wiring closed."""
+    import json
+    import urllib.request
+    from ultron.tts import xtts_v3
+
+    server_py = tmp_path / "python.exe"
+    server_py.write_text("")
+    server_sc = tmp_path / "xtts_server.py"
+    server_sc.write_text("")
+    ref_wav = tmp_path / "ref.wav"
+    ref_wav.write_text("")
+
+    captured: list[bytes] = []
+
+    class _FakeResp:
+        headers = {"X-Sample-Rate": "24000"}
+        def read(self, n=None):
+            return b""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return None
+
+    def _fake_urlopen(req, timeout=None):
+        data = getattr(req, "data", None)
+        if data:
+            captured.append(data)
+        return _FakeResp()
+
+    monkeypatch.setattr(xtts_v3.XttsV3Speech, "_start_server", lambda self: None)
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+
+    engine = xtts_v3.XttsV3Speech(
+        server_python=server_py,
+        server_script=server_sc,
+        reference_audio=ref_wav,
+        port=12345,
+        temperature=0.65,
+    )
+
+    engine._http_synthesize("hello there")
+
+    assert captured, "expected exactly one POST to /synthesize"
+    body = json.loads(captured[0].decode("utf-8"))
+    assert body["temperature"] == 0.65
+
+
+# ---------------------------------------------------------------------------
+# Phantom-tail trim configuration (2026-05-12 phantom-token mitigation)
+# ---------------------------------------------------------------------------
+
+
+def test_xtts_v3_config_phantom_tail_trim_enabled_default_on():
+    cfg = XttsV3Config()
+    assert cfg.phantom_tail_trim_enabled is True
+
+
+def test_xtts_v3_config_phantom_tail_silence_threshold_range_enforced():
+    from pydantic import ValidationError
+    XttsV3Config(phantom_tail_silence_threshold=0.0001)
+    XttsV3Config(phantom_tail_silence_threshold=0.005)  # schema default
+    XttsV3Config(phantom_tail_silence_threshold=0.05)
+    with pytest.raises(ValidationError):
+        XttsV3Config(phantom_tail_silence_threshold=0.0)
+    with pytest.raises(ValidationError):
+        XttsV3Config(phantom_tail_silence_threshold=0.06)
+
+
+def test_xtts_v3_config_phantom_tail_max_event_ms_range_enforced():
+    from pydantic import ValidationError
+    XttsV3Config(phantom_tail_max_event_ms=50.0)
+    XttsV3Config(phantom_tail_max_event_ms=200.0)  # schema default
+    XttsV3Config(phantom_tail_max_event_ms=500.0)
+    with pytest.raises(ValidationError):
+        XttsV3Config(phantom_tail_max_event_ms=49.0)
+    with pytest.raises(ValidationError):
+        XttsV3Config(phantom_tail_max_event_ms=501.0)
+
+
+def test_xtts_v3_config_phantom_tail_min_lead_silence_ms_range_enforced():
+    from pydantic import ValidationError
+    XttsV3Config(phantom_tail_min_lead_silence_ms=50.0)
+    XttsV3Config(phantom_tail_min_lead_silence_ms=150.0)  # schema default
+    XttsV3Config(phantom_tail_min_lead_silence_ms=500.0)
+    with pytest.raises(ValidationError):
+        XttsV3Config(phantom_tail_min_lead_silence_ms=49.0)
+    with pytest.raises(ValidationError):
+        XttsV3Config(phantom_tail_min_lead_silence_ms=501.0)
+
+
+# ---------------------------------------------------------------------------
+# trim_phantom_tail function — pure DSP, no engine needed
+# ---------------------------------------------------------------------------
+
+
+def _build_buffer(sr: int, *segments: tuple[str, float, float]) -> np.ndarray:
+    """Helper: build a float32 audio buffer from (kind, duration_s, amplitude) segments.
+
+    ``kind == 'silence'`` produces zeros; anything else produces a
+    sine wave at 200 Hz scaled to the amplitude. Simulates the
+    phantom-token signature (sustained speech -> silence -> short
+    burst -> silence) deterministically.
+    """
+    chunks: list[np.ndarray] = []
+    for kind, dur_s, amp in segments:
+        n = int(dur_s * sr)
+        if kind == "silence" or amp == 0.0:
+            chunks.append(np.zeros(n, dtype=np.float32))
+        else:
+            t = np.linspace(0.0, dur_s, n, endpoint=False, dtype=np.float32)
+            chunks.append((amp * np.sin(2 * np.pi * 200.0 * t)).astype(np.float32))
+    return np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)
+
+
+def test_trim_phantom_tail_detects_and_removes_classic_phantom():
+    """Reproduces the 19.28s pattern observed in the user's session:
+    long speech -> ~280 ms silence -> ~100 ms isolated burst ->
+    ~420 ms silence. The trim should keep the long speech (plus a
+    small grace cushion) and drop everything after."""
+    from ultron.tts.xtts_v3 import trim_phantom_tail
+    sr = 24000
+    buf = _build_buffer(
+        sr,
+        ("speech", 1.5, 0.3),    # sustained speech
+        ("silence", 0.28, 0.0),  # lead silence (>=150ms threshold)
+        ("speech", 0.10, 0.3),   # the phantom (100 ms event, <200ms ceiling)
+        ("silence", 0.42, 0.0),  # trailing silence
+    )
+    out, trimmed = trim_phantom_tail(buf, sr)
+    assert trimmed is True
+    # The trim should land somewhere AT or shortly AFTER 1.5 s
+    # (sustained speech end) and definitely BEFORE 1.78 s (where the
+    # phantom starts).
+    keep_s = out.shape[0] / sr
+    assert 1.5 <= keep_s < 1.78
+
+
+def test_trim_phantom_tail_leaves_sustained_speech_alone():
+    """An ordinary speech clip with no phantom (just sustained speech
+    followed by silence) should NOT be trimmed -- legitimate end-of-
+    sentence audio must be preserved."""
+    from ultron.tts.xtts_v3 import trim_phantom_tail
+    sr = 24000
+    buf = _build_buffer(
+        sr,
+        ("speech", 2.0, 0.3),
+        ("silence", 0.20, 0.0),
+    )
+    out, trimmed = trim_phantom_tail(buf, sr)
+    assert trimmed is False
+    assert out.shape[0] == buf.shape[0]
+
+
+def test_trim_phantom_tail_leaves_short_inter_word_silence_alone():
+    """A natural mid-sentence inter-word pause (short silence) between
+    two speech regions must NOT be misread as a phantom signature.
+    The 150 ms ``min_lead_silence_ms`` threshold should reject a
+    100 ms gap as too short."""
+    from ultron.tts.xtts_v3 import trim_phantom_tail
+    sr = 24000
+    buf = _build_buffer(
+        sr,
+        ("speech", 1.0, 0.3),
+        ("silence", 0.10, 0.0),  # short inter-word gap
+        ("speech", 0.08, 0.3),   # short trailing word
+        ("silence", 0.30, 0.0),
+    )
+    out, trimmed = trim_phantom_tail(buf, sr)
+    assert trimmed is False
+
+
+def test_trim_phantom_tail_leaves_legitimate_long_trailing_speech_alone():
+    """A trailing event longer than ``max_event_ms`` is legitimate
+    speech, not a phantom. Verify even when preceded by long
+    silence we don't trim it."""
+    from ultron.tts.xtts_v3 import trim_phantom_tail
+    sr = 24000
+    buf = _build_buffer(
+        sr,
+        ("speech", 1.0, 0.3),
+        ("silence", 0.30, 0.0),
+        ("speech", 0.40, 0.3),  # 400 ms trailing event > 200 ms ceiling
+        ("silence", 0.10, 0.0),
+    )
+    out, trimmed = trim_phantom_tail(buf, sr)
+    assert trimmed is False
+
+
+def test_trim_phantom_tail_handles_empty_input():
+    from ultron.tts.xtts_v3 import trim_phantom_tail
+    sr = 24000
+    empty = np.zeros(0, dtype=np.float32)
+    out, trimmed = trim_phantom_tail(empty, sr)
+    assert trimmed is False
+    assert out.shape[0] == 0
+
+
+def test_trim_phantom_tail_handles_very_short_clip():
+    """Anything shorter than four analysis windows can't be reliably
+    classified -- bail out without trimming."""
+    from ultron.tts.xtts_v3 import trim_phantom_tail
+    sr = 24000
+    short = np.zeros(int(0.03 * sr), dtype=np.float32)  # 30 ms < 4 * 20 ms
+    out, trimmed = trim_phantom_tail(short, sr)
+    assert trimmed is False
+    assert out.shape[0] == short.shape[0]
+
+
+def test_trim_phantom_tail_handles_all_silent_clip():
+    """Pure silence has no speech to anchor the pattern. Pass through."""
+    from ultron.tts.xtts_v3 import trim_phantom_tail
+    sr = 24000
+    silent = np.zeros(int(2.0 * sr), dtype=np.float32)
+    out, trimmed = trim_phantom_tail(silent, sr)
+    assert trimmed is False
+    assert out.shape[0] == silent.shape[0]
+
+
+def test_trim_phantom_tail_respects_disabled_flag_via_engine(monkeypatch, tmp_path):
+    """When ``phantom_tail_trim_enabled=False`` the engine skips the
+    trim entirely -- useful for A/B comparison. Verify by patching
+    the trim function and asserting it is NOT called."""
+    import urllib.request
+    from ultron.tts import xtts_v3
+
+    server_py = tmp_path / "python.exe"
+    server_py.write_text("")
+    server_sc = tmp_path / "xtts_server.py"
+    server_sc.write_text("")
+    ref_wav = tmp_path / "ref.wav"
+    ref_wav.write_text("")
+
+    class _FakeResp:
+        headers = {"X-Sample-Rate": "24000"}
+        def read(self, n=None):
+            return b""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return None
+
+    # Server returns 100 ms of silence so _synthesize has audio to
+    # filter (synth path is shared between trim-on and trim-off).
+    pcm = (np.zeros(2400, dtype=np.int16)).tobytes()
+    response_chunks = [pcm, b""]
+
+    class _ResponseWithBody(_FakeResp):
+        def __init__(self):
+            self._chunks = list(response_chunks)
+        def read(self, n=None):
+            if not self._chunks:
+                return b""
+            return self._chunks.pop(0)
+
+    def _fake_urlopen(req, timeout=None):
+        return _ResponseWithBody()
+
+    monkeypatch.setattr(xtts_v3.XttsV3Speech, "_start_server", lambda self: None)
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+
+    call_counter = {"n": 0}
+
+    def _spy_trim(*args, **kwargs):
+        call_counter["n"] += 1
+        return args[0], False
+
+    monkeypatch.setattr(xtts_v3, "trim_phantom_tail", _spy_trim)
+
+    engine = xtts_v3.XttsV3Speech(
+        server_python=server_py,
+        server_script=server_sc,
+        reference_audio=ref_wav,
+        port=12345,
+        phantom_tail_trim_enabled=False,
+    )
+
+    engine._synthesize("hello")
+    assert call_counter["n"] == 0
 
 
 def test_xtts_v3_config_nested_under_tts():

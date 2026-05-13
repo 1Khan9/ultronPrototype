@@ -47,6 +47,12 @@ from ultron.audio import (
     VoiceActivityDetector,
     WakeWordDetector,
 )
+from ultron.audio.smart_turn import (
+    SMART_TURN_SAMPLE_RATE,
+    SmartTurnDetector,
+    SmartTurnVerdict,
+    build_detector_from_config,
+)
 from ultron.audio.vad import SpeechEvent
 from ultron.llm import LLMEngine
 from ultron.transcription import WhisperEngine
@@ -62,6 +68,10 @@ from ultron.coding import (
 from ultron.coding.coordinator import ConversationCoordinator
 from ultron.coding.narration import StatusNarrator
 from ultron.uncertainty import apply as apply_uncertainty
+from ultron.conversational_ack import (
+    ConversationalAckSource,
+    is_conversational_ack_eligible,
+)
 from ultron.response_style import apply_brevity_hint
 from ultron.web_search import (
     AcknowledgmentSource,
@@ -141,6 +151,26 @@ class Orchestrator:
             # constant was 15 s; a real session got cut off
             # mid-sentence at that ceiling. Default raised to 30 s.
             self._max_utterance_seconds = float(_vad_cfg.max_utterance_seconds)
+            # 2026-05-12 Smart Turn V3 semantic end-of-turn config.
+            # The detector itself is constructed below (after the
+            # try/except block) once we know whether the model file
+            # is present; cache the policy knobs here so both paths
+            # below see them.
+            _smart_turn_cfg = getattr(_vad_cfg, "smart_turn", None)
+            if _smart_turn_cfg is not None and bool(_smart_turn_cfg.enabled):
+                self._smart_turn_cfg = _smart_turn_cfg
+                self._smart_turn_window_seconds = float(_smart_turn_cfg.window_seconds)
+                self._smart_turn_fast_path_silence_ms = int(
+                    _smart_turn_cfg.fast_path_silence_duration_ms
+                )
+                self._smart_turn_incomplete_extension_ms = int(
+                    _smart_turn_cfg.incomplete_extension_ms
+                )
+            else:
+                self._smart_turn_cfg = None
+                self._smart_turn_window_seconds = 8.0
+                self._smart_turn_fast_path_silence_ms = 500
+                self._smart_turn_incomplete_extension_ms = 700
         except Exception:
             # Defensive: tests / scripts may construct Orchestrator
             # without a fully built config. Fall back to the shim.
@@ -150,11 +180,35 @@ class Orchestrator:
             self._long_utterance_threshold_seconds = 8.0
             self._long_utterance_silence_duration_ms = 2400
             self._max_utterance_seconds = float(self.MAX_UTTERANCE_SECONDS)
+            self._smart_turn_cfg = None
+            self._smart_turn_window_seconds = 8.0
+            self._smart_turn_fast_path_silence_ms = 500
+            self._smart_turn_incomplete_extension_ms = 700
         self.ring = RingBuffer(
             int(ring_capacity_seconds * settings.SAMPLE_RATE)
         )
         self.wake = WakeWordDetector()
-        self.vad = VoiceActivityDetector()
+        # 2026-05-12 Smart Turn V3: build the detector BEFORE the VAD so
+        # we can wire the fast-path silence baseline into the VAD's
+        # construction when smart-turn is active. Missing model file
+        # / disabled config returns None and the VAD falls back to its
+        # legacy silence requirement (typically 1200 ms via config).
+        self.smart_turn = self._build_smart_turn_detector()
+        if self.smart_turn is not None:
+            # Smart Turn confirms or rejects the early SPEECH_END, so
+            # we can collapse the silence requirement to the fast-path
+            # value and rely on the model to catch trailed-off cases.
+            self.vad = VoiceActivityDetector(
+                min_silence_ms=self._smart_turn_fast_path_silence_ms,
+            )
+            logger.info(
+                "Smart Turn V3 active: VAD min_silence_duration set to %d ms "
+                "(extension on incomplete: %d ms)",
+                self._smart_turn_fast_path_silence_ms,
+                self._smart_turn_incomplete_extension_ms,
+            )
+        else:
+            self.vad = VoiceActivityDetector()
         self.stt = WhisperEngine()
         self.memory = self._load_memory_if_enabled()
         self.llm = LLMEngine(memory=self.memory)
@@ -171,6 +225,12 @@ class Orchestrator:
         self.web_gate, self.web_executor, self.ack_source = (
             self._load_web_search_if_enabled()
         )
+        # 2026-05-12 filler-ack on conversational path: separate
+        # shuffled-cycle source so the conversational and web-search
+        # pools rotate independently. Construction is cheap (no
+        # dependencies) so always-on -- gating happens at use site
+        # via ``is_conversational_ack_eligible``.
+        self.conv_ack_source = ConversationalAckSource()
         self.mcp_server = self._load_mcp_server_if_enabled()
         self.coding_coordinator = self._load_coding_coordinator_if_enabled()
         # Phase 3.5: OpenClaw bridge holder. None when openclaw.enabled
@@ -433,6 +493,99 @@ class Orchestrator:
         except Exception as e:
             logger.warning("Web search init failed (%s) -- disabled.", e)
             return None, None, None
+
+    def _build_smart_turn_detector(self) -> Optional[SmartTurnDetector]:
+        """Construct the Smart Turn V3 detector when enabled + model is on disk.
+
+        Fail-open: missing model file / disabled flag / construction
+        error -> returns None and the orchestrator falls back to its
+        legacy VAD-only end-of-turn detection. The voice baseline is
+        unaffected when the detector is unavailable.
+
+        Returns:
+            A constructed (but not yet loaded -- lazy at first use)
+            :class:`SmartTurnDetector` on success, or ``None`` to
+            disable smart-turn for this session.
+        """
+        if self._smart_turn_cfg is None:
+            return None
+        try:
+            from ultron.config import PROJECT_ROOT
+            return build_detector_from_config(
+                self._smart_turn_cfg, PROJECT_ROOT,
+            )
+        except Exception as e:
+            logger.warning(
+                "Smart Turn V3 detector construction failed; "
+                "falling back to legacy VAD-only end-of-turn: %s",
+                e,
+            )
+            return None
+
+    def _smart_turn_should_check(
+        self, *, speech_seen: bool, speech_samples: int,
+    ) -> bool:
+        """Decide whether to invoke Smart Turn V3 on the just-captured audio.
+
+        Three gating conditions:
+
+        1. The detector must be available (None means disabled / model
+           missing -- skip).
+        2. The user must have actually started speaking (no point
+           running on a buffer of leading silence).
+        3. The contiguous speech duration must be within the model's
+           training window. Longer utterances are handled by the
+           existing adaptive long-utterance backstop at the VAD layer.
+
+        Args:
+            speech_seen: True iff VAD has emitted SPEECH_START during
+                this capture.
+            speech_samples: Number of samples from speech-start to
+                "now" (end-of-speech). Compared against
+                ``smart_turn.window_seconds`` to decide eligibility.
+
+        Returns:
+            True iff Smart Turn should run. The decision intentionally
+            does NOT consider whether smart-turn has already been used
+            this capture -- the caller tracks that and skips this
+            check on the second SPEECH_END.
+        """
+        if self.smart_turn is None:
+            return False
+        if not speech_seen:
+            return False
+        window_samples = int(
+            self._smart_turn_window_seconds * settings.SAMPLE_RATE
+        )
+        return speech_samples <= window_samples
+
+    def _run_smart_turn(
+        self, captured: np.ndarray,
+    ) -> Optional[SmartTurnVerdict]:
+        """Run a single Smart Turn V3 inference call on the captured audio.
+
+        Wraps :meth:`SmartTurnDetector.is_complete` with project-level
+        sample-rate plumbing. Returns ``None`` on any failure or when
+        the detector is not available. Caller treats ``None`` as
+        "undecided" and trusts VAD's end-of-speech verdict.
+
+        Args:
+            captured: Full captured audio buffer up to the current
+                end-of-speech moment. Float32, 16 kHz mono assumed.
+
+        Returns:
+            A :class:`SmartTurnVerdict` on success, ``None`` on
+            failure (logged) or when the detector is unavailable.
+        """
+        if self.smart_turn is None:
+            return None
+        try:
+            return self.smart_turn.is_complete(
+                captured, sample_rate=SMART_TURN_SAMPLE_RATE,
+            )
+        except Exception as e:
+            logger.warning("Smart Turn V3 inference dispatch failed: %s", e)
+            return None
 
     def _load_addressing_classifier(self) -> AddressingClassifier:
         """Build the CPU-side addressing classifier used in WARM mode."""
@@ -777,6 +930,20 @@ class Orchestrator:
         for the remainder of the capture. This keeps short utterances
         snappy but gives long technical descriptions room to breathe
         through thinking pauses without prematurely closing.
+
+        Smart Turn V3 confirmation (2026-05-12): when
+        ``vad.smart_turn.enabled`` is True and the model file is on
+        disk, the VAD silence baseline drops to
+        ``smart_turn.fast_path_silence_duration_ms`` (typically 500 ms
+        vs the legacy 1200 ms). On the first SPEECH_END, the captured
+        audio is run through the model. Verdict ``complete`` returns
+        immediately; verdict ``incomplete`` extends the capture by
+        ``incomplete_extension_ms`` and bumps the VAD silence
+        requirement to the legacy backstop value (so the second
+        SPEECH_END comes from genuine VAD silence). Long utterances
+        beyond ``smart_turn.window_seconds`` of speech bypass the
+        model -- the adaptive long-utterance backstop already handles
+        those at the VAD layer.
         """
         self.vad.reset()
         # Pre-roll: take the COLD slice (short) from the ring so the
@@ -798,6 +965,17 @@ class Orchestrator:
         long_threshold_samples = int(
             self._long_utterance_threshold_seconds * settings.SAMPLE_RATE
         )
+        # Smart Turn V3 capture state. ``smart_turn_used`` latches
+        # after one inference call so we don't re-check on each
+        # subsequent SPEECH_END within the same capture. The anchor
+        # is the elapsed_samples value when the incomplete verdict
+        # was returned; user-resumes-speech cancels the timeout by
+        # setting the anchor back to zero.
+        smart_turn_used = False
+        smart_turn_incomplete_anchor = 0
+        extension_samples = int(
+            self._smart_turn_incomplete_extension_ms / 1000.0 * settings.SAMPLE_RATE
+        )
 
         while not self._shutdown.is_set() and elapsed_samples < max_samples:
             chunk = self.audio.get_chunk(timeout=0.5)
@@ -808,10 +986,59 @@ class Orchestrator:
 
             result = self.vad.process(chunk)
             if result.event == SpeechEvent.SPEECH_START:
-                speech_seen = True
-                speech_start_samples = elapsed_samples
+                if not speech_seen:
+                    speech_seen = True
+                    speech_start_samples = elapsed_samples
+                # Smart-turn previously said "incomplete" and we were
+                # in the extension wait. User has resumed speaking --
+                # cancel the timeout; the next SPEECH_END (at the
+                # bumped VAD silence threshold) is the real end.
+                smart_turn_incomplete_anchor = 0
             elif result.event == SpeechEvent.SPEECH_END and speech_seen:
-                break
+                speech_samples = elapsed_samples - speech_start_samples
+                if (
+                    not smart_turn_used
+                    and self._smart_turn_should_check(
+                        speech_seen=speech_seen,
+                        speech_samples=speech_samples,
+                    )
+                ):
+                    captured = np.concatenate(chunks).astype(
+                        np.float32, copy=False,
+                    )
+                    verdict = self._run_smart_turn(captured)
+                    smart_turn_used = True
+                    if verdict is None:
+                        # Undecided (model load failed mid-call,
+                        # inference raised, etc.). Trust VAD.
+                        break
+                    if verdict.is_complete:
+                        logger.info(
+                            "Smart Turn V3: complete (prob=%.3f, %.1f ms)",
+                            verdict.probability, verdict.latency_ms,
+                        )
+                        break
+                    # Incomplete: keep listening. Enter the extension
+                    # window and bump VAD silence to the legacy
+                    # backstop so the next SPEECH_END is at the slow
+                    # rate (a real end-of-turn).
+                    smart_turn_incomplete_anchor = elapsed_samples
+                    self.vad.set_min_silence_duration_ms(
+                        self._long_utterance_silence_duration_ms
+                    )
+                    logger.info(
+                        "Smart Turn V3: incomplete (prob=%.3f, %.1f ms) -- "
+                        "extending capture by up to %d ms; VAD silence "
+                        "requirement raised to %d ms",
+                        verdict.probability,
+                        verdict.latency_ms,
+                        self._smart_turn_incomplete_extension_ms,
+                        self._long_utterance_silence_duration_ms,
+                    )
+                else:
+                    # Legacy path: trust VAD, or smart-turn already
+                    # used / utterance too long for smart-turn window.
+                    break
 
             # Once we've been speaking longer than the threshold,
             # extend the silence requirement so a thinking pause
@@ -832,6 +1059,24 @@ class Orchestrator:
                     self._long_utterance_silence_duration_ms,
                 )
 
+            # Smart Turn V3 extension timeout: if the model said
+            # "incomplete" but the user never actually resumed
+            # speaking, accept end-of-turn after the configured
+            # extension window. Without this, the orchestrator would
+            # hang until max_utterance_seconds whenever smart-turn
+            # was wrong about an incomplete verdict.
+            if (
+                smart_turn_used
+                and smart_turn_incomplete_anchor > 0
+                and (elapsed_samples - smart_turn_incomplete_anchor) >= extension_samples
+            ):
+                logger.info(
+                    "Smart Turn V3 extension timeout: no resumed speech in "
+                    "%d ms; accepting end-of-turn",
+                    self._smart_turn_incomplete_extension_ms,
+                )
+                break
+
             if not speech_seen:
                 leading_silence += chunk.shape[0]
                 if leading_silence >= silence_grace:
@@ -850,6 +1095,12 @@ class Orchestrator:
           for a fresh wake-gated capture)
         - an ``np.ndarray`` containing the captured utterance audio when VAD
           reports SPEECH_END
+
+        Smart Turn V3 confirmation (2026-05-12) mirrors the COLD-path
+        behaviour in :meth:`_capture_utterance`: when enabled + model
+        available, an early SPEECH_END is confirmed by the model;
+        ``incomplete`` extends the capture by ``incomplete_extension_ms``
+        and bumps the VAD silence requirement to the legacy backstop.
         """
         self.audio.drain()
         self.wake.reset()
@@ -862,6 +1113,12 @@ class Orchestrator:
         pre_roll: Optional[np.ndarray] = None
         speech_samples = 0
         max_samples = int(self._max_utterance_seconds * settings.SAMPLE_RATE)
+        # Smart Turn V3 state -- mirrors _capture_utterance.
+        smart_turn_used = False
+        smart_turn_incomplete_anchor = 0
+        extension_samples = int(
+            self._smart_turn_incomplete_extension_ms / 1000.0 * settings.SAMPLE_RATE
+        )
 
         while not self._shutdown.is_set() and time.monotonic() < deadline:
             chunk = self.audio.get_chunk(timeout=0.1)
@@ -896,9 +1153,74 @@ class Orchestrator:
             speech_chunks.append(chunk)
             speech_samples += chunk.shape[0]
 
+            if result.event == SpeechEvent.SPEECH_START and smart_turn_used:
+                # User resumed speaking after smart-turn said
+                # incomplete -- cancel the extension timeout.
+                smart_turn_incomplete_anchor = 0
+
             if result.event == SpeechEvent.SPEECH_END:
-                pieces = ([pre_roll] if pre_roll is not None else []) + speech_chunks
-                return np.concatenate(pieces).astype(np.float32, copy=False)
+                if (
+                    not smart_turn_used
+                    and self._smart_turn_should_check(
+                        speech_seen=True,
+                        speech_samples=speech_samples,
+                    )
+                ):
+                    pieces = (
+                        [pre_roll] if pre_roll is not None else []
+                    ) + speech_chunks
+                    captured = np.concatenate(pieces).astype(
+                        np.float32, copy=False,
+                    )
+                    verdict = self._run_smart_turn(captured)
+                    smart_turn_used = True
+                    if verdict is None or verdict.is_complete:
+                        if verdict is not None:
+                            logger.info(
+                                "Smart Turn V3 (follow-up): complete "
+                                "(prob=%.3f, %.1f ms)",
+                                verdict.probability, verdict.latency_ms,
+                            )
+                        return captured
+                    # Incomplete -- keep listening.
+                    smart_turn_incomplete_anchor = speech_samples
+                    self.vad.set_min_silence_duration_ms(
+                        self._long_utterance_silence_duration_ms
+                    )
+                    logger.info(
+                        "Smart Turn V3 (follow-up): incomplete "
+                        "(prob=%.3f, %.1f ms) -- extending up to %d ms",
+                        verdict.probability,
+                        verdict.latency_ms,
+                        self._smart_turn_incomplete_extension_ms,
+                    )
+                else:
+                    pieces = (
+                        [pre_roll] if pre_roll is not None else []
+                    ) + speech_chunks
+                    return np.concatenate(pieces).astype(
+                        np.float32, copy=False,
+                    )
+
+            # Smart-turn extension timeout: if "incomplete" was
+            # returned and no speech-resume cancelled the anchor,
+            # accept end-of-turn after the configured grace.
+            if (
+                smart_turn_used
+                and smart_turn_incomplete_anchor > 0
+                and (speech_samples - smart_turn_incomplete_anchor) >= extension_samples
+            ):
+                logger.info(
+                    "Smart Turn V3 (follow-up) extension timeout: "
+                    "accepting end-of-turn after %d ms of silence",
+                    self._smart_turn_incomplete_extension_ms,
+                )
+                pieces = (
+                    [pre_roll] if pre_roll is not None else []
+                ) + speech_chunks
+                return np.concatenate(pieces).astype(
+                    np.float32, copy=False,
+                )
 
             if speech_samples >= max_samples:
                 # Hard cap — return what we have, classifier can still gate it.
@@ -1171,17 +1493,55 @@ class Orchestrator:
             if watcher is not None:
                 watcher.join(timeout=1.0)
 
+    def _maybe_conversational_ack(self, user_text: str) -> Optional[str]:
+        """Return a filler-ack phrase to prepend on the conversational
+        path, or None if the gate suppresses it.
+
+        2026-05-12 filler-ack: masks the ~2.5 s perceived gap between
+        Whisper completing and the LLM's first TTS chunk on the no-
+        search conversational branch. The web-search path already
+        yields its own ack from :meth:`_search_augmented_tokens`; this
+        helper covers the no-search branches only.
+
+        Gate semantics live in
+        :func:`ultron.conversational_ack.is_conversational_ack_eligible`;
+        this method threads the orchestrator's pending-clarification
+        state in so coding-task dialogues don't double-ack.
+        """
+        has_clar = False
+        if self.coding_voice is not None:
+            try:
+                has_clar = bool(self.coding_voice.has_pending_clarification())
+            except Exception as e:
+                logger.debug(
+                    "has_pending_clarification check failed (treating as False): %s",
+                    e,
+                )
+        if not is_conversational_ack_eligible(
+            user_text, has_pending_clarification=has_clar
+        ):
+            return None
+        try:
+            return self.conv_ack_source.next_phrase()
+        except Exception as e:
+            logger.warning("Conversational ack source failed: %s", e)
+            return None
+
     def _build_response_stream(self, user_text: str):
         """Yield tokens for the response, applying the web-search gate.
 
         Returned generator handles three paths:
-          * No gate or NO_SEARCH/UNCERTAIN -> base ``llm.generate_stream``.
+          * No gate or NO_SEARCH/UNCERTAIN -> filler-ack (if gate
+            permits), then base ``llm.generate_stream``.
           * SEARCH with successful retrieval -> ack phrase, then a
             search-augmented prompt.
           * SEARCH with empty/failed retrieval -> ack phrase, then base
             generation (LLM at least apologizes accurately).
         """
         if self.web_gate is None or self.web_executor is None:
+            ack = self._maybe_conversational_ack(user_text)
+            if ack:
+                yield ack + " "
             yield from self.llm.generate_stream(apply_brevity_hint(user_text))
             return
 
@@ -1189,6 +1549,9 @@ class Orchestrator:
             verdict = self.web_gate.classify(user_text)
         except Exception as e:
             logger.warning("Web gate failed (%s) -- falling through to base", e)
+            ack = self._maybe_conversational_ack(user_text)
+            if ack:
+                yield ack + " "
             yield from self.llm.generate_stream(apply_brevity_hint(user_text))
             return
 
@@ -1204,6 +1567,16 @@ class Orchestrator:
             verdict.reason,
         )
         if verdict.decision != GateDecision.SEARCH:
+            # 2026-05-12 filler-ack on conversational path (NO_SEARCH /
+            # UNCERTAIN). Yields before brevity-hinted prompt + LLM
+            # stream so the TTS pipeline starts speaking the ack
+            # within ~200 ms of Whisper completing -- masks the
+            # ~2.5 s perceived gap before the LLM's first token
+            # synthesises. Gated against pending coding-clarifications
+            # and short utterances so it doesn't fire on interjections.
+            ack = self._maybe_conversational_ack(user_text)
+            if ack:
+                yield ack + " "
             # 2026-05-10 brevity reinforcement: prepend a 1-3-sentence
             # directive when the user's question is brief and isn't an
             # explicit ask for depth. Counters the 4B model's habit of

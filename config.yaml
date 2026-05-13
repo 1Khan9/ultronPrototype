@@ -103,6 +103,39 @@ vad:
   # 5-120 s; values outside trip validate_config.py.
   max_utterance_seconds: 30.0
 
+  # 2026-05-12 Smart Turn V3 -- semantic end-of-turn confirmation.
+  # Runs AFTER Silero VAD declares end-of-speech. 8 MB int8 ONNX, CPU
+  # inference ~12 ms, zero VRAM cost. When enabled, the orchestrator
+  # uses fast_path_silence_duration_ms as the baseline silence
+  # requirement (much shorter than the legacy 1200 ms / current 500 ms
+  # vad.min_silence_duration_ms) and the model confirms or rejects
+  # the early end-of-speech. Long utterances (>window_seconds of
+  # speech) bypass the model -- the adaptive long-utterance backstop
+  # already handles those at the VAD layer. Fail-open: missing model
+  # file degrades silently to legacy VAD-only behaviour.
+  smart_turn:
+    enabled: true
+    model_path: "models/smart_turn/smart-turn-v3.2-cpu.onnx"
+    # Sigmoid threshold above which the model declares the turn
+    # complete. 0.5 is Pipecat's production-tested default; raise to
+    # 0.6-0.7 if false-positive cut-offs become an issue.
+    completion_threshold: 0.5
+    # Reduced VAD silence requirement when smart-turn is active. The
+    # model catches mid-thought trail-offs that this short threshold
+    # would otherwise misread as end-of-turn.
+    fast_path_silence_duration_ms: 500
+    # When smart-turn says "incomplete", wait this much additional
+    # silence before submitting anyway. Prevents the orchestrator
+    # from hanging if the user actually was done speaking despite the
+    # incomplete verdict. fast_path (500) + incomplete_extension (700)
+    # = ~1200 ms total, matching the legacy backstop.
+    incomplete_extension_ms: 700
+    # Audio window cap fed to the model. Matches training; longer
+    # utterances are truncated to the last 8 s by the wrapper.
+    window_seconds: 8.0
+    # ONNX intra-op thread count. 1 is recommended.
+    num_threads: 1
+
 # ---------------------------------------------------------------------------
 # Wake word
 # ---------------------------------------------------------------------------
@@ -537,6 +570,22 @@ tts:
     # (pitch shift / delay / reverb / etc.) is unaffected and processes
     # the shorter audio buffer identically. Safe range ~0.7-1.4.
     speed: 1.15
+    # 2026-05-12 phantom-token mitigation: lower temperature sharpens
+    # the XTTS duration-token distribution so the model stops
+    # occasionally emitting fragmentary syllables at sentence ends.
+    # 0.65 keeps the voice character bit-identical (timbre is set by
+    # the locked speaker embedding + the v3 filter chain). Below 0.5
+    # prosody starts to collapse; above 0.8 phantoms creep back in.
+    temperature: 0.65
+    # 2026-05-12 phantom-tail trim, defence in depth. Catches the
+    # residual phantom-token tails that slip through the temperature
+    # reduction. Pattern detected: sustained speech -> >=150 ms silence
+    # -> <200 ms audio event -> silence to buffer end. Set false to
+    # disable (useful for A/B comparison).
+    phantom_tail_trim_enabled: true
+    phantom_tail_silence_threshold: 0.005
+    phantom_tail_max_event_ms: 200.0
+    phantom_tail_min_lead_silence_ms: 150.0
 
 # ---------------------------------------------------------------------------
 # Logging
