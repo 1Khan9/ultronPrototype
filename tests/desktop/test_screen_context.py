@@ -342,6 +342,239 @@ def test_build_screen_context_vlm_disabled_by_default(monkeypatch):
         set_vlm_describe(None)
 
 
+# ---------------------------------------------------------------------------
+# Analyze-and-discard (Phase 12)
+# ---------------------------------------------------------------------------
+
+
+def test_screenshot_without_bytes_clears_bytes_and_flags(monkeypatch):
+    shot = Screenshot(
+        image_bytes=b"\x89PNG_BIG_PAYLOAD",
+        monitor_index=0, width=1920, height=1080,
+        timestamp=42.0, origin_x=0, origin_y=0,
+    )
+    stripped = shot.without_bytes()
+    assert stripped.image_bytes is None
+    assert stripped.bytes_discarded is True
+    # Metadata preserved.
+    assert stripped.width == 1920
+    assert stripped.monitor_index == 0
+    assert stripped.timestamp == 42.0
+    # Original unchanged (frozen dataclass).
+    assert shot.image_bytes == b"\x89PNG_BIG_PAYLOAD"
+
+
+def test_screenshot_without_bytes_is_idempotent():
+    shot = Screenshot(
+        image_bytes=None, monitor_index=0,
+        width=10, height=10, timestamp=0.0,
+        origin_x=0, origin_y=0, bytes_discarded=True,
+    )
+    again = shot.without_bytes()
+    assert again is shot  # short-circuit
+
+
+def test_build_screen_context_discards_bytes_after_vlm_by_default(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.get_foreground_window",
+        lambda: _win(fg=True, mon=0),
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+    )
+    fake_cap = MagicMock()
+    fake_cap.capture_monitor.return_value = _shot()
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.get_screen_capture", lambda: fake_cap,
+    )
+
+    set_vlm_describe(lambda img: "A code editor.")
+    try:
+        snap = build_screen_context(
+            capture=True, include_uia=False, include_vlm=True,
+        )
+        # VLM ran -> bytes discarded.
+        assert snap.vlm_description == "A code editor."
+        assert snap.screenshot is not None
+        assert snap.screenshot.image_bytes is None
+        assert snap.screenshot.bytes_discarded is True
+        # Metadata still there.
+        assert snap.screenshot.width > 0
+    finally:
+        set_vlm_describe(None)
+
+
+def test_build_screen_context_keeps_bytes_when_discard_disabled(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.get_foreground_window",
+        lambda: _win(fg=True),
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+    )
+    fake_cap = MagicMock()
+    fake_cap.capture_monitor.return_value = _shot()
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.get_screen_capture", lambda: fake_cap,
+    )
+
+    set_vlm_describe(lambda img: "A code editor.")
+    try:
+        snap = build_screen_context(
+            capture=True, include_uia=False, include_vlm=True,
+            discard_image_after_analysis=False,
+        )
+        # Bytes preserved.
+        assert snap.screenshot is not None
+        assert snap.screenshot.image_bytes is not None
+        assert snap.screenshot.bytes_discarded is False
+    finally:
+        set_vlm_describe(None)
+
+
+def test_build_screen_context_no_vlm_keeps_bytes_even_with_discard_on(monkeypatch):
+    """When the VLM didn't run, there's no description to fall back on
+    -- bytes should be retained so the caller can run their own analysis.
+    """
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.get_foreground_window",
+        lambda: _win(fg=True),
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+    )
+    fake_cap = MagicMock()
+    fake_cap.capture_monitor.return_value = _shot()
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.get_screen_capture", lambda: fake_cap,
+    )
+
+    set_vlm_describe(None)
+    snap = build_screen_context(
+        capture=True, include_vlm=False,
+        discard_image_after_analysis=True,  # on, but VLM didn't run
+    )
+    assert snap.screenshot is not None
+    assert snap.screenshot.image_bytes is not None
+    assert snap.screenshot.bytes_discarded is False
+
+
+def test_build_screen_context_vlm_failure_keeps_bytes(monkeypatch):
+    """VLM call that returns None means no analysis was captured --
+    don't discard bytes (the caller may retry or fall back).
+    """
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.get_foreground_window",
+        lambda: _win(fg=True),
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+    )
+    fake_cap = MagicMock()
+    fake_cap.capture_monitor.return_value = _shot()
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.get_screen_capture", lambda: fake_cap,
+    )
+
+    set_vlm_describe(lambda img: None)  # VLM returns no text
+    try:
+        snap = build_screen_context(
+            capture=True, include_vlm=True,
+        )
+        # No description -> bytes preserved.
+        assert snap.vlm_description is None
+        assert snap.screenshot is not None
+        assert snap.screenshot.image_bytes is not None
+    finally:
+        set_vlm_describe(None)
+
+
+def test_cache_strips_bytes_by_default():
+    """The cache should never retain raw pixels by default."""
+    cache = ScreenContextCache(ring_size=3)
+    snap = ScreenContextSnapshot(
+        timestamp=time.time(), monitors=(),
+        foreground=None, windows=(), ui_text=(),
+        screenshot=Screenshot(
+            image_bytes=b"\x89PNG_LIVE",
+            monitor_index=0, width=10, height=10,
+            timestamp=0.0, origin_x=0, origin_y=0,
+        ),
+        vlm_description="something",
+        elapsed_ms=10.0,
+    )
+    cache.store(snap)
+    cached = cache.latest()
+    assert cached is not None
+    assert cached.screenshot is not None
+    assert cached.screenshot.image_bytes is None
+    assert cached.screenshot.bytes_discarded is True
+
+
+def test_cache_keeps_bytes_when_discard_disabled():
+    cache = ScreenContextCache(ring_size=3, discard_image_bytes=False)
+    snap = ScreenContextSnapshot(
+        timestamp=time.time(), monitors=(),
+        foreground=None, windows=(), ui_text=(),
+        screenshot=Screenshot(
+            image_bytes=b"\x89PNG_PRESERVED",
+            monitor_index=0, width=10, height=10,
+            timestamp=0.0, origin_x=0, origin_y=0,
+        ),
+        vlm_description="x", elapsed_ms=0.0,
+    )
+    cache.store(snap)
+    cached = cache.latest()
+    assert cached is not None
+    assert cached.screenshot is not None
+    assert cached.screenshot.image_bytes == b"\x89PNG_PRESERVED"
+
+
+def test_cache_handles_already_discarded_snapshot():
+    """Storing a snapshot whose bytes are already discarded should not crash
+    and should not re-allocate.
+    """
+    cache = ScreenContextCache(ring_size=3)
+    snap = ScreenContextSnapshot(
+        timestamp=time.time(), monitors=(),
+        foreground=None, windows=(), ui_text=(),
+        screenshot=Screenshot(
+            image_bytes=None, monitor_index=0,
+            width=10, height=10, timestamp=0.0,
+            origin_x=0, origin_y=0, bytes_discarded=True,
+        ),
+        vlm_description="x", elapsed_ms=0.0,
+    )
+    cache.store(snap)
+    cached = cache.latest()
+    assert cached is not None
+    assert cached.screenshot.bytes_discarded is True
+
+
+def test_cache_handles_none_screenshot():
+    """Snapshot without a screenshot at all stores cleanly."""
+    cache = ScreenContextCache(ring_size=3)
+    snap = ScreenContextSnapshot(
+        timestamp=time.time(), monitors=(),
+        foreground=None, windows=(), ui_text=(),
+        screenshot=None, vlm_description=None, elapsed_ms=0.0,
+    )
+    cache.store(snap)
+    assert cache.latest() is snap  # exact same object (no rebuild needed)
+
+
 def test_build_screen_context_vlm_exception_handled(monkeypatch):
     monkeypatch.setattr(
         "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],

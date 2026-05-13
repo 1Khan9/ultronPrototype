@@ -44,22 +44,54 @@ class Screenshot:
     """One captured frame.
 
     Attributes:
-        image_bytes: PNG-encoded image data.
+        image_bytes: PNG-encoded image data. ``None`` once the bytes
+            have been discarded (post-VLM analysis under the
+            analyze-and-discard pattern -- see :meth:`without_bytes` and
+            :func:`ultron.desktop.screen_context.build_screen_context`'s
+            ``discard_image_after_analysis`` flag).
         monitor_index: source monitor index, or None for arbitrary regions.
         width: pixel width.
         height: pixel height.
         timestamp: ``time.time()`` at capture moment.
         origin_x: leftmost pixel coordinate of the capture in virtual-screen space.
         origin_y: topmost pixel coordinate of the capture in virtual-screen space.
+        bytes_discarded: True iff the original bytes were intentionally
+            dropped after analysis. Lets callers distinguish "no
+            capture was made" (image_bytes=None, bytes_discarded=False)
+            from "capture was made + analysed, then discarded for
+            storage efficiency / privacy" (image_bytes=None,
+            bytes_discarded=True). Defaults False.
     """
 
-    image_bytes: bytes
+    image_bytes: Optional[bytes]
     monitor_index: Optional[int]
     width: int
     height: int
     timestamp: float
     origin_x: int
     origin_y: int
+    bytes_discarded: bool = False
+
+    def without_bytes(self) -> "Screenshot":
+        """Return a copy with ``image_bytes`` cleared and
+        ``bytes_discarded=True``.
+
+        Used by the screen-context layer post-VLM analysis so the
+        cache only ever retains the textual description, not the raw
+        pixels. Idempotent on already-discarded screenshots.
+        """
+        if self.image_bytes is None and self.bytes_discarded:
+            return self
+        return Screenshot(
+            image_bytes=None,
+            monitor_index=self.monitor_index,
+            width=self.width,
+            height=self.height,
+            timestamp=self.timestamp,
+            origin_x=self.origin_x,
+            origin_y=self.origin_y,
+            bytes_discarded=True,
+        )
 
 
 def _bgra_to_png_bytes(bgra: bytes, width: int, height: int) -> bytes:

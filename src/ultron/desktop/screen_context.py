@@ -177,6 +177,7 @@ def build_screen_context(
     ui_text_max_elements: int = 80,
     window_list_cap: int = 12,
     vlm_prompt: Optional[str] = None,
+    discard_image_after_analysis: bool = True,
 ) -> ScreenContextSnapshot:
     """Assemble a screen-context snapshot.
 
@@ -198,6 +199,18 @@ def build_screen_context(
         vlm_prompt: optional question to thread into the VLM call
             (e.g. the user's actual utterance). Currently unused
             (Phase 6 will wire VLM signatures that accept prompts).
+        discard_image_after_analysis: when True (default) AND the VLM
+            ran successfully, strip ``image_bytes`` from the returned
+            screenshot before returning. Saves memory + reduces the
+            data-at-rest footprint -- the textual VLM description is
+            what callers actually use downstream; the raw pixels are
+            redundant once analysed. The :class:`Screenshot` instance
+            still carries dimensions / timestamp / monitor_index;
+            only the bytes field is cleared (with ``bytes_discarded=
+            True`` to distinguish from "no capture was made").
+            Set False when the caller specifically needs the bytes
+            (saving to disk for debugging, downstream image-processing
+            tool that can't consume text).
 
     Returns:
         :class:`ScreenContextSnapshot`. Always returns a snapshot --
@@ -260,6 +273,17 @@ def build_screen_context(
                 logger.warning("VLM describe failed: %s", e)
                 vlm_text = None
 
+    # Analyze-and-discard: when the VLM successfully described the
+    # image, the textual description is what we need going forward.
+    # Drop the bytes to keep memory + downstream-storage footprint
+    # small (and reduce the surface for accidental exfil downstream).
+    if (
+        shot is not None
+        and vlm_text is not None
+        and discard_image_after_analysis
+    ):
+        shot = shot.without_bytes()
+
     elapsed_ms = (time.time() - t0) * 1000.0
     return ScreenContextSnapshot(
         timestamp=t0,
@@ -285,6 +309,14 @@ class ScreenContextCache:
     previously-built context without paying the assembly cost again.
     Snapshots are NOT persisted to disk -- screen captures contain
     sensitive content.
+
+    By default the cache strips ``image_bytes`` from stored snapshots
+    (the analyze-and-discard pattern). The textual VLM description +
+    window / UIA / monitor metadata are what callers actually need for
+    follow-up queries; the raw pixels just sit in memory until eviction.
+    Set ``discard_image_bytes=False`` at construction to preserve bytes
+    (useful when a downstream consumer specifically needs the image,
+    e.g. an image-stylize tool).
     """
 
     def __init__(
@@ -292,12 +324,35 @@ class ScreenContextCache:
         *,
         ring_size: int = 3,
         max_age_seconds: float = 15.0,
+        discard_image_bytes: bool = True,
     ) -> None:
         self._ring: deque[ScreenContextSnapshot] = deque(maxlen=max(1, ring_size))
         self._max_age = float(max_age_seconds)
+        self._discard_bytes = bool(discard_image_bytes)
         self._lock = threading.Lock()
 
     def store(self, snapshot: ScreenContextSnapshot) -> None:
+        """Append a snapshot to the ring buffer.
+
+        When ``discard_image_bytes`` is True (the default), the snapshot
+        is rebuilt with ``screenshot.without_bytes()`` applied first --
+        so the cache only ever retains the textual description + metadata.
+        """
+        if (
+            self._discard_bytes
+            and snapshot.screenshot is not None
+            and snapshot.screenshot.image_bytes is not None
+        ):
+            snapshot = ScreenContextSnapshot(
+                timestamp=snapshot.timestamp,
+                monitors=snapshot.monitors,
+                foreground=snapshot.foreground,
+                windows=snapshot.windows,
+                ui_text=snapshot.ui_text,
+                screenshot=snapshot.screenshot.without_bytes(),
+                vlm_description=snapshot.vlm_description,
+                elapsed_ms=snapshot.elapsed_ms,
+            )
         with self._lock:
             self._ring.append(snapshot)
 

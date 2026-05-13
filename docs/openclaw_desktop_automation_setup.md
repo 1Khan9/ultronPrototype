@@ -43,6 +43,12 @@ multi-step plans; native code does the work.
 
 ## Step 1 -- Add the `ultron-vision` agent
 
+> **AUTO-INSTALLED 2026-05-12** in this user's `~/.openclaw/openclaw.json`.
+> A backup of the pre-install config lives at
+> `~/.openclaw/openclaw.json.pre-ultron-vision-bak`. If you need to
+> re-apply on a different machine (or re-install after a restore),
+> follow the manual recipe below.
+
 Edit `~/.openclaw/openclaw.json` and add a fourth agent block to
 the `agents.list` array. The existing config has `ultron-test`
 (default worker), `ultron-main` (user-facing), and `ultron-heartbeat`.
