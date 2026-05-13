@@ -10,6 +10,8 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 
+**2026-05-12 desktop automation Phases 1-6 -- native primitives.** New `src/ultron/desktop/` package: monitors / capture (mss) / windows (pywin32+psutil) / placement / launcher (Chrome default-profile + monitor targeting + app registry) / uia (pywinauto semantic clicks + tree text extraction) / input_control (pyautogui mouse+keyboard, validator-gated + rate-limited + foreground-security-blocked) / screen_context (orchestrator that assembles foreground + window list + UIA text + optional VLM description into a single snapshot for LLM injection) / vlm (moondream2 via transformers, CPU-on-demand, lazy-loaded, fail-open at every layer, ~3.5 GB FP16 weights pre-fetched via `scripts/download_models.py` step 9/10). Every capture stamps its bytes in the safety taint tracker as capability=`screen_context` so the validator's outflow gate can catch exfil chains. Tests: **+171 across `tests/desktop/`** (test_monitors / test_capture / test_windows / test_placement / test_launcher / test_uia / test_input_control / test_screen_context / test_vlm). User decision (no ClawHub plugins) drives "native primitives + OpenClaw as orchestration brain" architecture -- OpenClaw multi-step delegation lands in a follow-up (Phase 7 MCP tool exposure + Phase 8 classifier+dispatcher wiring). **1830 -> 2001 tests passing.**
+
 Last validated against `main` HEAD `91a3a3a` (2026-05-12 Phases 1-5 -- **abliterated default LLM + runtime tool-call validator** -- on top of `b1e4297`. Phase 1 added Josiefied-Qwen3-8B-abliterated-v1 Q5_K_M as the new default LLM preset. Phases 2-5 built the runtime tool-call validator that pairs with the abliterated model: 141 rules across 19 categories (K self-protection, A filesystem-destruction, B privilege-escalation, C security-perimeter, D credentials, E system-stability, F repo-integrity, G resource-exhaustion, H untrusted-code-execution, I outbound-impact, J data-exfiltration, M persistence, N process-manipulation, O anti-forensics, P AV/EDR-tampering, Q containers, R sensors, S AI-tampering, plus Cap-1..Cap-4 capability carve-outs). Cross-cutting concerns: Windows-aware path canonicalization (symlinks, junctions, 8.3 short names, percent-escape rejection, bidi-override rejection), tamper-evident hash-chain audit log at logs/safety_audit.jsonl, explicit-intent matcher, cross-capability taint tracker. Wired into the OpenClaw dispatcher's pre-flight check AND the coding bridge's FILE_CHANGE listener. Fail-closed everywhere -- buggy rule = BLOCK_HARD, missing config = BLOCK_HARD, unresolvable path = BLOCK_HARD. **1713 -> 1830 tests passing (+117).** 2026-05-12 Phase 1 added Josiefied-Qwen3-8B-abliterated-v1 Q5_K_M alongside existing presets and flipped the default. Goekdeniz-Guelmez Josiefied + abliterated Qwen3-8B Q5_K_M quantised by mradermacher; 5.85 GB on disk; ~10 GB voice-path peak vs 11.5 GB cap. Abliterated removes content-level refusals; the runtime tool-call validator under `src/ultron/safety/` (forthcoming phases 2-5) gates the capability surface. No paired draft (no abliterated 0.8B GGUF on HF) so no speculative decoding -- expect modest TTFT regression vs 4B preset until measured. Old `qwen3.5-9b` and `qwen3.5-4b` presets retained for swap-back. The 2026-05-12 three-part pass at `b1e4297` shipped audio-artifact fix + filler-ack + **Smart Turn V3** — three changes in one pass on top of `41e13b1`: **XTTS phantom-token mitigation** [user-reported "small sound blips like an unrelated word started then cut off" diagnosed via spectral analysis of a real 58 s session capture; phantom-token signature confirmed at 19.28 s — a 100 ms isolated audio event with 280 ms lead silence + 420 ms trailing silence; XTTS-v2's GPT duration head sometimes emits a fragmentary syllable after the stop-token; fixed by lowering server temperature from 0.75 → 0.65 to sharpen the duration-token distribution AND a defence-in-depth client-side phantom-tail trim that detects the specific pattern and removes it before the v3 filter; speed=1.15 preserved per user direction], **conversational filler-ack** [new `src/ultron/conversational_ack.py` with shuffled-cycle phrase pool ("Mm.", "Right.", "Hm.", "Considering.", etc.) wired into `Orchestrator._build_response_stream` so the no-search conversational branch yields a short thinking-noise BEFORE the LLM stream — masks the ~2.5 s perceived gap between Whisper completing and the LLM's first TTS chunk; gated against short utterances and pending coding-clarifications], **Smart Turn V3 semantic end-of-turn confirmation** [new `src/ultron/audio/smart_turn.py` wraps Pipecat's 8 MB int8 ONNX model (`models/smart_turn/smart-turn-v3.2-cpu.onnx`); CPU-only inference ~12 ms, zero VRAM cost; lazy-loaded, fail-open at every level (missing model file degrades silently to legacy VAD-only behaviour); when active, the VAD silence baseline drops from 1200 ms → 500 ms and the model confirms or rejects the early SPEECH_END; "complete" → submit immediately, "incomplete" → extend capture by 700 ms with VAD silence bumped to the long-utterance backstop; long utterances >8 s of speech bypass the model (the existing adaptive long-utterance backstop handles those); wired into both `_capture_utterance` and `_follow_up_listen`; net win ~500-1200 ms of perceived latency per confidently-complete turn]). **Tests: 1629 → 1711 (+82 net).**
 
 Prior validating HEAD `9139bda` (2026-05-11 follow-up bug-fix pass — Windsurf session — three live-session issues addressed: configurable max-utterance ceiling [class-constant `MAX_UTTERANCE_SECONDS=15.0` was cutting real users off mid-sentence; now `vad.max_utterance_seconds` config, default 30.0 s], completion-narration XTTS pin [`f"Project root: {path}."` made XTTS hang on backslash-laden Windows paths and pinned the GPU at 100 %; now speaks `path.name` only], progress-query classifier coverage gap [`"How is that project going?"` fell through to the conversational LLM because `_PROGRESS_PATTERNS` required `going` immediately after `that` and didn't tolerate the `project` in between; new `_DETERMINER_NOUN` group covers the/that/this/your/our/my × task/project/build/app/code/work/thing/run/job for going / coming / doing / done]).
@@ -209,6 +211,18 @@ For the current decisions and Foundation phase status see
 │       ├── uncertainty.py          ← Phase 5 (original prompts) uncertainty-signal application
 │       ├── response_style.py       ← 2026-05-10: per-call brevity hint (apply_brevity_hint)
 │       ├── conversational_ack.py   ← 2026-05-12: filler-ack on conversational path (ConversationalAckSource, is_conversational_ack_eligible)
+│       │
+│       ├── desktop/                  ← Desktop automation primitives (NEW; native, no ClawHub deps)
+│       │   ├── __init__.py
+│       │   ├── monitors.py           ← Win32 monitor enumeration + find_monitor + point_to_monitor
+│       │   ├── capture.py            ← mss-based multi-monitor capture; taint-tracker integration
+│       │   ├── windows.py            ← pywin32 + psutil window enum + foreground detection + monitor-index lookup
+│       │   ├── placement.py          ← move/resize/maximize/focus on target monitor
+│       │   ├── launcher.py           ← AppLauncher with registry (Chrome/Cursor/Discord/VSCode/Edge/Firefox/etc.) + Chrome default-profile + Google Images convenience
+│       │   ├── uia.py                ← pywinauto UIA text extraction + semantic click/type with Cap-3/Cap-4 safety hooks
+│       │   ├── input_control.py      ← pyautogui mouse+keyboard, rate-limited, validator-gated, blocks input on UAC/security windows
+│       │   ├── screen_context.py     ← orchestrator: assemble foreground + windows + UIA text + optional VLM description for LLM injection
+│       │   └── vlm.py                ← Moondream2 VLM wrapper (transformers + trust_remote_code), CPU-only on-demand, lazy-loaded, fail-open
 │       │
 │       ├── safety/                  ← 2026-05-12 Phase 2-5: runtime tool-call validator
 │       │   ├── __init__.py
@@ -860,6 +874,92 @@ external activity; this module's phrases are tonally non-committal
   `verdict.decision != SEARCH` branch. The `_search_augmented_tokens`
   path is untouched (already yields its own ack from
   `web_search.acknowledgments.AcknowledgmentSource`).
+
+### `src/ultron/desktop/` (Desktop automation native primitives)
+
+NEW package backing the "open YouTube on monitor 2", "show me a picture of golden retriever",
+"explain what I'm looking at" voice flows. Built native (no ClawHub plugin dependencies)
+per user direction. Same UI Automation capability surface as the `windows-control` plugin
+via `pywinauto`; same screenshot capability as `desktop-control` via `mss`.
+
+#### `desktop/monitors.py`
+
+- `class Monitor` -- frozen dataclass: index, name, x, y, width, height, work_x/y/width/height, is_primary. Helpers: `.right`, `.bottom`, `.center`.
+- `enumerate_monitors() -> list[Monitor]` -- Win32 `EnumDisplayMonitors` + `GetMonitorInfo`. Primary sorts to index 0; rest left-to-right. Empty list on pywin32 failure.
+- `find_monitor(query) -> Optional[Monitor]` -- accepts int / numeric string / `"primary"`/`"main"`/`"default"` / ordinals `"first"`/`"second"`/`"1st"` / directional `"left"`/`"right"`/`"top"`/`"bottom"`/`"center"` / device-name substring.
+- `point_to_monitor(x, y) -> Optional[Monitor]` -- containing monitor for a virtual-screen point.
+
+#### `desktop/capture.py`
+
+- `class Screenshot` -- frozen: image_bytes (PNG), monitor_index, width, height, timestamp, origin_x/y.
+- `class ScreenCapture` -- thread-local `mss.MSS` (mss is not thread-safe per-instance). Every successful capture records its PNG bytes in the safety taint tracker as capability=`screen_context`. Methods: `capture_monitor(monitor_or_index)`, `capture_all_monitors()`, `capture_region(x, y, w, h)`, `close()`. Fail-open (returns None on mss errors).
+- `_bgra_to_png_bytes(raw, width, height) -> bytes` -- pure helper, BGRA from mss to PNG via Pillow.
+- Singletons: `get_screen_capture()` / `set_screen_capture()`.
+
+#### `desktop/windows.py`
+
+- `class WindowInfo` -- frozen: hwnd, title, class_name, process_name (via psutil), pid, rect, monitor_index (greatest-overlap rule), is_minimized, is_foreground. Helpers: `.width`, `.height`, `.center`.
+- `enumerate_windows(*, include_minimized=False, include_invisible=False, require_title=True) -> list[WindowInfo]` -- pywin32 `EnumWindows` callback.
+- `get_foreground_window() -> Optional[WindowInfo]` -- `GetForegroundWindow`.
+- `find_window(query, *, prefer_foreground=True, prefer_monitor=None, by_process=True) -> Optional[WindowInfo]` -- substring match against title (and optionally process name) with exact-match / foreground / monitor-preference tiebreakers.
+- `_monitor_index_for_rect(rect, monitors)` -- pure helper used by tests.
+
+#### `desktop/placement.py`
+
+- `class PlacementResult` -- success/hwnd/monitor_index/error.
+- `move_window_to_monitor(hwnd, monitor, *, fullscreen=False, maximize=False, size=None, offset=(0,0))` -- target-monitor placement. `fullscreen` fills the monitor as a regular window; `maximize` calls `SW_MAXIMIZE` after moving; explicit `size` clamps to work area.
+- `maximize_window(hwnd)`, `minimize_window(hwnd)`, `restore_window(hwnd)`, `focus_window(hwnd)` -- single-action helpers. `focus_window` does SetForegroundWindow with BringWindowToTop fallback per Windows' foreground-lock rules.
+
+#### `desktop/launcher.py`
+
+- `class AppEntry` -- frozen: name, candidate_paths, args_prefix, aliases, process_name.
+- `class LaunchResult` -- success/app_name/exe_path/pid/hwnd/monitor_index/placement/error.
+- `class AppLauncher` -- registry-driven launcher.
+  - `find_app(query) -> Optional[AppEntry]` -- name + alias + substring.
+  - `resolve_executable(entry) -> Optional[Path]` -- first existing candidate; Discord/Chrome-specific resolvers handle their Squirrel/auto-update directory layouts.
+  - `launch_app(name, *, monitor, extra_args, fullscreen, maximize, wait_for_window, user_text)` -- safety-validated spawn + optional monitor placement via `move_window_to_monitor`.
+  - `launch_chrome(*, url, monitor, fullscreen, maximize, window_size, new_window, user_text)` -- launches user's actual Chrome with `--new-window <URL>` (NOT Playwright). Reuses default profile (no `--user-data-dir`). Reusing the user's real Chrome session means cookies + sign-ins + extensions are preserved.
+  - `open_image_search(query, *, monitor, small_window, user_text)` -- "show me a picture of X" convenience: launches Chrome with Google Images URL.
+- Default registry includes: chrome, edge, firefox, cursor, vscode, discord, notepad, explorer, terminal (wt), spotify, slack, obs.
+- Every launch passes through `_validate_launch` → `ToolCallValidator.check` with `tool_name="desktop.launch_app"`. Cap-2 rules block `--remote-debugging-port`, `--user-data-dir`, `--load-extension`, `--disable-web-security`, launches from Temp/Downloads.
+
+#### `desktop/uia.py`
+
+- `class UIAElement` / `class UIAActionResult` -- frozen snapshots; UI element data captured at lookup time (live pywinauto handles can go stale).
+- `collect_window_text(window, *, max_elements=200, max_depth=8, min_length=2) -> list[str]` -- walk a window's UIA tree and return unique visible text strings. **Load-bearing for `screen_context`**: this is how "what's actually written on screen" feeds into the LLM. Bounded traversal (browser/IDE trees have 10k+ elements).
+- `find_element(window, *, query, control_type, automation_id, exact) -> Optional[UIAElement]` -- search by name / automation_id / control_type.
+- `click_element(window, query, ...) -> UIAActionResult` -- find + `click_input()`. Goes through Cap-3 action-verb-click rule (NEEDS_EXPLICIT_INTENT on `"Submit"` / `"Pay"` / `"Send Money"` etc.) and Cap-3 OAuth/payment URL detection on window title.
+- `type_text_into_element(window, query, text, ..., clear_first=True) -> UIAActionResult` -- find + `set_text()` (preferred) or `type_keys()` fallback. Same Cap-3 safety hook.
+- Lazy pywinauto import so `import ultron.desktop` doesn't pay the COM cost; failure returns None / empty list.
+
+#### `desktop/input_control.py`
+
+- `class InputControlResult` -- success/action/error.
+- `class InputController` -- pyautogui-backed mouse/keyboard with three gates:
+  1. **Foreground security check.** `_foreground_is_security_window()` returns True when the focused window's class matches UAC / Windows Security / Credential UI patterns. Synthetic input on those is blocked by Windows itself (UIPI) but we refuse upstream so the audit log has context.
+  2. **Rate limit.** `max_actions_per_second` (default 5) cap; over the limit fails the call rather than blocking the orchestrator.
+  3. **Safety validator.** Every action builds a `RuleContext` with `tool_name="desktop.input.<action>"` for Cap-4 synthetic-input rules to check arguments against.
+- Methods: `move_mouse(x, y, ...)`, `click(x, y, *, button, clicks, ...)`, `type_text(text, ...)`, `press_key(key, ...)`, `press_hotkey(*keys, ...)`, `scroll(amount, *, x, y, ...)`. All return `InputControlResult`.
+- pyautogui's `FAILSAFE` (mouse-to-corner aborts) stays on; do NOT disable.
+
+#### `desktop/screen_context.py`
+
+- `class ScreenContextSnapshot` -- frozen: timestamp, monitors, foreground, windows, ui_text, screenshot, vlm_description, elapsed_ms. `.render_for_llm(*, max_ui_text=40) -> str` formats the snapshot as a readable text block for prepending to a user utterance.
+- `build_screen_context(*, capture=True, capture_all_monitors=False, include_uia=True, include_vlm=False, ...)` -- the orchestrator. Assembles monitors / foreground / windows / UIA tree text / optional screenshot / optional VLM description into one snapshot. Every component fails to its empty/None default rather than raising.
+- `class ScreenContextCache` -- in-memory ring buffer (default 3 entries, max age 15 s). `latest_fresh()` returns the most recent snapshot only if within max_age; useful for follow-up questions reusing the previous capture.
+- `capture_and_cache(...)` -- convenience: build snapshot + store in the singleton cache.
+- VLM hook: `set_vlm_describe(fn)` registers the bridge function called when `include_vlm=True`. `vlm.set_vlm(...)` wires this transparently.
+
+#### `desktop/vlm.py`
+
+- `class Moondream2VLM` -- moondream2 wrapper via transformers (`vikhyatk/moondream2`, `trust_remote_code=True`).
+  - Construction validates importability but does NOT load weights. `warmup()` forces the lazy-load now.
+  - `describe(image_bytes, *, prompt=None) -> VLMResult` -- decodes PNG via Pillow, runs `model.encode_image` + `model.answer_question`. Fail-open at every layer (missing transformers / bad image / inference exception / empty output all return `VLMResult(success=False, ...)`).
+  - CPU-only. ~3.5 GB FP16 weights on disk; ~4-5 GB RAM after load. ~5-8 s per query.
+- `class VLMResult` / `class VLMLoadError`.
+- `build_vlm_from_config(*, enabled, repo, revision, device, max_tokens) -> Optional[Moondream2VLM]` -- factory; returns None on construction failure (orchestrator treats None as "VLM unavailable; fall back to text-only context").
+- `get_vlm()` / `set_vlm(...)` -- singleton + wires the `screen_context.set_vlm_describe(...)` bridge transparently.
+- Model weights pre-fetched via `scripts/download_models.py` step 9/10.
 
 ### `src/ultron/audio/`
 
