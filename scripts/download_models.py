@@ -51,13 +51,28 @@ LLM_4B_FILE = "Qwen3.5-4B-Q4_K_M.gguf"
 LLM_DRAFT_REPO = "unsloth/Qwen3.5-0.8B-GGUF"
 LLM_DRAFT_FILE = "Qwen3.5-0.8B-Q4_K_M.gguf"
 
+# 2026-05-12 — Josiefied-Qwen3-8B-abliterated-v1 (Goekdeniz-Guelmez).
+# Q5_K_M strikes the balance between quality and VRAM headroom on the
+# 4070 Ti (~5.85 GB on disk; ~10 GB peak voice-path stack vs 11.5 GB cap).
+# Quantised by mradermacher (community-trusted quantiser). Pairs with
+# the runtime tool-call validator under src/ultron/safety/ — the model
+# is abliterated (no content-level refusals) but the validator gates
+# the actual capability surface.
+LLM_JOSIEFIED_REPO = "mradermacher/Josiefied-Qwen3-8B-abliterated-v1-GGUF"
+LLM_JOSIEFIED_FILE = "Josiefied-Qwen3-8B-abliterated-v1.Q5_K_M.gguf"
+
 # Smart Turn V3 — semantic end-of-turn detector (BSD-2-Clause).
 # 8 MB int8 ONNX; CPU inference ~12 ms. Runs AFTER Silero detects silence
 # to confirm the user is actually done speaking (vs trailed off mid-
 # thought). Lets us drop the baseline VAD silence requirement
 # substantially while preserving safety on mid-sentence pauses.
 SMART_TURN_REPO = "pipecat-ai/smart-turn-v3"
-SMART_TURN_FILE = "smart-turn-v3.1.onnx"
+# v3.1 is no longer on the Hub as a plain ``smart-turn-v3.1.onnx`` -- the
+# Pipecat repo now ships ``v3.1-cpu`` / ``v3.1-gpu`` and ``v3.2-cpu`` /
+# ``v3.2-gpu``. We use the latest CPU variant (the wrapper pins to
+# ``CPUExecutionProvider`` for zero VRAM cost). I/O contract is identical
+# to v3.1 (input ``[batch, 80, 800]`` float32, output sigmoid).
+SMART_TURN_FILE = "smart-turn-v3.2-cpu.onnx"
 
 # Piper voice files
 PIPER_VOICE_URL = (
@@ -130,20 +145,23 @@ def main() -> int:
 
     settings.MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-    print("\n[1/8] LLM (Qwen3.5-9B Q4_K_M) — current default voice-path model")
+    print("\n[1/9] LLM (Josiefied-Qwen3-8B-abliterated-v1 Q5_K_M) — current default")
+    _hf_download(LLM_JOSIEFIED_REPO, LLM_JOSIEFIED_FILE, settings.MODELS_DIR)
+
+    print("\n[2/9] LLM (Qwen3.5-9B Q4_K_M) — retained for swap-back")
     _hf_download(LLM_REPO, LLM_FILE, settings.MODELS_DIR)
 
-    print("\n[2/8] LLM (Qwen3.5-4B Q4_K_M) — 4B optimization plan target")
+    print("\n[3/9] LLM (Qwen3.5-4B Q4_K_M) — retained for swap-back / spec decoding")
     _hf_download(LLM_4B_REPO, LLM_4B_FILE, settings.MODELS_DIR)
 
-    print("\n[3/8] LLM (Qwen3.5-0.8B Q4_K_M) — speculative-decoding draft for 4B")
+    print("\n[4/9] LLM (Qwen3.5-0.8B Q4_K_M) — speculative-decoding draft for 4B preset")
     _hf_download(LLM_DRAFT_REPO, LLM_DRAFT_FILE, settings.MODELS_DIR)
 
-    print("\n[4/8] Piper voice (en_US-ryan-medium)")
+    print("\n[5/9] Piper voice (en_US-ryan-medium)")
     _download(PIPER_VOICE_URL, settings.TTS_VOICE_PATH)
     _download(PIPER_CONFIG_URL, settings.TTS_VOICE_CONFIG_PATH)
 
-    print("\n[5/8] faster-whisper (downloads on first transcription)")
+    print("\n[6/9] faster-whisper (downloads on first transcription)")
     print("  → triggering pre-fetch…")
     try:
         from faster_whisper import WhisperModel
@@ -157,7 +175,7 @@ def main() -> int:
     except Exception as e:
         print(f"  ✗ failed: {e}")
 
-    print("\n[6/8] openWakeWord pretrained models (downloads on first use)")
+    print("\n[7/9] openWakeWord pretrained models (downloads on first use)")
     try:
         import openwakeword.utils as ow_utils
 
@@ -166,11 +184,11 @@ def main() -> int:
     except Exception as e:
         print(f"  ✗ failed: {e}")
 
-    print("\n[7/8] Smart Turn V3 — semantic end-of-turn detector (~8 MB int8)")
+    print("\n[8/9] Smart Turn V3.2 (cpu) — semantic end-of-turn detector (~8.7 MB int8)")
     smart_turn_dir = settings.MODELS_DIR / "smart_turn"
     _hf_download(SMART_TURN_REPO, SMART_TURN_FILE, smart_turn_dir)
 
-    print("\n[8/8] RVC support models + voice-conversion model")
+    print("\n[9/9] RVC support models + voice-conversion model")
     _download(RVC_SUPPORT_BASE_URL + "hubert_base.pt", settings.RVC_HUBERT_PATH)
     _download(RVC_SUPPORT_BASE_URL + "rmvpe.pt", settings.RVC_RMVPE_PATH)
     if settings.RVC_MODEL_PATH.is_file() and settings.RVC_INDEX_PATH.is_file():

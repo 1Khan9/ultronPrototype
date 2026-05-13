@@ -376,6 +376,21 @@ LLM_PRESETS: dict[str, dict[str, Any]] = {
         "n_ctx": 8192,
         "draft_model_path": "models/Qwen3.5-0.8B-Q4_K_M.gguf",
     },
+    # 2026-05-12 -- Josiefied-Qwen3-8B-abliterated-v1 (Goekdeniz-Guelmez)
+    # quantised by mradermacher. Abliterated (refusal vectors removed) +
+    # Josiefied fine-tune (improved personality / instruction-following).
+    # The voice path keeps Ultron's persona via SOUL.md system prompt;
+    # the model's abliterated nature removes content-level refusals while
+    # the runtime tool-call validator (src/ultron/safety/) gates the
+    # actual capability surface. Q5_K_M strikes the balance between
+    # quality and VRAM headroom (~5.5 GB on disk; peak ~10 GB stack vs
+    # the 11.5 GB cap on the user's 4070 Ti). No matching 0.8B draft is
+    # published, so speculative decoding is off for this preset.
+    "josiefied-qwen3-8b": {
+        "model_path": "models/Josiefied-Qwen3-8B-abliterated-v1.Q5_K_M.gguf",
+        "n_ctx": 8192,
+        "draft_model_path": None,
+    },
 }
 
 
@@ -383,17 +398,28 @@ class LLMConfig(_Strict):
     # Pinned to llama_cpp per feedback_llm_runtime_decision.md (2026-05-08).
     provider: Literal["llama_cpp"] = "llama_cpp"
     # 4B optimization plan Stage A — model preset.
-    #   "qwen3.5-9b" — current default; resolves to the 9B GGUF + n_ctx=8192,
-    #                  no draft model.
-    #   "qwen3.5-4b" — 4B target + 0.8B draft for speculative decoding,
-    #                  n_ctx=16384. Flipped on after Stage H regression
-    #                  sweep passes.
-    #   "custom"     — no auto-resolution; raw model_path / n_ctx /
-    #                  draft_model_path fields are used as-is. For tests
-    #                  and ad-hoc model swaps.
+    #   "qwen3.5-9b"        — pre-4B-plan default; 9B GGUF + n_ctx=8192,
+    #                         no draft model. Retained for swap-back.
+    #   "qwen3.5-4b"        — 4B target + 0.8B draft for speculative
+    #                         decoding, n_ctx=8192. Default through 2026-05-11.
+    #   "josiefied-qwen3-8b" — Goekdeniz-Guelmez Josiefied + abliterated
+    #                         Qwen3-8B Q5_K_M; new default 2026-05-12.
+    #                         Combines an abliterated/personality-tuned
+    #                         conversational layer with the runtime
+    #                         tool-call validator in src/ultron/safety/.
+    #                         No paired draft model (no compatible 0.8B
+    #                         abliterated GGUF exists).
+    #   "custom"            — no auto-resolution; raw model_path / n_ctx /
+    #                         draft_model_path fields are used as-is. For
+    #                         tests and ad-hoc model swaps.
     # Preset defaults only fill in fields the user did NOT explicitly
     # set in YAML — see ``_apply_preset``.
-    preset: Literal["qwen3.5-9b", "qwen3.5-4b", "custom"] = "qwen3.5-9b"
+    preset: Literal[
+        "qwen3.5-9b",
+        "qwen3.5-4b",
+        "josiefied-qwen3-8b",
+        "custom",
+    ] = "josiefied-qwen3-8b"
     # Where the model actually runs:
     #   "in_process"  — load via llama-cpp-python in this Python process
     #                   (current default; what the voice pipeline uses today).

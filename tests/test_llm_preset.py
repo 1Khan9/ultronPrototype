@@ -1,11 +1,19 @@
-"""4B optimization plan Stage A — preset resolution tests.
+"""Preset resolution tests (2026-05-12 update).
 
 Verifies ``LLMConfig.preset`` behaviour:
-- Default preset ``qwen3.5-9b`` resolves to today's exact config
-  (back-compat — every existing test must keep passing).
+- Default preset ``josiefied-qwen3-8b`` resolves to the
+  Goekdeniz-Guelmez Josiefied + abliterated Qwen3-8B Q5_K_M (current
+  default since 2026-05-12). The abliterated model removes content-
+  level refusals; the runtime tool-call validator under
+  ``src/ultron/safety/`` gates the actual capability surface. No
+  paired draft (no abliterated 0.8B GGUF on HF) so no speculative
+  decoding for this preset.
+- ``qwen3.5-9b`` resolves to the 9B GGUF + n_ctx=8192, no draft.
+  Retained for swap-back.
 - ``qwen3.5-4b`` resolves to the 4B GGUF + 0.8B draft + n_ctx=8192.
-  (n_ctx pinned to match the 9B-era voice-path TTFT baseline; users
-  who want a larger context override n_ctx explicitly in YAML.)
+  Retained for swap-back / speculative decoding. (n_ctx pinned to
+  match the 9B-era voice-path TTFT baseline; users who want a larger
+  context override n_ctx explicitly in YAML.)
 - ``custom`` does not touch any field; raw user values pass through.
 - Explicit user fields always win over preset defaults (mixed mode).
 
@@ -21,8 +29,22 @@ import pytest
 from ultron.config import LLM_PRESETS, LLMConfig, load_config
 
 
-def test_default_preset_is_9b() -> None:
+def test_default_preset_is_josiefied_8b() -> None:
+    """2026-05-12: default flipped to Josiefied + abliterated Qwen3-8B
+    Q5_K_M. Abliterated removes content-level refusals; the runtime
+    tool-call validator (``src/ultron/safety/``) gates the actual
+    capability surface."""
     cfg = LLMConfig()
+    assert cfg.preset == "josiefied-qwen3-8b"
+    assert cfg.model_path == "models/Josiefied-Qwen3-8B-abliterated-v1.Q5_K_M.gguf"
+    assert cfg.n_ctx == 8192
+    # No paired draft model -- no abliterated 0.8B GGUF on HF.
+    assert cfg.draft_model_path is None
+
+
+def test_legacy_9b_preset_still_available() -> None:
+    """The 9B preset is retained for swap-back / A-B comparison."""
+    cfg = LLMConfig(preset="qwen3.5-9b")
     assert cfg.preset == "qwen3.5-9b"
     assert cfg.model_path == "models/Qwen3.5-9B-Q4_K_M.gguf"
     assert cfg.n_ctx == 8192
@@ -86,17 +108,38 @@ def test_custom_preset_with_default_model_path_is_legal() -> None:
 
 
 def test_preset_table_contents() -> None:
-    """The preset table is the contract that the launcher + 4B plan
-    docs depend on. Lock it down."""
-    assert set(LLM_PRESETS.keys()) == {"qwen3.5-9b", "qwen3.5-4b"}
+    """The preset table is the contract that the launcher, swap script,
+    and 4B-plan docs depend on. Lock it down. ``custom`` is the schema-
+    only sentinel and does NOT appear in LLM_PRESETS."""
+    assert set(LLM_PRESETS.keys()) == {
+        "qwen3.5-9b", "qwen3.5-4b", "josiefied-qwen3-8b",
+    }
     nine = LLM_PRESETS["qwen3.5-9b"]
     four = LLM_PRESETS["qwen3.5-4b"]
+    eight_jos = LLM_PRESETS["josiefied-qwen3-8b"]
     assert nine["model_path"].endswith("Qwen3.5-9B-Q4_K_M.gguf")
     assert nine["draft_model_path"] is None
     assert nine["n_ctx"] == 8192
     assert four["model_path"].endswith("Qwen3.5-4B-Q4_K_M.gguf")
     assert four["draft_model_path"].endswith("Qwen3.5-0.8B-Q4_K_M.gguf")
     assert four["n_ctx"] == 8192
+    assert eight_jos["model_path"].endswith(
+        "Josiefied-Qwen3-8B-abliterated-v1.Q5_K_M.gguf"
+    )
+    assert eight_jos["draft_model_path"] is None
+    assert eight_jos["n_ctx"] == 8192
+
+
+def test_josiefied_preset_resolves_paths_and_ctx() -> None:
+    """Constructing LLMConfig with the new preset name should auto-fill
+    model_path / n_ctx exactly as the table specifies."""
+    cfg = LLMConfig(preset="josiefied-qwen3-8b")
+    assert cfg.preset == "josiefied-qwen3-8b"
+    assert cfg.model_path == (
+        "models/Josiefied-Qwen3-8B-abliterated-v1.Q5_K_M.gguf"
+    )
+    assert cfg.n_ctx == 8192
+    assert cfg.draft_model_path is None
 
 
 def test_yaml_load_with_4b_preset(tmp_path: Path) -> None:
@@ -117,8 +160,12 @@ llm:
 
 
 def test_yaml_load_default_preset_back_compat(tmp_path: Path) -> None:
-    """A YAML config that doesn't mention preset at all must produce
-    the legacy 9B configuration (key back-compat guarantee)."""
+    """A YAML config that does not specify ``preset`` falls back to the
+    schema default. As of 2026-05-12 the schema default is the
+    Josiefied + abliterated Qwen3-8B preset (was qwen3.5-4b before
+    that, qwen3.5-9b before the 4B plan). This test pins the schema
+    default for documentation; the production ``config.yaml`` always
+    spells the preset out explicitly."""
     yaml_text = """
 version: "1.0"
 llm:
@@ -127,8 +174,10 @@ llm:
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(yaml_text, encoding="utf-8")
     cfg = load_config(cfg_path)
-    assert cfg.llm.preset == "qwen3.5-9b"
-    assert cfg.llm.model_path == "models/Qwen3.5-9B-Q4_K_M.gguf"
+    assert cfg.llm.preset == "josiefied-qwen3-8b"
+    assert cfg.llm.model_path == (
+        "models/Josiefied-Qwen3-8B-abliterated-v1.Q5_K_M.gguf"
+    )
     assert cfg.llm.n_ctx == 8192
     assert cfg.llm.draft_model_path is None
 
