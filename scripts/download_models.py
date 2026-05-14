@@ -81,14 +81,13 @@ LLM_JOSIEFIED_4B_Q5_FILE = "Josiefied-Qwen3-4B-abliterated-v2.Q5_K_M.gguf"
 # Pulled in by transformers.AutoModelForCausalLM on first VLM query; the
 # pre-fetch here populates the cache so the first user query is fast.
 #
-# 2026-05-14: pin to a stable revision. The model author updates ``main``
-# regularly and a recent ``tokenizer.json`` revision is incompatible with
-# pinned ``tokenizers`` builds (error: "data did not match any variant of
-# untagged enum ModelWrapper"). ``2025-06-21`` is the documented stable
-# release at https://huggingface.co/vikhyatk/moondream2 and matches the
-# revision pinned in src/ultron/desktop/vlm.py.
+# 2026-05-14: pin to a stable revision. Initially set to 2025-06-21
+# but that still hit the tokenizer.json compat error on the venv's
+# tokenizers 0.19.1. ``2024-08-26`` is the older stable release that
+# predates the tokenizer.json format change. Must match the revision
+# pinned in src/ultron/desktop/vlm.py.
 MOONDREAM_REPO = "vikhyatk/moondream2"
-MOONDREAM_REVISION = "2025-06-21"
+MOONDREAM_REVISION = "2024-08-26"
 
 # Smart Turn V3 — semantic end-of-turn detector (BSD-2-Clause).
 # 8 MB int8 ONNX; CPU inference ~12 ms. Runs AFTER Silero detects silence

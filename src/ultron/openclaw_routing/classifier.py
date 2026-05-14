@@ -59,7 +59,9 @@ from ultron.openclaw_routing.intents import (
     RoutingIntentKind,
     ScreenContextIntent,
     ShellOpIntent,
+    WindowCloseIntent,
     WindowIntent,
+    WindowMoveIntent,
 )
 
 
@@ -766,6 +768,40 @@ def classify_routing(
                 screen_context_intent=sc,
             )
 
+    # 1.95) WINDOW_MOVE (2026-05-14) -- "Put Discord on my right monitor".
+    #       Must fire BEFORE APP_LAUNCH because the noun "put" doesn't
+    #       overlap with launch verbs but the monitor target would
+    #       otherwise be the only signal; routing to APP_LAUNCH here
+    #       would spawn a SECOND Discord instead of moving the existing
+    #       window.
+    if not has_pending_clarification:
+        wm = _classify_window_move(text)
+        if wm is not None:
+            return RoutingIntent(
+                kind=RoutingIntentKind.WINDOW_MOVE,
+                raw_text=text,
+                confidence=0.9,
+                source="rule",
+                reason="window-move pattern matched",
+                window_move_intent=wm,
+            )
+
+    # 1.96) WINDOW_CLOSE (2026-05-14) -- "Close my YouTube video on my
+    #       right monitor", "close Discord". Must fire BEFORE coding
+    #       cancel rules already returned above; the regex denies
+    #       "close the task" etc. to avoid hijacking those.
+    if not has_pending_clarification:
+        wc = _classify_window_close(text)
+        if wc is not None:
+            return RoutingIntent(
+                kind=RoutingIntentKind.WINDOW_CLOSE,
+                raw_text=text,
+                confidence=0.9,
+                source="rule",
+                reason="window-close pattern matched",
+                window_close_intent=wc,
+            )
+
     # 2.0) APP_LAUNCH (Phase 8) -- "open YouTube on monitor 2",
     #      "launch Cursor on my left monitor", "show me a picture of X".
     #      Native via :mod:`ultron.desktop.launcher`; routes to user's
@@ -1070,12 +1106,18 @@ _APP_LAUNCH_PATTERNS = re.compile(
 # "find an image of X". Distinct from MEDIA_GENERATION (which creates
 # images via ComfyUI) -- this just opens Google Images in a new Chrome
 # window.
+# 2026-05-14 second-pass: accept singular AND plural ("picture(s)",
+# "image(s)", "photo(s)") and "some" as a determiner so phrasings like
+# "show me pictures of Resident Evil Requiem" (the user's actual
+# 2026-05-14 session phrasing) match too.
+_IMAGE_NOUN = r"(?:pictures?|images?|photos?)"
+_IMAGE_DET = r"(?:an?\s+|some\s+|the\s+)?"
 _IMAGE_SEARCH_PATTERNS = re.compile(
     r"\b(?:"
-    r"show\s+me\s+(?:an?\s+)?(?:picture|image|photo)\s+of\s+(?P<q1>.+?)(?:\s+on\s+|\s*[.?]|\s*$)|"
+    rf"show\s+me\s+{_IMAGE_DET}{_IMAGE_NOUN}\s+of\s+(?P<q1>.+?)(?:\s+on\s+|\s*[.?]|\s*$)|"
     r"show\s+me\s+what\s+(?P<q2>.+?)\s+looks?\s+like(?:\s+on\s+|\s*[.?]|\s*$)|"
-    r"find\s+(?:me\s+)?(?:an?\s+)?(?:picture|image|photo)\s+of\s+(?P<q3>.+?)(?:\s+on\s+|\s*[.?]|\s*$)|"
-    r"i\s+want\s+to\s+see\s+(?:an?\s+)?(?:picture|image|photo)\s+of\s+(?P<q4>.+?)(?:\s+on\s+|\s*[.?]|\s*$)"
+    rf"find\s+(?:me\s+)?{_IMAGE_DET}{_IMAGE_NOUN}\s+of\s+(?P<q3>.+?)(?:\s+on\s+|\s*[.?]|\s*$)|"
+    rf"i\s+want\s+to\s+see\s+{_IMAGE_DET}{_IMAGE_NOUN}\s+of\s+(?P<q4>.+?)(?:\s+on\s+|\s*[.?]|\s*$)"
     r")",
     re.IGNORECASE,
 )
@@ -1098,6 +1140,135 @@ _IMAGE_SEARCH_IMPLICIT_RE = re.compile(
     r"\b",
     re.IGNORECASE,
 )
+
+# 2026-05-14 second-pass: even WITHOUT a monitor target, "show me a
+# chicken" is reasonably interpreted as an image-search request when
+# the subject is concrete (not a system / app / question phrase).
+# Defaults to the main monitor at dispatch time. Matches the user's
+# 2026-05-14 second-session phrasing ("Show me a chicken." with no
+# monitor cue -- previously fell through to conversational and got a
+# hallucinated "Displaying visuals via text only..." response).
+_IMAGE_SEARCH_BARE_RE = re.compile(
+    r"^\s*show\s+me\s+(?:an?\s+|the\s+|some\s+)?"
+    r"(?P<q>[^.?!]+?)\s*[.?!]?\s*$",
+    re.IGNORECASE,
+)
+
+# ---------------------------------------------------------------------------
+# 2026-05-14 second-pass: WINDOW_MOVE -- "Put / Move / Send <app> to /
+# on <position> monitor". Distinct from APP_LAUNCH (which spawns a
+# NEW process); WINDOW_MOVE finds an EXISTING open window and
+# repositions it. The user's session said "Put Discord on my right
+# monitor" expecting their existing Discord window to move; the
+# previous classifier didn't have this verb so it leaked to
+# conversational and Ultron hallucinated "I cannot perform actions
+# on your device."
+_WINDOW_MOVE_RE = re.compile(
+    r"\b(?:put|move|send|throw|drag|relocate|push|bring|shift)\s+"
+    r"(?:my\s+|the\s+|that\s+|this\s+)?"
+    r"(?P<window>[^.?!]+?)"
+    r"\s+(?:to|on|onto|over\s+to)\s+(?:my\s+|the\s+)?"
+    r"(?P<mon>(?:1st|first|2nd|second|3rd|third|4th|fourth|primary|main|"
+    r"left|right|center|centre|middle|top|bottom)\s+(?:monitor|screen|display)|"
+    r"monitor\s+(?:1|2|3|4|one|two|three|four)|"
+    r"screen\s+(?:1|2|3|4|one|two|three|four)|"
+    r"display\s+(?:1|2|3|4|one|two|three|four))\b",
+    re.IGNORECASE,
+)
+
+# WINDOW_CLOSE -- "Close <app>" / "close <app> on <monitor>" /
+# "close my <app> tab" / "close the <app> window". Matches existing
+# windows only. Distinct from coding CANCEL ("cancel the task") which
+# is caught earlier in classify_routing.
+_WINDOW_CLOSE_RE = re.compile(
+    r"\b(?:close|exit|quit|shut|kill|dismiss)"
+    r"(?:\s+(?:out\s+))?\s+"
+    r"(?:my\s+|the\s+|that\s+|this\s+)?"
+    r"(?P<window>[^.?!]+?)"
+    r"(?:\s+(?:tab|window|app|application))?"
+    r"(?:\s+on\s+(?:my\s+|the\s+)?(?P<mon>(?:1st|first|2nd|second|3rd|third|"
+    r"4th|fourth|primary|main|left|right|center|centre|middle|top|bottom)\s+"
+    r"(?:monitor|screen|display)|"
+    r"monitor\s+(?:1|2|3|4|one|two|three|four)|"
+    r"screen\s+(?:1|2|3|4|one|two|three|four)|"
+    r"display\s+(?:1|2|3|4|one|two|three|four)))?"
+    r"\s*[.?!]?\s*$",
+    re.IGNORECASE,
+)
+# Subjects we deny on WINDOW_CLOSE to avoid hijacking other intents:
+# - coding cancel ("close the task" / "kill the task") -- handled by CODING
+# - vague references that don't map to a window ("close the file")
+_WINDOW_CLOSE_DENY = frozenset({
+    "task", "the task", "my task", "this task", "that task",
+    "session", "the session",
+    "file", "the file",  # file_op territory
+    "everything", "all of it", "all of them",  # too broad
+    "ultron", "yourself", "your mouth",  # don't shut Ultron down here
+})
+
+
+def _classify_window_move(text: str) -> Optional[WindowMoveIntent]:
+    """Match "put / move / send <window> to <monitor>" pattern."""
+    if not text:
+        return None
+    m = _WINDOW_MOVE_RE.search(text)
+    if not m:
+        return None
+    window = (m.group("window") or "").strip()
+    if not window:
+        return None
+    # Same deny-list as window-close: don't grab "put the task on..." etc.
+    if window.lower() in _WINDOW_CLOSE_DENY:
+        return None
+    # Reuse the monitor target extractor on the full text -- it already
+    # knows how to map "main" -> directional vs "1st" -> index.
+    mon_idx, mon_q = _extract_monitor_target(text)
+    return WindowMoveIntent(
+        window_query=window,
+        monitor_index=mon_idx,
+        monitor_query=mon_q,
+        raw_text=text,
+    )
+
+
+def _classify_window_close(text: str) -> Optional[WindowCloseIntent]:
+    """Match "close / quit / exit <window>" pattern."""
+    if not text:
+        return None
+    m = _WINDOW_CLOSE_RE.search(text)
+    if not m:
+        return None
+    window = (m.group("window") or "").strip()
+    if not window:
+        return None
+    lowered = window.lower()
+    # Deny exact match OR prefix match (catches "yourself down" via
+    # the "yourself" deny entry, "everything else" via "everything",
+    # etc.).
+    if any(
+        lowered == bad or lowered.startswith(bad + " ")
+        for bad in _WINDOW_CLOSE_DENY
+    ):
+        return None
+    # Strip trailing "tab" / "window" / "app" / "application" -- the
+    # regex consumed them only as optional context.
+    window_clean = re.sub(
+        r"\s+(?:tab|window|app|application)\s*$", "", window,
+        flags=re.IGNORECASE,
+    ).strip()
+    if not window_clean:
+        return None
+    mon_q = ""
+    if m.group("mon"):
+        # Reuse extractor for the monitor disambiguator. We store the
+        # raw monitor phrase here -- the handler can pass it through
+        # find_monitor at dispatch time.
+        _, mon_q = _extract_monitor_target(text)
+    return WindowCloseIntent(
+        window_query=window_clean,
+        monitor_query=mon_q,
+        raw_text=text,
+    )
 
 # Exclusion list: subjects that should NOT trigger implicit image search
 # even with a monitor target. These overlap with screen-context /
@@ -1330,6 +1501,43 @@ def _classify_app_launch(text: str) -> Optional[AppLaunchIntent]:
                 url=url,
                 monitor_index=mon_idx,
                 monitor_query=mon_q,
+                fullscreen=False,
+                maximize=False,
+                raw_text=text,
+            )
+
+    # 2026-05-14 second-pass: bare "show me X" with no monitor cue and
+    # no "picture of" keyword. Same deny-list, same Google-Images URL;
+    # falls through to ``_resolve_monitor`` which defaults to "main".
+    bare_img = _IMAGE_SEARCH_BARE_RE.match(text.strip())
+    if bare_img:
+        query = (bare_img.group("q") or "").strip()
+        lowered = query.lower()
+        # Tighter guards than the with-monitor pattern: at this priority
+        # we don't have the monitor signal to disambiguate, so be strict
+        # about which subjects qualify. Skip if:
+        #   - in the explicit deny list
+        #   - starts with a question word (what / who / how / etc.)
+        #   - starts with a known app name (those route to APP_LAUNCH below)
+        question_starts = ("what", "who", "how", "why", "where",
+                           "when", "which", "whose")
+        if (
+            query
+            and lowered not in _IMAGE_SEARCH_IMPLICIT_DENY
+            and not any(lowered.startswith(q + " ") or lowered == q
+                        for q in question_starts)
+            and not any(lowered.startswith(app + " ") or lowered == app
+                        for app in _IMAGE_SEARCH_IMPLICIT_DENY)
+        ):
+            url = (
+                "https://www.google.com/search?tbm=isch&q="
+                + _url_quote(query)
+            )
+            return AppLaunchIntent(
+                app_name="chrome",
+                url=url,
+                monitor_index=None,
+                monitor_query="",  # _resolve_monitor will default to "main"
                 fullscreen=False,
                 maximize=False,
                 raw_text=text,

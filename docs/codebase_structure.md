@@ -36,7 +36,71 @@ User decision (no ClawHub plugins) drives the "native primitives + OpenClaw as o
 
 * **Phase 14 (orchestrator VLM wiring).** `Orchestrator.__init__` now calls `_load_desktop_vlm_if_enabled()` which constructs the moondream2 VLM and pushes it via :func:`ultron.desktop.vlm.set_vlm`. Lazy + fail-open: construction validates the transformers stack but does NOT load the ~3.5 GB weights at orchestrator startup -- the load happens on first :func:`describe` call (first ``SCREEN_CONTEXT_QUERY`` with VLM). Failure (missing transformers, missing weights on disk) leaves the singleton unset and `screen_context` falls back to text-only context (window title + UIA tree + foreground app). Targeted sweep: 221 pipeline + desktop tests still pass.
 
-**2026-05-14 second-pass VRAM relief + classifier extension (pending commit on top of `901ebf1`).**
+**2026-05-14 third pass: chat_template_kwargs regression fix + WINDOW_MOVE / WINDOW_CLOSE + bare image-search + plural image nouns + moondream2 revision rollback (pending commit on top of `b79d41e`).**
+
+Triggered by another live-session log surfacing three issues:
+
+* **CRITICAL regression: every web-search preflight failed with
+  `TypeError: Llama.create_chat_completion() got an unexpected
+  keyword argument 'chat_template_kwargs'`.** llama-cpp-python 0.3.22
+  (the version pinned in the venv) does not accept that kwarg. The
+  Stage F `_chat_completion_kwargs` helper had been adding it
+  unconditionally when `enable_thinking` was set, but the only user
+  was previously the voice path defaulting to `enable_thinking=None`
+  so the kwarg was never emitted. My 2026-05-14 second-pass
+  `enable_thinking=False` calls in screen-context AND the preflight
+  triggered the latent bug. Fix: replaced the kwarg approach with
+  Qwen3's `/no_think` user-message marker (new
+  `LLMEngine._apply_no_think_marker`). Works at the prompt layer so
+  it survives the llama-cpp-python version gap. The HTTP runtime
+  still carries `chat_template_kwargs` in the JSON body because
+  llama-cpp-server (separate codebase) does accept it.
+
+* **"Show me a chicken." (no monitor cue) fell through to
+  conversational LLM** and got a hallucinated "Displaying visuals
+  via text only" response. Added a new `_IMAGE_SEARCH_BARE_RE` that
+  matches "show me X" at end-of-string when X is concrete (not a
+  question word, not a known app, not a screen-context noun).
+  Defaults to the main monitor via the existing `_resolve_monitor`
+  fallback. Tighter guards than the with-monitor pattern: question
+  starts (`what` / `who` / `how` / etc.) and known apps are
+  denied because they have other handlers.
+
+* **"Show me pictures of Resident Evil Requiem" missed image-search**
+  because the explicit-keyword regex required singular noun. Added
+  `s?` to all three noun positions (`pictures? / images? / photos?`)
+  plus accept `some` / `the` as determiners. The user's session
+  log had both "Show me a chicken" (no keyword) and "Show me
+  pictures of Resident Evil Requiem" (plural keyword) failing for
+  these reasons.
+
+* **"Put Discord on my right monitor"** wasn't a routable intent.
+  New `RoutingIntentKind.WINDOW_MOVE` + `WindowMoveIntent` +
+  `_WINDOW_MOVE_RE` ("put / move / send / throw / drag / relocate /
+  push / bring / shift X to / on <monitor>") + `_classify_window_move`
+  + voice handler `handle_window_move` that calls the existing
+  `find_window` + `move_window_to_monitor` primitives. Distinct
+  from APP_LAUNCH which would spawn a new instance.
+
+* **"Close my YouTube video on my right monitor"** wasn't a
+  routable intent. New `RoutingIntentKind.WINDOW_CLOSE` +
+  `WindowCloseIntent` + `_WINDOW_CLOSE_RE` ("close / exit / quit /
+  shut / kill / dismiss X") with deny-list (task / file / everything
+  / yourself / etc. so it doesn't hijack coding-cancel or file-op
+  intents) + voice handler that sends `WM_CLOSE` via
+  `win32gui.PostMessage` (graceful close).
+
+* **moondream2 revision pin moved from 2025-06-21 to 2024-08-26.**
+  The 2025-06-21 tokenizer.json format is too new for the venv's
+  `tokenizers 0.19.1`. 2024-08-26 is the older stable release
+  referenced in moondream2's compat discussion thread (HF
+  discussion 59). Even if moondream2 fails to load, the text-only
+  screen-context fallback now works thanks to the
+  `chat_template_kwargs` fix above.
+
+Tests: 2278 -> 2313 (+35). Voice baseline unaffected.
+
+**2026-05-14 second-pass VRAM relief + classifier extension (commit `15f58d5`).**
 
 Triggered by the user running on the new 4B abliterated default and
 finding the VRAM still maxing at ~11.1 GB (nvidia-smi showed ~4.7 GB

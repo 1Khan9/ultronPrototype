@@ -325,6 +325,15 @@ def test_classify_screen_context_adjective_qualified(text):
     ("find me a picture of the eiffel tower", "eiffel tower"),
     ("find me an image of pyramids", "pyramids"),
     ("i want to see a picture of an octopus", "octopus"),
+    # 2026-05-14 second pass: plural and "some" determiner. User's
+    # session said "Show me pictures of Resident Evil Requiem" and
+    # the old regex didn't match.
+    ("Show me pictures of Resident Evil Requiem", "Resident Evil Requiem"),
+    ("show me images of cats", "cats"),
+    ("show me some pictures of mountains", "mountains"),
+    ("show me the pictures of pyramids", "pyramids"),
+    ("find me images of dogs", "dogs"),
+    ("i want to see photos of paris", "paris"),
 ])
 def test_classify_app_launch_image_search(text, query_fragment):
     intent = _classify_app_launch(text)
@@ -375,9 +384,6 @@ def test_classify_app_launch_implicit_image_search(text, query_fragment):
 
 
 @pytest.mark.parametrize("text", [
-    # No monitor target -> not implicit-image-search (don't hijack)
-    "show me a chicken",
-    "show me a picture",
     # Deny-list subjects (would otherwise overlap with system intents)
     "show me my screen on my main monitor",
     "show me what's on my main monitor",
@@ -395,6 +401,115 @@ def test_classify_app_launch_implicit_image_search_no_match(text):
         assert "tbm=isch" not in (intent.url or ""), (
             f"unexpected image search for {text!r}: {intent.url}"
         )
+
+
+# ---------------------------------------------------------------------------
+# 2026-05-14 second-pass: bare "show me X" (no monitor) -> image search,
+# defaults to main monitor at dispatch.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("text,fragment", [
+    ("Show me a chicken.", "chicken"),
+    ("show me a golden retriever", "golden+retriever"),
+    ("Show me Afghanistan.", "Afghanistan"),
+    ("show me some pyramids", "pyramids"),
+    ("show me the eiffel tower", "eiffel+tower"),
+])
+def test_classify_app_launch_bare_image_search(text, fragment):
+    """Without a monitor target, "show me X" should still route to
+    image search and default-to-main at dispatch time."""
+    intent = _classify_app_launch(text)
+    assert intent is not None, f"failed for {text!r}"
+    assert intent.app_name == "chrome"
+    assert intent.url is not None
+    assert "tbm=isch" in intent.url
+    assert fragment.lower() in intent.url.lower()
+    # No monitor target in the utterance; voice handler will default.
+    assert intent.monitor_index is None
+    assert intent.monitor_query == ""
+
+
+@pytest.mark.parametrize("text", [
+    "show me what",  # question fragment
+    "show me how to make this",  # question phrasing
+    "show me my screen",  # screen-context deny
+    "show me youtube",  # known app (without monitor -> falls through to BROWSER)
+    "show me chrome",
+])
+def test_classify_app_launch_bare_image_search_negative(text):
+    """Bare image-search shouldn't fire for question phrasings or
+    known-app subjects -- those have other handlers."""
+    intent = _classify_app_launch(text)
+    if intent is not None:
+        assert "tbm=isch" not in (intent.url or ""), (
+            f"unexpected image search for {text!r}: {intent.url}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 2026-05-14 second-pass: WINDOW_MOVE -- "Put Discord on my right monitor"
+# ---------------------------------------------------------------------------
+
+
+from ultron.openclaw_routing.classifier import classify_routing
+from ultron.openclaw_routing.intents import RoutingIntentKind
+
+
+@pytest.mark.parametrize("text,window_fragment", [
+    ("Put Discord on my right monitor", "discord"),
+    ("put discord on my right monitor", "discord"),
+    ("Move YouTube to the main monitor", "youtube"),
+    ("Send Chrome to my left screen", "chrome"),
+    ("move my Discord to monitor 2", "discord"),
+    ("put the YouTube tab on monitor 1", "youtube"),
+])
+def test_classify_routing_window_move(text, window_fragment):
+    """WINDOW_MOVE fires for "put/move/send X to monitor Y" pattern."""
+    intent = classify_routing(text)
+    assert intent.kind == RoutingIntentKind.WINDOW_MOVE, (
+        f"expected WINDOW_MOVE for {text!r}, got {intent.kind}"
+    )
+    assert intent.window_move_intent is not None
+    assert window_fragment in intent.window_move_intent.window_query.lower()
+
+
+# ---------------------------------------------------------------------------
+# WINDOW_CLOSE -- "close Discord", "close my YouTube tab"
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("text,window_fragment", [
+    ("close Discord", "discord"),
+    ("Close my YouTube tab", "youtube"),
+    ("close the YouTube window", "youtube"),
+    ("close chrome on my right monitor", "chrome"),
+    ("quit Spotify", "spotify"),
+    ("can you close my YouTube video on my right monitor", "youtube video"),
+])
+def test_classify_routing_window_close(text, window_fragment):
+    """WINDOW_CLOSE fires for "close/quit X" pattern."""
+    intent = classify_routing(text)
+    assert intent.kind == RoutingIntentKind.WINDOW_CLOSE, (
+        f"expected WINDOW_CLOSE for {text!r}, got {intent.kind}"
+    )
+    assert intent.window_close_intent is not None
+    assert window_fragment in intent.window_close_intent.window_query.lower()
+
+
+@pytest.mark.parametrize("text", [
+    "close the task",  # coding cancel territory; deny-listed
+    "cancel the task",  # coding cancel (handled earlier in pipeline)
+    "close the file",  # file_op territory; deny-listed
+    "close everything",  # too broad; deny-listed
+    "shut yourself down",  # deny-listed
+])
+def test_classify_routing_window_close_negative(text):
+    """Deny-list subjects must not route to WINDOW_CLOSE."""
+    intent = classify_routing(text)
+    assert intent.kind != RoutingIntentKind.WINDOW_CLOSE, (
+        f"unexpected WINDOW_CLOSE for {text!r}"
+    )
 
 
 def test_classify_app_launch_bare_url():

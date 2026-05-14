@@ -79,6 +79,19 @@ class RoutingIntentKind(str, Enum):
     # into the next LLM call as context.
     SCREEN_CONTEXT_QUERY = "screen_context_query"
 
+    # Window move (2026-05-14 second-pass) -- "Put Discord on my right
+    # monitor", "move YouTube to the main monitor", "send Cursor to
+    # the left screen". Finds an existing window by name and
+    # repositions it via :func:`ultron.desktop.placement.move_window_to_monitor`.
+    # Distinct from APP_LAUNCH (which spawns a NEW process / window);
+    # WINDOW_MOVE operates on already-open windows only.
+    WINDOW_MOVE = "window_move"
+
+    # Window close (2026-05-14 second-pass) -- "close Discord", "close
+    # my YouTube tab", "close the YouTube window on my right monitor".
+    # Finds an existing window by name and sends WM_CLOSE.
+    WINDOW_CLOSE = "window_close"
+
 
 # ---------------------------------------------------------------------------
 # Per-category structured intents (for openclaw-bound ones)
@@ -253,6 +266,46 @@ class ScreenContextIntent:
 
 
 @dataclass
+class WindowMoveIntent:
+    """Move an existing window to a target monitor (2026-05-14).
+
+    Attributes:
+        window_query: substring matched against window titles (and
+            optionally process names) to find the target window.
+        monitor_index: explicit target monitor index when the user
+            said "monitor 2" / "second monitor".
+        monitor_query: directional / named target ("left" / "right" /
+            "main" / "primary") to resolve via
+            :func:`ultron.desktop.monitors.find_monitor` at dispatch.
+        fullscreen: fill the target monitor (as a regular window).
+        maximize: SW_MAXIMIZE after placement.
+    """
+
+    window_query: str
+    monitor_index: Optional[int] = None
+    monitor_query: str = ""
+    fullscreen: bool = False
+    maximize: bool = False
+    raw_text: str = ""
+
+
+@dataclass
+class WindowCloseIntent:
+    """Close an existing window by name (2026-05-14).
+
+    Attributes:
+        window_query: substring matched against window titles.
+        monitor_query: optional disambiguator -- when multiple windows
+            match the name, restrict to ones on the specified monitor
+            (``"right"`` / ``"main"`` / etc.).
+    """
+
+    window_query: str
+    monitor_query: str = ""
+    raw_text: str = ""
+
+
+@dataclass
 class SystemStatusIntent:
     """A voice query about Ultron's overall state.
 
@@ -312,6 +365,8 @@ class RoutingIntent:
     window_intent: Optional[WindowIntent] = None              # WINDOW_AUTOMATION only (V1-gap C3)
     app_launch_intent: Optional[AppLaunchIntent] = None       # APP_LAUNCH only (Phase 8)
     screen_context_intent: Optional[ScreenContextIntent] = None  # SCREEN_CONTEXT_QUERY only (Phase 8)
+    window_move_intent: Optional[WindowMoveIntent] = None     # WINDOW_MOVE only (2026-05-14)
+    window_close_intent: Optional[WindowCloseIntent] = None   # WINDOW_CLOSE only (2026-05-14)
 
     # Disambiguation: when the rule-based + LLM disambiguator can't decide,
     # the orchestrator asks the user a clarifying question.

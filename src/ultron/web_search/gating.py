@@ -252,21 +252,25 @@ def _preflight_call(llm, prompt: str, max_tokens: int) -> str:
 
     def _one_call(temperature: float) -> str:
         try:
-            # 2026-05-14: pass `enable_thinking=False` so Qwen3.5's chat
-            # template skips the <think>...</think> chain. Preflight is a
-            # structured JSON-output task; reasoning tokens add cost and
-            # the abliterated default LLM tends to start with a long
-            # thinking block that the JSON parser then chokes on (the
-            # 2026-05-14 session log showed "preflight returned
-            # unparseable JSON: '<think>\\nOkay, let me break down...'").
+            # 2026-05-14 (second pass): inject the Qwen3 ``/no_think``
+            # marker into the user message so the chat template skips
+            # the <think>...</think> chain at generate time. Previously
+            # we passed ``chat_template_kwargs={"enable_thinking": False}``
+            # but llama-cpp-python 0.3.22's create_chat_completion()
+            # doesn't accept that kwarg -- the call raised TypeError on
+            # every preflight, dropping the gate to default NO_SEARCH.
+            # The marker approach works at the prompt layer and is
+            # version-agnostic.
+            user_msg = prompt
+            if "/no_think" not in user_msg:
+                user_msg = user_msg.rstrip() + " /no_think"
             out = llm._llm.create_chat_completion(  # noqa: SLF001
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": user_msg}],
                 temperature=temperature,
                 max_tokens=max_tokens,
-                chat_template_kwargs={"enable_thinking": False},
             )
             raw = (out["choices"][0]["message"]["content"] or "").strip()
-            # Belt + braces: even with thinking disabled, some Qwen3
+            # Belt + braces: even with the /no_think marker, some Qwen3
             # variants still emit a stray <think>...</think> if their
             # tokeniser sees the open-tag token early in sampling. Strip
             # any residual blocks here so the JSON parser downstream

@@ -59,12 +59,16 @@ DEFAULT_MOONDREAM_REPO = "vikhyatk/moondream2"
 
 # Pin to a stable revision. The model author updates ``main`` regularly
 # and recent ``tokenizer.json`` revisions are incompatible with the
-# tokenizers builds we have pinned -- surfaces as the runtime error
-# "data did not match any variant of untagged enum ModelWrapper at
-# line 255192 column 3" during from_pretrained(). ``2025-06-21`` is
-# the documented stable release per huggingface.co/vikhyatk/moondream2
-# README. Must match the value in scripts/download_models.py.
-DEFAULT_MOONDREAM_REVISION = "2025-06-21"
+# tokenizers builds we have pinned. ``2025-06-21`` (the previous pin)
+# still hit "data did not match any variant of untagged enum
+# ModelWrapper at line 255192 column 3" on tokenizers 0.19.1 in the
+# project's venv -- the tokenizer.json format that revision uses is
+# newer than 0.19.1 can deserialise. ``2024-08-26`` is the older
+# stable release referenced in moondream2's tokenizer-compat
+# discussion thread (https://huggingface.co/vikhyatk/moondream2/discussions/59)
+# and predates the tokenizer.json format change. Must match the value
+# in scripts/download_models.py.
+DEFAULT_MOONDREAM_REVISION = "2024-08-26"
 
 # Default prompt when the caller doesn't supply one. Intentionally
 # open-ended -- Ultron will frame the answer in its own voice via the

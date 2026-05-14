@@ -840,6 +840,11 @@ class LLMEngine:
             gate_verdict=gate_verdict,
             suppress_memory_context=suppress_memory_context,
         )
+        # 2026-05-14: apply ``/no_think`` marker to the last user message
+        # when thinking is explicitly disabled. Replaces the unsupported
+        # ``chat_template_kwargs`` plumbing -- works at the prompt layer
+        # so it survives the llama-cpp-python version gap.
+        messages = self._apply_no_think_marker(messages, enable_thinking)
         _llm_cfg = get_config().llm
         t0 = time.monotonic()
         if self._runtime == "in_process":
@@ -891,6 +896,8 @@ class LLMEngine:
             gate_verdict=gate_verdict,
             suppress_memory_context=suppress_memory_context,
         )
+        # 2026-05-14: same /no_think handling as the blocking path.
+        messages = self._apply_no_think_marker(messages, enable_thinking)
         _llm_cfg = get_config().llm
         t0 = time.monotonic()
         first_token_time: Optional[float] = None
@@ -949,10 +956,23 @@ class LLMEngine:
         """Build the kwargs dict for ``Llama.create_chat_completion``.
 
         Centralised so both ``generate`` and ``generate_stream`` produce
-        identical request shape (only ``stream`` differs), and so the
-        Stage F ``enable_thinking`` toggle is set in exactly one place.
+        identical request shape (only ``stream`` differs).
 
-        Returns a fresh dict — the caller is free to mutate without
+        2026-05-14: the historical Stage-F approach passed
+        ``chat_template_kwargs={"enable_thinking": ...}`` to enable /
+        disable Qwen3.5's ``<think>...</think>`` block emission. That
+        kwarg is NOT accepted by ``llama_cpp.Llama.create_chat_completion``
+        in 0.3.22 (the version pinned in this venv) -- passing it raises
+        ``TypeError: got an unexpected keyword argument 'chat_template_kwargs'``.
+        The mocked Stage-F tests didn't catch this because they patch
+        the Llama instance. Real callers (preflight, screen-context)
+        crashed at runtime. We no longer pass the kwarg here; the
+        thinking-mode toggle is applied via ``_apply_no_think_marker``
+        on the user message (Qwen3 convention) and the chain itself
+        is filtered out by ``_strip_thinking_blocks`` /
+        ``strip_thinking_text`` regardless.
+
+        Returns a fresh dict -- the caller is free to mutate without
         affecting other calls.
         """
         kwargs: dict = {
@@ -963,14 +983,41 @@ class LLMEngine:
         }
         if stream:
             kwargs["stream"] = True
-        if enable_thinking is not None:
-            # Qwen3.5's chat template reads ``enable_thinking`` to decide
-            # whether to emit a ``<think>...</think>`` block. ``False``
-            # cuts the 2-5x token-output overhead the thinking block
-            # adds — meaningful on the 4B (smaller model = relatively
-            # bigger latency cost from thinking).
-            kwargs["chat_template_kwargs"] = {"enable_thinking": enable_thinking}
         return kwargs
+
+    @staticmethod
+    def _apply_no_think_marker(
+        messages: list, enable_thinking: Optional[bool],
+    ) -> list:
+        """Append ``/no_think`` to the last user message when thinking
+        is explicitly disabled.
+
+        Qwen3 / Qwen3.5 chat templates inspect the user message for a
+        trailing ``/no_think`` marker and skip the ``<think>...</think>``
+        block when present. This is the equivalent of passing
+        ``chat_template_kwargs={"enable_thinking": False}`` for the
+        models we run, without depending on the llama-cpp-python kwarg
+        plumbing.
+
+        ``enable_thinking=True`` (explicit-on) and ``None`` (default)
+        are both no-ops here; the default template emits thinking
+        when not suppressed.
+
+        Returns a possibly-mutated copy of ``messages``. The original
+        list is not modified.
+        """
+        if enable_thinking is not False:
+            return messages
+        if not messages:
+            return messages
+        out = [dict(m) for m in messages]
+        for entry in reversed(out):
+            if entry.get("role") == "user":
+                content = entry.get("content", "")
+                if isinstance(content, str) and "/no_think" not in content:
+                    entry["content"] = content.rstrip() + " /no_think"
+                break
+        return out
 
     # --- HTTP runtime helpers ----------------------------------------------
 

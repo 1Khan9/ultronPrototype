@@ -62,11 +62,13 @@ def test_preflight_default_uses_single_call_temp_zero(cfg_mock) -> None:
     # Temperature was 0.0
     args = llm._llm.create_chat_completion.call_args
     assert args.kwargs["temperature"] == 0.0
-    # 2026-05-14: chat_template_kwargs forces enable_thinking=False so
-    # the abliterated default LLM doesn't emit a <think>...</think>
-    # chain that the JSON parser chokes on.
-    ctk = args.kwargs.get("chat_template_kwargs", {})
-    assert ctk.get("enable_thinking") is False
+    # 2026-05-14 second pass: chat_template_kwargs was REMOVED (the
+    # real llama-cpp-python 0.3.22 signature rejects it). Instead, we
+    # append the Qwen3 /no_think marker to the user message at the
+    # prompt layer. Assert the marker is present and the kwarg is not.
+    assert "chat_template_kwargs" not in args.kwargs
+    msgs = args.kwargs["messages"]
+    assert msgs[-1]["content"].endswith("/no_think")
     assert verdict.decision == GateDecision.SEARCH
 
 

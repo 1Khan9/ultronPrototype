@@ -60,6 +60,34 @@ class AppLaunchVoiceResult:
 
 
 @dataclass(frozen=True)
+class WindowMoveVoiceResult:
+    """Result of handling a WINDOW_MOVE intent (2026-05-14).
+
+    Attributes:
+        success: True iff a matching window was found AND moved.
+        voice_message: short in-character line for the user.
+        hwnd: window handle that was moved (when found).
+        monitor_index: target monitor (when placement ran).
+    """
+
+    success: bool
+    voice_message: str
+    hwnd: Optional[int] = None
+    monitor_index: Optional[int] = None
+    error: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class WindowCloseVoiceResult:
+    """Result of handling a WINDOW_CLOSE intent (2026-05-14)."""
+
+    success: bool
+    voice_message: str
+    hwnd: Optional[int] = None
+    error: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class ScreenContextVoiceResult:
     """Result of handling a SCREEN_CONTEXT_QUERY intent.
 
@@ -302,9 +330,154 @@ def handle_screen_context_query(intent) -> ScreenContextVoiceResult:
     )
 
 
+# ---------------------------------------------------------------------------
+# WINDOW_MOVE / WINDOW_CLOSE handlers (2026-05-14 second-pass)
+# ---------------------------------------------------------------------------
+
+
+def _find_existing_window(query: str, monitor_query: str = ""):
+    """Resolve an existing window by name. Optionally restricted to a
+    monitor (when the user disambiguates with "the YouTube video on my
+    right monitor"). Returns the WindowInfo or None.
+    """
+    try:
+        from ultron.desktop.monitors import find_monitor
+        from ultron.desktop.windows import find_window
+    except Exception as e:  # noqa: BLE001
+        logger.debug("window resolve import failed: %s", e)
+        return None
+
+    prefer_monitor = None
+    if monitor_query:
+        mon = find_monitor(monitor_query)
+        if mon is not None:
+            prefer_monitor = mon.index
+    return find_window(
+        query=query,
+        prefer_foreground=True,
+        prefer_monitor=prefer_monitor,
+        by_process=True,
+    )
+
+
+def handle_window_move(intent) -> WindowMoveVoiceResult:
+    """Dispatch a :class:`WindowMoveIntent` to the native placement primitive.
+
+    Finds an existing window by name and moves it to the target monitor.
+    Distinct from APP_LAUNCH which would spawn a NEW process.
+    """
+    window_query = (getattr(intent, "window_query", "") or "").strip()
+    if not window_query:
+        return WindowMoveVoiceResult(
+            success=False,
+            voice_message="I didn't catch which window to move.",
+            error="empty window_query",
+        )
+
+    monitor_index = getattr(intent, "monitor_index", None)
+    monitor_query = getattr(intent, "monitor_query", "") or ""
+    fullscreen = bool(getattr(intent, "fullscreen", False))
+    maximize = bool(getattr(intent, "maximize", False))
+
+    win = _find_existing_window(window_query)
+    if win is None:
+        return WindowMoveVoiceResult(
+            success=False,
+            voice_message=f"I couldn't find an open {window_query} window.",
+            error="window not found",
+        )
+
+    monitor = _resolve_monitor(monitor_index, monitor_query)
+    if monitor is None:
+        return WindowMoveVoiceResult(
+            success=False,
+            voice_message="I couldn't resolve the target monitor.",
+            hwnd=win.hwnd,
+            error="monitor resolution failed",
+        )
+
+    try:
+        from ultron.desktop.placement import move_window_to_monitor
+        result = move_window_to_monitor(
+            win.hwnd, monitor, fullscreen=fullscreen, maximize=maximize,
+        )
+    except Exception as e:  # noqa: BLE001
+        return WindowMoveVoiceResult(
+            success=False,
+            voice_message=f"I couldn't move {window_query}. {e}",
+            hwnd=win.hwnd,
+            error=str(e),
+        )
+
+    if not result.success:
+        return WindowMoveVoiceResult(
+            success=False,
+            voice_message=(
+                f"I couldn't move {window_query}."
+                + (f" {result.error}" if result.error else "")
+            ),
+            hwnd=win.hwnd,
+            error=result.error,
+        )
+
+    return WindowMoveVoiceResult(
+        success=True,
+        voice_message=f"Moved {window_query} to monitor {monitor.index + 1}.",
+        hwnd=win.hwnd,
+        monitor_index=monitor.index,
+    )
+
+
+def handle_window_close(intent) -> WindowCloseVoiceResult:
+    """Dispatch a :class:`WindowCloseIntent` -- close the matched window.
+
+    Uses pywin32's WM_CLOSE message (graceful close, lets the app save).
+    """
+    window_query = (getattr(intent, "window_query", "") or "").strip()
+    if not window_query:
+        return WindowCloseVoiceResult(
+            success=False,
+            voice_message="I didn't catch which window to close.",
+            error="empty window_query",
+        )
+
+    monitor_query = getattr(intent, "monitor_query", "") or ""
+    win = _find_existing_window(window_query, monitor_query=monitor_query)
+    if win is None:
+        return WindowCloseVoiceResult(
+            success=False,
+            voice_message=f"I couldn't find an open {window_query} window.",
+            error="window not found",
+        )
+
+    try:
+        import win32con  # type: ignore[import]
+        import win32gui  # type: ignore[import]
+        # PostMessage with WM_CLOSE -- graceful "would you like to save"
+        # close path. SendMessage would block until the app handles it.
+        win32gui.PostMessage(win.hwnd, win32con.WM_CLOSE, 0, 0)
+    except Exception as e:  # noqa: BLE001
+        return WindowCloseVoiceResult(
+            success=False,
+            voice_message=f"I couldn't close {window_query}. {e}",
+            hwnd=win.hwnd,
+            error=str(e),
+        )
+
+    return WindowCloseVoiceResult(
+        success=True,
+        voice_message=f"Closing {window_query}.",
+        hwnd=win.hwnd,
+    )
+
+
 __all__ = [
     "AppLaunchVoiceResult",
     "ScreenContextVoiceResult",
+    "WindowMoveVoiceResult",
+    "WindowCloseVoiceResult",
     "handle_app_launch",
     "handle_screen_context_query",
+    "handle_window_move",
+    "handle_window_close",
 ]

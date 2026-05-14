@@ -1061,6 +1061,82 @@ class CapabilityVoiceController:
             handled=True,
         )
 
+    # --- WINDOW_MOVE / WINDOW_CLOSE (2026-05-14 second-pass) ---------------
+
+    def _handle_window_move(self, routing_intent) -> "VoiceResponse":
+        """Native WINDOW_MOVE: relocate an existing window to a target
+        monitor. Bypasses OpenClaw entirely."""
+        from ultron.openclaw_routing import get_routing_log
+
+        intent = routing_intent.window_move_intent
+        if intent is None:
+            return VoiceResponse(
+                text="I didn't catch which window to move.",
+                handled=True,
+            )
+        try:
+            from ultron.desktop.voice import handle_window_move
+            result = handle_window_move(intent)
+        except Exception as e:                                    # noqa: BLE001
+            get_routing_log().record(
+                routing_intent,
+                handler="voice.window_move",
+                outcome="failed",
+                extra={"error": str(e)},
+            )
+            return VoiceResponse(
+                text="I couldn't move that window right now.",
+                handled=True,
+            )
+
+        get_routing_log().record(
+            routing_intent,
+            handler="voice.window_move",
+            outcome="dispatched" if result.success else "failed",
+            extra={
+                "window_query": intent.window_query,
+                "monitor_index": result.monitor_index,
+                "error": result.error,
+            },
+        )
+        return VoiceResponse(text=result.voice_message, handled=True)
+
+    def _handle_window_close(self, routing_intent) -> "VoiceResponse":
+        """Native WINDOW_CLOSE: find a window by name and send WM_CLOSE."""
+        from ultron.openclaw_routing import get_routing_log
+
+        intent = routing_intent.window_close_intent
+        if intent is None:
+            return VoiceResponse(
+                text="I didn't catch which window to close.",
+                handled=True,
+            )
+        try:
+            from ultron.desktop.voice import handle_window_close
+            result = handle_window_close(intent)
+        except Exception as e:                                    # noqa: BLE001
+            get_routing_log().record(
+                routing_intent,
+                handler="voice.window_close",
+                outcome="failed",
+                extra={"error": str(e)},
+            )
+            return VoiceResponse(
+                text="I couldn't close that window right now.",
+                handled=True,
+            )
+
+        get_routing_log().record(
+            routing_intent,
+            handler="voice.window_close",
+            outcome="dispatched" if result.success else "failed",
+            extra={
+                "window_query": intent.window_query,
+                "error": result.error,
+            },
+        )
+        return VoiceResponse(text=result.voice_message, handled=True)
+
     # --- Phase 5 capability dispatch ---------------------------------------
 
     def handle_capability_intent(self, routing_intent) -> Optional[VoiceResponse]:
@@ -1138,6 +1214,13 @@ class CapabilityVoiceController:
             return self._handle_app_launch(routing_intent)
         if kind == RoutingIntentKind.SCREEN_CONTEXT_QUERY:
             return self._handle_screen_context_query(routing_intent)
+        # 2026-05-14 second-pass: WINDOW_MOVE / WINDOW_CLOSE operate on
+        # already-open windows (find_window + move/close). Bypass
+        # OpenClaw entirely (same as APP_LAUNCH).
+        if kind == RoutingIntentKind.WINDOW_MOVE:
+            return self._handle_window_move(routing_intent)
+        if kind == RoutingIntentKind.WINDOW_CLOSE:
+            return self._handle_window_close(routing_intent)
 
         # Coding kinds — delegate to the existing utterance pipeline.
         coding_kinds = {
