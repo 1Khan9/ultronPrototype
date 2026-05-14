@@ -607,10 +607,11 @@ For the current decisions and Foundation phase status see
 │   ├── _merge_phase0_baselines.py  ← OpenClaw Phase 0: baseline merger
 │   ├── _vram_peak_monitor.py       ← Auxiliary VRAM peak monitor (used by extended baselines)
 │   ├── run_maintenance_for_cron.py ← OpenClaw Phase 7: cron-friendly maintenance wrapper (JSON / pretty / exit codes)
-│   └── run_ultron_mcp_for_openclaw.py ← OpenClaw Phase 13: stdio MCP entry script OpenClaw spawns to call Ultron tools
+│   ├── run_ultron_mcp_for_openclaw.py ← OpenClaw Phase 13: stdio MCP entry script OpenClaw spawns to call Ultron tools
+│   └── cleanup_stale_processes.py ← 2026-05-14 cleanup pass: kill orphaned pytest workers + stale MCP stubs + orphan XTTS servers (preserves live Ultron via port-19761 listener check)
 │
 ├── tests/
-│   ├── conftest.py                 ← Path setup so `from ultron.*` works
+│   ├── conftest.py                 ← Path setup + pytest_sessionfinish hook that reaps test-spawned python children (preserves the live Ultron on port 19761)
 │   ├── test_*.py                   ← ~25 unit/integration test files (default suite)
 │   ├── coding/
 │   │   ├── conftest.py
@@ -2274,11 +2275,50 @@ Per-scenario validation: retrieval `expect_includes` / `expect_excludes` substri
 
 **Run:** `python scripts/_debug_retrieval_cosine.py`. No flags; edit the `PROBES` and `CANDIDATES` lists at the top of the file to test new query+content pairs.
 
+### `scripts/cleanup_stale_processes.py` (2026-05-14 cleanup pass)
+
+**Purpose:** find and kill stale Ultron-related python processes
+(orphaned pytest workers, stale `run_ultron_mcp_for_openclaw.py`
+processes from old worktrees, orphaned XTTS servers, large no-cmdline
+workers). Always preserves the currently-running Ultron and its
+process chain: the script enumerates the TCP listener on port 19761
+(the MCP server) and adds that process plus its ancestors and
+descendants to a "do not touch" set.
+
+**Run:**
+
+```
+python scripts/cleanup_stale_processes.py            # dry-run; prints what it would kill
+python scripts/cleanup_stale_processes.py --kill     # actually terminates them (prompts first)
+python scripts/cleanup_stale_processes.py --kill -y  # skip the prompt
+```
+
+**Flags:** `--max-age-minutes` (default 30; ignore unknown-cmdline workers younger than this), `--min-rss-mb-unknown` (default 200; only kill unknown-cmdline workers with at least this much RAM).
+
+**In:** `psutil` (already in the venv) + the live process table. **Out:** stdout summary + exit code 0 on success, 1 if any termination failed.
+
 ---
 
 ## Tests
 
-### `tests/conftest.py` — Path setup so `from ultron.*` works.
+### `tests/conftest.py` — Path setup + session-end subprocess reaper.
+
+Two responsibilities:
+
+1. Prepend the project root and ``src/`` to ``sys.path`` so
+   ``from ultron.*`` works when pytest is launched from the repo
+   without an editable install.
+
+2. Register a ``pytest_sessionfinish`` hook (2026-05-14 cleanup pass)
+   that walks the test runner's descendant python processes and
+   terminates them when the session ends -- whether the run completed
+   normally, crashed, or was Ctrl-C interrupted. Without this, a hung
+   test or a backgrounded pytest that never gets reaped leaves a
+   python worker holding hundreds of MB of RAM (and VRAM if torch /
+   CUDA was loaded by a fixture). Fail-open at every step (psutil
+   import / TCP enumeration / individual terminate calls); never
+   touches a process tied to the live Ultron orchestrator (detected
+   via the port-19761 listener and its ancestor/descendant chain).
 
 ### Default suite (no env gate) — 1575 passed / 15 skipped (GPU-gated), ~51 s wall (2026-05-10)
 

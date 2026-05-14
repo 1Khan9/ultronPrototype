@@ -35,6 +35,9 @@ dev = [
 
 [project.scripts]
 ultron = "ultron.__main__:main"
+# scripts/cleanup_stale_processes.py is invoked directly
+# (`python scripts/cleanup_stale_processes.py`); not registered here
+# because scripts/ is not a package.
 
 [tool.setuptools.packages.find]
 where = ["src"]
