@@ -397,22 +397,28 @@ LLM_PRESETS: dict[str, dict[str, Any]] = {
     # quantised by mradermacher. Base model: Qwen/Qwen3-4B-Instruct-2507.
     # Same abliterated + Josiefied fine-tune lineage as the 8B variant
     # above; preserves the runtime tool-call validator pairing at
-    # roughly half the VRAM footprint (~3.0 GB on disk vs 5.85 GB for
-    # the 8B Q5_K_M). New default 2026-05-14 to recover ~3 GB VRAM
-    # headroom on the 4070 Ti so the voice stack runs with a real
-    # buffer instead of right against the cap. No matching abliterated
-    # 0.6B / 0.8B draft is published, so speculative decoding stays off
-    # for this preset.
+    # roughly half the VRAM footprint.
+    #
+    # Quant choice (2026-05-14 second-pass): **Q4_K_M** (~2.6 GB on disk)
+    # instead of Q5_K_M. The Q5_K_M variant ran fine but the user's
+    # actual workstation has ~4.7 GB of background GPU usage from
+    # Chrome / Discord / EdgeWebView / NVIDIA Broadcast / Cursor.
+    # With Q5_K_M's ~3.5 GB VRAM and the rest of the voice stack the
+    # total still pushed past 11 GB. Q4_K_M saves another ~500 MB at
+    # negligible quality impact (Q4_K_M vs Q5_K_M MMLU delta is
+    # <0.5 percentage points on Qwen3-4B per the mradermacher quant
+    # ladder annotations); the abliterated content layer is unchanged.
+    # The Q5_K_M file is retained on disk for swap-back via the
+    # "custom" preset or an explicit model_path override.
     #
     # n_ctx=6144 (down from the 8192 default the other presets use):
     # Q8_0 KV cache at n_ctx=8192 costs ~580 MB for this model; 6144
     # saves ~150 MB without affecting voice typical use (history capped
     # at 4 turns + RAG top-3 + system prompt fits in ~2k tokens; even
     # the heaviest screen-context query with 30+ windows + UIA tree +
-    # VLM description lands well under 4k). The user's setup peaks at
-    # 12 GB so every MB matters until the buffer is comfortable.
+    # VLM description lands well under 4k).
     "josiefied-qwen3-4b": {
-        "model_path": "models/Josiefied-Qwen3-4B-abliterated-v2.Q5_K_M.gguf",
+        "model_path": "models/Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf",
         "n_ctx": 6144,
         "draft_model_path": None,
     },

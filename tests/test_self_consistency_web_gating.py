@@ -62,7 +62,45 @@ def test_preflight_default_uses_single_call_temp_zero(cfg_mock) -> None:
     # Temperature was 0.0
     args = llm._llm.create_chat_completion.call_args
     assert args.kwargs["temperature"] == 0.0
+    # 2026-05-14: chat_template_kwargs forces enable_thinking=False so
+    # the abliterated default LLM doesn't emit a <think>...</think>
+    # chain that the JSON parser chokes on.
+    ctk = args.kwargs.get("chat_template_kwargs", {})
+    assert ctk.get("enable_thinking") is False
     assert verdict.decision == GateDecision.SEARCH
+
+
+def test_preflight_strips_think_block_from_raw_output(cfg_mock) -> None:
+    """2026-05-14 regression: if the LLM still emits a <think> chain
+    despite enable_thinking=False (as happened in the session log
+    "preflight returned unparseable JSON: '<think>...'"), the wrapper
+    must strip it before the JSON parser sees it."""
+    raw_with_think = (
+        "<think>\n"
+        "Okay, let me break down the user's query. They want to "
+        "'Show me a chicken on my main monitor.' First, I need to "
+        "determine if a web search is necessary...\n"
+        "</think>\n"
+        '{"needs_search": false, "knowledge_confidence": "medium", '
+        '"search_queries": [], "reason": "command, not search"}'
+    )
+    llm = _llm_returning(raw_with_think)
+    with patch("ultron.config.get_config", return_value=cfg_mock):
+        verdict = classify_by_preflight(llm, "show me a chicken on my main monitor")
+    assert verdict.decision == GateDecision.NO_SEARCH
+    assert verdict.source == "preflight"
+
+
+def test_preflight_unterminated_think_block_does_not_crash(cfg_mock) -> None:
+    """Even an unterminated <think> (truncation / cancel) must not
+    raise -- callers treat empty output as "preflight failed -> default
+    NO_SEARCH"."""
+    truncated = "<think>\nOkay, let me break down the user's query."
+    llm = _llm_returning(truncated)
+    with patch("ultron.config.get_config", return_value=cfg_mock):
+        verdict = classify_by_preflight(llm, "show me a chicken on my main monitor")
+    # Empty raw -> default NO_SEARCH (source="default" or fallback).
+    assert verdict.decision == GateDecision.NO_SEARCH
 
 
 def test_preflight_default_no_search_back_compat(cfg_mock) -> None:

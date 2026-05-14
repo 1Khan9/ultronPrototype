@@ -63,11 +63,16 @@ LLM_JOSIEFIED_FILE = "Josiefied-Qwen3-8B-abliterated-v1.Q5_K_M.gguf"
 
 # 2026-05-14 — Josiefied-Qwen3-4B-abliterated-v2 (Goekdeniz-Guelmez).
 # Base: Qwen/Qwen3-4B-Instruct-2507. Same abliterated + Josiefied
-# fine-tune lineage as the 8B above at ~half the VRAM footprint
-# (~3.0 GB on disk for Q5_K_M; ~7.4 GB voice-path peak vs 11.5 GB cap
-# — ~4 GB buffer, comfortable on the 4070 Ti). New default 2026-05-14.
+# fine-tune lineage as the 8B above at ~half the VRAM footprint.
+# Quant choice (2026-05-14 second-pass): Q4_K_M (~2.6 GB on disk;
+# ~3.0 GB VRAM loaded). Q5_K_M was the initial choice but the user's
+# workstation has ~4.7 GB of background GPU usage from Chrome /
+# Discord / EdgeWebView / NVIDIA Broadcast, leaving too little
+# headroom. Q4_K_M trims ~500 MB at negligible quality impact.
+# The Q5_K_M file is also fetched (below) as a swap-back option.
 LLM_JOSIEFIED_4B_REPO = "mradermacher/Josiefied-Qwen3-4B-abliterated-v2-GGUF"
-LLM_JOSIEFIED_4B_FILE = "Josiefied-Qwen3-4B-abliterated-v2.Q5_K_M.gguf"
+LLM_JOSIEFIED_4B_FILE = "Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf"
+LLM_JOSIEFIED_4B_Q5_FILE = "Josiefied-Qwen3-4B-abliterated-v2.Q5_K_M.gguf"
 
 # Moondream2 -- 1.9B vision-language model for "explain what I'm looking at"
 # voice flows. CPU-only on-demand inference (~5-8 s per query). Total ~3.5 GB
@@ -205,8 +210,11 @@ def main() -> int:
 
     settings.MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-    print("\n[1/11] LLM (Josiefied-Qwen3-4B-abliterated-v2 Q5_K_M) — current default")
+    print("\n[1/11] LLM (Josiefied-Qwen3-4B-abliterated-v2 Q4_K_M) — current default")
     _hf_download(LLM_JOSIEFIED_4B_REPO, LLM_JOSIEFIED_4B_FILE, settings.MODELS_DIR)
+
+    print("\n[1b/11] LLM (Josiefied-Qwen3-4B-abliterated-v2 Q5_K_M) — retained for swap-back / quality A/B")
+    _hf_download(LLM_JOSIEFIED_4B_REPO, LLM_JOSIEFIED_4B_Q5_FILE, settings.MODELS_DIR)
 
     print("\n[2/11] LLM (Josiefied-Qwen3-8B-abliterated-v1 Q5_K_M) — retained for swap-back")
     _hf_download(LLM_JOSIEFIED_REPO, LLM_JOSIEFIED_FILE, settings.MODELS_DIR)

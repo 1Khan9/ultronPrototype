@@ -252,12 +252,27 @@ def _preflight_call(llm, prompt: str, max_tokens: int) -> str:
 
     def _one_call(temperature: float) -> str:
         try:
+            # 2026-05-14: pass `enable_thinking=False` so Qwen3.5's chat
+            # template skips the <think>...</think> chain. Preflight is a
+            # structured JSON-output task; reasoning tokens add cost and
+            # the abliterated default LLM tends to start with a long
+            # thinking block that the JSON parser then chokes on (the
+            # 2026-05-14 session log showed "preflight returned
+            # unparseable JSON: '<think>\\nOkay, let me break down...'").
             out = llm._llm.create_chat_completion(  # noqa: SLF001
                 messages=[{"role": "user", "content": prompt}],
                 temperature=temperature,
                 max_tokens=max_tokens,
+                chat_template_kwargs={"enable_thinking": False},
             )
-            return (out["choices"][0]["message"]["content"] or "").strip()
+            raw = (out["choices"][0]["message"]["content"] or "").strip()
+            # Belt + braces: even with thinking disabled, some Qwen3
+            # variants still emit a stray <think>...</think> if their
+            # tokeniser sees the open-tag token early in sampling. Strip
+            # any residual blocks here so the JSON parser downstream
+            # never sees them.
+            from ultron.llm.inference import strip_thinking_text
+            return strip_thinking_text(raw).strip()
         except Exception as e:
             logger.warning("preflight LLM call failed: %s", e)
             return ""

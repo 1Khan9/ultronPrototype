@@ -2,8 +2,10 @@
 
 Verifies ``LLMConfig.preset`` behaviour:
 - Default preset ``josiefied-qwen3-4b`` resolves to the
-  Goekdeniz-Guelmez Josiefied + abliterated Qwen3-4B-v2 Q5_K_M
-  (current default since 2026-05-14 -- VRAM relief on the 4070 Ti).
+  Goekdeniz-Guelmez Josiefied + abliterated Qwen3-4B-v2 Q4_K_M
+  (current default since 2026-05-14 -- VRAM relief on the 4070 Ti.
+  Started Q5_K_M same day; trimmed to Q4_K_M to fit alongside the
+  user's ~4.7 GB of background GPU usage).
   The abliterated model removes content-level refusals; the runtime
   tool-call validator under ``src/ultron/safety/`` gates the actual
   capability surface. No paired draft so no speculative decoding for
@@ -39,7 +41,7 @@ def test_default_preset_is_josiefied_4b() -> None:
     surface."""
     cfg = LLMConfig()
     assert cfg.preset == "josiefied-qwen3-4b"
-    assert cfg.model_path == "models/Josiefied-Qwen3-4B-abliterated-v2.Q5_K_M.gguf"
+    assert cfg.model_path == "models/Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf"
     assert cfg.n_ctx == 6144
     # No paired draft model -- no abliterated 0.6B / 0.8B GGUF on HF.
     assert cfg.draft_model_path is None
@@ -66,7 +68,7 @@ def test_josiefied_4b_preset_resolves_paths_and_ctx() -> None:
     """
     cfg = LLMConfig(preset="josiefied-qwen3-4b")
     assert cfg.preset == "josiefied-qwen3-4b"
-    assert cfg.model_path == "models/Josiefied-Qwen3-4B-abliterated-v2.Q5_K_M.gguf"
+    assert cfg.model_path == "models/Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf"
     assert cfg.n_ctx == 6144
     assert cfg.draft_model_path is None
 
@@ -160,7 +162,7 @@ def test_preset_table_contents() -> None:
     assert eight_jos["draft_model_path"] is None
     assert eight_jos["n_ctx"] == 8192
     assert four_jos["model_path"].endswith(
-        "Josiefied-Qwen3-4B-abliterated-v2.Q5_K_M.gguf"
+        "Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf"
     )
     assert four_jos["draft_model_path"] is None
     # 2026-05-14: 4B abliterated uses n_ctx=6144 (smaller than the
@@ -202,7 +204,7 @@ llm:
     cfg = load_config(cfg_path)
     assert cfg.llm.preset == "josiefied-qwen3-4b"
     assert cfg.llm.model_path == (
-        "models/Josiefied-Qwen3-4B-abliterated-v2.Q5_K_M.gguf"
+        "models/Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf"
     )
     # 4B abliterated preset uses n_ctx=6144 (KV-cache trim).
     # Test omits an explicit n_ctx so the preset default applies.

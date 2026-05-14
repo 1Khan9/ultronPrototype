@@ -1080,6 +1080,44 @@ _IMAGE_SEARCH_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# 2026-05-14: implicit image-search shortcut -- "show me X on my main
+# monitor" / "show me a chicken on my right screen" -- when no "picture
+# of" keyword is present but the utterance carries a monitor target
+# AND the subject isn't a known app / screen-context noun. The user's
+# 2026-05-14 session said "Show me a chicken on my main monitor" and
+# the explicit-keyword regex above didn't match, so the utterance
+# leaked to the conversational LLM. With a monitor target present,
+# the only sensible interpretation is "open an image of X there".
+_IMAGE_SEARCH_IMPLICIT_RE = re.compile(
+    r"\bshow\s+me\s+(?:an?\s+|the\s+|some\s+)?"
+    r"(?P<q>[^.?!]+?)"
+    r"\s+on\s+(?:my\s+|the\s+)?"
+    r"(?:1st|first|2nd|second|3rd|third|4th|fourth|primary|main|"
+    r"left|right|center|centre|middle|top|bottom)"
+    r"\s+(?:monitor|screen|display)"
+    r"\b",
+    re.IGNORECASE,
+)
+
+# Exclusion list: subjects that should NOT trigger implicit image search
+# even with a monitor target. These overlap with screen-context /
+# system-status / app-launch intents which fire earlier in the
+# classifier anyway, but the explicit deny-list keeps the implicit
+# branch from competing on borderline phrasings.
+_IMAGE_SEARCH_IMPLICIT_DENY = frozenset({
+    "what", "what's", "what is",
+    "my screen", "the screen",
+    "my desktop", "the desktop",
+    "my window", "the window",
+    "the file", "the contents",
+    "the status", "the alerts",
+    "youtube", "github", "gmail", "reddit", "netflix", "twitter",
+    "x.com", "hacker news", "hn",
+    "chrome", "edge", "firefox", "cursor", "vscode", "discord",
+    "spotify", "slack", "obs", "notepad", "explorer", "terminal",
+    "google chrome", "microsoft edge", "vs code",
+})
+
 # URL-only quick-open (so "open youtube.com" routes to APP_LAUNCH for Chrome).
 _BARE_URL_OPEN_PATTERNS = re.compile(
     r"\b(?:open|pull\s+up|bring\s+up|launch|go\s+to|visit)\s+"
@@ -1258,6 +1296,30 @@ def _classify_app_launch(text: str) -> Optional[AppLaunchIntent]:
         query = (img.group("q1") or img.group("q2")
                  or img.group("q3") or img.group("q4") or "").strip()
         if query:
+            mon_idx, mon_q = _extract_monitor_target(text)
+            url = (
+                "https://www.google.com/search?tbm=isch&q="
+                + _url_quote(query)
+            )
+            return AppLaunchIntent(
+                app_name="chrome",
+                url=url,
+                monitor_index=mon_idx,
+                monitor_query=mon_q,
+                fullscreen=False,
+                maximize=False,
+                raw_text=text,
+            )
+
+    # 2026-05-14: implicit image search -- "show me X on my main monitor".
+    # No "picture of" keyword required. The monitor target is the
+    # disambiguating signal (utterance is asking for something to be
+    # displayed on a specific screen, not a conversational reply).
+    implicit_img = _IMAGE_SEARCH_IMPLICIT_RE.search(text)
+    if implicit_img:
+        query = (implicit_img.group("q") or "").strip()
+        # Guard: subject must not be a known app/screen-context noun.
+        if query and query.lower() not in _IMAGE_SEARCH_IMPLICIT_DENY:
             mon_idx, mon_q = _extract_monitor_target(text)
             url = (
                 "https://www.google.com/search?tbm=isch&q="

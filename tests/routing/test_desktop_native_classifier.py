@@ -347,6 +347,56 @@ def test_classify_app_launch_image_search_with_monitor():
     assert intent.monitor_index == 1
 
 
+# ---------------------------------------------------------------------------
+# 2026-05-14: implicit image-search shortcut -- "show me X on my main monitor"
+# without the "picture of" keyword.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("text,query_fragment", [
+    # The user's actual session-log phrasing
+    ("Show me a chicken on my main monitor", "chicken"),
+    ("show me a chicken on my main monitor.", "chicken"),
+    ("show me a golden retriever on my right monitor", "golden+retriever"),
+    ("Show me a raspberry pi 3B on my left monitor", "raspberry+pi"),
+    ("show me Afghanistan on my main screen", "Afghanistan"),
+    ("show me some pyramids on my center display", "pyramids"),
+])
+def test_classify_app_launch_implicit_image_search(text, query_fragment):
+    """Implicit image-search: "show me X on my <position> monitor" with no
+    "picture of" keyword. The monitor target is the disambiguating
+    signal."""
+    intent = _classify_app_launch(text)
+    assert intent is not None, f"failed for {text!r}"
+    assert intent.app_name == "chrome"
+    assert intent.url is not None
+    assert "tbm=isch" in intent.url
+    assert query_fragment.lower() in intent.url.lower()
+
+
+@pytest.mark.parametrize("text", [
+    # No monitor target -> not implicit-image-search (don't hijack)
+    "show me a chicken",
+    "show me a picture",
+    # Deny-list subjects (would otherwise overlap with system intents)
+    "show me my screen on my main monitor",
+    "show me what's on my main monitor",
+    "show me my desktop on the left monitor",
+    # Known-app subjects -> APP_LAUNCH handles these (don't double-fire)
+    "show me youtube on my second monitor",
+    "show me chrome on my right monitor",
+])
+def test_classify_app_launch_implicit_image_search_no_match(text):
+    """Negative cases where the implicit image-search MUST NOT fire."""
+    intent = _classify_app_launch(text)
+    # Either no match at all, or a non-image-search match (e.g. youtube
+    # routes to APP_LAUNCH with the home URL, not Google Images).
+    if intent is not None:
+        assert "tbm=isch" not in (intent.url or ""), (
+            f"unexpected image search for {text!r}: {intent.url}"
+        )
+
+
 def test_classify_app_launch_bare_url():
     # Use a domain NOT in _SITE_TO_URL so the bare-URL pattern fires
     # rather than the named-site pattern. wikipedia.org isn't in the

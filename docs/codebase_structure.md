@@ -36,7 +36,41 @@ User decision (no ClawHub plugins) drives the "native primitives + OpenClaw as o
 
 * **Phase 14 (orchestrator VLM wiring).** `Orchestrator.__init__` now calls `_load_desktop_vlm_if_enabled()` which constructs the moondream2 VLM and pushes it via :func:`ultron.desktop.vlm.set_vlm`. Lazy + fail-open: construction validates the transformers stack but does NOT load the ~3.5 GB weights at orchestrator startup -- the load happens on first :func:`describe` call (first ``SCREEN_CONTEXT_QUERY`` with VLM). Failure (missing transformers, missing weights on disk) leaves the singleton unset and `screen_context` falls back to text-only context (window title + UIA tree + foreground app). Targeted sweep: 221 pipeline + desktop tests still pass.
 
-**2026-05-14 VRAM-relief + UX-fix pass (pending commit on top of `205b97e`).**
+**2026-05-14 second-pass VRAM relief + classifier extension (pending commit on top of `901ebf1`).**
+
+Triggered by the user running on the new 4B abliterated default and
+finding the VRAM still maxing at ~11.1 GB (nvidia-smi showed ~4.7 GB
+already used by Chrome / Discord / EdgeWebView / NVIDIA Broadcast /
+Cursor BEFORE Ultron loaded). Plus two classifier regressions
+surfaced in the same session.
+
+* **LLM quant trim: Q5_K_M -> Q4_K_M** on the `josiefied-qwen3-4b`
+  preset. Saves another ~500 MB VRAM at negligible quality impact
+  (Qwen3-4B Q4_K_M vs Q5_K_M MMLU delta <0.5 pp per the
+  mradermacher quant ladder). Q5_K_M file retained on disk via the
+  download script's optional fetch for swap-back A/B.
+
+* **Implicit image-search shortcut.** "Show me a chicken on my
+  main monitor" -- with no "picture of" keyword -- now matches a
+  new `_IMAGE_SEARCH_IMPLICIT_RE` pattern. The monitor target is
+  the disambiguating signal; a deny-list (`_IMAGE_SEARCH_IMPLICIT_DENY`)
+  keeps screen-context / app-launch subjects from leaking in.
+
+* **Preflight `<think>` strip.** `web_search.gating._preflight_call`
+  was bypassing `LLMEngine.generate()` (calls
+  `llm._llm.create_chat_completion` directly), so the 2026-05-14
+  `strip_thinking_text` fix wasn't reaching it. Now passes
+  `chat_template_kwargs={"enable_thinking": False}` AND applies
+  `strip_thinking_text` defensively. Belt + braces: the abliterated
+  model occasionally emits a stray `<think>` even with thinking
+  disabled.
+
+Tests: 2263 -> 2278 (+15). Voice-path peak (4B Q4_K_M) is ~6.5-6.9 GB
+vs the ~7.0-7.4 GB of the Q5_K_M variant -- leaves ~5 GB above the
+user's typical background apps' ~4.7 GB consumption (vs 12 GB
+hard cap on the 4070 Ti).
+
+**2026-05-14 VRAM-relief + UX-fix pass (commit `901ebf1`).**
 
 Eleven coordinated fixes prompted by the user's live-session feedback
 (`12 GB VRAM ceiling hit; GPU at 100%; "main monitor" defaults to
@@ -652,7 +686,8 @@ For the current decisions and Foundation phase status see
 │   └── automation_tasks.jsonl      ← Phase 5 OpenClaw task records
 │
 ├── models/                         ← (main checkout only — NOT in worktrees)
-│   ├── Josiefied-Qwen3-4B-abliterated-v2.Q5_K_M.gguf ← LLM, CURRENT DEFAULT (3.0 GB, 2026-05-14)
+│   ├── Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf ← LLM, CURRENT DEFAULT (2.4 GB, 2026-05-14 second-pass)
+│   ├── Josiefied-Qwen3-4B-abliterated-v2.Q5_K_M.gguf ← retained for swap-back / quality A/B (2.7 GB, 2026-05-14)
 │   ├── Josiefied-Qwen3-8B-abliterated-v1.Q5_K_M.gguf ← LLM (5.85 GB; retained for swap-back / bigger abliterated)
 │   ├── Qwen3.5-9B-Q4_K_M.gguf      ← LLM (5.29 GB; retained for swap-back, not abliterated)
 │   ├── Qwen3.5-4B-Q4_K_M.gguf      ← LLM (2.55 GB; retained for swap-back / spec decoding, not abliterated)
@@ -2371,7 +2406,8 @@ Set `$env:PYTEST_RUN_GPU_TESTS = "1"` before pytest. Includes real Claude API ca
 
 | File | Used by | Size |
 |---|---|---|
-| `Josiefied-Qwen3-4B-abliterated-v2.Q5_K_M.gguf` | `LLMEngine` (when `llm.preset == "josiefied-qwen3-4b"`, **CURRENT DEFAULT 2026-05-14**). Goekdeniz-Guelmez Josiefied + abliterated Qwen3-4B-Instruct-2507 Q5_K_M, quantised by mradermacher. Same abliterated lineage as the 8B at ~half the VRAM. The runtime tool-call validator under `src/ultron/safety/` gates the capability surface. No paired draft (no abliterated sub-4B GGUF published). | 3.0 GB |
+| `Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf` | `LLMEngine` (when `llm.preset == "josiefied-qwen3-4b"`, **CURRENT DEFAULT 2026-05-14 second-pass**). Same Goekdeniz-Guelmez Josiefied + abliterated Qwen3-4B-Instruct-2507 as the Q5_K_M below, just smaller quant. ~3.0 GB VRAM loaded; chosen to leave room for the user's typical ~4.7 GB of background GPU usage. | 2.4 GB |
+| `Josiefied-Qwen3-4B-abliterated-v2.Q5_K_M.gguf` | retained for swap-back / quality A/B. Same model at Q5_K_M (~3.5 GB VRAM loaded). | 3.0 GB |
 | `Josiefied-Qwen3-8B-abliterated-v1.Q5_K_M.gguf` | `LLMEngine` (when `llm.preset == "josiefied-qwen3-8b"`; retained for swap-back to the bigger abliterated variant) | 5.85 GB |
 | `Qwen3.5-9B-Q4_K_M.gguf` | `LLMEngine` (when `llm.preset == "qwen3.5-9b"`; retained for swap-back, not abliterated) | 5.29 GB |
 | `Qwen3.5-4B-Q4_K_M.gguf` | `LLMEngine` (when `llm.preset == "qwen3.5-4b"`; retained for swap-back / spec decoding, not abliterated) | 2.55 GB |
