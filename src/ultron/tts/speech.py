@@ -657,6 +657,17 @@ class TextToSpeech:
             try:
                 stream = self._open_output_stream(spec_sr, low_latency)
                 stream.start()
+                # 2026-05-16 latency pass 2: write 50 ms of silence so
+                # the device clock is running before the first real
+                # audio write. The xtts_v3 engine already did this; the
+                # legacy path was missing the silence write so the
+                # first ``speak_stream`` clip paid the device-wake
+                # latency. Best-effort: swallow failures (some PortAudio
+                # backends prime themselves on stream.start()).
+                try:
+                    self._write_silence(stream, spec_sr, 0.05)
+                except Exception:
+                    pass
                 # Track the SR so consume can validate.
                 stream._ultron_sr = spec_sr  # type: ignore[attr-defined]
                 self._preopened_stream = stream

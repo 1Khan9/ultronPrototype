@@ -197,6 +197,37 @@ class TestLegacyPreOpen:
             e.prepare_output_stream()
         assert e._preopened_stream is None
 
+    def test_prepare_writes_silence_for_device_clock_warmup(self):
+        """2026-05-16 latency pass 2: legacy engine pre-open must
+        also write 50 ms of silence to wake the audio device clock
+        (XTTS already did). Without this, the first ``speak_stream``
+        clip on the legacy stack pays the device-wake latency."""
+        e = self._build_engine()
+        fake = _FakeOutputStream()
+        with patch.object(e, "_open_output_stream", return_value=fake), \
+             patch.object(e, "_write_silence") as mock_write:
+            e.prepare_output_stream()
+        # Silence call: stream, sr, 50 ms.
+        assert mock_write.called
+        args, _kwargs = mock_write.call_args
+        assert args[0] is fake
+        assert args[2] == pytest.approx(0.05)
+
+    def test_prepare_silence_write_failure_is_swallowed(self):
+        """If _write_silence itself raises, the pre-open should still
+        succeed -- some PortAudio backends prime themselves on
+        stream.start() and don't need the explicit write."""
+        e = self._build_engine()
+        fake = _FakeOutputStream()
+        with patch.object(e, "_open_output_stream", return_value=fake), \
+             patch.object(
+                 e, "_write_silence",
+                 side_effect=RuntimeError("write failed")
+             ):
+            e.prepare_output_stream()
+        # Stream still cached.
+        assert e._preopened_stream is fake
+
 
 # ---------------------------------------------------------------------------
 # Orchestrator wiring

@@ -80,7 +80,10 @@ def test_smart_turn_config_defaults_match_production_layout():
     assert cfg.model_path.endswith("smart-turn-v3.2-cpu.onnx")
     assert cfg.model_path.startswith("models/smart_turn/")
     assert cfg.completion_threshold == 0.5
-    assert cfg.fast_path_silence_duration_ms == 500
+    # 2026-05-16 latency pass 2: gradient-fire defaults.
+    assert cfg.early_completion_threshold == 0.65
+    assert cfg.fast_path_silence_duration_ms == 300  # dropped 500 -> 300
+    assert cfg.medium_grace_ms == 200  # 300 + 200 = legacy 500
     assert cfg.incomplete_extension_ms == 700
     assert cfg.window_seconds == 8.0
     assert cfg.num_threads == 1
@@ -151,14 +154,138 @@ def test_smart_turn_config_round_trips_through_dict():
     cfg = SmartTurnConfig(
         enabled=False,
         completion_threshold=0.7,
+        early_completion_threshold=0.8,
         fast_path_silence_duration_ms=400,
+        medium_grace_ms=150,
         incomplete_extension_ms=900,
     )
     cfg2 = SmartTurnConfig.model_validate(cfg.model_dump())
     assert cfg2.enabled is False
     assert cfg2.completion_threshold == 0.7
+    assert cfg2.early_completion_threshold == 0.8
     assert cfg2.fast_path_silence_duration_ms == 400
+    assert cfg2.medium_grace_ms == 150
     assert cfg2.incomplete_extension_ms == 900
+
+
+# ---------------------------------------------------------------------------
+# 2026-05-16 latency pass 2 -- gradient-fire knobs
+# ---------------------------------------------------------------------------
+
+
+def test_smart_turn_config_early_completion_threshold_default_is_065():
+    """Default 0.65: empirically conservative bar that eliminates
+    virtually all false-positive cut-offs while still firing on
+    confidently-complete turns at the shortened fast-path."""
+    from ultron.config import SmartTurnConfig
+    cfg = SmartTurnConfig()
+    assert cfg.early_completion_threshold == 0.65
+
+
+def test_smart_turn_config_early_completion_threshold_range():
+    from pydantic import ValidationError
+    from ultron.config import SmartTurnConfig
+    SmartTurnConfig(early_completion_threshold=0.05)
+    SmartTurnConfig(early_completion_threshold=0.99)
+    with pytest.raises(ValidationError):
+        SmartTurnConfig(early_completion_threshold=0.04)
+    with pytest.raises(ValidationError):
+        SmartTurnConfig(early_completion_threshold=1.0)
+
+
+def test_smart_turn_config_medium_grace_ms_default_is_200():
+    """Default 200 ms: 300 (fast_path) + 200 (grace) = 500 ms,
+    matching the prior legacy baseline for medium-confidence turns.
+    This is the no-regression contract for the medium band."""
+    from ultron.config import SmartTurnConfig
+    cfg = SmartTurnConfig()
+    assert cfg.medium_grace_ms == 200
+
+
+def test_smart_turn_config_medium_grace_ms_range():
+    from pydantic import ValidationError
+    from ultron.config import SmartTurnConfig
+    SmartTurnConfig(medium_grace_ms=0)  # legal: no grace, trust early verdict
+    SmartTurnConfig(medium_grace_ms=1500)
+    with pytest.raises(ValidationError):
+        SmartTurnConfig(medium_grace_ms=-1)
+    with pytest.raises(ValidationError):
+        SmartTurnConfig(medium_grace_ms=1501)
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator gradient-fire classifier
+# ---------------------------------------------------------------------------
+
+
+def _stub_orch_for_classifier():
+    """Build a minimal Orchestrator skeleton with the three threshold
+    knobs set, for testing _classify_smart_turn_verdict in isolation."""
+    from ultron.pipeline.orchestrator import Orchestrator
+    o = object.__new__(Orchestrator)
+    o._smart_turn_completion_threshold = 0.5
+    o._smart_turn_early_completion_threshold = 0.65
+    return o
+
+
+def test_classify_smart_turn_verdict_none_is_undecided():
+    """None verdict (model load failed / inference raised) -> caller
+    falls back to legacy VAD-only trust."""
+    from ultron.audio.smart_turn import SmartTurnVerdict  # noqa: F401
+    o = _stub_orch_for_classifier()
+    assert o._classify_smart_turn_verdict(None) == "undecided"
+
+
+def test_classify_smart_turn_verdict_early_complete():
+    """prob >= early_completion_threshold -> submit immediately at
+    the shortened fast-path baseline."""
+    from ultron.audio.smart_turn import SmartTurnVerdict
+    o = _stub_orch_for_classifier()
+    v = SmartTurnVerdict(is_complete=True, probability=0.9, latency_ms=10.0)
+    assert o._classify_smart_turn_verdict(v) == "early_complete"
+
+
+def test_classify_smart_turn_verdict_early_complete_at_threshold():
+    """Boundary: prob == early_completion_threshold still counts as
+    early_complete (>= not >)."""
+    from ultron.audio.smart_turn import SmartTurnVerdict
+    o = _stub_orch_for_classifier()
+    v = SmartTurnVerdict(is_complete=True, probability=0.65, latency_ms=10.0)
+    assert o._classify_smart_turn_verdict(v) == "early_complete"
+
+
+def test_classify_smart_turn_verdict_medium_complete():
+    """completion_threshold <= prob < early_completion_threshold:
+    medium-confidence -- wait the grace window then trust."""
+    from ultron.audio.smart_turn import SmartTurnVerdict
+    o = _stub_orch_for_classifier()
+    v = SmartTurnVerdict(is_complete=True, probability=0.6, latency_ms=10.0)
+    assert o._classify_smart_turn_verdict(v) == "medium_complete"
+
+
+def test_classify_smart_turn_verdict_medium_at_lower_boundary():
+    """Boundary: prob == completion_threshold counts as medium_complete."""
+    from ultron.audio.smart_turn import SmartTurnVerdict
+    o = _stub_orch_for_classifier()
+    v = SmartTurnVerdict(is_complete=True, probability=0.5, latency_ms=10.0)
+    assert o._classify_smart_turn_verdict(v) == "medium_complete"
+
+
+def test_classify_smart_turn_verdict_incomplete():
+    """prob < completion_threshold -> user trailed off; enter the
+    incomplete-extension wait path."""
+    from ultron.audio.smart_turn import SmartTurnVerdict
+    o = _stub_orch_for_classifier()
+    v = SmartTurnVerdict(is_complete=False, probability=0.3, latency_ms=10.0)
+    assert o._classify_smart_turn_verdict(v) == "incomplete"
+
+
+def test_classify_smart_turn_verdict_just_below_completion_is_incomplete():
+    """prob just below completion_threshold -> incomplete."""
+    from ultron.audio.smart_turn import SmartTurnVerdict
+    o = _stub_orch_for_classifier()
+    v = SmartTurnVerdict(is_complete=False, probability=0.49, latency_ms=10.0)
+    assert o._classify_smart_turn_verdict(v) == "incomplete"
 
 
 def test_vad_config_includes_smart_turn_subsection():

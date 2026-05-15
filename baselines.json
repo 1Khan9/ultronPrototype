@@ -289,5 +289,48 @@
     "before_load": 2625,
     "full_stack_loaded": 7284,
     "peak_under_load": 7434
+  },
+  "llm_prefix_cache_bench": {
+    "metadata": {
+      "timestamp": "2026-05-14 21:35:34",
+      "queries": [
+        "What's the weather like today?",
+        "Tell me a short joke.",
+        "How do I list files in a directory on Linux?",
+        "Define entropy in one sentence.",
+        "Who wrote The Old Man and the Sea?"
+      ],
+      "warmup_turns": 1,
+      "voice_pass_label": "2026-05-16 latency pass 2 / Phase 2"
+    },
+    "cold_path": {
+      "median_ms": 63.0,
+      "p95_ms": 78.8,
+      "min_ms": 62.0,
+      "max_ms": 79.0,
+      "n": 5,
+      "raw_ms": [
+        78.0,
+        79.0,
+        63.0,
+        62.0,
+        63.0
+      ]
+    },
+    "warm_path": {
+      "median_ms": 78.0,
+      "p95_ms": 78.8,
+      "min_ms": 62.0,
+      "max_ms": 79.0,
+      "n": 5,
+      "raw_ms": [
+        78.0,
+        78.0,
+        79.0,
+        63.0,
+        62.0
+      ]
+    },
+    "median_delta_ms": -15.0
   }
 }

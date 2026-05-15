@@ -86,7 +86,14 @@ class _Strict(BaseModel):
 class AudioConfig(_Strict):
     sample_rate: int = 16000
     channels: int = 1
-    blocksize: int = 512
+    # 2026-05-16 latency pass 2: 512 -> 256 (32 ms -> 16 ms at 16 kHz).
+    # Halves the mic-to-consumer queue latency. Silero VAD's internal
+    # window is 512 samples regardless -- it buffers two 256-sample
+    # chunks for one decision -- so VAD timing is unchanged, but the
+    # orchestrator's per-block silence-onset detection has finer
+    # granularity (16 ms steps vs 32 ms) for the speculative-Whisper
+    # kick-off in Phase 4.
+    blocksize: int = 256
     dtype: str = "float32"
     input_device: Optional[str] = None        # env: ULTRON_AUDIO_DEVICE
     output_device: Optional[str] = None       # env: ULTRON_AUDIO_OUTPUT_DEVICE
@@ -153,14 +160,39 @@ class SmartTurnConfig(_Strict):
     # cost of longer perceived latency on confidently-done turns.
     # Loosening (0.3-0.4) is rarely useful -- it just trusts VAD more.
     completion_threshold: float = Field(default=0.5, ge=0.05, le=0.95)
+    # 2026-05-16 latency pass 2: gradient-fire confidence threshold for
+    # the EARLY check at ``fast_path_silence_duration_ms``. When the
+    # model returns prob >= early_completion_threshold at the early
+    # checkpoint (300 ms by default), we submit immediately. When prob
+    # is in [completion_threshold, early_completion_threshold) we wait
+    # an additional ``medium_grace_ms`` and re-check with the lower
+    # threshold (compensates for the model being less confident on the
+    # shorter silence tail). When prob < completion_threshold we enter
+    # the existing ``incomplete_extension_ms`` path (user trailed off).
+    # Pipecat's smart-turn-v3.2 blog notes higher accuracy on short
+    # utterances; 0.65 is a conservative early-fire bar that empirically
+    # eliminates virtually all false-positive cut-offs while still
+    # firing on the common "definite end-of-turn" case.
+    early_completion_threshold: float = Field(default=0.65, ge=0.05, le=0.99)
     # Reduced VAD ``min_silence_duration_ms`` baseline when smart-turn
     # is active. Smart Turn confirms or rejects the early end-of-speech
     # so we can declare SPEECH_END much sooner and rely on the model
-    # to catch trailed-off mid-thought cases. 500 ms strikes a balance:
-    # short enough to capture most of the perceived-latency win, long
-    # enough that obvious mid-word breaths don't trigger an inference
-    # cycle on every pause.
-    fast_path_silence_duration_ms: int = Field(default=500, ge=100, le=2000)
+    # to catch trailed-off mid-thought cases. 2026-05-16 latency pass 2
+    # dropped this from 500 -> 300 ms after web research showed
+    # smart-turn-v3.2 maintains accuracy at the lower bound; combined
+    # with ``early_completion_threshold`` raised to 0.65 we get the
+    # full 200 ms win on confidently-complete turns while preserving
+    # the legacy 500 ms behaviour for medium-confidence turns via the
+    # gradient-fire path.
+    fast_path_silence_duration_ms: int = Field(default=300, ge=100, le=2000)
+    # 2026-05-16 latency pass 2: silence grace appended to
+    # ``fast_path_silence_duration_ms`` when the early check returns
+    # in the "uncertain" band [completion_threshold, early_completion_threshold).
+    # The orchestrator waits this long then re-checks the verdict
+    # against ``completion_threshold`` (legacy 0.5). 200 ms takes us
+    # from 300 ms fast-path back to the 500 ms legacy baseline, so the
+    # medium-confidence case never regresses vs the prior pass.
+    medium_grace_ms: int = Field(default=200, ge=0, le=1500)
     # Additional silence required AFTER smart-turn says "incomplete"
     # before the orchestrator finally accepts end-of-turn. This is the
     # second-chance grace window for the user to resume speaking; if
@@ -496,6 +528,26 @@ class LLMConfig(_Strict):
     # hardware). Range bounds match llama.cpp's internal validation.
     n_batch: Optional[int] = Field(default=None, ge=1, le=32768)
     n_ubatch: Optional[int] = Field(default=None, ge=1, le=32768)
+    # 2026-05-16 latency pass 2: prefix KV cache. When > 0, the in-process
+    # Llama instance gets a ``LlamaRAMCache`` attached at init so completed
+    # session KV state is stored in host RAM keyed by the longest-common-
+    # prefix of the token sequence. Subsequent calls with a shared prefix
+    # (the stable system prompt + prior turns) restore the cached state
+    # instead of re-evaluating those tokens.
+    #
+    # **DEFAULT 0 (disabled) after live bench on 4070 Ti + josiefied-4B-
+    # Q4_K_M showed a ~15 ms TTFT REGRESSION vs cache-off.** llama.cpp's
+    # internal KV cache already handles intra-session prefix reuse (which
+    # is what every voice turn within one engine instance does); the
+    # explicit LlamaRAMCache adds a ``load_state`` memcpy that exceeds
+    # the eval savings on our short 280-token system prompts. The knob
+    # stays in place so operators with different workloads (longer
+    # prompts, cross-session reloads, slower-prefill models) can opt in.
+    # See ``scripts/bench_llm_prefix_cache.py`` and the
+    # ``baselines.json:llm_prefix_cache_bench`` block for the measurement.
+    # Set to e.g. 2147483648 (2 GiB) to re-enable. Host RAM only -- the
+    # cache does NOT touch the 11.5 GB VRAM budget.
+    prefix_cache_ram_bytes: int = Field(default=0, ge=0)
     system_prompt: str = ""
     server: LLMServerConfig = Field(default_factory=LLMServerConfig)
     persona: LLMPersonaConfig = Field(default_factory=LLMPersonaConfig)

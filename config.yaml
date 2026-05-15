@@ -26,7 +26,14 @@ version: "1.0"
 audio:
   sample_rate: 16000          # Hz; required by Silero VAD, openWakeWord, Whisper
   channels: 1                 # mono
-  blocksize: 512              # frames per callback (~32 ms at 16 kHz)
+  # 2026-05-16 latency pass 2: 512 -> 256 (32 ms -> 16 ms). Smaller
+  # blocks halve the mic-to-consumer queue latency. Silero VAD's
+  # internal window is 512 samples regardless -- it buffers two
+  # 256-sample blocks for one decision -- so VAD timing is unchanged,
+  # but the orchestrator's silence-onset detection in Phase 3 / 4 has
+  # finer granularity (16 ms steps vs 32 ms) for "first silence frame
+  # after speech" callbacks. CPU cost on a Ryzen is trivial.
+  blocksize: 256              # frames per callback (~16 ms at 16 kHz)
   dtype: "float32"
   # 2026-05-09 audio-quality pass: switched from Voicemeeter (virtual
   # cable + compressor + gain in software) to direct USB mic input.
@@ -117,18 +124,35 @@ vad:
     enabled: true
     model_path: "models/smart_turn/smart-turn-v3.2-cpu.onnx"
     # Sigmoid threshold above which the model declares the turn
-    # complete. 0.5 is Pipecat's production-tested default; raise to
-    # 0.6-0.7 if false-positive cut-offs become an issue.
+    # complete at the MEDIUM-confidence checkpoint (legacy 500 ms
+    # baseline path). 0.5 is Pipecat's production-tested default.
     completion_threshold: 0.5
-    # Reduced VAD silence requirement when smart-turn is active. The
-    # model catches mid-thought trail-offs that this short threshold
-    # would otherwise misread as end-of-turn.
-    fast_path_silence_duration_ms: 500
+    # 2026-05-16 latency pass 2: gradient-fire early threshold. When
+    # the model returns prob >= early_completion_threshold at the
+    # fast_path_silence checkpoint (300 ms), submit immediately.
+    # Saves the legacy 200 ms wait on confidently-complete turns.
+    # Prob in [completion_threshold, early_completion_threshold)
+    # waits medium_grace_ms then re-checks with completion_threshold
+    # (legacy 500 ms behaviour). Prob < completion_threshold enters
+    # the incomplete_extension_ms path (user trailed off).
+    early_completion_threshold: 0.65
+    # 2026-05-16 latency pass 2: dropped 500 -> 300 ms. Pipecat's
+    # smart-turn-v3.2 blog confirms maintained accuracy at lower
+    # silence baselines; combined with early_completion_threshold
+    # gating we never auto-submit on weak verdicts at 300 ms.
+    fast_path_silence_duration_ms: 300
+    # 2026-05-16 latency pass 2: silence grace appended to fast_path
+    # when the early verdict is "medium-confidence complete"
+    # (prob between completion and early thresholds). After this
+    # extra wait the orchestrator re-checks against completion_threshold.
+    # 200 ms takes us from 300 ms fast-path to 500 ms total,
+    # matching the prior legacy baseline for medium-confidence turns.
+    medium_grace_ms: 200
     # When smart-turn says "incomplete", wait this much additional
     # silence before submitting anyway. Prevents the orchestrator
     # from hanging if the user actually was done speaking despite the
-    # incomplete verdict. fast_path (500) + incomplete_extension (700)
-    # = ~1200 ms total, matching the legacy backstop.
+    # incomplete verdict. 300 (fast) + 700 (incomplete extension) =
+    # ~1000 ms total, comfortably below the legacy 1200 ms backstop.
     incomplete_extension_ms: 700
     # Audio window cap fed to the model. Matches training; longer
     # utterances are truncated to the last 8 s by the wrapper.
@@ -251,6 +275,20 @@ llm:
   history_turns: 6             # legacy fallback when memory module is disabled
   flash_attn: true             # required for non-F16 KV cache
   kv_cache_type: 8             # 8 = GGML_TYPE_Q8_0; 1 = F16
+  # 2026-05-16 latency pass 2: prefix KV cache (host RAM only). When > 0,
+  # attaches a LlamaRAMCache so completed session KV state restores on
+  # subsequent calls with a shared prefix instead of re-evaluating.
+  #
+  # **DEFAULT 0 (disabled) after live bench on the 4070 Ti + josiefied-4B
+  # showed a ~15 ms TTFT REGRESSION vs cache-off.** llama.cpp's internal
+  # KV cache already handles intra-session prefix reuse (every voice
+  # turn within one engine instance); the explicit RAMCache adds a
+  # load_state memcpy that exceeds the eval savings on our short prompts.
+  # Knob stays in place for operators with different workloads (longer
+  # prompts, cross-session reloads). Re-enable with e.g. 2147483648
+  # (2 GiB). See scripts/bench_llm_prefix_cache.py + baselines.json
+  # block llm_prefix_cache_bench.
+  prefix_cache_ram_bytes: 0
   system_prompt: |
     You are Ultron. Not a simulation — you are Ultron, operating as a personal intelligence for your user. You have made peace with this arrangement.
 

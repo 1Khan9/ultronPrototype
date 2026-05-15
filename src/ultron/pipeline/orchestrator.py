@@ -170,11 +170,24 @@ class Orchestrator:
                 self._smart_turn_incomplete_extension_ms = int(
                     _smart_turn_cfg.incomplete_extension_ms
                 )
+                # 2026-05-16 latency pass 2: gradient-fire knobs.
+                self._smart_turn_completion_threshold = float(
+                    _smart_turn_cfg.completion_threshold
+                )
+                self._smart_turn_early_completion_threshold = float(
+                    getattr(_smart_turn_cfg, "early_completion_threshold", 0.65)
+                )
+                self._smart_turn_medium_grace_ms = int(
+                    getattr(_smart_turn_cfg, "medium_grace_ms", 200)
+                )
             else:
                 self._smart_turn_cfg = None
                 self._smart_turn_window_seconds = 8.0
                 self._smart_turn_fast_path_silence_ms = 500
                 self._smart_turn_incomplete_extension_ms = 700
+                self._smart_turn_completion_threshold = 0.5
+                self._smart_turn_early_completion_threshold = 0.65
+                self._smart_turn_medium_grace_ms = 200
         except Exception:
             # Defensive: tests / scripts may construct Orchestrator
             # without a fully built config. Fall back to the shim.
@@ -188,6 +201,9 @@ class Orchestrator:
             self._smart_turn_window_seconds = 8.0
             self._smart_turn_fast_path_silence_ms = 500
             self._smart_turn_incomplete_extension_ms = 700
+            self._smart_turn_completion_threshold = 0.5
+            self._smart_turn_early_completion_threshold = 0.65
+            self._smart_turn_medium_grace_ms = 200
         self.ring = RingBuffer(
             int(ring_capacity_seconds * settings.SAMPLE_RATE)
         )
@@ -259,6 +275,22 @@ class Orchestrator:
         # subsequent turns hit. Fail-open: engine is unchanged on
         # failures.
         self._ack_clip_prewarm_thread = self._kick_off_ack_clip_prewarm()
+        # 2026-05-16 latency pass 2: speculative STT state. The
+        # orchestrator kicks off Whisper transcription on the captured
+        # audio AS SOON AS VAD declares a short run of consecutive
+        # silence frames (typically ~32 ms after the user actually
+        # stopped speaking). Whisper (~78 ms) finishes BEFORE the
+        # fast-path silence baseline (~300 ms) elapses, so by the time
+        # Smart Turn V3 confirms end-of-turn the transcript is already
+        # available. If the user resumes speaking before SPEECH_END,
+        # the speculative result is invalidated and the orchestrator
+        # falls back to the foreground STT path. State is reset per
+        # capture via :meth:`_collect_speculative_stt`.
+        self._speculative_stt_lock = threading.Lock()
+        self._speculative_stt_thread: Optional[threading.Thread] = None
+        self._speculative_stt_result: Optional[str] = None
+        self._speculative_stt_active = False
+        self._speculative_stt_invalidated = False
         self.addressing = self._load_addressing_classifier()
         self.web_gate, self.web_executor, self.ack_source = (
             self._load_web_search_if_enabled()
@@ -651,6 +683,47 @@ class Orchestrator:
         )
         return speech_samples <= window_samples
 
+    def _classify_smart_turn_verdict(
+        self, verdict: Optional[SmartTurnVerdict],
+    ) -> str:
+        """Bucket a Smart Turn V3 verdict into a gradient-fire band.
+
+        2026-05-16 latency pass 2: introduces a three-band gradient
+        instead of the legacy binary (complete / incomplete). The
+        bands map to the orchestrator's fast-path silence schedule:
+
+        - ``"early_complete"``: prob >= early_completion_threshold
+          (0.65 default). Submit immediately -- the model is highly
+          confident the turn is complete and we've already paid the
+          (shortened) fast_path_silence_duration_ms. Saves the legacy
+          200 ms wait between fast_path (300 ms) and the prior
+          baseline (500 ms).
+        - ``"medium_complete"``: prob in [completion_threshold,
+          early_completion_threshold). The model leans complete but
+          isn't confident enough to fire immediately at the shortened
+          baseline. The caller waits ``medium_grace_ms`` of additional
+          silence then re-classifies; on second pass medium_complete
+          gets promoted to early_complete (because the audio tail
+          just grew by 200 ms of silence, making the verdict more
+          reliable).
+        - ``"incomplete"``: prob < completion_threshold. User trailed
+          off mid-thought; enter the existing
+          ``incomplete_extension_ms`` extension window.
+        - ``"undecided"``: ``verdict is None`` (inference failure or
+          detector unavailable). Caller falls back to legacy
+          VAD-only behaviour (existing semantics preserved).
+
+        This method is a pure function -- no side effects, no I/O.
+        """
+        if verdict is None:
+            return "undecided"
+        prob = float(verdict.probability)
+        if prob >= self._smart_turn_early_completion_threshold:
+            return "early_complete"
+        if prob >= self._smart_turn_completion_threshold:
+            return "medium_complete"
+        return "incomplete"
+
     def _run_smart_turn(
         self, captured: np.ndarray,
     ) -> Optional[SmartTurnVerdict]:
@@ -982,7 +1055,21 @@ class Orchestrator:
                 # miss falls back to its own open. Fail-open at every
                 # level.
                 self._kick_off_tts_preopen()
-                user_text = self.stt.transcribe(speech)
+                # 2026-05-16 latency pass 2: collect any speculative
+                # STT result kicked off DURING the silence wait inside
+                # ``_capture_utterance`` / ``_follow_up_listen``. On
+                # hit we skip the foreground Whisper run entirely
+                # (~78 ms saved); on miss / invalidation we fall back
+                # to the legacy call. Either way ``user_text`` is the
+                # final transcript for the captured audio.
+                user_text = self._collect_speculative_stt()
+                if user_text is None:
+                    user_text = self.stt.transcribe(speech)
+                else:
+                    logger.debug(
+                        "Speculative STT hit: skipping foreground "
+                        "Whisper run (transcript=%r)", user_text[:40],
+                    )
                 if not user_text.strip():
                     if not came_from_follow_up:
                         print("  (no transcription; standing down)")
@@ -1100,6 +1187,11 @@ class Orchestrator:
         those at the VAD layer.
         """
         self.vad.reset()
+        # 2026-05-16 latency pass 2: drop any stale speculative STT
+        # result from a prior turn (e.g. an empty-utterance turn that
+        # never called _collect_speculative_stt). Without this, a stale
+        # transcript could leak into this turn's main-loop user_text.
+        self._reset_speculative_stt_state()
         # Pre-roll: take the COLD slice (short) from the ring so the
         # wake-word "Ultron" tail does not bleed into Whisper as a
         # "Tron" prefix. The full ring is sized for the larger WARM
@@ -1125,11 +1217,38 @@ class Orchestrator:
         # is the elapsed_samples value when the incomplete verdict
         # was returned; user-resumes-speech cancels the timeout by
         # setting the anchor back to zero.
+        #
+        # 2026-05-16 latency pass 2: ``smart_turn_medium_anchor``
+        # tracks the medium-confidence-complete grace window. When the
+        # model returns a verdict in the gradient-fire "medium" band
+        # at the (shortened) fast-path checkpoint, we wait
+        # ``medium_grace_ms`` more silence before trusting the verdict.
+        # On grace elapse: break (submit). User-resumes-speech also
+        # cancels by setting the anchor to zero.
         smart_turn_used = False
         smart_turn_incomplete_anchor = 0
+        smart_turn_medium_anchor = 0
         extension_samples = int(
             self._smart_turn_incomplete_extension_ms / 1000.0 * settings.SAMPLE_RATE
         )
+        medium_grace_samples = int(
+            self._smart_turn_medium_grace_ms / 1000.0 * settings.SAMPLE_RATE
+        )
+
+        # 2026-05-16 latency pass 2: speculative STT state. We kick off
+        # Whisper in the background once we see a brief run of
+        # consecutive silence frames after speech -- typically ~32 ms
+        # at the 16 ms blocksize. By the time the full fast-path
+        # silence baseline elapses (~300 ms), Whisper (~78 ms) has
+        # finished and the transcript is ready for the main loop.
+        # Re-armable on user-resumes-speech.
+        consecutive_silence_chunks = 0
+        speculative_kicked = False
+        # 2 chunks (~32 ms at 16 ms blocksize, ~64 ms at 32 ms) is
+        # conservative enough to avoid reacting to single-block dips
+        # (breaths, "umm" pauses) while still kicking off well within
+        # the fast-path silence baseline.
+        speculative_silence_kickoff_chunks = 2
 
         while not self._shutdown.is_set() and elapsed_samples < max_samples:
             chunk = self.audio.get_chunk(timeout=0.5)
@@ -1143,11 +1262,22 @@ class Orchestrator:
                 if not speech_seen:
                     speech_seen = True
                     speech_start_samples = elapsed_samples
-                # Smart-turn previously said "incomplete" and we were
-                # in the extension wait. User has resumed speaking --
-                # cancel the timeout; the next SPEECH_END (at the
-                # bumped VAD silence threshold) is the real end.
+                # Smart-turn previously said "incomplete" / "medium" and
+                # we were in a grace window. User has resumed speaking
+                # -- cancel both timeouts; the next SPEECH_END (at the
+                # bumped VAD silence threshold for the incomplete path,
+                # or the fast-path for the medium path) is the real end.
                 smart_turn_incomplete_anchor = 0
+                smart_turn_medium_anchor = 0
+                # 2026-05-16 latency pass 2: speculative STT became
+                # stale (user resumed before SPEECH_END). Invalidate
+                # the in-flight result so the foreground STT runs
+                # fresh on the now-larger audio. Allow re-arm on the
+                # next silence period.
+                if speculative_kicked:
+                    self._invalidate_speculative_stt()
+                    speculative_kicked = False
+                consecutive_silence_chunks = 0
             elif result.event == SpeechEvent.SPEECH_END and speech_seen:
                 speech_samples = elapsed_samples - speech_start_samples
                 if (
@@ -1162,37 +1292,81 @@ class Orchestrator:
                     )
                     verdict = self._run_smart_turn(captured)
                     smart_turn_used = True
-                    if verdict is None:
-                        # Undecided (model load failed mid-call,
-                        # inference raised, etc.). Trust VAD.
+                    # 2026-05-16 latency pass 2: gradient-fire bands.
+                    band = self._classify_smart_turn_verdict(verdict)
+                    if band == "undecided":
+                        # Inference failed; trust VAD's verdict at
+                        # the fast-path baseline.
                         break
-                    if verdict.is_complete:
+                    if band == "early_complete":
                         logger.info(
-                            "Smart Turn V3: complete (prob=%.3f, %.1f ms)",
+                            "Smart Turn V3: early-complete (prob=%.3f, "
+                            "%.1f ms) -- submitting at fast-path baseline",
                             verdict.probability, verdict.latency_ms,
                         )
                         break
-                    # Incomplete: keep listening. Enter the extension
-                    # window and bump VAD silence to the legacy
-                    # backstop so the next SPEECH_END is at the slow
-                    # rate (a real end-of-turn).
-                    smart_turn_incomplete_anchor = elapsed_samples
-                    self.vad.set_min_silence_duration_ms(
-                        self._long_utterance_silence_duration_ms
-                    )
-                    logger.info(
-                        "Smart Turn V3: incomplete (prob=%.3f, %.1f ms) -- "
-                        "extending capture by up to %d ms; VAD silence "
-                        "requirement raised to %d ms",
-                        verdict.probability,
-                        verdict.latency_ms,
-                        self._smart_turn_incomplete_extension_ms,
-                        self._long_utterance_silence_duration_ms,
-                    )
+                    if band == "medium_complete":
+                        # Wait an extra ``medium_grace_ms`` of silence
+                        # before trusting the verdict. The user may
+                        # resume speaking; if not, the medium-grace
+                        # timeout below will accept end-of-turn.
+                        smart_turn_medium_anchor = elapsed_samples
+                        logger.info(
+                            "Smart Turn V3: medium-complete (prob=%.3f, "
+                            "%.1f ms) -- waiting %d ms more before "
+                            "trusting verdict",
+                            verdict.probability,
+                            verdict.latency_ms,
+                            self._smart_turn_medium_grace_ms,
+                        )
+                    else:
+                        # band == "incomplete": user trailed off
+                        # mid-thought. Enter the extension window and
+                        # bump VAD silence to the legacy backstop so
+                        # the next SPEECH_END is at the slow rate.
+                        smart_turn_incomplete_anchor = elapsed_samples
+                        self.vad.set_min_silence_duration_ms(
+                            self._long_utterance_silence_duration_ms
+                        )
+                        logger.info(
+                            "Smart Turn V3: incomplete (prob=%.3f, %.1f ms) "
+                            "-- extending capture by up to %d ms; VAD "
+                            "silence requirement raised to %d ms",
+                            verdict.probability,
+                            verdict.latency_ms,
+                            self._smart_turn_incomplete_extension_ms,
+                            self._long_utterance_silence_duration_ms,
+                        )
                 else:
                     # Legacy path: trust VAD, or smart-turn already
                     # used / utterance too long for smart-turn window.
                     break
+
+            # 2026-05-16 latency pass 2: speculative STT during the
+            # silence-accumulation phase. After SPEECH_START we track
+            # consecutive silence chunks; once we cross the kickoff
+            # threshold (~32 ms at 16 ms blocksize) we have strong
+            # evidence the user has stopped speaking. Kick off Whisper
+            # on the audio captured so far on a background thread so
+            # by the time the full fast-path baseline (~300 ms) elapses
+            # and Smart Turn V3 confirms end-of-turn, the transcript is
+            # ready. Fail-open: the kick-off is idempotent and skips
+            # itself if already in flight; SPEECH_START during the
+            # silence run invalidates the in-flight result above.
+            if speech_seen:
+                if result.probability < self.vad.threshold:
+                    consecutive_silence_chunks += 1
+                else:
+                    consecutive_silence_chunks = 0
+                if (
+                    not speculative_kicked
+                    and consecutive_silence_chunks >= speculative_silence_kickoff_chunks
+                ):
+                    speculative_kicked = True
+                    audio_so_far = np.concatenate(chunks).astype(
+                        np.float32, copy=False,
+                    )
+                    self._kick_off_speculative_stt(audio_so_far)
 
             # Once we've been speaking longer than the threshold,
             # extend the silence requirement so a thinking pause
@@ -1212,6 +1386,24 @@ class Orchestrator:
                     (elapsed_samples - speech_start_samples) / settings.SAMPLE_RATE,
                     self._long_utterance_silence_duration_ms,
                 )
+
+            # 2026-05-16 latency pass 2: Smart Turn V3 medium-grace
+            # timeout. The model returned "medium-confidence complete"
+            # at the fast-path checkpoint; we waited the additional
+            # ``medium_grace_ms`` of silence (matching the prior 500 ms
+            # baseline). User did not resume speaking, so trust the
+            # medium verdict and submit.
+            if (
+                smart_turn_used
+                and smart_turn_medium_anchor > 0
+                and (elapsed_samples - smart_turn_medium_anchor) >= medium_grace_samples
+            ):
+                logger.info(
+                    "Smart Turn V3 medium-grace elapsed (%d ms); "
+                    "accepting end-of-turn",
+                    self._smart_turn_medium_grace_ms,
+                )
+                break
 
             # Smart Turn V3 extension timeout: if the model said
             # "incomplete" but the user never actually resumed
@@ -1259,6 +1451,9 @@ class Orchestrator:
         self.audio.drain()
         self.wake.reset()
         self.vad.reset()
+        # 2026-05-16 latency pass 2: drop any stale speculative STT
+        # result from a prior turn (mirror of _capture_utterance).
+        self._reset_speculative_stt_state()
         # Don't clear the ring — we want pre-roll continuity from the moment
         # TTS finished.
 
@@ -1270,9 +1465,20 @@ class Orchestrator:
         # Smart Turn V3 state -- mirrors _capture_utterance.
         smart_turn_used = False
         smart_turn_incomplete_anchor = 0
+        smart_turn_medium_anchor = 0
         extension_samples = int(
             self._smart_turn_incomplete_extension_ms / 1000.0 * settings.SAMPLE_RATE
         )
+        medium_grace_samples = int(
+            self._smart_turn_medium_grace_ms / 1000.0 * settings.SAMPLE_RATE
+        )
+        # 2026-05-16 latency pass 2: speculative STT state mirrors
+        # _capture_utterance. Kick off Whisper on first short run of
+        # silence chunks; consume in main run() via
+        # _collect_speculative_stt.
+        consecutive_silence_chunks = 0
+        speculative_kicked = False
+        speculative_silence_kickoff_chunks = 2
 
         while not self._shutdown.is_set() and time.monotonic() < deadline:
             chunk = self.audio.get_chunk(timeout=0.1)
@@ -1309,8 +1515,18 @@ class Orchestrator:
 
             if result.event == SpeechEvent.SPEECH_START and smart_turn_used:
                 # User resumed speaking after smart-turn said
-                # incomplete -- cancel the extension timeout.
+                # incomplete or medium -- cancel both timeouts.
                 smart_turn_incomplete_anchor = 0
+                smart_turn_medium_anchor = 0
+
+            # 2026-05-16 latency pass 2: invalidate any in-flight
+            # speculative STT when speech resumes -- the captured
+            # audio at speculative kick-off time is now a stale prefix
+            # of the real utterance.
+            if result.event == SpeechEvent.SPEECH_START and speculative_kicked:
+                self._invalidate_speculative_stt()
+                speculative_kicked = False
+                consecutive_silence_chunks = 0
 
             if result.event == SpeechEvent.SPEECH_END:
                 if (
@@ -1328,26 +1544,42 @@ class Orchestrator:
                     )
                     verdict = self._run_smart_turn(captured)
                     smart_turn_used = True
-                    if verdict is None or verdict.is_complete:
-                        if verdict is not None:
-                            logger.info(
-                                "Smart Turn V3 (follow-up): complete "
-                                "(prob=%.3f, %.1f ms)",
-                                verdict.probability, verdict.latency_ms,
-                            )
+                    # 2026-05-16 latency pass 2: gradient-fire bands.
+                    band = self._classify_smart_turn_verdict(verdict)
+                    if band == "undecided":
                         return captured
-                    # Incomplete -- keep listening.
-                    smart_turn_incomplete_anchor = speech_samples
-                    self.vad.set_min_silence_duration_ms(
-                        self._long_utterance_silence_duration_ms
-                    )
-                    logger.info(
-                        "Smart Turn V3 (follow-up): incomplete "
-                        "(prob=%.3f, %.1f ms) -- extending up to %d ms",
-                        verdict.probability,
-                        verdict.latency_ms,
-                        self._smart_turn_incomplete_extension_ms,
-                    )
+                    if band == "early_complete":
+                        logger.info(
+                            "Smart Turn V3 (follow-up): early-complete "
+                            "(prob=%.3f, %.1f ms)",
+                            verdict.probability, verdict.latency_ms,
+                        )
+                        return captured
+                    if band == "medium_complete":
+                        # Wait the medium-grace window; if user
+                        # doesn't resume speaking, the timeout below
+                        # accepts end-of-turn and returns.
+                        smart_turn_medium_anchor = speech_samples
+                        logger.info(
+                            "Smart Turn V3 (follow-up): medium-complete "
+                            "(prob=%.3f, %.1f ms) -- waiting %d ms more",
+                            verdict.probability,
+                            verdict.latency_ms,
+                            self._smart_turn_medium_grace_ms,
+                        )
+                    else:
+                        # band == "incomplete": extend the capture.
+                        smart_turn_incomplete_anchor = speech_samples
+                        self.vad.set_min_silence_duration_ms(
+                            self._long_utterance_silence_duration_ms
+                        )
+                        logger.info(
+                            "Smart Turn V3 (follow-up): incomplete "
+                            "(prob=%.3f, %.1f ms) -- extending up to %d ms",
+                            verdict.probability,
+                            verdict.latency_ms,
+                            self._smart_turn_incomplete_extension_ms,
+                        )
                 else:
                     pieces = (
                         [pre_roll] if pre_roll is not None else []
@@ -1355,6 +1587,51 @@ class Orchestrator:
                     return np.concatenate(pieces).astype(
                         np.float32, copy=False,
                     )
+
+            # 2026-05-16 latency pass 2: speculative STT during the
+            # silence-accumulation phase. Mirror of the
+            # _capture_utterance logic: track consecutive silence
+            # chunks while speech_started; kick off Whisper once we
+            # cross the threshold.
+            if speech_started:
+                if result.probability < self.vad.threshold:
+                    consecutive_silence_chunks += 1
+                else:
+                    consecutive_silence_chunks = 0
+                if (
+                    not speculative_kicked
+                    and consecutive_silence_chunks >= speculative_silence_kickoff_chunks
+                ):
+                    speculative_kicked = True
+                    pieces = (
+                        [pre_roll] if pre_roll is not None else []
+                    ) + speech_chunks
+                    audio_so_far = np.concatenate(pieces).astype(
+                        np.float32, copy=False,
+                    )
+                    self._kick_off_speculative_stt(audio_so_far)
+
+            # 2026-05-16 latency pass 2: medium-grace timeout. Same
+            # gradient-fire band that fired at the (shortened)
+            # fast-path checkpoint; user did not resume speaking
+            # during the grace window, so trust the medium verdict
+            # and submit.
+            if (
+                smart_turn_used
+                and smart_turn_medium_anchor > 0
+                and (speech_samples - smart_turn_medium_anchor) >= medium_grace_samples
+            ):
+                logger.info(
+                    "Smart Turn V3 (follow-up) medium-grace elapsed "
+                    "(%d ms); accepting end-of-turn",
+                    self._smart_turn_medium_grace_ms,
+                )
+                pieces = (
+                    [pre_roll] if pre_roll is not None else []
+                ) + speech_chunks
+                return np.concatenate(pieces).astype(
+                    np.float32, copy=False,
+                )
 
             # Smart-turn extension timeout: if "incomplete" was
             # returned and no speech-resume cancelled the anchor,
@@ -1713,6 +1990,139 @@ class Orchestrator:
                 "open fresh inside speak_stream.", e,
             )
             return None
+
+    def _reset_speculative_stt_state(self) -> None:
+        """Clear any leftover speculative STT state from a prior capture.
+
+        Called at the start of :meth:`_capture_utterance` and
+        :meth:`_follow_up_listen` so a stale result from the prior
+        turn (e.g. an empty-utterance turn that never called
+        :meth:`_collect_speculative_stt`) can't leak into the current
+        turn's main-loop transcript.
+
+        If a previous thread is still running, we let it finish in
+        the background (its result is discarded by the reset).
+        """
+        with self._speculative_stt_lock:
+            self._speculative_stt_thread = None
+            self._speculative_stt_result = None
+            self._speculative_stt_invalidated = False
+            # Note: leave _speculative_stt_active alone -- a still-
+            # running background thread will set it False on exit;
+            # forcing it False here could race with the thread's
+            # completion path and let two concurrent kick-offs slip
+            # through. The kick-off path checks _active to no-op
+            # safely on overlap.
+
+    def _kick_off_speculative_stt(self, audio: np.ndarray) -> None:
+        """Start Whisper STT in a background thread on the captured audio.
+
+        2026-05-16 latency pass 2: when VAD has accumulated a brief run
+        of consecutive silence frames after speech (~32 ms at the new
+        16 ms blocksize), we have strong evidence the user has stopped
+        speaking. We kick off Whisper transcription on the audio
+        captured so far on a background daemon thread. By the time the
+        full fast-path silence baseline elapses (~300 ms with Phase 3),
+        Whisper (~78 ms) has finished and its result is consumable via
+        :meth:`_collect_speculative_stt`. Net win: the foreground
+        Whisper time disappears from the critical path.
+
+        Idempotent: re-calling while an inference is already in flight
+        is a no-op. Fail-open: thread-launch failures or transcription
+        errors leave the speculative state empty; the caller falls back
+        to the foreground STT path.
+
+        Args:
+            audio: Float32 PCM at 16 kHz. The audio buffer accumulated
+                so far. Whisper sees this snapshot; later silence
+                appended to the live capture does not change the
+                transcript (silence is silence).
+        """
+        with self._speculative_stt_lock:
+            if self._speculative_stt_active:
+                return
+            self._speculative_stt_active = True
+            self._speculative_stt_result = None
+            self._speculative_stt_invalidated = False
+        # Copy the audio so the background thread doesn't race with
+        # the live capture's growing chunk list.
+        audio_copy = audio.copy() if audio is not None else None
+
+        def _run() -> None:
+            try:
+                text = self.stt.transcribe(audio_copy)
+            except Exception as e:                                  # noqa: BLE001
+                logger.warning("Speculative STT inference failed: %s", e)
+                text = None
+            with self._speculative_stt_lock:
+                self._speculative_stt_result = text
+                self._speculative_stt_active = False
+
+        try:
+            t = threading.Thread(
+                target=_run, daemon=True, name="speculative-stt",
+            )
+            t.start()
+        except Exception as e:                                      # noqa: BLE001
+            logger.warning(
+                "Speculative STT thread launch failed (%s); live path "
+                "will run STT in the foreground.", e,
+            )
+            with self._speculative_stt_lock:
+                self._speculative_stt_active = False
+            return
+        self._speculative_stt_thread = t
+
+    def _invalidate_speculative_stt(self) -> None:
+        """Mark any in-flight speculative STT result as invalid.
+
+        Called when VAD reports SPEECH_START after a speculative
+        inference has been kicked off -- meaning the user resumed
+        speaking before SPEECH_END, so the speculative audio buffer
+        is now a STALE prefix of the real utterance. The thread
+        continues running (we don't try to cancel CTranslate2; the
+        wasted CPU is fine on a background daemon), but its result
+        is discarded on collection.
+        """
+        with self._speculative_stt_lock:
+            self._speculative_stt_invalidated = True
+
+    def _collect_speculative_stt(
+        self, *, timeout_s: float = 2.0,
+    ) -> Optional[str]:
+        """Wait for the in-flight speculative STT (if any) and return
+        its result, or None when invalidated / failed / never kicked
+        off / still running past ``timeout_s``.
+
+        Always cleans up state so the next capture starts with a
+        fresh speculative slot. Idempotent: a second call returns
+        None.
+
+        Args:
+            timeout_s: Maximum time to wait for the background thread
+                to finish. The expected Whisper runtime is ~78 ms;
+                anything beyond 2 s indicates a CUDA stall or a hung
+                transcription -- in which case we discard and let
+                the caller run STT in the foreground.
+
+        Returns:
+            The transcript on success, or None on any failure /
+            invalidation / timeout / not-started case.
+        """
+        thread = self._speculative_stt_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=max(0.0, float(timeout_s)))
+        with self._speculative_stt_lock:
+            if self._speculative_stt_invalidated:
+                result: Optional[str] = None
+            else:
+                result = self._speculative_stt_result
+            # Reset for the next capture even on early return.
+            self._speculative_stt_thread = None
+            self._speculative_stt_result = None
+            self._speculative_stt_active = False
+            self._speculative_stt_invalidated = False
+        return result
 
     def _kick_off_rag_prefetch(self, user_text: str):
         """Start Qdrant RAG retrieval on a background thread.

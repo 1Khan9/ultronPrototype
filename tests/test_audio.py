@@ -188,6 +188,22 @@ def test_audio_capture_produces_chunks():
         assert chunk.shape == (512,)
 
 
+# ---- 2026-05-16 latency pass 2 -- 16 ms blocksize default ---------------
+
+
+def test_audio_config_blocksize_default_is_256():
+    """Default blocksize 256 samples = 16 ms at 16 kHz, halved from
+    the prior 512 sample (32 ms) value. Smaller blocks halve mic-to-
+    consumer queue latency. Silero VAD's internal window is 512
+    samples regardless -- it buffers two 256-sample chunks for one
+    decision -- so VAD timing is unchanged."""
+    from ultron.config import AudioConfig
+    cfg = AudioConfig()
+    assert cfg.blocksize == 256
+    # Verify the duration math: 256 samples / 16000 Hz = 16 ms.
+    assert (cfg.blocksize / cfg.sample_rate) * 1000 == pytest.approx(16.0)
+
+
 # ---- VAD adaptive silence (no model load required) -----------------------
 
 

@@ -436,6 +436,38 @@ class LLMEngine:
         except Exception as e:
             logger.error("LLM load failed: %s", e)
             raise
+
+        # 2026-05-16 latency pass 2: attach a host-RAM prefix cache.
+        # llama-cpp-python's ``LlamaRAMCache`` stores completed session
+        # KV states keyed by token sequence and serves the longest
+        # common prefix on subsequent calls. For our voice loop, the
+        # system prompt + previously-rendered history is stable across
+        # turns, so the new tokens to evaluate each turn shrink from
+        # ~the-whole-prompt to ~just-the-new-user-message. Host RAM
+        # only -- does NOT touch VRAM.
+        #
+        # Fail-open: if ``LlamaRAMCache`` doesn't exist in this
+        # llama-cpp-python build, or attaching fails for any reason,
+        # we log WARN and proceed without the cache. The voice path
+        # falls back to legacy re-evaluation behaviour.
+        cache_bytes = int(getattr(cfg, "prefix_cache_ram_bytes", 0))
+        if cache_bytes > 0:
+            try:
+                # ``LlamaRAMCache`` was added before 0.3.22; we import it
+                # lazily so a hypothetical wheel that lacks it still
+                # boots successfully.
+                from llama_cpp import LlamaRAMCache  # type: ignore[attr-defined]
+                llama.set_cache(LlamaRAMCache(capacity_bytes=cache_bytes))
+                logger.info(
+                    "LLM prefix KV cache attached (host RAM, capacity=%.2f GiB)",
+                    cache_bytes / (1024 ** 3),
+                )
+            except Exception as e:                                   # noqa: BLE001
+                logger.warning(
+                    "LlamaRAMCache attach failed (%s); legacy re-eval "
+                    "behaviour will be used.", e,
+                )
+
         logger.info(
             "LLM ready in %.2fs (memory=%s)",
             time.monotonic() - t0,
