@@ -333,3 +333,189 @@ def test_ast_listener_handles_missing_file_path(
     # No audit row emitted
     ast_rows = [r for r in audit if r.get("kind", "").startswith("ast_syntax")]
     assert ast_rows == []
+
+
+# ---------------------------------------------------------------------------
+# Track 1g voice-loop integration: completion_narration mentions AST
+# failures discovered during the task.
+# ---------------------------------------------------------------------------
+
+
+def _mark_task_complete(handle: _StubHandle, *, files_created=None) -> None:
+    """Test helper: flip the stub handle's state into a successful
+    completion so ``completion_narration`` walks the success branch."""
+    handle._state.is_complete = True
+    handle._state.success = True
+    handle._state.files_created = list(files_created or [])
+
+
+def test_completion_narration_mentions_single_ast_failure(
+    runner_with_ast_enabled, tmp_path,
+):
+    runner, bridge, _audit = runner_with_ast_enabled
+    src = tmp_path / "broken.py"
+    src.write_text("def broken(:\n    pass\n", encoding="utf-8")
+
+    request = TaskRequest(
+        task_prompt="...", cwd=tmp_path, model="haiku", timeout_s=30,
+    )
+    runner.start_task(request)
+    bridge.handle.fire(TaskEvent(
+        kind=EventKind.FILE_CHANGE,
+        file_path=src,
+    ))
+    _mark_task_complete(bridge.handle, files_created=[src])
+
+    narration = runner.completion_narration()
+    assert "syntax error" in narration.lower()
+    assert "broken.py" in narration
+    # TTS-safe: no absolute paths, no backslashes
+    assert str(src) not in narration
+    assert "\\" not in narration
+
+
+def test_completion_narration_mentions_multiple_ast_failures(
+    runner_with_ast_enabled, tmp_path,
+):
+    runner, bridge, _audit = runner_with_ast_enabled
+    files = []
+    for i, name in enumerate(["a.py", "b.py"]):
+        src = tmp_path / name
+        src.write_text(f"def x_{i}(:\n", encoding="utf-8")
+        files.append(src)
+
+    request = TaskRequest(
+        task_prompt="...", cwd=tmp_path, model="haiku", timeout_s=30,
+    )
+    runner.start_task(request)
+    for src in files:
+        bridge.handle.fire(TaskEvent(
+            kind=EventKind.FILE_CHANGE,
+            file_path=src,
+        ))
+    _mark_task_complete(bridge.handle, files_created=files)
+
+    narration = runner.completion_narration()
+    assert "2 files have syntax errors" in narration
+    assert "a.py" in narration
+    assert "b.py" in narration
+
+
+def test_completion_narration_caps_at_three_filenames_with_remainder(
+    runner_with_ast_enabled, tmp_path,
+):
+    runner, bridge, _audit = runner_with_ast_enabled
+    names = [f"f{i}.py" for i in range(5)]
+    files = []
+    for i, name in enumerate(names):
+        src = tmp_path / name
+        src.write_text(f"def x_{i}(:\n", encoding="utf-8")
+        files.append(src)
+
+    request = TaskRequest(
+        task_prompt="...", cwd=tmp_path, model="haiku", timeout_s=30,
+    )
+    runner.start_task(request)
+    for src in files:
+        bridge.handle.fire(TaskEvent(
+            kind=EventKind.FILE_CHANGE,
+            file_path=src,
+        ))
+    _mark_task_complete(bridge.handle, files_created=files)
+
+    narration = runner.completion_narration()
+    assert "5 files have syntax errors" in narration
+    # First three should appear; the last two should be folded into
+    # "and 2 more"
+    assert "f0.py" in narration
+    assert "f1.py" in narration
+    assert "f2.py" in narration
+    assert "and 2 more" in narration
+    # f3 / f4 are explicitly absent from the spoken list
+    assert "f3.py" not in narration
+    assert "f4.py" not in narration
+
+
+def test_completion_narration_no_however_when_no_ast_failures(
+    runner_with_ast_enabled, tmp_path,
+):
+    runner, bridge, _audit = runner_with_ast_enabled
+    src = tmp_path / "ok.py"
+    src.write_text("def ok(): return 1\n", encoding="utf-8")
+
+    request = TaskRequest(
+        task_prompt="...", cwd=tmp_path, model="haiku", timeout_s=30,
+    )
+    runner.start_task(request)
+    bridge.handle.fire(TaskEvent(
+        kind=EventKind.FILE_CHANGE,
+        file_path=src,
+    ))
+    _mark_task_complete(bridge.handle, files_created=[src])
+
+    narration = runner.completion_narration()
+    assert "however" not in narration.lower()
+    assert "syntax error" not in narration.lower()
+
+
+def test_completion_narration_dedupes_ast_failures_by_leaf(
+    runner_with_ast_enabled, tmp_path,
+):
+    """Claude often rewrites the same file multiple times during a
+    task. The voice-loop tracker dedupes by leaf so the user hears
+    one mention per broken file even after many rewrite cycles."""
+    runner, bridge, _audit = runner_with_ast_enabled
+    src = tmp_path / "thrash.py"
+
+    request = TaskRequest(
+        task_prompt="...", cwd=tmp_path, model="haiku", timeout_s=30,
+    )
+    runner.start_task(request)
+    for variant in ("def x(:\n", "def y(:\n", "def z(:\n"):
+        src.write_text(variant, encoding="utf-8")
+        bridge.handle.fire(TaskEvent(
+            kind=EventKind.FILE_CHANGE,
+            file_path=src,
+        ))
+    _mark_task_complete(bridge.handle, files_created=[src])
+
+    narration = runner.completion_narration()
+    assert "one file has syntax errors" in narration
+    assert narration.count("thrash.py") == 1
+
+
+def test_ast_failures_reset_on_new_task_start(
+    runner_with_ast_enabled, tmp_path,
+):
+    """A second start_task() should clear failures from the first
+    task so the new narration starts from a clean tracker."""
+    runner, bridge, _audit = runner_with_ast_enabled
+
+    # Task 1: broken file
+    src1 = tmp_path / "first.py"
+    src1.write_text("def x(:\n", encoding="utf-8")
+    runner.start_task(TaskRequest(
+        task_prompt="...", cwd=tmp_path, model="haiku", timeout_s=30,
+    ))
+    bridge.handle.fire(TaskEvent(
+        kind=EventKind.FILE_CHANGE,
+        file_path=src1,
+    ))
+    _mark_task_complete(bridge.handle, files_created=[src1])
+    first_narration = runner.completion_narration()
+    assert "first.py" in first_narration
+
+    # Task 2: clean file. Task 1's broken file must NOT appear.
+    src2 = tmp_path / "second.py"
+    src2.write_text("def ok(): return 1\n", encoding="utf-8")
+    runner.start_task(TaskRequest(
+        task_prompt="...", cwd=tmp_path, model="haiku", timeout_s=30,
+    ))
+    bridge.handle.fire(TaskEvent(
+        kind=EventKind.FILE_CHANGE,
+        file_path=src2,
+    ))
+    _mark_task_complete(bridge.handle, files_created=[src2])
+    second_narration = runner.completion_narration()
+    assert "first.py" not in second_narration
+    assert "syntax error" not in second_narration.lower()

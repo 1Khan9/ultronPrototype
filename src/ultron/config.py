@@ -786,6 +786,13 @@ class BackgroundSummarizerConfig(_Strict):
     cadence_turns: int = Field(default=10, ge=1, le=100)
     min_turns: int = Field(default=3, ge=1, le=100)
     idle_threshold_seconds: float = Field(default=30.0, ge=0.0)
+    # 2026-05-19 orchestrator integration: where the storage hook
+    # appends one JSON line per :class:`SummaryResult`. The default
+    # lives under ``data/`` (gitignored). A null / empty value disables
+    # the JSONL write but leaves the summarizer itself running --
+    # callers who want to wire a custom store_fn can do so by patching
+    # the orchestrator's :meth:`_build_default_background_summary_store`.
+    output_path: str = "data/background_summaries.jsonl"
 
 
 class MemoryConfig(_Strict):

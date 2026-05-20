@@ -361,6 +361,18 @@ class Orchestrator:
         self._last_response_finished_monotonic: float = 0.0
         self._last_search_payload = None
 
+        # 2026-05-19 Tracks 1c-1e voice-loop integration. The
+        # BackgroundSummarizer fires when ``memory.background_summary.enabled``
+        # is True; otherwise the loader returns None and the hot-path
+        # helpers short-circuit at zero cost. Constructed AFTER memory
+        # + llm so the wired callbacks can reference them. State for
+        # the per-turn background thread + a guard lock so only one
+        # summarizer pass is in flight at a time (the summarizer's
+        # internal _in_flight flag is a second line of defense).
+        self.background_summarizer = self._load_background_summarizer_if_enabled()
+        self._background_summarizer_lock = threading.Lock()
+        self._background_summarizer_thread: Optional[threading.Thread] = None
+
         self._shutdown = threading.Event()
         self._interrupt = threading.Event()
         self._pending_capture = threading.Event()
@@ -844,6 +856,145 @@ class Orchestrator:
             logger.warning("ConversationMemory init failed (%s) -- disabling memory", e)
             return None
 
+    def _load_background_summarizer_if_enabled(self):
+        """2026-05-19 Tracks 1c-1e voice-loop integration.
+
+        Build a :class:`BackgroundSummarizer` wired against the
+        currently-loaded LLM + memory. Returns ``None`` when the
+        feature flag is off, when the LLM or memory are unavailable,
+        or when construction raises (fail-open).
+
+        The summarizer's hot path is opt-in -- the orchestrator only
+        calls :meth:`maybe_summarize` from
+        :meth:`_maybe_run_background_summarizer`, which itself short-
+        circuits when this returns None. So flipping the flag off
+        recovers byte-for-byte legacy orchestrator behaviour.
+        """
+        try:
+            from ultron.config import get_config
+            cfg = get_config().memory.background_summary
+        except Exception as e:                                # noqa: BLE001
+            logger.debug("background_summary config read failed (%s)", e)
+            return None
+        if not cfg.enabled:
+            return None
+        if self.memory is None:
+            logger.warning(
+                "background_summary.enabled=True but memory is None; "
+                "summarizer disabled.",
+            )
+            return None
+        if self.llm is None:
+            logger.warning(
+                "background_summary.enabled=True but llm is None; "
+                "summarizer disabled.",
+            )
+            return None
+        try:
+            from ultron.memory.background_summarizer import (
+                BackgroundSummarizer,
+                TurnSnapshot,
+                _SUMMARY_SYSTEM_PROMPT,
+            )
+        except Exception as e:                                # noqa: BLE001
+            logger.warning(
+                "BackgroundSummarizer import failed (%s); summarizer disabled.", e,
+            )
+            return None
+
+        # generate_fn: hand the rendered prompt to the LLM via the
+        # isolated path so SOUL.md persona + memory injection don't
+        # contaminate the summarization. The summarizer's render_summary_prompt
+        # produces the user-side prompt; the system prompt comes from
+        # the summarizer module's constant.
+        def _generate_fn(rendered_prompt: str) -> str:
+            return self.llm.generate_isolated(
+                system_prompt=_SUMMARY_SYSTEM_PROMPT,
+                user_prompt=rendered_prompt,
+                temperature=0.2,
+            )
+
+        # recent_turns_fn: project ConversationMemory.recent into the
+        # summarizer's TurnSnapshot shape. ``recent_window`` controls
+        # how many turns the summarizer can see per pass -- generous
+        # by default (the gate already throttles call cadence).
+        def _recent_turns_fn():
+            try:
+                turns = self.memory.recent(64)
+            except Exception as e:                            # noqa: BLE001
+                logger.warning(
+                    "memory.recent failed for summarizer (%s); "
+                    "skipping pass.", e,
+                )
+                return []
+            return [
+                TurnSnapshot(
+                    turn_id=t.id, ts=t.ts, role=t.role, content=t.content,
+                )
+                for t in turns
+            ]
+
+        # store_fn: append the SummaryResult as one JSON line to the
+        # configured output path. Fail-open at every step. A separate
+        # follow-up integration pass can replace this with a Qdrant
+        # write that creates ``type=session_summary|fact|decision|preference``
+        # entries -- the storage shape is intentionally flat so the
+        # JSONL is straightforward to ingest later.
+        store_fn = self._build_default_background_summary_store(cfg.output_path)
+
+        try:
+            return BackgroundSummarizer(
+                generate_fn=_generate_fn,
+                store_fn=store_fn,
+                recent_turns_fn=_recent_turns_fn,
+                cadence_turns=int(cfg.cadence_turns),
+                min_turns=int(cfg.min_turns),
+                idle_threshold_seconds=float(cfg.idle_threshold_seconds),
+            )
+        except Exception as e:                                # noqa: BLE001
+            logger.warning(
+                "BackgroundSummarizer construction failed (%s); disabled.", e,
+            )
+            return None
+
+    @staticmethod
+    def _build_default_background_summary_store(output_path: str):
+        """Return a ``store_fn`` that appends to ``output_path`` as JSONL.
+
+        Returns ``None`` when ``output_path`` is empty (storage
+        intentionally disabled). The returned function never raises:
+        IO errors are logged WARN and swallowed so a flaky disk never
+        crashes a background pass.
+        """
+        if not output_path:
+            return None
+        import dataclasses as _dc
+        import json as _json
+        from pathlib import Path as _Path
+        target = _Path(output_path)
+
+        def _store(result) -> None:
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                payload = {
+                    "ts": time.time(),
+                    "summary": result.summary,
+                    "facts": [_dc.asdict(f) for f in result.facts],
+                    "decisions": [_dc.asdict(d) for d in result.decisions],
+                    "preferences": [_dc.asdict(p) for p in result.preferences],
+                    "turn_id_start": result.turn_id_start,
+                    "turn_id_end": result.turn_id_end,
+                    "span_seconds": result.span_seconds,
+                }
+                with target.open("a", encoding="utf-8") as fh:
+                    fh.write(_json.dumps(payload, ensure_ascii=False) + "\n")
+            except Exception as e:                            # noqa: BLE001
+                logger.warning(
+                    "background summary store_fn failed (%s); discarding pass.", e,
+                )
+
+        return _store
+
     @staticmethod
     def _load_rvc_if_enabled() -> RvcConverter | None:
         """Try to load RVC; warn and continue with plain Piper on failure."""
@@ -962,6 +1113,11 @@ class Orchestrator:
         logger.info("Shutdown requested")
         self._shutdown.set()
         self._interrupt.set()
+        # 2026-05-19 Tracks 1c-1e: cancel any in-flight background
+        # summarizer so the worker exits cleanly. The thread is daemon
+        # so it would be reaped anyway, but the cancel lets the in-flight
+        # LLM call notice + skip parse/store cleanly.
+        self._cancel_background_summarizer()
         for action in (self.tts.stop, self.audio.stop):
             try:
                 action()
@@ -1036,6 +1192,12 @@ class Orchestrator:
                 # E2 goal-anchor planning: surface anchor lifecycle
                 # narration (opening / warning / transition / completion).
                 self._announce_pending_anchor_narration()
+                # 2026-05-19 Tracks 1c-1e: opportunistic background
+                # summarisation. Cheap no-op when disabled or when a
+                # previous pass is still in flight; the summarizer's
+                # idle-threshold gate decides whether this attempt
+                # actually performs LLM work.
+                self._maybe_run_background_summarizer()
 
                 speech: Optional[np.ndarray] = None
                 came_from_follow_up = False
@@ -1230,6 +1392,15 @@ class Orchestrator:
         those at the VAD layer.
         """
         self.vad.reset()
+        # 2026-05-19 Tracks 1c-1e: best-effort cancel of any in-flight
+        # background summarizer pass. The user is about to (or has just
+        # started to) speak; we want the GPU free for the foreground
+        # path. The summarizer's cancel flag is read between sub-calls,
+        # so this is a hint -- a mid-LLM-call summarizer still has to
+        # complete the in-flight create_chat_completion before
+        # foreground LLM can serialise behind it. No-op when the
+        # summarizer is disabled.
+        self._cancel_background_summarizer()
         # 2026-05-16 latency pass 2: drop any stale speculative STT
         # result from a prior turn (e.g. an empty-utterance turn that
         # never called _collect_speculative_stt). Without this, a stale
@@ -1507,6 +1678,10 @@ class Orchestrator:
         self.audio.drain()
         self.wake.reset()
         self.vad.reset()
+        # 2026-05-19 Tracks 1c-1e: mirror of _capture_utterance --
+        # best-effort cancel the in-flight summarizer so the foreground
+        # follow-up path has the GPU.
+        self._cancel_background_summarizer()
         # 2026-05-16 latency pass 2: drop any stale speculative STT
         # result from a prior turn (mirror of _capture_utterance).
         self._reset_speculative_stt_state()
@@ -1956,6 +2131,90 @@ class Orchestrator:
         if narration:
             self._speak(narration)
             self._last_response_finished_monotonic = time.monotonic()
+
+    def _maybe_run_background_summarizer(self) -> None:
+        """2026-05-19 Tracks 1c-1e voice-loop hook.
+
+        Spawn a daemon thread that calls the background summarizer if:
+        * the summarizer was constructed (flag on at start-up),
+        * no previous summarizer thread is still running.
+
+        The summarizer's own gating (idle threshold + cadence +
+        min_turns + in_flight) decides whether the call actually
+        performs an LLM round-trip on this attempt -- so it is safe to
+        invoke from the top of every run-loop iteration. Most calls
+        short-circuit cheaply inside ``maybe_summarize``.
+
+        Wakes through the run loop are independent of the summarizer:
+        the wake-word listener runs on its own audio thread and is not
+        affected by an in-flight summary call. Foreground LLM
+        contention is avoided in practice because the summarizer only
+        proceeds after ``idle_threshold_seconds`` of quiet, which is
+        well past the moment any prior foreground call finished. If
+        the user does wake Ultron during a summary, the cancel flag
+        is set (best-effort) and the foreground call effectively
+        serialises behind the in-flight LLM call -- at most a ~1-2 s
+        delay on the first response.
+
+        Fail-open: any exception in thread launch is swallowed; the
+        next iteration retries.
+        """
+        if self.background_summarizer is None:
+            return
+        with self._background_summarizer_lock:
+            prev = self._background_summarizer_thread
+            if prev is not None and prev.is_alive():
+                return
+            last_activity = self._last_response_finished_monotonic
+            if last_activity <= 0.0:
+                # No foreground turn has finished yet on this process.
+                # Skip until at least one round-trip has happened so the
+                # idle-threshold gate has a meaningful reference point.
+                return
+
+            def _run() -> None:
+                try:
+                    self.background_summarizer.maybe_summarize(
+                        last_activity_monotonic=last_activity,
+                    )
+                except Exception as e:                        # noqa: BLE001
+                    logger.warning(
+                        "background summarizer maybe_summarize failed (%s); "
+                        "next attempt will try again.", e,
+                    )
+
+            try:
+                t = threading.Thread(
+                    target=_run,
+                    name="ultron-background-summarizer",
+                    daemon=True,
+                )
+                t.start()
+                self._background_summarizer_thread = t
+            except Exception as e:                            # noqa: BLE001
+                logger.warning(
+                    "background summarizer thread launch failed (%s)", e,
+                )
+
+    def _cancel_background_summarizer(self) -> None:
+        """Signal any in-flight summarizer call to abort ASAP.
+
+        Called when the orchestrator pivots to capture or speak so the
+        GPU is freed for the foreground path. Idempotent. No-op when
+        the summarizer is disabled. Does NOT join the thread -- the
+        summarizer's cancel flag is read between LLM sub-calls and at
+        end-of-pass; an actively-streaming LLM call still has to
+        complete before the lock-free transition happens (acceptable
+        worst-case delay of ~1-2 s).
+        """
+        if self.background_summarizer is None:
+            return
+        try:
+            self.background_summarizer.cancel()
+        except Exception as e:                                # noqa: BLE001
+            logger.warning(
+                "background summarizer cancel failed (%s); ignoring.", e,
+            )
 
     # --- phase: process ------------------------------------------------------
 

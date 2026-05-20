@@ -22,7 +22,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from config import settings
 from ultron.coding.anchors import (
@@ -167,6 +167,16 @@ class CodingTaskRunner:
         self._anchor_plan: Optional[AnchorPlan] = None
         self._anchor_lock = threading.Lock()
         self._pending_anchor_narration: Optional[str] = None
+        # 2026-05-19 Track 1g voice-loop integration -- per-task
+        # AST-syntax-failure tracker. The FILE_CHANGE listener appends
+        # ``(path_leaf, error_message)`` pairs on every parse failure
+        # so :meth:`completion_narration` can surface the count + first
+        # few filenames to the user. Stays empty (and the narration
+        # branch stays inert) when ``coding.ast_metadata.enabled`` is
+        # False. Reset on every :meth:`start_task` so failures from a
+        # prior task don't leak into the next narration.
+        self._ast_failures_this_task: List[Tuple[str, str]] = []
+        self._ast_lock = threading.Lock()
 
     # --- task lifecycle -----------------------------------------------------
 
@@ -232,6 +242,11 @@ class CodingTaskRunner:
             self._project_label = request.label
             self._mcp_config_path = request.mcp_config_path
             self._reset_delta_baseline()
+            # Track 1g voice-loop integration -- clear any AST syntax
+            # failures left over from the previous task so the next
+            # ``completion_narration`` starts from a clean slate.
+            with self._ast_lock:
+                self._ast_failures_this_task.clear()
 
         # Tee task lifecycle to a JSONL audit log -- one line per event.
         if self._log_path is not None:
@@ -564,6 +579,34 @@ class CodingTaskRunner:
             tail_text = tail[-1] if tail else state.final_summary.strip()
             if tail_text:
                 parts.append(tail_text[:300])
+        # Track 1g voice-loop integration -- surface AST syntax
+        # failures discovered during the task. The opener stays as it
+        # was (Claude reports success based on exit code); this adds
+        # an honest "but" sentence so the user knows ground truth
+        # diverged from the bridge's success signal. Speak only file
+        # leaves (TTS-safe, never paths) and cap at three filenames
+        # so a runaway broken-rewrite cycle doesn't produce a 30 s
+        # narration. Anything past three collapses into "and N more".
+        with self._ast_lock:
+            ast_failures = list(self._ast_failures_this_task)
+        if ast_failures:
+            n_fail = len(ast_failures)
+            if n_fail == 1:
+                parts.append(
+                    f"However, one file has syntax errors: {ast_failures[0][0]}."
+                )
+            else:
+                shown = [p for (p, _e) in ast_failures[:3]]
+                shown_str = ", ".join(shown)
+                if n_fail > 3:
+                    parts.append(
+                        f"However, {n_fail} files have syntax errors, "
+                        f"including {shown_str}, and {n_fail - 3} more."
+                    )
+                else:
+                    parts.append(
+                        f"However, {n_fail} files have syntax errors: {shown_str}."
+                    )
         parts.append(f"Elapsed: {elapsed} seconds.")
         return " ".join(parts)
 
@@ -917,6 +960,20 @@ class CodingTaskRunner:
                         "AST syntax check failed for %s: %s",
                         path_str, meta.error,
                     )
+                    # Track 1g voice-loop integration -- append to the
+                    # per-task tracker so ``completion_narration`` can
+                    # surface the count + leaf filenames. Dedupe by
+                    # leaf path (Claude often rewrites the same file
+                    # multiple times mid-task; only the latest matters
+                    # for the user-facing summary). Strict failure-only
+                    # so the tracker never grows on healthy runs.
+                    leaf = path.name
+                    with self._ast_lock:
+                        self._ast_failures_this_task = [
+                            (p, e) for (p, e) in self._ast_failures_this_task
+                            if p != leaf
+                        ]
+                        self._ast_failures_this_task.append((leaf, meta.error))
                 fields = {
                     "ts": time.time(),
                     "task_id": handle.task_id(),

@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional
 
+from ultron.channels import Channel, ChannelMetadata
 from ultron.config import get_config, resolve_path
 from ultron.errors import QdrantUnavailableError
 from ultron.memory.embedder import HybridEmbedder, _SparseVec
@@ -56,6 +57,13 @@ class MemoryTurn:
     entities: List[str] = field(default_factory=list)
     topic_tags: List[str] = field(default_factory=list)
     cluster_id: Optional[int] = None
+    # 2026-05-19 Track 6 voice-loop integration. Which audio channel
+    # produced this turn -- defaults to :data:`Channel.USER` so legacy
+    # call sites (which pre-date the abstraction) get the existing
+    # behaviour. Persisted into the Qdrant payload via
+    # :meth:`ChannelMetadata.as_payload_dict` so downstream filters
+    # / observability can route on it.
+    channel: Channel = Channel.USER
 
 
 @dataclass
@@ -274,7 +282,13 @@ class ConversationMemory:
 
     # --- write path ---------------------------------------------------------
 
-    def add(self, role: str, content: str) -> MemoryTurn:
+    def add(
+        self,
+        role: str,
+        content: str,
+        *,
+        channel: Optional[Channel] = None,
+    ) -> MemoryTurn:
         """Append a turn, return immediately. Persistence is async.
 
         The hot path:
@@ -284,7 +298,16 @@ class ConversationMemory:
 
         On queue overflow we log and drop the new turn rather than block --
         the spec gives us a hard "must not regress latency" budget.
+
+        2026-05-19 Track 6 voice-loop integration: ``channel`` tags the
+        utterance with the audio channel it came from (USER / TEAMMATE /
+        SYSTEM). Defaults to :data:`Channel.USER` so existing call sites
+        (every legacy site predates the abstraction) preserve their
+        behaviour byte-for-byte. The channel is stamped on the
+        :class:`MemoryTurn` AND persisted in the Qdrant payload.
         """
+        if channel is None:
+            channel = Channel.USER
         with self._lock:
             turn = MemoryTurn(
                 id=self._next_id,
@@ -292,6 +315,7 @@ class ConversationMemory:
                 role=role,
                 content=content,
                 session_id=self.session_id,
+                channel=channel,
             )
             self._next_id += 1
             self._recent.append(turn)
@@ -377,6 +401,19 @@ class ConversationMemory:
             payload["topic_id"] = topic_id
         if discourse_type is not None:
             payload["discourse_type"] = discourse_type
+        # 2026-05-19 Track 6 voice-loop integration: persist the channel
+        # so a future filter / retrieval branch can scope to USER vs
+        # TEAMMATE vs SYSTEM. ChannelMetadata.as_payload_dict() returns
+        # the canonical shape (``channel`` + ``channel_confidence``).
+        try:
+            payload.update(
+                ChannelMetadata(channel=turn.channel).as_payload_dict()
+            )
+        except Exception as e:                                # noqa: BLE001
+            logger.warning(
+                "Channel payload stamp failed for turn %d (%s); "
+                "writing without channel metadata.", turn.id, e,
+            )
 
         point = PointStruct(
             id=str(uuid.uuid4()),
@@ -1048,6 +1085,12 @@ def _extract_dense_vector(vec) -> Optional[List[float]]:
 
 
 def _payload_to_turn(payload: dict) -> MemoryTurn:
+    # 2026-05-19 Track 6 voice-loop integration: legacy payloads (written
+    # before the channel field landed) don't carry ``channel``. The
+    # :meth:`Channel.from_str` helper coerces missing / unknown values to
+    # :data:`Channel.USER` so the round-trip is backwards-compatible.
+    channel_raw = payload.get("channel")
+    channel = Channel.from_str(channel_raw) if channel_raw else Channel.USER
     return MemoryTurn(
         id=int(payload.get("turn_id", 0)),
         ts=float(payload.get("ts", 0.0)),
@@ -1058,4 +1101,5 @@ def _payload_to_turn(payload: dict) -> MemoryTurn:
         entities=list(payload.get("entities") or []),
         topic_tags=list(payload.get("topic_tags") or []),
         cluster_id=payload.get("cluster_id"),
+        channel=channel,
     )

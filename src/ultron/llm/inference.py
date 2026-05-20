@@ -968,6 +968,102 @@ class LLMEngine:
         self._record_turn(user_message, text)
         return text
 
+    def generate_isolated(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        max_tokens: int = 2048,
+        temperature: float = 0.2,
+        top_p: float = 0.95,
+    ) -> str:
+        """One-shot LLM call with caller-supplied system + user prompts.
+
+        Bypasses :meth:`_build_messages` so the SOUL.md persona, memory
+        history, and RAG retrieval do NOT leak into the call. Does NOT
+        record the exchange to conversation history. Used by callers
+        whose task is structurally unrelated to the voice persona --
+        the background summarizer (Tracks 1c-1e) is the first such
+        caller; future structured-extraction or evaluation callers
+        will reuse the same surface.
+
+        Args:
+            system_prompt: caller's full system instruction. Replaces
+                SOUL.md entirely for this call only -- never mutates
+                the persistent persona state.
+            user_prompt: caller's user-role content (typically a
+                rendered template containing data + schema).
+            max_tokens: cap on generation length. Defaults are large
+                enough for JSON-mode summaries; tighten for known-
+                short outputs.
+            temperature, top_p: sampling knobs. Defaults bias toward
+                lower-variance output (good for structured / JSON
+                use cases). Override for creative tasks.
+
+        Returns:
+            The model's response text with ``<think>`` blocks
+            stripped (same as :meth:`generate`).
+
+        Concurrency:
+            Calls into ``Llama.create_chat_completion`` directly.
+            Caller is responsible for not overlapping with the
+            foreground :meth:`generate` / :meth:`generate_stream`
+            calls; the orchestrator's BackgroundSummarizer wiring
+            gates on the idle state to enforce this.
+
+        Fail-open:
+            Returns an empty string on any exception (HTTP / parse /
+            llama crash). The caller -- a best-effort background
+            worker -- decides what to do with the empty result
+            (typically: discard the pass, retry next idle window).
+        """
+        if not user_prompt or not user_prompt.strip():
+            return ""
+        messages = [
+            {"role": "system", "content": system_prompt or ""},
+            {"role": "user", "content": user_prompt},
+        ]
+        _llm_cfg = get_config().llm
+        t0 = time.monotonic()
+        try:
+            if self._runtime == "in_process":
+                kwargs = {
+                    "temperature": float(temperature),
+                    "top_p": float(top_p),
+                    "max_tokens": int(max_tokens),
+                    "repeat_penalty": _llm_cfg.default_repeat_penalty,
+                }
+                out = self._llm.create_chat_completion(messages=messages, **kwargs)
+            else:
+                # HTTP path uses the server-side default sampling knobs.
+                # The summarizer is the only opt-in caller right now and
+                # voice runs in_process by default, so this branch is
+                # exercised only by HTTP-mode operators -- the structured
+                # output instruction in the prompt is the real signal
+                # we depend on for shape.
+                out = self._http_chat_completion(
+                    messages, _llm_cfg, stream=False, enable_thinking=False,
+                )
+        except Exception as e:                                # noqa: BLE001
+            logger.warning(
+                "generate_isolated LLM call failed (%s); returning empty.", e,
+            )
+            return ""
+        try:
+            raw_text = out["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as e:
+            logger.warning(
+                "generate_isolated response shape unexpected (%s); "
+                "returning empty.", e,
+            )
+            return ""
+        text = strip_thinking_text(raw_text).strip()
+        elapsed_s = time.monotonic() - t0
+        logger.info(
+            "LLM (isolated): %d chars in %.2fs", len(text), elapsed_s,
+        )
+        return text
+
     def record_completed_turn(self, user_message: str, response: str) -> None:
         """Append a completed user/assistant exchange to history.
 
