@@ -261,6 +261,15 @@ class CodingTaskRunner:
         anchor_listener = self._build_anchor_plan_and_listener(handle, request)
         if anchor_listener is not None:
             handle.add_listener(anchor_listener)
+        # 2026-05-19 Tracks 1f + 1g -- AST syntax verification on
+        # FILE_CHANGE events. Off by default. When enabled, every
+        # Python file Claude Code writes gets parsed via stdlib ast;
+        # a syntax failure emits an ``ast_syntax_failure`` audit row
+        # so completion narration can fact-check the success claim
+        # instead of trusting the bridge's exit code alone.
+        ast_listener = self._make_ast_syntax_listener(handle)
+        if ast_listener is not None:
+            handle.add_listener(ast_listener)
         # Also log a structured "start" record for offline inspection.
         self._log_record({
             "ts": time.time(),
@@ -834,6 +843,108 @@ class CodingTaskRunner:
             text = self._pending_canonical_abort
             self._pending_canonical_abort = None
         return text
+
+    # --- 2026-05-19 Tracks 1f + 1g: AST syntax verification ---------------
+
+    def _make_ast_syntax_listener(self, handle):
+        """Build the FILE_CHANGE listener that AST-parses written
+        Python files.
+
+        Returns ``None`` when:
+        * ``coding.ast_metadata.enabled`` is False (the default), OR
+        * ``syntax_check_on_file_change`` is False, OR
+        * The :mod:`ultron.coding.ast_metadata` module is unavailable.
+
+        The listener never cancels the task -- it only emits audit
+        rows. Completion narration can later check the rolling syntax-
+        failure count to fact-check a "Done." claim, but that wiring
+        is intentionally separate so we can ship the audit signal
+        first and decide on UX later.
+
+        Non-Python files (``.txt``, ``.json``, etc.) are passed
+        through without parsing -- the gate is name-based.
+        """
+        try:
+            from ultron.config import get_config
+            ast_cfg = get_config().coding.ast_metadata
+        except Exception as e:                                # noqa: BLE001
+            logger.debug("ast_metadata config read failed: %s", e)
+            return None
+
+        if not ast_cfg.enabled or not ast_cfg.syntax_check_on_file_change:
+            return None
+
+        try:
+            from ultron.coding.ast_metadata import (
+                extract_metadata_from_path,
+                is_python_file,
+            )
+            from ultron.coding.bridge import EventKind
+        except Exception as e:                                # noqa: BLE001
+            logger.debug(
+                "ast_metadata listener unavailable (%s); skipping", e,
+            )
+            return None
+
+        attach_metadata = bool(ast_cfg.attach_metadata_to_audit)
+
+        def _listener(event):
+            try:
+                if getattr(event, "kind", None) != EventKind.FILE_CHANGE:
+                    return
+                # The TaskEvent dataclass stores the changed path under
+                # ``file_path`` -- the safety listener happens to use a
+                # different attribute name today, but the actual bridge
+                # emit shape is ``file_path``. We accept both for
+                # defensive compatibility with any future bridge that
+                # populates either field.
+                file_path_obj = getattr(event, "file_path", None)
+                if file_path_obj is None:
+                    file_path_obj = getattr(event, "path", None)
+                if not file_path_obj:
+                    return
+                from pathlib import Path as _Path
+                path = file_path_obj if isinstance(file_path_obj, _Path) else _Path(str(file_path_obj))
+                path_str = str(path)
+                if not is_python_file(path):
+                    return
+                meta = extract_metadata_from_path(path)
+                if meta.syntax_valid:
+                    audit_kind = "ast_syntax_ok"
+                else:
+                    audit_kind = "ast_syntax_failure"
+                    logger.warning(
+                        "AST syntax check failed for %s: %s",
+                        path_str, meta.error,
+                    )
+                fields = {
+                    "ts": time.time(),
+                    "task_id": handle.task_id(),
+                    "kind": audit_kind,
+                    "path": path_str,
+                    "syntax_valid": meta.syntax_valid,
+                    "error": meta.error,
+                    "line_count": meta.line_count,
+                }
+                if attach_metadata and meta.syntax_valid:
+                    fields["functions_defined"] = list(meta.functions_defined)
+                    fields["classes_defined"] = list(meta.classes_defined)
+                    fields["imports"] = list(meta.imports)
+                    fields["has_main_guard"] = meta.has_main_guard
+                self._log_record(fields)
+                # Also tee to session audit for the project log -- the
+                # signal is most useful when correlated with the prompt
+                # that prompted the file write.
+                self._session_audit(audit_kind, **{
+                    k: v for k, v in fields.items() if k != "ts"
+                })
+            except Exception as e:                            # noqa: BLE001
+                # Never raise back into the bridge event loop -- a
+                # broken syntax check shouldn't bring down event
+                # delivery.
+                logger.debug("ast_metadata listener error: %s", e)
+
+        return _listener
 
     # --- E2 goal-anchor planning -------------------------------------------
 

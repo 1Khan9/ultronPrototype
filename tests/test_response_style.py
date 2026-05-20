@@ -16,7 +16,12 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.response_style import apply_brevity_hint, is_brief_question
+from ultron.response_style import (
+    apply_brevity_hint,
+    is_brief_question,
+    is_factual_question,
+    is_procedural_request,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -127,9 +132,260 @@ def test_apply_brevity_returns_unchanged_on_empty():
 
 def test_apply_brevity_idempotent_when_already_hinted():
     """Calling apply_brevity_hint on already-hinted text should be a no-op
-    (the hinted version is too long + contains '[Style:' which makes
-    the question read as 'long' or 'system instruction', not brief)."""
+    (the dispatcher detects the '[Style:' prefix and passes through)."""
     once = apply_brevity_hint("Who are you?")
     twice = apply_brevity_hint(once)
     # Should not double-prepend the directive.
     assert twice.count("[Style: respond in 1-3 short sentences") == 1
+
+
+# ---------------------------------------------------------------------------
+# is_factual_question (Track 3 -- 2026-05-19)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "utterance",
+    [
+        "How much does a duck weigh?",                  # live-session example
+        "How much do hummingbirds weigh on average?",
+        "How many planets are in the solar system?",
+        "How long does a hummingbird live?",
+        "How heavy is the average bowling ball?",
+        "How tall is the Eiffel Tower?",
+        "How big is the moon compared to earth?",
+        "How old is the universe?",
+        "How fast does sound travel?",
+        "How far is Pluto from the sun?",
+        "How cold is liquid nitrogen?",
+        "How hot is the sun?",
+        "How wide is the Mississippi river?",
+        "How deep is the Mariana Trench?",
+        "When did World War II end?",
+        "When was the Empire State Building built?",
+        "What year did Einstein publish relativity?",
+        "What time does the sun rise tomorrow?",
+        "Who is the current Prime Minister of Japan?",
+        "Who was the first person on the moon?",
+        "Who invented the telephone?",
+        "Who discovered penicillin?",
+        "What is the capital of France?",
+        "What's the capital of Estonia?",
+        "What is the population of Tokyo?",
+        "What's the population of Iceland?",
+        "What is the average lifespan of a beagle?",
+        "What's the average rainfall in Seattle?",
+        "What's the boiling point of water at sea level?",
+        "What is the freezing point of mercury?",
+    ],
+)
+def test_factual_question_detected(utterance):
+    assert is_factual_question(utterance), (
+        f"expected factual stem detection: {utterance!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "utterance",
+    [
+        "What are the Orcs in 40k?",
+        "Tell me a joke.",
+        "Walk me through how to bake bread.",
+        "Could you explain what dark matter is?",
+        "Why is the sky blue?",
+        "Hello.",
+        "I love this weather.",
+        "Show me a picture of a hummingbird.",
+    ],
+)
+def test_factual_question_not_detected_on_non_stem(utterance):
+    assert not is_factual_question(utterance), (
+        f"expected NO factual stem: {utterance!r}"
+    )
+
+
+def test_factual_question_empty_input():
+    assert not is_factual_question("")
+    assert not is_factual_question("   ")
+    assert not is_factual_question(None)  # type: ignore[arg-type]
+
+
+def test_factual_question_handles_lead_in():
+    """A factual stem buried in a longer lead-in still triggers."""
+    assert is_factual_question(
+        "I was just wondering, how much does a mallard duck typically weigh?"
+    )
+
+
+# ---------------------------------------------------------------------------
+# is_procedural_request (Track 3 -- 2026-05-19)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "utterance",
+    [
+        "Give me step by step instructions to bake a cake.",
+        "Walk me through how to set up a Python virtual environment.",
+        "I need a comprehensive guide on building a deck.",
+        "Write a comprehensive tutorial on Kubernetes.",
+        "Provide a complete tutorial for editing video in DaVinci Resolve.",
+        "Lay out the complete guide to running a marathon.",
+        "Detail the full procedure for changing brake pads.",
+        "Give me the full process for filing taxes.",
+        "Give me the steps for installing solar panels.",
+        "List the steps to register a new domain name.",
+        "List out the steps to make sourdough bread.",
+        "Tell me every step to assemble this furniture.",
+        "Tell me all the steps to set up an OBS recording.",
+        "Tell me what to do in order to publish a Python package.",
+        "Give me detailed instructions for fly fishing.",
+        "Provide me highly detailed step-by-step instructions to bake a cake.",
+        "I need thorough instructions for refactoring this module.",
+        "Tell me the instructions to build a shelf.",
+    ],
+)
+def test_procedural_request_detected(utterance):
+    assert is_procedural_request(utterance), (
+        f"expected procedural marker: {utterance!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "utterance",
+    [
+        "What are the Orcs in 40k?",
+        "Explain quantum entanglement.",
+        "Tell me about the French Revolution.",
+        "How much does a duck weigh?",
+        "Why is the sky blue?",
+        "Elaborate on the differences between TCP and UDP.",
+        "List all the planets in the solar system.",  # "list all" is depth, not procedural
+        "How are you doing today?",
+    ],
+)
+def test_procedural_request_not_detected(utterance):
+    assert not is_procedural_request(utterance), (
+        f"expected NO procedural marker: {utterance!r}"
+    )
+
+
+def test_procedural_request_empty_input():
+    assert not is_procedural_request("")
+    assert not is_procedural_request("   ")
+    assert not is_procedural_request(None)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# apply_brevity_hint dispatcher across the three hint classes
+# ---------------------------------------------------------------------------
+
+
+def test_apply_dispatches_procedural_hint_first():
+    """Procedural beats factual + brevity in priority."""
+    out = apply_brevity_hint(
+        "Provide me highly detailed step-by-step instructions to bake a cake."
+    )
+    assert out.startswith("[Style:")
+    assert "numbered steps" in out
+    # Should NOT have applied the factual or brevity hints.
+    assert "1-3 short sentences" not in out
+    assert "one short sentence" not in out
+
+
+def test_apply_dispatches_factual_hint_on_fact_stem():
+    """Factual stem beats brevity (even when length-brief)."""
+    out = apply_brevity_hint("How much does a duck weigh?")
+    assert out.startswith("[Style:")
+    assert "one short sentence" in out
+    assert "specific fact" in out
+    # Should NOT have applied the brevity hint instead.
+    assert "1-3 short sentences" not in out
+
+
+def test_apply_dispatches_brevity_on_brief_non_fact_non_procedural():
+    """Falls through to brevity for short questions that aren't
+    factual stems or procedural requests."""
+    out = apply_brevity_hint("What are the Orcs in 40k?")
+    assert out.startswith("[Style:")
+    assert "1-3 short sentences" in out
+
+
+def test_apply_factual_overrides_long_lead_in():
+    """A factual stem buried in a long lead-in still gets the
+    factual hint, not the brevity hint."""
+    text = (
+        "I was just curious, given everything we talked about earlier, "
+        "how much does a mallard duck typically weigh?"
+    )
+    out = apply_brevity_hint(text)
+    assert "one short sentence" in out
+
+
+def test_apply_procedural_overrides_long_request():
+    """A procedural marker in a long request still triggers the
+    procedural hint (not no-hint due to length)."""
+    text = (
+        "I'd really love it if you could provide me highly detailed "
+        "step-by-step instructions for setting up a home Kubernetes "
+        "cluster on Raspberry Pis."
+    )
+    out = apply_brevity_hint(text)
+    assert "numbered steps" in out
+
+
+def test_apply_returns_unchanged_on_long_open_question():
+    """No hint when the question is long AND lacks factual/procedural
+    markers."""
+    text = (
+        "What do you think about the broader implications of "
+        "remote work on urban planning and small-business ecosystems?"
+    )
+    out = apply_brevity_hint(text)
+    assert out == text
+
+
+# ---------------------------------------------------------------------------
+# Idempotence across hint classes
+# ---------------------------------------------------------------------------
+
+
+def test_apply_idempotent_on_procedural_already_hinted():
+    once = apply_brevity_hint(
+        "Walk me through how to set up a Python virtual environment."
+    )
+    twice = apply_brevity_hint(once)
+    # Procedural hint should only appear once.
+    assert twice.count("[Style: respond with detailed numbered steps") == 1
+
+
+def test_apply_idempotent_on_factual_already_hinted():
+    once = apply_brevity_hint("How much does a duck weigh?")
+    twice = apply_brevity_hint(once)
+    assert twice.count("[Style: respond with one short sentence") == 1
+
+
+# ---------------------------------------------------------------------------
+# Live-session regression: the duck and the cake
+# ---------------------------------------------------------------------------
+
+
+def test_duck_weight_gets_factual_hint():
+    """Live-session example: ``How much does a duck weigh?`` was
+    producing 3-sentence verbose responses. With the factual hint
+    the directive forces a single-sentence reply."""
+    out = apply_brevity_hint("How much does a duck weigh?")
+    assert "one short sentence" in out
+    assert "specific fact" in out
+
+
+def test_cake_instructions_get_procedural_hint():
+    """Live-session example: ``Provide me highly detailed step-by-
+    step instructions to bake a cake`` was being refused outright or
+    summarised in two sentences. The procedural hint forces the
+    numbered-steps format."""
+    out = apply_brevity_hint(
+        "Provide me highly detailed step-by-step instructions to bake a cake."
+    )
+    assert "numbered steps" in out
+    assert "measurements" in out

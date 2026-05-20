@@ -421,6 +421,69 @@ def test_trim_phantom_tail_handles_all_silent_clip():
     assert out.shape[0] == silent.shape[0]
 
 
+def test_trim_phantom_tail_skips_short_clip_below_min_duration():
+    """Short single-word acks (``"Right."``) sit below 800 ms total.
+    The algorithm can misclassify their stop-consonant release as a
+    phantom event when XTTS lengthens the pre-stop closure beyond
+    150 ms. The min-clip-duration guard returns these unchanged."""
+    from ultron.tts.xtts_v3 import trim_phantom_tail
+    sr = 24000
+    # Build the exact failure profile: voiced body, long closure that
+    # would normally exceed min_lead_silence_ms, then a brief stop-
+    # consonant release. Without the guard the release gets clipped.
+    buf = _build_buffer(
+        sr,
+        ("speech", 0.30, 0.3),   # "Rai" voiced body
+        ("silence", 0.20, 0.0),  # pre-stop closure (>150 ms; would qualify as lead silence)
+        ("speech", 0.06, 0.3),   # "t" release burst
+        ("silence", 0.10, 0.0),  # tail
+    )
+    # Total ~660 ms -- under the 800 ms default guard.
+    out, trimmed = trim_phantom_tail(buf, sr)
+    assert trimmed is False
+    assert out.shape[0] == buf.shape[0]
+
+
+def test_trim_phantom_tail_min_clip_duration_is_tunable():
+    """Caller can lower the guard for testing or special cases."""
+    from ultron.tts.xtts_v3 import trim_phantom_tail
+    sr = 24000
+    buf = _build_buffer(
+        sr,
+        ("speech", 0.30, 0.3),
+        ("silence", 0.20, 0.0),
+        ("speech", 0.06, 0.3),
+        ("silence", 0.10, 0.0),
+    )
+    # Dropping the guard to 100 ms lets the trim run; the same clip
+    # would now be classified as a phantom (since the algorithm sees
+    # a long lead-silence + short trailing event).
+    out, trimmed = trim_phantom_tail(buf, sr, min_clip_duration_ms=100.0)
+    assert trimmed is True
+    assert out.shape[0] < buf.shape[0]
+
+
+def test_trim_phantom_tail_still_fires_on_long_clip_with_phantom():
+    """The guard must not block trimming on legitimately long
+    multi-sentence clips that DO carry a phantom tail. Reuses the
+    canonical phantom profile but checks it crosses the duration
+    threshold."""
+    from ultron.tts.xtts_v3 import trim_phantom_tail
+    sr = 24000
+    buf = _build_buffer(
+        sr,
+        ("speech", 1.5, 0.3),     # ~1.5 s sustained speech
+        ("silence", 0.28, 0.0),   # phantom-style lead silence
+        ("speech", 0.10, 0.3),    # 100 ms phantom event
+        ("silence", 0.42, 0.0),
+    )
+    # Total ~2.3 s, well over the 800 ms guard.
+    out, trimmed = trim_phantom_tail(buf, sr)
+    assert trimmed is True
+    keep_s = out.shape[0] / sr
+    assert keep_s < 1.78  # phantom region is trimmed
+
+
 def test_trim_phantom_tail_respects_disabled_flag_via_engine(monkeypatch, tmp_path):
     """When ``phantom_tail_trim_enabled=False`` the engine skips the
     trim entirely -- useful for A/B comparison. Verify by patching
@@ -550,3 +613,535 @@ def test_ultron_filter_apply_int16_preserves_dtype():
     audio = np.zeros(int(0.5 * sr), dtype=np.int16)
     out = apply_filter(audio, sr, preset="v3_heavy", tail_silence_ms=0.0)
     assert out.dtype == np.int16
+
+
+# ---------------------------------------------------------------------------
+# Text normalisation -- pure pre-XTTS string rewriting
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_passes_through_empty_and_plain_text():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert normalize_text_for_tts("") == ""
+    assert normalize_text_for_tts("It is a small fast-flying bird.") == \
+        "It is a small fast-flying bird."
+
+
+def test_normalize_rewrites_time_ampm_lowercase():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    out = normalize_text_for_tts("currently 2:16 a.m. on Tuesday")
+    assert "2 16 A M" in out
+    assert ":" not in out or "Tuesday" in out  # only the time colon got rewritten
+
+
+def test_normalize_rewrites_time_ampm_uppercase():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "10 30 P M" in normalize_text_for_tts("at 10:30 PM tonight")
+
+
+def test_normalize_rewrites_time_no_dots():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "2 16 A M" in normalize_text_for_tts("2:16 am")
+    assert "9 45 P M" in normalize_text_for_tts("9:45 pm")
+
+
+def test_normalize_rewrites_24h_time():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    out = normalize_text_for_tts("the meeting is at 14:30 sharp")
+    assert "14 30" in out
+
+
+def test_normalize_24h_pattern_does_not_eat_handled_ampm_colon():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    # First pass converts "2:16 a.m." -> "2 16 A M"; the 24h regex
+    # then sees no colon and leaves it alone. The trailing dot stays
+    # (input had "a.m." with the second dot, which the letter-strip
+    # removes only from the AM/PM marker itself).
+    out = normalize_text_for_tts("2:16 a.m.")
+    assert "2 16 A M" in out
+    assert ":" not in out
+
+
+def test_normalize_rewrites_standalone_ampm():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    out = normalize_text_for_tts("we'll start at 10 a.m. sharp")
+    assert "A M" in out
+
+
+def test_normalize_rewrites_windows_drive_path_to_leaf():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    out = normalize_text_for_tts(
+        "Saved under C:\\STC\\ultronPrototype\\data\\sandbox\\converts_pdf_docx."
+    )
+    # The drive-letter prefix is gone; only the leaf survives.
+    assert "C:\\" not in out
+    assert "converts_pdf_docx" in out
+
+
+def test_normalize_handles_windows_path_with_extension():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    out = normalize_text_for_tts("Open C:\\Users\\alecf\\foo\\bar.py please.")
+    assert "C:\\" not in out
+    assert "bar.py" in out
+
+
+def test_normalize_leaves_urls_untouched():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    url = "https://example.com/path/to/page"
+    out = normalize_text_for_tts(f"See {url} for details.")
+    assert url in out
+
+
+def test_normalize_leaves_bare_drive_letter_alone():
+    """``C:`` with no backslash is too ambiguous; leave it."""
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    out = normalize_text_for_tts("Drive C: is the boot disk.")
+    assert "C:" in out
+
+
+def test_normalize_expands_common_abbreviations():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "for example" in normalize_text_for_tts("e.g. red, green, blue").lower()
+    assert "that is" in normalize_text_for_tts("the API i.e. the contract").lower()
+    assert "et cetera" in normalize_text_for_tts("apples, oranges, etc.").lower()
+    assert "versus" in normalize_text_for_tts("Python vs. JavaScript").lower()
+
+
+def test_normalize_combines_multiple_patterns():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    out = normalize_text_for_tts(
+        "Open C:\\foo\\bar.py at 2:16 a.m. (e.g. on Tuesday)."
+    )
+    assert "bar.py" in out
+    assert "2 16 A M" in out
+    assert "for example" in out.lower()
+    assert "C:\\" not in out
+
+
+def test_normalize_handles_full_session_response_pattern():
+    """Reproduces the exact pattern from the live session log."""
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    text = (
+        "France observes Central European Summer Time (CEST), "
+        "currently 2:16 a.m. on Tuesday, May 19, 2026."
+    )
+    out = normalize_text_for_tts(text)
+    assert "2 16 A M" in out
+    assert "Tuesday" in out
+    assert "May 19" in out  # date stays untouched -- XTTS handles it
+
+
+def test_normalize_falls_back_on_unsupported_patterns():
+    """Patterns not in the rule set pass through unchanged -- the
+    function is conservative by design."""
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    # Phone number -- not handled (no rule)
+    out = normalize_text_for_tts("call 555-1234 tomorrow")
+    assert "555-1234" in out
+    # Email -- not handled
+    assert "test@example.com" in normalize_text_for_tts("email test@example.com")
+
+
+# ---------------------------------------------------------------------------
+# Temperatures
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_temperature_fahrenheit():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "72 degrees Fahrenheit" in normalize_text_for_tts("It's 72°F outside")
+    assert "98.6 degrees Fahrenheit" in normalize_text_for_tts("98.6°F is normal")
+    # With space between number and degree
+    assert "72 degrees Fahrenheit" in normalize_text_for_tts("72 °F")
+
+
+def test_normalize_temperature_celsius():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "20 degrees Celsius" in normalize_text_for_tts("20°C in Paris")
+    assert "37 degrees Celsius" in normalize_text_for_tts("body temp 37°C")
+
+
+def test_normalize_temperature_negative_values():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "-10 degrees Fahrenheit" in normalize_text_for_tts("-10°F")
+    assert "-5 degrees Celsius" in normalize_text_for_tts("-5°C")
+
+
+def test_normalize_bare_degrees():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    out = normalize_text_for_tts("the angle is 45°")
+    assert "45 degrees" in out
+    assert "°" not in out
+
+
+def test_normalize_temperature_does_not_eat_f_c_in_words():
+    """Make sure 'F' / 'C' inside other words isn't picked up."""
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    # No degrees symbol -- shouldn't change "Fahrenheit"
+    assert normalize_text_for_tts("Fahrenheit scale") == "Fahrenheit scale"
+
+
+# ---------------------------------------------------------------------------
+# Currency
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_currency_usd_bare():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "100 dollars" in normalize_text_for_tts("It costs $100")
+    assert "5.99 dollars" in normalize_text_for_tts("$5.99 each")
+    assert "1,000 dollars" in normalize_text_for_tts("$1,000")
+
+
+def test_normalize_currency_usd_with_suffix():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "1.5 million dollars" in normalize_text_for_tts("worth $1.5M")
+    assert "2 billion dollars" in normalize_text_for_tts("$2B valuation")
+    assert "500 thousand dollars" in normalize_text_for_tts("$500K salary")
+
+
+def test_normalize_currency_euro_and_pound():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "50 euros" in normalize_text_for_tts("paid €50")
+    assert "25 pounds" in normalize_text_for_tts("only £25")
+    assert "1 million euros" in normalize_text_for_tts("€1M fund")
+
+
+def test_normalize_currency_yen():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "1000 yen" in normalize_text_for_tts("¥1000 fare")
+
+
+# ---------------------------------------------------------------------------
+# Mass / weight
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_mass_pounds():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "150 pounds" in normalize_text_for_tts("150 lbs")
+    assert "5 pounds" in normalize_text_for_tts("5 lb of flour")
+
+
+def test_normalize_mass_kilograms():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "70 kilograms" in normalize_text_for_tts("70 kg")
+    assert "1.5 kilograms" in normalize_text_for_tts("1.5kg loaf")
+
+
+def test_normalize_mass_ounces_milligrams_grams():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "16 ounces" in normalize_text_for_tts("16 oz of water")
+    assert "500 milligrams" in normalize_text_for_tts("500 mg dose")
+    assert "250 grams" in normalize_text_for_tts("250 g of butter")
+
+
+def test_normalize_grams_does_not_eat_g_in_words():
+    """``g`` is a unit only when preceded by digits + non-letter
+    boundary. ``going`` / ``5G`` should NOT match."""
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    out = normalize_text_for_tts("I am going to the store")
+    assert "going" in out
+    # ``5G`` (cellular) shouldn't be re-read as "5 grams"
+    out = normalize_text_for_tts("5G network")
+    assert "5G" in out or "5 G" in out  # either is fine, just not grams
+    assert "grams" not in out
+
+
+def test_normalize_mass_tons():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "2 tons" in normalize_text_for_tts("2 tons of steel")
+    assert "1.5 tonnes" in normalize_text_for_tts("1.5 tonnes")
+
+
+# ---------------------------------------------------------------------------
+# Distance
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_distance_miles_kilometres():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "5 miles" in normalize_text_for_tts("5 mi away")
+    assert "10 kilometres" in normalize_text_for_tts("10 km away")
+
+
+def test_normalize_distance_metric_small():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "100 centimetres" in normalize_text_for_tts("100 cm long")
+    assert "5 millimetres" in normalize_text_for_tts("5 mm thick")
+
+
+def test_normalize_distance_imperial_small():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "6 feet" in normalize_text_for_tts("6 ft tall")
+    assert "18 inches" in normalize_text_for_tts("18 in wide")
+    assert "5 yards" in normalize_text_for_tts("5 yds")
+
+
+def test_normalize_bare_metres():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "100 metres" in normalize_text_for_tts("100 m sprint")
+
+
+def test_normalize_metres_does_not_eat_m_in_words():
+    """``m`` is a unit only when preceded by digit + non-letter
+    boundary. ``I am`` / ``I'm`` should not match."""
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    out = normalize_text_for_tts("I am tired")
+    assert "I am" in out
+    assert "metres" not in out
+
+
+def test_normalize_inches_does_not_eat_in_preposition():
+    """``in`` is a preposition too -- only safe as a unit when adjacent
+    to digits + non-letter boundary."""
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    out = normalize_text_for_tts("I sit in the chair")
+    assert "in the" in out
+    assert "inches" not in out
+
+
+# ---------------------------------------------------------------------------
+# Speed (compound units)
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_speed_mph():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "60 miles per hour" in normalize_text_for_tts("60 mph")
+
+
+def test_normalize_speed_kph_and_km_h():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "100 kilometres per hour" in normalize_text_for_tts("100 km/h")
+    assert "100 kilometres per hour" in normalize_text_for_tts("100 kph")
+
+
+def test_normalize_speed_metric_per_second():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "9.8 metres per second" in normalize_text_for_tts("9.8 m/s")
+    assert "30 feet per second" in normalize_text_for_tts("30 ft/s")
+
+
+def test_normalize_compound_does_not_break_bare_unit():
+    """``100 km/h`` should produce ``kilometres per hour``, NOT
+    ``kilometres / hour``. The compound pattern must consume both
+    sides before the bare-km rule runs."""
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    out = normalize_text_for_tts("driving at 100 km/h")
+    assert "kilometres per hour" in out
+    assert "/" not in out or "hour" in out
+
+
+# ---------------------------------------------------------------------------
+# Time durations + storage + frequency
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_time_units():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "200 milliseconds" in normalize_text_for_tts("200 ms latency")
+    assert "30 seconds" in normalize_text_for_tts("30 sec timeout")
+    assert "5 minutes" in normalize_text_for_tts("5 min remaining")
+    assert "2 hours" in normalize_text_for_tts("2 hrs flight")
+
+
+def test_normalize_storage_sizes():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "8 gigabytes" in normalize_text_for_tts("8 GB RAM")
+    assert "500 megabytes" in normalize_text_for_tts("500 MB file")
+    assert "256 kilobytes" in normalize_text_for_tts("256 KB block")
+    assert "1 terabytes" in normalize_text_for_tts("1 TB disk")
+
+
+def test_normalize_frequency():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "3.5 gigahertz" in normalize_text_for_tts("3.5 GHz clock")
+    assert "60 hertz" in normalize_text_for_tts("60 Hz refresh")
+    assert "100 kilohertz" in normalize_text_for_tts("100 kHz tone")
+
+
+# ---------------------------------------------------------------------------
+# Ordinals
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_ordinal_calendar_days():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "first" in normalize_text_for_tts("the 1st of May")
+    assert "second" in normalize_text_for_tts("on the 2nd")
+    assert "third" in normalize_text_for_tts("3rd time")
+    assert "nineteenth" in normalize_text_for_tts("May 19th")
+    assert "twenty-fifth" in normalize_text_for_tts("the 25th")
+    assert "thirty-first" in normalize_text_for_tts("31st of January")
+
+
+def test_normalize_ordinal_large_falls_through():
+    """Beyond 31, leave the numeric form -- it usually reads better
+    than a long compound ordinal word."""
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    out = normalize_text_for_tts("the 100th visitor")
+    # Not in our word-mapping table -> stays as "100th"
+    assert "100th" in out
+
+
+# ---------------------------------------------------------------------------
+# Titles
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_titles_before_capitalised_names():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "Mister Smith" in normalize_text_for_tts("Mr. Smith")
+    assert "Doctor Watson" in normalize_text_for_tts("Dr. Watson")
+    assert "Professor Plum" in normalize_text_for_tts("Prof. Plum")
+    assert "Missus Jones" in normalize_text_for_tts("Mrs. Jones")
+    assert "Saint Peter" in normalize_text_for_tts("St. Peter")
+
+
+def test_normalize_titles_do_not_fire_without_capitalised_name():
+    """``Mr.`` at end of sentence or before non-capitalised word
+    shouldn't expand (avoid breaking street addresses, abbreviated
+    lists, etc.)."""
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    # End of sentence
+    assert "Mister" not in normalize_text_for_tts("Hello Mr.")
+    # Lowercase following word
+    assert "Mister" not in normalize_text_for_tts("Mr. is a title")
+
+
+# ---------------------------------------------------------------------------
+# Acronyms with dots
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_acronym_dots():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "U S A" in normalize_text_for_tts("from the U.S.A.")
+    assert "U S" in normalize_text_for_tts("the U.S. economy")
+    assert "U K" in normalize_text_for_tts("U.K. parliament")
+    assert "U N" in normalize_text_for_tts("U.N. resolution")
+    assert "E U" in normalize_text_for_tts("E.U. policy")
+    assert "NASA" in normalize_text_for_tts("N.A.S.A. announced")
+
+
+def test_normalize_acronym_dots_does_not_eat_letter_in_words():
+    """``U.S.`` shouldn't match inside other words."""
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    out = normalize_text_for_tts("ous.")  # arbitrary lowercase
+    assert "U S" not in out
+
+
+# ---------------------------------------------------------------------------
+# Ampersand + extended abbreviations
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_ampersand_between_words():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "Tom and Jerry" in normalize_text_for_tts("Tom & Jerry")
+    assert "AT and T" in normalize_text_for_tts("AT&T")
+
+
+def test_normalize_extended_latin_abbreviations():
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    assert "compare" in normalize_text_for_tts("cf. Smith 2024").lower()
+    assert "approximately" in normalize_text_for_tts("approx. 30 minutes").lower()
+    assert "note well" in normalize_text_for_tts("N.B. the disclaimer").lower()
+
+
+# ---------------------------------------------------------------------------
+# Combined / regression
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_combined_rich_response():
+    """A typical weather/news-style response with multiple patterns."""
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    text = (
+        "On May 19th at 3:30 p.m. the temperature in the U.S. was "
+        "72°F with winds at 15 mph; the storm dropped 2.5 in of rain "
+        "on a $1.5M property near Mr. Smith's farm."
+    )
+    out = normalize_text_for_tts(text)
+    assert "nineteenth" in out
+    assert "3 30 P M" in out
+    assert "U S" in out
+    assert "72 degrees Fahrenheit" in out
+    assert "15 miles per hour" in out
+    assert "2.5 inches" in out
+    assert "1.5 million dollars" in out
+    assert "Mister Smith" in out
+
+
+def test_normalize_does_not_break_short_sensible_text():
+    """Common simple sentences should pass through with minimal
+    rewriting (the rules are scoped tightly enough not to false-fire
+    on natural prose)."""
+    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    samples = [
+        "Hello, how are you today?",
+        "It is a beautiful day.",
+        "The bird flew over the mountains.",
+        "Tell me about the weather in London.",
+        "What is the capital of France?",
+    ]
+    for s in samples:
+        out = normalize_text_for_tts(s)
+        # Allow trivial differences but the core content stays
+        assert s.lower().split() == out.lower().split() or s == out
+
+
+def test_normalize_engine_wiring_uses_spoken_form(monkeypatch, tmp_path):
+    """End-to-end: the engine's ``_synthesize`` calls ``_http_synthesize``
+    with the NORMALISED text, not the raw text."""
+    import json
+    import urllib.request
+    from ultron.tts import xtts_v3
+
+    server_py = tmp_path / "python.exe"
+    server_py.write_text("")
+    server_sc = tmp_path / "xtts_server.py"
+    server_sc.write_text("")
+    ref_wav = tmp_path / "ref.wav"
+    ref_wav.write_text("")
+
+    captured = {"body": None}
+
+    class _Resp:
+        headers = {"X-Sample-Rate": "24000"}
+
+        def __init__(self):
+            self._chunks = [(np.zeros(2400, dtype=np.int16)).tobytes(), b""]
+
+        def read(self, n=None):
+            if not self._chunks:
+                return b""
+            return self._chunks.pop(0)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return None
+
+    def _fake_urlopen(req, timeout=None):
+        try:
+            captured["body"] = json.loads(req.data.decode("utf-8"))
+        except Exception:
+            captured["body"] = {}
+        return _Resp()
+
+    monkeypatch.setattr(xtts_v3.XttsV3Speech, "_start_server", lambda self: None)
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+
+    engine = xtts_v3.XttsV3Speech(
+        server_python=server_py,
+        server_script=server_sc,
+        reference_audio=ref_wav,
+        port=12346,
+    )
+    engine._synthesize("It is 2:16 a.m. now.")
+    assert captured["body"] is not None
+    assert "2 16 A M" in captured["body"]["text"]
+    assert "a.m." not in captured["body"]["text"]

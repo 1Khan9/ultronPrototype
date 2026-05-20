@@ -145,6 +145,12 @@ def test_preset_table_contents() -> None:
     assert set(LLM_PRESETS.keys()) == {
         "qwen3.5-9b", "qwen3.5-4b",
         "josiefied-qwen3-8b", "josiefied-qwen3-4b",
+        # 2026-05-19 additions: candidates for daily-use + gaming-mode
+        # swaps. GGUFs NOT yet on disk -- presets are paper-only until
+        # download. swap_llm_preset.py refuses the swap if files are
+        # absent.
+        "gemma-3-4b-abliterated",
+        "llama-3.2-3b-abliterated",
     }
     nine = LLM_PRESETS["qwen3.5-9b"]
     four = LLM_PRESETS["qwen3.5-4b"]
@@ -168,6 +174,88 @@ def test_preset_table_contents() -> None:
     # 2026-05-14: 4B abliterated uses n_ctx=6144 (smaller than the
     # other presets' 8192) to trim ~150 MB off the KV cache.
     assert four_jos["n_ctx"] == 6144
+
+
+def test_gemma_4b_abliterated_preset_resolves() -> None:
+    """2026-05-19 daily-use candidate: Gemma 3 4B abliterated paired
+    with the 1B draft for speculative decoding. n_ctx=4096 trims KV
+    cache further (Gemma uses GQA so KV is already smaller than
+    Qwen's at the same context length).
+
+    Filename invariants: main GGUF from mradermacher uses dot
+    separator (``...abliterated.Q4_K_M.gguf``); draft from bartowski
+    uses hyphen (``...-Q4_K_M.gguf``). Both must match the filenames
+    written by ``scripts/download_models.py`` so
+    ``swap_llm_preset.py``'s GGUF-presence check passes after a
+    fresh download.
+    """
+    cfg = LLMConfig(preset="gemma-3-4b-abliterated")
+    assert cfg.preset == "gemma-3-4b-abliterated"
+    assert cfg.model_path == "models/gemma-3-4b-it-abliterated.Q4_K_M.gguf"
+    assert cfg.n_ctx == 4096
+    assert cfg.draft_model_path == "models/gemma-3-1b-it-Q4_K_M.gguf"
+
+
+def test_llama_3_2_3b_abliterated_preset_resolves() -> None:
+    """2026-05-19 gaming-mode candidate: Llama 3.2 3B abliterated
+    paired with the 1B draft. Smaller VRAM footprint than Qwen3-4B,
+    naturally brief conversational tone. n_ctx=2048 because gaming
+    channel utterances are short -- smaller KV cache frees memory
+    for Valorant + OBS.
+
+    Same dot/hyphen invariant as the Gemma preset above.
+    """
+    cfg = LLMConfig(preset="llama-3.2-3b-abliterated")
+    assert cfg.preset == "llama-3.2-3b-abliterated"
+    assert cfg.model_path == "models/Llama-3.2-3B-Instruct-abliterated.Q4_K_M.gguf"
+    assert cfg.n_ctx == 2048
+    assert cfg.draft_model_path == "models/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+
+
+def test_new_presets_match_download_script_filenames() -> None:
+    """Regression: every preset's model_path + draft_model_path must
+    end with a filename that ``scripts/download_models.py`` actually
+    writes. If the constants in the download script drift from the
+    preset paths, ``swap_llm_preset.py`` refuses the swap with
+    "preset files missing" -- this test catches the drift early.
+    """
+    import importlib
+    spec = importlib.util.spec_from_file_location(
+        "download_models",
+        Path(__file__).resolve().parent.parent / "scripts" / "download_models.py",
+    )
+    # Skip the import side effects (it touches HF cache etc.) by
+    # reading the source instead and grepping for the *_FILE constants.
+    download_src = (
+        Path(__file__).resolve().parent.parent / "scripts" / "download_models.py"
+    ).read_text(encoding="utf-8")
+
+    expected_pairs = [
+        ("gemma-3-4b-abliterated", "model_path", "gemma-3-4b-it-abliterated.Q4_K_M.gguf"),
+        ("gemma-3-4b-abliterated", "draft_model_path", "gemma-3-1b-it-Q4_K_M.gguf"),
+        ("llama-3.2-3b-abliterated", "model_path", "Llama-3.2-3B-Instruct-abliterated.Q4_K_M.gguf"),
+        ("llama-3.2-3b-abliterated", "draft_model_path", "Llama-3.2-1B-Instruct-Q4_K_M.gguf"),
+    ]
+    for preset, key, expected_filename in expected_pairs:
+        actual = LLM_PRESETS[preset][key]
+        assert actual.endswith(expected_filename), (
+            f"{preset}.{key} = {actual!r} does not end with "
+            f"{expected_filename!r}; the download script writes that "
+            f"filename so the preset path must match."
+        )
+        assert expected_filename in download_src, (
+            f"download_models.py does not reference {expected_filename!r}; "
+            f"the preset path will resolve to a missing file after a "
+            f"fresh download."
+        )
+
+
+def test_new_presets_in_literal_type() -> None:
+    """Both new presets accepted by the Literal validator. Invalid
+    preset strings still reject (covered in test_invalid_preset_rejected)."""
+    # No exception on either; failure would raise ValidationError.
+    LLMConfig(preset="gemma-3-4b-abliterated")
+    LLMConfig(preset="llama-3.2-3b-abliterated")
 
 
 def test_yaml_load_with_4b_preset(tmp_path: Path) -> None:

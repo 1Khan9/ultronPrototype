@@ -184,3 +184,72 @@ def test_resolve_model_switch_target_unknown_raises() -> None:
     from ultron.openclaw_routing.classifier import _resolve_model_switch_target
     with pytest.raises(ValueError):
         _resolve_model_switch_target("XYZ")
+
+
+# ---------------------------------------------------------------------------
+# 2026-05-19 Track 4 voice integration: gemma + llama tokens
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "utterance,expected_preset",
+    [
+        ("switch to gemma", "gemma-3-4b-abliterated"),
+        ("Switch to Gemma.", "gemma-3-4b-abliterated"),
+        ("use the gemma model", "gemma-3-4b-abliterated"),
+        ("swap to gemma 3", "gemma-3-4b-abliterated"),
+        ("switch over to gemma 3 4B", "gemma-3-4b-abliterated"),
+        ("load gemma", "gemma-3-4b-abliterated"),
+        ("activate gemma", "gemma-3-4b-abliterated"),
+        ("change to gemma", "gemma-3-4b-abliterated"),
+    ],
+)
+def test_classifier_routes_gemma_utterance_to_model_switch(
+    utterance, expected_preset,
+) -> None:
+    intent = classify_routing(utterance)
+    assert intent.kind == RoutingIntentKind.MODEL_SWITCH, (
+        f"failed on: {utterance!r}"
+    )
+    assert intent.model_switch_intent is not None
+    assert intent.model_switch_intent.target_preset == expected_preset
+
+
+@pytest.mark.parametrize(
+    "utterance,expected_preset",
+    [
+        ("switch to llama", "llama-3.2-3b-abliterated"),
+        ("Switch to Llama.", "llama-3.2-3b-abliterated"),
+        ("use llama", "llama-3.2-3b-abliterated"),
+        ("swap to llama 3.2", "llama-3.2-3b-abliterated"),
+        ("switch to llama 3 2", "llama-3.2-3b-abliterated"),
+        ("load llama 3.2 3B", "llama-3.2-3b-abliterated"),
+        ("go to llama", "llama-3.2-3b-abliterated"),
+        ("activate llama", "llama-3.2-3b-abliterated"),
+    ],
+)
+def test_classifier_routes_llama_utterance_to_model_switch(
+    utterance, expected_preset,
+) -> None:
+    intent = classify_routing(utterance)
+    assert intent.kind == RoutingIntentKind.MODEL_SWITCH, (
+        f"failed on: {utterance!r}"
+    )
+    assert intent.model_switch_intent is not None
+    assert intent.model_switch_intent.target_preset == expected_preset
+
+
+def test_resolve_model_switch_target_gemma_and_llama() -> None:
+    from ultron.openclaw_routing.classifier import _resolve_model_switch_target
+    assert _resolve_model_switch_target("gemma") == "gemma-3-4b-abliterated"
+    assert _resolve_model_switch_target("Gemma 3") == "gemma-3-4b-abliterated"
+    assert _resolve_model_switch_target("llama") == "llama-3.2-3b-abliterated"
+    assert _resolve_model_switch_target("Llama 3.2") == "llama-3.2-3b-abliterated"
+
+
+def test_passing_remarks_about_gemma_do_not_trigger_switch() -> None:
+    """Conservative regex: requires action verb + target token."""
+    intent = classify_routing("gemma is supposed to be faster")
+    assert intent.kind != RoutingIntentKind.MODEL_SWITCH
+    intent = classify_routing("I read that llama 3.2 has better tool calling")
+    assert intent.kind != RoutingIntentKind.MODEL_SWITCH

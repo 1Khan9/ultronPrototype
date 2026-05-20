@@ -101,9 +101,17 @@ _MODEL_SWITCH_4B_TOKEN = r"(?:4\s*[Bb]|four\s*[Bb]|for\s*[Bb]|4\s*-\s*[Bb])"
 # "8B" / "8 b" / "eight B".
 _MODEL_SWITCH_8B_TOKEN = r"(?:8\s*[Bb]|eight\s*[Bb]|ate\s*[Bb]|8\s*-\s*[Bb])"
 _MODEL_SWITCH_9B_TOKEN = r"(?:9\s*[Bb]|nine\s*[Bb]|9\s*-\s*[Bb])"
+# 2026-05-19 Track 4 voice integration: word-named family tokens.
+# Whisper transcribes spoken family names cleanly so "switch to
+# gemma" / "switch to llama" route through the same MODEL_SWITCH
+# intent as the digit-B forms. Optional trailing version suffix
+# (e.g., "llama 3.2", "gemma 3 4B") is accepted but not required.
+_MODEL_SWITCH_GEMMA_TOKEN = r"(?:gemma(?:\s+3(?:\s+4\s*[Bb])?)?)"
+_MODEL_SWITCH_LLAMA_TOKEN = r"(?:llama(?:\s+3(?:[.\s]2)?(?:\s+3\s*[Bb])?)?)"
 _MODEL_SWITCH_TOKEN = (
     rf"(?P<model>{_MODEL_SWITCH_4B_TOKEN}|{_MODEL_SWITCH_8B_TOKEN}|"
-    rf"{_MODEL_SWITCH_9B_TOKEN})"
+    rf"{_MODEL_SWITCH_9B_TOKEN}|{_MODEL_SWITCH_GEMMA_TOKEN}|"
+    rf"{_MODEL_SWITCH_LLAMA_TOKEN})"
 )
 _MODEL_SWITCH_PATTERNS = re.compile(
     rf"\b(?:{_MODEL_SWITCH_VERBS})\s+(?:over\s+)?(?:to\s+|on\s+to\s+|onto\s+)?"
@@ -187,15 +195,27 @@ def _resolve_model_switch_target(matched_token: str) -> str:
     """Map the matched-text variant back to the canonical preset name.
 
     ``matched_token`` is the contents of the ``(?P<model>...)`` group —
-    e.g. "4B", "four B", "9 b", "for B", "8 b", "eight B". Returns one
-    of the canonical preset names. 2026-05-14: "4B" / "8B" route to
-    the Josiefied (abliterated) variants because those are the
-    intentionally-maintained presets the user is choosing between
-    after the 4B default landed; "9B" keeps the plain qwen3.5-9b
-    swap-back path. Users who specifically want plain qwen3.5-4b set
-    that in YAML or via ``ULTRON_LLM_PRESET``.
+    e.g. "4B", "four B", "9 b", "for B", "8 b", "eight B",
+    "gemma", "llama 3.2". Returns one of the canonical preset names.
+
+    2026-05-14: "4B" / "8B" route to the Josiefied (abliterated)
+    variants because those are the intentionally-maintained presets
+    the user is choosing between after the 4B default landed; "9B"
+    keeps the plain qwen3.5-9b swap-back path.
+
+    2026-05-19 Track 4 voice integration: "gemma" -> Gemma 3 4B
+    abliterated; "llama" / "llama 3.2" -> Llama 3.2 3B abliterated.
+    Both presets are paper-only until the GGUFs are downloaded;
+    swap_llm_preset's GGUF-presence validation surfaces the
+    actionable error when the user tries to swap.
     """
     t = matched_token.lower().replace("-", "").replace(" ", "")
+    # Word-named families first -- their tokens contain alphabetic
+    # characters that would not match the digit-leading branches.
+    if t.startswith("gemma"):
+        return "gemma-3-4b-abliterated"
+    if t.startswith("llama"):
+        return "llama-3.2-3b-abliterated"
     if t.startswith("4") or t.startswith("four") or t.startswith("for"):
         return "josiefied-qwen3-4b"
     if t.startswith("8") or t.startswith("eight") or t.startswith("ate"):

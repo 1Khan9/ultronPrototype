@@ -10,6 +10,46 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 
+**2026-05-19 cross-cutting expansion -- COMPLETE.** Re-implemented locally the full catalogue the secondary-machine session designed (the changes never made it to GitHub from that machine). All new modules ship default-OFF on their behaviour-changing flags so the voice baseline contract holds. Brief rundown:
+
+* **Track 3 (response_style.py):** extended `apply_brevity_hint` with three hint classes -- procedural (numbered-steps directive on "step-by-step" / "walk me through" / "comprehensive guide" / "highly detailed" / etc.), factual (one-sentence directive on "how much / how many / how heavy / when did / what year / who invented / what's the capital" stems), brevity (existing 1-3-sentence directive on short non-stem questions). Procedural > factual > brevity in priority. Directly attacks Qwen3-4B's verbosity miscalibration (duck/cake case). +69 tests.
+* **Track 4 (LLM presets):** added `gemma-3-4b-abliterated` (with `gemma-3-1b-it` speculative draft, n_ctx=4096) and `llama-3.2-3b-abliterated` (with `Llama-3.2-1B-Instruct` draft, n_ctx=2048) entries to `LLM_PRESETS`. Default stays `josiefied-qwen3-4b` -- swap via `python scripts/swap_llm_preset.py gemma-3-4b-abliterated` once GGUFs are on disk. Voice MODEL_SWITCH classifier extended with `_MODEL_SWITCH_GEMMA_TOKEN` + `_MODEL_SWITCH_LLAMA_TOKEN` so "switch to gemma / llama" routes through the existing preset-swap flow. `_resolve_model_switch_target` returns the right canonical preset name. +6 preset tests, +18 voice-intent tests.
+* **Track 1f + 1g (AST metadata):** new [`src/ultron/coding/ast_metadata.py`](../src/ultron/coding/ast_metadata.py) -- stdlib-ast extractor returning `functions_defined`, `functions_called`, `classes_defined`, `imports`, `syntax_valid`, `has_main_guard`, `line_count`. `CodingTaskRunner._make_ast_syntax_listener` registers a FILE_CHANGE listener (gated on `coding.ast_metadata.enabled`) that AST-parses every Python file Claude Code writes and emits `ast_syntax_ok` / `ast_syntax_failure` audit rows. Stops "Done." narration from claiming success on broken syntax. +21 + 9 tests.
+* **Track 1a (topical chunking):** new [`src/ultron/memory/topical_chunking.py`](../src/ultron/memory/topical_chunking.py) -- `TopicTracker` + `compute_topic_boundary` (cosine-similarity boundary detection). Wired into `ConversationMemory._upsert_turn` so every payload carries a `topic_id` when `memory.topical_chunking.enabled`. +24 tests.
+* **Track 1b (discourse tagging):** new [`src/ultron/memory/discourse.py`](../src/ultron/memory/discourse.py) -- 6-way classifier (QUESTION / STATEMENT / DECISION / CLARIFICATION_REQUEST / ACKNOWLEDGMENT / TOPIC_SHIFT) with rule layer + embedding-centroid fallback. Wired into payload write path under `memory.discourse_tagging.enabled`. +28 tests.
+* **Track 1h (ranking signals):** [`ranking.py`](../src/ultron/memory/ranking.py) extended with `compute_topic_match_score` + `compute_discourse_match_score` + new `RankingWeights.topic_match_weight` / `discourse_match_weight` (default 0.0 = byte-for-byte legacy). +16 tests.
+* **Track 2 (parallel embedding):** new `HybridEmbedder.encode_query_dense_sparse(parallel=False)` helper -- when `parallel=True`, ThreadPoolExecutor overlaps dense + sparse encode. Default False; opt-in via `embeddings.parallel_query_embedding`. ~5-15 ms saved per retrieve call. +7 tests.
+* **Track 1c+1d+1e (BackgroundSummarizer):** new [`src/ultron/memory/background_summarizer.py`](../src/ultron/memory/background_summarizer.py) -- idle-gated, lock-serialized LLM call that emits one JSON-mode summary + structured facts/decisions/preferences per N turns. Defensive JSON parsing (fence + brace-balanced fallback). Default OFF (`memory.background_summary.enabled`). Foundations ship; orchestrator wiring is intentionally separate. +22 tests.
+* **Track 5 (Kokoro engine):** new [`src/ultron/tts/kokoro_engine.py`](../src/ultron/tts/kokoro_engine.py) -- StyleTTS2 + ISTFTNet wrapper exposing the same `speak`/`speak_stream`/`warmup`/`prepare_output_stream`/`stop` surface as `XttsV3Speech`. `tts.engine` accepts `"kokoro"`. Lazy load on first inference; fail-open with `KokoroEngineLoadError` when weights are absent. Optional runtime v3 pedalboard filter for pre-fine-tune use. +15 tests.
+* **Track 6 (channel abstraction):** new [`src/ultron/channels.py`](../src/ultron/channels.py) -- `Channel` enum (USER / TEAMMATE / SYSTEM) + `ChannelMetadata` dataclass with `as_payload_dict()` for Qdrant storage. `GamingModeManager.engage` / `disengage` now flip a process-global `is_gaming_mode_active()` flag so desktop primitives can short-circuit during Valorant play. Foundations ship; orchestrator dual-channel wiring is a separate integration pass. +17 + 6 tests.
+* **Latency hygiene helpers:** new [`src/ultron/latency_hygiene.py`](../src/ultron/latency_hygiene.py) -- `raise_process_priority`, `pause_gc` / `resume_gc`, `warmup_llm`, `warmup_embedder`. All fail-open, all opt-in. +13 tests.
+* **scripts/download_models.py:** added Gemma 3 4B + 1B and Llama 3.2 3B + 1B GGUF fetch steps. Skippable via `OFFLINE_SKIP_OPTIONAL_LLMS=1`. User invokes the script when ready to download.
+
+**Tests: 2716 -> 3053 passing** (+337) / 15 skipped (GPU-gated) / 0 failed in ~62 s. Voice baseline contract preserved. Validated HEAD pending commit on the worktree branch.
+
+---
+
+**2026-05-19 live-session bug fixes -- COMPLETE.** Triaged from a live-session log: (1) the conversational "Right." ack played clipped on every turn; (2) the LLM hallucinated a "I cannot display images" disclaimer on a hummingbird answer despite having APP_LAUNCH + image-search wired; (3) "2:16 a.m." came out as garbled letter strings; (4) a baking-recipe ask got refused with a random duck pivot. Three surgical fixes -- all in the documented iteration zone, no SOUL.md / RVC / Piper / LLM-model-file touch.
+
+* **Bug 1 fix (ack clipping):** [`trim_phantom_tail`](../src/ultron/tts/xtts_v3.py) gains a `min_clip_duration_ms` parameter (default 800 ms). Clips shorter than the guard skip the trim entirely. The algorithm previously misclassified stop-consonant releases on single short words (``"Right."``) as phantom events when XTTS lengthened the pre-stop closure beyond 150 ms. Because the ack clip cache prewarms via `_synthesize`, the clipped audio got cached and replayed every turn. Real phantom tails only show up at the end of multi-sentence responses, so the 800 ms guard is conservative. 4 new tests in [`tests/test_xtts_v3_config.py`](../tests/test_xtts_v3_config.py).
+
+* **Bug 2 + 4 fix (capability anchor):** extended `~/.openclaw/workspace/IDENTITY.md` (the user-facing system-prompt seed) from one line to a structured capability + non-refusal block. The voice path picks it up via [`PersonaLoader.refresh_if_stale`](../src/ultron/openclaw_bridge/persona.py) on the next turn without restart. SOUL.md (voice character) is untouched -- IDENTITY.md is the right semantic location for "what you can do" and isn't under the SOUL/RVC/Piper lock. The new content lists every wired Ultron capability (APP_LAUNCH, image search, window control, screen context, web search, supervised coding, memory, MODEL_SWITCH) and explicitly directs the model not to pre-emptively disclaim, not to invent pivot topics, not to refuse benign requests. Qwen3.5-4B's training-data prior was driving the disclaimers; the anchor gives it ground truth.
+
+* **Bug 3 fix (TTS text normalisation):** new pure function `normalize_text_for_tts(text)` in [`src/ultron/tts/xtts_v3.py`](../src/ultron/tts/xtts_v3.py), called from `_synthesize` before `_http_synthesize`. Rewrites Windows drive paths (``C:\\foo\\bar\\baz.ext`` -> ``baz.ext`` leaf), 12-hour times with AM/PM (``2:16 a.m.`` -> ``2 16 A M``), 24-hour times (``14:30`` -> ``14 30``), standalone ``a.m./p.m.`` markers, and common Latin abbreviations (``e.g.`` -> "for example", ``i.e.`` -> "that is", ``etc.`` -> "et cetera", ``vs.`` -> "versus"). Conservative -- patterns that don't match pass through unchanged. URLs are deliberately preserved (a Posix-path regex would otherwise mangle ``https://x.com/foo/bar`` to ``bar`` -- only Windows drive paths are rewritten). Defence-in-depth on top of the 2026-05-11 completion-narration fix. 15 new tests in [`tests/test_xtts_v3_config.py`](../tests/test_xtts_v3_config.py).
+
+**Files changed:**
+
+```
+src/ultron/tts/xtts_v3.py                          (+ normalize_text_for_tts + abbreviation patterns; + min_clip_duration_ms guard on trim_phantom_tail; _synthesize calls normaliser before _http_synthesize)
+tests/test_xtts_v3_config.py                       (+ 4 trim guard tests; + 15 normalisation tests including end-to-end engine wiring)
+~/.openclaw/workspace/IDENTITY.md                  (one line -> structured capability + non-refusal block; hot-reloads via PersonaLoader)
+docs/codebase_structure.md                         (this status header + per-module deltas)
+```
+
+**Tests: 2697 -> 2716 passing** (+19) / 15 skipped (GPU-gated) / 0 failed in ~62 s. Voice baseline contract preserved -- no LLM-path edits beyond the system-prompt content, no audio-pipeline timing changes, the trim guard is a pure short-circuit on an already-fail-open code path. The user must restart Ultron once for the new xtts_v3 module + cleared ack cache (so the prewarm rebuilds clips with the updated trim guard).
+
+---
+
 **2026-05-18+ Phase 0+1 build + E2 + E5: cross-cutting learning infrastructure + adaptive context + voice-character-lock + goal-anchor planning -- COMPLETE.** Cross-cutting foundation work on top of the 2026-05-18 latency pass 3. The user asked for an integrated build covering Phase 0 (eval harness) + Phase 1 (observation framework with outcome tagging, lineage IDs, adaptive context, confidence plumbing) plus E2 (full goal-anchor planning) and E5 (voice-character-lock guardrails). All shipped; runtime behaviour is default-OFF on the behaviour-changing flags so the voice baseline contract is preserved.
 
 * **Phase 0 -- eval harness + labeled corpus.** New [`scripts/eval_harness.py`](../scripts/eval_harness.py) + [`tests/eval/corpus.jsonl`](../tests/eval/corpus.jsonl) (60 labeled rows). Classifier-only mode runs `classify_routing` + addressing-rule + web-gate-rule classification against the corpus without loading the voice stack -- safe to invoke from CI / Claude Code without the voice-stack-concurrency ASK. Per-dimension accuracy gates configurable; exits 0/1/2 (pass/gate-fail/IO-fail) so it slots into automation. The shipped corpus baselines at 100% across all three dimensions; `tests/test_eval_harness.py` pins the baseline so a classifier regression fails CI before reaching production. **33 tests.**
@@ -193,7 +233,7 @@ User decision (no ClawHub plugins) drives the "native primitives + OpenClaw as o
 
 * **Phase 14 (orchestrator VLM wiring).** `Orchestrator.__init__` now calls `_load_desktop_vlm_if_enabled()` which constructs the moondream2 VLM and pushes it via :func:`ultron.desktop.vlm.set_vlm`. Lazy + fail-open: construction validates the transformers stack but does NOT load the ~3.5 GB weights at orchestrator startup -- the load happens on first :func:`describe` call (first ``SCREEN_CONTEXT_QUERY`` with VLM). Failure (missing transformers, missing weights on disk) leaves the singleton unset and `screen_context` falls back to text-only context (window title + UIA tree + foreground app). Targeted sweep: 221 pipeline + desktop tests still pass.
 
-Last validated against `claude/nifty-swirles-5fd6b1` HEAD (2026-05-18 Phase 0+1 + E2 + E5 build; **all eight tasks above**; on top of `e3ac64e` 2026-05-18 latency pass 3 -- 3 phases; on top of `a6fc937` codebase_structure entry for bench_llm_prefix_cache; on top of `9a15c06` 2026-05-16 latency pass 2; on top of `5d5f65f` CLAUDE.md pointer bump; on top of `703c11f` 2026-05-15 latency pass; on top of `0bf2027` handoff-doc bump; on top of `622000d` third-pass chat_template_kwargs regression + WINDOW_MOVE/CLOSE + bare image-search + plural image nouns; on top of `b79d41e` stale-process safeguards; on top of `15f58d5` second-pass VRAM relief + classifier extension; on top of `901ebf1` first VRAM-relief + UX-fix pass). **Tests: 2472 -> 2697 passing (+225) / 15 skipped (GPU-gated) / 0 failed in ~59 s.** Voice-path peak VRAM ~6.5-6.9 GB (4B abliterated Q4_K_M + Whisper int8_fp16 + XTTS + KV cache Q8_0 @ 6144 + idle) -- comfortably below the 11.5 GB hard cap on the 4070 Ti. **Default LLM:** `josiefied-qwen3-4b` preset -> `models/Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf` (Goekdeniz-Guelmez Josiefied + abliterated Qwen3-4B-Instruct-2507; quantised by mradermacher). **Live-measured timings (2026-05-15):** LLM TTFT median **63 ms** (was previously estimated 140 ms); Whisper STT median **78 ms on 5s audio at beam=1** (was 157 ms at beam=5); ack synth on conversational/web-search pool is **0 ms cache hit** (was 350-400 ms HTTP+filter). **Stale-process safeguards installed:** `tests/conftest.py:pytest_sessionfinish` auto-reaps test descendants; `scripts/cleanup_stale_processes.py` is the manual cleanup tool. Both preserve the live Ultron via the port-19761 listener check.
+Last validated against `claude/suspicious-solomon-a123c0` HEAD (2026-05-19 live-session bug-fix pass; **trim_phantom_tail short-clip guard + normalize_text_for_tts + IDENTITY.md capability anchor**; on top of `1b46427` preset-back-to-plain-4B + CLAUDE.md pointer; on top of `2b979c0` 2026-05-19 Phase 0+1 + E2 + E5 build; on top of `e3ac64e` 2026-05-18 latency pass 3 -- 3 phases; on top of `a6fc937` codebase_structure entry for bench_llm_prefix_cache; on top of `9a15c06` 2026-05-16 latency pass 2; on top of `5d5f65f` CLAUDE.md pointer bump; on top of `703c11f` 2026-05-15 latency pass; on top of `0bf2027` handoff-doc bump; on top of `622000d` third-pass chat_template_kwargs regression + WINDOW_MOVE/CLOSE + bare image-search + plural image nouns; on top of `b79d41e` stale-process safeguards; on top of `15f58d5` second-pass VRAM relief + classifier extension; on top of `901ebf1` first VRAM-relief + UX-fix pass). **Tests: 2697 -> 2716 passing (+19) / 15 skipped (GPU-gated) / 0 failed in ~62 s.** Voice-path peak VRAM ~6.5-6.9 GB (4B abliterated Q4_K_M + Whisper int8_fp16 + XTTS + KV cache Q8_0 @ 6144 + idle) -- comfortably below the 11.5 GB hard cap on the 4070 Ti. **Default LLM:** `josiefied-qwen3-4b` preset -> `models/Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf` (Goekdeniz-Guelmez Josiefied + abliterated Qwen3-4B-Instruct-2507; quantised by mradermacher). **Live-measured timings (2026-05-15):** LLM TTFT median **63 ms** (was previously estimated 140 ms); Whisper STT median **78 ms on 5s audio at beam=1** (was 157 ms at beam=5); ack synth on conversational/web-search pool is **0 ms cache hit** (was 350-400 ms HTTP+filter). **Stale-process safeguards installed:** `tests/conftest.py:pytest_sessionfinish` auto-reaps test descendants; `scripts/cleanup_stale_processes.py` is the manual cleanup tool. Both preserve the live Ultron via the port-19761 listener check.
 
 **2026-05-14 third pass: chat_template_kwargs regression fix + WINDOW_MOVE / WINDOW_CLOSE + bare image-search + plural image nouns + moondream2 revision rollback (commit `622000d`).**
 
@@ -1719,8 +1759,9 @@ orchestrator playback path (the producer-signaled lookahead in
 - `class XttsSynthError(RuntimeError)` — synth call failure.
 - `trim_phantom_tail(audio_f32, sample_rate, *, silence_threshold=0.005,
   max_event_ms=200.0, min_lead_silence_ms=150.0, trailing_grace_ms=80.0,
-  window_ms=20.0) -> (np.ndarray, bool)` (NEW 2026-05-12 phantom-token
-  mitigation, defence in depth) — pure function that detects the
+  window_ms=20.0, min_clip_duration_ms=800.0) -> (np.ndarray, bool)`
+  (NEW 2026-05-12 phantom-token mitigation, defence in depth; 2026-05-19
+  short-clip guard added) — pure function that detects the
   specific XTTS-v2 phantom signature (sustained_speech → ≥150 ms
   silence → <200 ms isolated event → silence to buffer end) and
   trims everything after the last sustained-speech region plus a
@@ -1730,7 +1771,22 @@ orchestrator playback path (the producer-signaled lookahead in
   legitimately long trailing speech). Runs BEFORE the v3 filter so
   the reverb tail decays normally into its tail_silence_ms padding.
   Empirically grounded against a real session WAV showing the
-  signature at 19.28 s.
+  signature at 19.28 s. **2026-05-19:** `min_clip_duration_ms`
+  short-circuit (default 800 ms) prevents mis-firing on single short
+  words like ``"Right."`` where XTTS occasionally lengthens the
+  pre-stop closure beyond 150 ms and the [t] release would otherwise
+  be misclassified as a phantom event.
+- `normalize_text_for_tts(text) -> str` (NEW 2026-05-19) — pure
+  text rewriter called from `_synthesize` BEFORE the HTTP synth call.
+  Handles patterns XTTS-v2 mispronounces: Windows drive paths
+  (``C:\\foo\\bar\\baz.ext`` -> leaf filename), times with AM/PM
+  (``2:16 a.m.`` -> ``2 16 A M``), 24-hour times (``14:30`` ->
+  ``14 30``), standalone ``a.m./p.m.`` markers, Latin abbreviations
+  (``e.g.`` -> "for example", ``i.e.`` -> "that is", ``etc.`` ->
+  "et cetera", ``vs.`` -> "versus"). Conservative: unmatched
+  patterns pass through unchanged. URLs are deliberately untouched
+  (the regex set deliberately excludes Posix paths because they
+  would mangle URLs like ``https://x.com/foo/bar``).
 - `class XttsV3Speech` — the engine.
   - `__init__(...)` — resolves paths via `tts.xtts_v3` config,
     spawns the XTTS HTTP server in `.venv-xtts`, polls `/healthz`
@@ -1742,9 +1798,12 @@ orchestrator playback path (the producer-signaled lookahead in
     args override.
   - `speak`, `speak_stream`, `warmup`, `stop` — same API as the
     legacy engine.
-  - `_synthesize(text)` — POST `/synthesize`, accumulates the
-    streamed PCM, optionally runs `trim_phantom_tail` (gated on
-    `phantom_tail_trim_enabled`), applies the v3 Ultron filter via
+  - `_synthesize(text)` — checks the ack cache first (hit returns
+    immediately), then runs `normalize_text_for_tts(text)` to
+    rewrite TTS-hostile patterns (2026-05-19), POSTs `/synthesize`,
+    accumulates the streamed PCM, optionally runs `trim_phantom_tail`
+    (gated on `phantom_tail_trim_enabled`; 2026-05-19 short-clip
+    guard at 800 ms), applies the v3 Ultron filter via
     `ultron_filter.apply_filter(..., tail_silence_ms=200)`, returns
     `(int16 pcm, sr)` matching the legacy engine's contract.
   - `_http_synthesize(text)` — raw HTTP call; reads chunked PCM

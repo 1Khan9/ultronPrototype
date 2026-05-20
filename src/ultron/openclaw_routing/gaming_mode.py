@@ -82,6 +82,47 @@ class GamingModeReport:
         return all(p.success for p in self.plugin_states) if self.plugin_states else True
 
 
+_GAMING_MODE_ACTIVE_LOCK = threading.Lock()
+_GAMING_MODE_ACTIVE: bool = False
+
+
+def is_gaming_mode_active() -> bool:
+    """Process-global query for "is gaming mode currently engaged".
+
+    2026-05-19 Track 6: the desktop automation primitives (Moondream2
+    VLM, mss capture, pyautogui input, pywinauto UIA) consult this
+    flag at their public-API entry points and short-circuit when
+    True. The rationale (per the 2026-05-19 design conversation): a
+    Python process with pyautogui resident is functionally
+    indistinguishable from Discord + Voicemod from Vanguard's
+    perspective, so the baseline is safe -- but the actual MITIGATION
+    against the kernel-level behavioural fingerprinting is to ensure
+    SendInput / SetCursorPos / etc. are NOT exercised while a
+    Riot-protected game is running. This flag gates the call sites,
+    not the imports (the modules stay importable; only their
+    side-effects are blocked).
+
+    Thread-safe read; the underlying flag is a module-level bool
+    guarded by a lock. Fail-open: when in doubt, the flag returns
+    False -- the gating is meant to PROTECT during gameplay, not to
+    block desktop automation outside it.
+    """
+    with _GAMING_MODE_ACTIVE_LOCK:
+        return _GAMING_MODE_ACTIVE
+
+
+def set_gaming_mode_active(active: bool) -> None:
+    """Update the process-global gaming-mode flag.
+
+    Called by :class:`GamingModeManager` on engage / disengage. Test
+    fixtures can call this directly to simulate the flag state
+    without instantiating the full manager.
+    """
+    global _GAMING_MODE_ACTIVE
+    with _GAMING_MODE_ACTIVE_LOCK:
+        _GAMING_MODE_ACTIVE = bool(active)
+
+
 class GamingModeManager:
     """Owns the engage/disengage state machine.
 
@@ -162,6 +203,10 @@ class GamingModeManager:
             with self._lock:
                 self._status = GamingModeStatus.ENGAGED
             report.status = GamingModeStatus.ENGAGED
+            # 2026-05-19 Track 6: flip the process-global flag so the
+            # desktop primitives short-circuit. Done in ``finally`` so
+            # even a partial-failure engage still gates the surface.
+            set_gaming_mode_active(True)
 
         self._write_log_row(report)
         return report
@@ -197,6 +242,9 @@ class GamingModeManager:
             with self._lock:
                 self._status = GamingModeStatus.IDLE
             report.status = GamingModeStatus.IDLE
+            # Track 6: clear the process-global flag so the desktop
+            # surface re-engages immediately on disengage.
+            set_gaming_mode_active(False)
 
         self._write_log_row(report)
         return report

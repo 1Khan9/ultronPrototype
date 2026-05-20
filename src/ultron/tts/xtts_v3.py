@@ -31,6 +31,7 @@ import io
 import json
 import logging
 import queue
+import re
 import socket
 import subprocess
 import sys
@@ -95,6 +96,7 @@ def trim_phantom_tail(
     min_lead_silence_ms: float = 150.0,
     trailing_grace_ms: float = 80.0,
     window_ms: float = 20.0,
+    min_clip_duration_ms: float = 800.0,
 ) -> Tuple[np.ndarray, bool]:
     """Detect and trim an XTTS phantom-token tail.
 
@@ -121,6 +123,12 @@ def trim_phantom_tail(
     very short clips: anything shorter than two analysis windows is
     returned unchanged.
 
+    Clips shorter than ``min_clip_duration_ms`` are returned unchanged.
+    Real phantom syllables only show up at the end of multi-sentence
+    responses; a single short word like ``"Right."`` lasts ~400-700 ms
+    and the algorithm can misclassify its stop-consonant release as a
+    phantom when XTTS lengthens the pre-stop closure.
+
     Args:
         audio_f32: 1-D mono audio. Other shapes are flattened.
         sample_rate: Hz.
@@ -133,6 +141,9 @@ def trim_phantom_tail(
         trailing_grace_ms: amount of audio preserved after the last
             sustained-speech window (to keep natural decay).
         window_ms: analysis window size.
+        min_clip_duration_ms: clips shorter than this skip the trim
+            entirely. Guards against mis-trimming stop-consonant
+            releases on single short words.
 
     Returns:
         ``(audio, trimmed)`` -- ``audio`` is the (possibly shorter)
@@ -143,6 +154,9 @@ def trim_phantom_tail(
         audio_f32 = audio_f32.reshape(-1)
     n = audio_f32.shape[0]
     if n == 0:
+        return audio_f32, False
+
+    if sample_rate > 0 and (n / sample_rate) * 1000.0 < min_clip_duration_ms:
         return audio_f32, False
 
     win = max(1, int(sample_rate * window_ms / 1000.0))
@@ -207,6 +221,317 @@ def trim_phantom_tail(
         if cut_samples <= 0:
             return audio_f32, False
     return audio_f32[:cut_samples], True
+
+
+# ----------------------------------------------------------------------
+# Text normalisation for XTTS
+# ----------------------------------------------------------------------
+#
+# XTTS-v2 mispronounces certain text patterns even with a clean
+# reference voice: time formats with colons + "a.m./p.m." come out as
+# garbled letter strings; Windows paths with backslashes pin the GPU at
+# 100 %; bare unit suffixes attached to numbers are read letter-by-
+# letter ("72 degrees F" sounds OK but "72°F" garbles); currency
+# symbols are skipped entirely; common Latin abbreviations and title
+# abbreviations are inconsistent. The normaliser rewrites these into
+# spoken-friendly forms before the server inference call. Each rewrite
+# is conservative -- anything that doesn't match a pattern passes
+# through unchanged. URLs and email addresses are deliberately
+# preserved (XTTS reads them naturally and aggressive rewriting
+# would mangle them).
+
+# ----- Windows paths (must run FIRST so the drive-letter colon
+# isn't misread as a time pattern). ----------------------------------
+
+# ``C:\foo\bar\baz.ext`` -> ``baz.ext``. Excludes chars Windows
+# itself rejects in filenames + whitespace. Requires at least one
+# backslash so bare ``C:`` (e.g., "Drive C: is full") passes through.
+_WIN_PATH_RE = re.compile(
+    r"\b[A-Za-z]:\\(?:[^\s\\/:*?\"<>|]+\\)*([^\s\\/:*?\"<>|]+)",
+)
+
+# ----- Times (run before bare unit patterns so the colon is gone
+# before the standalone-AM/PM pass). ---------------------------------
+
+# H:MM or HH:MM optionally followed by a.m./p.m./am/pm.
+_TIME_AMPM_RE = re.compile(
+    r"\b(\d{1,2}):(\d{2})\s*(a\.?\s*m\.?|p\.?\s*m\.?)\b",
+    re.IGNORECASE,
+)
+
+# 24-hour HH:MM standalone. Negative lookbehind/lookahead so we don't
+# eat the inner colon of an already-handled AM/PM time or grab a digit
+# that's part of something larger (ratio, date "2026:01" etc.).
+_TIME_24H_RE = re.compile(
+    r"(?<![:\d])(\d{1,2}):(\d{2})(?![:\d])"
+)
+
+# Standalone a.m./p.m. attached to a number ("10 a.m. sharp" or
+# "8 pm tonight"). The leading digit anchor prevents "I am" being
+# misread as "I A M" and "P.M." in proper names from being mangled.
+_AMPM_STANDALONE_RE = re.compile(
+    r"\b(\d{1,2})\s+(a\.?\s*m\.?|p\.?\s*m\.?)\b",
+    re.IGNORECASE,
+)
+
+# ----- Temperatures. ------------------------------------------------
+
+# ``72°F`` / ``72 °F`` / ``72° F`` (and Celsius variants).
+_TEMP_F_RE = re.compile(
+    r"(-?\d+(?:\.\d+)?)\s*°\s*F\b",
+    re.IGNORECASE,
+)
+_TEMP_C_RE = re.compile(
+    r"(-?\d+(?:\.\d+)?)\s*°\s*C\b",
+    re.IGNORECASE,
+)
+# ``45°`` (no F/C suffix). Run AFTER F/C so they don't lose their
+# suffix. Negative lookahead excludes letters that would form
+# another unit (so we don't catch the ``°`` that we just stripped).
+_TEMP_DEG_RE = re.compile(
+    r"(-?\d+(?:\.\d+)?)\s*°(?!\s*[A-Za-z])",
+)
+
+# ----- Currency (compound suffixes first, then bare). ---------------
+
+# ``$1.5M`` / ``$1.5 million`` style. Order: M before plain, B before
+# M (so $1.5B isn't grabbed by the M rule first), K likewise.
+_CURRENCY_PATTERNS: Tuple[Tuple[re.Pattern, str], ...] = (
+    (re.compile(r"\$(\d+(?:,\d{3})*(?:\.\d+)?)\s*B\b"), r"\1 billion dollars"),
+    (re.compile(r"\$(\d+(?:,\d{3})*(?:\.\d+)?)\s*M\b"), r"\1 million dollars"),
+    (re.compile(r"\$(\d+(?:,\d{3})*(?:\.\d+)?)\s*K\b"), r"\1 thousand dollars"),
+    (re.compile(r"\$(\d+(?:,\d{3})*(?:\.\d+)?)"), r"\1 dollars"),
+    (re.compile(r"€(\d+(?:,\d{3})*(?:\.\d+)?)\s*B\b"), r"\1 billion euros"),
+    (re.compile(r"€(\d+(?:,\d{3})*(?:\.\d+)?)\s*M\b"), r"\1 million euros"),
+    (re.compile(r"€(\d+(?:,\d{3})*(?:\.\d+)?)\s*K\b"), r"\1 thousand euros"),
+    (re.compile(r"€(\d+(?:,\d{3})*(?:\.\d+)?)"), r"\1 euros"),
+    (re.compile(r"£(\d+(?:,\d{3})*(?:\.\d+)?)\s*B\b"), r"\1 billion pounds"),
+    (re.compile(r"£(\d+(?:,\d{3})*(?:\.\d+)?)\s*M\b"), r"\1 million pounds"),
+    (re.compile(r"£(\d+(?:,\d{3})*(?:\.\d+)?)\s*K\b"), r"\1 thousand pounds"),
+    (re.compile(r"£(\d+(?:,\d{3})*(?:\.\d+)?)"), r"\1 pounds"),
+    (re.compile(r"¥(\d+(?:,\d{3})*(?:\.\d+)?)"), r"\1 yen"),
+)
+
+# ----- Units of measurement.
+#
+# Compound units (km/h, m/s) MUST come before bare-unit patterns so
+# the slash form isn't broken into ``X kilometres / 30 hours`` by an
+# earlier match. Each rule requires a digit prefix and a word
+# boundary so common words ("m" in "I am", "g" inside "going") aren't
+# misread as units. ----------------------------------------------------
+
+_UNIT_PATTERNS: Tuple[Tuple[re.Pattern, str], ...] = (
+    # Speed (compound; run before bare distance + time units).
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*km\s*/\s*h\b", re.IGNORECASE), r"\1 kilometres per hour"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*kph\b", re.IGNORECASE), r"\1 kilometres per hour"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*mph\b", re.IGNORECASE), r"\1 miles per hour"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*m\s*/\s*s\b", re.IGNORECASE), r"\1 metres per second"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*ft\s*/\s*s\b", re.IGNORECASE), r"\1 feet per second"),
+    # Mass (lb before bare numeric).
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*lbs?\b", re.IGNORECASE), r"\1 pounds"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*kgs?\b", re.IGNORECASE), r"\1 kilograms"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*oz\b", re.IGNORECASE), r"\1 ounces"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*mg\b", re.IGNORECASE), r"\1 milligrams"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*tonnes?\b", re.IGNORECASE), r"\1 tonnes"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*tons?\b", re.IGNORECASE), r"\1 tons"),
+    # ``g`` is a unit ONLY when (a) preceded by a digit + optional space
+    # and (b) followed by a non-letter boundary. Stops "5g network" from
+    # matching, but catches "500 g of flour".
+    (re.compile(r"(?<![A-Za-z])(\d+(?:\.\d+)?)\s*g\b(?![A-Za-z])"), r"\1 grams"),
+    # Distance (bare; after km/h, m/s above).
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*km\b", re.IGNORECASE), r"\1 kilometres"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*cm\b", re.IGNORECASE), r"\1 centimetres"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*mm\b", re.IGNORECASE), r"\1 millimetres"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*mi\b", re.IGNORECASE), r"\1 miles"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*ft\b", re.IGNORECASE), r"\1 feet"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*yds?\b", re.IGNORECASE), r"\1 yards"),
+    # ``in`` is a preposition too -- only safe when adjacent to a digit
+    # AND followed by a non-letter. ``5in screen`` would match; ``in the``
+    # would not.
+    (re.compile(r"(?<![A-Za-z])(\d+(?:\.\d+)?)\s*in\b(?![A-Za-z])"), r"\1 inches"),
+    # Bare ``m`` is risky -- only treat as metres when surrounded by
+    # digit on the left AND non-letter on the right. Skips "I am",
+    # "I'm", and similar.
+    (re.compile(r"(?<![A-Za-z])(\d+(?:\.\d+)?)\s*m\b(?![A-Za-z/])"), r"\1 metres"),
+    # Time units (ms, sec, min, hr, hrs).
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*ms\b", re.IGNORECASE), r"\1 milliseconds"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*secs?\b", re.IGNORECASE), r"\1 seconds"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*mins?\b", re.IGNORECASE), r"\1 minutes"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*hrs?\b", re.IGNORECASE), r"\1 hours"),
+    # Storage / data sizes.
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*GB\b"), r"\1 gigabytes"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*MB\b"), r"\1 megabytes"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*KB\b"), r"\1 kilobytes"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*TB\b"), r"\1 terabytes"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*GHz\b"), r"\1 gigahertz"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*MHz\b"), r"\1 megahertz"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*kHz\b"), r"\1 kilohertz"),
+    (re.compile(r"\b(\d+(?:\.\d+)?)\s*Hz\b"), r"\1 hertz"),
+)
+
+# ----- Ordinals (1st-31st covers calendar dates; beyond that the
+# numeric form usually reads better). --------------------------------
+
+_ORDINAL_WORDS = {
+    1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth",
+    6: "sixth", 7: "seventh", 8: "eighth", 9: "ninth", 10: "tenth",
+    11: "eleventh", 12: "twelfth", 13: "thirteenth", 14: "fourteenth",
+    15: "fifteenth", 16: "sixteenth", 17: "seventeenth",
+    18: "eighteenth", 19: "nineteenth", 20: "twentieth",
+    21: "twenty-first", 22: "twenty-second", 23: "twenty-third",
+    24: "twenty-fourth", 25: "twenty-fifth", 26: "twenty-sixth",
+    27: "twenty-seventh", 28: "twenty-eighth", 29: "twenty-ninth",
+    30: "thirtieth", 31: "thirty-first",
+}
+
+_ORDINAL_RE = re.compile(r"\b(\d{1,2})(st|nd|rd|th)\b", re.IGNORECASE)
+
+
+def _ordinal_sub(match: re.Match) -> str:
+    n = int(match.group(1))
+    return _ORDINAL_WORDS.get(n, f"{n}{match.group(2).lower()}")
+
+
+# ----- Title abbreviations + acronym-dots. --------------------------
+
+_TITLE_PATTERNS: Tuple[Tuple[re.Pattern, str], ...] = (
+    (re.compile(r"\bMr\.(?=\s+[A-Z])"), "Mister"),
+    (re.compile(r"\bMrs\.(?=\s+[A-Z])"), "Missus"),
+    (re.compile(r"\bMs\.(?=\s+[A-Z])"), "Miz"),
+    (re.compile(r"\bDr\.(?=\s+[A-Z])"), "Doctor"),
+    (re.compile(r"\bProf\.(?=\s+[A-Z])"), "Professor"),
+    # ``St.`` is ambiguous (Street vs. Saint). Treat as ``Saint`` only
+    # when followed by a capitalised proper noun -- that's the
+    # personal-name pattern. Sentence-starting ``St.`` is rare; in
+    # the address sense, the period typically appears AFTER a street
+    # name (e.g., "Main St.") not before a capitalised name.
+    (re.compile(r"\bSt\.(?=\s+[A-Z])"), "Saint"),
+)
+
+_ACRONYM_DOTS_PATTERNS: Tuple[Tuple[re.Pattern, str], ...] = (
+    (re.compile(r"\bU\.S\.A\."), "U S A"),
+    (re.compile(r"\bU\.S\.(?!\w)"), "U S"),
+    (re.compile(r"\bU\.K\.(?!\w)"), "U K"),
+    (re.compile(r"\bU\.N\.(?!\w)"), "U N"),
+    (re.compile(r"\bE\.U\.(?!\w)"), "E U"),
+    (re.compile(r"\bN\.A\.S\.A\."), "NASA"),
+)
+
+# ----- Common Latin abbreviations (single-pass replacement). --------
+
+_ABBREVIATION_PATTERNS: Tuple[Tuple[re.Pattern, str], ...] = (
+    (re.compile(r"\be\.\s*g\.", re.IGNORECASE), "for example"),
+    (re.compile(r"\bi\.\s*e\.", re.IGNORECASE), "that is"),
+    (re.compile(r"\betc\.(?=\s|$|[,;])", re.IGNORECASE), "et cetera"),
+    (re.compile(r"\bvs\.", re.IGNORECASE), "versus"),
+    (re.compile(r"\bcf\.", re.IGNORECASE), "compare"),
+    (re.compile(r"\bN\.B\.", re.IGNORECASE), "note well"),
+    (re.compile(r"\bapprox\.", re.IGNORECASE), "approximately"),
+)
+
+# ----- Misc characters that throw XTTS off. -------------------------
+
+# ``&`` between words is consistently read as "and" by some TTS but
+# silently skipped by others. Replace it explicitly when it sits
+# between word characters. Skip HTML entities ("&amp;" etc.).
+_AMPERSAND_RE = re.compile(r"(?<=[A-Za-z0-9])\s*&\s*(?=[A-Za-z0-9])")
+
+
+def _ampm_letters(token: str) -> str:
+    """``a.m.`` / ``AM`` / ``a m`` -> ``A M``."""
+    letters = re.sub(r"[^a-zA-Z]", "", token).upper()
+    return " ".join(letters)
+
+
+def normalize_text_for_tts(text: str) -> str:
+    """Rewrite text patterns XTTS-v2 mispronounces.
+
+    Applies the following passes in order. Each pass is conservative
+    -- unmatched text passes through unchanged. URLs and email
+    addresses are deliberately preserved.
+
+    1. Windows drive paths (``C:\\foo\\bar\\baz.ext``) collapse to
+       the filename leaf. Run FIRST because the drive-letter colon
+       would otherwise look like a time pattern.
+    2. Times with AM/PM (``2:16 a.m.`` -> ``2 16 A M``).
+    3. Bare 24-hour times (``14:30`` -> ``14 30``).
+    4. Standalone ``a.m.`` / ``p.m.`` markers.
+    5. Temperatures: ``72°F`` -> ``72 degrees Fahrenheit``,
+       ``20°C`` -> ``20 degrees Celsius``, ``45°`` -> ``45 degrees``.
+    6. Currency: ``$1.5M`` -> ``1.5 million dollars``, ``£25`` ->
+       ``25 pounds``, plus € and ¥. Compound suffixes (B/M/K) handled
+       before bare amounts.
+    7. Units of measurement: speed (mph, kph, km/h, m/s), mass (lb,
+       kg, oz, g, mg, tonne, ton), distance (km, m, cm, mm, mi, ft,
+       in, yd), time (ms, sec, min, hr), storage (GB, MB, KB, TB),
+       frequency (Hz, kHz, MHz, GHz). Compound units (km/h, m/s)
+       run before bare units. Each rule requires a digit prefix +
+       word boundary so common words ("m" in "I am", "g" inside
+       "going") aren't misread.
+    8. Ordinals 1st-31st: ``19th`` -> ``nineteenth``. Larger
+       ordinals stay numeric.
+    9. Title abbreviations followed by a capitalised name:
+       ``Dr. Smith`` -> ``Doctor Smith``.
+    10. Acronym-with-dots: ``U.S.A.`` -> ``U S A``.
+    11. Latin abbreviations: ``e.g.`` -> ``for example``,
+        ``i.e.`` -> ``that is``, ``etc.`` -> ``et cetera``,
+        ``vs.`` -> ``versus``, ``cf.`` -> ``compare``,
+        ``approx.`` -> ``approximately``.
+    12. Inter-word ``&`` -> ``and``.
+
+    Pure function. Empty input passes through. Safe to call on any
+    text.
+    """
+    if not text:
+        return text
+
+    out = text
+
+    # 1. Windows paths.
+    out = _WIN_PATH_RE.sub(lambda m: m.group(1), out)
+
+    # 2-4. Times + AM/PM.
+    out = _TIME_AMPM_RE.sub(
+        lambda m: f"{m.group(1)} {m.group(2)} {_ampm_letters(m.group(3))}",
+        out,
+    )
+    out = _TIME_24H_RE.sub(lambda m: f"{m.group(1)} {m.group(2)}", out)
+    out = _AMPM_STANDALONE_RE.sub(
+        lambda m: f"{m.group(1)} {_ampm_letters(m.group(2))}",
+        out,
+    )
+
+    # 5. Temperatures (F/C first so the suffix isn't stripped by
+    # the bare-degree pass).
+    out = _TEMP_F_RE.sub(r"\1 degrees Fahrenheit", out)
+    out = _TEMP_C_RE.sub(r"\1 degrees Celsius", out)
+    out = _TEMP_DEG_RE.sub(r"\1 degrees", out)
+
+    # 6. Currency.
+    for pattern, replacement in _CURRENCY_PATTERNS:
+        out = pattern.sub(replacement, out)
+
+    # 7. Units of measurement (compound before bare).
+    for pattern, replacement in _UNIT_PATTERNS:
+        out = pattern.sub(replacement, out)
+
+    # 8. Ordinals.
+    out = _ORDINAL_RE.sub(_ordinal_sub, out)
+
+    # 9. Titles + 10. Acronym-dots.
+    for pattern, replacement in _TITLE_PATTERNS:
+        out = pattern.sub(replacement, out)
+    for pattern, replacement in _ACRONYM_DOTS_PATTERNS:
+        out = pattern.sub(replacement, out)
+
+    # 11. Latin abbreviations.
+    for pattern, replacement in _ABBREVIATION_PATTERNS:
+        out = pattern.sub(replacement, out)
+
+    # 12. Ampersand.
+    out = _AMPERSAND_RE.sub(" and ", out)
+
+    return out
 
 
 def _find_free_port() -> int:
@@ -838,7 +1163,15 @@ class XttsV3Speech:
 
         t0 = time.monotonic()
         try:
-            pcm_i16 = self._http_synthesize(text)
+            spoken = normalize_text_for_tts(text)
+        except Exception as e:
+            logger.warning(
+                "TTS text normalisation failed for %r (%s); using raw text",
+                text[:60], e,
+            )
+            spoken = text
+        try:
+            pcm_i16 = self._http_synthesize(spoken)
         except Exception as e:
             logger.error("XTTS server synth failed for %r: %s", text[:60], e)
             from ultron.errors import PiperSynthesisError  # closest typed error

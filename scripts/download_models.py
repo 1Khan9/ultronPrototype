@@ -11,6 +11,7 @@ failure does not abort the others.
 
 from __future__ import annotations
 
+import os
 import sys
 import urllib.request
 from pathlib import Path
@@ -73,6 +74,30 @@ LLM_JOSIEFIED_FILE = "Josiefied-Qwen3-8B-abliterated-v1.Q5_K_M.gguf"
 LLM_JOSIEFIED_4B_REPO = "mradermacher/Josiefied-Qwen3-4B-abliterated-v2-GGUF"
 LLM_JOSIEFIED_4B_FILE = "Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf"
 LLM_JOSIEFIED_4B_Q5_FILE = "Josiefied-Qwen3-4B-abliterated-v2.Q5_K_M.gguf"
+
+# 2026-05-19 Track 4 -- Gemma 3 4B abliterated (mradermacher quants of
+# the Goekdeniz-Guelmez abliterated fine-tune over Google's
+# gemma-3-4b-it). Designed as the candidate daily-use swap targeted
+# at the verbosity miscalibration documented in the 2026-05-19 design
+# pass (IFEval 90.2 vs Qwen3's pattern of over-explaining factual
+# queries and under-delivering on procedural depth). Pairs with the
+# Gemma 3 1B IT draft for speculative decoding -- same tokenizer so
+# the 60-75% acceptance rate holds on conversational text.
+LLM_GEMMA_3_4B_REPO = "mradermacher/gemma-3-4b-it-abliterated-GGUF"
+LLM_GEMMA_3_4B_FILE = "gemma-3-4b-it-abliterated.Q4_K_M.gguf"
+LLM_GEMMA_3_1B_REPO = "bartowski/gemma-3-1b-it-GGUF"
+LLM_GEMMA_3_1B_FILE = "gemma-3-1b-it-Q4_K_M.gguf"
+
+# 2026-05-19 Track 4 -- Llama 3.2 3B abliterated (mradermacher quants
+# of Meta's Llama-3.2-3B-Instruct base with refusal vectors removed).
+# Designed as the gaming-mode preset: smaller VRAM footprint, naturally
+# brief conversational tone, weaker tool-call discipline (acceptable
+# in gaming mode where OpenClaw orchestration is disabled). Paired
+# with the Llama 3.2 1B Instruct draft for speculative decoding.
+LLM_LLAMA_3_2_3B_REPO = "mradermacher/Llama-3.2-3B-Instruct-abliterated-GGUF"
+LLM_LLAMA_3_2_3B_FILE = "Llama-3.2-3B-Instruct-abliterated.Q4_K_M.gguf"
+LLM_LLAMA_3_2_1B_REPO = "bartowski/Llama-3.2-1B-Instruct-GGUF"
+LLM_LLAMA_3_2_1B_FILE = "Llama-3.2-1B-Instruct-Q4_K_M.gguf"
 
 # Moondream2 -- 1.9B vision-language model for "explain what I'm looking at"
 # voice flows. CPU-only on-demand inference (~5-8 s per query). Total ~3.5 GB
@@ -226,6 +251,26 @@ def main() -> int:
 
     print("\n[5/11] LLM (Qwen3.5-0.8B Q4_K_M) — speculative-decoding draft for 4B preset")
     _hf_download(LLM_DRAFT_REPO, LLM_DRAFT_FILE, settings.MODELS_DIR)
+
+    # 2026-05-19 Track 4 -- candidate swap presets. Optional; the
+    # downloads only matter once the user sets ``llm.preset`` to one
+    # of these via swap_llm_preset.py or the voice MODEL_SWITCH
+    # intent. Setting OFFLINE_SKIP_OPTIONAL_LLMS=1 in the environment
+    # skips these fetches (useful on a constrained connection).
+    if not os.environ.get("OFFLINE_SKIP_OPTIONAL_LLMS"):
+        print("\n[5a/11] LLM (Gemma 3 4B abliterated Q4_K_M) — candidate daily-use swap (Track 4)")
+        _hf_download(LLM_GEMMA_3_4B_REPO, LLM_GEMMA_3_4B_FILE, settings.MODELS_DIR)
+        print("\n[5b/11] LLM (Gemma 3 1B IT Q4_K_M) — speculative draft for the Gemma preset")
+        _hf_download(LLM_GEMMA_3_1B_REPO, LLM_GEMMA_3_1B_FILE, settings.MODELS_DIR)
+        print("\n[5c/11] LLM (Llama 3.2 3B abliterated Q4_K_M) — gaming-mode preset")
+        _hf_download(LLM_LLAMA_3_2_3B_REPO, LLM_LLAMA_3_2_3B_FILE, settings.MODELS_DIR)
+        print("\n[5d/11] LLM (Llama 3.2 1B Instruct Q4_K_M) — speculative draft for the Llama preset")
+        _hf_download(LLM_LLAMA_3_2_1B_REPO, LLM_LLAMA_3_2_1B_FILE, settings.MODELS_DIR)
+    else:
+        print(
+            "\n[5a-5d/11] skipping optional swap-preset GGUFs "
+            "(OFFLINE_SKIP_OPTIONAL_LLMS=1)",
+        )
 
     print("\n[6/11] Piper voice (en_US-ryan-medium)")
     _download(PIPER_VOICE_URL, settings.TTS_VOICE_PATH)

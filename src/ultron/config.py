@@ -459,6 +459,53 @@ LLM_PRESETS: dict[str, dict[str, Any]] = {
         "n_ctx": 6144,
         "draft_model_path": None,
     },
+    # 2026-05-19 -- Gemma 3 4B abliterated (mradermacher quants of the
+    # Goekdeniz-Guelmez Josiefied abliterated fine-tune over Google's
+    # gemma-3-4b-it base model). IFEval scores 90.2 vs Qwen3's pattern
+    # of length miscalibration (over-explains factual queries,
+    # under-delivers on procedural depth). Designed as a candidate
+    # daily-use swap whose stronger instruction-following directly
+    # addresses the duck/cake verbosity issue documented in the
+    # 2026-05-19 design pass. Pairs with the Gemma 3 1B IT draft for
+    # speculative decoding (same tokenizer/vocab so acceptance rate
+    # holds; ~60-75% on conversational text).
+    #
+    # NOT default. Default stays josiefied-qwen3-4b until the GGUFs
+    # are downloaded + a week of A/B against the eval harness. Swap
+    # via ``python scripts/swap_llm_preset.py gemma-3-4b-abliterated``
+    # once weights are present on disk.
+    "gemma-3-4b-abliterated": {
+        # mradermacher GGUF naming convention is ``{name}.Q4_K_M.gguf``
+        # (dot separator). bartowski drafts use hyphens
+        # (``{name}-Q4_K_M.gguf``). Filenames here MUST match what
+        # ``scripts/download_models.py`` writes -- otherwise
+        # ``swap_llm_preset.py``'s _validate_preset_files refuses the
+        # swap with "preset files missing".
+        "model_path": "models/gemma-3-4b-it-abliterated.Q4_K_M.gguf",
+        "n_ctx": 4096,
+        "draft_model_path": "models/gemma-3-1b-it-Q4_K_M.gguf",
+    },
+    # 2026-05-19 -- Llama 3.2 3B abliterated (mradermacher quants of
+    # Meta's Llama-3.2-3B-Instruct base with refusal vectors removed).
+    # Designed as the gaming-mode preset: smaller VRAM footprint
+    # (~1.9 GB Q4 vs 2.5 GB for Qwen3-4B), naturally brief
+    # conversational tone (field-tested in voice pipelines per the
+    # 2026-05-19 design conversation), and Llama 3.2 1B IT as a
+    # tokenizer-compatible draft for speculative decoding. Tool-call
+    # discipline is weaker than Qwen but acceptable in gaming mode
+    # where OpenClaw orchestration is disabled.
+    #
+    # NOT default. Intended as a swap target when ``MODEL_SWITCH``
+    # voice intent or ``swap_llm_preset.py`` engages gaming mode.
+    # n_ctx=2048 because gaming-channel utterances are short and the
+    # smaller KV cache frees ~400 MB for Valorant + OBS headroom.
+    "llama-3.2-3b-abliterated": {
+        # See gemma note above on naming conventions -- main from
+        # mradermacher (dot), draft from bartowski (hyphen).
+        "model_path": "models/Llama-3.2-3B-Instruct-abliterated.Q4_K_M.gguf",
+        "n_ctx": 2048,
+        "draft_model_path": "models/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+    },
 }
 
 
@@ -490,6 +537,10 @@ class LLMConfig(_Strict):
         "qwen3.5-4b",
         "josiefied-qwen3-8b",
         "josiefied-qwen3-4b",
+        # 2026-05-19: added but NOT default. See LLM_PRESETS comments
+        # for swap-readiness contract (GGUFs must be on disk first).
+        "gemma-3-4b-abliterated",
+        "llama-3.2-3b-abliterated",
         "custom",
     ] = "josiefied-qwen3-4b"
     # Where the model actually runs:
@@ -598,6 +649,12 @@ class EmbeddingsConfig(_Strict):
     dense_model: str = "BAAI/bge-small-en-v1.5"
     sparse_model: str = "Qdrant/bm25"
     dense_dim: int = 384
+    # 2026-05-19 Track 2: when True, single-query dense + sparse
+    # encoding runs on a 2-worker ThreadPoolExecutor so the two
+    # ONNX inferences overlap (~5-15 ms saved per retrieve call on
+    # CPU). Default False -- byte-for-byte legacy serial path until
+    # operators opt in.
+    parallel_query_embedding: bool = False
 
 
 class QdrantCollections(_Strict):
@@ -634,13 +691,95 @@ class MemoryRetrievalConfig(_Strict):
 
 
 class MemoryRankingConfig(_Strict):
-    """V1-gap A2: weighted blend of RRF + recency + surprise - redundancy."""
+    """V1-gap A2: weighted blend of RRF + recency + surprise - redundancy.
+
+    2026-05-19 Track 1h: extended with topic_match_weight and
+    discourse_match_weight to factor in the new payload metadata
+    populated by Tracks 1a (topical chunking) and 1b (discourse
+    tagging). Both default to 0.0 so the legacy retrieval path is
+    byte-for-byte unchanged until operators tune them up against
+    referential-query eval rows.
+    """
 
     rrf_weight: float = Field(default=1.0, ge=0.0)
     recency_weight: float = Field(default=0.2, ge=0.0)
     recency_half_life_days: float = Field(default=7.0, gt=0.0)
     surprise_weight: float = Field(default=0.15, ge=0.0)
     redundancy_weight: float = Field(default=0.3, ge=0.0)
+    # Track 1h additions -- default 0.0 (no behaviour change).
+    topic_match_weight: float = Field(default=0.0, ge=0.0)
+    discourse_match_weight: float = Field(default=0.0, ge=0.0)
+
+
+class TopicalChunkingConfig(_Strict):
+    """2026-05-19 Track 1a: topical chunking on the memory write path.
+
+    When ``enabled`` is True, ``ConversationMemory.add`` consults a
+    :class:`TopicTracker` to detect topic boundaries via cosine
+    similarity between consecutive turn embeddings. Each turn's
+    payload gets a ``topic_id`` for use by the ranking layer
+    (Track 1h).
+
+    Default OFF -- the metadata fields ship by default but the
+    boundary detection only runs when the flag is set. With the flag
+    off, turns get no topic_id; the ranking layer's topic_match_score
+    returns 0.0 for those payloads which is the byte-for-byte legacy
+    behaviour.
+    """
+
+    enabled: bool = False
+    boundary_similarity_threshold: float = Field(default=0.4, ge=0.0, le=1.0)
+    idle_timeout_seconds: float = Field(default=300.0, ge=0.0)
+
+
+class DiscourseTaggingConfig(_Strict):
+    """2026-05-19 Track 1b: discourse-type tagging on the memory write
+    path. Adds a 6-way classification (QUESTION / STATEMENT /
+    DECISION / CLARIFICATION_REQUEST / ACKNOWLEDGMENT / TOPIC_SHIFT)
+    to each turn's payload via rule layer + optional embedding-
+    centroid fallback.
+
+    Default OFF. With the flag off, no discourse_type metadata is
+    attached and the ranking layer's discourse_match_score returns
+    0.0 for those payloads (byte-for-byte legacy behaviour).
+
+    When ``use_embedding_fallback`` is True and the rule layer
+    returns None, the classifier embeds the turn via the existing
+    HybridEmbedder and dispatches to the nearest precomputed
+    centroid. Adds ~5-20 ms CPU per write on the rule-miss path.
+    """
+
+    enabled: bool = False
+    use_embedding_fallback: bool = True
+    centroid_confidence_floor: float = Field(default=0.25, ge=0.0, le=1.0)
+
+
+class BackgroundSummarizerConfig(_Strict):
+    """2026-05-19 Tracks 1c + 1d + 1e: periodic LLM-driven summary
+    + structured fact extraction.
+
+    When enabled, the orchestrator's idle hook calls
+    :class:`ultron.memory.background_summarizer.BackgroundSummarizer.maybe_summarize`
+    when conversational activity has been quiet for at least
+    ``idle_threshold_seconds`` AND at least ``cadence_turns`` new
+    turns have accumulated since the last summary.
+
+    The pass invokes the SAME in-process LLM as the foreground voice
+    path (lock-serialized). No additional model load, no VRAM cost
+    -- the only resource cost is the LLM call itself (~1-2 s on
+    Qwen3-4B), gated to idle windows.
+
+    Storage hook writes the summary + extracted facts as new Qdrant
+    entries (``type=session_summary | fact | decision | preference``).
+
+    Default OFF. The orchestrator never calls the summarizer until
+    the flag is on, so legacy behaviour is byte-for-byte unchanged.
+    """
+
+    enabled: bool = False
+    cadence_turns: int = Field(default=10, ge=1, le=100)
+    min_turns: int = Field(default=3, ge=1, le=100)
+    idle_threshold_seconds: float = Field(default=30.0, ge=0.0)
 
 
 class MemoryConfig(_Strict):
@@ -678,6 +817,19 @@ class MemoryConfig(_Strict):
     # V1-gap A2.
     retrieval: MemoryRetrievalConfig = Field(default_factory=MemoryRetrievalConfig)
     ranking: MemoryRankingConfig = Field(default_factory=MemoryRankingConfig)
+    # 2026-05-19 Track 1a -- topical chunking write-side metadata.
+    topical_chunking: TopicalChunkingConfig = Field(
+        default_factory=TopicalChunkingConfig,
+    )
+    # 2026-05-19 Track 1b -- discourse-type tagging write-side metadata.
+    discourse_tagging: DiscourseTaggingConfig = Field(
+        default_factory=DiscourseTaggingConfig,
+    )
+    # 2026-05-19 Tracks 1c + 1d + 1e -- periodic background summary
+    # + structured fact extraction (idle-gated, default OFF).
+    background_summary: BackgroundSummarizerConfig = Field(
+        default_factory=BackgroundSummarizerConfig,
+    )
 
 
 class BraveConfig(_Strict):
@@ -826,6 +978,34 @@ class CodingFactsConfig(_Strict):
     max_age_days: Optional[float] = None
 
 
+class CodingAstMetadataConfig(_Strict):
+    """2026-05-19 Tracks 1f + 1g: AST-based structural metadata
+    extraction from coding-task FILE_CHANGE events.
+
+    When ``enabled`` is True AND ``syntax_check_on_file_change`` is
+    True, the :class:`CodingTaskRunner` registers a FILE_CHANGE
+    listener that parses each created / modified Python file via
+    :mod:`ultron.coding.ast_metadata` and emits an audit-log row
+    (``ast_syntax_ok`` or ``ast_syntax_failure``) so completion
+    narration can fact-check the success claim.
+
+    Default OFF: the AST parse adds ~5-50 ms per FILE_CHANGE on .py
+    files (invisible inside the coding-task latency budget which is
+    measured in seconds, but the metadata storage decision is
+    operator-led).
+
+    The audit signal is the primary deliverable -- if Claude Code
+    writes broken Python and reports success, the listener catches
+    it. The structural metadata (functions_defined, imports, etc.)
+    is captured for future use in code-context retrieval but not
+    consumed yet.
+    """
+
+    enabled: bool = False
+    syntax_check_on_file_change: bool = True
+    attach_metadata_to_audit: bool = True
+
+
 class CodingGoalAnchorsConfig(_Strict):
     """E2 goal-anchor planning (Phase 0+1 build, 2026-05-18+).
 
@@ -876,6 +1056,11 @@ class CodingConfig(_Strict):
     # E2 goal-anchor planning (Phase 0+1 build) -- off by default.
     goal_anchors: CodingGoalAnchorsConfig = Field(
         default_factory=CodingGoalAnchorsConfig,
+    )
+    # 2026-05-19 Tracks 1f + 1g -- AST-based syntax verification on
+    # FILE_CHANGE events. Default OFF.
+    ast_metadata: CodingAstMetadataConfig = Field(
+        default_factory=CodingAstMetadataConfig,
     )
     # A3 wiring -- stored-facts fast-path on clarifications.
     facts: CodingFactsConfig = Field(default_factory=CodingFactsConfig)
@@ -1029,13 +1214,46 @@ class XttsV3Config(_Strict):
     phantom_tail_min_lead_silence_ms: float = Field(default=150.0, ge=50.0, le=500.0)
 
 
+class KokoroConfig(_Strict):
+    """2026-05-19 Track 5: Kokoro TTS engine configuration.
+
+    Selected when ``tts.engine == "kokoro"``. The engine loads the
+    StyleTTS2 + ISTFTNet weights from ``model_path`` lazily on first
+    inference. With ``apply_runtime_filter`` enabled, the v3
+    pedalboard chain runs on Kokoro output at runtime (useful pre-
+    fine-tune so the voice character matches XTTS). Post-fine-tune,
+    the filter character is baked into the model weights and this
+    flag stays False.
+    """
+
+    # Directory containing Kokoro weights + voice tensors.
+    model_path: str = "models/kokoro"
+    # Voice tensor name. Production target is a fine-tuned Ultron
+    # voice from the synth corpus; the stock ``af_alloy`` boots the
+    # engine before the fine-tune lands.
+    voice: str = "af_alloy"
+    # CPU is the production target -- Kokoro is fast enough on CPU
+    # and keeps the GPU free for LLM + Whisper. Set "cuda" for ~3x
+    # faster synthesis when the user has the VRAM budget.
+    device: str = Field(default="cpu", pattern="^(cpu|cuda)$")
+    # Speech-rate multiplier; 1.0 = native cadence.
+    speed: float = Field(default=1.0, ge=0.5, le=2.0)
+    # Pre-fine-tune: run the v3 Ultron pedalboard filter on Kokoro
+    # output to match XTTS voice character. Disable post-fine-tune
+    # (the filter character will be baked into the weights).
+    apply_runtime_filter: bool = False
+    filter_preset: str = "v3_heavy"
+
+
 class TTSConfig(_Strict):
     # 2026-05-10 voice swap: ``"piper_rvc"`` is the legacy stack
     # (Piper voice + RVC timbre transfer); ``"xtts_v3"`` is the new
-    # XTTS v2 streaming + v3 filter stack. Switching engines requires
-    # a process restart (the chosen engine is loaded once at
-    # orchestrator construction).
-    engine: str = Field(default="piper_rvc", pattern="^(piper_rvc|xtts_v3)$")
+    # XTTS v2 streaming + v3 filter stack. 2026-05-19 Track 5:
+    # ``"kokoro"`` is the new lightweight StyleTTS2 + ISTFTNet
+    # engine, intended as the post-fine-tune target. Switching
+    # engines requires a process restart (the chosen engine is
+    # loaded once at orchestrator construction).
+    engine: str = Field(default="piper_rvc", pattern="^(piper_rvc|xtts_v3|kokoro)$")
     piper_voice_path: str = "models/piper/en_US-ryan-medium.onnx"
     piper_voice_config_path: str = "models/piper/en_US-ryan-medium.onnx.json"
     output_sample_rate: int = 22050
@@ -1046,6 +1264,9 @@ class TTSConfig(_Strict):
     edge_fade_ms: int = Field(default=4, ge=0)
     rvc: RVCConfig = Field(default_factory=RVCConfig)
     xtts_v3: XttsV3Config = Field(default_factory=XttsV3Config)
+    # 2026-05-19 Track 5 -- Kokoro engine config (used when
+    # tts.engine == "kokoro").
+    kokoro: KokoroConfig = Field(default_factory=KokoroConfig)
     # 2026-05-09 latency hot-fix: split Piper and RVC into two separate
     # worker stages connected by a bounded queue. With the legacy
     # single-worker shape, sentence N+1's Piper synthesis only began

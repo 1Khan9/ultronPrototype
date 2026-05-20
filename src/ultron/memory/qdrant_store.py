@@ -114,6 +114,53 @@ class ConversationMemory:
         self._recent_cache_size = recent_cache_size
         self.session_id = session_id or _new_session_id()
 
+        # 2026-05-19 Track 1a + 1b: optional write-side metadata
+        # tracking. Both default-OFF; instantiated lazily here only
+        # when the corresponding flag is on so legacy memory writes
+        # are byte-for-byte unchanged.
+        self._topic_tracker = None
+        self._discourse_classifier = None
+        try:
+            topic_cfg = cfg.memory.topical_chunking
+            if topic_cfg.enabled:
+                from ultron.memory.topical_chunking import TopicTracker
+                self._topic_tracker = TopicTracker(
+                    similarity_threshold=topic_cfg.boundary_similarity_threshold,
+                    timeout_seconds=topic_cfg.idle_timeout_seconds,
+                )
+                logger.info(
+                    "Topical chunking enabled (threshold=%.2f, timeout=%.0fs)",
+                    topic_cfg.boundary_similarity_threshold,
+                    topic_cfg.idle_timeout_seconds,
+                )
+        except Exception as e:                               # noqa: BLE001
+            logger.warning(
+                "Failed to initialise topical chunker (%s); continuing "
+                "without topic_id metadata.", e,
+            )
+        try:
+            disc_cfg = cfg.memory.discourse_tagging
+            if disc_cfg.enabled:
+                from ultron.memory.discourse import DiscourseClassifier
+                embedder_fn = None
+                if disc_cfg.use_embedding_fallback:
+                    embedder_fn = self._embedder.encode_query_dense
+                self._discourse_classifier = DiscourseClassifier(
+                    embedder_fn=embedder_fn,
+                    confidence_floor=disc_cfg.centroid_confidence_floor,
+                )
+                logger.info(
+                    "Discourse tagging enabled (centroid_fallback=%s, "
+                    "confidence_floor=%.2f)",
+                    bool(embedder_fn),
+                    disc_cfg.centroid_confidence_floor,
+                )
+        except Exception as e:                               # noqa: BLE001
+            logger.warning(
+                "Failed to initialise discourse classifier (%s); "
+                "continuing without discourse_type metadata.", e,
+            )
+
         # Lazy-imported here so a missing qdrant-client install doesn't crash
         # at module import time -- the orchestrator's _load_memory_if_enabled
         # catches the resulting ValueError and disables memory gracefully.
@@ -288,23 +335,56 @@ class ConversationMemory:
         dvec = self._embedder.encode_dense(text_dense)
         svec = self._embedder.encode_sparse(turn.content)[0]
 
+        # 2026-05-19 Track 1a + 1b: write-side metadata enrichment.
+        # Both branches fail-open -- a tracker / classifier exception
+        # leaves the payload without the enrichment field rather than
+        # blocking the write.
+        topic_id: Optional[str] = None
+        if self._topic_tracker is not None:
+            try:
+                obs = self._topic_tracker.observe(dvec.tolist())
+                topic_id = obs.topic_id
+            except Exception as e:                           # noqa: BLE001
+                logger.warning(
+                    "Topic tracker observe failed for turn %d (%s); "
+                    "skipping topic_id metadata.", turn.id, e,
+                )
+
+        discourse_type: Optional[str] = None
+        if self._discourse_classifier is not None:
+            try:
+                verdict = self._discourse_classifier.classify(turn.content)
+                if verdict is not None:
+                    discourse_type = verdict.value
+            except Exception as e:                           # noqa: BLE001
+                logger.warning(
+                    "Discourse classifier failed for turn %d (%s); "
+                    "skipping discourse_type metadata.", turn.id, e,
+                )
+
+        payload = {
+            "turn_id": turn.id,
+            "ts": turn.ts,
+            "role": turn.role,
+            "content": turn.content,
+            "session_id": turn.session_id,
+            "summary": turn.summary,
+            "entities": turn.entities,
+            "topic_tags": turn.topic_tags,
+            "cluster_id": turn.cluster_id,
+        }
+        if topic_id is not None:
+            payload["topic_id"] = topic_id
+        if discourse_type is not None:
+            payload["discourse_type"] = discourse_type
+
         point = PointStruct(
             id=str(uuid.uuid4()),
             vector={
                 "dense": dvec.tolist(),
                 "bm25": SparseVector(indices=svec.indices, values=svec.values),
             },
-            payload={
-                "turn_id": turn.id,
-                "ts": turn.ts,
-                "role": turn.role,
-                "content": turn.content,
-                "session_id": turn.session_id,
-                "summary": turn.summary,
-                "entities": turn.entities,
-                "topic_tags": turn.topic_tags,
-                "cluster_id": turn.cluster_id,
-            },
+            payload=payload,
         )
         self._client.upsert(
             collection_name=get_config().qdrant.collections.conversations,

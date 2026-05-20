@@ -42,6 +42,15 @@ class RankingWeights:
     recency_half_life_days: float = 7.0
     surprise_weight: float = 0.15
     redundancy_weight: float = 0.3
+    # 2026-05-19 Track 1h: topic + discourse match signals. Both
+    # default to 0.0 so legacy retrieval is byte-for-byte unchanged
+    # until operators tune them up. Topic match boosts candidates
+    # whose ``topic_id`` matches the query's expected topic; discourse
+    # match boosts candidates whose ``discourse_type`` matches the
+    # query's expected class (e.g., "what did we decide about X?"
+    # wants DECISION turns).
+    topic_match_weight: float = 0.0
+    discourse_match_weight: float = 0.0
 
 
 @dataclass
@@ -157,6 +166,49 @@ def compute_redundancy_penalty(
     return float(best)
 
 
+def compute_topic_match_score(
+    candidate: CandidateScore,
+    query_topic_id: Optional[str],
+) -> float:
+    """1.0 when the candidate's payload ``topic_id`` matches the query's
+    expected topic; 0.0 otherwise.
+
+    ``query_topic_id`` of None (caller has no topic hypothesis) returns
+    0.0 -- a missing query-side signal can't boost anything. A
+    candidate payload without a ``topic_id`` field also returns 0.0,
+    keeping the legacy byte-for-byte path stable when topical chunking
+    is disabled (payloads lack the field entirely).
+    """
+    if not query_topic_id:
+        return 0.0
+    payload = candidate.payload or {}
+    candidate_topic = payload.get("topic_id")
+    if not candidate_topic:
+        return 0.0
+    return 1.0 if candidate_topic == query_topic_id else 0.0
+
+
+def compute_discourse_match_score(
+    candidate: CandidateScore,
+    expected_discourse_types: Optional[Sequence[str]],
+) -> float:
+    """1.0 when the candidate's payload ``discourse_type`` is in the
+    expected-types set; 0.0 otherwise.
+
+    The expected-types argument is a sequence (or None) so the caller
+    can pass multiple acceptable types -- a query like "what did we
+    figure out about X?" matches both DECISION and STATEMENT, not just
+    one. Empty / None expected set returns 0.0 (no boost).
+    """
+    if not expected_discourse_types:
+        return 0.0
+    payload = candidate.payload or {}
+    candidate_type = payload.get("discourse_type")
+    if not candidate_type:
+        return 0.0
+    return 1.0 if candidate_type in expected_discourse_types else 0.0
+
+
 def compute_composite_score(
     candidate: CandidateScore,
     *,
@@ -164,13 +216,21 @@ def compute_composite_score(
     primary_dense: Optional[Sequence[float]],
     picked: Sequence[CandidateScore],
     now: Optional[float] = None,
+    query_topic_id: Optional[str] = None,
+    expected_discourse_types: Optional[Sequence[str]] = None,
 ) -> float:
-    """Weighted blend of RRF + recency + surprise - redundancy.
+    """Weighted blend of RRF + recency + surprise - redundancy +
+    topic_match + discourse_match.
 
     Side-effect-free: the caller is expected to assign the returned
     value to ``candidate.composite_score`` if they want it persisted.
     The signature returns the score so the helper composes naturally
     with sorted() / max().
+
+    The new ``query_topic_id`` + ``expected_discourse_types`` kwargs
+    are optional; with their weights at 0.0 (the default in
+    :class:`RankingWeights`) the call reduces to the legacy
+    RRF + recency + surprise - redundancy formula byte-for-byte.
     """
     rrf = float(candidate.rrf_score) * weights.rrf_weight
 
@@ -187,7 +247,15 @@ def compute_composite_score(
         candidate.dense, picked,
     ) * weights.redundancy_weight
 
-    return rrf + recency + surprise - redundancy
+    topic_match = compute_topic_match_score(
+        candidate, query_topic_id,
+    ) * weights.topic_match_weight
+
+    discourse_match = compute_discourse_match_score(
+        candidate, expected_discourse_types,
+    ) * weights.discourse_match_weight
+
+    return rrf + recency + surprise - redundancy + topic_match + discourse_match
 
 
 def select_top_k(
@@ -197,6 +265,8 @@ def select_top_k(
     weights: RankingWeights,
     primary_dense: Optional[Sequence[float]] = None,
     now: Optional[float] = None,
+    query_topic_id: Optional[str] = None,
+    expected_discourse_types: Optional[Sequence[str]] = None,
 ) -> List[CandidateScore]:
     """Greedy redundancy-aware top-K selection.
 
@@ -210,6 +280,12 @@ def select_top_k(
     Stable: ties broken by original ``rrf_score`` (we re-sort each
     iteration). The returned list is in selection order (best first)
     with ``composite_score`` populated.
+
+    Track 1h additions (2026-05-19): ``query_topic_id`` and
+    ``expected_discourse_types`` flow into the composite-score
+    weighting. With the corresponding weights at 0.0 (defaults) the
+    behaviour is byte-for-byte identical to the pre-Track-1h
+    behaviour, so existing callers don't need updates.
     """
     if k <= 0 or not candidates:
         return []
@@ -222,6 +298,8 @@ def select_top_k(
             score = compute_composite_score(
                 c, weights=weights,
                 primary_dense=primary_dense, picked=picked, now=now,
+                query_topic_id=query_topic_id,
+                expected_discourse_types=expected_discourse_types,
             )
             if score > best_score:
                 best_score = score
@@ -241,6 +319,8 @@ __all__ = [
     "cosine_similarity",
     "compute_surprise_score",
     "compute_redundancy_penalty",
+    "compute_topic_match_score",
+    "compute_discourse_match_score",
     "compute_composite_score",
     "select_top_k",
 ]
