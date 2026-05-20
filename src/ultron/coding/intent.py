@@ -73,20 +73,62 @@ _CANCEL_PATTERNS = re.compile(
 # Captures the kind of natural-language directive the user gives mid-build:
 # "actually have him use postgres", "tell him to add logging", "instead of X
 # do Y", "change that to Y", "make him do Y".
+#
+# 2026-05-19 Issue 7 fix: extended with natural second-person imperatives
+# ("add a tkinter GUI", "edit the code to use postgres", "now include
+# error handling"). Live session 2026-05-19: after the PNG-to-JPEG
+# converter generated, the user said "edit it and add a tkinter GUI" --
+# the third-person-only regex missed it, the utterance fell through to
+# _CODE_TRIGGERS which classified it as a NEW task, voice.py refused
+# because a task was running (or for the post-completion case, would
+# have scaffolded a NEW project instead of editing the existing one).
+# Patterns below catch the second-person flavour. Gated by
+# ``has_active_task=True`` (or active session) so false positives can't
+# hijack casual conversation -- the user has to have a coding task in
+# flight or recently complete for these to fire.
 _ADJUSTMENT_PATTERNS = re.compile(
-    r"\b(?:"
-    r"actually,?\s+(?:have\s+(?:him|claude)|tell\s+(?:him|claude)|change|make\s+(?:him|claude)|switch|use|do)|"
-    r"instead\s+of\s+\w+,?\s+(?:have|tell|use|do|make)|"
-    r"have\s+(?:him|claude|it)\s+(?:use|switch|change|make|do|stop|start|add|remove|drop)|"
-    r"tell\s+(?:him|claude|it)\s+to\s+\w+|"
-    r"make\s+(?:him|claude|it)\s+(?:use|switch|change|stop|start|add|remove|do|drop|focus)|"
-    r"can\s+you\s+(?:have|tell|make)\s+(?:him|claude|it)|"
-    r"don't\s+(?:have|let)\s+(?:him|claude|it)|"
-    r"change\s+(?:that|it)\s+to|"
-    r"forget\s+(?:that|the)\s+(?:approach|plan|idea)|"
-    r"on\s+(?:second|2nd)\s+thought|"
-    r"hold\s+on,?\s+(?:have|tell|use|do|make|change|switch)"
-    r")\b",
+    r"(?:"
+    # Third-person legacy patterns ("have him X" / "tell him to Y").
+    r"\bactually,?\s+(?:have\s+(?:him|claude)|tell\s+(?:him|claude)|change|make\s+(?:him|claude)|switch|use|do)\b|"
+    r"\binstead\s+of\s+\w+,?\s+(?:have|tell|use|do|make)\b|"
+    r"\bhave\s+(?:him|claude|it)\s+(?:use|switch|change|make|do|stop|start|add|remove|drop)\b|"
+    r"\btell\s+(?:him|claude|it)\s+to\s+\w+|"
+    r"\bmake\s+(?:him|claude|it)\s+(?:use|switch|change|stop|start|add|remove|do|drop|focus)\b|"
+    r"\bcan\s+you\s+(?:have|tell|make)\s+(?:him|claude|it)\b|"
+    r"\bdon't\s+(?:have|let)\s+(?:him|claude|it)\b|"
+    r"\bchange\s+(?:that|it)\s+to\b|"
+    r"\bforget\s+(?:that|the)\s+(?:approach|plan|idea)\b|"
+    r"\bon\s+(?:second|2nd)\s+thought\b|"
+    r"\bhold\s+on,?\s+(?:have|tell|use|do|make|change|switch)\b|"
+    # 2026-05-19 second-person follow-ups. Anchor at sentence start
+    # (^) optionally preceded by a "now / also / then / next / please /
+    # can you / could you / would you / go ahead and / I want you to /
+    # I'd like (you) to" lead-in. The verb list covers the natural
+    # vocabulary the user reaches for when iterating on existing code.
+    r"^\s*(?:now,?\s+|also,?\s+|then,?\s+|next,?\s+|please\s+|"
+    r"can\s+you\s+|could\s+you\s+|would\s+you\s+|"
+    r"go\s+ahead\s+and\s+|i\s+want\s+(?:you\s+)?to\s+|"
+    r"i'?d\s+like\s+(?:you\s+)?(?:to\s+)?|"
+    r"and\s+(?:now\s+|also\s+|then\s+)?)?"
+    r"(?:add|include|implement|introduce|append|insert|prepend|"
+    r"edit|update|modify|change|extend|tweak|adjust|alter|"
+    r"refactor|rewrite|restructure|reorganize|reorganise|simplify|"
+    r"fix|patch|repair|debug|"
+    r"remove|delete|drop|strip|kill|"
+    r"replace|swap|substitute|migrate|convert|port|"
+    r"rename|move|relocate|"
+    r"wire|hook|plug|integrate|connect|attach|"
+    r"enable|disable|toggle|expose|hide|"
+    r"optimi[sz]e|harden|polish|clean(?:\s+up)?|tighten|format|"
+    r"document|comment|annotate|"
+    r"give\s+(?:it|that|the\s+code|the\s+project|the\s+app|the\s+script)\s+a\b|"
+    r"make\s+(?:it|that|the\s+code|the\s+project|the\s+app|the\s+script)\s+"
+    r"(?:have|use|do|support|return|accept|handle|read|write|"
+    r"a\b|an\b|the\b|into\b|with\b|without\b)|"
+    r"put\s+in\s+(?:a|an|the|some)\b|"
+    r"throw\s+in\s+(?:a|an|the|some)\b|"
+    r"build\s+(?:in\s+)?(?:a|an|the|some)\b)\b"
+    r")",
     re.IGNORECASE,
 )
 
@@ -127,8 +169,12 @@ _PROGRESS_PATTERNS = re.compile(
     # "Are you done" / "Is it done" / "Is the project done yet"
     r"\bare\s+you\s+done|"
     r"\bis\s+(?:it|claude|" + _DETERMINER_NOUN + r")\s+done|"
-    # Generic status markers
-    r"\b(?:any\s+)?progress\b|"
+    # Generic status markers. 2026-05-19 Issue 7 fix: negative
+    # lookahead so "add a progress bar / spinner / indicator /
+    # callback" -- which is an ADJUSTMENT, not a status query --
+    # doesn't trigger this rule.
+    r"\b(?:any\s+)?progress(?!\s+(?:bar|spinner|indicator|callback|"
+    r"hook|wheel|tracker|wheel|update\s+function|widget))\b|"
     r"\bwhat(?:'s|\s+is)\s+(?:the\s+)?(?:status|update)|"
     r"\bgive\s+me\s+(?:a\s+)?(?:status|update)|"
     r"\bhow\s+far\s+along|"
