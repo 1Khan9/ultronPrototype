@@ -73,6 +73,12 @@ _DATE_QUERY_RE = re.compile(
       | what(?:'s|s|\s+is)?\s+the\s+day\b
       | (?:tell|give|show)\s+me\s+(?:the\s+date|today's\s+date|the\s+day)\b
       | today's\s+date\b
+      # 2026-05-19 round 5: Whisper-mangled variants. Live session
+      # gave "That's today's date." for "What's today's date?" -- the
+      # detector below treats the declarative form as a question too.
+      | that(?:'s|s|\s+is)?\s+today(?:'s\s+date)?\b
+      | that(?:'s|s|\s+is)?\s+the\s+date(?:\s+today)?\b
+      | (?:do|d')\s+you\s+know\s+(?:the\s+date|today's\s+date|what\s+(?:the\s+)?date\s+(?:it\s+)?is)\b
     )
     \s*[.!?]?\s*$
     """,

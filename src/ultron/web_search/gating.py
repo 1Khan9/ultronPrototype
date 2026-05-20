@@ -233,6 +233,46 @@ _CREATIVE_TASKS = re.compile(
 )
 
 
+# 2026-05-19 round 5: bare greetings + acks should NEVER reach the LLM
+# preflight. Live session 2026-05-19 bhoza25go.output:
+# - 'Ultron say hello' -> SEARCH preflight -> brave + jina on 'Ultron
+#   character details', wasted 5+ seconds and produced a fake "Marvel
+#   character" framing
+# - The preflight LLM (Gemma) is over-eager: it sees ANY question as
+#   potentially searchable and gives reasons like "The query requires
+#   confirming Ultron's established character traits".
+#
+# Anchored at sentence start (^) -- partial matches inside longer
+# utterances (e.g. "thanks for the explanation, now what's the
+# weather") still escalate normally.
+_GREETING_OR_ACK = re.compile(
+    r"""
+    ^\s*
+    (?:(?:hey\s+|hi\s+|ok\s+|okay\s+)?ultron[,\s]+)?
+    (?:and\s+|so\s+|then\s+|but\s+|please\s+)?
+    (?:
+        # Greetings
+        hi|hello|hey|yo|sup|hola|greetings|aloha|howdy
+      | good\s+(?:morning|afternoon|evening|night)
+      | (?:say|tell|give)\s+(?:hi|hello|something|anything)
+      # Acks / closures
+      | thanks?(?:\s+you)?
+      | thank\s+you(?:\s+very\s+much)?
+      | (?:ok|okay|alright|sure|yes|yeah|yep|nope|no)
+      | (?:cool|nice|great|awesome|perfect|fine)
+      | got\s+it
+      | sounds?\s+good
+      | (?:mhm+|hmm+|mmm+|uh[-\s]?huh)
+      | (?:never\s+mind|nevermind|forget\s+it|no\s+worries|all\s+good)
+      # Mid-utterance fillers that often appear alone after a Whisper cut
+      | (?:right|got\s+that|noted|understood)
+    )
+    \s*[.!?,]?\s*$
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
 def _preflight_call(llm, prompt: str, max_tokens: int) -> str:
     """Single greedy call OR self-consistency N-vote on the JSON output.
 
@@ -307,6 +347,22 @@ def classify_by_rules(utterance: str) -> Optional[GateVerdict]:
         return GateVerdict(
             GateDecision.NO_SEARCH, "high", "rule",
             reason,
+            knowledge_source=_resolve_knowledge_source(
+                needs_search=False, confidence="high", rule_reason=reason,
+            ),
+        )
+
+    # 2026-05-19 round 5: greetings / acks are NEVER worth searching.
+    # Pre-empts the LLM preflight which was firing creative reasons
+    # like "The query requires confirming Ultron's established character
+    # traits" -> SEARCH on "Ultron say hello". The preflight is expensive
+    # AND was producing wrong verdicts on these obvious cases.
+    if _GREETING_OR_ACK.match(text):
+        reason = "greeting / ack -- no web lookup needed"
+        return GateVerdict(
+            GateDecision.NO_SEARCH, "high", "rule",
+            reason,
+            has_temporal_dependency=False,
             knowledge_source=_resolve_knowledge_source(
                 needs_search=False, confidence="high", rule_reason=reason,
             ),

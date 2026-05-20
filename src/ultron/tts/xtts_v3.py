@@ -1381,12 +1381,23 @@ class XttsV3Speech:
         hard cap below is the belt-and-braces: 1.5x the configured
         chunk size, with the offending text logged so we can identify
         the upstream culprit on next occurrence.
+
+        2026-05-19 round 5: also log EVERY synth call at INFO level
+        (with length + preview) so the next phantom-text occurrence
+        shows what XTTS actually received. The XTTS server's
+        "Requested tokens (N)" error message is opaque about the
+        input text -- this log captures it client-side.
         """
+        text_len = len(text)
+        logger.info(
+            "XTTS synth: %d chars -> server (preview=%r)",
+            text_len, text[:160],
+        )
         hard_cap = max(120, int(self._max_chars_per_synth_call * 1.5))
-        if len(text) > hard_cap:
+        if text_len > hard_cap:
             logger.warning(
                 "XTTS text cap: truncating %d-char input to %d (preview=%r)",
-                len(text), hard_cap, text[:120],
+                text_len, hard_cap, text[:120],
             )
             text = text[:hard_cap].rstrip() + "."
         body = json.dumps(

@@ -1296,6 +1296,27 @@ class LLMEngine:
         )
         # 2026-05-14: same /no_think handling as the blocking path.
         messages = self._apply_no_think_marker(messages, enable_thinking)
+        # 2026-05-19 round 5 debug: log message-list shape so we can
+        # see whether suppress_memory_context actually fired AND
+        # whether anything is leaking into recent history that
+        # shouldn't be there. The PER-MESSAGE log uses content
+        # PREVIEWS (first 200 chars) so the log stays readable but
+        # surfaces enough to identify contamination.
+        logger.info(
+            "LLM messages (suppress=%s, precomputed=%s, count=%d):",
+            suppress_memory_context,
+            "yes" if precomputed_rag_snippets is not None else "no",
+            len(messages),
+        )
+        for i, m in enumerate(messages):
+            content = str(m.get("content", ""))
+            preview = content[:200].replace("\n", " ")
+            if len(content) > 200:
+                preview += "..."
+            logger.info(
+                "  msg[%d] role=%s (%d chars): %s",
+                i, m.get("role", "?"), len(content), preview,
+            )
         _llm_cfg = get_config().llm
         t0 = time.monotonic()
         first_token_time: Optional[float] = None
