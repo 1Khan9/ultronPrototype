@@ -154,7 +154,27 @@ _THIRD_PARTY_NARRATIVE = re.compile(
     # state to someone else.
     r"|^\s*(?:he|it|she)(?:'s|\s+is)\s+(?:workable|broken|done|ready|stuck|"
     r"thinking|working|good|fine|set|set\s+up|all\s+set)\b"
+    # 2026-05-19 Issue 6 fix: continuation of third-party reference
+    # like "I'm running him through his paces" / "running him" /
+    # "showing him to the team". The first-person verb + him/her
+    # signals the user is reporting about Ultron to a third party.
+    r"|\b(?:i'?m|i\s+am|i)\s+(?:running|showing|telling|teaching|"
+    r"explaining|introducing|demoing|testing|debugging)\s+(?:him|her|it)\b"
     r")",
+    re.IGNORECASE,
+)
+
+# 2026-05-19 Issue 6 fix: third-party possessive questions.
+# "Where's his sandbox?" / "What's her name?" / "When is their birthday?"
+# are about-Ultron-to-a-third-party, not directed AT Ultron. Without
+# this guard the factual-question-stem rule below fires (because the
+# utterance starts with "where's") and ADDRESSED wins with conf 0.85
+# -- live session 2026-05-19: "Where's his sandbar?" (Whisper-mangled
+# from "where's his sandbox") was wrongly accepted as a follow-up to
+# Ultron and triggered a SEARCH for a JPEG that didn't exist.
+_THIRD_PARTY_POSSESSIVE_QUESTION = re.compile(
+    r"^\s*(?:what|where|when|why|how|which)(?:'s|s|\s+is|\s+are|\s+was|\s+were)?\s+"
+    r"(?:his|her|their|its)\s+\w+",
     re.IGNORECASE,
 )
 
@@ -216,6 +236,15 @@ def classify(
     if _THIRD_PARTY_NARRATIVE.search(text):
         return RuleHit(
             AddressingDecision.NOT_ADDRESSED, 0.85, "narrating Ultron to a third party"
+        )
+    # Issue 6 fix: "where's his X?" / "what's her Y?" -- about Ultron,
+    # not to Ultron. Must run BEFORE the factual-question-stem rule
+    # below, which would otherwise grab "where's" and short-circuit
+    # to ADDRESSED at 0.85.
+    if _THIRD_PARTY_POSSESSIVE_QUESTION.match(text):
+        return RuleHit(
+            AddressingDecision.NOT_ADDRESSED, 0.85,
+            "third-party possessive question (about Ultron, not to Ultron)",
         )
     if lowered in _INTERJECTIONS:
         return RuleHit(

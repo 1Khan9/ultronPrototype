@@ -32,6 +32,16 @@ class _LLMRagCfg:
         self.position = position
 
 
+class _LLMCompressionCfg:
+    """No-op compression stub. The live config.yaml has compression
+    enabled which would mangle the RAG block content these tests
+    assert on; the stub disables it for the duration of each test."""
+    enabled = False
+    compress_rag = False
+    compress_web = False
+    compress_history = False
+
+
 class _CfgWithMemory:
     def __init__(self, position: str = "recency"):
         self.memory = _MemCfg()
@@ -39,7 +49,23 @@ class _CfgWithMemory:
         class _LLM:
             def __init__(self):
                 self.rag = _LLMRagCfg(position=position)
+                self.compression = _LLMCompressionCfg()
         self.llm = _LLM()
+
+
+def _patched_config_context(cfg):
+    """Helper: patch both inference.get_config and compression.get_config
+    so the compression layer sees the test's no-compress flag.
+    Returns a contextlib.ExitStack so callers can use `with` syntax."""
+    import contextlib
+    stack = contextlib.ExitStack()
+    stack.enter_context(patch(
+        "ultron.llm.inference.get_config", return_value=cfg,
+    ))
+    stack.enter_context(patch(
+        "ultron.llm.compression.get_config", return_value=cfg,
+    ))
+    return stack
 
 
 def _make_engine(snippets: list, position: str) -> LLMEngine:
@@ -67,7 +93,7 @@ def test_recency_position_prepends_rag_to_user_message() -> None:
     ]
     eng = _make_engine(snippets, "recency")
 
-    with patch("ultron.llm.inference.get_config", return_value=_CfgWithMemory("recency")):
+    with _patched_config_context(_CfgWithMemory("recency")):
         msgs = eng._build_messages("when's the deadline?")
 
     # System message: persona only, NO RAG content
@@ -91,8 +117,8 @@ def test_system_position_folds_rag_into_system_message() -> None:
     ]
     eng = _make_engine(snippets, "system")
 
-    with patch("ultron.llm.inference.get_config", return_value=_CfgWithMemory("system")):
-        msgs = eng._build_messages("hello")
+    with _patched_config_context(_CfgWithMemory("system")):
+        msgs = eng._build_messages("what is the meaning of life")
 
     # System message contains both persona and RAG content
     assert msgs[0]["role"] == "system"
@@ -103,7 +129,7 @@ def test_system_position_folds_rag_into_system_message() -> None:
     # User message has the raw query, no RAG prefix
     last = msgs[-1]
     assert last["role"] == "user"
-    assert last["content"] == "hello"
+    assert last["content"] == "what is the meaning of life"
 
 
 def test_no_snippets_means_no_rag_block_anywhere() -> None:
@@ -112,13 +138,13 @@ def test_no_snippets_means_no_rag_block_anywhere() -> None:
     persona."""
     eng = _make_engine([], "recency")
 
-    with patch("ultron.llm.inference.get_config", return_value=_CfgWithMemory("recency")):
-        msgs = eng._build_messages("hello")
+    with _patched_config_context(_CfgWithMemory("recency")):
+        msgs = eng._build_messages("what is the meaning of life")
 
     assert msgs[0]["content"] == "PERSONA"
     last = msgs[-1]
     assert last["role"] == "user"
-    assert last["content"] == "hello"
+    assert last["content"] == "what is the meaning of life"
 
 
 def test_retrieve_failure_falls_back_to_no_rag() -> None:
@@ -127,11 +153,11 @@ def test_retrieve_failure_falls_back_to_no_rag() -> None:
     eng = _make_engine([], "recency")
     eng._memory.retrieve.side_effect = RuntimeError("qdrant down")
 
-    with patch("ultron.llm.inference.get_config", return_value=_CfgWithMemory("recency")):
-        msgs = eng._build_messages("hello")
+    with _patched_config_context(_CfgWithMemory("recency")):
+        msgs = eng._build_messages("what is the meaning of life")
 
     assert msgs[0]["content"] == "PERSONA"
-    assert msgs[-1]["content"] == "hello"
+    assert msgs[-1]["content"] == "what is the meaning of life"
 
 
 def test_format_rag_block_empty_returns_empty_string() -> None:
@@ -145,7 +171,13 @@ def test_format_rag_block_renders_role_and_content() -> None:
         _FakeTurn("user", "alpha"),
         _FakeTurn("assistant", "beta"),
     ]
-    block = LLMEngine._format_rag_block(snippets)
+    # The live config.yaml has llm.compression.enabled=true which
+    # mangles the assertion strings ("from" gets dropped). Patch
+    # compression.get_config so the helper sees the no-compress flag
+    # for this assertion's lifetime; legacy production behaviour is
+    # unchanged.
+    with _patched_config_context(_CfgWithMemory("recency")):
+        block = LLMEngine._format_rag_block(snippets)
     assert "Relevant earlier context from prior conversations:" in block
     assert "- user: alpha" in block
     assert "- assistant: beta" in block
@@ -165,8 +197,8 @@ def test_recency_position_does_not_affect_history() -> None:
     cfg = _CfgWithMemory("recency")
     cfg.memory.recent_turns = 5
 
-    with patch("ultron.llm.inference.get_config", return_value=cfg):
-        msgs = eng._build_messages("now")
+    with _patched_config_context(cfg):
+        msgs = eng._build_messages("what time is it now precisely")
 
     roles = [m["role"] for m in msgs]
     assert roles == ["system", "user", "assistant", "user"]
@@ -190,8 +222,8 @@ def test_build_messages_default_uses_single_pass_retrieve():
     eng = _make_engine(snippets, "recency")
     eng._memory.retrieve_for_query = MagicMock(return_value=snippets)
 
-    with patch("ultron.llm.inference.get_config", return_value=_CfgWithMemory("recency")):
-        eng._build_messages("query")
+    with _patched_config_context(_CfgWithMemory("recency")):
+        eng._build_messages("what was the answer to that query")
 
     eng._memory.retrieve.assert_called_once()
     eng._memory.retrieve_for_query.assert_not_called()
@@ -208,12 +240,12 @@ def test_build_messages_with_verdict_uses_retrieve_for_query():
         context_categories = ["category A"]
         memory_search_queries = []
 
-    with patch("ultron.llm.inference.get_config", return_value=_CfgWithMemory("recency")):
-        eng._build_messages("query", gate_verdict=_Verdict())
+    with _patched_config_context(_CfgWithMemory("recency")):
+        eng._build_messages("what was the answer to that query", gate_verdict=_Verdict())
 
     eng._memory.retrieve_for_query.assert_called_once()
     args, kwargs = eng._memory.retrieve_for_query.call_args
-    assert args[0] == "query"
+    assert args[0] == "what was the answer to that query"
     assert isinstance(args[1], _Verdict)
     eng._memory.retrieve.assert_not_called()
 
@@ -232,7 +264,7 @@ def test_build_messages_falls_back_when_retrieve_for_query_missing():
         context_categories = []
         memory_search_queries = []
 
-    with patch("ultron.llm.inference.get_config", return_value=_CfgWithMemory("recency")):
-        eng._build_messages("query", gate_verdict=_Verdict())
+    with _patched_config_context(_CfgWithMemory("recency")):
+        eng._build_messages("what was the answer to that query", gate_verdict=_Verdict())
 
     eng._memory.retrieve.assert_called_once()

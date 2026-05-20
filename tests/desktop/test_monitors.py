@@ -317,7 +317,26 @@ def test_enumerate_monitors_live_has_exactly_one_primary():
         pytest.skip("no monitors detected (headless session?)")
     primaries = [m for m in mons if m.is_primary]
     assert len(primaries) == 1, "exactly one primary monitor expected"
-    assert primaries[0].index == 0, "primary must sort to index 0"
+    # 2026-05-19 Issue 5 fix: monitors now sort left-to-right by x
+    # (not primary-first). The primary monitor's index depends on its
+    # physical position; we no longer assert it sorts to 0. Callers
+    # that specifically need the primary find it via the is_primary
+    # flag on the Monitor.
+
+
+@pytestmark_windows
+def test_enumerate_monitors_live_sorted_left_to_right():
+    """Issue 5 fix: monitors sort left-to-right by x. Each entry's
+    x should be >= the previous entry's x."""
+    mons = enumerate_monitors()
+    if len(mons) < 2:
+        pytest.skip("need >=2 monitors to verify ordering")
+    for prev, curr in zip(mons, mons[1:]):
+        assert curr.x >= prev.x, (
+            f"monitors not sorted left-to-right by x: "
+            f"index {prev.index} (x={prev.x}) >= "
+            f"index {curr.index} (x={curr.x})"
+        )
 
 
 @pytestmark_windows

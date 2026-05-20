@@ -694,6 +694,14 @@ class MemoryRetrievalConfig(_Strict):
     multi_pass_enabled: bool = True
     max_categories_per_query: int = Field(default=4, ge=0, le=10)
     candidates_per_category_multiplier: int = Field(default=4, ge=1, le=20)
+    # 2026-05-19 Issue 2 fix: suppress RAG retrieval entirely for
+    # short greetings / acks. The bge-small embedder cosine-matches
+    # these to off-topic stored memory above the 0.6 ``rag_min_relevance``
+    # cutoff (live session 2026-05-19: 'Say hello.' returned a
+    # response about Salesforce Agentforce pricing). Net-benefit
+    # default ON; opt out by setting False if you specifically want
+    # greetings to draw from memory for some downstream feature.
+    skip_rag_for_short_queries: bool = True
 
 
 class MemoryRankingConfig(_Strict):
@@ -1225,6 +1233,16 @@ class XttsV3Config(_Strict):
     # between two legitimate utterances). 150 ms is well below normal
     # inter-word pauses and well above mid-word micro-pauses.
     phantom_tail_min_lead_silence_ms: float = Field(default=150.0, ge=50.0, le=500.0)
+    # 2026-05-19 Issue 1 fix: cap per-synth-call text length so a
+    # single sentence can't overflow the XTTS-v2 GPT 4096-audio-token
+    # context window. The server errored on a live 2026-05-19 session
+    # at 4830 tokens for a search-augmented response. 240 chars is
+    # conservative (~3 sec of synthesised speech; well under 4096
+    # tokens even with URL char-by-char tokenisation). Sentences that
+    # exceed the cap get sub-split on clause / word boundaries via
+    # XttsV3Speech._split_for_synth -- behaviour is byte-for-byte
+    # unchanged for typical short responses.
+    max_chars_per_synth_call: int = Field(default=240, ge=80, le=1000)
 
 
 class KokoroConfig(_Strict):

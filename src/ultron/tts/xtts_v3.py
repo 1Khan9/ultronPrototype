@@ -436,6 +436,20 @@ _ABBREVIATION_PATTERNS: Tuple[Tuple[re.Pattern, str], ...] = (
 # between word characters. Skip HTML entities ("&amp;" etc.).
 _AMPERSAND_RE = re.compile(r"(?<=[A-Za-z0-9])\s*&\s*(?=[A-Za-z0-9])")
 
+# 2026-05-19 Issue 1 fix: URLs in spoken text are catastrophic for the
+# XTTS-v2 GPT context budget. The model tokenises ``https://``...``/``
+# character-by-character with high token cost; a couple of URLs in a
+# single sentence can push the audio-token output over the 4096 ctx
+# window and crash the synth worker (live-session 2026-05-19 log:
+# ``Requested tokens (4830) exceed context window of 4096``). The
+# normaliser now strips URLs entirely -- a URL spoken aloud is
+# unintelligible anyway and the sources list is shown in the printed
+# transcript. Matches http(s)://, ftp://, and bare www. URLs.
+_URL_RE = re.compile(
+    r"(?:https?|ftp)://\S+|\bwww\.\S+",
+    re.IGNORECASE,
+)
+
 
 def _ampm_letters(token: str) -> str:
     """``a.m.`` / ``AM`` / ``a m`` -> ``A M``."""
@@ -447,12 +461,18 @@ def normalize_text_for_tts(text: str) -> str:
     """Rewrite text patterns XTTS-v2 mispronounces.
 
     Applies the following passes in order. Each pass is conservative
-    -- unmatched text passes through unchanged. URLs and email
-    addresses are deliberately preserved.
+    -- unmatched text passes through unchanged.
 
+    0. URLs (``https://...``, ``http://...``, ``ftp://...``, bare
+       ``www.example.com``) are stripped. A URL spoken aloud is
+       unintelligible and -- worse -- char-by-char tokenisation
+       balloons the XTTS-v2 audio-token count, easily overflowing
+       the 4096-token GPT context window (live-session 2026-05-19
+       hit 4830 tokens on a response containing source URLs).
+       Sources are still shown in the printed transcript.
     1. Windows drive paths (``C:\\foo\\bar\\baz.ext``) collapse to
-       the filename leaf. Run FIRST because the drive-letter colon
-       would otherwise look like a time pattern.
+       the filename leaf. Run FIRST AFTER url-strip because the
+       drive-letter colon would otherwise look like a time pattern.
     2. Times with AM/PM (``2:16 a.m.`` -> ``2 16 A M``).
     3. Bare 24-hour times (``14:30`` -> ``14 30``).
     4. Standalone ``a.m.`` / ``p.m.`` markers.
@@ -486,6 +506,13 @@ def normalize_text_for_tts(text: str) -> str:
         return text
 
     out = text
+
+    # 0. URLs -- strip entirely (Issue 1 fix; see _URL_RE comment).
+    # Replace each URL with a single space so surrounding tokens
+    # don't get glued together ("seehttps://x.com today" issue).
+    # Collapse the resulting whitespace runs afterwards.
+    out = _URL_RE.sub(" ", out)
+    out = re.sub(r"[ \t]{2,}", " ", out)
 
     # 1. Windows paths.
     out = _WIN_PATH_RE.sub(lambda m: m.group(1), out)
@@ -614,6 +641,15 @@ class XttsV3Speech:
         self.flush_chars = set(flush_chars)
         self.filter_preset = filter_preset
         self.filter_tail_silence_ms = float(filter_tail_silence_ms)
+        # 2026-05-19 Issue 1 fix: cap per-synth-call text length so a
+        # single sentence can't overflow the 4096-audio-token XTTS-v2
+        # GPT context window. 240 chars is conservative (~3 sec of
+        # speech; even URL-heavy text stays well under 4096 tokens
+        # at this cap).
+        if xtts_cfg is not None and getattr(xtts_cfg, "max_chars_per_synth_call", None):
+            self._max_chars_per_synth_call = int(xtts_cfg.max_chars_per_synth_call)
+        else:
+            self._max_chars_per_synth_call = 240
         # Cadence: passed to XTTS ``inference_stream(speed=...)`` on the
         # server side. Adjusts synthesis duration tokens; does NOT touch
         # the post-synthesis v3 filter chain.
@@ -1083,7 +1119,18 @@ class XttsV3Speech:
         fragments: Iterable[str],
         push: Callable[[ClipItem], None],
     ) -> None:
-        """Walk fragments, synth on flush chars, push ClipItems."""
+        """Walk fragments, synth on flush chars, push ClipItems.
+
+        2026-05-19 Issue 1 fix: every sentence is sub-split via
+        :meth:`_split_for_synth` before being passed to ``_synthesize``,
+        so no single HTTP call to the XTTS server sends text long
+        enough to overflow the 4096-audio-token GPT context window.
+        Cap is taken from ``tts.xtts_v3.max_chars_per_synth_call``
+        (default 240). Short sentences pass through as a one-element
+        list -- behaviour is byte-for-byte unchanged for typical
+        conversational responses.
+        """
+        max_chars = self._max_chars_per_synth_call
         buffer: list[str] = []
         for frag in fragments:
             if self._stop_event.is_set():
@@ -1104,15 +1151,91 @@ class XttsV3Speech:
                 buffer.clear()
                 remaining = remaining[flush_pos + 1 :]
                 if sentence:
-                    pcm, sr = self._synthesize(sentence)
-                    if pcm.size > 0:
-                        push(ClipItem(pcm, sr, is_known_last=False))
+                    for chunk in self._split_for_synth(sentence, max_chars):
+                        if self._stop_event.is_set():
+                            break
+                        pcm, sr = self._synthesize(chunk)
+                        if pcm.size > 0:
+                            push(ClipItem(pcm, sr, is_known_last=False))
 
         tail = "".join(buffer).strip()
         if tail and not self._stop_event.is_set():
-            pcm, sr = self._synthesize(tail)
-            if pcm.size > 0:
-                push(ClipItem(pcm, sr, is_known_last=False))
+            for chunk in self._split_for_synth(tail, max_chars):
+                if self._stop_event.is_set():
+                    break
+                pcm, sr = self._synthesize(chunk)
+                if pcm.size > 0:
+                    push(ClipItem(pcm, sr, is_known_last=False))
+
+    @staticmethod
+    def _split_for_synth(text: str, max_chars: int) -> list[str]:
+        """Sub-split a single chunk so each piece is <= ``max_chars``.
+
+        Tries successively-finer boundaries: clause punctuation
+        (``,`` ``;`` ``:`` ``--``) first, then space boundaries. If
+        a token itself exceeds the cap (e.g. a long URL the URL-strip
+        missed), it is force-sliced at the char level so the call
+        stays under the limit.
+
+        Returns ``[text]`` unchanged when ``text`` is already short
+        enough -- the common case, preserving byte-for-byte legacy
+        behaviour for typical conversational responses.
+        """
+        if max_chars <= 0:
+            return [text]
+        text = text.strip()
+        if not text or len(text) <= max_chars:
+            return [text] if text else []
+
+        # Pass 1: clause boundaries (preserve the boundary char on the
+        # left chunk so the cadence stays natural).
+        clause_re = re.compile(r"([,;:]|--|—| -- )\s+")
+        parts: list[str] = []
+        cursor = 0
+        for m in clause_re.finditer(text):
+            end = m.end()
+            parts.append(text[cursor:end].strip())
+            cursor = end
+        if cursor < len(text):
+            parts.append(text[cursor:].strip())
+        if len(parts) == 1:
+            # No clause boundaries; fall through to word split.
+            parts = [text]
+
+        out: list[str] = []
+        for part in parts:
+            if not part:
+                continue
+            if len(part) <= max_chars:
+                out.append(part)
+                continue
+            # Pass 2: word boundaries. Greedily pack words into chunks
+            # of <= max_chars characters.
+            words = part.split()
+            current = ""
+            for w in words:
+                if not w:
+                    continue
+                # If a single word exceeds the cap (very long URL /
+                # alphanumeric ID the strip missed), force-slice it.
+                if len(w) > max_chars:
+                    if current:
+                        out.append(current)
+                        current = ""
+                    for i in range(0, len(w), max_chars):
+                        out.append(w[i:i + max_chars])
+                    continue
+                proposed = (current + " " + w).strip() if current else w
+                if len(proposed) > max_chars:
+                    if current:
+                        out.append(current)
+                    current = w
+                else:
+                    current = proposed
+            if current:
+                out.append(current)
+
+        return [p for p in out if p]
 
     def set_ack_cache(self, cache: Optional[PrecomputedAckClipCache]) -> None:
         """Wire a pre-computed ack clip cache.

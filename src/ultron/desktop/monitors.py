@@ -95,7 +95,23 @@ _ORDINAL_WORDS: dict[str, int] = {
 def enumerate_monitors() -> list[Monitor]:
     """List all connected monitors.
 
-    Returns monitors with primary first, then left-to-right by x.
+    2026-05-19 Issue 5 fix: sort purely by physical x position
+    (left-to-right). The previous primary-first ordering produced
+    a confusing index scheme: on a 3-monitor setup with the middle
+    monitor designated primary, "monitor 1" was the middle, "monitor
+    2" was the leftmost, "monitor 3" was the rightmost -- so a
+    user saying "open YouTube on monitor 2" or hearing "Opening on
+    monitor 2" expected the middle one but got the leftmost. Live-
+    session 2026-05-19: 'left monitor' resolved correctly to the
+    leftmost (via min-x) but the narration said "monitor 2", which
+    is the user's mental name for the MIDDLE one. Pure left-to-right
+    sort makes the index match physical position so the spoken
+    monitor number matches the user's mental model.
+
+    The ``is_primary`` flag is still preserved on every Monitor so
+    callers that specifically need the Windows-designated primary
+    can locate it; only the SORT ORDER changed.
+
     On enumeration failure, returns an empty list (fail-open).
     """
     try:
@@ -127,7 +143,9 @@ def enumerate_monitors() -> list[Monitor]:
     if not rows:
         return []
 
-    rows.sort(key=lambda m: (0 if m["is_primary"] else 1, m["rect"][0]))
+    # Pure left-to-right sort (was: primary-first then x). See Issue 5
+    # fix note above.
+    rows.sort(key=lambda m: (m["rect"][0], m["rect"][1]))
 
     monitors: list[Monitor] = []
     for idx, m in enumerate(rows):

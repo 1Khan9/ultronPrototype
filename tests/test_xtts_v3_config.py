@@ -685,11 +685,19 @@ def test_normalize_handles_windows_path_with_extension():
     assert "bar.py" in out
 
 
-def test_normalize_leaves_urls_untouched():
+def test_normalize_strips_urls_for_tts_safety():
+    """2026-05-19 Issue 1 fix: URLs that used to be preserved are now
+    stripped before TTS to keep the XTTS-v2 GPT context under the
+    4096-audio-token cap. A live session hit 4830 tokens on a search
+    response containing source URLs and the synth worker errored."""
     from ultron.tts.xtts_v3 import normalize_text_for_tts
     url = "https://example.com/path/to/page"
     out = normalize_text_for_tts(f"See {url} for details.")
-    assert url in out
+    assert url not in out
+    assert "https://" not in out
+    # The surrounding prose stays intelligible.
+    assert "See" in out
+    assert "for details" in out
 
 
 def test_normalize_leaves_bare_drive_letter_alone():
@@ -1145,3 +1153,160 @@ def test_normalize_engine_wiring_uses_spoken_form(monkeypatch, tmp_path):
     assert captured["body"] is not None
     assert "2 16 A M" in captured["body"]["text"]
     assert "a.m." not in captured["body"]["text"]
+
+
+# ---------------------------------------------------------------------------
+# 2026-05-19 Issue 1 fix: URL stripping + per-call length cap +
+# _split_for_synth helper.
+# ---------------------------------------------------------------------------
+
+
+from ultron.tts.xtts_v3 import normalize_text_for_tts, XttsV3Speech
+
+
+def test_normalize_strips_https_url():
+    out = normalize_text_for_tts(
+        "Visit https://www.time.gov/ for the current time."
+    )
+    assert "https://" not in out
+    assert "time.gov" not in out
+    assert "Visit" in out
+    assert "for the current time" in out
+
+
+def test_normalize_strips_multiple_urls():
+    out = normalize_text_for_tts(
+        "See https://a.com/foo and http://b.org/bar for details."
+    )
+    assert "https://" not in out
+    assert "http://" not in out
+    assert "a.com" not in out
+    assert "b.org" not in out
+    assert "See" in out
+    assert "and" in out
+    assert "for details" in out
+
+
+def test_normalize_strips_bare_www_url():
+    out = normalize_text_for_tts("Try www.example.com today.")
+    assert "www." not in out
+    assert "example.com" not in out
+    assert "Try" in out
+    assert "today" in out
+
+
+def test_normalize_strips_ftp_url():
+    out = normalize_text_for_tts(
+        "Files at ftp://files.example.org/pub/data are stale."
+    )
+    assert "ftp://" not in out
+    assert "files.example.org" not in out
+
+
+def test_normalize_url_strip_collapses_whitespace():
+    """After URL removal the surrounding spaces should not double up."""
+    out = normalize_text_for_tts(
+        "see https://x.com today"
+    )
+    assert "  " not in out
+    assert out.startswith("see")
+    assert out.endswith("today")
+
+
+def test_normalize_url_strip_preserves_non_url_text():
+    """Plain prose with no URLs must round-trip unchanged."""
+    text = "Hello world. This is a test sentence."
+    assert normalize_text_for_tts(text) == text
+
+
+def test_normalize_url_strip_does_not_eat_dotted_filename():
+    """``app.py`` / ``data.json`` style dotted-filename tokens must NOT
+    be stripped -- only URL-shaped tokens (http(s)://, ftp://, www.)
+    qualify."""
+    out = normalize_text_for_tts("Open app.py and check data.json.")
+    assert "app.py" in out
+    assert "data.json" in out
+
+
+# ----- _split_for_synth helper -----
+
+
+def test_split_for_synth_short_text_passes_through():
+    out = XttsV3Speech._split_for_synth("Hello world.", 240)
+    assert out == ["Hello world."]
+
+
+def test_split_for_synth_returns_empty_list_for_empty_input():
+    assert XttsV3Speech._split_for_synth("", 240) == []
+    assert XttsV3Speech._split_for_synth("   ", 240) == []
+
+
+def test_split_for_synth_zero_max_returns_unchanged():
+    """Defensive: a misconfigured cap (0 or negative) returns the
+    text unchanged rather than infinite-looping."""
+    out = XttsV3Speech._split_for_synth("Some text here.", 0)
+    assert out == ["Some text here."]
+
+
+def test_split_for_synth_clause_boundary():
+    text = "First clause, second clause, third clause."
+    out = XttsV3Speech._split_for_synth(text, max_chars=20)
+    # Each chunk must be <= 20 chars and together they must cover the
+    # original text (modulo whitespace + clause-boundary repositioning).
+    for chunk in out:
+        assert len(chunk) <= 20
+    # All clauses should still be referenced in the output
+    joined = " ".join(out)
+    assert "First clause" in joined
+    assert "second clause" in joined
+    assert "third clause" in joined
+
+
+def test_split_for_synth_word_boundary_when_no_clauses():
+    text = "one two three four five six seven eight nine ten eleven twelve"
+    out = XttsV3Speech._split_for_synth(text, max_chars=20)
+    for chunk in out:
+        assert len(chunk) <= 20
+    joined = " ".join(out)
+    assert "one" in joined
+    assert "twelve" in joined
+
+
+def test_split_for_synth_force_slices_oversize_word():
+    """A single token longer than max_chars (rare; usually a URL the
+    strip missed, or a long alphanumeric id) gets char-sliced so the
+    synth call still stays under the cap."""
+    long_word = "abcdefghijklmnopqrstuvwxyz" * 4  # 104 chars
+    text = f"prefix {long_word} suffix"
+    out = XttsV3Speech._split_for_synth(text, max_chars=20)
+    for chunk in out:
+        assert len(chunk) <= 20
+
+
+def test_split_for_synth_long_sentence_with_urls_after_strip():
+    """End-to-end: a typical pre-normaliser sentence with URLs gets
+    URL-stripped, then sub-split if still too long."""
+    raw = (
+        "See https://example.com/very/long/path/here and "
+        "https://another.com/another/path for additional details "
+        "about the policy and the latest updates."
+    )
+    normalised = normalize_text_for_tts(raw)
+    out = XttsV3Speech._split_for_synth(normalised, max_chars=40)
+    for chunk in out:
+        assert len(chunk) <= 40
+        assert "https://" not in chunk
+
+
+def test_xtts_v3_config_default_max_chars_per_synth_call():
+    cfg = XttsV3Config()
+    assert cfg.max_chars_per_synth_call == 240
+
+
+def test_xtts_v3_config_max_chars_per_synth_call_range_validation():
+    XttsV3Config(max_chars_per_synth_call=80)   # boundary low
+    XttsV3Config(max_chars_per_synth_call=1000)  # boundary high
+    with pytest.raises(Exception):
+        XttsV3Config(max_chars_per_synth_call=79)
+    with pytest.raises(Exception):
+        XttsV3Config(max_chars_per_synth_call=1001)

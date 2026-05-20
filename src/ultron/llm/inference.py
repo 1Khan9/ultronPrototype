@@ -117,6 +117,95 @@ _HARDENING_PREAMBLE = (
 )
 
 
+# 2026-05-19 Issue 2 fix: short-conversational-query RAG suppressor.
+# Greetings + acks have very little semantic signal, but bge-small
+# embeddings still cosine-match them to off-topic stored memory at
+# values that exceed the 0.6 ``rag_min_relevance`` threshold (live
+# session 2026-05-19: 'Say hello.' -> 200-char response about
+# Salesforce Agentforce pricing because a stale memory cosined high
+# enough to survive the filter). Suppressing RAG entirely on these
+# queries cuts the contamination at the source. Factual-question
+# stems ('what', 'how', 'who', etc.) are explicitly NOT suppressed
+# even when short, since "how much does a duck weigh" type questions
+# legitimately benefit from RAG context.
+_GREETING_RE = _re.compile(
+    r"^\s*(?:hi|hello|hey|yo|sup|hola|greetings|"
+    r"good\s+(?:morning|afternoon|evening|night)|"
+    r"say\s+(?:hello|hi|something|anything)|"
+    r"howdy|aloha)\b",
+    _re.IGNORECASE,
+)
+
+_SHORT_ACK_RE = _re.compile(
+    r"^\s*(?:thanks?|thank\s+you|ok(?:ay)?|sure|yes|no|yeah|yep|nope|"
+    r"cool|nice|got\s+it|sounds?\s+good|alright|right|fine|"
+    r"perfect|great|awesome|mhm+|uh\s*huh|mmm+|hmm+)\s*[.!?]?\s*$",
+    _re.IGNORECASE,
+)
+
+_FACTUAL_STEMS = frozenset({
+    "what", "when", "where", "who", "whose", "whom", "how", "why",
+    "which", "is", "are", "was", "were", "do", "does", "did",
+    "can", "could", "would", "should", "will", "tell", "explain",
+    "describe", "show", "give", "list", "find", "search", "open",
+    "play", "put", "move", "close", "launch", "start", "stop",
+    "create", "make", "build", "write", "fix", "debug", "run",
+    "switch", "change", "set", "configure",
+})
+
+
+def _is_short_conversational_query(
+    text: str, *, max_tokens: int = 4,
+) -> bool:
+    """Return True when ``text`` is a short greeting / ack that
+    shouldn't trigger RAG retrieval.
+
+    Three classes are detected:
+    * **Greeting** -- matches :data:`_GREETING_RE` ("hi", "hello",
+      "good morning", "say hello", etc.).
+    * **Ack** -- matches :data:`_SHORT_ACK_RE` ("thanks", "ok",
+      "cool", "got it", etc.) -- must be the entire utterance.
+    * **Short generic** -- tokens <= ``max_tokens`` AND the first
+      token is NOT a factual-question stem from
+      :data:`_FACTUAL_STEMS`. This catches things like "say
+      something" or "anything else" without snagging "what time
+      is it" or "how much does a duck weigh".
+
+    Empty / whitespace input also returns True (nothing to retrieve
+    for).
+
+    Pure function. Used by :meth:`LLMEngine._retrieve_rag_snippets`
+    as a pre-retrieval gate.
+    """
+    if not text:
+        return True
+    cleaned = text.strip()
+    if not cleaned:
+        return True
+    if _GREETING_RE.match(cleaned):
+        return True
+    if _SHORT_ACK_RE.match(cleaned):
+        return True
+    tokens = cleaned.split()
+    if len(tokens) <= max_tokens:
+        first = tokens[0].lower().rstrip("?,!.:;")
+        # Strip ``'s`` / ``s`` contractions so "what's" / "whens" /
+        # "where's" / "who's" still match their stems in the set.
+        if first.endswith("'s"):
+            first = first[:-2]
+        elif first.endswith("s") and len(first) > 2:
+            # Conservative: only strip trailing s for known stems that
+            # have a contracted form ("whens" / "wheres"). Plain words
+            # that end in s (e.g. "this") shouldn't be stripped.
+            for stem in ("when", "where", "what", "who", "how"):
+                if first == stem + "s":
+                    first = stem
+                    break
+        if first not in _FACTUAL_STEMS:
+            return True
+    return False
+
+
 def _sanitize_user_input(text: str) -> Tuple[str, List[str]]:
     """Neutralise tag-style prompt-injection markers in user input.
 
@@ -721,12 +810,34 @@ class LLMEngine:
         no verdict (or the flag off), falls back to the original
         single-pass ``retrieve`` -- byte-for-byte identical to today.
 
+        2026-05-19 Issue 2 fix: skip retrieval entirely for short
+        greetings / acks via :func:`_is_short_conversational_query`.
+        These queries have very little semantic signal and the
+        bge-small embeddings cosine-match them to off-topic stored
+        memory at values that exceed the 0.6 ``rag_min_relevance``
+        threshold, producing wildly off-topic responses (live session
+        2026-05-19: 'Say hello.' got a 200-char response about
+        Salesforce Agentforce pricing). Suppressing RAG here cuts the
+        contamination at the source. Gated on
+        ``memory.retrieval.skip_rag_for_short_queries`` (default True
+        as a net-benefit fix; opt out by setting False).
+
         Returns ``[]`` on failure or when memory is disabled. Logs a
         warning on retrieval failure but never raises.
         """
         if self._memory is None:
             return []
         mem_cfg = get_config().memory
+        retrieval_cfg = getattr(mem_cfg, "retrieval", None)
+        skip_short = bool(getattr(
+            retrieval_cfg, "skip_rag_for_short_queries", True,
+        )) if retrieval_cfg is not None else True
+        if skip_short and _is_short_conversational_query(user_message):
+            logger.debug(
+                "RAG suppressed for short conversational query: %r",
+                user_message[:60],
+            )
+            return []
         try:
             if gate_verdict is not None and hasattr(
                 self._memory, "retrieve_for_query",

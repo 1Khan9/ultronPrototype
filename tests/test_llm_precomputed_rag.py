@@ -140,10 +140,13 @@ def test_precomputed_empty_list_means_no_rag():
 
 
 def test_none_falls_back_to_internal_retrieve():
-    """When the kwarg is not passed, legacy behaviour: retrieve internally."""
+    """When the kwarg is not passed, legacy behaviour: retrieve internally.
+
+    Uses a factual question so the 2026-05-19 short-query RAG gate
+    (which suppresses retrieval on greetings) doesn't fire."""
     eng, memory = _build_engine()
 
-    msgs = eng._build_messages("hi")  # no precomputed
+    msgs = eng._build_messages("what is the meaning of life")  # no precomputed
 
     user_msg = msgs[-1]
     # Stored snippets DO land in the message:
@@ -175,11 +178,14 @@ def test_suppress_wins_over_precomputed():
 
 
 def test_retrieve_rag_snippets_public_proxies_private():
-    """The public method exists and calls through to the private one."""
+    """The public method exists and calls through to the private one.
+
+    Uses a factual-stem query so the short-query RAG gate doesn't
+    pre-empt the retrieve."""
     eng, memory = _build_engine()
 
     # Spy on the underlying memory retrieve.
-    snippets = eng.retrieve_rag_snippets("anything")
+    snippets = eng.retrieve_rag_snippets("what is the meaning of life")
 
     assert memory.retrieve_calls == 1
     assert isinstance(snippets, list)
