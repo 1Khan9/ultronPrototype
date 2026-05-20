@@ -703,13 +703,14 @@ tts:
     model_path: "models/kokoro"
     voice: "am_michael"            # stock American English male voice
     device: "cpu"                  # zero VRAM; ~realtime synthesis
-    # 2026-05-20 round 8d cadence tune: 1.0 -> 1.15. Kokoro's native
-    # speed multiplier (matches XTTS production value). Audio plays
-    # ~15% faster without slurring; the model adjusts prosody at
-    # synthesis time rather than time-stretching the output, so voice
-    # character is preserved. Safe range roughly 0.8-1.3 before
-    # naturalness degrades. Schema-bounded [0.5, 2.0].
-    speed: 1.15
+    # 2026-05-20 round 8d -> 8e: 1.0 -> 1.15 -> 1.3. Kokoro's native
+    # speed multiplier. Audio plays ~30% faster than native cadence.
+    # 1.3 sits at the edge of the documented "before naturalness
+    # degrades" range -- if any slur surfaces in live use, back off
+    # to 1.25 or 1.2. The model adjusts prosody at synthesis time so
+    # voice character is preserved (no time-stretching artifacts).
+    # Schema-bounded [0.5, 2.0].
+    speed: 1.3
     apply_runtime_filter: false    # no v3 pedalboard pass; stock voice
     filter_preset: "v3_heavy"      # unused while apply_runtime_filter=false
 
