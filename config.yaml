@@ -593,7 +593,12 @@ tts:
   sentence_flush_chars: ".!?\n"   # only strong terminators trigger Piper synthesis
   inter_sentence_pause_ms: 250
   piper_length_scale: 1.15        # >1.0 = slower / more deliberate
-  pause_ms: 180                    # silence between consecutive sentence clips
+  # 2026-05-20 round 8d: 180 -> 100 ms. Snappier inter-sentence
+  # cadence. With the Kokoro producer-consumer pipeline, this is
+  # literally the only silence between consecutive sentences (synth
+  # of N+1 already overlaps playback of N). 100 ms reads as a
+  # natural breath without dragging.
+  pause_ms: 100                    # silence between consecutive sentence clips
   edge_fade_ms: 4                  # short fade prevents clicks at clip boundaries
   # 2026-05-09 latency hot-fix: split Piper and RVC into two worker
   # stages connected by a bounded queue. With single-worker (legacy
@@ -697,7 +702,13 @@ tts:
     model_path: "models/kokoro"
     voice: "am_michael"            # stock American English male voice
     device: "cpu"                  # zero VRAM; ~realtime synthesis
-    speed: 1.0                     # native cadence
+    # 2026-05-20 round 8d cadence tune: 1.0 -> 1.15. Kokoro's native
+    # speed multiplier (matches XTTS production value). Audio plays
+    # ~15% faster without slurring; the model adjusts prosody at
+    # synthesis time rather than time-stretching the output, so voice
+    # character is preserved. Safe range roughly 0.8-1.3 before
+    # naturalness degrades. Schema-bounded [0.5, 2.0].
+    speed: 1.15
     apply_runtime_filter: false    # no v3 pedalboard pass; stock voice
     filter_preset: "v3_heavy"      # unused while apply_runtime_filter=false
 

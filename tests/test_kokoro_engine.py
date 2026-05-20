@@ -622,6 +622,130 @@ def test_speak_stream_stop_event_interrupts(monkeypatch):
     # No assertions on output -- just confirm no exceptions.
 
 
+# ---------------------------------------------------------------------------
+# Ack-cache wiring (2026-05-20 round 8d)
+# ---------------------------------------------------------------------------
+
+
+def test_set_ack_cache_attaches_and_logs(caplog):
+    """`set_ack_cache(cache)` stores the cache and logs phrase count."""
+    import logging
+    from ultron.tts.precomputed_ack import PrecomputedAckClipCache
+
+    cache = PrecomputedAckClipCache(["Mm.", "Right.", "Considering."])
+    engine = KokoroSpeech(model_path=Path("/stub"))
+    with caplog.at_level(logging.INFO, logger="ultron.tts.kokoro"):
+        engine.set_ack_cache(cache)
+    assert engine._ack_cache is cache
+    # Expect a log line mentioning the phrase count.
+    assert any("3" in rec.message for rec in caplog.records)
+
+
+def test_set_ack_cache_none_detaches():
+    """Passing `None` detaches the cache (used after server restart)."""
+    from ultron.tts.precomputed_ack import PrecomputedAckClipCache
+
+    engine = KokoroSpeech(model_path=Path("/stub"))
+    cache = PrecomputedAckClipCache(["Mm."])
+    engine.set_ack_cache(cache)
+    assert engine._ack_cache is cache
+    engine.set_ack_cache(None)
+    assert engine._ack_cache is None
+
+
+def test_synthesize_cache_hit_skips_kpipeline():
+    """Cache hit returns the stored clip without touching the KPipeline."""
+    from ultron.tts.precomputed_ack import PrecomputedAckClipCache
+
+    cached_pcm = np.array([1, 2, 3, 4], dtype=np.int16)
+    cached_sr = 24000
+    cache = PrecomputedAckClipCache(["Mm."])
+    # Manually populate (bypass prewarm) -- the cache stores keyed by
+    # stripped text.
+    cache._clips = {"Mm.": (cached_pcm, cached_sr)}
+
+    pipeline_calls = []
+
+    class _ShouldNotBeCalled:
+        def __call__(self, text, *, voice, speed):
+            pipeline_calls.append(text)
+            yield ("g", "p", np.full(100, 0.05, dtype=np.float32))
+
+    engine = KokoroSpeech(model_path=Path("/stub"), voice="am_michael")
+    engine._model = _ShouldNotBeCalled()
+    engine._loaded = True
+    engine.set_ack_cache(cache)
+
+    pcm, sr = engine._synthesize("Mm.")
+    # Cache hit -- KPipeline not invoked.
+    assert pipeline_calls == []
+    # Returned clip is the cached one.
+    assert sr == cached_sr
+    assert (pcm == cached_pcm).all()
+
+
+def test_synthesize_cache_miss_falls_through_to_kpipeline():
+    """Cache miss runs the live KPipeline path unchanged."""
+    from ultron.tts.precomputed_ack import PrecomputedAckClipCache
+
+    cache = PrecomputedAckClipCache(["Right."])
+    cache._clips = {
+        "Right.": (np.array([99], dtype=np.int16), 24000),
+    }
+    engine = _make_engine_with_fake_pipeline(audio_samples=1200)
+    engine.set_ack_cache(cache)
+
+    # Text NOT in the cache.
+    pcm, sr = engine._synthesize("This is not cached.")
+    assert engine._model.last_text == "This is not cached."
+    assert pcm.size == 1200
+    assert sr == 24000
+
+
+def test_synthesize_with_no_cache_attached_uses_kpipeline():
+    """Pre-cache-wiring behaviour preserved: no cache -> live path."""
+    engine = _make_engine_with_fake_pipeline()
+    assert engine._ack_cache is None
+    pcm, sr = engine._synthesize("Hello world.")
+    assert engine._model.last_text == "Hello world."
+    assert pcm.dtype == np.int16
+
+
+def test_synthesize_cache_hit_skips_apply_runtime_filter():
+    """Cached clip is returned verbatim -- runtime filter does NOT
+    re-run on the cached path (the cache stores already-filtered audio)."""
+    from ultron.tts.precomputed_ack import PrecomputedAckClipCache
+
+    cache = PrecomputedAckClipCache(["Mm."])
+    sentinel_pcm = np.array([42, 43, 44], dtype=np.int16)
+    cache._clips = {"Mm.": (sentinel_pcm, 24000)}
+
+    engine = _make_engine_with_fake_pipeline()
+    engine.apply_runtime_filter = True   # would normally run filter
+    engine.set_ack_cache(cache)
+
+    pcm, _sr = engine._synthesize("Mm.")
+    # Filter would mutate the values; verify the cached clip is
+    # returned bit-for-bit instead.
+    assert (pcm == sentinel_pcm).all()
+
+
+def test_synthesize_cache_uses_stripped_key():
+    """The orchestrator's flow strips text before calling _synthesize;
+    the cache should be keyed by the same stripped form."""
+    from ultron.tts.precomputed_ack import PrecomputedAckClipCache
+
+    cache = PrecomputedAckClipCache(["Mm."])
+    cache._clips = {"Mm.": (np.array([7], dtype=np.int16), 24000)}
+    engine = _make_engine_with_fake_pipeline()
+    engine.set_ack_cache(cache)
+
+    # _synthesize is called with stripped text by _run_synth_loop;
+    # call with the stripped form directly here.
+    pcm, _sr = engine._synthesize("Mm.")
+    assert (pcm == np.array([7], dtype=np.int16)).all()
+
+
 def test_speak_stream_fail_open_on_missing_sounddevice(monkeypatch):
     """If sounddevice import fails the call returns cleanly without raising."""
     import builtins

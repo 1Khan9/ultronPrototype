@@ -157,6 +157,13 @@ class KokoroSpeech:
         # 2026-05-15 latency parity: pre-open output stream slot.
         self._preopened_stream = None
         self._preopened_lock = threading.Lock()
+        # 2026-05-20 round 8d: pre-computed ack clip cache slot. The
+        # orchestrator's ``_kick_off_ack_clip_prewarm`` calls
+        # ``set_ack_cache`` after warmup; ``_synthesize`` checks here
+        # before running the live KPipeline call so cached "Mm." /
+        # "Right." / "Querying external sources." return in ~5 ms
+        # instead of ~200-400 ms of CPU synth.
+        self._ack_cache = None
         # Lazy import inside the synth path so a missing kokoro
         # install doesn't crash at module import time -- callers can
         # construct the engine and discover the load failure at the
@@ -462,11 +469,54 @@ class KokoroSpeech:
             worker.join(timeout=2.0)
 
     # ------------------------------------------------------------------
+    # Ack-cache wiring (2026-05-20 round 8d)
+    # ------------------------------------------------------------------
+
+    def set_ack_cache(self, cache) -> None:
+        """Wire a pre-computed ack clip cache.
+
+        Mirror of :meth:`XttsV3Speech.set_ack_cache` -- once installed,
+        :meth:`_synthesize` checks the cache before invoking the live
+        KPipeline call. Cache hits return the stored ``(pcm, sr)``
+        clip directly (~5 ms lookup), skipping ~200-400 ms of CPU
+        synth + optional v3 filter. Pass ``None`` to detach.
+
+        The orchestrator wires this from ``_kick_off_ack_clip_prewarm``
+        after Kokoro warmup so cached clips are byte-identical to the
+        live path (same engine settings, same voice, same runtime
+        filter state).
+        """
+        self._ack_cache = cache
+        if cache is not None:
+            logger.info(
+                "Kokoro: ack clip cache attached (%d phrases enrolled)",
+                len(cache.phrases),
+            )
+
+    # ------------------------------------------------------------------
     # Internal: synth + playback
     # ------------------------------------------------------------------
 
     def _synthesize(self, text: str) -> Clip:
-        """Run Kokoro inference on a sentence and return int16 PCM."""
+        """Run Kokoro inference on a sentence and return int16 PCM.
+
+        2026-05-20 round 8d: ack-cache check happens BEFORE the
+        KPipeline call so cached phrases (Mm. / Right. / Considering. /
+        Querying external sources. / etc.) return their pre-rendered
+        clip in ~5 ms. Cache miss falls through to the live path
+        unchanged.
+        """
+        # Cache-hit fast path. ``getattr`` keeps the engine
+        # instantiable in unit-test fixtures that bypass __init__.
+        ack_cache = getattr(self, "_ack_cache", None)
+        if ack_cache is not None:
+            cached = ack_cache.get(text)
+            if cached is not None:
+                logger.debug(
+                    "Kokoro: ack-cache hit for %r", text[:40],
+                )
+                return cached
+
         self._ensure_loaded()
         if self._model is None:
             raise KokoroEngineLoadError("Kokoro model is None after load")
