@@ -1047,6 +1047,7 @@ class LLMEngine:
         gate_verdict=None,
         suppress_memory_context: bool = False,
         precomputed_rag_snippets: Optional[List] = None,
+        history_user_message: Optional[str] = None,
     ) -> str:
         """Blocking generation. Returns the full response string.
 
@@ -1078,6 +1079,18 @@ class LLMEngine:
         web-search-augmented calls where the search results are the
         ground truth and unrelated past conversation only contaminates
         the response tone/topic.
+
+        ``history_user_message`` (2026-05-20 round 7 contamination fix):
+        when set, this string is what gets persisted to memory instead
+        of ``user_message``. Used when the caller passed a HEAVILY
+        AUGMENTED prompt (search-augmented context, brevity hints,
+        confidence markers, etc.) to the LLM but wants the BARE user
+        utterance recorded in conversation memory. Critical for RAG
+        sanity: storing 'User question: high. Fresh information: ...'
+        as a user turn means a future query for 'high' cosine-matches
+        the augmented prompt and re-injects it as 'relevant earlier
+        context'. Storing just 'high' avoids the loop. Default ``None``
+        preserves the legacy behaviour (user_message == history entry).
         """
         messages = self._build_messages(
             user_message,
@@ -1130,7 +1143,11 @@ class LLMEngine:
             )
         except Exception:
             pass
-        self._record_turn(user_message, text)
+        # 2026-05-20 round 7: record the BARE user utterance in
+        # memory, not the augmented LLM prompt. See history_user_message
+        # docstring above for the contamination-loop rationale.
+        recorded_user = history_user_message if history_user_message is not None else user_message
+        self._record_turn(recorded_user, text)
         return text
 
     def generate_isolated(
@@ -1267,6 +1284,7 @@ class LLMEngine:
         suppress_memory_context: bool = False,
         precomputed_rag_snippets: Optional[List] = None,
         record_history: bool = True,
+        history_user_message: Optional[str] = None,
     ) -> Iterator[str]:
         """Yield response tokens as they arrive.
 
@@ -1282,6 +1300,20 @@ class LLMEngine:
         the caller. Used by the orchestrator's speculative-LLM path
         so a speculation that gets invalidated (user resumed speaking)
         doesn't leak an orphan record into history.
+
+        ``history_user_message`` (2026-05-20 round 7 contamination fix):
+        when set, this string is what gets persisted to memory instead
+        of ``user_message``. Use this when ``user_message`` is a
+        HEAVILY AUGMENTED prompt (search-augmented context, brevity
+        hints, confidence markers, etc.) -- the LLM needs the
+        augmented version for grounding, but memory should record the
+        bare user utterance. Without this kwarg, RAG retrieval on a
+        future similar query cosine-matches the stored augmented
+        prompt and re-injects it as 'relevant earlier context',
+        producing a self-reinforcing contamination loop (live session
+        2026-05-20: 'high.' retrieved a prior stored 'User question:
+        ... high. Fresh information from web search: ...' turn).
+        Default ``None`` preserves legacy behaviour.
 
         The full response is appended to history once the stream completes
         normally; on cancel, partial output is recorded so the model
@@ -1356,8 +1388,17 @@ class LLMEngine:
                 yield visible
         finally:
             full = "".join(accumulated).strip()
+            # 2026-05-20 round 7: record the BARE user utterance, not
+            # the augmented prompt that went to the LLM. Default keeps
+            # legacy behaviour (history_user_message=None -> use the
+            # full augmented input, which is what older callers expect).
+            recorded_user = (
+                history_user_message
+                if history_user_message is not None
+                else user_message
+            )
             if full and completed and not canceled and record_history:
-                self._record_turn(user_message, full)
+                self._record_turn(recorded_user, full)
             elif full and completed and not canceled and not record_history:
                 # 2026-05-18 latency pass 3 (Phase 3): caller will commit
                 # via :meth:`record_completed_turn` once it knows the

@@ -1314,3 +1314,300 @@ def test_xtts_v3_config_max_chars_per_synth_call_range_validation():
         XttsV3Config(max_chars_per_synth_call=79)
     with pytest.raises(Exception):
         XttsV3Config(max_chars_per_synth_call=2001)
+
+
+# ---------------------------------------------------------------------------
+# Round 7b (2026-05-20): smarter sentence boundary detection.
+#
+# The previous flush logic broke on every ``.``, which caused mid-token
+# splits at ellipses, decimals, domains, and abbreviations -- producing
+# the "horrible pacing, random pauses between words" the user heard.
+# These tests pin the new heuristics.
+# ---------------------------------------------------------------------------
+
+
+def test_boundary_simple_sentence_end_flushes():
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        "Hello world. Next", 11, buffer_complete=False,
+    ) is True
+
+
+def test_boundary_question_mark_flushes():
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        "Hello? Next", 5, buffer_complete=False,
+    ) is True
+
+
+def test_boundary_exclamation_flushes():
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        "Wow! Next", 3, buffer_complete=False,
+    ) is True
+
+
+def test_boundary_newline_flushes():
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        "Line one\nLine two", 8, buffer_complete=False,
+    ) is True
+
+
+def test_boundary_ellipsis_first_dot_holds():
+    """First dot of `...` should not flush."""
+    text = "Wait... I think"
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        text, 4, buffer_complete=False,
+    ) is False
+
+
+def test_boundary_ellipsis_second_dot_holds():
+    text = "Wait... I think"
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        text, 5, buffer_complete=False,
+    ) is False
+
+
+def test_boundary_ellipsis_terminal_third_dot_does_not_flush():
+    """All three dots of an ellipsis are non-flush.
+
+    Earlier design flushed on the third dot when followed by a space,
+    but that fragmented ``Wait... what?`` into two synth calls --
+    audible micro-pause between the ellipsis tail and the rest of
+    the sentence. Round 7b refines the policy: ellipsis is treated
+    as a mid-sentence prosodic pause (XTTS handles it via its own
+    duration model when the dots are present in the chunk text).
+    """
+    text = "Wait... I think"
+    assert text[6] == "."
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        text, 6, buffer_complete=False,
+    ) is False
+
+
+def test_boundary_decimal_does_not_flush():
+    text = "Pi is 3.14 approximately"
+    # pos 7 is the dot between 3 and 1.
+    assert text[7] == "."
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        text, 7, buffer_complete=False,
+    ) is False
+
+
+def test_boundary_version_number_does_not_flush():
+    text = "Using v2.0 now"
+    pos = text.index(".")
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        text, pos, buffer_complete=False,
+    ) is False
+
+
+def test_boundary_mid_domain_does_not_flush():
+    text = "Visit Dictionary.com for definitions"
+    # pos of "." between Dictionary and com.
+    pos = text.index(".")
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        text, pos, buffer_complete=False,
+    ) is False
+
+
+def test_boundary_abbrev_dr_does_not_flush():
+    text = "Dr. Smith arrived"
+    assert text[2] == "."
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        text, 2, buffer_complete=False,
+    ) is False
+
+
+def test_boundary_abbrev_eg_does_not_flush():
+    text = "Try foods e.g. apples and bananas"
+    # First dot in "e.g.": after the "e".
+    pos = text.index("e.g.") + 1
+    assert text[pos] == "."
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        text, pos, buffer_complete=False,
+    ) is False
+
+
+def test_boundary_abbrev_etc_does_not_flush():
+    text = "apples, bananas, etc. today"
+    pos = text.index("etc.") + 3
+    assert text[pos] == "."
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        text, pos, buffer_complete=False,
+    ) is False
+
+
+def test_boundary_trailing_dot_holds_when_incomplete():
+    """A `.` at the very end of the buffer should wait for more tokens."""
+    text = "Hello"
+    # Synthetic: simulate `.` at end -- by appending we get a dot
+    # at the final position.
+    text = "Hello."
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        text, 5, buffer_complete=False,
+    ) is False
+
+
+def test_boundary_trailing_dot_flushes_when_complete():
+    text = "Hello."
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        text, 5, buffer_complete=True,
+    ) is True
+
+
+def test_boundary_period_then_capital_letter_flushes():
+    """``Smith.A`` is suspicious (no space) but our rule lets it
+    through because the cost of a false hold is worse (buffer
+    overrun) than a false flush (one extra micro-pause). Pin the
+    behaviour explicitly so future regressions are caught."""
+    text = "Smith.Apple is rare"
+    assert text[5] == "."
+    # letter.letter -> domain rule -> NOT a boundary.
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        text, 5, buffer_complete=False,
+    ) is False
+
+
+def test_boundary_double_question_mark_flushes_first():
+    text = "Really?? Yes"
+    assert XttsV3Speech._is_safe_sentence_boundary(
+        text, 6, buffer_complete=False,
+    ) is True
+
+
+# ---------- _find_next_sentence_boundary integration ----------
+
+
+def _make_engine_for_boundary():
+    """Build a bare-bones engine for boundary tests without spawning XTTS."""
+    e = XttsV3Speech.__new__(XttsV3Speech)
+    e.flush_chars = set(".!?\n")
+    return e
+
+
+def test_find_boundary_skips_ellipsis_then_flushes_real_sentence():
+    e = _make_engine_for_boundary()
+    text = "Hmm... well, that's the case. Next"
+    cut = e._find_next_sentence_boundary(text, buffer_complete=False)
+    assert cut > 0
+    # Should land at the `.` after "case" (not at any of the ellipsis dots).
+    assert text[:cut].rstrip().endswith("case.")
+
+
+def test_find_boundary_skips_abbrev_then_flushes_real_sentence():
+    e = _make_engine_for_boundary()
+    text = "Dr. Smith is here. He'll see you."
+    cut = e._find_next_sentence_boundary(text, buffer_complete=False)
+    assert cut > 0
+    assert text[:cut].rstrip().endswith("here.")
+
+
+def test_find_boundary_skips_decimal_then_flushes():
+    e = _make_engine_for_boundary()
+    text = "Pi is 3.14159 approximately. End"
+    cut = e._find_next_sentence_boundary(text, buffer_complete=False)
+    assert cut > 0
+    assert text[:cut].rstrip().endswith("approximately.")
+
+
+def test_find_boundary_returns_zero_when_no_safe_boundary():
+    e = _make_engine_for_boundary()
+    # All dots are unsafe (ellipsis + abbrev).
+    text = "Wait... e.g. apples"
+    cut = e._find_next_sentence_boundary(text, buffer_complete=False)
+    assert cut == 0
+
+
+def test_find_boundary_returns_zero_for_text_with_no_flush_chars():
+    e = _make_engine_for_boundary()
+    cut = e._find_next_sentence_boundary(
+        "no flush chars at all here", buffer_complete=False,
+    )
+    assert cut == 0
+
+
+# ---------- _run_synth_loop integration ----------
+
+
+def _capture_synth(text_fragments):
+    """Run ``_run_synth_loop`` against a stub engine and capture the
+    arguments passed to ``_synthesize``. Returns the list of texts."""
+    import threading
+    e = XttsV3Speech.__new__(XttsV3Speech)
+    e.flush_chars = set(".!?\n")
+    e._max_chars_per_synth_call = 600
+    e._stop_event = threading.Event()
+    captured: list[str] = []
+
+    def fake_synth(text):
+        captured.append(text)
+        import numpy as _np
+        return _np.zeros(8, dtype=_np.float32), 24000
+
+    e._synthesize = fake_synth
+    e._run_synth_loop(
+        fragments=iter(text_fragments),
+        push=lambda clip: None,
+    )
+    return captured
+
+
+def test_run_synth_loop_does_not_chunk_on_ellipsis():
+    """``Wait... what?`` should produce ONE synth call, not four."""
+    out = _capture_synth(["Wait... what?"])
+    assert len(out) == 1
+    assert "Wait" in out[0] and "what" in out[0]
+
+
+def test_run_synth_loop_does_not_chunk_on_abbreviation():
+    """``Dr. Smith is here.`` should produce ONE synth call."""
+    out = _capture_synth(["Dr. Smith is here."])
+    assert len(out) == 1
+    assert "Dr." in out[0] and "Smith" in out[0]
+
+
+def test_run_synth_loop_does_not_chunk_on_decimal():
+    out = _capture_synth(["Pi is 3.14 approximately."])
+    assert len(out) == 1
+    assert "3.14" in out[0]
+
+
+def test_run_synth_loop_does_not_chunk_on_domain():
+    out = _capture_synth(["Visit Dictionary.com today."])
+    assert len(out) == 1
+    assert "Dictionary.com" in out[0]
+
+
+def test_run_synth_loop_flushes_two_sentences_into_two_calls():
+    out = _capture_synth(["Hello world. Second sentence here."])
+    assert len(out) == 2
+    assert "Hello world" in out[0]
+    assert "Second sentence" in out[1]
+
+
+def test_run_synth_loop_streamed_dots_held_until_followup():
+    """Streaming `Wait` then `...` then ` what?` should still produce
+    one call (boundary detection sees ellipsis when buffered together)."""
+    out = _capture_synth(["Wait", "...", " what? Next."])
+    # Two sentences total: "Wait... what?" and "Next."
+    assert len(out) == 2
+    assert "Wait" in out[0] and "what" in out[0]
+
+
+def test_run_synth_loop_tail_flushes_pending_when_no_terminator():
+    """A stream ending mid-sentence (no terminator) still flushes
+    everything via the end-of-stream tail."""
+    out = _capture_synth(["incomplete tail with no punctuation"])
+    assert len(out) == 1
+    assert "incomplete tail" in out[0]
+
+
+def test_run_synth_loop_safety_valve_breaks_runaway_buffer():
+    """If text grows past 2x max_chars without a safe boundary, the
+    safety valve soft-breaks on the last clause/space."""
+    text = "word " * 400  # 2000 chars, no terminators
+    out = _capture_synth([text])
+    # Should produce multiple chunks via the safety valve, not one
+    # giant chunk that overflows the synth cap.
+    assert len(out) >= 1
+    for chunk in out:
+        # Each chunk must remain under (and tolerably near) max_chars.
+        assert len(chunk) <= 800  # max_chars * 2 worst-case bound

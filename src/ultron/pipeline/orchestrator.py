@@ -3260,9 +3260,14 @@ class Orchestrator:
                 logger, "rag:collected",
                 snippet_count=len(snippets) if snippets else 0,
             )
+            # 2026-05-20 round 7: store the BARE user_text in memory
+            # (not the brevity-hinted prompt); see history_user_message
+            # docstring on LLMEngine.generate_stream for the
+            # contamination-loop rationale.
             yield from self.llm.generate_stream(
                 apply_brevity_hint(user_text),
                 precomputed_rag_snippets=snippets,
+                history_user_message=user_text,
             )
             return
 
@@ -3299,9 +3304,11 @@ class Orchestrator:
                 if ack:
                     yield ack + " "
                 snippets = self._collect_rag_future(rag_future)
+                # Round 7: bare user_text recorded in memory.
                 yield from self.llm.generate_stream(
                     apply_brevity_hint(user_text),
                     precomputed_rag_snippets=snippets,
+                    history_user_message=user_text,
                 )
                 return
 
@@ -3370,10 +3377,18 @@ class Orchestrator:
             # V1-gap A2: thread the verdict through so multi-pass
             # retrieval activates (when configured + categories present).
             snippets = self._collect_rag_future(rag_future)
+            # 2026-05-20 round 7: store the BARE user_text in memory.
+            # The augmented_text carries '[Confidence: ...]' / brevity-
+            # hint markers that should NOT be persisted as the user's
+            # turn -- doing so makes RAG retrieve them later as
+            # "relevant earlier context", producing a contamination
+            # loop. The LLM still receives the augmented text for
+            # grounding.
             yield from self.llm.generate_stream(
                 augmented_text,
                 gate_verdict=verdict,
                 precomputed_rag_snippets=snippets,
+                history_user_message=user_text,
             )
             return
 
@@ -3388,10 +3403,31 @@ class Orchestrator:
                 rag_future.cancel()
             except Exception:
                 pass
-        yield from self._search_augmented_tokens(augmented_text, verdict)
+        # 2026-05-20 round 7: pass the bare user_text through so the
+        # search-augmented branch can record it in memory (not the
+        # multi-thousand-char augmented prompt which was the
+        # contamination root cause in the live 2026-05-20 session).
+        yield from self._search_augmented_tokens(
+            augmented_text, verdict, bare_user_text=user_text,
+        )
 
-    def _search_augmented_tokens(self, user_text: str, verdict):
+    def _search_augmented_tokens(
+        self,
+        user_text: str,
+        verdict,
+        bare_user_text: Optional[str] = None,
+    ):
         """Yield ack phrase + search-augmented LLM tokens.
+
+        ``user_text`` is the augmented prompt body passed to the LLM
+        (carries brevity / confidence markers + search instructions).
+        ``bare_user_text`` is the original user utterance -- when
+        provided, it is what gets persisted to conversation memory
+        via ``history_user_message``. This prevents the multi-thousand-
+        char augmented prompt body (with "[Confidence: ...]" markers
+        and search-result instructions) from being stored and then
+        retrieved by RAG as "relevant earlier context" -- the
+        contamination loop observed in the 2026-05-20 live session.
 
         Order of operations (2026-05-09 refinement):
           1. Yield ack token FIRST so the TTS pipeline starts speaking
@@ -3455,7 +3491,10 @@ class Orchestrator:
                     "results. Answer from your existing knowledge and be "
                     "explicit about uncertainty if relevant.)"
                 )
-                yield from self.llm.generate_stream(fallback_query)
+                yield from self.llm.generate_stream(
+                    fallback_query,
+                    history_user_message=bare_user_text,
+                )
                 return
 
             self._last_search_payload = payload
@@ -3486,7 +3525,10 @@ class Orchestrator:
                 "topics from past turns. Stay in character. Be concise. "
                 "End the response when you have answered the question."
             )
-            yield from self.llm.generate_stream(augmented)
+            yield from self.llm.generate_stream(
+                augmented,
+                history_user_message=bare_user_text,
+            )
         finally:
             pool.shutdown(wait=False)
 

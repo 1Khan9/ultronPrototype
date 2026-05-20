@@ -41,7 +41,7 @@ import urllib.error
 import urllib.request
 import wave
 from pathlib import Path
-from typing import Callable, Iterable, NamedTuple, Optional, Tuple
+from typing import Callable, ClassVar, Iterable, NamedTuple, Optional, Tuple
 
 import numpy as np
 import sounddevice as sd
@@ -1119,59 +1119,194 @@ class XttsV3Speech:
     # Internals
     # ------------------------------------------------------------------
 
+    # Common English abbreviations that end with `.` but do NOT mark
+    # a sentence boundary. Lower-cased; the boundary check normalises
+    # before lookup. Kept conservative -- a missed abbreviation
+    # produces an early flush (audible micro-pause), while a false
+    # positive HOLDS too much text and risks an overrun. So we only
+    # list abbreviations confidently used mid-sentence.
+    _ABBREVIATIONS: ClassVar[frozenset[str]] = frozenset({
+        "mr", "mrs", "ms", "dr", "st", "jr", "sr", "fr",
+        "vs", "etc", "eg", "ie", "cf", "al", "esp",
+        "inc", "co", "ltd", "corp", "llc",
+        "ave", "blvd", "rd", "pkwy", "hwy",
+        "no", "nos",
+        "approx", "vol", "ed", "eds", "rev", "ref",
+    })
+
+    @classmethod
+    def _is_safe_sentence_boundary(
+        cls, text: str, pos: int, *, buffer_complete: bool,
+    ) -> bool:
+        """Return True if ``text[pos]`` is a flushable sentence end.
+
+        Rejects mid-token periods that would otherwise fragment the
+        audio (ellipsis, decimals, domains, common abbreviations).
+        ``buffer_complete`` should be True only when called from the
+        tail-flush at end-of-stream so trailing `.` is treated as
+        a real sentence end rather than "wait for more tokens".
+
+        Round 7b (2026-05-20): introduced to stop ``.`` after
+        ``Dictionary``, ``e.g``, ``3``, ``v2``, etc. from triggering
+        a flush. Previously the entire stream got chopped into 3-6
+        sub-clips per sentence, each carrying 200 ms of v3-filter
+        tail silence -- the cause of the "horrible pacing, random
+        pauses between words" the user reported.
+        """
+        ch = text[pos]
+        n = len(text)
+        if ch == "\n":
+            return True
+        if ch in "!?":
+            # `!?` are unambiguous. Note: `??` or `!!` still trigger
+            # on the first one; the post-flush remainder starts with
+            # the second char, which we treat as a 1-char "sentence"
+            # -- harmless, gets stripped.
+            return True
+        if ch != ".":
+            return False
+        # Ellipsis suppression: don't flush mid-ellipsis (next is `.`)
+        # nor at the trailing dot of an ellipsis (prev is `.`).
+        if pos + 1 < n and text[pos + 1] == ".":
+            return False
+        if pos > 0 and text[pos - 1] == ".":
+            return False
+        # Acronym continuation: pattern "L.L." where L is a letter --
+        # e.g. "e.g.", "i.e.", "U.S.", "U.K.", "Ph.D.". The current `.`
+        # closes a single-letter token whose predecessor is also `.`,
+        # which marks it as part of an abbreviation chain that should
+        # not break the sentence.
+        if (
+            pos >= 2
+            and text[pos - 2] == "."
+            and text[pos - 1].isalpha()
+        ):
+            return False
+        # Decimal: digit.digit (e.g. "3.14"). Reject.
+        if (
+            pos > 0
+            and text[pos - 1].isdigit()
+            and pos + 1 < n
+            and text[pos + 1].isdigit()
+        ):
+            return False
+        # Mid-domain: letter.letter ("Dictionary.com"). Reject.
+        if (
+            pos > 0
+            and text[pos - 1].isalpha()
+            and pos + 1 < n
+            and text[pos + 1].isalpha()
+        ):
+            return False
+        # Trailing `.` with no next char: wait for more unless we're
+        # at end of stream.
+        if pos + 1 >= n:
+            return buffer_complete
+        next_ch = text[pos + 1]
+        if next_ch.isspace():
+            # Walk back over the preceding letter run -- if it's a
+            # known abbreviation, suppress the flush.
+            start = pos
+            while start > 0 and text[start - 1].isalpha():
+                start -= 1
+            token = text[start:pos].lower()
+            if token and token in cls._ABBREVIATIONS:
+                return False
+            return True
+        # Anything else (e.g. "U.S.A." mid-token) -- be permissive,
+        # let it flush. Worst case is one extra micro-pause, not a
+        # context overflow.
+        return True
+
+    def _find_next_sentence_boundary(
+        self, text: str, *, buffer_complete: bool,
+    ) -> int:
+        """Return position+1 of the next safe boundary, or 0 if none."""
+        for i, ch in enumerate(text):
+            if ch in self.flush_chars:
+                if self._is_safe_sentence_boundary(
+                    text, i, buffer_complete=buffer_complete,
+                ):
+                    return i + 1
+        return 0
+
     def _run_synth_loop(
         self,
         *,
         fragments: Iterable[str],
         push: Callable[[ClipItem], None],
     ) -> None:
-        """Walk fragments, synth on flush chars, push ClipItems.
+        """Walk fragments, synth on safe sentence boundaries, push ClipItems.
+
+        Round 7b (2026-05-20): boundary detection now defers across
+        ellipses, decimals, domains, and common abbreviations. The
+        running buffer is held until we either find a *safe* flush
+        or hit the safety-valve length (``max_chars`` * 2) at which
+        point we soft-break on the last clause/space boundary so an
+        unflushable stream can't grow without bound. End-of-stream
+        always flushes whatever remains.
 
         2026-05-19 Issue 1 fix: every sentence is sub-split via
         :meth:`_split_for_synth` before being passed to ``_synthesize``,
         so no single HTTP call to the XTTS server sends text long
         enough to overflow the 4096-audio-token GPT context window.
         Cap is taken from ``tts.xtts_v3.max_chars_per_synth_call``
-        (default 240). Short sentences pass through as a one-element
-        list -- behaviour is byte-for-byte unchanged for typical
-        conversational responses.
+        (default 600).
         """
         max_chars = self._max_chars_per_synth_call
-        buffer: list[str] = []
+        # ``max_chars * 2`` headroom: a normal sentence sits under
+        # ``max_chars``; we only soft-break when no safe boundary has
+        # appeared and the buffer doubled past that threshold.
+        soft_break_threshold = max(max_chars * 2, 240)
+        pending = ""
+
+        def _flush(text: str) -> None:
+            for chunk in self._split_for_synth(text, max_chars):
+                if self._stop_event.is_set():
+                    return
+                pcm, sr = self._synthesize(chunk)
+                if pcm.size > 0:
+                    push(ClipItem(pcm, sr, is_known_last=False))
+
         for frag in fragments:
             if self._stop_event.is_set():
                 break
             if not frag:
                 continue
-            remaining = frag
-            while remaining:
-                flush_pos = next(
-                    (i for i, c in enumerate(remaining) if c in self.flush_chars),
-                    -1,
+            pending += frag
+            # Drain as many safe boundaries as possible.
+            while True:
+                cut = self._find_next_sentence_boundary(
+                    pending, buffer_complete=False,
                 )
-                if flush_pos == -1:
-                    buffer.append(remaining)
+                if cut <= 0:
                     break
-                buffer.append(remaining[: flush_pos + 1])
-                sentence = "".join(buffer).strip()
-                buffer.clear()
-                remaining = remaining[flush_pos + 1 :]
+                sentence = pending[:cut].strip()
+                pending = pending[cut:].lstrip()
                 if sentence:
-                    for chunk in self._split_for_synth(sentence, max_chars):
-                        if self._stop_event.is_set():
-                            break
-                        pcm, sr = self._synthesize(chunk)
-                        if pcm.size > 0:
-                            push(ClipItem(pcm, sr, is_known_last=False))
+                    _flush(sentence)
+                    if self._stop_event.is_set():
+                        break
+            if self._stop_event.is_set():
+                break
+            # Safety valve: if the buffer has grown well past the
+            # synth-call cap without finding a safe boundary, soft-
+            # break at the last clause / space.
+            if len(pending) > soft_break_threshold:
+                soft_cut = -1
+                for sep in (";", ":", ",", "--", " "):
+                    pos = pending.rfind(sep)
+                    if pos > soft_cut:
+                        soft_cut = pos
+                if soft_cut > 0:
+                    sentence = pending[: soft_cut + 1].strip()
+                    pending = pending[soft_cut + 1 :].lstrip()
+                    if sentence:
+                        _flush(sentence)
 
-        tail = "".join(buffer).strip()
+        tail = pending.strip()
         if tail and not self._stop_event.is_set():
-            for chunk in self._split_for_synth(tail, max_chars):
-                if self._stop_event.is_set():
-                    break
-                pcm, sr = self._synthesize(chunk)
-                if pcm.size > 0:
-                    push(ClipItem(pcm, sr, is_known_last=False))
+            _flush(tail)
 
     @staticmethod
     def _split_for_synth(text: str, max_chars: int) -> list[str]:

@@ -10,6 +10,42 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 
+**2026-05-20 round 7a + 7b -- contamination loop + smarter TTS chunking -- COMPLETE.** Two surgical fixes triaged from the live-session logs the user accumulated across the previous round. Round 7c (XTTS-as-training-data sample generation) and 7d (Kokoro switch-in live) are deferred to the next session.
+
+* **Round 7a -- root cause of the residual contamination.** Even after rounds 1-6 had (a) made [`ConversationMemory.recent(n)`](../src/ultron/memory/conversation.py) session-scoped, (b) promoted the short-query suppression to full `suppress_memory_context=True`, and (c) stripped brevity hints BEFORE the short-query gate, the LLM kept replaying old-session content (FBI watch list, Imperium, Salesforce pricing, baking, Berlin weather, etc.). The trace log surfaced the actual root cause: `LLMEngine.generate` / `LLMEngine.generate_stream` were recording the FULL prompt body to memory as the user message -- including the augmented `"User question: X\n\nFresh information from web search:\n{sources}..."` (4-8 kB) on the search path and `apply_brevity_hint(text)` (which prepends `"[Style: ...]\n\n"`) on the conversational path. So every new memory write seeded fresh contamination by storing the synthesised prompt body that RAG then retrieved on the NEXT turn as "relevant earlier context".
+
+  **Fix:** new `history_user_message: Optional[str] = None` kwarg on [`LLMEngine.generate` + `LLMEngine.generate_stream`](../src/ultron/llm/inference.py). When supplied, `_record_turn(history_user_message, response)` records the BARE user utterance instead of the augmented input. When `None`, legacy behaviour holds bit-exact. 5 callsites in [`Orchestrator._build_response_stream` + `_search_augmented_tokens`](../src/ultron/pipeline/orchestrator.py) updated to pass `history_user_message=user_text` (or the new `bare_user_text` parameter on `_search_augmented_tokens`). The speculative-LLM and local-clock paths were already storing bare values via `record_completed_turn`, so they need no change.
+
+* **Round 7b -- smarter TTS sentence boundaries.** User-reported "horrible pacing, random pauses between words, horribly slow cadence" survived round 4's 240 -> 600 char cap retune because the underlying flush algorithm still triggered on every `.`. So "Wait... what?" became 4 separate HTTP calls (3 ellipsis dots + the `?`), each picking up ~200 ms of v3-filter tail silence. "Pi is 3.14 approximately." became 2 calls split at the decimal. "Dr. Smith arrived." became 2 calls.
+
+  **Fix in [`src/ultron/tts/xtts_v3.py`](../src/ultron/tts/xtts_v3.py):**
+  - New `_ABBREVIATIONS` ClassVar frozenset (mr, mrs, ms, dr, st, jr, sr, fr, vs, etc, eg, ie, cf, al, esp, inc, co, ltd, corp, llc, ave, blvd, rd, pkwy, hwy, no, nos, approx, vol, ed, eds, rev, ref).
+  - New `_is_safe_sentence_boundary(cls, text, pos, *, buffer_complete)` classmethod. Rules: `\n`/`!`/`?` always flush; `.` rejected when (next is `.` ellipsis OR prev is `.` acronym/ellipsis tail OR pos-2 is `.` + pos-1 is letter acronym continuation OR decimal `digit.digit` OR mid-domain `letter.letter` OR trailing-dot-on-incomplete-buffer OR followed by space after a known abbreviation). Otherwise flush.
+  - New `_find_next_sentence_boundary(text, *, buffer_complete)` instance method.
+  - `_run_synth_loop` rewritten to use a cumulative pending buffer (instead of fragment-local processing) so streamed `Wait`/`...`/` what?` correctly defers the boundary decision across fragments. A `max_chars * 2` safety valve soft-breaks on the last clause/space if no safe boundary appears -- guards against runaway code or punctuation-free streams.
+  - +32 tests in [`tests/test_xtts_v3_config.py`](../tests/test_xtts_v3_config.py) pin every boundary rule + chunking integration case.
+
+**Files changed:**
+
+```
+src/ultron/llm/inference.py            (+ history_user_message kwarg on generate + generate_stream; recorded_user resolution; comprehensive docstring)
+src/ultron/pipeline/orchestrator.py    (5 callsites; _search_augmented_tokens gains bare_user_text param + propagates to its 2 internal generate_stream calls)
+src/ultron/tts/xtts_v3.py              (+ _ABBREVIATIONS + _is_safe_sentence_boundary + _find_next_sentence_boundary + _run_synth_loop rewrite + ClassVar import)
+tests/test_xtts_v3_config.py           (+ 32 boundary + chunking tests)
+docs/codebase_structure.md             (this section + validating-HEAD bump)
+CLAUDE.md                              (MOST RECENT pointer + test-count bump)
+~/.claude/projects/.../memory/MEMORY.md
+~/.claude/projects/.../memory/project_ultron_2026_05_20_round_7ab_memory_and_tts_chunking.md
+```
+
+**Tests: 3483 -> 3513 passing (+30)** / 15 skipped (GPU-gated) / 0 failed in 66.34 s. Voice baseline contract preserved (no SOUL.md / RVC / Piper / LLM-model-file touch; XTTS engine inputs unchanged -- only the chunk boundaries that drive it).
+
+**Deferred for the next session:**
+- **Round 7c:** `scripts/generate_kokoro_training_clips.py` -- uses the current XTTS+v3 chain to synthesise a diverse training-data corpus (~30-90 min of clean Ultron-voice audio with a transcript JSONL manifest) for fine-tuning Kokoro. ASK before running per `feedback_voice_stack_concurrency.md`.
+- **Round 7d:** once Kokoro is fine-tuned, drop weights at `models/kokoro/`, flip `tts.engine: kokoro` in `config.yaml`, verify ack cache prewarm + `speak_stream` through `KokoroSpeech` (Track 5 surface already wired). Kokoro should drop ~60 ms TTFT and ~2 GB VRAM vs XTTS; voice character will be baked into the weights so the post-synth v3 filter chain may become optional.
+
+---
+
 **2026-05-19 cross-cutting expansion -- COMPLETE.** Re-implemented locally the full catalogue the secondary-machine session designed (the changes never made it to GitHub from that machine). All new modules ship default-OFF on their behaviour-changing flags so the voice baseline contract holds. Brief rundown:
 
 * **Track 3 (response_style.py):** extended `apply_brevity_hint` with three hint classes -- procedural (numbered-steps directive on "step-by-step" / "walk me through" / "comprehensive guide" / "highly detailed" / etc.), factual (one-sentence directive on "how much / how many / how heavy / when did / what year / who invented / what's the capital" stems), brevity (existing 1-3-sentence directive on short non-stem questions). Procedural > factual > brevity in priority. Directly attacks Qwen3-4B's verbosity miscalibration (duck/cake case). +69 tests.
