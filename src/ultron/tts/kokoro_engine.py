@@ -40,13 +40,20 @@ import queue
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Iterable, NamedTuple, Optional, Tuple
+from typing import Callable, ClassVar, Iterable, NamedTuple, Optional, Tuple
 
 import numpy as np
 
 from ultron.utils.logging import get_logger
 
 logger = get_logger("tts.kokoro")
+
+
+# Mirror of ultron.tts.xtts_v3._QUEUE_GET_TIMEOUT_SECONDS / the legacy
+# speech.py constant. Long enough to absorb a slow first-clip synth
+# (Kokoro lazy-load on first call) without false-killing the playback
+# loop.
+_QUEUE_GET_TIMEOUT_SECONDS = 60.0
 
 
 # ----------------------------------------------------------------------
@@ -323,50 +330,136 @@ class KokoroSpeech:
     def speak_stream(self, fragments: Iterable[str]) -> None:
         """Consume token fragments + play sentence-by-sentence.
 
-        Streams sentences as they complete (flush on
-        ``flush_chars``). Mirrors the XTTS / legacy contract so the
-        orchestrator's playback path works unchanged.
+        2026-05-20 round 8c rewrite: producer-consumer pipeline (mirror
+        of :meth:`XttsV3Speech.speak_stream`). Synth runs on a worker
+        thread that pushes :class:`ClipItem` onto a bounded queue;
+        playback consumes on the main thread holding a single open
+        :class:`sounddevice.OutputStream` for the whole call. Synth of
+        sentence N+1 overlaps playback of sentence N, eliminating the
+        multi-second pauses the prior sequential loop produced (each
+        inter-sentence gap was the full ~200-600 ms CPU synth cost).
+        Also adds safe-sentence-boundary detection so ellipses /
+        decimals / mid-domain dots / known abbreviations don't
+        fragment the audio.
         """
         self._stop_event.clear()
-        buffer: list[str] = []
-        for frag in fragments:
-            if self._stop_event.is_set():
-                return
-            if not frag:
-                continue
-            remaining = frag
-            while remaining:
-                flush_pos = next(
-                    (i for i, c in enumerate(remaining) if c in self.flush_chars),
-                    -1,
-                )
-                if flush_pos == -1:
-                    buffer.append(remaining)
-                    break
-                buffer.append(remaining[: flush_pos + 1])
-                sentence = "".join(buffer).strip()
-                buffer.clear()
-                remaining = remaining[flush_pos + 1:]
-                if sentence:
-                    try:
-                        clip = self._synthesize(sentence)
-                    except KokoroEngineLoadError as e:
-                        logger.warning(
-                            "Kokoro load error mid-stream (%s); "
-                            "skipping sentence: %r", e, sentence[:40],
-                        )
-                        continue
-                    if clip[0].size > 0:
-                        self._play(clip)
-        tail = "".join(buffer).strip()
-        if tail and not self._stop_event.is_set():
+
+        try:
+            from ultron.config import get_config
+            tts_cfg = get_config().tts
+            spec_open = tts_cfg.speculative_stream_open_enabled
+            low_latency = tts_cfg.output_low_latency_mode
+        except Exception:
+            spec_open = False
+            low_latency = False
+
+        audio_q: queue.Queue[Optional[ClipItem]] = queue.Queue(maxsize=8)
+
+        def synth_worker() -> None:
             try:
-                clip = self._synthesize(tail)
-            except KokoroEngineLoadError as e:
-                logger.warning("Kokoro load error on tail (%s)", e)
-                return
-            if clip[0].size > 0:
-                self._play(clip)
+                self._run_synth_loop(
+                    fragments=fragments,
+                    push=lambda item: audio_q.put(item),
+                )
+            except Exception as e:                                # noqa: BLE001
+                logger.error("Kokoro synth worker error: %s", e)
+            finally:
+                audio_q.put(None)
+
+        worker = threading.Thread(
+            target=synth_worker, daemon=True, name="kokoro-synth",
+        )
+        worker.start()
+
+        try:
+            import sounddevice as sd
+        except Exception as e:                                    # noqa: BLE001
+            logger.warning(
+                "sounddevice unavailable -- skipping Kokoro playback: %s", e,
+            )
+            worker.join(timeout=2.0)
+            return
+
+        sr = self._sample_rate
+        block_frames = max(1, int(sr * 0.05))
+        stream = None
+        first_item: Optional[ClipItem] = None
+
+        try:
+            with self._playback_lock:
+                if self._stop_event.is_set():
+                    return
+
+                # Prefer the pre-opened stream (opened during STT on a
+                # daemon thread per Orchestrator._kick_off_tts_preopen).
+                stream = self._consume_preopened_stream(sr)
+                if stream is None:
+                    stream = self._open_output_stream(sr, low_latency)
+                    stream.start()
+                    # 50 ms silence write wakes the device clock.
+                    self._write_silence(stream, sr, 0.05)
+
+                try:
+                    first_item = audio_q.get(
+                        timeout=_QUEUE_GET_TIMEOUT_SECONDS,
+                    )
+                except queue.Empty:
+                    logger.warning(
+                        "Kokoro playback queue starved before first clip",
+                    )
+                    return
+                if first_item is None:
+                    return
+
+                # Inter-sentence pause (matches XTTS / legacy parity).
+                try:
+                    from config import settings as _legacy_settings
+                    pause_ms = _legacy_settings.TTS_PAUSE_MS
+                except Exception:
+                    pause_ms = 180
+
+                item = first_item
+                while True:
+                    if self._stop_event.is_set():
+                        return
+                    audio = self._stereo_pcm(item.audio)
+                    for start in range(0, audio.shape[0], block_frames):
+                        if self._stop_event.is_set():
+                            return
+                        stream.write(audio[start : start + block_frames])
+
+                    if item.is_known_last:
+                        self._write_silence(stream, sr, 0.05)
+                        break
+
+                    if pause_ms > 0 and not self._stop_event.is_set():
+                        self._write_silence(stream, sr, pause_ms / 1000.0)
+
+                    try:
+                        nxt = audio_q.get(
+                            timeout=_QUEUE_GET_TIMEOUT_SECONDS,
+                        )
+                    except queue.Empty:
+                        logger.warning(
+                            "Kokoro playback waited %.0fs without next "
+                            "clip; ending", _QUEUE_GET_TIMEOUT_SECONDS,
+                        )
+                        self._write_silence(stream, sr, 0.05)
+                        break
+                    if nxt is None:
+                        self._write_silence(stream, sr, 0.05)
+                        break
+                    item = nxt
+        except Exception as e:                                    # noqa: BLE001
+            logger.warning("Kokoro streaming playback error: %s", e)
+        finally:
+            if stream is not None:
+                try:
+                    stream.stop()
+                    stream.close()
+                except Exception:
+                    pass
+            worker.join(timeout=2.0)
 
     # ------------------------------------------------------------------
     # Internal: synth + playback
@@ -473,6 +566,202 @@ class KokoroSpeech:
                 pass
             return None
         return s
+
+    # ------------------------------------------------------------------
+    # Producer/consumer helpers (2026-05-20 round 8c)
+    # ------------------------------------------------------------------
+
+    # Common English abbreviations that end with `.` but do NOT mark a
+    # sentence boundary. Lower-cased; the boundary check normalises
+    # before lookup. Mirror of :data:`XttsV3Speech._ABBREVIATIONS` --
+    # both engines benefit identically from rejecting these mid-token
+    # `.` flushes. Duplicated rather than imported to keep the engines
+    # independently testable.
+    _ABBREVIATIONS: ClassVar[frozenset[str]] = frozenset({
+        "mr", "mrs", "ms", "dr", "st", "jr", "sr", "fr",
+        "vs", "etc", "eg", "ie", "cf", "al", "esp",
+        "inc", "co", "ltd", "corp", "llc",
+        "ave", "blvd", "rd", "pkwy", "hwy",
+        "no", "nos",
+        "approx", "vol", "ed", "eds", "rev", "ref",
+    })
+
+    @classmethod
+    def _is_safe_sentence_boundary(
+        cls, text: str, pos: int, *, buffer_complete: bool,
+    ) -> bool:
+        """Return True if ``text[pos]`` is a flushable sentence end.
+
+        Pure function -- mirror of
+        :meth:`XttsV3Speech._is_safe_sentence_boundary`. Rejects mid-
+        token periods that would otherwise fragment the audio
+        (ellipsis, decimals, domains, abbreviation chains).
+        """
+        ch = text[pos]
+        n = len(text)
+        if ch == "\n":
+            return True
+        if ch in "!?":
+            return True
+        if ch != ".":
+            return False
+        # Ellipsis suppression.
+        if pos + 1 < n and text[pos + 1] == ".":
+            return False
+        if pos > 0 and text[pos - 1] == ".":
+            return False
+        # Acronym continuation: "L.L." where each L is a letter.
+        if (
+            pos >= 2
+            and text[pos - 2] == "."
+            and text[pos - 1].isalpha()
+        ):
+            return False
+        # Decimal: digit.digit (e.g. "3.14").
+        if (
+            pos > 0
+            and text[pos - 1].isdigit()
+            and pos + 1 < n
+            and text[pos + 1].isdigit()
+        ):
+            return False
+        # Mid-domain: letter.letter ("Dictionary.com").
+        if (
+            pos > 0
+            and text[pos - 1].isalpha()
+            and pos + 1 < n
+            and text[pos + 1].isalpha()
+        ):
+            return False
+        # Trailing `.` with no next char: wait for more unless we're
+        # at end of stream.
+        if pos + 1 >= n:
+            return buffer_complete
+        next_ch = text[pos + 1]
+        if next_ch.isspace():
+            start = pos
+            while start > 0 and text[start - 1].isalpha():
+                start -= 1
+            token = text[start:pos].lower()
+            if token and token in cls._ABBREVIATIONS:
+                return False
+            return True
+        return True
+
+    def _find_next_sentence_boundary(
+        self, text: str, *, buffer_complete: bool,
+    ) -> int:
+        """Return position+1 of the next safe boundary, or 0 if none."""
+        for i, ch in enumerate(text):
+            if ch in self.flush_chars:
+                if self._is_safe_sentence_boundary(
+                    text, i, buffer_complete=buffer_complete,
+                ):
+                    return i + 1
+        return 0
+
+    def _run_synth_loop(
+        self,
+        *,
+        fragments: Iterable[str],
+        push: Callable[[ClipItem], None],
+    ) -> None:
+        """Walk fragments, synth on safe sentence boundaries, push ClipItems.
+
+        Cumulative pending-buffer pattern: collect fragments, scan for
+        the next safe sentence boundary, synth that slice, push,
+        repeat. End-of-stream flushes whatever remains via
+        ``buffer_complete=True``.
+
+        Unlike :meth:`XttsV3Speech._run_synth_loop` we do NOT sub-split
+        long sentences -- Kokoro is a single feed-forward inference
+        per call and has no 4096-token GPT context to overflow.
+        """
+        pending = ""
+        for frag in fragments:
+            if self._stop_event.is_set():
+                return
+            if not frag:
+                continue
+            pending += frag
+            while True:
+                cut = self._find_next_sentence_boundary(
+                    pending, buffer_complete=False,
+                )
+                if cut == 0:
+                    break
+                sentence = pending[:cut].strip()
+                pending = pending[cut:]
+                if not sentence:
+                    continue
+                try:
+                    clip = self._synthesize(sentence)
+                except KokoroEngineLoadError as e:
+                    logger.warning(
+                        "Kokoro load error mid-stream (%s); skipping "
+                        "sentence: %r", e, sentence[:40],
+                    )
+                    continue
+                except Exception as e:                            # noqa: BLE001
+                    logger.warning(
+                        "Kokoro synth failure (%s); skipping sentence: %r",
+                        e, sentence[:40],
+                    )
+                    continue
+                if clip[0].size > 0 and not self._stop_event.is_set():
+                    push(ClipItem(
+                        audio=clip[0],
+                        sample_rate=clip[1],
+                        is_known_last=False,
+                    ))
+        tail = pending.strip()
+        if tail and not self._stop_event.is_set():
+            try:
+                clip = self._synthesize(tail)
+            except KokoroEngineLoadError as e:
+                logger.warning("Kokoro load error on tail (%s)", e)
+                return
+            except Exception as e:                                # noqa: BLE001
+                logger.warning("Kokoro tail synth failure (%s)", e)
+                return
+            if clip[0].size > 0 and not self._stop_event.is_set():
+                push(ClipItem(
+                    audio=clip[0],
+                    sample_rate=clip[1],
+                    is_known_last=False,
+                ))
+
+    @staticmethod
+    def _stereo_pcm(pcm: np.ndarray) -> np.ndarray:
+        """Expand mono int16 PCM to interleaved stereo. No-op for stereo."""
+        if pcm.ndim == 2 and pcm.shape[1] == 2:
+            return pcm.astype(np.int16, copy=False)
+        return np.column_stack((pcm, pcm)).astype(np.int16, copy=False)
+
+    def _open_output_stream(self, sr: int, low_latency: bool):
+        """Open a fresh sounddevice OutputStream at ``sr``.
+
+        Honors ``tts.output_low_latency_mode`` for the PortAudio
+        ``latency='low'`` hint (saves 30-100 ms OS-buffering on most
+        Windows hosts; falls back gracefully if the host ignores it).
+        """
+        import sounddevice as sd
+        kwargs = dict(samplerate=sr, channels=2, dtype="int16")
+        if low_latency:
+            kwargs["latency"] = "low"
+        return sd.OutputStream(**kwargs)
+
+    @staticmethod
+    def _write_silence(stream, sr: int, seconds: float) -> None:
+        """Write ``seconds`` of stereo silence to ``stream``. Best-effort."""
+        if seconds <= 0:
+            return
+        frames = max(1, int(sr * seconds))
+        silence = np.zeros((frames, 2), dtype=np.int16)
+        try:
+            stream.write(silence)
+        except Exception:
+            pass
 
 
 __all__ = [
