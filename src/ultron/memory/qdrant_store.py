@@ -431,7 +431,41 @@ class ConversationMemory:
     # --- read path ----------------------------------------------------------
 
     def recent(self, n: int) -> List[MemoryTurn]:
-        """Return the last ``n`` turns chronologically, served from cache."""
+        """Return the last ``n`` turns of the CURRENT session, chronologically.
+
+        2026-05-19 cross-session contamination fix: the in-process cache
+        loads up to ``recent_cache_size`` turns from Qdrant on startup,
+        which historically included turns from prior Ultron sessions.
+        :meth:`_build_messages` fed those prior-session turns into the
+        LLM as 'conversation history', producing replays of wildly off-
+        topic content from old conversations (Salesforce pricing /
+        FBI watch list / etc. in 2026-05-19 live session). Recent-turn
+        history is supposed to mean "what we're talking about RIGHT
+        NOW"; cross-session content is what RAG (``retrieve``) is for.
+
+        This method now filters to the current session_id so the LLM's
+        conversation-history slice contains only this run's turns. RAG
+        retrieval (``retrieve`` / ``retrieve_for_query``) remains
+        cross-session by design.
+
+        For callers that specifically want the cross-session cache
+        view (e.g. the long-term-memory maintenance script), use
+        :meth:`recent_all_sessions`.
+        """
+        if n <= 0:
+            return []
+        with self._lock:
+            scoped = [t for t in self._recent if t.session_id == self.session_id]
+            return list(scoped[-n:])
+
+    def recent_all_sessions(self, n: int) -> List[MemoryTurn]:
+        """Return the last ``n`` turns across ALL sessions (legacy behaviour).
+
+        Use when you specifically need the cross-session cache view --
+        e.g. background maintenance, observability scans, or warm-start
+        analytics. The voice-loop hot path uses :meth:`recent` instead,
+        which scopes to the current session.
+        """
         if n <= 0:
             return []
         with self._lock:

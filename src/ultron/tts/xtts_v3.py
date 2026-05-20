@@ -1363,7 +1363,26 @@ class XttsV3Speech:
         return out_pcm, self._sample_rate
 
     def _http_synthesize(self, text: str) -> np.ndarray:
-        """POST /synthesize, accumulate streamed PCM, return int16 array."""
+        """POST /synthesize, accumulate streamed PCM, return int16 array.
+
+        2026-05-19 defense-in-depth: cap text length BEFORE sending so
+        the XTTS-v2 4096-audio-token context window can't be exceeded
+        by a single call. The chunker in :meth:`_run_synth_loop`
+        normally keeps every call under ``max_chars_per_synth_call``,
+        but live sessions have hit the limit on phantom-text paths
+        we haven't fully traced (LLM stream emits 0 chars but the
+        synth queue receives ~5000 audio-tokens worth of text). The
+        hard cap below is the belt-and-braces: 1.5x the configured
+        chunk size, with the offending text logged so we can identify
+        the upstream culprit on next occurrence.
+        """
+        hard_cap = max(120, int(self._max_chars_per_synth_call * 1.5))
+        if len(text) > hard_cap:
+            logger.warning(
+                "XTTS text cap: truncating %d-char input to %d (preview=%r)",
+                len(text), hard_cap, text[:120],
+            )
+            text = text[:hard_cap].rstrip() + "."
         body = json.dumps(
             {
                 "text": text,

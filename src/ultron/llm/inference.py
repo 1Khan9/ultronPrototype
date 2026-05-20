@@ -694,6 +694,23 @@ class LLMEngine:
         # No-op (and zero added latency) on benign input.
         user_message, _injection_markers = _sanitize_user_input(user_message)
 
+        # 2026-05-19 contamination fix #2: short conversational queries
+        # (greetings / acks) should not see ANY conversational context.
+        # The RAG gate via :func:`_is_short_conversational_query` is
+        # checked inside :meth:`_retrieve_rag_snippets`, but recent-turn
+        # history takes a separate path and was bleeding cross-topic
+        # content into greetings (live session 2026-05-19: 'and say
+        # hello' got an FBI-watch-list response replayed from the recent-
+        # turn history slice). When the gate fires, we promote it to a
+        # full suppress_memory_context so BOTH RAG and recent history
+        # drop out -- "Hello." doesn't need any prior turn to answer.
+        if not suppress_memory_context and _is_short_conversational_query(user_message):
+            logger.debug(
+                "short-query memory suppression: dropping recent + RAG for %r",
+                user_message[:60],
+            )
+            suppress_memory_context = True
+
         # Resolve the system prompt fresh each turn. When the persona
         # source is the workspace, this is what makes hot reload work:
         # PersonaLoader's refresh_if_stale catches mtime/size changes

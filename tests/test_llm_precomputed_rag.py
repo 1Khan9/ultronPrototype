@@ -130,7 +130,7 @@ def test_precomputed_empty_list_means_no_rag():
     """Passing [] = caller fetched and got nothing. Don't retry."""
     eng, memory = _build_engine()
 
-    msgs = eng._build_messages("hi", precomputed_rag_snippets=[])
+    msgs = eng._build_messages("what is the meaning of life", precomputed_rag_snippets=[])
 
     user_msg = msgs[-1]
     # No RAG content from the stored memory snippets:
@@ -204,12 +204,16 @@ def test_retrieve_rag_snippets_returns_empty_when_no_memory():
 
 def test_precomputed_preserves_recent_history():
     """Recent-turn history is independent of the RAG snippets --
-    pre-fetching RAG must not drop the conversation history."""
+    pre-fetching RAG must not drop the conversation history.
+
+    Uses a factual-stem query so the 2026-05-19 short-query memory
+    suppression gate doesn't fire."""
     eng, memory = _build_engine()
     custom_snippets = [_make_turn("assistant", "S1")]
 
     msgs = eng._build_messages(
-        "hi", precomputed_rag_snippets=custom_snippets,
+        "what is the meaning of life",
+        precomputed_rag_snippets=custom_snippets,
     )
 
     # System + recent (2 turns) + user = 4 messages.
@@ -230,7 +234,7 @@ def test_precomputed_with_gate_verdict_is_compatible():
     custom_snippets = [_make_turn("assistant", "S1")]
 
     msgs = eng._build_messages(
-        "hi",
+        "what is the weather like in paris today",
         gate_verdict=fake_verdict,
         precomputed_rag_snippets=custom_snippets,
     )

@@ -302,7 +302,7 @@ def test_history_turns_for_llm_caps_recent_feed():
 
         eng._memory = _FakeMem()
 
-        eng._build_messages("hello")
+        eng._build_messages("what is the meaning of life")
 
         # We asked memory.recent for the capped number, not 20.
         assert recent_calls["asked_for"] == 4
@@ -338,7 +338,7 @@ def test_history_turns_for_llm_respects_cache_size_floor():
 
         eng._memory = _FakeMem()
 
-        eng._build_messages("hello")
+        eng._build_messages("what is the meaning of life")
         # Capped at min(history_turns_for_llm=10, recent_turns=2) -> 2.
         assert recent_calls["asked_for"] == 2
     finally:

@@ -9,7 +9,39 @@ from ultron.pipeline import Orchestrator
 from ultron.utils.logging import configure_logging, get_logger
 
 
+def _ensure_utf8_stdio() -> None:
+    """Reconfigure stdout / stderr to UTF-8 with ``errors='replace'``.
+
+    2026-05-19 fix: on Windows the default console encoding is cp1252
+    which cannot encode many characters that show up in source titles
+    / URLs (smart quotes, em-dashes, Unicode glyphs). A printed source
+    list crashed the entire response pipeline with::
+
+        UnicodeEncodeError: 'charmap' codec can't encode characters in
+        position 160-161: character maps to <undefined>
+
+    Forcing UTF-8 with ``errors='replace'`` makes every ``print()``
+    call resilient: unencodable code points become ``?`` in the
+    console instead of throwing. The audio pipeline is unaffected
+    (TTS uses its own pipeline); only console output changes.
+    """
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None:
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            # Best-effort: a non-reconfigurable stream (rare; tests
+            # sometimes wrap stdio) keeps its existing settings.
+            pass
+
+
 def main() -> int:
+    _ensure_utf8_stdio()
     configure_logging()
     logger = get_logger("main")
 
