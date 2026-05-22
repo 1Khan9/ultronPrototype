@@ -609,6 +609,38 @@ class Orchestrator:
             )
             return False
 
+    # 2026-05-22 -- map registered phrasings to canonical actions. The
+    # intent recognizer keeps each phrase as its own canonical_phrase
+    # (no synonym graph), so the dispatcher needs to know which raw
+    # phrase corresponds to which command. Add new variants to a set
+    # below to extend coverage without writing new dispatcher branches.
+    _INTENT_ENGAGE_PHRASES = frozenset({
+        "engage gaming mode",
+        "switch to gaming mode",
+        "turn on gaming mode",
+        "start gaming mode",
+        "activate gaming mode",
+    })
+    _INTENT_DISENGAGE_PHRASES = frozenset({
+        "disengage gaming mode",
+        "turn off gaming mode",
+        "stop gaming mode",
+        "exit gaming mode",
+        "deactivate gaming mode",
+    })
+    _INTENT_STATUS_PHRASES = frozenset({
+        "gaming mode status",
+    })
+
+    def _resolve_gaming_mode_manager(self):
+        """Return the GamingModeManager from either of the two wiring
+        points (top-level attr or via coding_voice). Returns None when
+        gaming mode is disabled."""
+        manager = getattr(self, "gaming_mode_manager", None)
+        if manager is None and getattr(self, "coding_voice", None) is not None:
+            manager = getattr(self.coding_voice, "gaming_mode_manager", None)
+        return manager
+
     def _dispatch_intent_match(self, match) -> bool:
         """Route an intent match to the right local handler.
 
@@ -616,15 +648,13 @@ class Orchestrator:
         needed); False if we should fall through to the existing
         routing path.
         """
+        import asyncio
         phrase = match.canonical_phrase
-        if phrase == "engage gaming mode":
-            manager = getattr(self, "gaming_mode_manager", None)
-            if manager is None and getattr(self, "coding_voice", None) is not None:
-                manager = getattr(self.coding_voice, "gaming_mode_manager", None)
+        if phrase in self._INTENT_ENGAGE_PHRASES:
+            manager = self._resolve_gaming_mode_manager()
             if manager is None:
-                logger.debug("intent: 'engage gaming mode' fired but no manager")
+                logger.debug("intent: gaming engage fired but no manager")
                 return False
-            import asyncio
             try:
                 asyncio.run(manager.engage())
             except Exception as e:                                # noqa: BLE001
@@ -635,13 +665,10 @@ class Orchestrator:
             except Exception:
                 pass
             return True
-        if phrase == "disengage gaming mode":
-            manager = getattr(self, "gaming_mode_manager", None)
-            if manager is None and getattr(self, "coding_voice", None) is not None:
-                manager = getattr(self.coding_voice, "gaming_mode_manager", None)
+        if phrase in self._INTENT_DISENGAGE_PHRASES:
+            manager = self._resolve_gaming_mode_manager()
             if manager is None:
                 return False
-            import asyncio
             try:
                 asyncio.run(manager.disengage())
             except Exception as e:                                # noqa: BLE001
@@ -652,10 +679,8 @@ class Orchestrator:
             except Exception:
                 pass
             return True
-        if phrase == "gaming mode status":
-            manager = getattr(self, "gaming_mode_manager", None)
-            if manager is None and getattr(self, "coding_voice", None) is not None:
-                manager = getattr(self.coding_voice, "gaming_mode_manager", None)
+        if phrase in self._INTENT_STATUS_PHRASES:
+            manager = self._resolve_gaming_mode_manager()
             if manager is None:
                 return False
             try:
@@ -772,10 +797,16 @@ class Orchestrator:
     def _load_gaming_mode_manager_if_enabled(self):
         """V1-gap A1: construct the GamingModeManager when configured.
 
-        Returns ``None`` when disabled or when the OpenClaw bridge is
-        unavailable (which the manager needs to call
-        ``openclaw plugins enable / disable``). Failures degrade
-        silently -- gaming mode is purely additive.
+        2026-05-22: previously returned None when no OpenClaw client
+        was wired; the manager now constructs without it -- the
+        engage/disengage callbacks (LLM swap, Kokoro device flip, STT
+        swap, VLM unload) all work without OpenClaw, and the manager
+        already handles ``client=None`` gracefully by returning
+        ``no openclaw client`` per-plugin states (the rest of the
+        engage cycle still completes).
+        Returns ``None`` when ``gaming_mode.enabled=false`` or when
+        construction itself fails. Failures degrade silently --
+        gaming mode is purely additive.
         """
         from ultron.config import get_config, resolve_path
 
@@ -785,11 +816,11 @@ class Orchestrator:
         bridge = getattr(self, "openclaw_bridge", None)
         client = getattr(bridge, "client", None) if bridge is not None else None
         if client is None:
-            logger.warning(
-                "gaming_mode.enabled=true but no OpenClaw client wired -- "
-                "gaming mode disabled this session.",
+            logger.info(
+                "gaming_mode: constructing manager without an OpenClaw "
+                "client (plugin disable will no-op; LLM/Kokoro/STT/VLM "
+                "engage callbacks still fire).",
             )
-            return None
         try:
             from ultron.openclaw_routing.gaming_mode import GamingModeManager
 

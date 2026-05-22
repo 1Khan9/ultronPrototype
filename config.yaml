@@ -569,7 +569,13 @@ memory:
   # 0.7-0.95. 0.6 sits above the off-topic noise floor and below
   # genuinely-relevant matches. Set 0.0 to disable filtering
   # (legacy behaviour).
-  rag_min_relevance: 0.6
+  # 2026-05-22 raised from 0.6 -> 0.72 after a live "switch to gaming
+  # mode" turn pulled in unrelated context ("Scavenge wild nuts..." +
+  # ack snippets) above 0.6 cosine, which caused the LLM to hallucinate
+  # an irrelevant baseball answer. 0.72 stays below genuinely-relevant
+  # matches (0.78+ in field measurements) while pruning the off-topic
+  # noise band that 0.6 was admitting.
+  rag_min_relevance: 0.72
   # Cap on recent-turn history fed to the LLM as conversation
   # context. The in-process recent-turn CACHE size remains
   # ``recent_turns: 20`` -- this just bounds what reaches the LLM.
@@ -1082,12 +1088,32 @@ browser:
 intent:
   enabled: true                  # opt-in; flip to true to wire matching
   model_variant: "q4"            # q4|q8|fp16|fp32|q4f16 (~300 MB at q4)
-  threshold: 0.8                 # cosine similarity floor for a match
+  # 2026-05-22 lowered from 0.8 to 0.65 -- live test showed "switch to
+  # gaming mode" scored ~0.7 against "engage gaming mode" (semantically
+  # very close, but the threshold rejected it). 0.65 catches natural
+  # variations without obvious false positives. Tune up if you start
+  # seeing the wrong intent fire; tune down for even broader matching.
+  threshold: 0.65
   warmup_on_init: true           # pre-load on startup so first match is fast
+  # Register multiple natural phrasings per intent. The recognizer matches
+  # against the FIRST canonical form; all the variants below resolve to
+  # the same orchestrator-side handler (engage / disengage / status).
   phrases:
+    # Engage variants
     - "engage gaming mode"
+    - "switch to gaming mode"
+    - "turn on gaming mode"
+    - "start gaming mode"
+    - "activate gaming mode"
+    # Disengage variants
     - "disengage gaming mode"
+    - "turn off gaming mode"
+    - "stop gaming mode"
+    - "exit gaming mode"
+    - "deactivate gaming mode"
+    # Status
     - "gaming mode status"
+    # Time / date locals
     - "what time is it"
     - "what is today's date"
 
@@ -1103,7 +1129,7 @@ intent:
 # ---------------------------------------------------------------------------
 
 gaming_mode:
-  enabled: false
+  enabled: true                  # 2026-05-22: voice-trigger active; LLM/Kokoro/STT/VLM swap fires regardless of openclaw state
   plugins_to_disable:
     - desktop-control
     - windows-control

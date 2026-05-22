@@ -673,7 +673,13 @@ def _classify_routing_impl(
     openclaw_on = bool(cfg and cfg.openclaw.enabled)
     desktop_on = bool(openclaw_on and cfg and cfg.desktop.enabled)
     window_on = bool(openclaw_on and cfg and cfg.window_control.enabled)
-    gaming_on = bool(openclaw_on and cfg and cfg.gaming_mode.enabled)
+    # 2026-05-22: gaming mode no longer requires openclaw. The
+    # engage/disengage callbacks (LLM swap, Kokoro device flip, STT
+    # swap, VLM unload) work without an OpenClaw client; only the
+    # optional plugin-disable step needs it. Decoupling the
+    # classifier gate lets users with openclaw.enabled=false still
+    # trigger gaming mode by voice.
+    gaming_on = bool(cfg and cfg.gaming_mode.enabled)
     if not text:
         return RoutingIntent(
             kind=RoutingIntentKind.CONVERSATIONAL,

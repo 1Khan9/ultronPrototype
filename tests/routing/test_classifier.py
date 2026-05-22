@@ -594,11 +594,17 @@ def _classify_with_flags(
         cfg.window_control.enabled = saved[3]
 
 
-def test_gaming_mode_pattern_skipped_when_openclaw_offline():
+def test_gaming_mode_pattern_works_without_openclaw():
+    """2026-05-22: gaming mode is decoupled from openclaw_on. The
+    engage callbacks (LLM swap, Kokoro device flip, STT swap, VLM
+    unload) all work without an OpenClaw client, so the classifier
+    no longer gates on openclaw.enabled -- only gaming_mode.enabled.
+    """
     intent = _classify_with_flags(
-        "I'm about to play Valorant", openclaw=False,
+        "I'm about to play Valorant",
+        openclaw=False, gaming_mode=True,
     )
-    assert intent.kind == RoutingIntentKind.CONVERSATIONAL
+    assert intent.kind == RoutingIntentKind.GAMING_MODE
 
 
 def test_gaming_mode_pattern_skipped_when_per_feature_off():

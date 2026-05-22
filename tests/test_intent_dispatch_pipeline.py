@@ -52,9 +52,29 @@ class _MinimalOrchestrator:
         except Exception:
             return False
 
+    # Mirror of orchestrator's frozensets (2026-05-22 multi-variant
+    # dispatch). Keep these in sync with
+    # ``Orchestrator._INTENT_ENGAGE_PHRASES`` etc. so the test covers
+    # the same variant resolution the live dispatcher uses.
+    _ENGAGE = frozenset({
+        "engage gaming mode",
+        "switch to gaming mode",
+        "turn on gaming mode",
+        "start gaming mode",
+        "activate gaming mode",
+    })
+    _DISENGAGE = frozenset({
+        "disengage gaming mode",
+        "turn off gaming mode",
+        "stop gaming mode",
+        "exit gaming mode",
+        "deactivate gaming mode",
+    })
+    _STATUS = frozenset({"gaming mode status"})
+
     def _dispatch_intent_match(self, match) -> bool:
         phrase = match.canonical_phrase
-        if phrase == "engage gaming mode":
+        if phrase in self._ENGAGE:
             manager = self.gaming_mode_manager
             if manager is None:
                 return False
@@ -68,7 +88,7 @@ class _MinimalOrchestrator:
             except Exception:
                 pass
             return True
-        if phrase == "disengage gaming mode":
+        if phrase in self._DISENGAGE:
             manager = self.gaming_mode_manager
             if manager is None:
                 return False
@@ -82,7 +102,7 @@ class _MinimalOrchestrator:
             except Exception:
                 pass
             return True
-        if phrase == "gaming mode status":
+        if phrase in self._STATUS:
             manager = self.gaming_mode_manager
             if manager is None:
                 return False
@@ -150,6 +170,66 @@ def test_recognizer_exception_falls_through():
 # ---------------------------------------------------------------------------
 # Gaming mode dispatch
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("phrase", [
+    "engage gaming mode",
+    "switch to gaming mode",
+    "turn on gaming mode",
+    "start gaming mode",
+    "activate gaming mode",
+])
+def test_engage_phrase_variants_all_fire_manager_engage(phrase):
+    """All registered engage variants dispatch to manager.engage(),
+    not just the canonical 'engage gaming mode'. The intent recognizer
+    keeps each phrase as its own canonical_phrase (no synonym graph),
+    so the dispatcher resolves variants via a frozenset lookup."""
+    manager = _stub_gaming_mode_manager()
+    engage_calls = {"n": 0}
+
+    async def _engage():
+        engage_calls["n"] += 1
+
+    manager.engage = _engage
+
+    match = IntentMatch(
+        canonical_phrase=phrase,
+        utterance=f"user said {phrase!r}",
+        similarity=0.9,
+    )
+    orch = _MinimalOrchestrator(
+        intent_recognizer=_StubRecognizer(match),
+        gaming_mode_manager=manager,
+    )
+    assert orch._maybe_dispatch_intent("anything") is True
+    assert engage_calls["n"] == 1
+
+
+@pytest.mark.parametrize("phrase", [
+    "disengage gaming mode",
+    "turn off gaming mode",
+    "stop gaming mode",
+    "exit gaming mode",
+    "deactivate gaming mode",
+])
+def test_disengage_phrase_variants_all_fire_manager_disengage(phrase):
+    manager = _stub_gaming_mode_manager()
+    disengage_calls = {"n": 0}
+
+    async def _disengage():
+        disengage_calls["n"] += 1
+
+    manager.disengage = _disengage
+
+    match = IntentMatch(
+        canonical_phrase=phrase, utterance="x", similarity=0.9,
+    )
+    orch = _MinimalOrchestrator(
+        intent_recognizer=_StubRecognizer(match),
+        gaming_mode_manager=manager,
+    )
+    assert orch._maybe_dispatch_intent("anything") is True
+    assert disengage_calls["n"] == 1
 
 
 def test_engage_gaming_mode_intent_fires_manager_engage():
