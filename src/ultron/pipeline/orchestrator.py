@@ -2578,13 +2578,21 @@ class Orchestrator:
 
     def _maybe_start_stt_stream(self) -> bool:
         """Begin a streaming STT session if the engine supports it.
+
+        2026-05-22 update: also spawns a background worker that drains
+        a chunk queue and feeds the engine -- the capture thread MUST
+        NOT block on Moonshine's mid-stream ``update_transcription``
+        calls (50-100 ms on CPU), or sounddevice's input buffer
+        overflows and audio is dropped (the silent-turn-1 bug + the
+        ``Audio status flag: input overflow`` warnings).
+
         Returns True iff streaming is now active and the capture loop
-        should keep feeding chunks."""
+        should keep enqueueing chunks.
+        """
         if not self._stt_streaming_enabled():
             return False
         try:
             self.stt.start_stream()
-            return True
         except Exception as e:                                         # noqa: BLE001
             logger.warning(
                 "Streaming STT start failed (%s); falling back to one-shot.",
@@ -2592,16 +2600,59 @@ class Orchestrator:
             )
             return False
 
+        # Background-worker pattern: the capture thread enqueues each
+        # ~16 ms mic chunk, the worker drains the queue and calls the
+        # engine's feed_audio (which internally triggers the C-side
+        # update_transcription every ~200 ms). This keeps the capture
+        # thread responsive even when the model is slow on a partial.
+        import queue
+        self._stt_stream_queue = queue.Queue(maxsize=512)
+        self._stt_stream_sentinel = object()
+        self._stt_stream_worker_started = True
+
+        sentinel = self._stt_stream_sentinel
+        q = self._stt_stream_queue
+        stt = self.stt
+        sample_rate = settings.SAMPLE_RATE
+
+        def _worker() -> None:
+            while True:
+                try:
+                    item = q.get(timeout=2.0)
+                except Exception:
+                    continue
+                if item is sentinel:
+                    return
+                try:
+                    feed = getattr(stt, "feed_audio", None)
+                    if feed is not None:
+                        feed(item, sample_rate=sample_rate)
+                except Exception as e:                                # noqa: BLE001
+                    logger.debug("Streaming STT worker feed failed: %s", e)
+
+        t = threading.Thread(
+            target=_worker, daemon=True, name="stt-stream-worker",
+        )
+        t.start()
+        self._stt_stream_worker = t
+        return True
+
     def _maybe_feed_stt_chunk(self, chunk: np.ndarray) -> None:
-        """Push a single audio chunk to the streaming engine. No-op when
-        streaming isn't active. Per-chunk failures are swallowed so a
-        single bad chunk doesn't kill the entire capture."""
+        """Enqueue a single audio chunk for the background worker.
+
+        Non-blocking: if the queue is somehow full (shouldn't happen
+        with a 512-slot buffer at 16 ms chunks = ~8 s of audio), the
+        chunk is dropped silently rather than blocking the capture
+        thread. The model just sees a brief gap; the buffered audio
+        is still returned to the orchestrator for fallback transcribe.
+        """
+        q = getattr(self, "_stt_stream_queue", None)
+        if q is None:
+            return
         try:
-            feed = getattr(self.stt, "feed_audio", None)
-            if feed is not None:
-                feed(chunk, sample_rate=settings.SAMPLE_RATE)
+            q.put_nowait(chunk)
         except Exception as e:                                         # noqa: BLE001
-            logger.debug("Streaming STT feed_audio failed: %s", e)
+            logger.debug("Streaming STT queue full / put failed: %s", e)
 
     def _maybe_stop_stt_stream(self) -> Optional[str]:
         """Finalize the streaming session and return the final text.
@@ -2611,7 +2662,32 @@ class Orchestrator:
         ``self.stt.transcribe(buffer)`` call returns it instantly
         without re-running the model. Returns ``None`` on any error so
         the caller can fall through to the legacy path.
+
+        2026-05-22: also signals the background feed worker to finish
+        + joins it before calling ``stop_stream`` on the engine. This
+        ensures all queued chunks are actually consumed by the model
+        before we ask for the final transcript.
         """
+        # Drain + finish the background worker BEFORE stopping the
+        # engine -- otherwise we'd race against pending chunks.
+        try:
+            q = getattr(self, "_stt_stream_queue", None)
+            worker = getattr(self, "_stt_stream_worker", None)
+            sentinel = getattr(self, "_stt_stream_sentinel", None)
+            if q is not None and sentinel is not None:
+                try:
+                    q.put(sentinel, timeout=2.0)
+                except Exception:                                       # noqa: BLE001
+                    pass
+            if worker is not None and worker.is_alive():
+                worker.join(timeout=4.0)
+        except Exception as e:                                         # noqa: BLE001
+            logger.debug("Streaming STT worker drain failed: %s", e)
+        finally:
+            self._stt_stream_queue = None
+            self._stt_stream_worker = None
+            self._stt_stream_sentinel = None
+
         try:
             stop = getattr(self.stt, "stop_stream", None)
             if stop is None:
@@ -3457,6 +3533,11 @@ class Orchestrator:
                 apply_brevity_hint(user_text),
                 precomputed_rag_snippets=snippets,
                 history_user_message=user_text,
+                # 2026-05-22 perf fix: retrieve against the BARE
+                # user_text, not the brevity-hinted body. The hint
+                # prefix bloats the query and slows cross-encoder
+                # reranking.
+                rag_query=user_text,
             )
             return
 
@@ -3498,6 +3579,7 @@ class Orchestrator:
                     apply_brevity_hint(user_text),
                     precomputed_rag_snippets=snippets,
                     history_user_message=user_text,
+                    rag_query=user_text,  # 2026-05-22 perf
                 )
                 return
 
@@ -3595,6 +3677,12 @@ class Orchestrator:
                 gate_verdict=verdict,
                 precomputed_rag_snippets=snippets,
                 history_user_message=user_text,
+                # 2026-05-22 perf fix: retrieve uses the BARE user_text
+                # (typically 10-50 chars) instead of the augmented body
+                # (which carries brevity / confidence markers and is
+                # 200+ chars). Drops cross-encoder reranking from
+                # ~5-30 s to ~1-3 s on CPU.
+                rag_query=user_text,
             )
             return
 

@@ -170,16 +170,33 @@ class _PartialTextCollector:
         self._completed_ids: set[int] = set()
         # Latest in-flight latency report from the C++ core (for logs).
         self.last_latency_ms = 0
+        # 2026-05-22 diag: tracks how many on_line_* callbacks fire per
+        # streaming session, so we can detect "no events fired" -- the
+        # failure mode where stop_stream returns empty even though
+        # audio was fed.
+        self.event_count = 0
 
     def _update_line(self, line) -> None:
         """Shared helper for every line-changed event."""
         with self._lock:
-            self._lines[line.line_id] = line.text or ""
+            text = line.text or ""
+            self._lines[line.line_id] = text
             if getattr(line, "is_complete", False):
                 self._completed_ids.add(line.line_id)
             latency = getattr(line, "last_transcription_latency_ms", 0)
             if latency:
                 self.last_latency_ms = latency
+            self.event_count += 1
+            # Per-event DEBUG so we can verify listener wiring without
+            # spamming production. Enable with logger level DEBUG to see.
+            if logger.isEnabledFor(10):  # DEBUG
+                logger.debug(
+                    "Moonshine listener: line_id=%d is_complete=%s "
+                    "text=%r",
+                    line.line_id,
+                    getattr(line, "is_complete", False),
+                    text[:80],
+                )
 
     def get_text(self, *, completed_only: bool = False) -> str:
         """Return the current accumulated transcript.
@@ -207,6 +224,7 @@ class _PartialTextCollector:
             self._lines.clear()
             self._completed_ids.clear()
             self.last_latency_ms = 0
+            self.event_count = 0
 
 
 def _build_listener(collector: _PartialTextCollector):
@@ -408,6 +426,16 @@ class MoonshineEngine:
         subsequent :meth:`transcribe` call (e.g. from the orchestrator's
         post-capture path) returns the cached value instead of running
         the model again.
+
+        2026-05-22 stash semantics (the cache-miss path):
+            - Streaming produced text -> stash it.
+            - Streaming produced NOTHING (event_count == 0) -> stash
+              ``None`` instead of "" so the post-capture
+              ``transcribe(speech)`` falls through to a real one-shot
+              transcribe on the audio buffer. Empty-from-listener and
+              empty-from-no-events are different failure modes; the
+              second means "we have audio, just no events yet" and the
+              safe play is to re-run synchronously.
         """
         with self._stream_lock:
             if not self._stream_active:
@@ -429,7 +457,24 @@ class MoonshineEngine:
         text = self._collector.get_text(completed_only=True)
         if not text:
             text = self._collector.get_text(completed_only=False)
+        events = self._collector.event_count
+        if events == 0 and not text:
+            # Listener never fired during this session. Mark cache
+            # miss so the downstream ``transcribe(buffer)`` call
+            # re-runs synchronously on the full audio buffer instead
+            # of returning a misleading empty string.
+            logger.warning(
+                "Moonshine stop_stream: 0 listener events fired during "
+                "session. Cache miss -> post-capture transcribe will "
+                "re-run synchronously on the buffer.",
+            )
+            self._last_streaming_text = None
+            return ""
         self._last_streaming_text = text
+        logger.info(
+            "Moonshine stream finalized: %d events, %d chars",
+            events, len(text),
+        )
         return text
 
     # ----------------------------------------------------------------
