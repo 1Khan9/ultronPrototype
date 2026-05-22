@@ -9,6 +9,9 @@
 >
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
+>
+> **Validating HEAD:** `b02af04` on `origin/main`. Tests **4104 passing /
+> 16 skipped / 0 failed** in ~85 s via `scripts/run_tests.py`.
 
 **2026-05-22 session E: opencode-inspired event bus + coding-supervisor stack (5 phases) -- COMPLETE.** Tests **4104 passing / 16 skipped / 0 failed in ~85 s** (+158 net). One commit on top of `9f2ac68`.
 
@@ -1105,22 +1108,46 @@ State at this validation:
 
 ## Quick orientation
 
-Ultron is a local voice-first AI assistant. The pipeline is:
+Ultron is a local voice-first AI assistant. The pipeline (current as of
+HEAD `b02af04`):
 
 ```
-mic → wake word ("ultron") OR addressing classifier (WARM mode)
-    → VAD-bounded utterance capture
-    → Whisper STT
-    → classify_routing() ── coding ── CodingTaskRunner (Claude Code subprocess)
-                         ├ conversational ── LLM (Qwen3.5-9B Q4 via llama-cpp-python)
-                         │                   ├─ optional pre-flight web-search gate
-                         │                   │  ├─ Brave + Jina (real)
-                         │                   │  └─ acknowledgment phrase to TTS in <200 ms
-                         │                   └─ stream tokens to Piper TTS → RVC → audio
-                         ├ openclaw stub ── voice "gateway not connected yet"
-                         └ hybrid stub ── voice "would split it up..."
-    → async write turn to Qdrant (memory)
-    → enter WARM mode (30 s follow-up window)
+mic → wake word ("ultron") OR addressing classifier (WARM follow-up mode)
+    → Silero VAD + Smart Turn V3 (CPU end-of-turn confirmation, ~12 ms)
+    → STT via DualSTTRegistry
+        ├─ stt.engine="moonshine" (CPU streaming, ONNX, current default)
+        ├─ stt.engine="parakeet"  (NeMo TDT on CUDA via .venv-parakeet HTTP)
+        └─ stt.engine="whisper"   (faster-distil-whisper-small.en swap-back)
+    → Intent recognizer (Gemma-300M q4 CPU; 25 phrases) short-circuits
+       gaming-mode commands AND force-routes "needs fresh data" intents to SEARCH
+    → classify_routing() → RoutingIntentKind (23 kinds incl. OPEN_LAST_SOURCE,
+                                              NAVIGATE_TO_SITE, GAMING_MODE,
+                                              APP_LAUNCH, ...)
+        ├ coding kinds → CapabilityVoiceController._handle_code_task
+        │   ├ if coding.supervisor.enabled: ProjectSupervisor.decide() →
+        │   │   ├ RESUME (active task + adjustment) → runner.send_followup
+        │   │   ├ EDIT (semantic ≥ 0.75)            → enriched TaskRequest
+        │   │   ├ CLARIFY ([0.55, 0.75))            → ask user to disambiguate
+        │   │   └ NEW                                → fresh scaffold
+        │   │   ↳ optional narration with 1.5 s barge-in window
+        │   │   ↳ digest listener on COMPLETE refreshes project_index
+        │   └ legacy ProjectResolver path (default; supervisor flag is OFF)
+        ├ OPEN_LAST_SOURCE  → opens cited URL from last search-augmented turn
+        ├ NAVIGATE_TO_SITE  → SearxNG top-10 → domain-score → opens best
+        ├ APP_LAUNCH        → native desktop.launcher (Chrome/Cursor/etc.)
+        ├ conversational    → LLM (Qwen3.5-4B Q4_K_M in-process, n_ctx=8192)
+        │                     ├ optional web-search gate (rules + LLM preflight)
+        │                     │  ├ news queries get categories=news routing
+        │                     │  ├ SearxNG → Brave → DuckDuckGo cascade
+        │                     │  └ Trafilatura → Jina reader cascade
+        │                     ├ ConversationMemory.retrieve (RAG; reranker OFF)
+        │                     └ stream tokens to Kokoro TTS (CUDA, voice=ultron)
+        ├ gaming mode       → VRAM reclaim: LLM swap to llama-3.2-3b, STT to
+        │                     moonshine, Kokoro CUDA→CPU, VLM unload (~2.3 GB freed)
+        └ openclaw bound    → MESSAGING / BROWSER_AUTOMATION / etc.
+    → typed event bus publishes turn / gate / memory / supervisor events
+    → async write turn to Qdrant (conversations + projects collections)
+    → enter WARM follow-up window (30 s)
 ```
 
 For the architectural picture see [docs/architecture.md](architecture.md).
@@ -1153,6 +1180,16 @@ For the current decisions and Foundation phase status see
 │       ├── uncertainty.py          ← Phase 5 (original prompts) uncertainty-signal application
 │       ├── response_style.py       ← 2026-05-10: per-call brevity hint (apply_brevity_hint)
 │       ├── conversational_ack.py   ← 2026-05-12: filler-ack on conversational path (ConversationalAckSource, is_conversational_ack_eligible)
+│       ├── channels.py             ← 2026-05-19 Track 6: Channel enum + ChannelMetadata (USER / SYSTEM / BACKGROUND / EXTERNAL); used by ConversationMemory write payload + future channel-aware retrieval
+│       ├── latency_hygiene.py      ← 2026-05-19 Track latency: process priority + GC tuning + LLM/embedder warmup helpers
+│       ├── local_clock_reply.py    ← 2026-05-20: short-circuits bare "what time is it" / "what's today's date" / "what time is it in <city>" -- ~70-city zoneinfo map, no LLM, no search
+│       ├── trace.py                ← 2026-05-20 Round 6: thread-local turn_id + phase tag + structured tlog/phase helpers (every log line in a user utterance carries turn=N phase=X)
+│       │
+│       ├── bus/                      ← 2026-05-22 session E: typed event bus (port of opencode's packages/opencode/src/bus/)
+│       │   ├── __init__.py           ← Public API: Bus, BusEvent, EventPayload, get_bus, publish, subscribe, subscribe_all, reset_bus_for_testing + canonical event re-exports
+│       │   ├── event.py              ← BusEvent.define(type, schema) + EventPayload envelope; schema validation best-effort (delivers anyway, logs WARN)
+│       │   ├── service.py            ← Bus class: pub/sub registry + dispatch; eager-subscribe (closes opencode's known lost-events race); RLock-guarded; callback errors swallowed + logged
+│       │   └── events.py             ← 17-event canonical catalog: TurnStarted/Completed, STTTranscribed, RoutingClassified, GateVerdict, MemoryRetrieved, LLMStream{Token,Complete}, TTSPlayed, CodingFileChanged, ProjectIndexed, ProjectDigestGenerated, SupervisorDecided, SafetyViolated, GamingEngaged/Disengaged, VRAMReclaimed
 │       │
 │       ├── observations/            ← 2026-05-18 Phase 0+1: canonical observation framework
 │       │   ├── __init__.py
@@ -1233,22 +1270,34 @@ For the current decisions and Foundation phase status see
 │       │
 
 │       ├── llm/
-│       │   ├── inference.py        ← LLMEngine (llama-cpp-python; Qwen3.5-4B Q4_K_M active, 9B kept; reload_for_preset for hot swap)
+│       │   ├── inference.py        ← LLMEngine (llama-cpp-python; qwen3.5-4b Q4_K_M active default, n_ctx=8192; reload_for_preset for hot swap to llama-3.2-3b on gaming engage; LlamaPromptLookupDecoding (PLD) wired but disabled by default after three repair attempts; _apply_no_think_marker for Qwen3's /no_think); voice path passes enable_thinking=False on all 5 generate_stream sites
 │       │   ├── compression.py      ← 4B plan Item 4: heuristic + perplexity-scorer-hook compressor for RAG/web/history (default OFF)
 │       │   ├── context_scoring.py  ← 2026-05-18 Phase 1: adaptive context-window heuristic (default-OFF; ContextRecommendation)
+│       │   ├── draft_model.py      ← 2026-05-22: make_qwen08b_draft_model factory + prefix-cached state machine; llm.draft_kind: "none"|"pld"|"model" selector (default "none")
 │       │   └── self_consistency.py ← 4B plan Item 6: N-sample majority-vote driver + aggregators (text/JSON/label) (default OFF)
 │       │
-│       ├── memory/                 ← Phase 3 (original) Qdrant memory
-│       │   ├── embedder.py         ← HybridEmbedder (FastEmbed dense + BM25 sparse)
-│       │   └── qdrant_store.py     ← ConversationMemory (3 collections, async writer thread)
+│       ├── memory/                 ← Phase 3 (original) Qdrant memory + 2026-05 frontier
+│       │   ├── embedder.py         ← HybridEmbedder (FastEmbed dense bge-small + BM25 sparse + Qdrant/bm25); encode_dense / encode_query_dense / encode_query_dense_sparse with optional parallel mode
+│       │   ├── qdrant_store.py     ← ConversationMemory (4 collections: conversations, facts, web_results, projects); async writer thread; topical_chunking + discourse + reranker integration; channel-aware writes
+│       │   ├── ranking.py          ← 2026-05-19 Track 1: compute_topic_match_score + compute_discourse_match_score (default weight 0.0); recency-weighted composite scoring fallback
+│       │   ├── reranker.py         ← 2026-05-21 frontier Item 2: CrossEncoderReranker (BAAI/bge-reranker-v2-m3) shared across memory single-pass + multi-pass + facts + web-search ranker; default ENABLED at config layer but disabled at runtime via memory.reranking.enabled: false (was 17-18 s/turn on CPU)
+│       │   ├── topical_chunking.py ← 2026-05-19 Track 1a: cosine-boundary topic tracker writing topic_id payload (default OFF)
+│       │   ├── discourse.py        ← 2026-05-19 Track 1b: 6-way rule + embedding-centroid discourse classifier writing discourse_type payload (default OFF)
+│       │   ├── contextualizer.py   ← 2026-05-21 frontier Item 4: Anthropic-technique contextual retrieval (default OFF; LLM cost ~80-150 ms per write)
+│       │   └── background_summarizer.py ← 2026-05-19 Tracks 1c+1d+1e: idle-gated LLM-driven summary + structured fact extraction (default OFF)
 │       │
-│       ├── web_search/             ← Phase 4 (original) Brave + Jina
+│       ├── web_search/             ← Phase 4 (original) + 2026-05 local-first ladder
 │       │   ├── acknowledgments.py  ← AcknowledgmentSource (shuffled phrase pool)
-│       │   ├── brave.py            ← BraveSearchClient + circuit breaker (Phase 4 Foundation)
+│       │   ├── brave.py            ← BraveSearchClient + circuit breaker (Phase 4 Foundation); BraveResult/SearchResult rename with backwards-compat alias
 │       │   ├── cache.py            ← WebResultsCache (Qdrant-backed)
-│       │   ├── gating.py           ← Two-stage gate (rules + LLM pre-flight)
+│       │   ├── duckduckgo.py       ← 2026-05-22: DuckDuckGoSearchClient (HTML scrape via duckduckgo-search lib); last-fallback in provider chain
+│       │   ├── gating.py           ← Two-stage gate (rules + LLM pre-flight); _TIME_SENSITIVE / _VOLATILE_TOPICS / _NEWS_QUERIES / _TIME_IN_LOCATION_GATE_RE rules; classify_by_rules() short-circuit
 │       │   ├── jina.py             ← JinaReaderClient + circuit breaker
-│       │   └── search.py           ← WebSearchExecutor (orchestrates Brave + Jina + ranking)
+│       │   ├── provider_chain.py   ← 2026-05-22 frontier: SearchProviderChain (searxng -> brave -> duckduckgo); first-non-empty-wins cascade; per-provider client construction memoized; forwards categories= only to SearxNG
+│       │   ├── reader_chain.py     ← 2026-05-22 frontier: ReaderProviderChain (trafilatura -> jina) for full-text extraction
+│       │   ├── search.py           ← WebSearchExecutor (orchestrates chain + reader chain + ranking); 2026-05-22 categories= param forwarded for news-category SearxNG routing
+│       │   ├── searxng.py          ← 2026-05-22 frontier: SearxNGSearchClient (local Docker JSON API); circuit-breaker protected; X-Forwarded-For header satisfies botdetection; per-call categories override
+│       │   └── trafilatura_reader.py ← 2026-05-22 frontier: TrafilaturaReaderClient (local Python lib; ~32 k char cap)
 │       │
 │       ├── tts/                    ← Piper + RVC + XTTS + Kokoro engines + ack cache
 │       │   ├── kokoro_engine.py    ← KokoroSpeech (StyleTTS2 + ISTFTNet; current default via tts.engine="kokoro"; voice ultron, fine-tune model + voicepack loaded; **on CUDA** since 2026-05-22 with move_to_device("cpu") on gaming engage; trim_and_fade + _drain_queue_with_silence + apply_trim_fade/trim_fade_threshold_db config knobs)
@@ -1259,41 +1308,48 @@ For the current decisions and Foundation phase status see
 │       │   ├── ultron_filter.py    ← v3 Ultron mechanical filter (NEW 2026-05-10; pedalboard DSP chain; unused on kokoro engine when apply_runtime_filter=false)
 │       │   └── xtts_v3.py          ← XTTSV3Speech engine (NEW 2026-05-10; selected by tts.engine="xtts_v3"; retained for swap-back to XTTS+v3 stack)
 │       │
-│       ├── coding/                 ← Phase A coding orchestration + Coding Addendum
+│       ├── coding/                 ← Phase A coding orchestration + Coding Addendum + 2026-05-22 supervisor stack
 │       │   ├── anchors.py          ← 2026-05-18 E2: goal-anchor planning primitives (GoalAnchor / AnchorBudget / AnchorPlan / decompose_into_anchors)
+│       │   ├── ast_metadata.py     ← 2026-05-19 Track 1f: stdlib-AST per-file structural extractor (functions_defined / functions_called / imports / classes / syntax_valid); consumed by Track 1g coding-runner FILE_CHANGE listener + 2026-05-22 project_introspect snapshot
 │       │   ├── audit.py            ← SessionAuditWriter (per-session JSONL)
 │       │   ├── bridge.py           ← Abstract CodingBridge + TaskEvent vocabulary
 │       │   ├── canonical_monitor.py ← 4B plan Item 7: per-session tool-call canonical-path monitor (default OFF)
 │       │   ├── voice_lock.py       ← 2026-05-18 E5: voice-character-lock pre-dispatch scanner + FILE_CHANGE helper
 │       │   ├── coordinator.py      ← ConversationCoordinator (clarification + correction loops)
 │       │   ├── direct_bridge.py    ← DirectClaudeCodeBridge (claude --print --stream-json)
-│       │   ├── intent.py           ← Coding-pipeline intent classifier (CODE_TASK etc.)
+│       │   ├── intent.py           ← Coding-pipeline intent classifier (CODE_TASK etc.) + _ADJUSTMENT_PATTERNS regex used by ProjectSupervisor
 │       │   ├── mcp_server.py       ← UltronMCPServer (in-process tools + SSE worker tools)
 │       │   ├── narration.py        ← StatusNarrator (delta-aware progress narration)
+│       │   ├── project_digest.py   ← 2026-05-22 supervisor Phase A: opencode-style SUMMARY_TEMPLATE port; generate_digest(request, llm_call) -> ProjectDigest; fails open to render_template() (deterministic fallback); parse_digest_sections / extract_files_from_digest helpers
+│       │   ├── project_index.py    ← 2026-05-22 supervisor Phase B (Qdrant): ProjectIndex(embedder) + ProjectIndexEntry + ProjectMatch; upsert/get/search/search_by_name/delete/count + UUID5-derived stable project_id; publishes ProjectIndexedEvent on bus
+│       │   ├── project_introspect.py ← 2026-05-22 supervisor Phase B (non-LLM): snapshot(project_path) -> ProjectSnapshot; depth-limited walk + language detect + entry-point find + per-file AST via ast_metadata; SKIP_DIRECTORIES skip-list (node_modules / .venv / __pycache__ / etc); render_tree_summary for prompt embedding; per-path TTL cache
+│       │   ├── project_supervisor.py ← 2026-05-22 supervisor Phase C: ProjectSupervisor.decide(SupervisorInputs) -> SupervisorDecision; RESUME/EDIT/CLARIFY/NEW algorithm with cosine thresholds (default 0.75 / 0.55); merges semantic (ProjectIndex) + lexical (ProjectResolver) candidates; logs every decision to logs/supervisor_decisions.jsonl; publishes SupervisorDecidedEvent
 │       │   ├── projections.py      ← Phase C / Foundation Part 2: 5 bounded projections
 │       │   ├── projects.py         ← ProjectRegistry, ProjectResolver, new_sandbox_project
-│       │   ├── runner.py           ← CodingTaskRunner (one in-flight task; bridge owner)
+│       │   ├── runner.py           ← CodingTaskRunner (one in-flight task; bridge owner); listener registration surface used by supervisor digest listener
 │       │   ├── session.py          ← ProjectSession state model + SessionStore
+│       │   ├── supervisor_dispatch.py ← 2026-05-22 supervisor Phases D + E: SupervisorDispatchController owns narration (Phase D barge-in) + enriched-context TaskRequest builder (Phase E digest + file-tree + file-hints prepended to Claude's prompt); build_digest() wrapper for COMPLETE listener; _speakable() strips backslashes/drive-letters
 │       │   ├── templates.py        ← TemplateRenderer (Jinja2 prompts + budget enforcement)
-│       │   ├── verification.py     ← Verifier (six checks + corrective loop)
-│       │   └── voice.py            ← CapabilityVoiceController (handles MODEL_SWITCH for voice-driven LLM swap; Phase 5 rename; alias preserved)
+│       │   ├── verification.py    ← Verifier (six checks + corrective loop)
+│       │   └── voice.py            ← CapabilityVoiceController (handles MODEL_SWITCH for voice-driven LLM swap; Phase 5 rename; alias preserved); 2026-05-22 supervisor_dispatch + project_index kwargs + _handle_code_task_via_supervisor intercept + _dispatch_supervisor_task + _attach_supervisor_digest_listener + _build_supervisor_llm_call module helper
 │       │
 │       ├── pipeline/
 │       │   └── orchestrator.py     ← Main event loop / state machine
 │       │
-│       ├── openclaw_routing/       ← Phase 5 capability-routing layer
+│       ├── openclaw_routing/       ← Phase 5 capability-routing layer + 2026-05 extensions
 │       │   ├── ambiguity.py        ← 2026-05-18 Phase 1: should_clarify predicate + AmbiguityVerdict (band [0.4, 0.65) by default; flag-gated)
 │       │   ├── block_and_revise.py ← 4B plan Item 8: ToolCallValidator pre-flight gate on OpenClaw tool calls (default OFF; fails open)
-│       │   ├── classifier.py       ← classify_routing() - top-level intent classifier (incl. MODEL_SWITCH for voice-driven LLM swap)
+│       │   ├── classifier.py       ← classify_routing() - top-level intent classifier with 23 RoutingIntentKind dispatches; OPEN_LAST_SOURCE (priority 1.95), NAVIGATE_TO_SITE keyword pattern (1.93) + verb pattern (post-APP_LAUNCH), APP_LAUNCH (2.0), MODEL_SWITCH, GAMING_MODE, plus per-category rules
 │       │   ├── decision_log.py     ← RoutingDecisionLog (logs/routing_decisions.jsonl)
 │       │   ├── decomposer.py       ← HybridTaskDecomposer (Qwen-driven JSON output; opt-in self-consistency)
 │       │   ├── disambiguator.py    ← IntentDisambiguator (CODING/AUTOMATION/HYBRID/UNCLEAR; opt-in IRMA enrichment)
-│       │   ├── dispatcher.py       ← OpenClawDispatcher (5 stub methods)
-│       │   ├── intents.py          ← RoutingIntentKind enum (21 values incl. APP_LAUNCH / SCREEN_CONTEXT_QUERY / WINDOW_MOVE / WINDOW_CLOSE / MODEL_SWITCH / SYSTEM_STATUS / GAMING_MODE / DESKTOP_AUTOMATION / WINDOW_AUTOMATION), RoutingIntent + per-category dataclasses (incl. AppLaunchIntent, ScreenContextIntent, WindowMoveIntent, WindowCloseIntent, ModelSwitchIntent, SystemStatusIntent, GamingModeIntent, DesktopIntent, WindowIntent)
+│       │   ├── dispatcher.py       ← OpenClawDispatcher (5 stub methods + V1-gap C3 desktop/window handlers)
+│       │   ├── gaming_mode.py     ← V1-gap A1 (2026-05): GamingModeManager with on_engaged/on_disengaged callbacks (LLM hot-swap, STT swap, Kokoro device flip, VLM unload, Parakeet server stop); decoupled from openclaw_on (works without OpenClaw); ~2.3 GB VRAM freed
+│       │   ├── intents.py          ← RoutingIntentKind enum (23 values: CONVERSATIONAL, CODE_TASK, PROGRESS_QUERY, CANCEL, MID_SESSION_ADJUSTMENT, CLARIFICATION_RESPONSE, BROWSER_AUTOMATION, MEDIA_GENERATION, MESSAGING, FILE_OPERATION, SHELL_OPERATION, HYBRID_TASK, MODEL_SWITCH, SYSTEM_STATUS, GAMING_MODE, DESKTOP_AUTOMATION, WINDOW_AUTOMATION, APP_LAUNCH, SCREEN_CONTEXT_QUERY, WINDOW_MOVE, WINDOW_CLOSE, OPEN_LAST_SOURCE, NAVIGATE_TO_SITE), RoutingIntent + per-category dataclasses (incl. AppLaunchIntent, ScreenContextIntent, WindowMoveIntent, WindowCloseIntent, ModelSwitchIntent, SystemStatusIntent, GamingModeIntent, DesktopIntent, WindowIntent, OpenLastSourceIntent (2026-05-22 with ordinal + referent + monitor), NavigateToSiteIntent (2026-05-22 with site_query + monitor))
 │       │   ├── irma.py             ← 4B plan Item 5: InputReformulator + ReformulationContext (default OFF)
 │       │   └── runner.py           ← AutomationTaskRunner (mirror of CodingTaskRunner)
 │       │
-│       ├── openclaw_bridge/        ← OpenClaw integration Phases 1, 3, 4, 5, 6, 13 (complete)
+│       ├── openclaw_bridge/        ← OpenClaw integration Phases 1, 3, 4, 5, 6, 13 (complete) + V1-gap C3 desktop
 │       │   ├── persona.py          ← PersonaLoader (mode-based: user_facing/background/heartbeat/bootstrap) + hot reload
 │       │   ├── lifecycle.py        ← OpenClawLifecycle (HTTP health probes; never raises)
 │       │   ├── client.py           ← OpenClawClient (async CLI subprocess transport: invoke_tool / send_message / trigger_heartbeat / mcp_*)
@@ -1304,7 +1360,8 @@ For the current decisions and Foundation phase status see
 │       │   ├── notifications.py    ← NotificationDispatcher (Phase 4 — proactive Telegram pings on coding-completion / heartbeat / etc.)
 │       │   ├── heartbeat_alerts.py ← HeartbeatAlertLog (Phase 5 — JSONL-backed alert log with atomic update + retention)
 │       │   ├── browser.py          ← BrowserTool (Phase 6 — navigate/snapshot/click/type/screenshot via OpenClawClient.invoke_tool)
-│       │   ├── mcp_tools.py        ← Stdio MCP server (Phase 13 — get_heartbeat_alerts / acknowledge_alert / run_maintenance / list_active_coding_sessions / get_recent_voice_alerts)
+│       │   ├── desktop.py          ← V1-gap C3 (2026-05-12): native-route handlers + supporting helpers for DESKTOP_AUTOMATION + WINDOW_AUTOMATION dispatcher branches
+│       │   ├── mcp_tools.py        ← Stdio MCP server (Phase 13 — get_heartbeat_alerts / acknowledge_alert / run_maintenance / list_active_coding_sessions / get_recent_voice_alerts; 2026-05-12 Phase 11 added 19 desktop MCP tools, 24 total)
 │       │   └── system_status.py    ← SystemStatusReporter (Phase 13 — voice-side reporter for SYSTEM_STATUS intents)
 │       │
 │       ├── resilience/             ← Phase 4 resilience primitives
@@ -1407,15 +1464,37 @@ For the current decisions and Foundation phase status see
 │   └── eval_harness.py            ← 2026-05-18 Phase 0: classifier-only eval harness (routing + addressing + web_gate); reads tests/eval/corpus.jsonl; writes logs/eval_runs/<ts>.json; exit codes 0/1/2 for CI
 │
 ├── tests/
-│   ├── conftest.py                 ← Path setup + pytest_sessionfinish hook that reaps test-spawned python children (preserves the live Ultron on port 19761)
-│   ├── test_*.py                   ← ~25 unit/integration test files (default suite)
+│   ├── conftest.py                 ← Path setup + pytest_sessionfinish hook that reaps test-spawned python children (preserves the live Ultron on port 19761); pytest_configure walks the process tree + refuses to start if another pytest is running on this codebase
+│   ├── test_*.py                   ← ~80 unit/integration test files at the top level (default suite); see scripts/run_tests.py to invoke
+│   ├── bus/                        ← 2026-05-22 session E: typed event bus (43 tests)
+│   │   ├── __init__.py
+│   │   ├── test_event.py           ← BusEvent.define / EventPayload.make / schema validation
+│   │   ├── test_service.py         ← Bus pub/sub + race-safety + concurrent subscribe + unsubscribe semantics
+│   │   └── test_events_catalog.py  ← Canonical 17-event catalog uniqueness + naming convention
 │   ├── coding/
 │   │   ├── conftest.py
 │   │   ├── mock_bridge.py          ← ScriptedClaudeBridge (in-process mock, ClaudeScript DSL)
 │   │   ├── test_orchestration.py   ← 11 mock-bridge orchestration scenarios
 │   │   ├── test_orchestration_real.py ← Same scenarios with real Claude (PYTEST_RUN_GPU_TESTS=1)
 │   │   ├── test_mock_bridge_smoke.py
+│   │   ├── test_project_digest.py        ← 2026-05-22: digest template + LLM-call + parse_digest_sections + extract_files (+27)
+│   │   ├── test_project_introspect.py    ← 2026-05-22: snapshot walk + language detect + entry-points + AST + cache (+25)
+│   │   ├── test_project_index.py         ← 2026-05-22: real-Qdrant + real-embedder upsert / search / get / delete / list / count (+26)
+│   │   ├── test_project_supervisor.py    ← 2026-05-22: decide() RESUME/EDIT/CLARIFY/NEW + threshold bands + merge + audit log + bus event (+34)
+│   │   ├── test_supervisor_dispatch.py   ← 2026-05-22: DispatchOutcome per kind + narration + enriched context + fallback (+27)
 │   │   └── sandbox/                ← test fixture sandbox
+│   ├── desktop/                    ← Desktop automation primitives (NEW 2026-05-12 Phase 11)
+│   │   ├── test_monitors.py        ← Win32 enumeration + find_monitor + point_to_monitor
+│   │   ├── test_capture.py         ← mss-based capture + taint tracker integration
+│   │   ├── test_windows.py         ← pywin32 enum + foreground detection
+│   │   ├── test_placement.py       ← move/resize/maximize on target monitor
+│   │   ├── test_launcher.py        ← AppLauncher registry + Chrome default-profile + URL passing
+│   │   ├── test_uia.py             ← pywinauto text extraction + click/type with safety gates
+│   │   ├── test_input_control.py   ← pyautogui rate limit + validator gate + UAC blocking
+│   │   ├── test_screen_context.py  ← orchestrator + capture-bytes discard
+│   │   ├── test_vlm.py             ← Moondream2VLM lazy load + fail-open + unload
+│   │   ├── test_voice.py           ← handle_app_launch + handle_screen_context_query + monitor resolution
+│   │   └── test_preferences.py     ← JSONL log + recency-weighted phrase lookup
 │   ├── error_recovery/             ← Phase 4: per-dependency failure modes (78 tests)
 │   │   ├── conftest.py
 │   │   ├── test_brave_failures.py
@@ -1429,14 +1508,34 @@ For the current decisions and Foundation phase status see
 │   │   ├── test_claude_code_failures.py    ← Phase 4 deferred wrappers
 │   │   ├── test_mcp_server_failures.py     ← Phase 4 deferred wrappers
 │   │   └── test_filesystem_failures.py     ← Phase 4 deferred wrappers
-│   ├── routing/                    ← Phase 5: classifier + dispatcher + decomposer (148 tests)
+│   ├── eval/                       ← 2026-05-18 Phase 0 build: classifier-only eval harness
+│   │   ├── corpus.jsonl            ← 60-row labeled routing / addressing / web-gate corpus
+│   │   └── test_eval_harness_*.py
+│   ├── memory/                     ← Memory subsystem unit tests (was 2026-05-19 onward; reranker / contextualizer / qdrant store / topic / discourse)
+│   │   └── (test_qdrant_*, test_memory_qdrant.py at top-level, etc.)
+│   ├── observations/               ← 2026-05-18 Phase 1 observation framework tests
+│   │   ├── test_writer.py
+│   │   ├── test_integrations.py
+│   │   ├── test_outcome_resolver.py
+│   │   └── test_lineage_overlap.py
+│   ├── routing/                    ← Phase 5 + 2026-05 extensions: classifier + dispatcher + decomposer + ambiguity + gaming_mode + decision_log + dispatcher_a1_c3
 │   │   ├── conftest.py
-│   │   ├── test_classifier.py
+│   │   ├── test_classifier.py      ← Top-level classifier with 23 RoutingIntentKind branches + 2026-05-22 _NAVIGATE_TO_SITE + _OPEN_LAST_SOURCE_AMBIGUOUS lists
 │   │   ├── test_dispatcher.py
 │   │   ├── test_decomposer.py
 │   │   ├── test_disambiguator.py
 │   │   ├── test_decision_log.py
+│   │   ├── test_ambiguity_band.py
+│   │   ├── test_dispatcher_a1_c3.py    ← V1-gap A1 + C3 dispatcher branches
+│   │   ├── test_desktop_native_classifier.py
 │   │   └── test_backward_compat.py
+│   ├── safety/                     ← 2026-05-12 Phases 2-5: runtime tool-call validator tests (+117)
+│   │   ├── test_path_resolver.py
+│   │   ├── test_audit_log.py
+│   │   ├── test_validator_core.py
+│   │   ├── test_rules_by_category.py
+│   │   ├── test_intent_and_taint.py
+│   │   └── test_dispatcher_integration.py
 │   ├── integration/                ← Phase 6: end-to-end pipeline (83 tests + bridge e2e)
 │   │   ├── conftest.py
 │   │   ├── mocks.md                ← What's mocked vs real, per layer
@@ -1458,17 +1557,27 @@ For the current decisions and Foundation phase status see
 │       ├── test_notifications.py   ← NotificationDispatcher: per-event gating + recipient resolution + transport errors
 │       ├── test_heartbeat_alerts.py ← HeartbeatAlertLog: record / get / acknowledge / prune / concurrency
 │       ├── test_browser.py         ← BrowserTool: six primitives + result extraction edge cases
-│       ├── test_mcp_tools.py       ← Stdio MCP tools: get_heartbeat_alerts / acknowledge_alert / run_maintenance / list_active_coding_sessions / get_recent_voice_alerts
+│       ├── test_mcp_tools.py       ← Stdio MCP tools (+ Phase 11 desktop MCP tools)
+│       ├── test_mcp_tools_desktop.py    ← Phase 11 19 desktop MCP tools
 │       └── test_system_status.py   ← SystemStatusReporter: alerts / projects / all foci + voice rendering
 │
 ├── data/                           ← runtime data (gitignored except for stub structure)
-│   ├── qdrant/                     ← embedded Qdrant store
+│   ├── qdrant/                     ← embedded Qdrant store (4 collections: conversations, facts, web_results, projects)
 │   ├── memory.jsonl                ← legacy turn log / migration source
-│   ├── projects.json               ← coding project registry
+│   ├── projects.json               ← coding project registry (legacy lexical ProjectResolver source)
+│   ├── projects/<project_id>/digest.md ← 2026-05-22: per-project digest markdown (also stored in Qdrant projects collection)
 │   ├── sandbox/                    ← auto-created coding projects
 │   ├── summaries.jsonl             ← maintenance summaries
 │   ├── maintenance.sqlite          ← maintenance state
 │   └── ollama_compat_test/         ← Modelfile from Foundation-phase Ollama compat test
+│
+├── ultronVoiceAudio/                ← workshop for voice character (gitignored except scripts + small configs)
+│   ├── scripts/                     ← parakeet_server.py + kokoro fine-tune scripts + bulk synth helpers
+│   ├── searxng_config/              ← settings.yml + limiter.toml mounted into Docker container at /etc/searxng
+│   │   ├── settings.yml             ← engine roster + outgoing timeouts + categories=news mappings; bing + mojeek + wikipedia + wikidata + bing-news + reuters
+│   │   └── limiter.toml             ← botdetection config (limiter: false; modern trusted_proxies schema)
+│   ├── kokoro_finetune/             ← fine-tune project (Stage 1 done, Stage 2 ep 0 only; SLM joint NEVER ran)
+│   └── kokoro_training_corpus_*/    ← bulk-synthesized LJSpeech-shaped training corpus (1654 clips / 107 min)
 │
 ├── logs/                           ← runtime logs (gitignored)
 │   ├── ultron.log                  ← rotating main log
@@ -1480,18 +1589,26 @@ For the current decisions and Foundation phase status see
 │   ├── sessions/<id>.jsonl         ← per-session coding audit
 │   ├── errors.jsonl                ← Phase 4 typed errors
 │   ├── routing_decisions.jsonl     ← Phase 5 routing audit
-│   └── automation_tasks.jsonl      ← Phase 5 OpenClaw task records
+│   ├── automation_tasks.jsonl     ← Phase 5 OpenClaw task records
+│   ├── safety_audit.jsonl          ← 2026-05-12 Phases 2-5: tamper-evident hash-chain audit log for the runtime tool-call validator
+│   ├── supervisor_decisions.jsonl  ← 2026-05-22: ProjectSupervisor decisions JSONL for offline threshold tuning
+│   ├── eval_runs/<ts>.json         ← 2026-05-18 Phase 0: classifier eval harness output
+│   └── observations.jsonl          ← 2026-05-18 Phase 1: canonical observation framework write target
 │
 ├── models/                         ← (main checkout only — NOT in worktrees)
-│   ├── Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf ← LLM, CURRENT DEFAULT (2.4 GB, 2026-05-14 second-pass)
-│   ├── Josiefied-Qwen3-4B-abliterated-v2.Q5_K_M.gguf ← retained for swap-back / quality A/B (2.7 GB, 2026-05-14)
-│   ├── Josiefied-Qwen3-8B-abliterated-v1.Q5_K_M.gguf ← LLM (5.85 GB; retained for swap-back / bigger abliterated)
-│   ├── Qwen3.5-9B-Q4_K_M.gguf      ← LLM (5.29 GB; retained for swap-back, not abliterated)
-│   ├── Qwen3.5-4B-Q4_K_M.gguf      ← LLM (2.55 GB; retained for swap-back / spec decoding, not abliterated)
-│   ├── Qwen3.5-0.8B-Q4_K_M.gguf    ← speculative-decoding draft for the plain qwen3.5-4b preset (0.50 GB)
+│   ├── Qwen3.5-4B-Q4_K_M.gguf      ← LLM, CURRENT DEFAULT for qwen3.5-4b preset (2.55 GB; n_ctx=8192)
+│   ├── Qwen3.5-0.8B-Q4_K_M.gguf    ← speculative-decoding draft for qwen3.5-4b preset (0.50 GB; wired into draft_model.py but llm.draft_kind: "none" by default after PLD repair attempts)
+│   ├── (other GGUFs deleted 2026-05-20 round 8 cleanup; swap-back via `python scripts/download_models.py` for josiefied-qwen3-4b / qwen3.5-9b / llama-3.2-3b-abliterated / josiefied-qwen3-8b presets)
+│   ├── gemma-3-1b.gguf             ← Gemma 1B draft for gemma-3-4b-abliterated preset (when re-fetched)
+│   ├── kokoro/                     ← StyleTTS2 + ISTFTNet (current default TTS)
+│   │   ├── voices/ultron.pt        ← fine-tuned voicepack (style vectors ~512 KB)
+│   │   ├── ultron_finetune.pth     ← fine-tune model weights (~327 MB; decoder + predictor + text_encoder + bert)
+│   │   └── (HF cache loaded on first use)
 │   ├── openwakeword/ultron.onnx    ← custom wake word
-│   ├── piper/en_US-ryan-medium.onnx ← TTS voice
-│   ├── rvc/{hubert_base.pt, rmvpe.pt} ← RVC support files
+│   ├── piper/en_US-ryan-medium.onnx ← TTS voice (legacy piper_rvc engine; ~16 MB)
+│   ├── rvc/{hubert_base.pt, rmvpe.pt} ← RVC support files (legacy piper_rvc)
+│   ├── moondream2/                 ← VLM (CPU on-demand; lazy-loaded; ~1.5 GB)
+│   ├── flan-t5-small/              ← zero-shot addressee model (CPU)
 │   └── smart_turn/smart-turn-v3.2-cpu.onnx ← Smart Turn V3 (8.68 MB int8, 2026-05-12)
 │
 ├── ultron_james_spader_mcu_6941/   ← (main checkout only) RVC voice model
@@ -1513,32 +1630,154 @@ For the current decisions and Foundation phase status see
 ### Voice query (conversational) — happy path
 
 ```
-1. AudioCapture callback → enqueues 32 ms blocks
+1. AudioCapture callback → enqueues 16 ms blocks (blocksize=256 @ 16 kHz;
+   queue maxsize 1024 since 2026-05-22 audio-overflow fix)
 2. Orchestrator.run() loop:
    a. WakeWordDetector or AddressingClassifier consumes blocks
-      ├── COLD: "ultron" wake word required
-      └── WARM: classifier verdict required
-   b. On addressed: VoiceActivityDetector marks utterance start/end
+      ├── COLD: "ultron" custom OpenWakeWord ONNX required
+      └── WARM: AddressingClassifier verdict (rule -> zero-shot fallback) required
+   b. On addressed: Silero VAD marks utterance start/end + Smart Turn V3
+      gradient-fire confirms end (early-complete prob ≥ 0.65 -> submit at 300 ms;
+      otherwise wait the legacy backstop)
    c. AudioCapture._capture_utterance() yields ndarray
-3. WhisperEngine.transcribe(audio) → user_text
-4. classify_routing(user_text, has_active_coding_task, has_pending_clarification)
-   → RoutingIntent
-5. CapabilityVoiceController.handle_capability_intent(routing_intent)
-   ├── CONVERSATIONAL: returns None
+   d. (Optional) Speculative STT kicked off during silence wait
+3. DualSTTRegistry.transcribe(audio):
+   ├── stt.engine="moonshine"  -> MoonshineEngine (CPU, streaming-native via
+   │                              moonshine-voice; background worker chunk-feed)
+   ├── stt.engine="parakeet"   -> ParakeetEngine (NeMo TDT via .venv-parakeet
+   │                              HTTP server on CUDA; streaming endpoints)
+   └── stt.engine="whisper"    -> WhisperEngine (faster-whisper int8_fp16;
+                                  beam_size=1 since 2026-05-15)
+   -> user_text
+4. UltronIntentRecognizer.process_utterance(user_text):
+   ├── Match against 25 registered phrases via Gemma-300M q4 embeddings (CPU)
+   ├── If "needs fresh data" intent matches -> set self._next_turn_force_search=True
+   ├── If "gaming mode engage/disengage" matches -> short-circuit + invoke
+   │                                                 GamingModeManager directly
+   └── Else: return None and continue normal flow
+5. local_clock_reply.maybe_handle(user_text):
+   ├── "what time is it" / "what's today's date" -> system clock reply, ~5 ms
+   ├── "what time is it in <city>" + city in zoneinfo map -> reply, no LLM
+   └── Else: return None and continue normal flow
+6. classify_routing(user_text, has_active_coding_task, has_pending_clarification)
+   → RoutingIntent (one of 23 RoutingIntentKind values)
+7. Orchestrator intercepts OPEN_LAST_SOURCE / NAVIGATE_TO_SITE BEFORE the
+   capability controller (orchestrator-local state access):
+   ├── OPEN_LAST_SOURCE -> _resolve_cited_source() + webbrowser.open() OR Chrome on monitor
+   └── NAVIGATE_TO_SITE -> SearxNG "<site> official website" -> top-10 domain
+                            scoring -> webbrowser.open() OR Chrome on monitor
+8. CapabilityVoiceController.handle_capability_intent(routing_intent)
+   ├── CONVERSATIONAL: returns None (orchestrator falls through to LLM path)
    ├── coding kinds: routes through CodingTaskRunner
-   └── automation kinds: OpenClawDispatcher (stub voice msg)
-6. If None (conversational fall-through):
+   │   (when coding.supervisor.enabled, _handle_code_task_via_supervisor
+   │    intercepts -- see "Supervisor decision flow" below)
+   ├── APP_LAUNCH: native desktop.launcher (Chrome / Cursor / etc.)
+   ├── WINDOW_MOVE / WINDOW_CLOSE: pywin32 placement / WM_CLOSE
+   ├── GAMING_MODE: GamingModeManager.engage / disengage (VRAM reclaim)
+   ├── MODEL_SWITCH: LLMEngine.reload_for_preset() (in-process hot swap)
+   └── automation kinds: OpenClawDispatcher (stub voice msg by default)
+9. If None (conversational fall-through):
    a. Orchestrator._respond(user_text)
-      ├── Optional: WebSearchGate.classify(text) → SEARCH/NO_SEARCH/UNCERTAIN
-      ├── If SEARCH: AcknowledgmentSource.next_phrase() → TTS immediately
-      │              → WebSearchExecutor.run(text) → SearchPayload
-      │              → format_sources_for_prompt(payload.sources)
-      │              → injected into LLM context
-      ├── ConversationMemory.retrieve(text) → MemoryTurn[] (RAG)
-      ├── LLMEngine.generate_stream(text) → tokens
-      └── TextToSpeech.speak_stream(tokens) → Piper → RVC → audio device
+      ├── Optional speculative classification + speculative LLM during silence wait
+      ├── Web-search gate (3-layer):
+      │   ├── classify_by_rules: _TIME_SENSITIVE / _VOLATILE_TOPICS /
+      │   │                       _NEWS_QUERIES / _TIME_IN_LOCATION_GATE_RE
+      │   ├── If self._next_turn_force_search: pre-populate cached_verdict=SEARCH
+      │   └── Else preflight LLM (Qwen3.5-4B) on UNCERTAIN cases
+      ├── If SEARCH:
+      │   ├── AcknowledgmentSource.next_phrase() -> TTS immediately
+      │   │   (cache hit: ~0 ms; cache miss: ~200-400 ms)
+      │   ├── WebSearchExecutor.run(text, categories="news" iff news query):
+      │   │   ├── SearchProviderChain: SearxNG -> Brave -> DuckDuckGo
+      │   │   └── ReaderProviderChain: Trafilatura -> Jina
+      │   ├── format_sources_for_prompt + (if news) multi-event directive
+      │   └── injected into LLM context
+      ├── ConversationMemory.retrieve(text, k=3, min_relevance=0.78) -> MemoryTurn[]
+      │   (reranker.enabled=false runtime; cosine + RRF + recency composite)
+      ├── LLMEngine.generate_stream(text, enable_thinking=False, history_user_message=bare):
+      │   ├── Qwen3.5-4B Q4_K_M in-process via llama-cpp-python
+      │   ├── /no_think marker via _apply_no_think_marker (saves 5-10 s TTFT)
+      │   └── In-process spec decoding wired (llm.draft_kind="none" default)
+      └── KokoroSpeech.speak_stream(tokens) -> CUDA StyleTTS2 + ISTFTNet (voice=ultron)
+         ├── Producer-consumer pipeline (synth N+1 overlaps playback N)
+         ├── trim_and_fade boundary artifact mute (cosine fades + tail zero)
+         └── PrecomputedAckClipCache hits for known ack phrases
    b. ConversationMemory.add(user/assistant) on background thread
-7. Orchestrator enters FOLLOW_UP_LISTENING for 30 s (warm window)
+   c. Token accumulator captures the spoken response into _last_response_text
+      (used by OPEN_LAST_SOURCE resolver on the next turn)
+   d. Bus publishes turn.started / stt.transcribed / routing.classified /
+      gate.verdict / memory.retrieved / llm.stream.* / tts.played / turn.completed
+10. Orchestrator enters FOLLOW_UP_LISTENING for 30 s (warm window)
+```
+
+### Supervisor decision flow (2026-05-22)
+
+Active only when `coding.supervisor.enabled=true`. CODE_TASK / MID_SESSION_ADJUSTMENT /
+CLARIFICATION_RESPONSE utterances route through this layer BEFORE the legacy
+ProjectResolver path.
+
+```
+1. CapabilityVoiceController._handle_code_task -> intercepted via
+   _handle_code_task_via_supervisor when supervisor_dispatch is wired
+2. Build SupervisorInputs(user_text, coding_intent, has_active_task,
+                          active_task_project_name, active_task_session_id)
+3. SupervisorDispatchController.dispatch(inputs):
+   a. supervisor.decide(inputs) -> SupervisorDecision
+      Priority (first hit wins):
+      ├── Active-task + ADJUSTMENT_PATTERNS -> RESUME current session
+      ├── Semantic top match >= resolve_threshold (default 0.75) -> EDIT
+      ├── Registry exact name/alias match -> EDIT
+      ├── Top in [clarify_threshold, resolve_threshold) -> CLARIFY (top-2 candidates)
+      └── Else -> NEW scaffold
+   b. If narrate_enabled: speak narration via barge_in_speak callable
+      (delegates to Orchestrator._speak_with_barge_in_check); on barge-in
+      return BARGED_IN
+   c. Build DispatchOutcome:
+      ├── EDIT_DISPATCH -> enriched TaskRequest (digest + tree snapshot + file hints)
+      ├── NEW_DISPATCH  -> fresh TaskRequest under sandbox_root/<slugified-name>
+      ├── RESUME_FORWARD -> resume_session_id
+      └── CLARIFY        -> clarification_question
+4. _dispatch_supervisor_task:
+   a. mkdir cwd
+   b. runner.start_task(request) -> handle
+   c. _attach_supervisor_digest_listener(handle, project_name, cwd, user_goal_hint)
+      -> registers callback on COMPLETE that calls build_digest + index.upsert
+5. Audit log: every decision appended to logs/supervisor_decisions.jsonl
+6. Bus event: SupervisorDecidedEvent fires per decision
+7. On Claude session COMPLETE: digest listener -> generate_digest -> project_index.upsert
+   -> ProjectIndexedEvent + ProjectDigestGeneratedEvent on bus
+```
+
+### Gaming-mode VRAM reclaim flow (V1-gap A1, 2026-05-22)
+
+```
+1. Engage trigger:
+   ├── Voice utterance matches gaming-mode regex OR intent recognizer
+   └── classify_routing -> GAMING_MODE intent OR direct short-circuit
+2. GamingModeManager.engage(trigger_phrase):
+   a. on_engaged callbacks (decoupled from openclaw_on; work without OpenClaw):
+      ├── LLMEngine.reload_for_preset("llama-3.2-3b-abliterated", n_ctx=6144)
+      ├── DualSTTRegistry.swap_to("moonshine") + stop_parakeet_server()
+      ├── KokoroSpeech.move_to_device("cpu")
+      └── Moondream2VLM.unload() (drops _model + _tokenizer)
+   b. (If OpenClaw client present) plugin disable: desktop-control + windows-control
+   c. (Optional) Docker Desktop toggle if toggle_docker=true
+3. ~2.3 GB VRAM freed (4.4 GB -> 2.1 GB Ultron contribution; net headroom for game)
+4. Bus publishes GamingEngagedEvent + VRAMReclaimedEvent
+5. Disengage (voice or explicit): reverse the chain (LLM restored, Parakeet server
+   respawned in background, Kokoro moved back to CUDA, VLM lazy-reloads on demand)
+```
+
+### Bus event flow (2026-05-22)
+
+```
+publisher (any subsystem) -> publish(EventDef, properties)
+   -> EventPayload.make() builds envelope with auto-id + timestamp
+   -> schema validation (best-effort; logs WARN on mismatch but delivers)
+   -> Bus._lock acquired briefly to snapshot subscriber lists
+   -> typed-channel subscribers fire in registration order (publisher thread)
+   -> wildcard subscribers fire after typed (publisher thread)
+   -> per-callback try/except swallows + logs WARN ("subscriber N raised...")
 ```
 
 ### Coding task path
@@ -1690,14 +1929,29 @@ the loader path so llama-cpp / ctranslate2 find `cudart64_12.dll`,
 - `PROJECT_ROOT`, `MODELS_DIR`, `LOGS_DIR` — Path constants
 - `DEFAULT_CONFIG_PATH` — `<root>/config.yaml`
 - `resolve_path(value: str | Path) -> Path` — resolve relative paths against PROJECT_ROOT
-- Sub-models (all pydantic `_Strict`):
-  `AudioConfig`, `VADConfig`, `WakeWordConfig`, `STTConfig`, `LLMConfig`,
-  `EmbeddingsConfig`, `QdrantCollections`, `QdrantConfig`, `MemoryConfig`,
-  `BraveConfig`, `JinaConfig`, `WebCacheConfig`, `WebSearchConfig`,
-  `AddressingConfig`, `CodingMCPConfig`, `CodingVerificationConfig`,
-  `CodingConfig`, `ProjectionsBudgets`, `ProjectionsConfig`, `RVCConfig`,
-  `TTSConfig`, `LoggingConfig`, `ErrorPhrasesConfig`,
-  `RoutingClassifierConfig`, `RoutingConfig`, `OpenClawConfig`
+- Sub-models (all pydantic `_Strict`; large + growing list):
+  `AudioConfig`, `VADConfig`, `SmartTurnConfig`, `WakeWordConfig`, `STTConfig`,
+  `LLMConfig` (+ `LLM_PRESETS`), `EmbeddingsConfig`,
+  `QdrantCollections` (conversations / facts / web_results / **projects**),
+  `QdrantConfig`, `MemoryConfig` (+ `MemoryRerankingConfig` /
+  `MemoryRetrievalConfig` / `MemoryContextualRetrievalConfig` /
+  `MemoryTopicalChunkingConfig` / `MemoryDiscourseTaggingConfig`),
+  `BraveConfig`, `JinaConfig`, `SearxNGConfig`, `DuckDuckGoConfig`,
+  `WebCacheConfig`, `WebSearchConfig` (+ chain ordering),
+  `AddressingConfig`, `IntentConfig` (2026-05-22 Gemma-300M intent recognizer),
+  `CodingMCPConfig`, `CodingVerificationConfig`,
+  `CodingCanonicalMonitorConfig`, `CodingGoalAnchorsConfig`,
+  `CodingAstMetadataConfig`, `CodingFactsConfig`,
+  `CodingSupervisorConfig` (2026-05-22 supervisor stack: 11 knobs incl.
+  `enabled` / per-phase flags / `resolve_threshold` / `clarify_threshold`),
+  `CodingConfig`, `BackgroundSummarizerConfig`, `KokoroConfig`,
+  `ProjectionsBudgets`, `ProjectionsConfig`, `RVCConfig`,
+  `XttsV3Config`, `TTSConfig`, `LoggingConfig`, `ErrorPhrasesConfig`,
+  `RoutingClassifierConfig`, `RoutingConfig`, `OpenClawConfig`,
+  `GamingModeConfig`, `DesktopConfig` (+ `default_monitor_index` 2026-05-22),
+  `WindowControlConfig`, `SafetyConfig` (+ rule toggles),
+  `NotificationsConfig`, `HeartbeatConfig`, `BrowserConfig`,
+  `MediaGenerationConfig`
 - `UltronConfig` — top-level model
 - `load_config(path=None) -> UltronConfig` — explicit load (raises `ConfigurationError`)
 - `get_config() -> UltronConfig` — singleton, lazy-load on first call
@@ -1705,15 +1959,122 @@ the loader path so llama-cpp / ctranslate2 find `cudart64_12.dll`,
 - `set_config(cfg) -> None` — test injection
 - `current_config_path() -> Path | None`
 - `LLM_PRESETS: dict[str, dict]` (4B plan Stage A) — preset table for
-  `LLMConfig.preset`. Two presets defined: `qwen3.5-9b` (default; 9B
-  GGUF, n_ctx=8192, no draft) and `qwen3.5-4b` (4B GGUF + 0.8B draft +
-  n_ctx=16384). `LLMConfig._apply_preset` (model_validator) fills
-  in `model_path` / `n_ctx` / `draft_model_path` from this table only
-  when those fields are absent from `model_fields_set`, so explicit
-  YAML values always win.
+  `LLMConfig.preset`. Current default `qwen3.5-4b` (Qwen 3.5 4B Q4_K_M
+  + 0.8B draft + n_ctx=8192). Other presets retained for swap-back:
+  `josiefied-qwen3-4b`, `josiefied-qwen3-8b`, `qwen3.5-9b`,
+  `gemma-3-4b-abliterated`, `llama-3.2-3b-abliterated` (gaming-mode
+  target; n_ctx=6144). `LLMConfig._apply_preset` (model_validator)
+  fills in `model_path` / `n_ctx` / `draft_model_path` only when those
+  fields are absent from `model_fields_set`, so explicit YAML values
+  always win.
 
 **In:** `config.yaml`, `${ENV_VAR}` substitution from `os.environ`.
 **Out:** typed `UltronConfig` instance.
+
+### `src/ultron/bus/` (2026-05-22 session E)
+
+**Purpose:** in-process typed pub/sub. Ported from opencode's
+`packages/opencode/src/bus/` with the eager-subscribe race fix.
+Subsystems publish lifecycle events without hard-coding callback
+registrations through the orchestrator.
+
+**Public:**
+- `BusEvent.define(type: str, schema: Mapping[str, type], description="") -> BusEvent`
+- `EventPayload.make(event_def, properties, id=None) -> EventPayload`
+- `Bus` class (or `get_bus()` singleton):
+  - `.publish(event_def, properties, id=None) -> EventPayload`
+  - `.subscribe(event_def, callback) -> Callable[[], None]` (returns unsubscribe)
+  - `.subscribe_all(callback) -> Callable[[], None]`
+  - `.subscriber_count(event_def=None) -> int`
+  - `.published_count() -> int`
+- Module-level shortcuts: `publish`, `subscribe`, `subscribe_all`, `get_bus`,
+  `reset_bus_for_testing()` (test escape hatch)
+- 17 canonical events in `events.py` re-exported from `__init__.py`:
+  `TurnStartedEvent`, `TurnCompletedEvent`, `STTTranscribedEvent`,
+  `RoutingClassifiedEvent`, `GateVerdictEvent`, `MemoryRetrievedEvent`,
+  `LLMStreamTokenEvent`, `LLMStreamCompleteEvent`, `TTSPlayedEvent`,
+  `CodingFileChangedEvent`, `ProjectIndexedEvent`,
+  `ProjectDigestGeneratedEvent`, `SupervisorDecidedEvent`,
+  `SafetyViolatedEvent`, `GamingEngagedEvent`, `GamingDisengagedEvent`,
+  `VRAMReclaimedEvent`
+- `BUS_EVENT_CATALOG: list[BusEvent]` for introspection
+
+**Threading:** callbacks fire on publisher thread (synchronous). State
+guarded by `RLock`; recursive publish/subscribe from callbacks is safe.
+**Fail-open:** callback exceptions caught + logged; schema mismatches
+delivered with WARN.
+
+### `src/ultron/channels.py` (2026-05-19 Track 6)
+
+**Purpose:** Channel enum + metadata used by `ConversationMemory` write
+payload + future channel-aware retrieval.
+
+**Public:**
+- `Channel` enum (`USER` / `SYSTEM` / `BACKGROUND` / `EXTERNAL` / `OTHER`)
+- `ChannelMetadata` dataclass
+- `Channel.from_str(value) -> Channel` (with `OTHER` fallback for
+  forward-compat with legacy payloads)
+
+### `src/ultron/local_clock_reply.py` (2026-05-20)
+
+**Purpose:** short-circuits bare time/date queries from the system clock
+without ever invoking the LLM or web search. ~5 ms reply path.
+
+**Public:**
+- `maybe_handle(user_text) -> Optional[str]` — returns a spoken-form
+  reply when the utterance matches a bare time/date regex OR
+  `_TIME_IN_LOCATION_RE` with a city in `_CITY_TIMEZONES` (~70 cities
+  mapped to IANA tz identifiers). Returns None for unknown cities
+  (caller falls through to web-search gate which has a paired
+  `_TIME_IN_LOCATION_GATE_RE` to force SEARCH).
+- `_CITY_TIMEZONES: dict[str, str]` — public for testability.
+
+### `src/ultron/latency_hygiene.py` (2026-05-19)
+
+**Purpose:** process-level latency hygiene helpers: process-priority
+boost, GC tuning, LLM/embedder warmup.
+
+**Public:**
+- `apply_process_priority()` — Win32 process priority bump
+- `tune_gc()` — adjust GC generation thresholds
+- `warmup_llm_engine(engine)` / `warmup_embedder(embedder)` —
+  trigger first-load on a background thread
+
+### `src/ultron/trace.py` (2026-05-20 Round 6)
+
+**Purpose:** thread-local turn_id + phase tag + structured tlog/phase
+helpers. Every log line in a user utterance carries `turn=N phase=X`
+so `grep turn=42` shows the entire lifecycle of one user utterance
+in order.
+
+**Public:**
+- `next_turn() -> int` — increment + return the thread-local turn id
+- `set_phase(name: str)` — set the thread-local phase tag
+- `current_turn_id() -> Optional[int]`
+- `tlog(logger, event: str, **kwargs)` — structured log emission
+- `phase(name: str)` — context manager setting phase for its scope
+- `fmt(value) -> str` — short formatter for kv emission
+
+### `src/ultron/intent/recognizer.py` (2026-05-22)
+
+**Purpose:** engine-agnostic semantic intent matcher. Wraps
+`moonshine_voice.IntentRecognizer` with lazy load, fail-open semantics,
+and a thread-safe registry that replays registrations on model load.
+
+**Public:**
+- `UltronIntentRecognizer(model="embeddinggemma-300m", variant="q4", threshold=0.65)`
+  - `.register(name, phrase, *, threshold=None)` — append a recognised
+    intent (replayed on first model load)
+  - `.process_utterance(text) -> Optional[IntentMatch]` — fail-open;
+    returns None on model load failure or below-threshold match
+  - `.is_loaded() -> bool`
+- `IntentMatch(name, phrase, similarity, threshold)`
+- `IntentRegistration(name, phrase, threshold)`
+- `get_intent_recognizer() -> Optional[UltronIntentRecognizer]` /
+  `set_intent_recognizer(rec)` — module-level singleton accessors
+
+**In:** Gemma-300M q4 embedding model (~300 MB CPU RAM, loaded once)
+plus registered phrases from `config.yaml:intent.phrases`.
 
 ### `src/ultron/errors.py` (Phase 4)
 
@@ -2097,7 +2458,32 @@ VAD" rather than misclassifying.
 - `class HybridEmbedder` — FastEmbed dense (bge-small-en-v1.5 INT8) + sparse (Qdrant/bm25)
   - `encode_dense(texts) -> np.ndarray`
   - `encode_query_dense(text)` / `encode_query_sparse(text)`
+  - `encode_query_dense_batch(queries)` / `encode_query_sparse_batch(queries)` — multi-query helpers
+  - `encode_query_dense_sparse(query, *, parallel=False)` — single-call dense + sparse pair; optional `ThreadPoolExecutor` mode (V1-gap A2 parallel encoding)
   - `dim` property → 384
+
+#### `memory/reranker.py` (2026-05-21 frontier Item 2)
+- `class CrossEncoderReranker` — wraps `sentence-transformers` CrossEncoder; uses `BAAI/bge-reranker-v2-m3` by default.
+  - `rerank(query, candidates, *, top_k) -> List[Tuple[idx, score]]` — predict relevance, sort, top-k.
+  - Module-level `get_shared_reranker()` / `set_shared_reranker()` for singleton sharing.
+  - `_PREDICT_CONTENT_CAP_CHARS = 500` truncates candidate content before predict() to bound tokenize cost.
+  - Default: code-level ENABLED but runtime `memory.reranking.enabled: false` after live perf measurement (17-18 s/turn on CPU).
+
+#### `memory/contextualizer.py` (2026-05-21 frontier Item 4)
+- `class TurnContextualizer` — Anthropic-technique contextual retrieval. LLM-generates a brief situational anchor before embedding each turn so the dense vector carries surrounding context.
+- Default OFF (`memory.contextual_retrieval.enabled: false`); LLM cost ~80-150 ms per write turn.
+
+#### `memory/topical_chunking.py` (2026-05-19 Track 1a)
+- `class TopicTracker` — cosine-boundary topic tracker. Detects topic shift when consecutive turn embedding distance exceeds `boundary_similarity_threshold`; writes `topic_id` payload onto the memory turn.
+- Default OFF.
+
+#### `memory/discourse.py` (2026-05-19 Track 1b)
+- `class DiscourseClassifier` — 6-way classifier (REQUEST / QUESTION / STATEMENT / CONFIRMATION / SOCIAL / OTHER) via rule + optional embedding-centroid fallback.
+- Default OFF (`memory.discourse_tagging.enabled: false`).
+
+#### `memory/background_summarizer.py` (2026-05-19 Tracks 1c+1d+1e)
+- `class BackgroundSummarizer` — idle-gated LLM-driven summary + structured fact extraction. Runs on a worker thread when the orchestrator is idle.
+- Default OFF (`memory.background_summary.enabled: false`).
 
 #### `memory/qdrant_store.py`
 - `class MemoryTurn` — dataclass: id, ts, role, content, summary, entities, ...
@@ -2155,15 +2541,47 @@ VAD" rather than misclassifying.
 - `class JinaReaderClient`
   - `fetch(url) -> Optional[str]` — uses breaker + raises JinaReaderError
 
+#### `web_search/searxng.py` (2026-05-22 frontier)
+- `_SEARXNG_BREAKER` — CircuitBreaker
+- `class SearxNGError(BraveAPIError)` — typed failure
+- `class SearxNGSearchClient(base_url?, timeout_s?, categories?, engines?)`
+  - `is_reachable() -> bool` — cheap GET /
+  - `search(query, count?, categories=None) -> List[SearchResult]` — per-call
+    `categories` override (e.g. `"news"` for news-category routing); X-Forwarded-For
+    header satisfies SearxNG's botdetection so the engine list is reachable
+
+#### `web_search/duckduckgo.py` (2026-05-22 frontier)
+- `class DuckDuckGoSearchClient` — HTML-scrape last-fallback (via `duckduckgo-search` lib)
+  - `search(query, count?) -> List[SearchResult]`
+- Includes 2026-05-22 CAPTCHA handling: any HTTP 403 / CAPTCHA-marker translates
+  into circuit-breaker increment + empty list (fail-open to next provider)
+
+#### `web_search/provider_chain.py` (2026-05-22 frontier)
+- `class SearchProviderChain` — cascading provider chain
+  - `__init__(provider_ids=None)` — defaults to `searxng -> brave -> duckduckgo`
+    per `web_search.providers` config
+  - `search(query, count?, categories=None) -> List[SearchResult]` — first-non-empty
+    wins; per-provider client construction memoized; forwards `categories`
+    only to `searxng` (Brave + DDG silently ignore unknown kwargs)
+
+#### `web_search/trafilatura_reader.py` (2026-05-22 frontier)
+- `class TrafilaturaReaderClient` — local Python lib for HTML -> markdown
+  - `fetch(url) -> Optional[str]` — caps at ~32 k chars (was 200 k before live perf bug)
+
+#### `web_search/reader_chain.py` (2026-05-22 frontier)
+- `class ReaderProviderChain` — cascading reader chain
+  - Default order: `trafilatura -> jina` (local-first)
+  - `fetch(url) -> Optional[str]` — first-non-empty wins
+
 #### `web_search/search.py`
 - `class SearchSource` — dataclass: url, title, snippet, full_text, rank
 - `class SearchPayload` — dataclass: query, sources, cache_hit, elapsed_ms, notes
 - `_rank_snippets(llm, query, results, top_n)` — LLM-driven re-ranking
 - `_normalise_search_query(q)` / `_dedupe_queries(qs)` (V1-gap B2) — drop near-duplicate Brave queries before fan-out using a token-set canonical form (lowercase + possessive strip + stopword drop + sort).
 - `_render_inline_marker(index, *, fmt)` (V1-gap B3) — render bracketed `[1]` (default) or Unicode superscript (¹²³) inline citations based on `web_search.citation.inline_marker_format`.
-- `class WebSearchExecutor` — orchestrates Brave → rank → Jina → cache. **2026-05-09 latency fix:** Jina fetches now run IN PARALLEL via `concurrent.futures.ThreadPoolExecutor` with a collective deadline cap. Pre-fix the loop was sequential and one slow page (~10 s on a Quora result) blocked the entire search path while the TTS playback queue starved waiting for tokens. Post-fix wall time is `max(per-fetch durations)` instead of `sum(...)`, capped further by `collective_deadline_seconds`. Any fetch still in flight at deadline is abandoned (its source falls back to snippet-only with a `jina_deadline:<url>` note). Threads keep running in the background and exit on per-fetch HTTP timeout; `pool.shutdown(wait=False)` ensures the executor returns immediately.
-  - `__init__(brave, jina, llm, cache=None, max_fetch=None, collective_deadline_seconds=None)` — both kwargs default-resolve from `get_config().web_search.jina`.
-  - `run(user_query, search_queries?, top_n=3) -> SearchPayload`
+- `class WebSearchExecutor` — orchestrates SearchProviderChain → rank → ReaderProviderChain → cache. **2026-05-09 latency fix:** reader fetches run IN PARALLEL via `concurrent.futures.ThreadPoolExecutor` with a collective deadline cap. Pre-fix the loop was sequential and one slow page (~10 s on a Quora result) blocked the entire search path while the TTS playback queue starved waiting for tokens. Post-fix wall time is `max(per-fetch durations)` instead of `sum(...)`, capped further by `collective_deadline_seconds`. Any fetch still in flight at deadline is abandoned (its source falls back to snippet-only with a `jina_deadline:<url>` note). Threads keep running in the background and exit on per-fetch HTTP timeout; `pool.shutdown(wait=False)` ensures the executor returns immediately.
+  - `__init__(brave, jina, llm, cache=None, max_fetch=None, collective_deadline_seconds=None)` — `brave` is actually the SearchProviderChain (legacy field name retained for compatibility with internal call sites).
+  - `run(user_query, search_queries?, top_n=3, categories=None) -> SearchPayload` — 2026-05-22: `categories` param forwarded to the chain (only SearxNG accepts; Brave/DDG ignore). Set to `"news"` from the orchestrator when `_NEWS_QUERIES` regex matches.
 - `format_sources_for_prompt(sources)` / `format_sources_for_transcript(sources)` — references list always uses bracket form for monospace clarity.
 
 ### `src/ultron/tts/`
@@ -2432,6 +2850,128 @@ implementation).
   - `pop_budget_warning() -> Optional[str]`
   - `record_pre_task_aborted(*, label, reason, intent_text="")` (V1-gap A4) — append a pre-task abort row to the audit log when the orchestrator's barge-in watcher fires.
 
+#### `coding/ast_metadata.py` (2026-05-19 Track 1f)
+- `@dataclass class AstMetadata` — frozen; `syntax_valid: bool`, `error: str`,
+  `functions_defined: List[str]`, `functions_called: List[str]`,
+  `imports: List[str]`, `classes_defined: List[str]`
+- `extract_python_metadata(source: str) -> AstMetadata` — pure stdlib AST parse;
+  ~5-50 ms per file; fail-soft on non-Python input (returns syntax_valid=False
+  with error string)
+- `extract_metadata_from_path(path: Path) -> AstMetadata` — file convenience wrapper
+- Consumers: Track 1g coding-runner FILE_CHANGE listener (syntax verification);
+  2026-05-22 `project_introspect.snapshot()` (per-file structural metadata)
+
+#### `coding/project_digest.py` (2026-05-22 supervisor Phase A)
+- `SUMMARY_TEMPLATE` — markdown template with sections Goal / Constraints / Progress
+  {Done, In Progress, Blocked} / Key Decisions / Next Steps / Critical Context /
+  Relevant Files; port of opencode's `packages/opencode/src/session/compaction.ts`
+- `DIGEST_SECTIONS` / `PROGRESS_SUBSECTIONS` — section ordering constants
+- `@dataclass class DigestRequest` — project_name, project_path, task_summary,
+  files_created/modified/deleted, prior_digest_markdown, user_goal_hint,
+  language, entry_points
+- `@dataclass class ProjectDigest` — project_name, project_path, markdown,
+  sections (parsed), generated_at, elapsed_ms, fallback (True when template
+  fallback used), source ("llm" | "template" | "manual")
+- `LLMCallable` — type alias: callable that takes prompt string returns completion
+- `generate_digest(request, llm_call=None, *, max_files_in_prompt=40,
+  max_summary_chars=4000) -> ProjectDigest` — main entry; fails-open to
+  `render_template()` when no LLM or LLM raises / returns empty
+- `render_template(request) -> str` — deterministic fallback (no LLM)
+- `parse_digest_sections(markdown) -> Dict[str, str]` — walks `## Header` blocks
+  case-insensitive against `DIGEST_SECTIONS`; handles trailing whitespace
+- `extract_files_from_digest(markdown) -> List[str]` — extracts "Relevant Files"
+  section paths; returns empty when the section is missing or `(none)`
+- Internal helpers: `_build_digest_prompt` (PRIOR_PROLOGUE vs PROLOGUE selection),
+  `_summarize_files_for_prompt` (caps + "+N more" trailer),
+  `_normalize_digest_markdown` (strips ` ```markdown ` fences)
+
+#### `coding/project_introspect.py` (2026-05-22 supervisor Phase B non-LLM)
+- `LANGUAGE_BY_EXT: Mapping[str, str]` — extension -> language (python / javascript
+  / typescript / rust / go / java / kotlin / swift / csharp / cpp / c / ruby /
+  php / scala / clojure / elixir / bash / powershell / lua / r / matlab / dart /
+  html / css / vue / sql / apex)
+- `MARKER_FILES: Mapping[str, str]` — pyproject.toml / setup.py / requirements.txt /
+  manage.py / app.py / package.json / Cargo.toml / go.mod / pom.xml / etc.
+- `ENTRY_POINT_FILENAMES: Sequence[str]` — manage.py / main.py / app.py /
+  __main__.py / server.py / index.js / index.ts / wsgi.py / asgi.py / etc.
+- `SKIP_DIRECTORIES: frozenset` — node_modules / __pycache__ / .git / .venv /
+  build / dist / target / .next / coverage / etc.
+- `DEFAULT_MAX_DEPTH=6`, `DEFAULT_MAX_FILES=500`, `DEFAULT_MAX_DIRECTORIES=200`,
+  `DEFAULT_AST_FILE_CAP=30`, `DEFAULT_CACHE_TTL_SECONDS=30.0`
+- `@dataclass class FileInfo` — frozen; path, relative_path, size_bytes,
+  extension, is_entry_point
+- `@dataclass class ProjectSnapshot` — project_path, project_name, files,
+  directories, languages, language_counts, entry_points, markers,
+  ast_metadata: `Dict[str, AstMetadata]`, captured_at, elapsed_ms, truncated;
+  `.dominant_language` property; `.file_count`; `.render_tree_summary(max_lines=50)`
+- `snapshot(project_path, *, max_depth, max_files, max_directories,
+  ast_file_cap, use_cache=True) -> ProjectSnapshot` — main entry
+- `invalidate_snapshot_cache(project_path=None)` — drop entry or full clear
+- Internals: `_walk_project`, `_detect_languages`, `_detect_entry_points`,
+  `_parse_ast_for_python_files`, `_SnapshotCache` (TTL-based)
+
+#### `coding/project_index.py` (2026-05-22 supervisor Phase B Qdrant)
+- `@dataclass class ProjectIndexEntry` — project_id, project_name, project_path,
+  digest_markdown, digest_sections, digest_text_summary, language, entry_points,
+  tags, last_modified_unix, created_at_unix, last_session_id;
+  `.to_payload()` / `.from_payload(d)`
+- `@dataclass class ProjectMatch` — entry, score, reason
+- `class ProjectIndex(embedder, qdrant_path=None, collection_name=None,
+  recent_cache_size=50)`
+  - `.upsert(digest, *, project_id=None, tags=None, language="",
+    entry_points=None, last_session_id=None) -> Optional[ProjectIndexEntry]` —
+    embeds the digest text summary, upserts Qdrant; publishes
+    `ProjectIndexedEvent` on bus
+  - `.get(project_id) -> Optional[ProjectIndexEntry]` — cache-first lookup
+  - `.get_by_path(project_path) -> Optional[ProjectIndexEntry]`
+  - `.list_all(limit=100) -> List[ProjectIndexEntry]` — most-recently-modified first
+  - `.search(query, *, top_k=5, min_score=0.0) -> List[ProjectMatch]` —
+    cosine semantic search; uses `query_points()` with named "dense" vector
+  - `.search_by_name(name_substring, *, top_k=10) -> List[ProjectIndexEntry]` —
+    lexical fallback over recent cache + scroll
+  - `.delete(project_id) -> bool`
+  - `.count() -> int`
+- Helpers: `_derive_project_id(path)` — UUID5 with fixed namespace for stable id;
+  `_build_digest_summary_for_search(sections, max_chars=500)` — Goal + Critical
+  Context + Relevant Files concat, capped; `_score_reason(score)` — human label
+
+#### `coding/project_supervisor.py` (2026-05-22 supervisor Phase C)
+- `class SupervisorAction(str, Enum)` — RESUME / EDIT / CLARIFY / NEW
+- `@dataclass class SupervisorCandidate` — project_id, project_name, project_path,
+  score, source ("semantic" | "registry_exact" | "registry_substring" | ...)
+- `@dataclass class SupervisorDecision` — action, target_project_id/name/path,
+  resume_session_id, candidates, confidence, reasoning, clarification_question,
+  file_hints, user_text; `.to_log_dict()` for the JSONL audit
+- `@dataclass class SupervisorInputs` — user_text, coding_intent,
+  has_active_task, active_task_project_name, active_task_session_id, turn_id
+- `class ProjectSupervisor(index, registry, resolver, *, resolve_threshold=0.75,
+  clarify_threshold=0.55, decisions_log_path=None, max_candidates_in_decision=5)`
+  - `.decide(inputs) -> SupervisorDecision` — runs the priority pipeline
+    (active-adjustment / strong-semantic / registry-exact / clarify-band / new);
+    always returns + never raises; audit-logs + publishes `SupervisorDecidedEvent`
+- Helpers: `_merge_candidates(semantic, registry, *, cap)` — dedup-by-path,
+  higher-score-wins, source labels concatenated; `_registry_to_candidate`;
+  `_project_id_for_registry(project)` — maps registry path to same UUID5 as index
+
+#### `coding/supervisor_dispatch.py` (2026-05-22 supervisor Phases D + E)
+- `class DispatchActionKind(str, Enum)` — EDIT_DISPATCH / NEW_DISPATCH /
+  RESUME_FORWARD / CLARIFY / BARGED_IN / FALLBACK
+- `@dataclass class DispatchOutcome` — kind, voice_message, task_request,
+  clarification_question, resume_session_id, decision, already_narrated
+- `BargeInCheckable` / `PlainSpeak` — type aliases for injected speak callables
+- `class SupervisorDispatchController(supervisor, *, index, barge_in_speak,
+  plain_speak, narrate_enabled=False, narration_barge_in_window_seconds=1.5,
+  enriched_context_enabled=False, sandbox_root=None, default_model="haiku")`
+  - `.dispatch(inputs) -> DispatchOutcome` — orchestrates supervisor.decide →
+    narrate (Phase D, with barge-in) → build enriched TaskRequest (Phase E)
+  - `.build_digest(project_name, project_path, task_summary, files_*,
+    *, llm_call, prior_digest_markdown, user_goal_hint) -> ProjectDigest` —
+    convenience used by the COMPLETE listener
+- Internal: `_narration_for(decision)` (RESUME / EDIT / NEW / CLARIFY narration
+  text via TTS-safe `_speakable`); `_build_edit_prompt` (Phase E digest +
+  file-tree snapshot + file hints prepended); `_slugify_for_directory`;
+  `_speakable` (strips backslashes / drive letters); `_indent_block`
+
 #### `coding/coordinator.py`
 - `class DecisionPath(str, Enum)` — RULE_ESCALATE / RULE_DEFAULT / RULE_ANSWER / FACT_ANSWER (V1-gap A3) / LLM_ANSWER / LLM_DEFAULT / LLM_ESCALATE / USER_ANSWER / TIMEOUT_DEFAULT
 - `class ClarificationDecision`, `AdjustmentDecision`, `PendingUserClarification`, `_FactAnswer` (V1-gap A3, internal) — dataclasses
@@ -2460,30 +3000,60 @@ implementation).
 
 #### `coding/voice.py`
 - `class VoiceResponse` — dataclass: text, handled, cancelled, **pre_task_confirmation, deferred_dispatch, pre_task_label** (V1-gap A4 — when populated, the orchestrator speaks the confirmation with barge-in detection before running the deferred dispatch closure).
-- `class CapabilityVoiceController` (Phase 5 rename; alias = CodingVoiceController). `__init__` accepts an optional `llm_engine` (the live `LLMEngine`) so MODEL_SWITCH intents can call `llm_engine.reload_for_preset(...)` for in-process model hot-swap.
+- `class CapabilityVoiceController` (Phase 5 rename; alias = CodingVoiceController). `__init__` accepts an optional `llm_engine` (the live `LLMEngine`) so MODEL_SWITCH intents can call `llm_engine.reload_for_preset(...)`. 2026-05-22 supervisor kwargs: `supervisor_dispatch` + `project_index` — when wired, intercepts `_handle_code_task` BEFORE the legacy ProjectResolver path; when `None`, controller is byte-for-byte unchanged.
   - `pending_completion()` / `pending_clarifications()` / `pending_budget_warning()`
   - `has_pending_clarification() -> bool`
   - `handle_utterance(text) -> Optional[VoiceResponse]` — coding-only (delegated by capability dispatch)
   - `handle_capability_intent(routing_intent) -> Optional[VoiceResponse]` — top-level dispatch (Phase 5)
   - `_build_code_task_response(...)` (V1-gap A4, internal) — wraps `_submit` into a deferred dispatch closure when `coding.pre_task_confirmation_enabled`. Read-only intents (PROGRESS_QUERY / CANCEL / etc.) keep the legacy text-only response.
   - `_build_pre_task_confirmation(...)` / `_summarise_intent_for_voice(...)` (V1-gap A4, internal) — render the confirmation phrase ("I'll have Claude Code &lt;verb&gt; on the &lt;project&gt; project. Going ahead.").
+  - **2026-05-22 supervisor methods (internal):**
+    - `_handle_code_task_via_supervisor(intent) -> Optional[VoiceResponse]` —
+      builds `SupervisorInputs`, calls `supervisor_dispatch.dispatch()`,
+      converts `DispatchOutcome` to a `VoiceResponse`. Returns `None` on
+      FALLBACK to drop through to the legacy resolver path.
+    - `_dispatch_supervisor_task(intent, outcome) -> VoiceResponse` —
+      mkdir cwd, `registry.touch(name)`, `runner.start_task(request)`,
+      `_attach_supervisor_digest_listener(...)`.
+    - `_attach_supervisor_digest_listener(handle, project_name,
+      project_path, user_goal_hint)` — registers COMPLETE listener that
+      calls `supervisor_dispatch.build_digest(...)` +
+      `project_index.upsert(...)`; gated on `coding.supervisor.digests_enabled`.
+    - `_current_project_name()` / `_current_session_id_or_label()` —
+      best-effort runner state introspection.
+- **Module-level helper:** `_build_supervisor_llm_call(llm_engine, sup_cfg)
+  -> Optional[LLMCallable]` — wraps `LLMEngine.generate` for the digest
+  call (kwargs-fallback for variant signatures; returns None when
+  llm_engine is missing).
 
 ### `src/ultron/openclaw_routing/` (Phase 5)
 
 #### `openclaw_routing/intents.py`
-- `class RoutingIntentKind(str, Enum)` — 21 values: CONVERSATIONAL, CODE_TASK, PROGRESS_QUERY, CANCEL, MID_SESSION_ADJUSTMENT, CLARIFICATION_RESPONSE, BROWSER_AUTOMATION, MEDIA_GENERATION, MESSAGING, FILE_OPERATION, SHELL_OPERATION, HYBRID_TASK, MODEL_SWITCH (4B plan), SYSTEM_STATUS (Phase 13), GAMING_MODE (V1-gap A1), DESKTOP_AUTOMATION (V1-gap C3), WINDOW_AUTOMATION (V1-gap C3), APP_LAUNCH (Phase 8 desktop), SCREEN_CONTEXT_QUERY (Phase 8 desktop), WINDOW_MOVE (2026-05-14 third pass), WINDOW_CLOSE (2026-05-14 third pass)
-- Per-category dataclasses: `BrowserIntent`, `MediaGenIntent`, `MessagingIntent`, `FileOpIntent`, `ShellOpIntent`, **`GamingModeIntent`** (V1-gap A1), **`DesktopIntent`** (V1-gap C3), **`WindowIntent`** (V1-gap C3), **`AppLaunchIntent`** (Phase 8 desktop), **`ScreenContextIntent`** (Phase 8 desktop), **`WindowMoveIntent`** (2026-05-14 third pass), **`WindowCloseIntent`** (2026-05-14 third pass)
+- `class RoutingIntentKind(str, Enum)` — **23 values**: CONVERSATIONAL, CODE_TASK, PROGRESS_QUERY, CANCEL, MID_SESSION_ADJUSTMENT, CLARIFICATION_RESPONSE, BROWSER_AUTOMATION, MEDIA_GENERATION, MESSAGING, FILE_OPERATION, SHELL_OPERATION, HYBRID_TASK, MODEL_SWITCH (4B plan), SYSTEM_STATUS (Phase 13), GAMING_MODE (V1-gap A1), DESKTOP_AUTOMATION (V1-gap C3), WINDOW_AUTOMATION (V1-gap C3), APP_LAUNCH (Phase 8 desktop), SCREEN_CONTEXT_QUERY (Phase 8 desktop), WINDOW_MOVE (2026-05-14 third pass), WINDOW_CLOSE (2026-05-14 third pass), **OPEN_LAST_SOURCE** (2026-05-22 opens cited URL from last search-augmented turn; supports ordinal "the second one" + referent "the NBC story" + embedding-similarity match), **NAVIGATE_TO_SITE** (2026-05-22 queries SearxNG + scores top-10 domains + opens best match)
+- Per-category dataclasses: `BrowserIntent`, `MediaGenIntent`, `MessagingIntent`, `FileOpIntent`, `ShellOpIntent`, **`GamingModeIntent`** (V1-gap A1), **`DesktopIntent`** (V1-gap C3), **`WindowIntent`** (V1-gap C3), **`AppLaunchIntent`** (Phase 8 desktop), **`ScreenContextIntent`** (Phase 8 desktop), **`WindowMoveIntent`** (2026-05-14 third pass), **`WindowCloseIntent`** (2026-05-14 third pass), **`OpenLastSourceIntent`** (2026-05-22: monitor_index, monitor_query, ordinal, referent, raw_text), **`NavigateToSiteIntent`** (2026-05-22: site_query, monitor_index, monitor_query, raw_text)
 - `HybridSubtask` — dataclass: order, type, subtype, description
-- `RoutingIntent` — top-level dataclass: kind, raw_text, confidence, source, reason, coding_intent, automation_intent, subtasks, model_switch_intent, system_status_intent, **gaming_mode_intent, desktop_intent, window_intent** (V1-gaps A1/C3), needs_user_clarification, clarification_question
+- `RoutingIntent` — top-level dataclass: kind, raw_text, confidence, source, reason, coding_intent, automation_intent, subtasks, model_switch_intent, system_status_intent, **gaming_mode_intent, desktop_intent, window_intent** (V1-gaps A1/C3), app_launch_intent, screen_context_intent, window_move_intent, window_close_intent, **open_last_source_intent, navigate_to_site_intent** (2026-05-22), needs_user_clarification, clarification_question
 - `DispatchResult` — dataclass: success, voice_message, error, metadata
 - `TaskInfo` — task tracking dataclass
 - `AutomationIntent` = Union of the 5 automation intent classes
 
 #### `openclaw_routing/classifier.py`
 - `classify_routing(utterance, has_active_coding_task=False, has_pending_clarification=False) -> RoutingIntent`
-  Layered: in-flight commands → hybrid → coding → automation rules → CONVERSATIONAL fallback
+  Layered dispatch order (first hit wins):
+  1. In-flight commands (CANCEL / etc.)
+  2. Hybrid signals
+  3. Coding intents (CODE_TASK / etc.)
+  4. **1.93 NAVIGATE_TO_SITE keyword pattern** (2026-05-22; "open the X website")
+  5. **1.95 OPEN_LAST_SOURCE** (2026-05-22; "show me that article" / "the second one" / "the NBC story")
+  6. **2.0 APP_LAUNCH** (Phase 8; "open YouTube on monitor 2", image-search)
+  7. **2.05 NAVIGATE_TO_SITE verb pattern** (2026-05-22; "take me to HBO Max")
+  8. WINDOW_MOVE / WINDOW_CLOSE (2026-05-14)
+  9. Other automation rules (BROWSER_AUTOMATION / etc.)
+  10. CONVERSATIONAL fallback
 - `_build_browser_intent(text)`, `_build_media_intent(text)`, `_build_messaging_intent(text)`, `_build_file_intent(text)`, `_build_shell_intent(text)` — extract structured intent from raw text
-- **Comprehensive test pass extensions (HEAD 2fb0988+):** `_BROWSER_INTERACT.scroll` now covers `scroll the <page|window|tab|view|content|results|list> <down|up|left|right|to>` (the original pattern only matched `scroll <down|up|to> the`); `_MEDIA_PATTERNS.render` now covers `render <a|an|the> <image|scene|picture|video|illustration|drawing|artwork>` with optional `me` (the original required `render me`); `_MESSAGING_PATTERNS` adds `notify me <on|via> <telegram|signal|slack|discord>` (parallel to the existing `tell me on …` form); `_FILE_PATTERNS` adds `show me the contents of <file.ext>` (the original required the literal word "file"). All four extensions covered by parametrised regression tests in `tests/routing/test_classifier.py` (+10 tests / 1474 → 1484).
+- **2026-05-22 OPEN_LAST_SOURCE primitives:** `_OPEN_LAST_SOURCE_VERB` (`show me | open | pull up | bring up | load` — navigation verbs deliberately EXCLUDED), `_OPEN_LAST_SOURCE_NOUN` (`article | link | page | source | story | result | citation | website | site | url | item | entry | piece | report | headline | one`), four regex patterns (BARE / REF_BEFORE / REF_AFTER / NUMBER), `_ORDINAL_WORDS` map (first..tenth + last=-1), `_NUMBER_WORDS` map (one..ten). `_extract_open_last_source_referent(text)` extracts (ordinal, referent) tuple; `_classify_open_last_source(text) -> Optional[OpenLastSourceIntent]`.
+- **2026-05-22 NAVIGATE_TO_SITE primitives:** `_NAV_TO_SITE_VERB` (`take me to | go to | navigate to | head to | find me | bring me to`), `_NAV_TO_SITE_KEYWORD` (`website | site | page | homepage | .com | .org | .net | .io | dot com`), two patterns (VERB / KEYWORD); 27-entry `_NAVIGATE_TO_SITE_SITENAME_DENY` blocks "take me to bed" / "go to the gym" / "take me to the bathroom" / etc. `_classify_navigate_to_site(text) -> Optional[NavigateToSiteIntent]`.
+- **Comprehensive test pass extensions (HEAD 2fb0988+):** `_BROWSER_INTERACT.scroll` now covers `scroll the <page|window|tab|view|content|results|list> <down|up|left|right|to>` (the original pattern only matched `scroll <down|up|to> the`); `_MEDIA_PATTERNS.render` now covers `render <a|an|the> <image|scene|picture|video|illustration|drawing|artwork>` with optional `me` (the original required `render me`); `_MESSAGING_PATTERNS` adds `notify me <on|via> <telegram|signal|slack|discord>` (parallel to the existing `tell me on …` form); `_FILE_PATTERNS` adds `show me the contents of <file.ext>` (the original required the literal word "file").
 
 #### `openclaw_routing/dispatcher.py`
 - `class OpenClawDispatcher`
@@ -2861,7 +3431,7 @@ Sections:
 - `stt` (model, device, compute_type, beam_size, temperature, etc.)
 - `llm` (provider="llama_cpp", **preset** ["qwen3.5-9b"|"qwen3.5-4b"|"custom"; auto-fills model_path/n_ctx/draft_model_path when those keys are omitted — Stage A of the 4B plan], runtime ["in_process"|"http_server"], model_path, draft_model_path, n_ctx, gpu_layers, temperature, top_p, max_tokens, repeat_penalty, history_turns, flash_attn, kv_cache_type, system_prompt, server.{base_url,...}, persona.{source,...})
 - `embeddings` (dense_model, sparse_model, dense_dim)
-- `qdrant` (data_dir="data/qdrant", collections.{conversations,facts,web_results})
+- `qdrant` (data_dir="data/qdrant", collections.{conversations, facts, web_results, **projects** [2026-05-22 supervisor stack]})
 - `memory` (enabled, jsonl_legacy_path, recent_turns, rag_top_k, rag_exclude_recent, facts_top_k, write_queue_maxsize, **retrieval.{multi_pass_enabled=false, max_categories_per_query=4, candidates_per_category_multiplier=4}** (V1-gap A2), **ranking.{rrf_weight=1.0, recency_weight=0.2, recency_half_life_days=7.0, surprise_weight=0.15, redundancy_weight=0.3}** (V1-gap A2), **rag_min_relevance=0.6** (NEW 2026-05-09: cosine-similarity floor for RAG candidates; tuned empirically with bge-small INT8 -- off-topic content peaks ~0.55-0.57, truly relevant 0.7-0.95), **history_turns_for_llm=4** (NEW 2026-05-09: cap on recent-turn history fed to LLM per call; prevents topic-bleed when user pivots topics))
 - `web_search` (enabled, brave_api_key_env, brave/jina/cache subsections, **citation.inline_marker_format="bracket"** [V1-gap B3]). 2026-05-09 latency fix tunables: **`jina.timeout_seconds: 6.0`** (was 15.0), **`jina.max_fetch: 2`** (was 3), **`jina.collective_deadline_seconds: 6.0`** (NEW — executor-side cap on parallel fetch wait; 0 disables).
 - `addressing` (follow_up_enabled, **warm_mode_duration_seconds: 30.0** ← user override, NOT 10s; rule_confidence_threshold, **zero_shot_addressed_min_confidence: 0.80** [NEW 2026-05-11: demotes low-confidence zero-shot YES verdicts to NOT_ADDRESSED via default_silent; catches the borderline third-person utterances flan-t5-small saturates on at 0.75. Set to 0.0 for legacy permissive behaviour.], zero_shot_model, log_path)
@@ -2872,9 +3442,23 @@ Sections:
 - `error_phrases` (13 pools — qdrant_unavailable, brave_unavailable, jina_unavailable, anthropic_unavailable, rvc_unavailable, openclaw_unavailable, piper_unavailable, whisper_repeated_failures, addressing_classifier_failure, wake_word_model_failure, mcp_server_lost, claude_code_subprocess_failed, config_invalid)
 - `routing` (llm_disambiguation_enabled, hybrid_task_decomposition_enabled, disambiguation_question_template, routing_log_path, classifier subsection, stub_responses_enabled)
 - `openclaw` (enabled=false [stub], gateway_url, auth_token_env, health_check_*_seconds, fail_open, required_agent_id)
-- `gaming_mode` (V1-gap A1) — enabled=false, plugins_to_disable=[desktop-control, windows-control], toggle_docker=false, docker_executable_path, docker_process_name, log_path
-- `desktop` (V1-gap C3) — enabled=false, default_*_timeout_seconds, plugin_slug, tool_slug_screenshot / tool_slug_list_windows / tool_slug_find_window
+- `gaming_mode` (V1-gap A1) — enabled (2026-05-22 default TRUE), plugins_to_disable=[desktop-control, windows-control], toggle_docker=false, docker_executable_path, docker_process_name, log_path, **kokoro_engage_device="cpu" / kokoro_disengage_device="cuda"** (2026-05-22), **vlm_unload_on_engage=true** (2026-05-22), **llm_preset="llama-3.2-3b-abliterated"** (2026-05-22 gaming-mode swap target)
+- `desktop` (V1-gap C3) — enabled, default_*_timeout_seconds, plugin_slug, tool_slug_screenshot / tool_slug_list_windows / tool_slug_find_window, **default_monitor_index: Optional[int] = 2** (2026-05-22 user preference: when an APP_LAUNCH / NAVIGATE_TO_SITE / OPEN_LAST_SOURCE utterance gives no explicit monitor cue, place on this 1-based monitor index. Set to `null` to fall back to legacy "main" behaviour. Range [1, 8].)
 - `window_control` (V1-gap C3) — enabled=false, default_action_timeout_seconds, plugin_slug, tool_slug_focus / tool_slug_click / tool_slug_type
+- `intent` (2026-05-22 semantic intent recognizer) — enabled (default TRUE), model="embeddinggemma-300m", variant="q4", threshold=0.65, phrases: list of `{name, phrase, threshold?}` (25 registered: 12 gaming-mode variants + 2 time/date + 11 "needs fresh data" / freshness intents)
+- `safety` (2026-05-12 Phases 2-5 runtime tool-call validator) — enabled (default TRUE), per-rule toggles via `rules.{rule_id}: bool`, sandbox_roots override, extra_protected_files / extra_protected_dirs, screen_cache_dir, approved_outbound_apis, audit_log_path
+- `coding.supervisor` (2026-05-22 supervisor stack) — eleven knobs:
+  - `enabled` (master switch; default FALSE)
+  - `digests_enabled` (Phase A; default FALSE)
+  - `index_enabled` (Phase B; default FALSE)
+  - `decide_enabled` (Phase C; default FALSE)
+  - `narrate_enabled` (Phase D; default FALSE)
+  - `narration_barge_in_window_seconds=1.5`
+  - `enriched_context_enabled` (Phase E; default FALSE)
+  - `resolve_threshold=0.75` / `clarify_threshold=0.55`
+  - `digest_max_summary_chars=4000` / `digest_max_files_in_prompt=40`
+  - `decisions_log_path="logs/supervisor_decisions.jsonl"`
+  - `max_candidates_in_decision=5`
 
 ### `config/settings.py` (Phase 3 SHIM)
 
@@ -2911,12 +3495,53 @@ All scripts assume venv active in main checkout (`C:\STC\ultronPrototype`). Work
 **Out:** stdout — `<used> MB used | of <total> MB | target 9216 MB | cap 11500 MB | [OK/above target/WARN/CRITICAL]`
 **Functions:** `vram_used_mb(gpu_id) -> Optional[int]`, `vram_total_mb(gpu_id)`, `gpu_name(gpu_id)`, `_format_line(used, total)`, `main(argv)`.
 
+### `scripts/audio_diagnostic.py` (2026-05-09 audio-quality pass)
+
+**Purpose:** mic audio diagnostic harness — RMS, peak, dynamic range over a short capture; helps tune `audio.input_gain_db` for far-field vs close-mic setups.
+**Run:** `python scripts/audio_diagnostic.py [--seconds N]`
+**In:** live mic via sounddevice.
+**Out:** stdout — dB readings + clipping warnings.
+
+### `scripts/autonomous_e2e_harness.py`
+
+**Purpose:** autonomous end-to-end driver that exercises the voice pipeline against a synthetic corpus + writes a JSON report. Useful for nightly autonomous-run findings.
+**Run:** `python scripts/autonomous_e2e_harness.py`
+**Out:** `logs/autonomous_e2e_report.json`.
+
+### `scripts/benchmark_preflight.py`
+
+**Purpose:** V1-gap B5 preflight benchmark — measures preflight LLM gating cost vs cache hit benefit; informs whether to keep the preflight pass enabled.
+**Run:** `python scripts/benchmark_preflight.py [--queries N]`
+**In:** sample queries + LLM.
+**Out:** baselines.json entry + stdout summary.
+
+### `scripts/comprehensive_memory_quality.py` / `scripts/comprehensive_search_blending.py`
+
+**Purpose:** quality-assurance scripts written alongside the comprehensive quality test pass. Memory variant exercises hybrid RRF + reranker on a fixed corpus; search-blending exercises the multi-pass + composite-ranking path with the gate.
+
 ### `scripts/download_models.py`
 
-**Purpose:** first-run model fetcher (Qwen GGUF, Piper, faster-whisper, openWakeWord).
+**Purpose:** first-run model fetcher (Qwen GGUF, Kokoro voicepacks + fine-tune weights, Piper, faster-whisper / moonshine / parakeet, openWakeWord, Smart Turn V3, moondream2, flan-t5-small). 12 steps (renumbered at round 8 to add Kokoro pre-fetch).
 **Run:** `python scripts/download_models.py`
 **In:** Hugging Face Hub.
 **Out:** files under `models/`.
+
+### `scripts/migrate_embeddings.py`
+
+**Purpose:** one-shot Qdrant re-embedding when `embeddings.dense_model` changes (e.g. swap bge-small for a different encoder). Recreates the conversations collection at the new dim, re-embeds every turn, atomic swap.
+**Run:** `python scripts/migrate_embeddings.py [--dry-run]`
+**Out:** new collection populated; old one renamed for rollback.
+
+### `scripts/run_tests.py` (2026-05-21 testing-process hardening)
+
+**Purpose:** unified test runner with pre-flight kill of competing pytest processes, live-streamed stdout, per-test 30 s timeout, slowest-10 report, clean Ctrl-C shutdown.
+**Run:** `python scripts/run_tests.py [tests/<subdir>] [-k pattern] [--fast] [--no-timeout] [--kill-only --yes]`
+**In:** pytest config (uses pyproject.toml addopts).
+**Out:** test pass/fail summary; preserves the live Ultron MCP server on port 19761.
+
+### `scripts/segment_for_finetune.py` / `scripts/transcribe_ultron_reference.py` / `scripts/smoke_xtts_v3.py`
+
+**Purpose:** workshop helpers for the Kokoro fine-tune project (Stage 1 done, Stage 2 ep 0 only — see ultronVoiceAudio/). Segment a long voice recording into LJSpeech-shaped clips; transcribe a reference clip; smoke-test the XTTS v3 stack.
 
 ### `scripts/dump_session.py`
 
@@ -3202,9 +3827,11 @@ Two responsibilities:
    touches a process tied to the live Ultron orchestrator (detected
    via the port-19761 listener and its ancestor/descendant chain).
 
-### Default suite (no env gate) — **3483 passed / 15 skipped (GPU-gated)**, ~60 s wall (2026-05-20)
+### Default suite (no env gate) — **4104 passed / 16 skipped (GPU-gated)**, ~85 s wall (2026-05-22 HEAD `b02af04`)
 
-**Top-level (~25 files):**
+Run via `scripts/run_tests.py` (2026-05-21 testing-process hardening: pre-flight kill of competing pytest workers + per-test 30 s timeout + live-streamed stdout + clean Ctrl-C shutdown).
+
+**Top-level (~80 files):**
 - `test_addressing.py` — rule-based addressing classifier
 - `test_audio.py` — capture, ring buffer (incl. 2026-05-10 mode-aware `snapshot(last_n_samples=...)` slicing), devices
 - `test_response_style.py` (22, 2026-05-10) — `is_brief_question` / `apply_brevity_hint` coverage: short-question detection, depth-marker skip, long-question pass-through, empty input, idempotence on already-hinted text
@@ -3266,11 +3893,73 @@ Two responsibilities:
 - `test_canonical_monitor_runner_wiring.py` (9, 4B plan Item 7 wiring) — `CodingTaskRunner` listener gating: not-attached-when-disabled, attached-when-enabled, cancels handle on first abort verdict, doesn't cancel on canonical sequence, latches after first abort, swallows listener exceptions; `CapabilityVoiceController.pending_canonical_abort` polls + clears + swallows runner exception
 - `test_block_and_revise_dispatcher_wiring.py` (10, 4B plan Item 8 wiring) — `OpenClawDispatcher` per-handler validator gate: disabled-flag skips, no-LLM skips, ALLOW dispatches to stub, BLOCK short-circuits with reason, all 5 handlers run validator when enabled, validator exception falls open, voice controller threads its `llm_engine` to the dispatcher
 
+**`tests/bus/`** (2026-05-22 session E) — typed event bus tests (43):
+- `test_event.py` (10) — `BusEvent.define` signature; schema validation
+  (missing fields / wrong type / None passes / empty schema accepts anything);
+  `EventPayload.make` id generation + copy semantics + uniqueness
+- `test_service.py` (27) — `Bus` pub/sub basics (subscribe fires / multi-subscriber
+  / counts), wildcard (`subscribe_all` receives all events / both typed + wildcard fire),
+  unsubscribe (stops callback / idempotent / removes one only / wildcard / count after),
+  fail-open (callback exception doesn't break others / swallowed not raised),
+  schema mismatch still delivers, eager-subscribe race safety (100x subscribe-then-publish
+  loses zero events; concurrent subscribe+publish doesn't deadlock), subscriber-list
+  snapshot during dispatch is safe, module-level shortcuts hit the singleton,
+  `reset_bus_for_testing` returns fresh, published counter
+- `test_events_catalog.py` (6) — canonical 17-event catalog: non-empty, types
+  are unique, types are dotted+lowercase, descriptions non-empty, all named
+  re-exports are importable
+
 **`tests/coding/`:**
 - `mock_bridge.py` — `ScriptedClaudeBridge` + `ClaudeScript` DSL
 - `test_orchestration.py` — 11 mock-bridge scenarios (10 spec + 7b delta-tracking)
 - `test_orchestration_real.py` — same scenarios with real Claude (gated)
 - `test_mock_bridge_smoke.py` — mock-bridge sanity
+- `test_project_digest.py` (27, 2026-05-22) — `render_template` (goal hint /
+  file changes / all sections present / handles empty files / entry points /
+  language in critical context / default goal fallback); `parse_digest_sections`
+  (extracts all headings / returns body text / handles empty / ignores
+  subheadings / case-insensitive header match); `extract_files_from_digest`
+  (returns paths / handles (none) / handles missing section / strips
+  explanation); `generate_digest` (uses LLM call / falls back when LLM raises /
+  empty / whitespace / no LLM uses template / strips markdown code fence /
+  includes prior summary in prompt / records elapsed time / preserves metadata)
+- `test_project_introspect.py` (25, 2026-05-22) — `snapshot()` (returns proper
+  dataclass / detects python+js / walks files / finds entry points / detects
+  markers / empty project / nonexistent path / respects max_files / skips
+  node_modules / skips __pycache__ / respects max_depth); AST integration
+  (parses python ast / cap=0 skips); `render_tree_summary` (returns string /
+  caps lines); cache (returns same snapshot / use_cache=False bypasses / invalidate
+  clears entry + global); sanity on constants
+- `test_project_index.py` (26, 2026-05-22 — real Qdrant + real bge-small) —
+  construction creates collection + requires embedder; `upsert` persists entry,
+  rejects empty digest, overwrites existing, preserves created_at on update,
+  preserves tags when new empty; `get` returns upserted / None for unknown,
+  `get_by_path` returns entry; `list_all` returns all; `count` tracks upserts;
+  `search` returns relevant project / respects min_score / empty query returns
+  empty / results sorted by score; `search_by_name` finds substring / empty
+  query; `delete` removes entry / unknown returns false on empty; helpers
+  (`_derive_project_id` stable + path-unique; `_score_reason` band labels;
+  `_build_digest_summary_for_search` truncates / handles (none) section); entry
+  payload round-trip
+- `test_project_supervisor.py` (34, 2026-05-22) — constructor validates
+  thresholds; empty text returns NEW; resume when active-task + adjustment OR
+  intent kind = MID_SESSION_ADJUSTMENT; no resume without active task; edit
+  when semantic above resolve threshold; edit pulls file hints from digest;
+  edit when registry exact match; clarify when top in ambiguous band; clarify
+  single-candidate phrasing; new when no matches above clarify; new when no
+  index no matches; decision logged to jsonl; audit log fail-open;
+  `_merge_candidates` dedupes by path / sorts by score / respects cap; decide
+  publishes SupervisorDecidedEvent on bus
+- `test_supervisor_dispatch.py` (27, 2026-05-22) — `_slugify_for_directory`
+  (basic / truncates / empty); `_speakable` (strips backslashes / forward
+  slashes / quotes); `_indent_block`; dispatch per kind (RESUME_FORWARD /
+  EDIT_DISPATCH builds TaskRequest / EDIT missing path returns FALLBACK /
+  NEW_DISPATCH builds with sandbox / NEW without sandbox returns None /
+  CLARIFY); narration + barge-in (disabled doesn't call barge-in / enabled
+  calls / barge-in returns BARGED_IN / narration text for resume); enriched
+  context (digest + file tree + file hints in prompt / disabled excludes
+  digest); fallback (BadSupervisor raises -> FALLBACK); `build_digest` uses
+  snapshot for language
 - `sandbox/` — fixture sandbox
 
 **`tests/error_recovery/`** (Phase 4) — 78 tests:
@@ -3298,6 +3987,39 @@ Two responsibilities:
 - `test_error_recovery_pipeline.py` (4)
 - `mocks.md` + `performance.json` (reference files)
 
+**`tests/desktop/`** (2026-05-12 Phase 11 + 2026-05-14 second-pass) — desktop automation primitives (~150 tests):
+- `test_monitors.py` — Win32 enumeration + find_monitor + point_to_monitor + left-to-right sort fix
+- `test_capture.py` — mss capture + taint tracker integration + Screenshot.without_bytes()
+- `test_windows.py` — pywin32 enum + foreground detection
+- `test_placement.py` — move_window_to_monitor / maximize / fullscreen
+- `test_launcher.py` — AppLauncher registry (Chrome with default profile / Cursor / Discord / etc.) + URL passing
+- `test_uia.py` — pywinauto text extraction
+- `test_input_control.py` — pyautogui rate limit + validator gate + UAC blocking
+- `test_screen_context.py` — orchestrator + analyze-and-discard pattern
+- `test_vlm.py` — Moondream2VLM lazy load + fail-open + 2026-05-22 unload()
+- `test_voice.py` — handle_app_launch / handle_screen_context_query / handle_window_move / handle_window_close + 2026-05-22 default_monitor_index
+- `test_preferences.py` — JSONL log + recency-weighted phrase lookup
+
+**`tests/safety/`** (2026-05-12 Phases 2-5) — 141-rule runtime tool-call validator (~117 tests):
+- `test_path_resolver.py` — Windows-aware canonicalization (symlink / junction / 8.3 / bidi override / percent-escape rejection)
+- `test_audit_log.py` — tamper-evident SHA-256 hash chain + verify_chain() + concurrent writers
+- `test_validator_core.py` — Verdict / RuleContext / RuleResult dispatcher; fail-closed on rule exception
+- `test_rules_by_category.py` — category K (self-protection) + A-J load-bearing safety + M-S persistence/anti-forensics + Cap-1..Cap-4 capability carve-outs
+- `test_intent_and_taint.py` — explicit-intent matcher (verb+object window) + 60 s TTL byte-exact taint tracker
+- `test_dispatcher_integration.py` — wiring through OpenClawDispatcher + coding/runner FILE_CHANGE listener
+
+**`tests/eval/`** (2026-05-18 Phase 0) — classifier-only eval harness:
+- `corpus.jsonl` — 60-row labeled set for routing / addressing / web-gate
+- Plus `tests/test_eval_harness.py` at top level + `scripts/eval_harness.py` runner
+
+**`tests/memory/`** — Memory subsystem unit tests (the actual file count varies; primary tests live at top level as `test_memory_*.py` and `test_*_qdrant.py`)
+
+**`tests/observations/`** (2026-05-18 Phase 1) — canonical observation framework tests:
+- `test_writer.py` — thread-safe JSONL appender; concurrent emits don't corrupt
+- `test_integrations.py` — observe_routing_verdict / observe_addressing_verdict / observe_retrieval / observe_llm_call site coverage
+- `test_outcome_resolver.py` — emit outcome_resolution rows from history
+- `test_lineage_overlap.py` — compute_lineage_overlap pure primitive
+
 ### Slow / GPU-gated tests (16 skipped by default)
 
 Set `$env:PYTEST_RUN_GPU_TESTS = "1"` before pytest. Includes real Claude API calls (`test_coding_e2e.py`, `test_mcp_e2e.py`, `test_orchestration_real.py`) — burns tokens.
@@ -3320,18 +4042,35 @@ Set `$env:PYTEST_RUN_GPU_TESTS = "1"` before pytest. Includes real Claude API ca
 | `errors.jsonl` | `resilience.error_log.ErrorLog.record()` | JSONL | Phase 4 typed errors |
 | `routing_decisions.jsonl` | `openclaw_routing.decision_log.RoutingDecisionLog.record()` | JSONL | Phase 5 routing audit |
 | `automation_tasks.jsonl` | `AutomationTaskRunner._audit()` | JSONL | Phase 5 OpenClaw task records |
+| `safety_audit.jsonl` | `safety.audit.AuditLog.append()` | JSONL with SHA-256 hash chain | 2026-05-12 Phases 2-5: tamper-evident audit for the runtime tool-call validator; `verify_chain()` rebuilds the chain to detect tampering |
+| `supervisor_decisions.jsonl` | `coding.project_supervisor.ProjectSupervisor._record_decision()` | JSONL | 2026-05-22: every supervisor decision (action / target / confidence / reasoning / candidates / file_hints) for offline threshold tuning |
+| `eval_runs/<ts>.json` | `scripts/eval_harness.py` | JSON | 2026-05-18 Phase 0: classifier-only eval harness output (routing + addressing + web_gate accuracy on 60-row corpus) |
+| `observations.jsonl` | `observations.writer.ObservationWriter.emit()` | JSONL canonical schema | 2026-05-18 Phase 1: 12-field canonical observation framework write target (suppressed during pytest runs via autouse fixture) |
+| `gaming_mode.jsonl` | `openclaw_routing.gaming_mode.GamingModeManager._audit()` | JSONL | V1-gap A1: engage/disengage outcomes with per-plugin states |
+| `autonomous_e2e_report.json` | `scripts/autonomous_e2e_harness.py` | JSON | Periodic autonomous-run harness output |
 
 ### `data/`
 
 | Path | Owner | Purpose |
 |---|---|---|
-| `qdrant/` | `ConversationMemory`, `WebResultsCache` | Embedded Qdrant store; 3 collections |
+| `qdrant/` | `ConversationMemory`, `WebResultsCache`, `ProjectIndex` | Embedded Qdrant store; **4 collections** (`conversations`, `facts`, `web_results`, `projects`) |
 | `memory.jsonl` | (legacy) | Pre-Qdrant turn log; migration source / recovery |
-| `projects.json` | `ProjectRegistry` | Coding project registry |
+| `projects.json` | `ProjectRegistry` | Coding project registry (legacy lexical resolver source) |
+| `projects/<project_id>/digest.md` | `ProjectIndex.upsert()` (2026-05-22) | Per-project digest markdown mirror (also stored in Qdrant `projects` collection) |
 | `sandbox/` | `new_sandbox_project()` | Auto-created coding projects |
 | `summaries.jsonl` | `scripts/maintenance.py` | Conversation summaries |
 | `maintenance.sqlite` | `scripts/maintenance.py` | Maintenance state (cursors, etc.) |
 | `ollama_compat_test/` | (Foundation Phase 0) | Modelfile from Ollama compat test (not in active use) |
+
+### `ultronVoiceAudio/` (workshop dir, mostly gitignored)
+
+| Path | Owner | Purpose |
+|---|---|---|
+| `scripts/parakeet_server.py` | Parakeet engine | NeMo TDT HTTP server (CUDA); streaming endpoints (`/stream/start|feed|partial|stop`) |
+| `searxng_config/settings.yml` | SearxNG Docker container | Engine roster + outgoing timeouts + per-engine config; mounted into `/etc/searxng` |
+| `searxng_config/limiter.toml` | SearxNG Docker container | Botdetection config (modern `trusted_proxies` schema) |
+| `kokoro_finetune/` | Kokoro fine-tune workshop | Stage 1 done + Stage 2 ep 0 only (SLM joint NEVER ran); auto-resume infra via Task Scheduler |
+| `kokoro_training_corpus_*/` | Bulk synth corpus | 1654 clips / 107 min / 24 kHz LJSpeech-shaped training data |
 
 ### `models/` (main checkout only)
 
