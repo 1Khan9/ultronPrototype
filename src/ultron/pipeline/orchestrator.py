@@ -644,6 +644,27 @@ class Orchestrator:
             return None
         try:
             from ultron.openclaw_routing.gaming_mode import GamingModeManager
+
+            # 2026-05-22 Kokoro VRAM toggle: gaming mode flips the
+            # Kokoro engine to CPU to free ~330 MB of VRAM. Disengage
+            # restores whatever device the config has configured
+            # (typically "cuda"). Hooks are best-effort -- a missing
+            # ``move_to_device`` attribute (XTTS/Piper engines) leaves
+            # the callback as a no-op.
+            tts_kokoro_default_device = get_config().tts.kokoro.device
+
+            def _engage_kokoro_to_cpu():
+                tts = getattr(self, "tts", None)
+                if tts is None or not hasattr(tts, "move_to_device"):
+                    return
+                tts.move_to_device("cpu")
+
+            def _restore_kokoro_device():
+                tts = getattr(self, "tts", None)
+                if tts is None or not hasattr(tts, "move_to_device"):
+                    return
+                tts.move_to_device(tts_kokoro_default_device)
+
             manager = GamingModeManager(
                 client=client,
                 plugins_to_disable=list(cfg.plugins_to_disable),
@@ -651,10 +672,14 @@ class Orchestrator:
                 docker_executable_path=cfg.docker_executable_path,
                 docker_process_name=cfg.docker_process_name,
                 log_path=resolve_path(cfg.log_path) if cfg.log_path else None,
+                on_engaged=_engage_kokoro_to_cpu,
+                on_disengaged=_restore_kokoro_device,
             )
             logger.info(
-                "GamingModeManager ready (plugins=%s, toggle_docker=%s)",
+                "GamingModeManager ready (plugins=%s, toggle_docker=%s, "
+                "kokoro_engage_device=cpu, kokoro_disengage_device=%s)",
                 cfg.plugins_to_disable, cfg.toggle_docker,
+                tts_kokoro_default_device,
             )
             return manager
         except Exception as e:                                       # noqa: BLE001

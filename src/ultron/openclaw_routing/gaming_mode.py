@@ -149,6 +149,8 @@ class GamingModeManager:
         docker_executable_path: Optional[str] = None,
         docker_process_name: str = "Docker Desktop",
         log_path: Optional[Path] = None,
+        on_engaged: Optional[Any] = None,
+        on_disengaged: Optional[Any] = None,
     ) -> None:
         self.client = client
         self.plugins_to_disable = list(plugins_to_disable or [
@@ -166,6 +168,12 @@ class GamingModeManager:
         # doesn't try to enable plugins that weren't in scope.
         self._disabled_during_engage: List[str] = []
         self._docker_was_killed = False
+        # Optional callables fired AFTER engage/disengage completes.
+        # Used to flip per-component VRAM state (Kokoro device, etc.)
+        # in sync with gaming mode. Both run in a try/except so a
+        # callback failure cannot break the engage/disengage cycle.
+        self._on_engaged = on_engaged
+        self._on_disengaged = on_disengaged
 
     # --- public API ---------------------------------------------------------
 
@@ -207,6 +215,13 @@ class GamingModeManager:
             # desktop primitives short-circuit. Done in ``finally`` so
             # even a partial-failure engage still gates the surface.
             set_gaming_mode_active(True)
+            if self._on_engaged is not None:
+                try:
+                    self._on_engaged()
+                except Exception as e:                            # noqa: BLE001
+                    logger.warning(
+                        "gaming_mode on_engaged callback failed: %s", e,
+                    )
 
         self._write_log_row(report)
         return report
@@ -245,6 +260,13 @@ class GamingModeManager:
             # Track 6: clear the process-global flag so the desktop
             # surface re-engages immediately on disengage.
             set_gaming_mode_active(False)
+            if self._on_disengaged is not None:
+                try:
+                    self._on_disengaged()
+                except Exception as e:                            # noqa: BLE001
+                    logger.warning(
+                        "gaming_mode on_disengaged callback failed: %s", e,
+                    )
 
         self._write_log_row(report)
         return report

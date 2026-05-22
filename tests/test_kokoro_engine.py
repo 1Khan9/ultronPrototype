@@ -168,6 +168,107 @@ def test_synthesize_concatenates_multiple_pipeline_chunks():
 
 
 # ---------------------------------------------------------------------------
+# move_to_device (gaming mode VRAM toggle)
+# ---------------------------------------------------------------------------
+
+
+class _FakeKModel:
+    """Fake torch nn.Module-ish object that tracks .to() calls."""
+
+    def __init__(self):
+        self.device = "cpu"
+        self.to_calls = []
+
+    def to(self, device):
+        self.to_calls.append(device)
+        self.device = device
+        return self
+
+    def eval(self):
+        return self
+
+
+class _FakeKPipelineWithInnerModel:
+    """KPipeline-shaped wrapper exposing a movable .model attribute."""
+
+    def __init__(self):
+        self.model = _FakeKModel()
+
+
+def test_move_to_device_in_place_when_pipeline_exposes_inner_model():
+    """Hot-swap path: KPipeline.model has .to() -> move in place, no
+    tear-down. ``_loaded`` stays True, ``_model`` unchanged."""
+    engine = KokoroSpeech(model_path=Path("/stub"), device="cuda")
+    engine._model = _FakeKPipelineWithInnerModel()
+    engine._loaded = True
+
+    engine.move_to_device("cpu")
+
+    assert engine.device == "cpu"
+    assert engine._loaded is True
+    assert engine._model.model.to_calls == ["cpu"]
+
+
+def test_move_to_device_noop_when_already_there():
+    """``move_to_device(same)`` is a no-op when already loaded."""
+    engine = KokoroSpeech(model_path=Path("/stub"), device="cpu")
+    engine._model = _FakeKPipelineWithInnerModel()
+    engine._loaded = True
+
+    engine.move_to_device("cpu")
+
+    assert engine._model.model.to_calls == []
+
+
+def test_move_to_device_tears_down_when_inner_lacks_to():
+    """Pipeline without ``.model.to`` -> tear-down so next synth
+    lazy-reloads on the new device."""
+    class _NoToPipeline:
+        # No .model attribute at all.
+        pass
+
+    engine = KokoroSpeech(model_path=Path("/stub"), device="cuda")
+    engine._model = _NoToPipeline()
+    engine._loaded = True
+
+    engine.move_to_device("cpu")
+
+    assert engine.device == "cpu"
+    assert engine._loaded is False
+    assert engine._model is None
+
+
+def test_move_to_device_tears_down_on_to_exception():
+    """If .to() raises, fall back to tear-down rather than crash."""
+    class _BrokenModel:
+        def to(self, device):
+            raise RuntimeError("simulated CUDA OOM")
+
+        def eval(self):
+            return self
+
+    class _BrokenPipeline:
+        def __init__(self):
+            self.model = _BrokenModel()
+
+    engine = KokoroSpeech(model_path=Path("/stub"), device="cuda")
+    engine._model = _BrokenPipeline()
+    engine._loaded = True
+
+    engine.move_to_device("cpu")
+
+    assert engine.device == "cpu"
+    assert engine._loaded is False
+    assert engine._model is None
+
+
+def test_move_to_device_rejects_unknown_device():
+    engine = KokoroSpeech(model_path=Path("/stub"))
+    with pytest.raises(ValueError):
+        engine.move_to_device("opencl")
+
+
+# ---------------------------------------------------------------------------
 # Runtime filter (pre-fine-tune path)
 # ---------------------------------------------------------------------------
 

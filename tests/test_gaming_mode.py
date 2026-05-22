@@ -190,6 +190,64 @@ def test_engage_writes_log_row(tmp_path):
     assert isinstance(record["plugin_states"], list)
 
 
+# ---------------------------------------------------------------------------
+# Engage / disengage callbacks (2026-05-22 Kokoro VRAM toggle)
+# ---------------------------------------------------------------------------
+
+
+def test_on_engaged_callback_fires_after_status_flip():
+    """``on_engaged`` runs after ``set_gaming_mode_active(True)`` so
+    callbacks can rely on the global flag being set."""
+    client = _StubClient()
+    calls = []
+
+    def _cb():
+        from ultron.openclaw_routing.gaming_mode import is_gaming_mode_active
+        calls.append(("engaged", is_gaming_mode_active()))
+
+    mgr = GamingModeManager(
+        client=client, plugins_to_disable=["desktop-control"],
+        on_engaged=_cb,
+    )
+    asyncio.run(mgr.engage())
+    assert calls == [("engaged", True)]
+
+
+def test_on_disengaged_callback_fires_after_status_flip():
+    client = _StubClient()
+    calls = []
+
+    def _cb():
+        from ultron.openclaw_routing.gaming_mode import is_gaming_mode_active
+        calls.append(("disengaged", is_gaming_mode_active()))
+
+    mgr = GamingModeManager(
+        client=client, plugins_to_disable=["desktop-control"],
+        on_disengaged=_cb,
+    )
+    asyncio.run(mgr.engage())
+    asyncio.run(mgr.disengage())
+    assert calls == [("disengaged", False)]
+
+
+def test_engage_callback_failure_does_not_break_engage(tmp_path):
+    """A callback that raises must not roll back gaming mode; engage
+    completes and the engine surface stays gated."""
+    client = _StubClient()
+
+    def _broken():
+        raise RuntimeError("simulated callback failure")
+
+    mgr = GamingModeManager(
+        client=client, plugins_to_disable=["desktop-control"],
+        on_engaged=_broken,
+        log_path=tmp_path / "gaming_mode.jsonl",
+    )
+    report = asyncio.run(mgr.engage())
+    assert report.status == GamingModeStatus.ENGAGED
+    assert mgr.status() == GamingModeStatus.ENGAGED
+
+
 def test_no_client_returns_clear_error():
     mgr = GamingModeManager(client=None, plugins_to_disable=["x"])
     report = asyncio.run(mgr.engage())

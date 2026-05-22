@@ -315,6 +315,71 @@ class KokoroSpeech:
         with self._model_lock:
             self._load_error = None
 
+    def move_to_device(self, device: str) -> None:
+        """Hot-swap the Kokoro model between ``"cpu"`` and ``"cuda"``.
+
+        Tries an in-place ``.to(device)`` on the loaded KModel (fast
+        path; ~50-200 ms). Falls back to tearing down the model so the
+        next ``_synthesize`` lazy-reloads on the new device (~1-5 s
+        first call after flip; subsequent calls fast). Fail-open: any
+        failure leaves the engine at its previous device with a WARN
+        log -- callers can retry.
+
+        Used by GamingModeManager to free ~330 MB of VRAM during
+        gaming sessions: engage flips cuda -> cpu, disengage flips
+        cpu -> cuda. Cached ack clips are device-agnostic (already
+        rendered to int16) so they keep playing without reload.
+
+        Args:
+            device: ``"cpu"`` or ``"cuda"``. No-op when already there.
+        """
+        if device not in ("cpu", "cuda"):
+            raise ValueError(f"Kokoro move_to_device: unknown device {device!r}")
+        with self._model_lock:
+            if device == self.device and self._loaded:
+                return
+            prior_device = self.device
+            self.device = device
+
+            if self._loaded and self._model is not None:
+                inner = getattr(self._model, "model", None)
+                if inner is not None and hasattr(inner, "to"):
+                    try:
+                        self._model.model = inner.to(device).eval()
+                        logger.info(
+                            "Kokoro: moved model %s -> %s in place",
+                            prior_device, device,
+                        )
+                        if prior_device == "cuda" and device == "cpu":
+                            self._try_empty_cuda_cache()
+                        return
+                    except Exception as e:                        # noqa: BLE001
+                        logger.warning(
+                            "Kokoro: in-place .to(%s) failed (%s); "
+                            "tearing down for lazy reload.", device, e,
+                        )
+
+            # Tear down so next inference rebuilds on the new device.
+            self._model = None
+            self._loaded = False
+            self._load_error = None
+            if prior_device == "cuda":
+                self._try_empty_cuda_cache()
+            logger.info(
+                "Kokoro: torn down (was %s); next synth lazy-loads on %s",
+                prior_device, device,
+            )
+
+    @staticmethod
+    def _try_empty_cuda_cache() -> None:
+        """Best-effort ``torch.cuda.empty_cache()`` (silent on failure)."""
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+
     def _ensure_loaded(self) -> None:
         """Lazy-load Kokoro on first use.
 
