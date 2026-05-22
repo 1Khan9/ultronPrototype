@@ -271,7 +271,7 @@ class STTConfig(_Strict):
     # the transcription suddenly mishears proper nouns, accents, or
     # technical jargon that used to work, try ``stt.engine: whisper``
     # to confirm it's the engine before chasing other causes.
-    engine: Literal["auto", "whisper", "parakeet"] = "auto"
+    engine: Literal["auto", "whisper", "parakeet", "moonshine"] = "auto"
     # --- Whisper-side config (used when engine resolves to whisper) ---
     model: str = "small.en"
     device: str = "cuda"
@@ -324,6 +324,29 @@ class STTConfig(_Strict):
     # Per-transcribe HTTP timeout. Parakeet is fast (~5-20 ms for
     # 5 s audio); 30 s headroom covers cold-start + worst-case.
     parakeet_request_timeout_seconds: float = 30.0
+    # --- Moonshine-side config (used when engine resolves to moonshine) ---
+    # 2026-05-22. Moonshine ONNX is the smallest-footprint STT option
+    # in the stack -- 27 MB tiny / 58 MB base, runs on CPU via
+    # onnxruntime, streaming-native. Per the openasr-leaderboard
+    # average, moonshine/base WER is ~10% which is HIGHER than
+    # Whisper base.en's ~5% on LibriSpeech-clean -- but moonshine's
+    # numbers are averaged over harder mixed-noise / accented sets,
+    # not directly comparable. The latency win is the headline:
+    # ~5-15 ms on a 5 s clip vs Whisper's ~80 ms on the same hardware.
+    #
+    # Model names:
+    #   "moonshine/tiny"  -- 27 MB, ~12.66% WER, fastest, lowest footprint.
+    #   "moonshine/base"  -- 58 MB, ~10.07% WER, recommended default.
+    # Precision:
+    #   "float"      -- fp32 weights (default; widest CPU compatibility).
+    #   "quantized"  -- int8 weights; slightly faster on most CPUs at
+    #                   ~0.1-0.2 percentage-point WER cost.
+    moonshine_model: str = "moonshine/base"
+    # ``device`` is accepted for API parity with the other engines but
+    # Moonshine ONNX runs on CPU. (A future ``onnxruntime-gpu`` swap
+    # could honour cuda; not wired today.)
+    moonshine_device: Literal["cpu", "cuda"] = "cpu"
+    moonshine_precision: Literal["float", "quantized"] = "float"
 
 
 class LLMServerConfig(_Strict):

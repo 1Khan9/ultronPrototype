@@ -22,7 +22,8 @@
 # ║      The knobs you'll touch most often live, with current values         ║
 # ╠══════════════════════════════════════════════════════════════════════════╣
 # ║                                                                          ║
-# ║   STT     stt.model                     "base.en"                        ║
+# ║   STT     stt.engine                    "whisper"  (or "parakeet")       ║
+# ║           stt.model                     "base.en"  (whisper-only)        ║
 # ║           stt.compute_type              "int8_float16"                   ║
 # ║           stt.beam_size                 1                                ║
 # ║                                                                          ║
@@ -56,6 +57,15 @@
 # ║      "kokoro"   = active default (CPU StyleTTS2; ~0 GB VRAM)             ║
 # ║      "xtts_v3"  = swap-back (XTTS v2 + v3 filter; +60 ms TTFT, +2 GB)    ║
 # ║      "piper_rvc"= legacy fallback (Piper + RVC; never deprecated)        ║
+# ║                                                                          ║
+# ║   How to swap STT engines: edit stt.engine then restart                  ║
+# ║      "whisper"  = active default (faster-distil-whisper-small.en;        ║
+# ║                  ~200-250 MB VRAM, ~3.48% WER, ~3x faster than base.en)  ║
+# ║      "parakeet" = NVIDIA Parakeet TDT 0.6B v3 (subprocess; ~5.1 GB VRAM, ║
+# ║                  better accuracy on jargon / accents; 2026-05-22 wired)  ║
+# ║      "moonshine"= Moonshine ONNX on CPU (~60-120 MB; streaming-native;   ║
+# ║                  lowest-footprint STT in the stack; 2026-05-22 wired)    ║
+# ║      "auto"     = try parakeet, fall back to whisper                     ║
 # ║                                                                          ║
 # ║   Restart Ultron after any value change in this file:                    ║
 # ║      python -m ultron                                                    ║
@@ -221,16 +231,67 @@ wake_word:
 # ---------------------------------------------------------------------------
 
 stt:
-  # 2026-05-20 round 8b swap: small.en -> base.en. ~244M params ->
-  # ~74M params. Saves another ~300 MB VRAM (small.en int8_fp16 was
-  # ~520 MB; base.en int8_fp16 lands at ~200 MB). Faster inference --
-  # expect ~30-40% lower STT latency on the same audio. WER trade-off
-  # for short English voice queries is small but real (LibriSpeech-
-  # clean: ~3.4% small.en vs ~5.0% base.en); proper nouns / technical
-  # jargon / noisy audio are the typical regression vectors. Switch
-  # back via stt.model: "small.en" + re-run scripts/download_models.py
-  # if accuracy regresses on real-world use.
-  model: "base.en"
+  # =========================================================================
+  # STT ENGINE SWITCH  (2026-05-22)
+  # =========================================================================
+  # Three engines wired; flip this one field to swap. Restart required --
+  # the engine is constructed once at orchestrator startup.
+  #
+  #   "whisper"   -- faster-whisper on CUDA, int8_fp16. Default model is
+  #                  Systran/faster-distil-whisper-small.en (166M params,
+  #                  ~200-250 MB VRAM, ~78 ms / 5 s audio, ~3.48% WER on
+  #                  LibriSpeech-clean). The active production default.
+  #
+  #   "parakeet"  -- NVIDIA Parakeet TDT 0.6B v3 on CUDA (fp32) in an
+  #                  isolated subprocess at .venv-parakeet talking via
+  #                  HTTP on port 8771. VRAM: ~5.1 GB (measured live
+  #                  2026-05-22). STT latency: ~5-20 ms / 5 s audio
+  #                  (RTFx ~2000). Better on proper nouns / accents /
+  #                  technical jargon. Adds ~5 GB to the voice-path
+  #                  peak -- check VRAM headroom before flipping.
+  #
+  #   "moonshine" -- Moonshine ONNX on CPU (2026-05-22). Smallest
+  #                  footprint of any wired engine -- 58 MB ONNX
+  #                  (model "moonshine/base") or 27 MB ("moonshine/tiny").
+  #                  Streaming-native (no Whisper 30 s window).
+  #                  Latency: ~5-15 ms / 5 s short clip on CPU.
+  #                  WER averaged across OpenASR-leaderboard datasets
+  #                  is ~10% for base / ~12.66% for tiny -- worse on
+  #                  paper than Whisper distil-small.en on LS-clean,
+  #                  but the benchmarks aren't directly comparable.
+  #                  Run a real comparison on your voice before
+  #                  committing. Best for the absolute-lowest-VRAM
+  #                  case or when CPU is preferred for STT.
+  #
+  #   "auto"      -- tries Parakeet, falls back to Whisper if the
+  #                  server fails to start. Moonshine is NOT auto-
+  #                  selected -- swap to it explicitly when wanted.
+  #
+  # *** SUSPECT THIS FLAG FIRST IF VOICE QUALITY REGRESSES. *** Flip to
+  # "whisper" to confirm the engine is the cause before chasing other
+  # leads.
+  engine: "whisper"
+
+  # -------------------------------------------------------------------------
+  # WHISPER KNOBS  (ACTIVE WHEN engine == "whisper" OR auto-fallback)
+  # -------------------------------------------------------------------------
+  # 2026-05-22 SWAP: base.en -> distil-small.en (Systran/faster-distil-whisper-small.en).
+  # Distil-Whisper distil-small.en is a knowledge-distilled version of
+  # Whisper small.en. 166M params (vs base.en 74M); VRAM ~200-250 MB at
+  # int8_fp16 (vs base.en ~200 MB; +50 MB or so). LibriSpeech test-clean
+  # WER 3.48% (vs base.en ~5.0%); ~30% relative WER reduction. Also
+  # ~3x faster than base.en on the same hardware -- distillation pushed
+  # most of the encoder work into a smaller decoder that scales well
+  # with greedy decoding. Drops in via faster-whisper's CT2 conversion
+  # at the Systran repo -- no code change needed.
+  #
+  # PRIOR DEFAULTS (kept as one-line swap-back options):
+  #   "base.en"         -- 74M, ~200 MB VRAM, ~5.0% WER, fastest
+  #   "small.en"        -- 244M, ~520 MB VRAM, ~3.4% WER, more accurate
+  #   The model: field accepts either the short Whisper size names above
+  #   or a full HuggingFace repo ID like below. faster-whisper picks the
+  #   right loader automatically.
+  model: "Systran/faster-distil-whisper-small.en"
   device: "cuda"
   # 2026-05-14 VRAM-relief pass: float16 -> int8_float16. int8_float16
   # uses 8-bit weights + fp16 activations -- saves ~250 MB VRAM on the
@@ -251,6 +312,46 @@ stt:
   temperature: 0.0
   condition_on_previous_text: false
   vad_filter: false             # we already gated on VAD upstream
+
+  # -------------------------------------------------------------------------
+  # PARAKEET KNOBS  (ACTIVE WHEN engine == "parakeet" OR auto-success)
+  # -------------------------------------------------------------------------
+  # Frontier-enhancement Item 5 (2026-05-22 wired live). Parakeet runs
+  # in its OWN venv at ultronVoiceAudio/.venv-parakeet/ to keep NeMo's
+  # heavy deps out of the main venv. The engine in the main venv spawns
+  # parakeet_server.py and talks to it over HTTP. To rebuild the
+  # subprocess venv from scratch, install: torch==2.12.0+cu126 (from
+  # https://download.pytorch.org/whl/cu126), fsspec==2024.12.0,
+  # setuptools>=79.0.0,<82, nemo_toolkit[asr], fastapi, uvicorn,
+  # soundfile, python-multipart.
+  parakeet_model: "nvidia/parakeet-tdt-0.6b-v3"
+  parakeet_device: "cuda"        # set "cpu" to test without VRAM cost (~10x slower)
+  parakeet_use_isolated_venv: true
+  parakeet_server_python: "ultronVoiceAudio/.venv-parakeet/Scripts/python.exe"
+  parakeet_server_script: "ultronVoiceAudio/scripts/parakeet_server.py"
+  parakeet_server_url: "http://127.0.0.1:8771"
+  parakeet_server_startup_timeout_seconds: 60.0
+  parakeet_request_timeout_seconds: 30.0
+
+  # -------------------------------------------------------------------------
+  # MOONSHINE KNOBS  (ACTIVE WHEN engine == "moonshine")
+  # -------------------------------------------------------------------------
+  # 2026-05-22 wired live. Moonshine ONNX runs in the MAIN venv (no
+  # subprocess pattern needed -- it's pure onnxruntime, no Keras/TF/
+  # PyTorch deps). Install: pip install useful-moonshine-onnx
+  # (one 729 KB wheel; all transitive deps already satisfied).
+  #
+  # moonshine_model:
+  #   "moonshine/base"  -- 58 MB ONNX, ~10.07% avg WER, default
+  #   "moonshine/tiny"  -- 27 MB ONNX, ~12.66% avg WER, fastest
+  # moonshine_precision:
+  #   "float"      -- fp32 weights; widest CPU compat
+  #   "quantized"  -- int8 weights; slightly faster on most CPUs at
+  #                   ~0.1-0.2 pp WER cost
+  # moonshine_device: kept for API parity; Moonshine is CPU-only.
+  moonshine_model: "moonshine/base"
+  moonshine_precision: "float"
+  moonshine_device: "cpu"
 
 # ---------------------------------------------------------------------------
 # LLM (local Qwen-family GGUF via llama-cpp-python)
@@ -324,7 +425,17 @@ llm:
   default_repeat_penalty: 1.1
   history_turns: 6             # legacy fallback when memory module is disabled
   flash_attn: true             # required for non-F16 KV cache
-  kv_cache_type: 8             # 8 = GGML_TYPE_Q8_0; 1 = F16
+  # 2026-05-22: Q8_0 (8) -> F16 (1) to fix PLD verification batch crash.
+  # llama.cpp issue #19036 documents flash_attn + Q8_0 KV cache crashes
+  # on certain decode batches; in our stack the PLD verification batch
+  # (current_token + N draft_tokens) hits this path on every turn,
+  # causing ``llama_decode returned -1`` mid-stream after TTFT fires.
+  # F16 keeps the KV cache uncompressed -- adds ~440 MB VRAM (KV @ 8192
+  # roughly doubles from ~440 MB to ~880 MB) -- but unblocks PLD + the
+  # ~20 ms TTFT win we get from in-process speculative decoding.
+  # Reversible: set back to 8 if a future llama-cpp-python fixes the
+  # flash_attn + Q8 + PLD interaction.
+  kv_cache_type: 1             # 8 = GGML_TYPE_Q8_0 (legacy); 1 = F16 (PLD-safe)
   # 2026-05-16 latency pass 2: prefix KV cache (host RAM only). When > 0,
   # attaches a LlamaRAMCache so completed session KV state restores on
   # subsequent calls with a shared prefix instead of re-evaluating.

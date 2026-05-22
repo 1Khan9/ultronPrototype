@@ -3417,8 +3417,20 @@ class Orchestrator:
                 user_text,
             )
             if spec_iter is not None:
+                # 2026-05-22: count yields. When the speculative producer
+                # thread crashes before emitting any token (e.g. a bug in
+                # llama-cpp-python's PLD path), it still drops the sentinel
+                # in ``finally``, so this iterator returns immediately with
+                # zero yields. Without this fallback, the user got silence
+                # because the warning "main path will run fresh" was never
+                # actually wired to a fresh call. Now: if the spec produced
+                # nothing, fall through to the legacy fresh-call path
+                # below.
+                yielded_any = False
                 try:
-                    yield from spec_iter
+                    for tok in spec_iter:
+                        yielded_any = True
+                        yield tok
                 finally:
                     if commit_history is not None:
                         try:
@@ -3428,7 +3440,12 @@ class Orchestrator:
                                 "Speculative LLM history commit failed: %s",
                                 e,
                             )
-                return
+                if yielded_any:
+                    return
+                logger.warning(
+                    "Speculative LLM yielded 0 tokens; running fresh "
+                    "main-path LLM call so the turn isn't silent.",
+                )
 
             # 2026-05-10 brevity reinforcement: prepend a 1-3-sentence
             # directive when the user's question is brief and isn't an
