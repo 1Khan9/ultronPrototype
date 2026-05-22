@@ -1,5 +1,5 @@
 """Re-score Q6.F using the on-disk apps with a less-strict regex
-(no new Claude Code calls)."""
+(no new AI coding agent calls)."""
 import json
 import pathlib
 import re

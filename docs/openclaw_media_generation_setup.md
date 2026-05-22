@@ -10,10 +10,10 @@ The Ultron-side wiring is fully in place after Phase 12. Live media
 generation requires a local image-generation backend such as
 ComfyUI to be running on the same machine.
 
-## Project policy: only Claude Code is paid
+## Project policy: only AI coding agent is paid
 
 Ultron's stack is local-or-free everywhere except the supervised
-coding subsystem (Claude Code, paid via the Anthropic API). That
+coding subsystem (AI coding agent, paid via the Anthropic API). That
 constraint applies to media generation too:
 
 - **Use:** ComfyUI (local Stable Diffusion / SDXL / similar), other

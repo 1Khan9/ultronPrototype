@@ -185,7 +185,7 @@ shim — see [phase3_5_followup.md](phase3_5_followup.md)). The
 `MCPServerError` type and the phrase exist; the orchestrator-level
 wiring lands when the coding cluster migrates.
 
-### Claude Code subprocess (anticipated)
+### AI coding agent subprocess (anticipated)
 
 | Failure mode | Detection | Recovery | Log dependency |
 |---|---|---|---|
@@ -290,7 +290,7 @@ continue normally.
 
 - **MCP server failure narration** — wiring lives in the coding cluster
   which is still going through the Phase 3 shim. Phase 3.5 followup.
-- **Claude Code subprocess error narration** — same; the bridge in
+- **AI coding agent subprocess error narration** — same; the bridge in
   [direct_bridge.py](../src/ultron/coding/direct_bridge.py) catches
   failures but the user-facing phrase wiring is part of the coding
   cluster migration.

@@ -1,10 +1,10 @@
 """End-to-end Phase 6 verification.
 
-These tests spawn a real Claude Code subprocess against a real sandbox
+These tests spawn a real AI coding agent subprocess against a real sandbox
 directory and verify both the orchestration layer (bridge -> runner) and
-the actual code that Claude Code produces.
+the actual code that AI coding agent produces.
 
-Slow tier: gated on ``PYTEST_RUN_GPU_TESTS=1`` AND requires the Claude Code
+Slow tier: gated on ``PYTEST_RUN_GPU_TESTS=1`` AND requires the AI coding agent
 CLI to be installed. Each test costs a small number of haiku tokens and
 takes 10-60s.
 
@@ -13,14 +13,14 @@ Test plan:
 1. **New-project flow (`test_new_project_creates_files_at_dynamic_root`)**
    * Empty sandbox, fresh registry.
    * Create a NEW project under sandbox root via ``new_sandbox_project``.
-   * Submit a small task. Verify Claude Code created the requested file
+   * Submit a small task. Verify AI coding agent created the requested file
      INSIDE the project subdirectory and NOT at the sandbox root.
 
 2. **Existing-project flow (`test_existing_project_edits_correct_root`)**
    * Pre-create two project subfolders in the sandbox, each registered.
    * Submit a task targeting project A.
    * Verify project A's file was modified, project B was untouched.
-   * This is the dynamic-root requirement: Claude Code's cwd MUST be the
+   * This is the dynamic-root requirement: AI coding agent's cwd MUST be the
      project subdir, not the shared sandbox root.
 
 3. **Progress narration during a real run
@@ -53,13 +53,13 @@ pytestmark = [
     pytest.mark.slow,
     pytest.mark.skipif(
         os.environ.get("PYTEST_RUN_GPU_TESTS") != "1",
-        reason="set PYTEST_RUN_GPU_TESTS=1 to run e2e Claude Code tests",
+        reason="set PYTEST_RUN_GPU_TESTS=1 to run e2e AI coding agent tests",
     ),
 ]
 
 
 def _bridge() -> DirectClaudeCodeBridge:
-    """Resolve the real Claude Code CLI; skip the test if it's missing."""
+    """Resolve the real claude CLI; skip the test if it's missing."""
     try:
         return DirectClaudeCodeBridge()
     except FileNotFoundError as e:
@@ -89,7 +89,7 @@ def _wait_with_progress(runner: CodingTaskRunner, timeout_s: float = 240.0) -> N
 
 
 def test_new_project_creates_files_at_dynamic_root(tmp_path: Path):
-    """Verify that a new project gets its own subdirectory and Claude Code
+    """Verify that a new project gets its own subdirectory and AI coding agent
     writes ONLY inside that subdirectory."""
     sandbox = tmp_path / "sandbox"
     sandbox.mkdir()
@@ -122,7 +122,7 @@ def test_new_project_creates_files_at_dynamic_root(tmp_path: Path):
 
     result = handle.wait(timeout=180.0)
     assert result.success, (
-        f"Claude Code failed: exit={result.exit_status} error={result.error} summary={result.summary[:300]}"
+        f"AI coding agent failed: exit={result.exit_status} error={result.error} summary={result.summary[:300]}"
     )
 
     # File exists at the dynamic project root, not at the sandbox root.
@@ -217,7 +217,7 @@ def test_existing_project_edits_correct_root(tmp_path: Path):
     ))
     result = handle.wait(timeout=180.0)
     assert result.success, (
-        f"Claude Code failed: exit={result.exit_status} error={result.error}"
+        f"AI coding agent failed: exit={result.exit_status} error={result.error}"
     )
 
     # calc.py now defines BOTH add and subtract.

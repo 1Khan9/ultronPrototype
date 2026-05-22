@@ -109,7 +109,7 @@ class QdrantUnavailableError(DependencyUnavailableError):
 
 
 class AnthropicAPIError(DependencyUnavailableError):
-    """Anthropic Claude API failure (used during Claude Code sessions)."""
+    """Anthropic Claude API failure (used during AI coding agent sessions)."""
 
 
 class OllamaUnavailableError(DependencyUnavailableError):
@@ -145,7 +145,7 @@ class OpenClawToolError(UltronError):
 
 
 class ClaudeCodeError(UltronError):
-    """Claude Code subprocess failures: nonzero exit, malformed
+    """AI coding agent subprocess failures: nonzero exit, malformed
     stream-json, hang/timeout, killed by external signal."""
 
 

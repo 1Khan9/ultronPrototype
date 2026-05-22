@@ -509,7 +509,7 @@ def test_media_provider_override_in_config():
     ))
     cfg = get_config()
     # ComfyUI is the canonical local-only provider for media generation
-    # in Ultron's stack — Claude Code is the only paid service.
+    # in Ultron's stack — the AI coding agent is the only paid service.
     cfg.media_generation.default_image_provider = "comfyui"
     try:
         d = OpenClawDispatcher(config=cfg, bridge=bridge)

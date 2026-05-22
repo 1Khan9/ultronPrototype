@@ -1,5 +1,5 @@
 """Project supervisor -- the decision layer that sits between the
-routing classifier and the Claude Code dispatch.
+routing classifier and the AI coding agent dispatch.
 
 Given a user utterance + classified intent (CODE_TASK /
 MID_SESSION_ADJUSTMENT / CLARIFICATION_RESPONSE), the supervisor

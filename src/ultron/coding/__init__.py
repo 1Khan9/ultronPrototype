@@ -1,11 +1,11 @@
-"""Coding orchestration: Ultron drives Claude Code to do real work.
+"""Coding orchestration: Ultron drives AI coding agent to do real work.
 
 Phase 6 architecture:
-  user voice -> intent detection -> project resolution -> Claude Code subprocess
+  user voice -> intent detection -> project resolution -> AI coding agent subprocess
   with dynamic cwd -> progress tracking -> voice progress queries -> final
   narration.
 
-The Claude Code subprocess always runs with the project as cwd (NOT the
+The AI coding agent subprocess always runs with the project as cwd (NOT the
 sandbox root); this is the spec's hard "dynamic project root" requirement.
 For new projects we create a fresh subdirectory under the sandbox first;
 for edits we resolve to an existing registered project.

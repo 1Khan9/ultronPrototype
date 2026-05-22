@@ -702,7 +702,7 @@
   {
     "id": "medium_technical_0060",
     "category": "medium_technical",
-    "text": "The Claude Code subprocess exited cleanly with exit status zero."
+    "text": "The AI coding agent subprocess exited cleanly with exit status zero."
   },
   {
     "id": "medium_technical_0061",
@@ -1117,7 +1117,7 @@
   {
     "id": "tool_ack_0022",
     "category": "tool_ack",
-    "text": "Dispatching to Claude Code."
+    "text": "Dispatching to AI coding agent."
   },
   {
     "id": "tool_ack_0023",

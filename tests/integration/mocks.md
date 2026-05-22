@@ -16,7 +16,7 @@ for performance benchmarking against real models.
 | Qdrant memory | not loaded; `memory=None` on LLMEngine | embedded Qdrant | embedded Qdrant |
 | Brave API | `_MockBrave` returns fixture rows | real (only if `ULTRON_BRAVE_API_KEY` set) | mocked (no metering) |
 | Jina Reader | `_MockJina` returns canned markdown | real | mocked (no metering) |
-| Claude Code subprocess | `ScriptedClaudeBridge` (in-process worker thread) | real `claude` CLI subprocess | not exercised |
+| AI coding agent subprocess | `ScriptedClaudeBridge` (in-process worker thread) | real `claude` CLI subprocess | not exercised |
 | MCP server | real `UltronMCPServer` (in-process; no SSE wire) | real with SSE | not exercised |
 
 ## Fixtures

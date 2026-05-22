@@ -1,4 +1,4 @@
-"""Claude Code subprocess failure modes: launch failure, timeout,
+"""AI coding agent subprocess failure modes: launch failure, timeout,
 nonzero exit, stream-json error events. Plus the API-error pattern
 detector that decides between ClaudeCodeError and AnthropicAPIError.
 

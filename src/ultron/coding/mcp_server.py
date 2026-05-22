@@ -2,7 +2,7 @@
 
 One server hosts both the Qwen-facing supervisor surface (called as
 direct Python methods, no transport) and the Claude-facing worker
-surface (over Server-Sent Events, so any in-process Claude Code
+surface (over Server-Sent Events, so any in-process AI coding agent
 subprocess can connect via a generated ``.mcp.json``).
 
 Single shared state. The Qwen supervisor and Claude both read/write
@@ -858,7 +858,7 @@ class UltronMCPServer:
 
 
 def write_mcp_config(project_root: Path, sse_url: str) -> Path:
-    """Write a per-session ``.mcp.json`` so Claude Code, when invoked with
+    """Write a per-session ``.mcp.json`` so AI coding agent, when invoked with
     ``cwd=project_root``, automatically connects to our running server.
     Returns the path written."""
     project_root = Path(project_root)

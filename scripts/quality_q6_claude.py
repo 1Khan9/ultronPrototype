@@ -1,14 +1,14 @@
-"""Q6.E + Q6.F real Claude Code quality harness.
+"""Q6.E + Q6.F real AI coding agent quality harness.
 
 Sandboxes each task to its own subdir under data/sandbox/ and spawns
-the real Claude Code CLI via DirectClaudeCodeBridge.  Records the
+the real claude CLI via DirectClaudeCodeBridge.  Records the
 generated files + verification rubric.
 
 Q6.E: 4 single-function tasks (factorial, flatten, count_words, Stack)
 Q6.F: 5 full small applications (DOCX-to-PDF, Markdown-to-HTML, image
       batch renamer, JSON pretty-printer, TODO list)
 
-Total: 9 real Claude Code invocations.
+Total: 9 real AI coding agent invocations.
 
 Run from the main checkout (or worktree):
     .venv\\Scripts\\python.exe scripts\\quality_q6_claude.py
@@ -254,7 +254,7 @@ def score_single_function(slug: str, sandbox_dir: Path, primary_file: str, verif
 
 
 def run_q6e_single_functions() -> dict[str, Any]:
-    print("\n[Q6.E] 4 single-function Claude Code tasks")
+    print("\n[Q6.E] 4 single-function AI coding agent tasks")
     print("-" * 60)
     results = []
     for slug, prompt, primary_file, verify in Q6E_TASKS:
@@ -425,7 +425,7 @@ def score_full_app(slug: str, sandbox_dir: Path, expected_verb: str, claude_resu
 
 
 def run_q6f_full_apps() -> dict[str, Any]:
-    print("\n[Q6.F] 5 full small-application Claude Code tasks")
+    print("\n[Q6.F] 5 full small-application AI coding agent tasks")
     print("-" * 60)
     results = []
     for slug, prompt, expected_verb in Q6F_APPS:

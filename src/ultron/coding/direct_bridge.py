@@ -1,4 +1,4 @@
-"""Direct subprocess bridge to Claude Code.
+"""Direct subprocess bridge to AI coding agent.
 
 Spawns ``claude --print --output-format stream-json ...`` as a
 subprocess in the project's cwd, parses the JSONL event stream into our
@@ -46,7 +46,7 @@ from ultron.utils.logging import get_logger
 logger = get_logger("coding.direct_bridge")
 
 
-# Substrings in stream-json error payloads / Claude Code stderr that
+# Substrings in stream-json error payloads / AI coding agent stderr that
 # indicate the failure originated in the Anthropic API rather than the
 # subprocess itself. Matched case-insensitively against error text.
 _ANTHROPIC_API_ERROR_SIGNS = (
@@ -66,7 +66,7 @@ _ANTHROPIC_API_ERROR_SIGNS = (
 
 def _looks_like_anthropic_api_error(text: str) -> bool:
     """True if ``text`` smells like an Anthropic API failure surfaced
-    by Claude Code (rate-limited / overloaded / auth / etc.)."""
+    by AI coding agent (rate-limited / overloaded / auth / etc.)."""
     if not text:
         return False
     low = text.lower()
@@ -119,7 +119,7 @@ class DirectClaudeCodeBridge(CodingBridge):
             if found:
                 return found
         raise FileNotFoundError(
-            f"Could not locate the Claude Code CLI. Tried: {candidates}. "
+            f"Could not locate the claude CLI. Tried: {candidates}. "
             f"Set ULTRON_CLAUDE_CLI to the absolute path of claude.cmd / claude."
         )
 
@@ -158,7 +158,7 @@ class DirectClaudeCodeBridge(CodingBridge):
         claude_session_id: str,
         is_new_session: bool,
     ) -> List[str]:
-        # Claude Code requires UUID format for --session-id / --resume. We
+        # AI coding agent requires UUID format for --session-id / --resume. We
         # carry an unhyphenated 32-char id internally so the audit log is
         # easy to read; insert hyphens at the CLI boundary.
         cli_session_id = _format_uuid(claude_session_id)
@@ -192,7 +192,7 @@ class DirectClaudeCodeBridge(CodingBridge):
 
 def _format_uuid(raw: str) -> str:
     """Accept a 32-char hex string or an already-hyphenated UUID; return
-    canonical 8-4-4-4-12 form. Claude Code rejects other shapes."""
+    canonical 8-4-4-4-12 form. AI coding agent rejects other shapes."""
     s = raw.replace("-", "")
     if len(s) != 32:
         raise ValueError(f"invalid claude session id (expected 32 hex chars): {raw!r}")
@@ -217,7 +217,7 @@ _NARRATABLE_TOOLS = {
 
 
 class DirectTaskHandle(TaskHandle):
-    """One in-flight Claude Code subprocess + its parsed event stream."""
+    """One in-flight AI coding agent subprocess + its parsed event stream."""
 
     def __init__(
         self,
@@ -467,7 +467,7 @@ class DirectTaskHandle(TaskHandle):
             if _looks_like_anthropic_api_error(err_text):
                 get_error_log().record(
                     AnthropicAPIError(
-                        f"Anthropic API failure during Claude Code session "
+                        f"Anthropic API failure during AI coding agent session "
                         f"(exit {exit_status})",
                         context={
                             "task_id": self._task_id,
@@ -594,7 +594,7 @@ class DirectTaskHandle(TaskHandle):
             if _looks_like_anthropic_api_error(err):
                 get_error_log().record(
                     AnthropicAPIError(
-                        "Anthropic API error reported by Claude Code stream",
+                        "Anthropic API error reported by AI coding agent stream",
                         context={
                             "task_id": self._task_id,
                             "label": self._request.label or "",
@@ -607,7 +607,7 @@ class DirectTaskHandle(TaskHandle):
             else:
                 get_error_log().record(
                     ClaudeCodeError(
-                        "Claude Code stream-json error event",
+                        "AI coding agent stream-json error event",
                         context={
                             "task_id": self._task_id,
                             "label": self._request.label or "",

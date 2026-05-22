@@ -34,7 +34,7 @@ from ultron.config import (
 
 # ---------------------------------------------------------------------------
 # Stub bridge + handle so we can fire events into the registered listener
-# without spawning Claude Code.
+# without spawning AI coding agent.
 # ---------------------------------------------------------------------------
 
 

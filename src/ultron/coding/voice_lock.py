@@ -11,7 +11,7 @@ convention is enforced by:
 * Reviewer discipline.
 
 This module adds a **regex-grade pre-dispatch scanner** for the
-coding bridge: when Claude Code is about to be dispatched against a
+coding bridge: when AI coding agent is about to be dispatched against a
 task whose prompt explicitly targets a voice-locked file, the
 orchestrator gets a structured warning it can surface to the user
 (and optionally block on) BEFORE the subprocess spawns.

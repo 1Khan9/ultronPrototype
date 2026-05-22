@@ -1411,7 +1411,7 @@ class CodingAstMetadataConfig(_Strict):
     measured in seconds, but the metadata storage decision is
     operator-led).
 
-    The audit signal is the primary deliverable -- if Claude Code
+    The audit signal is the primary deliverable -- if AI coding agent
     writes broken Python and reports success, the listener catches
     it. The structural metadata (functions_defined, imports, etc.)
     is captured for future use in code-context retrieval but not
@@ -1428,7 +1428,7 @@ class CodingGoalAnchorsConfig(_Strict):
 
     When enabled, the :class:`CodingTaskRunner` decomposes incoming
     task prompts into named milestones (anchors) with per-anchor
-    token budgets. As USAGE events arrive from Claude Code, the
+    token budgets. As USAGE events arrive from AI coding agent, the
     runner attributes tokens to the active anchor and surfaces voice
     narration when an anchor completes, when it's near its budget,
     and when the next anchor begins.
@@ -1436,7 +1436,7 @@ class CodingGoalAnchorsConfig(_Strict):
     Resume support: when a task is paused mid-plan (budget exhausted,
     user cancelled, etc.), the runner's :meth:`send_followup` can
     prepend the next unfinished anchor's description to the
-    follow-up prompt so Claude Code resumes at the right milestone
+    follow-up prompt so AI coding agent resumes at the right milestone
     instead of restarting from scratch.
 
     Default OFF: the narration adds extra voice turns mid-task; the
@@ -1457,7 +1457,7 @@ class CodingGoalAnchorsConfig(_Strict):
 class CodingSupervisorConfig(_Strict):
     """2026-05-22 supervisor stack -- opencode-style project digest +
     semantic-resolution layer that sits between the routing classifier
-    and the Claude Code dispatch.
+    and the AI coding agent dispatch.
 
     Five sub-features, each independently flagged so they ship + flip
     in order (digests -> index -> decide -> narrate -> enriched).
@@ -1584,7 +1584,7 @@ class CodingConfig(_Strict):
     # to the Claude prompt. For ad-hoc voice utility requests ("write
     # me a PDF to DOCX converter") this triples-to-quintuples the
     # token spend -- Claude writes the script, then writes tests, then
-    # fixes import errors, then re-runs, etc. A direct Claude Code
+    # fixes import errors, then re-runs, etc. A direct AI coding agent
     # invocation of the same ask completes in ~2 k tokens; the
     # testing-mandated voice path was burning 130 k+. Default off
     # gets voice asks back to the natural cadence -- if the user
@@ -2128,7 +2128,7 @@ class MediaGenerationConfig(_Strict):
     **Provider policy (project-wide):** Ultron only accepts
     free-or-local providers. ComfyUI (local Stable Diffusion) is the
     canonical option. Pay-per-use APIs (Fal, Runway, Suno, etc.) are
-    NOT supported — Claude Code is the only paid service in the
+    NOT supported — the AI coding agent is the only paid service in the
     stack. Concrete provider configuration lives in
     ``~/.openclaw/openclaw.json`` under ``models.providers.<slug>``;
     Ultron just routes the intent. See

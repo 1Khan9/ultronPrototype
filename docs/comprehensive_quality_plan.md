@@ -23,9 +23,9 @@ damage, rigorous documentation).
    re-measure and document the delta.
 2. **No regressions to the 1484-passing test suite.** Net delta must
    stay ≥ 0.
-3. **No paid-API sprawl.** Brave + Jina + Claude Code budgeted
+3. **No paid-API sprawl.** Brave + Jina + AI coding agent budgeted
    explicitly per phase below; total spend cap **≤ 10 Brave
-   queries, ≤ 10 Jina fetches, ≤ 10 Claude Code calls** across the
+   queries, ≤ 10 Jina fetches, ≤ 10 AI coding agent calls** across the
    entire pass (vs 2/1/1 in the prior pass — quality testing
    genuinely needs more samples for statistical signal). User
    approved expansion to 10 of each so most-quality-relevant probes
@@ -46,7 +46,7 @@ damage, rigorous documentation).
    both explicitly user-requested.
 9. **Local LLM probes are unmetered** — Qwen 4B in-process is free to
    call as many times as needed; we'll use it heavily.
-10. **Sandbox isolation enforced.** Every Claude Code invocation in
+10. **Sandbox isolation enforced.** Every AI coding agent invocation in
     Q6 dispatches against a fresh subdirectory under `data/sandbox/`,
     spawned via `DirectClaudeCodeBridge.submit(...)` with
     `--add-dir <project_root>` (Claude can only see inside that one
@@ -61,7 +61,7 @@ damage, rigorous documentation).
 
 ## Sandbox enforcement chain (verified pre-execution)
 
-The chain that guarantees Claude Code stays inside `data/sandbox/`:
+The chain that guarantees AI coding agent stays inside `data/sandbox/`:
 
 | Step | File | Behaviour |
 |---|---|---|
@@ -540,9 +540,9 @@ Python process to amortise the 1.8 s LLM cold-load.
 * **Gate:** no projection exceeds budget; warnings fire on stress
   case.
 
-#### Q6.E — Real Claude Code on small single-function tasks
+#### Q6.E — Real AI coding agent on small single-function tasks
 
-* **Probe:** 4 real Claude Code invocations against tiny single-function
+* **Probe:** 4 real AI coding agent invocations against tiny single-function
   tasks (covers core code-generation patterns; full-application
   generation is exercised separately in Q6.F):
   * **Pure function (math):** `factorial.py` with `factorial(n: int) -> int`
@@ -572,11 +572,11 @@ Python process to amortise the 1.8 s LLM cold-load.
   pass / fail summary.
 * **Gate:** ≥ 3/4 tasks produce code that passes correctness check;
   ≥ 3/4 pass all 6 checks; 0 security violations across all 4.
-* **Spend:** 4 Claude Code calls.
+* **Spend:** 4 AI coding agent calls.
 
-#### Q6.F — Real Claude Code on full small applications (user request)
+#### Q6.F — Real AI coding agent on full small applications (user request)
 
-* **Probe:** 5 real Claude Code invocations against full small
+* **Probe:** 5 real AI coding agent invocations against full small
   applications. Each application is a complete program (not a single
   function): GUI construction + event handling + file I/O + error
   handling + clean exit. Each runs through the production path:
@@ -689,12 +689,12 @@ Python process to amortise the 1.8 s LLM cold-load.
   * 0 / 5 security violations across all apps
   * Each app's sandbox subdir contains the expected file(s) (no
     empty dispatches)
-* **Spend:** 5 Claude Code calls.
+* **Spend:** 5 AI coding agent calls.
 
 * **Total Q6 wall:** ~25 min (4 small-task calls at ~1 min each
   + 5 small-app calls at ~3-4 min each — small apps take longer
   because they're more code).
-* **Total Q6 spend:** 9 Claude Code calls (4 single-function +
+* **Total Q6 spend:** 9 AI coding agent calls (4 single-function +
   5 full-app).
 
 ### Phase Q7 — Items 4–8 quality
@@ -991,9 +991,9 @@ inherently model-bound or out-of-scope. The plan distinguishes:
   paid-API spend. The full pytest sweep + voice baseline re-measure
   uses only local resources.
 * **Iterations that need real-API verification** (web-search prompt
-  template change, Claude Code prompt template change): 0–2 Brave
-  or 0–1 Claude Code per iteration, capped at the global Q10
-  reserve (2 Brave / 0 Jina / 2 Claude Code).
+  template change, AI coding agent prompt template change): 0–2 Brave
+  or 0–1 AI coding agent per iteration, capped at the global Q10
+  reserve (2 Brave / 0 Jina / 2 AI coding agent).
 
 If the cumulative iteration spend would exceed the global cap, the
 iteration is paused and the finding is escalated to the user for
@@ -1068,7 +1068,7 @@ The table targets ~150 rows like the prior report.
 
 ## Spend budget (cumulative)
 
-| Phase | Brave | Jina | Claude Code | Justification |
+| Phase | Brave | Jina | AI coding agent | Justification |
 |---|---|---|---|---|
 | Q0 | 0 | 0 | 0 | pre-flight |
 | Q1 | 0 | 0 | 0 | local LLM only |
@@ -1140,7 +1140,7 @@ to the report for the user to assess if they choose:
   **Mitigation:** surface as recommendation to retune SOUL.md;
   don't autonomously edit voice-quality surfaces. Counts as a
   documented-only finding.
-* **Risk:** real Brave / Claude Code budget exceeded due to a fix
+* **Risk:** real Brave / AI coding agent budget exceeded due to a fix
   needing verification. **Mitigation:** hard pause for user approval
   before continuing; iteration loop tracks spend per cycle.
 * **Risk:** a fix to the Coordinator or classifier introduces

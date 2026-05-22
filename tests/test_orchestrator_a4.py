@@ -86,12 +86,12 @@ def _make_orch(*, tts=None, wake=None, coding_voice=None) -> Orchestrator:
 def test_speak_with_barge_in_no_wake_returns_false():
     orch = _make_orch()
     barge_in = orch._speak_with_barge_in_check(  # noqa: SLF001
-        "I'll have Claude Code do something. Going ahead.",
+        "I'll have AI coding agent do something. Going ahead.",
         post_check_window_s=0.0,
     )
     assert barge_in is False
     assert orch.tts.spoken == [
-        "I'll have Claude Code do something. Going ahead.",
+        "I'll have AI coding agent do something. Going ahead.",
     ]
 
 
@@ -173,7 +173,7 @@ def test_handle_capability_response_a4_dispatches_when_no_barge_in():
 
     response = VoiceResponse(
         text="Working on calculator.",
-        pre_task_confirmation="I'll have Claude Code add subtract on the calculator project. Going ahead.",
+        pre_task_confirmation="I'll have AI coding agent add subtract on the calculator project. Going ahead.",
         deferred_dispatch=_dispatch,
         pre_task_label="calculator",
     )
@@ -181,7 +181,7 @@ def test_handle_capability_response_a4_dispatches_when_no_barge_in():
 
     assert dispatched["called"] is True
     assert orch.tts.spoken == [
-        "I'll have Claude Code add subtract on the calculator project. Going ahead.",
+        "I'll have AI coding agent add subtract on the calculator project. Going ahead.",
         "Working on calculator.",
     ]
     assert runner.aborted == []  # no abort logged
@@ -211,7 +211,7 @@ def test_handle_capability_response_a4_skips_dispatch_on_barge_in(monkeypatch):
 
     response = VoiceResponse(
         text="Working on calculator.",
-        pre_task_confirmation="I'll have Claude Code add subtract on the calculator project. Going ahead.",
+        pre_task_confirmation="I'll have AI coding agent add subtract on the calculator project. Going ahead.",
         deferred_dispatch=_dispatch,
         pre_task_label="calculator",
     )
@@ -222,7 +222,7 @@ def test_handle_capability_response_a4_skips_dispatch_on_barge_in(monkeypatch):
     assert dispatched["called"] is False
     # The post-dispatch ``text`` was NOT spoken; user heard the cancellation.
     assert orch.tts.spoken == [
-        "I'll have Claude Code add subtract on the calculator project. Going ahead.",
+        "I'll have AI coding agent add subtract on the calculator project. Going ahead.",
         "Cancelled. What did you mean?",
     ]
     # Audit recorded.

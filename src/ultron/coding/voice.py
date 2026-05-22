@@ -798,7 +798,7 @@ class CapabilityVoiceController:
         """Render a short spoken confirmation in Ultron's voice.
 
         Format mirrors the V1 spec example:
-            "I'll have Claude Code <verb> on the <project> project. Going ahead."
+            "I'll have AI coding agent <verb> on the <project> project. Going ahead."
 
         We extract a short verb/object phrase from the intent text. When
         the intent is for a brand-new project we say "scaffold a new"
@@ -812,11 +812,11 @@ class CapabilityVoiceController:
         )
         if is_new:
             return (
-                f"I'll have Claude Code scaffold a new {project_phrase} "
+                f"I'll have AI coding agent scaffold a new {project_phrase} "
                 f"project: {action_phrase}. Going ahead."
             )
         return (
-            f"I'll have Claude Code {action_phrase} on the "
+            f"I'll have AI coding agent {action_phrase} on the "
             f"{project_phrase} project. Going ahead."
         )
 

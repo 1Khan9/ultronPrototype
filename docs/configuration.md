@@ -211,7 +211,7 @@ new home. Below is the section-level overview with tuning notes.
 
 ### `coding`
 
-Top-level: `enabled`, `bridge` ("direct" runs Claude Code as a subprocess; an `openclaw` slot is reserved but Part 5 of Foundation removes it).
+Top-level: `enabled`, `bridge` ("direct" runs AI coding agent as a subprocess; an `openclaw` slot is reserved but Part 5 of Foundation removes it).
 
 | Subsection | Key | Default | Notes |
 |---|---|---|---|
@@ -234,7 +234,7 @@ Top-level: `enabled`, `bridge` ("direct" runs Claude Code as a subprocess; an `o
 | (root) | `project_registry_path` | "data/projects.json" | |
 | (root) | `audit_log_path` | "logs/coding_tasks.jsonl" | |
 | (root) | `task_timeout_seconds` | 1800 | Outer cap on a single task (30 min). |
-| (root) | `skip_permissions` | true | Pass `--dangerously-skip-permissions` to Claude Code. Sandbox is project-local. |
+| (root) | `skip_permissions` | true | Pass `--dangerously-skip-permissions` to AI coding agent. Sandbox is project-local. |
 
 ### `projections`
 

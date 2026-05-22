@@ -6,7 +6,7 @@ Three test groups:
   - .mcp.json helpers: filesystem-only.
   - Live SSE roundtrip: starts a real uvicorn server on a free port,
     connects with the official MCP SSE client, calls each Claude-side
-    tool, validates the responses. No real Claude Code subprocess --
+    tool, validates the responses. No real AI coding agent subprocess --
     that's covered by the e2e test in Phase 1f.
 
 Tests pin ``ULTRON_CODING_MCP_ALLOW_ANY_ROOT=1`` so they can use tmp_path

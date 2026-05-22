@@ -1,7 +1,7 @@
-"""Phase 1 e2e: real Claude Code subprocess connects to a real running
+"""Phase 1 e2e: real AI coding agent subprocess connects to a real running
 :class:`UltronMCPServer` over SSE and calls our tools.
 
-This is the spec's "Claude Code can connect to the worker-facing server
+This is the spec's "AI coding agent can connect to the worker-facing server
 and call all four worker tools" criterion. Slow tier (PYTEST_RUN_GPU_TESTS=1)
 because it spawns a real ``claude`` subprocess and burns haiku tokens.
 """
@@ -28,7 +28,7 @@ pytestmark = [
     pytest.mark.slow,
     pytest.mark.skipif(
         os.environ.get("PYTEST_RUN_GPU_TESTS") != "1",
-        reason="set PYTEST_RUN_GPU_TESTS=1 to run real Claude Code e2e",
+        reason="set PYTEST_RUN_GPU_TESTS=1 to run real AI coding agent e2e",
     ),
 ]
 
@@ -47,7 +47,7 @@ def _bridge() -> DirectClaudeCodeBridge:
 
 
 def test_real_claude_calls_report_progress_and_declare_complete(tmp_path: Path):
-    """Spawn Claude Code, hand it a prompt that explicitly directs it to
+    """Spawn AI coding agent, hand it a prompt that explicitly directs it to
     call our MCP tools, and verify the session state reflects the calls.
 
     We tell Claude to call ``report_progress`` once and ``declare_complete``

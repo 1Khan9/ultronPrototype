@@ -1805,7 +1805,7 @@ class Orchestrator:
                     pending_capture=self._pending_capture.is_set(),
                     follow_up_until=follow_up_until,
                 )
-                # Coding-task completion push: if a background Claude Code
+                # Coding-task completion push: if a background AI coding agent
                 # task just finished, announce it before we go back to
                 # listening. This gives the unsolicited "Done. Created X
                 # in Y..." narration the spec calls for.

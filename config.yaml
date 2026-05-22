@@ -660,12 +660,12 @@ addressing:
   log_path: "logs/addressing.jsonl"
 
 # ---------------------------------------------------------------------------
-# Coding orchestration (Claude Code subprocess via direct bridge)
+# Coding orchestration (AI coding agent subprocess via direct bridge)
 # ---------------------------------------------------------------------------
 
 coding:
   enabled: true
-  bridge: "direct"             # direct = local Claude Code subprocess
+  bridge: "direct"             # direct = local AI coding agent subprocess
 
   # 4B plan Item 7 — canonical-path monitor for coding sessions.
   # Aborts a session when too many off-canonical tool calls land in the
@@ -690,7 +690,7 @@ coding:
     max_age_days: null        # null = no cap; set e.g. 90.0 to mirror decay
 
   # A4 pre-task confirmation — speak a brief in-character confirmation
-  # ("I'll have Claude Code <verb> on the <project> project. Going ahead.")
+  # ("I'll have AI coding agent <verb> on the <project> project. Going ahead.")
   # BEFORE spawning the bridge subprocess so the user has a wake-word
   # barge-in window to interrupt if Ultron resolved the wrong project
   # or misread the task. Default OFF — the ~0.5 s of TTS playback on
@@ -738,7 +738,7 @@ coding:
   # tests, run them, fix failures, re-run" discipline preamble. For
   # ad-hoc voice asks like "build a quick utility", this 3-5x'd the
   # token spend -- Claude wrote the script, then tests, then fixed
-  # import errors, then re-ran. A direct Claude Code call of the
+  # import errors, then re-ran. A direct AI coding agent call of the
   # same ask cost ~2 k tokens; the testing-mandated voice path burned
   # 130 k+. Default false restores the natural cadence. Set true to
   # bring back the testing mandate on every voice coding dispatch
@@ -748,14 +748,14 @@ coding:
 
   test_sandbox_path: "tests/coding/sandbox"
 
-  # Path to the Claude Code CLI on this machine. Override via ULTRON_CLAUDE_CLI env.
+  # Path to the AI coding agent CLI on this machine. Override via ULTRON_CLAUDE_CLI env.
   claude_cli: "${USERPROFILE}/AppData/Roaming/npm/claude.cmd"
   claude_model: "haiku"
 
   sandbox_root: "data/sandbox"
   project_registry_path: "data/projects.json"
   audit_log_path: "logs/coding_tasks.jsonl"
-  task_timeout_seconds: 1800   # 30 min — outer cap on a single Claude Code task
+  task_timeout_seconds: 1800   # 30 min — outer cap on a single AI coding agent task
   skip_permissions: true       # --dangerously-skip-permissions (sandbox is project-local)
 
   # 2026-05-22 supervisor stack (opencode-style project digest +
@@ -1063,7 +1063,7 @@ heartbeat:
 # music tools via OpenClaw provider plugins. Local-only: ComfyUI is
 # the canonical option (other providers like Fal / Runway / Suno are
 # pay-per-use and explicitly NOT supported per project policy — only
-# Claude Code is paid in this stack). Provider configuration lives in
+# the AI coding agent is paid in this stack). Provider configuration lives in
 # ~/.openclaw/openclaw.json under models.providers.<slug>.
 # See docs/openclaw_media_generation_setup.md.
 # ---------------------------------------------------------------------------

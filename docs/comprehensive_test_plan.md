@@ -13,9 +13,9 @@ contract.
    7913 MB on the 4B preset. Any change that touches the hot path
    must re-measure and document the delta. **Same numbers required
    at end of test pass as start.**
-2. **No paid-API sprawl.** Anthropic API (Claude Code) and Brave
+2. **No paid-API sprawl.** Anthropic API (AI coding agent) and Brave
    used **extremely sparingly** for proof-of-life only. ≤3 Brave
-   calls; ≤1 Claude Code task. ComfyUI / mobile node setup
+   calls; ≤1 AI coding agent task. ComfyUI / mobile node setup
    intentionally skipped (interactive / hardware).
 3. **No voice-quality regressions.** Don't modify Piper, RVC, the
    LLM model file, or any voice-quality parameter.
@@ -179,7 +179,7 @@ Capture concrete deltas from script output (token reduction, accuracy lift, abor
 **Strict budget:**
 - Brave: ≤2 queries (1 to verify happy path, 1 cache-hit re-query).
 - Jina: ≤1 fetch.
-- Claude Code: ≤1 minimal task ("create hello.py with current ISO date").
+- AI coding agent: ≤1 minimal task ("create hello.py with current ISO date").
 
 Don't trigger any heavy automation. ComfyUI / mobile node skipped.
 

@@ -7,7 +7,7 @@ log, session audit logs, maintenance subprocess) and returns
 results over the MCP stdio protocol.
 
 This is intentionally separate from :class:`UltronMCPServer` (in
-``ultron.coding.mcp_server``) which serves the Claude Code
+``ultron.coding.mcp_server``) which serves the AI coding agent
 subprocess via SSE and lives in the orchestrator process. Sharing
 that server across both consumers would require a stdio→SSE proxy
 shim; running a small dedicated stdio server is simpler and keeps

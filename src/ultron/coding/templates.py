@@ -1,4 +1,4 @@
-"""Jinja2 template rendering for Claude Code prompts.
+"""Jinja2 template rendering for AI coding agent prompts.
 
 Five templates live in ``prompts/coding/``:
 

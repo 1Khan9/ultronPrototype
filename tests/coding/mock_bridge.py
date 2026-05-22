@@ -1,4 +1,4 @@
-"""Phase 6: scripted mock bridge that simulates Claude Code in-process.
+"""Phase 6: scripted mock bridge that simulates AI coding agent in-process.
 
 The real Claude bridge spawns a subprocess that emits events and calls
 MCP tools over SSE. For mocked Phase 6 scenarios we replace the

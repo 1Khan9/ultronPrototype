@@ -5,7 +5,7 @@ Strict budget:
 * 0 Jina fetches by default (Jina is exercised through web_search.search.run
   which runs Brave + Jina in chain; running 1 chain = 1 of each)
 * 1 chain of Brave -> Jina via WebSearchExecutor
-* 1 Claude Code subprocess invocation against a tiny prompt
+* 1 AI coding agent subprocess invocation against a tiny prompt
 
 Run from the main checkout (or worktree — both work; no GPU needed):
 
@@ -104,14 +104,14 @@ def smoke_search_chain() -> dict:
 
 
 def smoke_claude_code_one() -> dict:
-    """1 minimal Claude Code subprocess invocation.
+    """1 minimal AI coding agent subprocess invocation.
 
     Prompt: "Print exactly the single line: SMOKE_OK".  Should complete in
     1-3 seconds and burn ~50-150 tokens total.
     """
     import subprocess
 
-    print("\n[Claude Code] 1 minimal subprocess invocation")
+    print("\n[AI coding agent] 1 minimal subprocess invocation")
     print("-" * 50)
 
     claude_cli = os.environ.get(

@@ -49,7 +49,7 @@ for the runtime decision.
 | Component | Location | Symbols | Status |
 |---|---|---|---|
 | Abstract bridge interface + standardized `TaskEvent` vocabulary | [src/ultron/coding/bridge.py](src/ultron/coding/bridge.py:254) | `CodingBridge`, `EventKind` (STATUS, TEXT, TOOL_USE, TOOL_RESULT, FILE_CHANGE, ERROR, COMPLETE, USAGE), `TaskHandle`, `TaskEvent`, `TaskRequest`, `TaskResult`, `TaskState` | **PRESENT** |
-| Direct Claude Code subprocess bridge | [src/ultron/coding/direct_bridge.py:52](src/ultron/coding/direct_bridge.py:52) | `DirectClaudeCodeBridge` | **PRESENT** (spawns `claude --print --output-format stream-json --include-partial-messages --include-hook-events --model haiku --add-dir <cwd> --dangerously-skip-permissions`) |
+| Direct AI coding agent subprocess bridge | [src/ultron/coding/direct_bridge.py:52](src/ultron/coding/direct_bridge.py:52) | `DirectClaudeCodeBridge` | **PRESENT** (spawns `claude --print --output-format stream-json --include-partial-messages --include-hook-events --model haiku --add-dir <cwd> --dangerously-skip-permissions`) |
 | Project registry (atomic JSON CRUD) | [src/ultron/coding/projects.py:86](src/ultron/coding/projects.py:86) | `ProjectRegistry`, `Project` | **PRESENT** (registry path: [data/projects.json](data/projects.json)) |
 | Project resolver (exact / alias / substring / semantic) | [src/ultron/coding/projects.py:197](src/ultron/coding/projects.py:197) | `ProjectResolver`, `ProjectResolution`, `ResolutionKind` | **PRESENT** |
 | Sandbox project creation | [src/ultron/coding/projects.py:357](src/ultron/coding/projects.py:357) | `new_sandbox_project`, `slugify_for_path` | **PRESENT** (creates under `data/sandbox/`, slug collision-safe) |

@@ -1,4 +1,4 @@
-"""Abstract bridge to a Claude Code execution backend.
+"""Abstract bridge to a AI coding agent execution backend.
 
 Ships with one concrete implementation -- :class:`DirectClaudeCodeBridge`,
 a local subprocess wrapper. The abstraction is preserved for future
@@ -141,7 +141,7 @@ class TaskRequest:
     task_prompt: str
     cwd: Path
     model: str = "haiku"
-    # Tools Claude Code is allowed to invoke. ``None`` means the backend's
+    # Tools AI coding agent is allowed to invoke. ``None`` means the backend's
     # default. Pass an explicit list to lock down a sandbox run.
     allowed_tools: Optional[List[str]] = None
     disallowed_tools: Optional[List[str]] = None

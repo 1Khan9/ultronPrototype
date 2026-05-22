@@ -213,7 +213,7 @@ def _match_conventional_default(question: str) -> Optional[str]:
 
 
 _DECIDE_PROMPT = """\
-You are deciding how to handle a clarification request from a coding agent (Claude Code) working on a project for the user. Your job: answer Claude's question yourself when possible, escalate to the user only when the decision is substantive.
+You are deciding how to handle a clarification request from a coding agent (AI coding agent) working on a project for the user. Your job: answer Claude's question yourself when possible, escalate to the user only when the decision is substantive.
 
 {projected_context}
 

@@ -10,7 +10,7 @@ table.
 **Branch base:** `main` @ `2fb0988`.
 **Total spend:** ~12 Brave queries (over plan cap of 10 due to
 cache=None making Q3.D cache-test queries go live; well under Brave
-free-tier quota), ~16 Jina fetches (similar), 9 Claude Code calls
+free-tier quota), ~16 Jina fetches (similar), 9 AI coding agent calls
 (within cap; 4 single-function in Q6.E + 5 full-app in Q6.F).
 
 ---
@@ -239,7 +239,7 @@ Test setup used `cache=None`; the test was inconclusive (no cache wired). Cache 
 
 **Gate: PASSED 5/5.** Truncation logic correctly trims oversized fields when needed.
 
-### Phase Q6.E — Real Claude Code single-function tasks (4 calls)
+### Phase Q6.E — Real AI coding agent single-function tasks (4 calls)
 
 | Task | Score | Correctness | Type hints | Docstring | Security | Wall (s) |
 |---|---|---|---|---|---|---|
@@ -250,7 +250,7 @@ Test setup used `cache=None`; the test was inconclusive (no cache wired). Cache 
 
 **Gate: PASSED 4/4.** Every task produced correct, idiomatic, secure code with type hints + docstrings on first try. Wall time 9-15 seconds per task.
 
-### Phase Q6.F — Real Claude Code full small applications (5 calls, user request)
+### Phase Q6.F — Real AI coding agent full small applications (5 calls, user request)
 
 | App | Score | Close button | Process button | py_compile | Security | Wall (s) | Sandbox isolated |
 |---|---|---|---|---|---|---|---|
@@ -262,7 +262,7 @@ Test setup used `cache=None`; the test was inconclusive (no cache wired). Cache 
 
 \* Score 11/11 after relaxed regex re-scoring (initial scoring used a too-strict regex that missed `command=self.root.destroy` and `text="Convert to PDF"` substring matches).
 
-**Gate: PASSED 5/5 with both buttons + 0 security violations.** Each app dispatched to its own `data/sandbox/quality_q6f_<slug>/` subdir via Claude Code with `--add-dir <subdir>` confining writes. All 5 apps:
+**Gate: PASSED 5/5 with both buttons + 0 security violations.** Each app dispatched to its own `data/sandbox/quality_q6f_<slug>/` subdir via AI coding agent with `--add-dir <subdir>` confining writes. All 5 apps:
 * compiled cleanly
 * imported tkinter, constructed `Tk()`, called `mainloop()`
 * had a Close button wired to `destroy()` / `quit()`
@@ -270,7 +270,7 @@ Test setup used `cache=None`; the test was inconclusive (no cache wired). Cache 
 * included try/except blocks and a top-of-file docstring
 * contained no `eval`/`exec`/`os.system`/`shell=True`/`pickle.loads`
 
-The user's specific request was met: Claude Code generated 5 full small applications including the docx-to-pdf with file-explorer picker, Process button, and Close button that exits cleanly. Sandbox isolation enforced — no out-of-sandbox writes observed.
+The user's specific request was met: AI coding agent generated 5 full small applications including the docx-to-pdf with file-explorer picker, Process button, and Close button that exits cleanly. Sandbox isolation enforced — no out-of-sandbox writes observed.
 
 ### Phase Q7 — Items 4-8 quality
 
@@ -508,7 +508,7 @@ After all defense changes:
 | 90 | Q10 iteration loop | voice baseline regressions | **0** | count | Q11 |
 | 91 | **Spend** | Brave queries used | ~12 | count | Q3 |
 | 92 | Spend | Jina fetches used | ~16 | count | Q3 |
-| 93 | Spend | Claude Code calls used | **9** | count | Q6.E + Q6.F |
+| 93 | Spend | AI coding agent calls used | **9** | count | Q6.E + Q6.F |
 | 94 | Spend | Anthropic API tokens spent | sparring (proof-of-life only) | n/a | Q6 |
 | 95 | **Documentation contract** | comprehensive_quality_plan.md | created | bool | Q0 |
 | 96 | Documentation contract | comprehensive_quality_report.md | created | bool | Q13 |
@@ -585,7 +585,7 @@ After all defense changes:
 * **`scripts/quality_harness.py`** — new orchestrator for Q1+Q2+Q4+Q5+Q7+Q8 (15 sub-phases in one process)
 * **`scripts/quality_q3_web.py`** — new orchestrator for Q3 (Brave + Jina with strict spend cap)
 * **`scripts/quality_q6_mocked.py`** — new orchestrator for Q6.D + Q9 (no real API)
-* **`scripts/quality_q6_claude.py`** — new orchestrator for Q6.E + Q6.F (real Claude Code, 9 calls)
+* **`scripts/quality_q6_claude.py`** — new orchestrator for Q6.E + Q6.F (real AI-coding-agent, 9 calls)
 * **`scripts/_quality_q10_iter1_verify.py`** — Q10 iteration verification harness (3 prompt-injection probes against the live LLM)
 * **`scripts/_quality_q6f_rescore.py`** — re-scores Q6.F apps with relaxed regex (no new Claude calls)
 

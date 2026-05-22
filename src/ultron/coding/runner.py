@@ -262,7 +262,7 @@ class CodingTaskRunner:
         if canonical_listener is not None:
             handle.add_listener(canonical_listener)
         # 2026-05-12 Phase 2 -- runtime safety validator FILE_CHANGE
-        # listener. When Claude Code spawns a write to a K-protected
+        # listener. When AI coding agent spawns a write to a K-protected
         # (or any other rule-protected) path, the listener cancels the
         # handle and audits the abort. Belt-and-braces on top of the
         # OpenClaw dispatcher gate -- coding-bridge file writes never
@@ -278,7 +278,7 @@ class CodingTaskRunner:
             handle.add_listener(anchor_listener)
         # 2026-05-19 Tracks 1f + 1g -- AST syntax verification on
         # FILE_CHANGE events. Off by default. When enabled, every
-        # Python file Claude Code writes gets parsed via stdlib ast;
+        # Python file the AI coding agent writes gets parsed via stdlib ast;
         # a syntax failure emits an ``ast_syntax_failure`` audit row
         # so completion narration can fact-check the success claim
         # instead of trusting the bridge's exit code alone.
@@ -328,7 +328,7 @@ class CodingTaskRunner:
           * the coordinator when relaying a user clarification answer
 
         If a task is currently running we wait for it to complete before
-        sending the follow-up -- Claude Code's ``--resume`` does not
+        sending the follow-up -- AI coding agent's ``--resume`` does not
         attach to a live subprocess, only to a persisted session.
         Returns the new TaskHandle on success, or ``None`` if there's no
         prior session to resume.
@@ -355,7 +355,7 @@ class CodingTaskRunner:
         # E2 goal-anchor resume: when the operator has enabled the
         # ``resume_prepend_next_anchor`` flag AND an unfinished anchor
         # plan is still in flight, prepend a one-line "Continue with..."
-        # directive so Claude Code picks up at the right milestone
+        # directive so AI coding agent picks up at the right milestone
         # instead of restarting from scratch.
         prompt = self._maybe_prepend_anchor_resume(prompt)
 

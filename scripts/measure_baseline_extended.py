@@ -540,7 +540,7 @@ def measure_coding_session_vram() -> Dict[str, Any]:
             "notes": (
                 "Voice stack remains loaded throughout. The scripted mock "
                 "bridge runs in a worker thread (no Claude subprocess). "
-                "Real Claude Code runs as a SUBPROCESS and consumes negligible "
+                "Real AI coding agent runs as a SUBPROCESS and consumes negligible "
                 "local GPU; the LLM hosting the answer is at Anthropic, not "
                 "local. So this measurement validates that the orchestration "
                 "machinery itself doesn't spike local VRAM."

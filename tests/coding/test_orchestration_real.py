@@ -1,4 +1,4 @@
-"""Phase 6 — orchestration scenarios with real Claude Code.
+"""Phase 6 — orchestration scenarios with real AI coding agent.
 
 Gated on ``PYTEST_RUN_GPU_TESTS=1`` like the existing e2e tests. Each
 test spawns a real ``claude --print`` subprocess and burns haiku

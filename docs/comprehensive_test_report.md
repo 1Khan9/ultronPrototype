@@ -12,7 +12,7 @@ this pass.
 **Worktree:** `claude/hopeful-mclaren-ef4e4b`.
 **Branch base:** `main` @ `2fb0988`.
 **Spend:** 2 Brave queries (1 bare + 1 chain); 1 Jina fetch (via the
-chain); 1 minimal Claude Code haiku invocation. Inside the user's
+chain); 1 minimal AI coding agent (haiku) invocation. Inside the user's
 "extremely sparingly" budget.
 
 ## Headline result
@@ -277,9 +277,9 @@ Spend log:
 |---|---|---|---|
 | Brave search 1 (`python 3.13 release notes`, count=3) | 1 query | **531 – 1235 ms** (cold→warm) | 3 results returned, first title "What's New In Python 3.13" |
 | Brave + Jina chain (`python 3.13 changelog`, top_n=2) | 1 Brave + 2 Jina | **5516 ms** end-to-end | 2 sources with full text retrieved; cache=False on first call |
-| Claude Code haiku (`Reply with exactly the single line: SMOKE_OK`) | 1 call | **6421 ms** | rc=0, stdout starts with "SMOKE_OK" |
+| AI coding agent (haiku) (`Reply with exactly the single line: SMOKE_OK`) | 1 call | **6421 ms** | rc=0, stdout starts with "SMOKE_OK" |
 
-Total spend across the entire test pass: **2 Brave queries, 1 Jina fetch, 1 Claude Code call.** Inside the user's "extremely sparingly" budget.
+Total spend across the entire test pass: **2 Brave queries, 1 Jina fetch, 1 AI coding agent call.** Inside the user's "extremely sparingly" budget.
 
 Gate: passed.
 
@@ -297,7 +297,7 @@ Resilience coverage from the existing `tests/error_recovery/` suite (78 tests, a
 | Config invalid / missing / malformed | test_config_failures.py | passed |
 | Circuit breaker primitive (states / threshold / window / cooldown) | test_circuit_breaker.py | passed |
 | Error log writer + phrase library | test_error_log.py | passed |
-| Claude Code launch fail / timeout / nonzero exit / API errors | test_claude_code_failures.py | passed |
+| AI coding agent launch fail / timeout / nonzero exit / API errors | test_claude_code_failures.py | passed |
 | MCP server bind fail / no active session / audit-log write | test_mcp_server_failures.py | passed |
 | File system error in workspace writes / project registry / coding tasks log | test_filesystem_failures.py | passed |
 
@@ -457,9 +457,9 @@ Every quantitative dimension captured during the pass, indexed by category. Each
 | 97 | Real APIs | Brave + Jina chain end-to-end | 5516 | ms | <15000 | P10 |
 | 98 | Real APIs | Brave queries spent (total) | 2 | count | ≤3 | P10 |
 | 99 | Real APIs | Jina fetches spent | 1 (via chain) | count | ≤2 | P10 |
-| 100 | Real APIs | Claude Code haiku invocation latency | 6421 | ms | <60000 | P10 |
-| 101 | Real APIs | Claude Code returncode | 0 | int | 0 | P10 |
-| 102 | Real APIs | Claude Code SMOKE_OK reply | yes | bool | yes | P10 |
+| 100 | Real APIs | AI coding agent (haiku) invocation latency | 6421 | ms | <60000 | P10 |
+| 101 | Real APIs | AI coding agent returncode | 0 | int | 0 | P10 |
+| 102 | Real APIs | AI coding agent SMOKE_OK reply | yes | bool | yes | P10 |
 | 103 | Real APIs | Total Anthropic API calls | 1 | count | ≤1 | P10 |
 | 104 | **Classifier gating regression** | Test cases | 4 | count | n/a | P8 |
 | 105 | Classifier gating regression | Pass rate | 4/4 | count | 100% | P8 |
@@ -472,7 +472,7 @@ Every quantitative dimension captured during the pass, indexed by category. Each
 | 112 | Resilience coverage | Config failure modes | 5 | tests | n/a | P11 |
 | 113 | Resilience coverage | Circuit breaker primitive | 14 | tests | n/a | P11 |
 | 114 | Resilience coverage | Error log writer | 8 | tests | n/a | P11 |
-| 115 | Resilience coverage | Claude Code subprocess | 18 | tests | n/a | P11 |
+| 115 | Resilience coverage | AI coding agent subprocess | 18 | tests | n/a | P11 |
 | 116 | Resilience coverage | MCP server | 3 | tests | n/a | P11 |
 | 117 | Resilience coverage | File system | 5 | tests | n/a | P11 |
 | 118 | **Bug findings + fixes** | Real classifier coverage gaps found | 4 | count | n/a | P4 |

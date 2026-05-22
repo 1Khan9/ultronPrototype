@@ -20,7 +20,7 @@
 {"id": "code_003", "utterance": "create a script to backup my documents folder", "expected_routing_kind": "code_task", "tags": ["coding"], "notes": "Create verb + script noun"}
 {"id": "code_004", "utterance": "fix the bug in my parser module", "expected_routing_kind": "code_task", "tags": ["coding"], "notes": "Fix verb on coding object"}
 {"id": "progress_001", "utterance": "how's it going", "expected_routing_kind": "progress_query", "has_active_coding_task": true, "tags": ["coding", "progress"], "notes": "Classic progress query during active task"}
-{"id": "progress_002", "utterance": "how is that project going", "expected_routing_kind": "progress_query", "has_active_coding_task": true, "tags": ["coding", "progress", "windsurf_fix"], "notes": "Windsurf fix - was falling through to LLM"}
+{"id": "progress_002", "utterance": "how is that project going", "expected_routing_kind": "progress_query", "has_active_coding_task": true, "tags": ["coding", "progress", "live_session_fix"], "notes": "Live-session fix - was falling through to LLM"}
 {"id": "progress_003", "utterance": "is it done yet", "expected_routing_kind": "progress_query", "has_active_coding_task": true, "tags": ["coding", "progress"], "notes": "Is X done? variant"}
 {"id": "progress_no_task", "utterance": "how is that project going", "expected_routing_kind": "conversational", "has_active_coding_task": false, "tags": ["coding", "progress", "gating"], "notes": "Same utterance falls through when no active task - gating regression"}
 {"id": "cancel_001", "utterance": "stop the task", "expected_routing_kind": "cancel", "has_active_coding_task": true, "tags": ["coding", "cancel"], "notes": "Direct cancel"}
