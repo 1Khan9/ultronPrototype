@@ -87,6 +87,81 @@ _KOKORO_DEFAULT_SAMPLE_RATE: int = 24000
 
 
 # ----------------------------------------------------------------------
+# Fine-tune state-dict compatibility shim
+# ----------------------------------------------------------------------
+
+
+def _make_kokoro_finetune_compat(src: Path) -> Path:
+    """Convert a parametrizations-API state dict to old-weight_norm
+    naming so the pip-installed ``kokoro`` package's KModel can load
+    the fine-tuned weights without falling through to ``strict=False``.
+
+    The training submodule (``ultronVoiceAudio/kokoro_finetune/kokoro``)
+    uses ``torch.nn.utils.parametrizations.weight_norm`` (new API),
+    storing weight_norm as ``<layer>.parametrizations.weight.original0``
+    (magnitude g) and ``...original1`` (direction v). The pip package
+    uses ``torch.nn.utils.weight_norm`` (old API), expecting
+    ``<layer>.weight_g`` and ``<layer>.weight_v``.
+
+    Loading the fine-tune directly into the pip KModel silently
+    falls through to ``strict=False`` and leaves every weight_norm-
+    parametrized layer at random init -- producing loud static
+    instead of speech.
+
+    The conversion is cached on disk so repeated startups are fast.
+    Cache invalidates when the source ``.pth`` is newer than the
+    cached compat file.
+
+    Args:
+        src: Path to the original fine-tune ``.pth`` (parametrizations
+            API).
+
+    Returns:
+        Path to the compat ``.pth`` (old weight_norm API) -- safe to
+        pass to ``KModel(model=...)``.
+    """
+    import torch
+    compat = src.with_name(src.stem + "__compat.pth")
+    if compat.is_file() and compat.stat().st_mtime >= src.stat().st_mtime:
+        return compat
+
+    logger.info(
+        "Kokoro: converting fine-tune state dict from parametrizations "
+        "API to old weight_norm naming (%s -> %s)",
+        src.name, compat.name,
+    )
+    sd = torch.load(str(src), map_location="cpu", weights_only=True)
+    converted: dict = {}
+    n_renamed = 0
+    for top, inner in sd.items():
+        if not isinstance(inner, dict):
+            converted[top] = inner
+            continue
+        new_inner = {}
+        for k, v in inner.items():
+            if k.endswith(".parametrizations.weight.original0"):
+                new_k = k.replace(
+                    ".parametrizations.weight.original0", ".weight_g",
+                )
+                n_renamed += 1
+            elif k.endswith(".parametrizations.weight.original1"):
+                new_k = k.replace(
+                    ".parametrizations.weight.original1", ".weight_v",
+                )
+                n_renamed += 1
+            else:
+                new_k = k
+            new_inner[new_k] = v
+        converted[top] = new_inner
+    torch.save(converted, str(compat))
+    logger.info(
+        "Kokoro: renamed %d keys, saved compat state dict at %s",
+        n_renamed, compat,
+    )
+    return compat
+
+
+# ----------------------------------------------------------------------
 # Engine
 # ----------------------------------------------------------------------
 
@@ -302,9 +377,23 @@ class KokoroSpeech:
         finetune_path = self.model_path / "ultron_finetune.pth"
         if finetune_path.is_file():
             try:
+                # 2026-05-22: the fine-tune was trained with PyTorch's
+                # NEW parametrization API
+                # (``torch.nn.utils.parametrizations.weight_norm``)
+                # which stores LSTM/Conv weight_norm as
+                # ``<layer>.parametrizations.weight.original0`` and
+                # ``...original1``. The pip-installed kokoro package
+                # uses the OLD API (``torch.nn.utils.weight_norm``)
+                # which expects ``<layer>.weight_g`` and ``weight_v``.
+                # Without conversion, KModel.load_state_dict's
+                # strict=False fallback silently leaves the affected
+                # modules at random init -> loud static output instead
+                # of speech. Convert the keys on first load (cached
+                # on disk for subsequent restarts).
+                compat_path = _make_kokoro_finetune_compat(finetune_path)
                 kmodel = KModel(
                     repo_id="hexgrad/Kokoro-82M",
-                    model=str(finetune_path),
+                    model=str(compat_path),
                 ).to(self.device).eval()
                 self._model = KPipeline(
                     lang_code="a",
