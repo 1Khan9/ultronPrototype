@@ -181,11 +181,17 @@ class SearxNGSearchClient:
         if self.engines:
             params["engines"] = self.engines
 
+        # SearxNG's botdetection logs ERROR when X-Forwarded-For/X-Real-IP
+        # are missing, even when the limiter is disabled. Sending the
+        # loopback IP satisfies the check and keeps the SearxNG log clean.
+        headers = {"X-Forwarded-For": "127.0.0.1"}
+
         t0 = time.monotonic()
         try:
             resp = requests.get(
                 self.base_url + "/search",
                 params=params,
+                headers=headers,
                 timeout=self.timeout_s,
             )
             resp.raise_for_status()

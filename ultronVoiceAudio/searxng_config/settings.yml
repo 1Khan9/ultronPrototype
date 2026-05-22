@@ -1,14 +1,22 @@
-# Ultron-local SearxNG settings.
-# `use_default_settings: true` merges the package defaults with our
-# overrides below -- we only need to specify what changes vs default.
+use_default_settings:
+  engines:
+    keep_only:
+      - bing
+      - mojeek
+      - wikipedia
+      - wikidata
 
-use_default_settings: true
+general:
+  debug: false
+  instance_name: "ultron-local"
 
 server:
   secret_key: "ultron-local-search-do-not-use-in-public"
   limiter: false
+  public_instance: false
   image_proxy: false
-  # Local-only deployment; allow all origins from localhost.
+  http_protocol_version: "1.1"
+  method: "GET"
   default_http_headers:
     X-Content-Type-Options: nosniff
     X-Download-Options: noopen
@@ -16,14 +24,46 @@ server:
     Referrer-Policy: no-referrer
 
 search:
-  # The critical bit: enable JSON API so our SearxNGSearchClient works.
   formats:
     - html
     - json
   safe_search: 1
   autocomplete: ""
+  default_lang: "en"
+  max_page: 1
+  ban_time_on_fail: 5
+  max_ban_time_on_fail: 120
+
+outgoing:
+  request_timeout: 3.0
+  max_request_timeout: 6.0
+  pool_connections: 100
+  pool_maxsize: 20
+  enable_http2: true
+  keepalive_expiry: 30
 
 ui:
   static_use_hash: true
   default_locale: en
   query_in_title: true
+
+engines:
+  - name: bing
+    disabled: false
+    timeout: 3.0
+    weight: 2
+
+  - name: mojeek
+    disabled: false
+    timeout: 3.0
+    weight: 1
+
+  - name: wikipedia
+    disabled: false
+    timeout: 2.0
+    weight: 2
+
+  - name: wikidata
+    disabled: false
+    timeout: 5.0
+    weight: 1

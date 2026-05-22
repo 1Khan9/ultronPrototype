@@ -72,6 +72,14 @@ from ultron.coding import (
 )
 from ultron.coding.coordinator import ConversationCoordinator
 from ultron.coding.narration import StatusNarrator
+from ultron.coding.voice import VoiceResponse as _VoiceResponse
+
+
+def _voice_text(text: str) -> _VoiceResponse:
+    """Wrap a plain string in a VoiceResponse so it can flow through
+    :meth:`Orchestrator._handle_capability_response`."""
+    return _VoiceResponse(text=text, handled=True)
+
 from ultron.uncertainty import apply as apply_uncertainty
 from ultron.conversational_ack import (
     ConversationalAckSource,
@@ -86,6 +94,7 @@ from ultron.web_search import (
     AcknowledgmentSource,
     BraveSearchClient,
     GateDecision,
+    GateVerdict,
     JinaReaderClient,
     WebResultsCache,
     WebSearchExecutor,
@@ -419,6 +428,11 @@ class Orchestrator:
         self._next_turn_force_search = False
         self._last_response_finished_monotonic: float = 0.0
         self._last_search_payload = None
+        # 2026-05-22 OPEN_LAST_SOURCE: accumulated text of the most
+        # recent assistant response. Used to match cited publication
+        # names back to the source list when the user says "show me
+        # that article".
+        self._last_response_text: str = ""
 
         # 2026-05-19 Tracks 1c-1e voice-loop integration. The
         # BackgroundSummarizer fires when ``memory.background_summary.enabled``
@@ -1910,6 +1924,7 @@ class Orchestrator:
                 if self.coding_voice is not None:
                     trace.set_phase("routing")
                     from ultron.openclaw_routing import classify_routing
+                    from ultron.openclaw_routing.intents import RoutingIntentKind
                     has_active = self.coding_voice.runner.has_active_task()
                     has_pending = self.coding_voice.has_pending_clarification()
                     routing_intent = classify_routing(
@@ -1926,6 +1941,26 @@ class Orchestrator:
                         has_active_task=has_active,
                         has_pending_clarification=has_pending,
                     )
+                    # 2026-05-22 OPEN_LAST_SOURCE: intercept here because
+                    # the handler needs orchestrator-local state
+                    # (_last_search_payload + _last_response_text) that
+                    # the capability controller doesn't have access to.
+                    if routing_intent.kind == RoutingIntentKind.OPEN_LAST_SOURCE:
+                        self._handle_open_last_source(routing_intent)
+                        self._last_response_finished_monotonic = time.monotonic()
+                        if _addr_cfg.follow_up_enabled:
+                            follow_up_until = (
+                                self._last_response_finished_monotonic
+                                + _addr_cfg.warm_mode_duration_seconds
+                            )
+                        else:
+                            follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="open_last_source",
+                            follow_up=bool(follow_up_until),
+                        )
+                        continue
                     capability_response = self.coding_voice.handle_capability_intent(routing_intent)
                     if capability_response is not None:
                         trace.tlog(
@@ -2870,6 +2905,258 @@ class Orchestrator:
 
     # --- phase: process ------------------------------------------------------
 
+    def _resolve_cited_source(
+        self, ordinal=None, referent: str = "",
+    ):
+        """Pick the source the user is asking to open.
+
+        Strategy (priority order, first hit wins):
+
+        1. Ordinal: when the user said "the first/second/third" or
+           "number 2", return ``sources[ordinal-1]``. Out-of-range
+           (e.g. "the fifth" when only 3 sources exist) falls
+           through to the next strategy.
+        2. Referent substring: when the user supplied a phrase
+           ("NBC", "Boeing crash"), search source titles + domain
+           roots for a case-insensitive substring match. Longest
+           match wins.
+        3. Embedding similarity (referent only): when the dense
+           embedder is available, encode the referent + each source
+           title and pick the best cosine match above 0.55.
+        4. Cited-in-response: scan the LLM's last response text for
+           publication names (existing behaviour for bare "show me
+           that article" with no referent).
+        5. Source[0] fallback: the first source in the list.
+
+        Returns the chosen source or None when the payload is empty.
+        """
+        payload = self._last_search_payload
+        if not payload or not payload.sources:
+            return None
+        sources = payload.sources
+
+        # Strategy 1: ordinal.
+        if ordinal is not None:
+            if ordinal == -1:
+                return sources[-1]
+            if 1 <= ordinal <= len(sources):
+                return sources[ordinal - 1]
+            logger.info(
+                "open_last_source: ordinal=%s out of range (have %d "
+                "sources); falling through to referent / fallback.",
+                ordinal, len(sources),
+            )
+
+        from urllib.parse import urlparse
+        import re as _re
+
+        # Build candidate strings (title segments, domain roots) per
+        # source. Used by both the referent substring match AND the
+        # cited-in-response fallback below.
+        def _candidates_for(source) -> list:
+            cands: list = []
+            title = (getattr(source, "title", "") or "").strip()
+            if title:
+                cands.append(title)
+                segments = _re.split(r"\s*[|\-–—·:]\s*", title)
+                for seg in segments:
+                    seg = seg.strip()
+                    if seg and len(seg) >= 3 and seg != title:
+                        cands.append(seg)
+            url = getattr(source, "url", "") or ""
+            try:
+                host = urlparse(url).hostname or ""
+            except Exception:                                       # noqa: BLE001
+                host = ""
+            if host:
+                stripped = host.lower().replace("www.", "")
+                root = stripped.split(".")[0]
+                if root and len(root) >= 4:
+                    cands.append(root)
+                    for suffix in (
+                        "news", "times", "post", "today", "daily",
+                        "press", "tribune", "herald", "journal",
+                        "magazine", "review",
+                    ):
+                        if root.endswith(suffix) and root != suffix:
+                            cands.append(
+                                f"{root[:-len(suffix)]} {suffix}"
+                            )
+            return cands
+
+        # Strategy 2: referent substring match.
+        if referent:
+            ref_lc = referent.lower().strip()
+            best = None
+            best_len = 0
+            for source in sources:
+                for cand in _candidates_for(source):
+                    cand_lc = cand.lower().strip()
+                    if len(cand_lc) < 3:
+                        continue
+                    # Match in either direction: referent in candidate
+                    # ("NBC" in "U.S. News | NBC News") OR candidate in
+                    # referent ("nbcnews" in "the nbc news story").
+                    if cand_lc in ref_lc or ref_lc in cand_lc:
+                        match_len = min(len(cand_lc), len(ref_lc))
+                        if match_len > best_len:
+                            best = source
+                            best_len = match_len
+            if best is not None:
+                return best
+
+        # Strategy 3: embedding similarity (referent only, when the
+        # dense embedder is available).
+        if referent and self.memory is not None:
+            chosen = self._embedding_pick_source(referent, sources)
+            if chosen is not None:
+                return chosen
+
+        # Strategy 4: cited-in-response (fallback for bare "show me
+        # that article" with no referent).
+        response_lc = (self._last_response_text or "").lower()
+        if not response_lc:
+            return sources[0]
+
+        best = None
+        best_match_len = 0
+        for source in sources:
+            for cand in _candidates_for(source):
+                cand_lc = cand.lower().strip()
+                if len(cand_lc) < 3:
+                    continue
+                if cand_lc in response_lc and len(cand_lc) > best_match_len:
+                    best = source
+                    best_match_len = len(cand_lc)
+
+        # Strategy 5: fallback to source [0].
+        return best if best is not None else sources[0]
+
+    def _embedding_pick_source(self, referent: str, sources):
+        """Pick the source whose title best matches ``referent`` by
+        dense-embedding cosine similarity.
+
+        Returns the chosen source or None when the embedder is
+        unavailable, similarities are too low, or any error occurs.
+        Threshold: 0.55. Below that, callers should fall through to
+        the next resolution strategy.
+        """
+        try:
+            embedder = self.memory._embedder  # noqa: SLF001
+        except Exception:                                           # noqa: BLE001
+            return None
+        if embedder is None:
+            return None
+
+        titles = [(getattr(s, "title", "") or "").strip() for s in sources]
+        if not any(titles):
+            return None
+        try:
+            import numpy as np
+            doc_vecs = embedder.encode_dense(titles)
+            query_vec = embedder.encode_query_dense(referent)
+            # Cosine similarity (vectors are L2-normalized by bge-small,
+            # but guard against future model swaps).
+            def _norm(v):
+                n = np.linalg.norm(v)
+                return v / n if n > 0 else v
+            doc_n = np.stack([_norm(v) for v in doc_vecs])
+            q_n = _norm(query_vec)
+            sims = doc_n @ q_n
+            best_idx = int(np.argmax(sims))
+            best_sim = float(sims[best_idx])
+        except Exception as e:                                      # noqa: BLE001
+            logger.debug("embedding source pick failed: %s", e)
+            return None
+
+        if best_sim < 0.55:
+            logger.info(
+                "open_last_source: embedding best sim=%.3f below 0.55 "
+                "threshold; falling through.", best_sim,
+            )
+            return None
+
+        logger.info(
+            "open_last_source: embedding pick idx=%d sim=%.3f title=%r",
+            best_idx, best_sim, titles[best_idx][:80],
+        )
+        return sources[best_idx]
+
+    def _handle_open_last_source(self, routing_intent) -> None:
+        """Open the URL cited in the most recent search-augmented turn.
+
+        Routes to :func:`webbrowser.open` by default. When the user
+        specifies a monitor target ("on monitor 2"), routes through
+        :func:`ultron.desktop.voice.handle_app_launch` so Chrome opens
+        on the requested screen.
+
+        Fail-open: missing payload, missing URL, browser-open failure
+        all degrade to a spoken voice message; never raise.
+        """
+        intent = getattr(routing_intent, "open_last_source_intent", None)
+        ordinal = getattr(intent, "ordinal", None) if intent else None
+        referent = getattr(intent, "referent", "") if intent else ""
+        chosen = self._resolve_cited_source(
+            ordinal=ordinal, referent=referent,
+        )
+        if chosen is None:
+            msg = "I don't have a recent article to open from our last exchange."
+            self._handle_capability_response(
+                _voice_text(msg), routing_intent,
+            )
+            return
+
+        url = getattr(chosen, "url", "") or ""
+        title = getattr(chosen, "title", "") or url
+        if not url:
+            msg = "I have a source but its URL is missing."
+            self._handle_capability_response(
+                _voice_text(msg), routing_intent,
+            )
+            return
+
+        mon_idx = getattr(intent, "monitor_index", None) if intent else None
+        mon_q = getattr(intent, "monitor_query", "") if intent else ""
+
+        if mon_idx is not None or mon_q:
+            try:
+                from ultron.openclaw_routing.intents import AppLaunchIntent
+                from ultron.desktop.voice import handle_app_launch
+
+                al = AppLaunchIntent(
+                    app_name="chrome",
+                    url=url,
+                    monitor_index=mon_idx,
+                    monitor_query=mon_q,
+                    fullscreen=False,
+                    maximize=False,
+                    raw_text=getattr(routing_intent, "raw_text", ""),
+                )
+                result = handle_app_launch(al)
+                self._handle_capability_response(
+                    _voice_text(result.voice_message or
+                                     f"Opening {title}."),
+                    routing_intent,
+                )
+                return
+            except Exception as e:                                  # noqa: BLE001
+                logger.warning("Monitor-targeted source open failed: %s; "
+                               "falling back to default browser.", e)
+
+        try:
+            import webbrowser
+            webbrowser.open(url, new=2)
+            self._handle_capability_response(
+                _voice_text(f"Opening {title}."),
+                routing_intent,
+            )
+        except Exception as e:                                      # noqa: BLE001
+            logger.warning("webbrowser.open failed for %s: %s", url, e)
+            self._handle_capability_response(
+                _voice_text("I couldn't open the browser."),
+                routing_intent,
+            )
+
     def _respond(self, user_text: str) -> None:
         """Stream LLM tokens into TTS and watch for wake-word interruption.
 
@@ -2881,6 +3168,11 @@ class Orchestrator:
         """
         self._interrupt.clear()
         self._last_search_payload = None
+        # 2026-05-22 OPEN_LAST_SOURCE: accumulate the spoken response so
+        # the next-turn "show me that article" handler can match cited
+        # publication names back to the source list.
+        self._last_response_text = ""
+        response_buf: list = []
         watcher: Optional[threading.Thread] = None
         if settings.BARGE_IN_ENABLED:
             watcher = threading.Thread(
@@ -2900,10 +3192,12 @@ class Orchestrator:
                         self.llm.cancel()
                         return
                     print(token, end="", flush=True)
+                    response_buf.append(token)
                     yield token
 
             self.tts.speak_stream(gated())
             print()  # newline after streamed response
+            self._last_response_text = "".join(response_buf)
 
             # Sources go to the transcript only -- no TTS read-out, since
             # citations interleaved with the spoken answer would clutter the
@@ -3991,7 +4285,6 @@ class Orchestrator:
         # high-confidence rule verdicts still win when they fired.
         if getattr(self, "_next_turn_force_search", False):
             self._next_turn_force_search = False  # consume
-            from ultron.web_search.gating import GateDecision, GateVerdict
             cached_verdict = GateVerdict(
                 GateDecision.SEARCH, "high", "intent_recognizer",
                 "freshness-intent matched; overriding preflight verdict",
@@ -4302,9 +4595,36 @@ class Orchestrator:
 
             self._last_search_payload = payload
             sources_block = format_sources_for_prompt(payload.sources)
+
+            # 2026-05-22 news multi-event directive: when the user
+            # asked "what's the latest news" / "any news today" /
+            # "what's happening" -- a digest of MULTIPLE distinct
+            # stories is more useful than a single-event summary.
+            # Detected via the same _NEWS_QUERIES regex the gate uses.
+            try:
+                from ultron.web_search.gating import _NEWS_QUERIES
+                is_news_query = bool(_NEWS_QUERIES.search(user_text))
+            except Exception:                                        # noqa: BLE001
+                is_news_query = False
+
+            if is_news_query:
+                shape_directive = (
+                    "This is a news / current-events query. Summarize "
+                    "3-5 DISTINCT stories from the sources above, one "
+                    "short sentence each. Don't dwell on a single "
+                    "event -- give the user a quick scan of what's "
+                    "happening across the snippets. Attribute each "
+                    "story to its source (e.g. 'CNN reports...', "
+                    "'per NBC News...'). If the snippets only "
+                    "describe one event, say so and summarize it.\n\n"
+                )
+            else:
+                shape_directive = ""
+
             augmented = (
                 f"User question: {user_text}\n\n"
                 f"Fresh information from web search:\n{sources_block}\n\n"
+                + shape_directive +
                 "Answer the user's current question using ONLY the "
                 "facts present in the search snippets above. Do not "
                 "invent specifics that aren't visible in the snippets. "

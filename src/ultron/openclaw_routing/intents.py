@@ -92,6 +92,13 @@ class RoutingIntentKind(str, Enum):
     # Finds an existing window by name and sends WM_CLOSE.
     WINDOW_CLOSE = "window_close"
 
+    # Open last source (2026-05-22) -- "show me that article", "open
+    # that link", "pull up the source". Opens the URL the LLM cited in
+    # the most recent search-augmented response. The orchestrator
+    # resolves the cited URL from its own state (last_search_payload +
+    # last_response_text) since the classifier is stateless.
+    OPEN_LAST_SOURCE = "open_last_source"
+
 
 # ---------------------------------------------------------------------------
 # Per-category structured intents (for openclaw-bound ones)
@@ -306,6 +313,46 @@ class WindowCloseIntent:
 
 
 @dataclass
+class OpenLastSourceIntent:
+    """Open one of the URLs cited in the most recent search-augmented response.
+
+    The classifier emits this whenever the user says "show me that
+    article" / "open that link" / "pull up the source" / etc. The
+    actual URL resolution happens in the orchestrator's dispatcher
+    (which has access to ``_last_search_payload`` + the LLM's last
+    response text) -- this intent only carries the optional monitor
+    target plus disambiguating signals parsed from the utterance.
+
+    Disambiguation: when the user says "the second one", "the NBC
+    story", "the one about Boeing", the classifier captures an
+    ordinal index, a publication/topic referent phrase, or both. The
+    resolver tries ordinal first, then publication-name substring
+    match against titles/domains, then semantic similarity against
+    source titles via the dense embedder, then falls back to
+    matching the cited publication in the LLM's last response.
+
+    Attributes:
+        monitor_index: explicit monitor index when the user said
+            "open that article on monitor 2".
+        monitor_query: directional / named monitor target
+            ("left" / "right" / "main" / "primary").
+        ordinal: 1-based source index parsed from "the first one" /
+            "the second story" / "number 3". None when no ordinal.
+        referent: noun phrase capturing what the user meant -- a
+            publication name ("NBC"), a topic ("the Boeing crash"),
+            or both. Empty string when the user said only a bare
+            "that article" with no disambiguator.
+        raw_text: the original utterance for logging.
+    """
+
+    monitor_index: Optional[int] = None
+    monitor_query: str = ""
+    ordinal: Optional[int] = None
+    referent: str = ""
+    raw_text: str = ""
+
+
+@dataclass
 class SystemStatusIntent:
     """A voice query about Ultron's overall state.
 
@@ -367,6 +414,7 @@ class RoutingIntent:
     screen_context_intent: Optional[ScreenContextIntent] = None  # SCREEN_CONTEXT_QUERY only (Phase 8)
     window_move_intent: Optional[WindowMoveIntent] = None     # WINDOW_MOVE only (2026-05-14)
     window_close_intent: Optional[WindowCloseIntent] = None   # WINDOW_CLOSE only (2026-05-14)
+    open_last_source_intent: Optional[OpenLastSourceIntent] = None  # OPEN_LAST_SOURCE only (2026-05-22)
 
     # Disambiguation: when the rule-based + LLM disambiguator can't decide,
     # the orchestrator asks the user a clarifying question.

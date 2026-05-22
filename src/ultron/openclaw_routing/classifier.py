@@ -55,6 +55,7 @@ from ultron.openclaw_routing.intents import (
     MediaGenIntent,
     MessagingIntent,
     ModelSwitchIntent,
+    OpenLastSourceIntent,
     RoutingIntent,
     RoutingIntentKind,
     ScreenContextIntent,
@@ -878,6 +879,23 @@ def _classify_routing_impl(
                 window_close_intent=wc,
             )
 
+    # 1.95) OPEN_LAST_SOURCE (2026-05-22) -- "show me that article",
+    #       "open that link", "pull up the source". Must fire BEFORE
+    #       APP_LAUNCH because "show me that article" would otherwise
+    #       hit the bare "show me X" image-search rule and treat
+    #       "article" as the search subject.
+    if not has_pending_clarification:
+        ols = _classify_open_last_source(text)
+        if ols is not None:
+            return RoutingIntent(
+                kind=RoutingIntentKind.OPEN_LAST_SOURCE,
+                raw_text=text,
+                confidence=0.9,
+                source="rule",
+                reason="open-last-source pattern matched",
+                open_last_source_intent=ols,
+            )
+
     # 2.0) APP_LAUNCH (Phase 8) -- "open YouTube on monitor 2",
     #      "launch Cursor on my left monitor", "show me a picture of X".
     #      Native via :mod:`ultron.desktop.launcher`; routes to user's
@@ -1134,6 +1152,116 @@ _SCREEN_CONTEXT_PATTERNS = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+
+
+# OPEN_LAST_SOURCE (2026-05-22) -- "show me that article", "open that
+# link", "pull up the source", "open the article on monitor 2", plus
+# disambiguated variants like "show me the second one", "open the NBC
+# story", "show me the article about Boeing".
+#
+# References the source(s) from the most recent search-augmented
+# response. Must match BEFORE app_launch's bare "show me <X>" rule,
+# which would otherwise treat "article" as an image-search subject.
+
+# Verbs accepted as "open this source for me" actions.
+_OPEN_LAST_SOURCE_VERB = (
+    r"(?:show\s+me|open(?:\s+up)?|pull\s+up|bring\s+up|load|go\s+to|"
+    r"take\s+me\s+to|navigate\s+to)"
+)
+
+# Source nouns -- what the user is asking to open. Includes "one" as a
+# pronoun standin ("show me the first one", "the NBC one") -- safe
+# because the bare/before patterns require a "the|that|this"
+# determiner, so naked "show me one" doesn't qualify.
+_OPEN_LAST_SOURCE_NOUN = (
+    r"(?:article|link|page|source|story|result|citation|website|site|url|"
+    r"item|entry|piece|report|headline|one)"
+)
+
+# Pattern A: bare "show me that article" (no referent, just a demonstrative).
+_OPEN_LAST_SOURCE_BARE_RE = re.compile(
+    rf"\b{_OPEN_LAST_SOURCE_VERB}\s+(?:that|the|this)\s+{_OPEN_LAST_SOURCE_NOUN}\b",
+    re.IGNORECASE,
+)
+
+# Pattern B: "show me the {referent} {noun}" -- e.g.
+# "show me the NBC story", "open the first article", "pull up the
+# second one". Captures the referent phrase between "the" and the noun.
+_OPEN_LAST_SOURCE_REF_BEFORE_RE = re.compile(
+    rf"""
+    \b{_OPEN_LAST_SOURCE_VERB}\s+
+    (?:the|that|this)\s+
+    (?P<referent>[A-Za-z0-9 .,'\-/]+?)\s+
+    {_OPEN_LAST_SOURCE_NOUN}\b
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+# Pattern C: "show me the {noun} about {referent}" -- e.g.
+# "open the article about Boeing", "show me the story on the
+# election", "pull up the one regarding the FDA". Captures the
+# referent phrase that follows the about/on/regarding/covering link.
+_OPEN_LAST_SOURCE_REF_AFTER_RE = re.compile(
+    rf"""
+    \b{_OPEN_LAST_SOURCE_VERB}\s+
+    (?:the|that|this)\s+
+    {_OPEN_LAST_SOURCE_NOUN}\s+
+    (?:about|on|regarding|covering|concerning|of)\s+
+    (?P<referent>[A-Za-z0-9 .,'\-/]+?)
+    (?:\s*(?:\.|,|\?|$)|\s+on\s+(?:my\s+)?(?:monitor|main|primary|left|right|second|third)\b)
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+# Pattern D: "open number 2" / "show me number three" -- pure ordinal.
+_OPEN_LAST_SOURCE_NUMBER_RE = re.compile(
+    rf"""
+    \b{_OPEN_LAST_SOURCE_VERB}\s+
+    (?:the\s+)?
+    (?:number|source|result|story|article|item|one)\s+
+    (?P<ord>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+# Combined "this is an open-last-source request" matcher -- one of the
+# four patterns above. Used as the cheap pre-filter in the classifier.
+_OPEN_LAST_SOURCE_RE = re.compile(
+    rf"""
+    \b{_OPEN_LAST_SOURCE_VERB}\s+
+    (?:
+        (?:that|the|this)\s+
+        (?:[A-Za-z0-9 .,'\-/]+?\s+)?
+        {_OPEN_LAST_SOURCE_NOUN}\b
+    |
+        (?:the\s+)?
+        (?:number|source|result|story|article|item|one)\s+
+        (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+# Words->ordinal-index map for "the first/second/third" style refs.
+_ORDINAL_WORDS = {
+    "first": 1, "1st": 1,
+    "second": 2, "2nd": 2,
+    "third": 3, "3rd": 3,
+    "fourth": 4, "4th": 4,
+    "fifth": 5, "5th": 5,
+    "sixth": 6, "6th": 6,
+    "seventh": 7, "7th": 7,
+    "eighth": 8, "8th": 8,
+    "ninth": 9, "9th": 9,
+    "tenth": 10, "10th": 10,
+    "last": -1,
+}
+
+# Number-word->int map for "number two" style refs.
+_NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
 
 
 # APP_LAUNCH: "open <X>", "launch <X>", "pull up <X>", "start <X>",
@@ -1525,6 +1653,88 @@ def _classify_screen_context(text: str) -> Optional[ScreenContextIntent]:
         question=text.strip(),
         include_vlm=True,
         monitor_index=mon_idx,
+        raw_text=text,
+    )
+
+
+def _extract_open_last_source_referent(text: str) -> tuple[Optional[int], str]:
+    """Parse ordinal + referent phrase from an OPEN_LAST_SOURCE utterance.
+
+    Returns a tuple ``(ordinal, referent)``:
+      * ``ordinal`` -- 1-based source index when the user said
+        "the first one" / "number 2" / "the last one" (-1 for last).
+        None when no ordinal phrasing is present.
+      * ``referent`` -- noun phrase capturing what they meant ("NBC",
+        "the Boeing crash", etc.). Empty when only a bare "that
+        article" demonstrative is present.
+
+    The patterns are intentionally permissive -- the orchestrator's
+    resolver does the final semantic match.
+    """
+    if not text:
+        return None, ""
+
+    # Pure-ordinal pattern first ("show me number 2", "open source 3").
+    m_num = _OPEN_LAST_SOURCE_NUMBER_RE.search(text)
+    if m_num:
+        tok = m_num.group("ord").lower()
+        if tok.isdigit():
+            return int(tok), ""
+        if tok in _NUMBER_WORDS:
+            return _NUMBER_WORDS[tok], ""
+
+    # Topic-after-noun pattern ("the article about Boeing").
+    m_after = _OPEN_LAST_SOURCE_REF_AFTER_RE.search(text)
+    if m_after:
+        ref = (m_after.group("referent") or "").strip().strip(".,?!")
+        return None, ref
+
+    # Referent-before-noun pattern ("the NBC story", "the first one").
+    m_before = _OPEN_LAST_SOURCE_REF_BEFORE_RE.search(text)
+    if m_before:
+        ref = (m_before.group("referent") or "").strip().strip(".,?!")
+        # Filter out trivial / monitor-leakage referents.
+        if ref.lower() in {"that", "the", "this", ""}:
+            return None, ""
+        # Ordinal word in the referent slot ("first", "second", ...).
+        ref_lc = ref.lower().strip()
+        if ref_lc in _ORDINAL_WORDS:
+            return _ORDINAL_WORDS[ref_lc], ""
+        # Sometimes the referent is "the second" / "first NBC" -- try
+        # leading-ordinal extraction.
+        first_word = ref_lc.split()[0] if ref_lc.split() else ""
+        if first_word in _ORDINAL_WORDS:
+            ord_val = _ORDINAL_WORDS[first_word]
+            rest = " ".join(ref.split()[1:]).strip()
+            return ord_val, rest
+        return None, ref
+
+    # Bare demonstrative ("show me that article") -- no disambiguator.
+    if _OPEN_LAST_SOURCE_BARE_RE.search(text):
+        return None, ""
+
+    return None, ""
+
+
+def _classify_open_last_source(text: str) -> Optional[OpenLastSourceIntent]:
+    """Match OPEN_LAST_SOURCE phrasing.
+
+    Returns the intent (carrying any monitor target + ordinal +
+    referent phrase) or None when no pattern matches. URL resolution
+    happens later in the orchestrator, which has access to the
+    last-search payload and last response text.
+    """
+    if not text:
+        return None
+    if _OPEN_LAST_SOURCE_RE.search(text) is None:
+        return None
+    mon_idx, mon_q = _extract_monitor_target(text)
+    ordinal, referent = _extract_open_last_source_referent(text)
+    return OpenLastSourceIntent(
+        monitor_index=mon_idx,
+        monitor_query=mon_q,
+        ordinal=ordinal,
+        referent=referent,
         raw_text=text,
     )
 

@@ -1,0 +1,13 @@
+# Limiter disabled at server.limiter: false in settings.yml.
+# This file exists only to suppress the
+# "missing config file: /etc/searxng/limiter.toml" warning.
+# Localhost is trusted; no rate limiting needed.
+
+[botdetection]
+ipv4_prefix = 32
+ipv6_prefix = 56
+trusted_proxies = ["127.0.0.0/8", "::1/128"]
+
+[botdetection.ip_limit]
+filter_link_local = false
+link_token = false
