@@ -616,18 +616,23 @@ class KokoroSpeech:
                     if pause_ms > 0 and not self._stop_event.is_set():
                         self._write_silence(stream, sr, pause_ms / 1000.0)
 
-                    try:
-                        nxt = audio_q.get(
-                            timeout=_QUEUE_GET_TIMEOUT_SECONDS,
-                        )
-                    except queue.Empty:
+                    # 2026-05-22: poll with silence chunks while the
+                    # CPU synth catches up. A blocking ``Queue.get``
+                    # here would drain the PortAudio output buffer to
+                    # empty -- producing an audible click at the
+                    # underflow point. Continuous silence keeps the
+                    # device clock fed without adding deliberate delay
+                    # beyond what synth latency already costs.
+                    nxt = self._drain_queue_with_silence(
+                        audio_q, stream, sr,
+                    )
+                    if nxt is None:
+                        if self._stop_event.is_set():
+                            return
                         logger.warning(
                             "Kokoro playback waited %.0fs without next "
                             "clip; ending", _QUEUE_GET_TIMEOUT_SECONDS,
                         )
-                        self._write_silence(stream, sr, 0.05)
-                        break
-                    if nxt is None:
                         self._write_silence(stream, sr, 0.05)
                         break
                     item = nxt
@@ -1020,6 +1025,38 @@ class KokoroSpeech:
             stream.write(silence)
         except Exception:
             pass
+
+    def _drain_queue_with_silence(
+        self,
+        audio_q: "queue.Queue[Optional[ClipItem]]",
+        stream,
+        sr: int,
+        *,
+        poll_seconds: float = 0.020,
+        deadline_seconds: float = _QUEUE_GET_TIMEOUT_SECONDS,
+    ) -> Optional[ClipItem]:
+        """Poll ``audio_q`` while keeping the output stream fed.
+
+        Kokoro CPU synth often runs slower than playback of the
+        previous clip on multi-sentence replies. A blocking
+        ``Queue.get`` would let the PortAudio output buffer drain to
+        empty -- producing an audible click at the underflow point.
+        This polls in short intervals and writes matching silence
+        blocks between polls, so the device clock stays fed without
+        adding deliberate extra delay beyond what synth already costs.
+
+        Returns the next :class:`ClipItem` as soon as it arrives, or
+        ``None`` on timeout / stop signal.
+        """
+        deadline = time.monotonic() + deadline_seconds
+        while time.monotonic() < deadline:
+            if self._stop_event.is_set():
+                return None
+            try:
+                return audio_q.get(timeout=poll_seconds)
+            except queue.Empty:
+                self._write_silence(stream, sr, poll_seconds)
+        return None
 
 
 __all__ = [

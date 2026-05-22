@@ -700,6 +700,80 @@ def test_speak_stream_overlaps_synth_and_playback(monkeypatch):
     assert elapsed < 0.5, f"speak_stream took {elapsed*1000:.0f}ms; expected <500ms"
 
 
+def test_drain_queue_writes_silence_when_starved(monkeypatch):
+    """When the synth worker hasn't produced the next clip yet, the
+    drain helper must keep the output stream fed with silence chunks
+    (preventing PortAudio underflow clicks) and return the clip as
+    soon as it arrives.
+    """
+    import queue as queue_mod
+
+    engine = KokoroSpeech(model_path=Path("/stub"), voice="am_michael")
+
+    writes = []
+
+    class _CountingStream:
+        def write(self, arr):
+            writes.append(arr.shape[0])
+
+    audio_q: queue.Queue = queue_mod.Queue()
+    sr = 24000
+
+    expected = ClipItem(
+        audio=np.zeros(1200, dtype=np.int16),
+        sample_rate=sr,
+        is_known_last=False,
+    )
+
+    def _producer():
+        # Wait long enough that drain_queue_with_silence has to write
+        # several poll-interval silence blocks before this arrives.
+        time.sleep(0.10)
+        audio_q.put(expected)
+
+    threading.Thread(target=_producer, daemon=True).start()
+
+    got = engine._drain_queue_with_silence(
+        audio_q, _CountingStream(), sr,
+        poll_seconds=0.020,
+        deadline_seconds=5.0,
+    )
+    assert got is expected, "drain helper should return the clip"
+    # At least one silence chunk (20 ms = 480 samples) should have
+    # been written during the ~100 ms producer wait.
+    assert len(writes) >= 2, f"expected silence writes during starve; got {len(writes)}"
+    assert all(n == int(sr * 0.020) for n in writes), (
+        f"unexpected silence block sizes: {set(writes)}"
+    )
+
+
+def test_drain_queue_returns_none_on_stop_event(monkeypatch):
+    """When the stop event fires while the helper is waiting, it must
+    return ``None`` instead of blocking indefinitely."""
+    import queue as queue_mod
+
+    engine = KokoroSpeech(model_path=Path("/stub"), voice="am_michael")
+
+    class _NullStream:
+        def write(self, _arr):
+            pass
+
+    audio_q: queue.Queue = queue_mod.Queue()
+
+    def _stopper():
+        time.sleep(0.05)
+        engine._stop_event.set()
+
+    threading.Thread(target=_stopper, daemon=True).start()
+
+    got = engine._drain_queue_with_silence(
+        audio_q, _NullStream(), 24000,
+        poll_seconds=0.020,
+        deadline_seconds=5.0,
+    )
+    assert got is None
+
+
 def test_speak_stream_sentinel_terminates_consumer(monkeypatch):
     """Synth worker's `None` sentinel on the queue cleanly ends playback."""
     import sounddevice as sd
