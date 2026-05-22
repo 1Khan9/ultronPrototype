@@ -129,6 +129,43 @@ def test_url_marker_attaches_query():
 
 
 @pytest.mark.parametrize("utterance", [
+    "what's the news",
+    "tell me the news",
+    "any news on the war",
+    "any updates on the AI release",
+    "any developments on the climate bill",
+    "what's happening with the stock market",
+    "what's going on in DC",
+    "what is happening with the election",
+    "current events in europe",
+    "current state of the project",
+    "news on AI",
+    "news about Tesla",
+    "headlines",
+    "recent developments in physics",
+    "the latest scoop on the merger",
+    "the latest buzz",
+    "trending topics today",
+    "AI news",
+    "machine learning developments",
+    "LLM releases",
+    "what is the latest in ai",
+    "give me the latest update",
+])
+def test_news_query_rule_forces_search(utterance):
+    """News / current-events phrasings that don't trip _TIME_SENSITIVE's
+    keyword list still route to SEARCH via the new _NEWS_QUERIES rule.
+    Catches the variations the preflight LLM was incorrectly NO_SEARCHing."""
+    got = classify_by_rules(utterance)
+    assert got is not None, f"rule didn't fire for {utterance!r}"
+    assert got.decision == D.SEARCH, (
+        f"expected SEARCH for {utterance!r}; got {got.decision} ({got.reason})"
+    )
+    assert got.source == "rule"
+    assert got.confidence == "high"
+
+
+@pytest.mark.parametrize("utterance", [
     "what time is it in Atlantis",
     "what's the time in some random town",
     "current time in Mars",

@@ -35,6 +35,8 @@ class _MinimalOrchestrator:
         self.gaming_mode_manager = gaming_mode_manager
         self.tts = tts or MagicMock()
         self.coding_voice = None
+        # 2026-05-22 -- consumed by _build_response_stream when set.
+        self._next_turn_force_search = False
 
     # Mirror of the real orchestrator implementations.
     def _maybe_dispatch_intent(self, user_text: str) -> bool:
@@ -71,9 +73,20 @@ class _MinimalOrchestrator:
         "deactivate gaming mode",
     })
     _STATUS = frozenset({"gaming mode status"})
+    _FORCE_SEARCH = frozenset({
+        "what is the latest news",
+        "tell me the latest news",
+        "current events",
+        "what is happening today",
+        "what is going on",
+        "any recent news",
+    })
 
     def _dispatch_intent_match(self, match) -> bool:
         phrase = match.canonical_phrase
+        if phrase in self._FORCE_SEARCH:
+            self._next_turn_force_search = True
+            return False  # LLM still runs; gate gets pre-populated
         if phrase in self._ENGAGE:
             manager = self.gaming_mode_manager
             if manager is None:
@@ -335,6 +348,54 @@ def test_manager_engage_failure_falls_through():
     # Manager failed -> dispatcher returns False so the LLM path can
     # still respond (e.g., "Gaming mode failed to engage").
     assert orch._maybe_dispatch_intent("gaming mode") is False
+
+
+# ---------------------------------------------------------------------------
+# Force-search intent (2026-05-22)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("phrase", [
+    "what is the latest news",
+    "tell me the latest news",
+    "current events",
+    "what is happening today",
+    "what is going on",
+    "any recent news",
+])
+def test_force_search_intent_sets_flag_and_falls_through(phrase):
+    """Matched fresh-data phrases must NOT short-circuit the LLM (the
+    caller still produces the response) but must set the orchestrator's
+    ``_next_turn_force_search`` flag so the response stream routes to
+    SEARCH instead of letting the preflight LLM decide."""
+    match = IntentMatch(
+        canonical_phrase=phrase, utterance="user said " + phrase,
+        similarity=0.91,
+    )
+    orch = _MinimalOrchestrator(
+        intent_recognizer=_StubRecognizer(match),
+        gaming_mode_manager=_stub_gaming_mode_manager(),
+    )
+    assert orch._next_turn_force_search is False  # clean state
+
+    handled = orch._maybe_dispatch_intent(phrase)
+
+    assert handled is False, (
+        "force-search intents must fall through; LLM still runs"
+    )
+    assert orch._next_turn_force_search is True, (
+        "the flag must be set so the gate forces SEARCH this turn"
+    )
+
+
+def test_force_search_flag_does_not_persist_across_turns():
+    """Reset the flag in __init__ -- subsequent turns start False."""
+    orch = _MinimalOrchestrator(intent_recognizer=_StubRecognizer(None))
+    assert orch._next_turn_force_search is False
+    # Simulate consumption (which the response stream does).
+    orch._next_turn_force_search = True
+    orch._next_turn_force_search = False
+    assert orch._next_turn_force_search is False
 
 
 def test_unrecognised_phrase_falls_through():

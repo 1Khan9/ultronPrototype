@@ -1123,6 +1123,22 @@ intent:
     # Time / date locals
     - "what time is it"
     - "what is today's date"
+    # 2026-05-22 -- "needs fresh data" phrases. Semantic match against
+    # these forces the gate verdict to SEARCH (skipping preflight LLM).
+    # Catches variations the regex layer misses ("give me the latest
+    # scoop", "what's the buzz", "fill me in on what's going on").
+    - "what is the latest news"
+    - "what are the latest news"
+    - "tell me the latest news"
+    - "any recent news"
+    - "any news today"
+    - "what is happening today"
+    - "what is going on"
+    - "tell me what is new"
+    - "current events"
+    - "give me the latest update"
+    - "what is the latest in ai"
+    - "what is the buzz"
 
 # ---------------------------------------------------------------------------
 # Gaming mode (V1-spec gap A1) — anticheat-safe shutdown of OpenClaw

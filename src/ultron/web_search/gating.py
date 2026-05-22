@@ -155,6 +155,52 @@ _TIME_SENSITIVE = re.compile(
 )
 
 
+# 2026-05-22 -- explicit news / current-events / developments patterns.
+# The user complained that "what's the latest news in AI" etc. should
+# unambiguously route to SEARCH. Most match _TIME_SENSITIVE via "latest"
+# / "current" / "recent", but variants like "any news on X", "what's
+# happening with X", "any updates on X" don't hit those tokens and
+# previously fell to the preflight LLM (which sometimes erroneously
+# returned NO_SEARCH). This is a deterministic backstop that runs
+# alongside _TIME_SENSITIVE.
+_NEWS_QUERIES = re.compile(
+    r"""
+    (?:
+        # "what's the news" / "tell me the news" / "give me the news"
+        \b(?:what(?:'s|s|\s+is)?|tell\s+me|give\s+me|read\s+me|show\s+me)\s+(?:the\s+)?news\b
+      | # "any news" / "any news on" / "any news about"
+        \bany\s+(?:news|updates?|developments?|info|information)(?:\s+(?:on|about|regarding|with|from))?\b
+      | # "what's happening" / "what's happening with X" / "what is happening"
+        \bwhat(?:'s|s|\s+is)?\s+happening\b
+      | # "what's going on" / "what is going on"
+        \bwhat(?:'s|s|\s+is)?\s+going\s+on\b
+      | # "what's new" / "what is new" (with optional "with X")
+        \bwhat(?:'s|s|\s+is)?\s+new\b
+      | # "current events" / "current affairs" / "current state of X"
+        \bcurrent\s+(?:events?|affairs?|state|status|situation|happenings?)\b
+      | # "news on X" / "news about X" / "news regarding X"
+        \bnews\s+(?:on|about|regarding|from|in|of)\b
+      | # "updates on X" / "any update on X"
+        \bupdates?\s+(?:on|about|regarding|from|for)\b
+      | # "headlines"
+        \bheadlines?\b
+      | # "any developments" / "recent developments in X"
+        \brecent\s+developments?\b
+      | # "the buzz" / "the latest scoop" / "the latest dirt"
+        \bthe\s+(?:latest\s+)?(?:buzz|scoop|dirt|word|story)\b
+      | # "trending" / "trending topics" / "what's trending"
+        \btrending\b
+      | # "tell me the latest" (already mostly caught by _TIME_SENSITIVE,
+        # but explicit here for "tell me the latest on X")
+        \btell\s+me\s+the\s+latest\b
+      | # "ai (news|developments|update)" -- common AI-specific phrasing
+        \b(?:ai|machine\s+learning|llm|large\s+language\s+model)s?\s+(?:news|updates?|developments?|releases?|announcements?)\b
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
 # 2026-05-22 -- "what time is it in <city>" / "current time in <city>"
 # patterns reaching the gate. local_clock_reply handles known cities via
 # zoneinfo BEFORE the gate runs; anything reaching this point is an
@@ -447,6 +493,20 @@ def classify_by_rules(utterance: str) -> Optional[GateVerdict]:
 
     if _TIME_SENSITIVE.search(text):
         reason = "time-sensitive marker"
+        return GateVerdict(
+            GateDecision.SEARCH, "high", "rule",
+            reason,
+            has_temporal_dependency=True,
+            knowledge_source=_resolve_knowledge_source(
+                needs_search=True, confidence="high", rule_reason=reason,
+            ),
+        )
+
+    # 2026-05-22: news / current-events / "what's happening" patterns
+    # that don't trip _TIME_SENSITIVE's keyword list.
+    if _NEWS_QUERIES.search(text):
+        reason = "news / current-events query -- needs fresh lookup"
+        _trace("gate:rules_match", rule="news_query", decision="SEARCH")
         return GateVerdict(
             GateDecision.SEARCH, "high", "rule",
             reason,

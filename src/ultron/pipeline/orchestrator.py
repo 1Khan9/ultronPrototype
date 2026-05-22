@@ -413,6 +413,10 @@ class Orchestrator:
         # (e.g., gaming mode engage/disengage) directly. Default OFF so
         # operators opt in after deciding which phrases to register.
         self._intent_recognizer = self._init_intent_recognizer_if_enabled()
+        # 2026-05-22 -- consumed by _build_response_stream. Set by the
+        # intent dispatcher when a "needs fresh data" phrase matches;
+        # forces the gate verdict to SEARCH (skipping preflight LLM).
+        self._next_turn_force_search = False
         self._last_response_finished_monotonic: float = 0.0
         self._last_search_payload = None
 
@@ -631,6 +635,30 @@ class Orchestrator:
     _INTENT_STATUS_PHRASES = frozenset({
         "gaming mode status",
     })
+    # 2026-05-22 -- semantic "needs fresh data" intents. When the intent
+    # recognizer matches one of these (cosine >= intent.threshold via
+    # Gemma-300M), the dispatcher does NOT short-circuit the LLM; instead
+    # it sets ``_next_turn_force_search`` so _build_response_stream
+    # bypasses the preflight LLM gate and routes directly to SEARCH.
+    # This is the semantic backstop to the regex-layer rules in
+    # web_search.gating: regex catches explicit markers ("latest",
+    # "current", "any news"), the intent layer catches phrasings the
+    # regex misses ("give me the latest scoop on X", "what's the buzz",
+    # "fill me in on what's happening").
+    _INTENT_FORCE_SEARCH_PHRASES = frozenset({
+        "what is the latest news",
+        "what are the latest news",
+        "tell me the latest news",
+        "any recent news",
+        "any news today",
+        "what is happening today",
+        "what is going on",
+        "tell me what is new",
+        "current events",
+        "give me the latest update",
+        "what is the latest in ai",
+        "what is the buzz",
+    })
 
     def _resolve_gaming_mode_manager(self):
         """Return the GamingModeManager from either of the two wiring
@@ -647,9 +675,22 @@ class Orchestrator:
         Returns True if the dispatch fully handled the turn (no LLM
         needed); False if we should fall through to the existing
         routing path.
+
+        Force-search phrases are a special case: they always return
+        False (the LLM still produces the response), but they set
+        ``self._next_turn_force_search = True`` so the response stream
+        bypasses the preflight gate and routes directly to SEARCH.
         """
         import asyncio
         phrase = match.canonical_phrase
+        if phrase in self._INTENT_FORCE_SEARCH_PHRASES:
+            self._next_turn_force_search = True
+            logger.info(
+                "intent: 'needs fresh data' matched (%r, sim=%.2f); "
+                "forcing SEARCH for this turn",
+                phrase, match.similarity,
+            )
+            return False  # let the LLM run; the gate gets pre-populated
         if phrase in self._INTENT_ENGAGE_PHRASES:
             manager = self._resolve_gaming_mode_manager()
             if manager is None:
@@ -3941,6 +3982,24 @@ class Orchestrator:
             trace.tlog(
                 logger, "rag:prefetch_kickoff",
                 kicked=kicked, has_future=rag_future is not None,
+            )
+
+        # 2026-05-22 -- semantic SEARCH override from the intent
+        # recognizer. If a "needs fresh data" phrase matched earlier
+        # in the turn, force the verdict to SEARCH (overriding any
+        # cached preflight). Done AFTER speculation so the rule layer's
+        # high-confidence rule verdicts still win when they fired.
+        if getattr(self, "_next_turn_force_search", False):
+            self._next_turn_force_search = False  # consume
+            from ultron.web_search.gating import GateDecision, GateVerdict
+            cached_verdict = GateVerdict(
+                GateDecision.SEARCH, "high", "intent_recognizer",
+                "freshness-intent matched; overriding preflight verdict",
+                has_temporal_dependency=True,
+            )
+            trace.tlog(
+                logger, "gate:intent_force_search",
+                decision="SEARCH", source="intent_recognizer",
             )
 
         if self.web_gate is None or self.web_executor is None:
