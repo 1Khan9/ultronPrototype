@@ -10,7 +10,35 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 
-**2026-05-22 long-form session: Moonshine streaming default + Kokoro fine-tune model load -- COMPLETE.** HEAD `756469a` on `origin/main`. Tests **3749 passing / 16 skipped / 0 failed in ~77 s**. Eleven commits on top of `3aed243`; full chronological story in [`memory/project_ultron_2026_05_22_moonshine_streaming_and_kokoro_finetune_load.md`](../../Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_22_moonshine_streaming_and_kokoro_finetune_load.md).
+**2026-05-22 session B: Dual-STT + intent recognizer + gaming-mode VRAM reclaim -- COMPLETE.** HEAD `5ec0643` on `origin/main`. Tests **3945 passing / 16 skipped / 0 failed in ~73 s**. 18 commits on top of `a773e5d`; full chronological story in [`memory/project_ultron_2026_05_22_dual_stt_intent_gaming_mode.md`](../../Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_22_dual_stt_intent_gaming_mode.md).
+
+* **NEW [`src/ultron/intent/`](../src/ultron/intent/) package** -- engine-agnostic semantic intent matcher wrapping `moonshine_voice.IntentRecognizer` (Gemma-300M q4 ~300 MB CPU RAM). [`recognizer.py`](../src/ultron/intent/recognizer.py) exposes `UltronIntentRecognizer` with lazy load, fail-open semantics, thread-safe registry, phrase-replay-at-load-time. `process_utterance(text) -> Optional[IntentMatch]` returns top match above threshold (default 0.65). Module-level singleton via `get_intent_recognizer()` / `set_intent_recognizer()` (mirrors `desktop/vlm.py`). New `IntentConfig` schema in [`src/ultron/config.py`](../src/ultron/config.py); 25 phrases registered in [config.yaml](../config.yaml) (12 gaming-mode variants + 2 time/date + 11 "needs fresh data" / freshness intents).
+
+* **NEW dual-STT runtime swap** in [`src/ultron/transcription/__init__.py`](../src/ultron/transcription/__init__.py). `DualSTTRegistry` holds primary + optional gaming engine; `swap_to(name)` flips the active pointer. `make_dual_stt_engines(cfg)` reads `stt.gaming_engine`; collapses to single-engine mode when primary and gaming match. `Orchestrator.swap_stt_engine(name)` flips `self.stt` + invalidates in-flight speculative STT. `parakeet_engine.py` exports `stop_parakeet_server()` / `start_parakeet_server(wait_for_ready)` / `is_parakeet_server_running()` for gaming-mode server lifecycle.
+
+* **NEW Parakeet streaming HTTP protocol** in [`ultronVoiceAudio/scripts/parakeet_server.py`](../ultronVoiceAudio/scripts/parakeet_server.py). Endpoints: `POST /stream/start`, `POST /stream/feed/{id}` (raw float32 bytes), `GET /stream/partial/{id}`, `POST /stream/stop/{id}`, `GET /stream/sessions`. **Pattern:** re-transcribe accumulated buffer instead of NeMo cache-aware RNN-T streaming -- Parakeet on GPU runs ~5-20 ms per call even at 10 s of audio, so the cost is hidden by voice-loop natural latency. TTL-based session reaper (90 s) + per-session 60 s audio cap. Client surface in [`parakeet_engine.py`](../src/ultron/transcription/parakeet_engine.py) mirrors Moonshine's API (`supports_streaming`, `start_stream`, `feed_audio`, `get_partial_text`, `stop_stream`) with 200 ms local feed coalescing.
+
+* **Gaming-mode full VRAM reclaim** wired in [`Orchestrator._engage_extra` / `_disengage_extra`](../src/ultron/pipeline/orchestrator.py) via `GamingModeManager`'s `on_engaged`/`on_disengaged` callbacks (NEW in [`gaming_mode.py`](../src/ultron/openclaw_routing/gaming_mode.py)). Engage chain: LLM hot-swap `qwen3.5-4b` -> `llama-3.2-3b-abliterated` (n_ctx **6144** -- bumped from 2048 after live ctx-overflow on "Frankfurt time" search-augmented query) via `LLMEngine.reload_for_preset`; STT swap to `gaming_engine`; Parakeet server stopped (~700 MB VRAM freed); Kokoro `move_to_device("cpu")` in-place; VLM `unload()` if loaded. Disengage reverses: LLM restored, Parakeet server respawned in background, swap back when `/healthz` ready; Kokoro restored to config device; VLM lazy-reloads on demand. **Net VRAM freed: ~2.3 GB** (4.4 -> 2.1 GB Ultron contribution). Classifier decoupled from `openclaw_on` so gaming mode works without OpenClaw running; `GamingModeManager` constructs with `client=None`.
+
+* **Kokoro boundary artifact fixes** in [`spectral_smooth.py`](../src/ultron/tts/spectral_smooth.py) + [`kokoro_engine.py`](../src/ultron/tts/kokoro_engine.py). NEW `trim_and_fade(audio, sr, *, threshold_db, fade_in_ms, fade_out_ms, pad_ms, hard_silence_pad_ms, tail_aggressive_trim_ms)` -- RMS trim + raised-cosine fades (25/45 ms) + hard silence pad (8 ms) + tail aggressive zero (25 ms, hard-mutes the partial-fine-tune end-of-clip blip). NEW `KokoroSpeech._drain_queue_with_silence(audio_q, stream, sr) -> (item, timed_out: bool)` -- polls in 20 ms intervals + writes matching silence chunks while CPU synth catches up (prevents PortAudio underflow click). Tuple return distinguishes synth-worker sentinel from real 60 s timeout (caller's WARN only fires on actual timeout). NEW `KokoroSpeech.move_to_device(device)` -- in-place `KPipeline.model.to(device)` fast path + tear-down fallback. NEW `apply_trim_fade` + `trim_fade_threshold_db` config knobs.
+
+* **NEW [`Moondream2VLM.unload()`](../src/ultron/desktop/vlm.py)** -- drops _model + _tokenizer + clears load-failure cache. Fires from gaming-mode engage callback; VLM re-lazy-loads on next describe call after disengage.
+
+* **RAG perf + noise tuning.** `MemoryRerankingConfig.enabled` default flipped **True -> False** (live measured at 17-18 s per memory retrieve on CPU even after the 500-char content cap; the latency cost overwhelms the 15-30% RAGAS quality lift). Reranker code stays wired -- flip `memory.reranking.enabled: true` in config.yaml to opt back in. Cosine + RRF + recency composite (fallback path) is the active scorer. `memory.rag_min_relevance: 0.6 -> 0.72 -> 0.78` (live-tested two bumps; genuinely-relevant matches at 0.78+). `memory.rag_top_k: 5 -> 3`. New `_PREDICT_CONTENT_CAP_CHARS: 500` class const in [`memory/reranker.py`](../src/ultron/memory/reranker.py) truncates candidate content before predict() to bound tokenize cost when the reranker IS enabled.
+
+* **Timezone-aware local clock** in [`src/ultron/local_clock_reply.py`](../src/ultron/local_clock_reply.py). NEW `_CITY_TIMEZONES` map with ~70 cities -> IANA timezone identifiers. NEW `_TIME_IN_LOCATION_RE` regex + `_maybe_city_time_reply` helper. Returns spoken form "In Paris, it's 10:09 PM." Falls through to None for unknown cities. STT-artifact lead-in tolerance (`you|yeah|uh|um|hmm`) added to all time-query regexes.
+
+* **Web-gate freshness rules** in [`src/ultron/web_search/gating.py`](../src/ultron/web_search/gating.py). NEW `_NEWS_QUERIES` regex catches "any news on X", "what's happening", "current events", "headlines", "AI developments", etc. NEW `_TIME_IN_LOCATION_GATE_RE` forces SEARCH on "time in <unknown city>" (paired with local_clock_reply which handles known cities directly). Both wired into `classify_by_rules` BEFORE the preflight LLM (which was incorrectly NO_SEARCH-ing some of these). NEW intent-as-SEARCH override in orchestrator: when a "needs fresh data" intent matches, sets `_next_turn_force_search=True`; `_build_response_stream` consumes the flag and pre-populates `cached_verdict` with `GateVerdict(SEARCH, "high", "intent_recognizer", ...)`, skipping the preflight LLM entirely.
+
+* **CREATE_NO_WINDOW sweep** across 8 subprocess sites (direct_bridge, verification ×5, mcp_tools, gaming_mode taskkill) and a missed 9th: **Parakeet server spawn** in [`parakeet_engine.py`](../src/ultron/transcription/parakeet_engine.py:185) was using `CREATE_NEW_PROCESS_GROUP` only (doesn't suppress console). Now OR'd with `CREATE_NO_WINDOW`. XTTS server spawn (`xtts_v3.py:792`) already had the flag.
+
+* **Tests added:** `tests/test_intent_recognizer.py` (+24), `tests/test_intent_dispatch_pipeline.py` (+16), `tests/test_parakeet_streaming_server.py` (+19), `tests/test_parakeet_streaming_client.py` (+19), `tests/test_stt_dual_engine.py` (+11), `tests/test_stt_swap_orchestrator.py` (+10), `tests/test_gaming_mode.py` (+10 net for callback wiring), and updates across `test_kokoro_engine.py` / `test_spectral_smooth.py` / `test_memory_reranker.py` / `test_web_gating.py` / `test_local_clock_reply.py` / `routing/test_classifier.py`. **3945 passing / 16 skipped / 0 failed in ~73 s.**
+
+* **Runtime artifacts on disk (gitignored):** `.venv-parakeet/` (NeMo + FastAPI + uvicorn for the isolated Parakeet server), Gemma-300M embedding model cached by `moonshine_voice` in HF cache.
+
+---
+
+**2026-05-22 long-form session: Moonshine streaming default + Kokoro fine-tune model load -- COMPLETE.** HEAD `756469a` (`a773e5d` after doc bump). Tests **3749 passing / 16 skipped / 0 failed in ~77 s**. Eleven commits on top of `3aed243`; full chronological story in [`memory/project_ultron_2026_05_22_moonshine_streaming_and_kokoro_finetune_load.md`](../../Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_22_moonshine_streaming_and_kokoro_finetune_load.md).
 
 * **STT default swapped to Moonshine v2 streaming.** [`src/ultron/transcription/moonshine_engine.py`](../src/ultron/transcription/moonshine_engine.py) -- the `MoonshineEngine` class wrapping the `moonshine-voice` package. `medium-streaming-en` model on CPU. Streaming protocol (`start_stream`, `feed_audio`, `get_partial_text`, `stop_stream`) plus the legacy `transcribe(audio)` API. The capture loop in [`src/ultron/pipeline/orchestrator.py`](../src/ultron/pipeline/orchestrator.py) spawns a `stt-stream-worker` daemon (`_maybe_start_stt_stream`) that drains a `Queue(maxsize=512)` -- the capture thread does `put_nowait(chunk)` and continues immediately, avoiding the blocking that Moonshine's internal `update_transcription` (50-100 ms each) was causing. Without this, sounddevice's input buffer overflowed and audio was dropped, leading to silent turn-1 transcripts. The on-first-load `_make_kokoro_finetune_compat` shim is the same defensive pattern at a different layer.
 
@@ -1048,10 +1076,15 @@ For the current decisions and Foundation phase status see
 │       │   ├── uia.py                ← pywinauto UIA text extraction + semantic click/type with Cap-3/Cap-4 safety hooks
 │       │   ├── input_control.py      ← pyautogui mouse+keyboard, rate-limited, validator-gated, blocks input on UAC/security windows
 │       │   ├── screen_context.py     ← orchestrator: assemble foreground + windows + UIA text + optional VLM description for LLM injection
-│       │   ├── vlm.py                ← Moondream2 VLM wrapper (transformers + trust_remote_code), CPU-only on-demand, lazy-loaded, fail-open
+│       │   ├── vlm.py                ← Moondream2 VLM wrapper (transformers + trust_remote_code), CPU-only on-demand, lazy-loaded, fail-open; 2026-05-22 Moondream2VLM.unload() for gaming-mode engage callback
 │       │   ├── voice.py              ← Phase 8 voice handlers (handle_app_launch / handle_screen_context_query) + 2026-05-14 third-pass handlers (handle_window_move / handle_window_close) bridging RoutingIntent -> native primitives
 │       │   └── preferences.py        ← Phase 10 preference learning (JSONL log + optional OpenClaw workspace mirror; find_preference_for_phrase for recency-weighted lookup)
 │       │
+│       ├── intent/                   ← 2026-05-22: engine-agnostic semantic intent matcher
+│       │   ├── __init__.py           ← public API (UltronIntentRecognizer, IntentMatch, IntentRegistration, get_intent_recognizer, set_intent_recognizer)
+│       │   └── recognizer.py         ← UltronIntentRecognizer wrapping moonshine_voice.IntentRecognizer (Gemma-300M q4 ~300 MB CPU RAM) with lazy load + fail-open + thread-safe registry + phrase-replay-at-load-time; process_utterance(text) -> Optional[IntentMatch]; module-level singleton mirroring desktop/vlm.py pattern
+│       │
+
 │       ├── safety/                  ← 2026-05-12 Phase 2-5: runtime tool-call validator
 │       │   ├── __init__.py
 │       │   ├── validator.py        ← ToolCallValidator core dispatcher, Verdict, RuleContext, RuleResult
@@ -1097,8 +1130,12 @@ For the current decisions and Foundation phase status see
 │       │   └── zero_shot.py        ← Flan-T5-small wrapper for ambiguous cases
 │       │
 │       ├── transcription/          ← STT
-│       │   └── whisper_engine.py   ← WhisperEngine (faster-whisper, CUDA fp16)
+│       │   ├── __init__.py          ← make_stt_engine + make_dual_stt_engines + DualSTTRegistry (2026-05-22) + _build_engine_by_name + _resolved_engine_name
+│       │   ├── whisper_engine.py    ← WhisperEngine (faster-whisper, CUDA fp16)
+│       │   ├── moonshine_engine.py  ← MoonshineEngine (CPU, streaming-native via moonshine-voice C++ lib); 2026-05-22 streaming protocol w/ background worker chunk-feed
+│       │   └── parakeet_engine.py   ← ParakeetEngine (NeMo TDT via isolated .venv-parakeet HTTP server on CUDA); 2026-05-22 streaming client + lifecycle helpers (stop_parakeet_server, start_parakeet_server, is_parakeet_server_running) + CREATE_NO_WINDOW
 │       │
+
 │       ├── llm/
 │       │   ├── inference.py        ← LLMEngine (llama-cpp-python; Qwen3.5-4B Q4_K_M active, 9B kept; reload_for_preset for hot swap)
 │       │   ├── compression.py      ← 4B plan Item 4: heuristic + perplexity-scorer-hook compressor for RAG/web/history (default OFF)
@@ -1118,11 +1155,11 @@ For the current decisions and Foundation phase status see
 │       │   └── search.py           ← WebSearchExecutor (orchestrates Brave + Jina + ranking)
 │       │
 │       ├── tts/                    ← Piper + RVC + XTTS + Kokoro engines + ack cache
-│       │   ├── kokoro_engine.py    ← KokoroSpeech engine (StyleTTS2 + ISTFTNet on CPU; CURRENT DEFAULT 2026-05-20 round 8 via tts.engine="kokoro"; voice am_michael; zero VRAM; spectral smoothing wired 2026-05-22 for partial-fine-tune ship)
+│       │   ├── kokoro_engine.py    ← KokoroSpeech (StyleTTS2 + ISTFTNet; current default via tts.engine="kokoro"; voice ultron, fine-tune model + voicepack loaded; **on CUDA** since 2026-05-22 with move_to_device("cpu") on gaming engage; trim_and_fade + _drain_queue_with_silence + apply_trim_fade/trim_fade_threshold_db config knobs)
 │       │   ├── precomputed_ack.py  ← PrecomputedAckClipCache (NEW 2026-05-15; ~350 ms saved per cache hit)
 │       │   ├── rvc.py              ← RvcConverter (Piper PCM → Ultron timbre)
 │       │   ├── speech.py           ← TextToSpeech (legacy Piper + RVC engine; selected by tts.engine="piper_rvc"; ack cache + prepare_output_stream)
-│       │   ├── spectral_smooth.py  ← NEW 2026-05-22: spectral magnitude smoothing for partial-fine-tune Kokoro (STFT median-filter ISTFT; ~10 ms/sec audio; masks pitch wobble; fail-open import)
+│       │   ├── spectral_smooth.py  ← spectral magnitude smoothing for partial-fine-tune (STFT median-filter ISTFT, optional); 2026-05-22 ADDED trim_and_fade(audio, sr, **kwargs) -- RMS trim + raised-cosine fades + hard silence pad + tail aggressive zero (mutes Kokoro end-of-clip blip)
 │       │   ├── ultron_filter.py    ← v3 Ultron mechanical filter (NEW 2026-05-10; pedalboard DSP chain; unused on kokoro engine when apply_runtime_filter=false)
 │       │   └── xtts_v3.py          ← XTTSV3Speech engine (NEW 2026-05-10; selected by tts.engine="xtts_v3"; retained for swap-back to XTTS+v3 stack)
 │       │

@@ -199,16 +199,20 @@ def test_gemma_4b_abliterated_preset_resolves() -> None:
 def test_llama_3_2_3b_abliterated_preset_resolves() -> None:
     """2026-05-19 gaming-mode candidate: Llama 3.2 3B abliterated
     paired with the 1B draft. Smaller VRAM footprint than Qwen3-4B,
-    naturally brief conversational tone. n_ctx=2048 because gaming
-    channel utterances are short -- smaller KV cache frees memory
-    for Valorant + OBS.
+    naturally brief conversational tone.
+
+    2026-05-22: n_ctx bumped 2048 -> 6144 after a live "what time in
+    Frankfurt" turn during gaming mode silently produced 0 LLM chars
+    because the search-augmented prompt totalled 2109 tokens just
+    past the 2048 cap. KV cache cost rises ~100 MB; trivial vs the
+    user actually getting answers for search-augmented queries.
 
     Same dot/hyphen invariant as the Gemma preset above.
     """
     cfg = LLMConfig(preset="llama-3.2-3b-abliterated")
     assert cfg.preset == "llama-3.2-3b-abliterated"
     assert cfg.model_path == "models/Llama-3.2-3B-Instruct-abliterated.Q4_K_M.gguf"
-    assert cfg.n_ctx == 2048
+    assert cfg.n_ctx == 6144
     assert cfg.draft_model_path == "models/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
 
 
