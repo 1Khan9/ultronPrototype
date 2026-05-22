@@ -52,7 +52,7 @@ Store / TestFlight by that.
 On the Windows host:
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" devices pair
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" devices pair
 ```
 
 This prints a QR code (and a fallback alphanumeric pairing code).
@@ -85,7 +85,7 @@ For Tailscale or VPN setups, see OpenClaw's networking docs.
 ### 4. Verify pairing
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" nodes list
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" nodes list
 ```
 
 Expected: the new iOS node listed with its hostname / device id.
@@ -165,7 +165,7 @@ prototype).
 ## Disabling a paired node
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" devices revoke <node-id>
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" devices revoke <node-id>
 ```
 
 The node-id comes from `openclaw nodes list`. Revoke removes the

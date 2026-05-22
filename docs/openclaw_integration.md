@@ -9,7 +9,7 @@ The integration prompt assumes Ollama is the shared LLM endpoint. We
 **substitute llama-cpp-python's OpenAI-compatible HTTP server**
 (`python -m llama_cpp.server`) at every "Ollama" reference in the
 prompt. Reasoning is recorded in
-[memory/feedback_llm_runtime_decision.md](C:\Users\alecf\.claude\projects\C--STC-ultronPrototype\memory\feedback_llm_runtime_decision.md):
+[memory/feedback_llm_runtime_decision.md]($env:USERPROFILE\.claude\projects\C--STC-ultronPrototype\memory\feedback_llm_runtime_decision.md):
 
 - The Ultron voice pipeline already loads
   `models/Qwen3.5-9B-Q4_K_M.gguf` via llama-cpp-python in-process
@@ -33,7 +33,7 @@ Tried three OpenClaw provider plugins in this order. Notes for
 future-Phase-1 reference:
 
 - **`@openclaw/openai-provider`** — rejected. Whitelists baseURL to
-  `api.openai.com` only ([base-url-Dikca7k1.js: isOpenAIApiBaseUrl](file://C:/Users/alecf/AppData/Roaming/npm/node_modules/openclaw/dist/base-url-Dikca7k1.js)).
+  `api.openai.com` only ([base-url-Dikca7k1.js: isOpenAIApiBaseUrl](file://$env:USERPROFILE/AppData/Roaming/npm/node_modules/openclaw/dist/base-url-Dikca7k1.js)).
   No way to point it at a self-hosted endpoint.
 - **`@openclaw/lmstudio-provider`** — rejected after testing.
   Looks plug-compatible from the manifest, but at inference time it
@@ -72,8 +72,8 @@ The hardcoded persona lives at [config.yaml:87 `llm.system_prompt`](../config.ya
 | Field | Value |
 |-------|-------|
 | Version | 2026.5.7 (build `eeef486`) |
-| Config file | `C:\Users\alecf\.openclaw\openclaw.json` |
-| Workspace dir | `C:\Users\alecf\.openclaw\workspace` (auto-detected) |
+| Config file | `$env:USERPROFILE\.openclaw\openclaw.json` |
+| Workspace dir | `$env:USERPROFILE\.openclaw\workspace` (auto-detected) |
 | Gateway URL | `ws://127.0.0.1:18789`, loopback bind |
 | Gateway running | **No** (would need to be started for HTTP API access) |
 | Gateway mode | `local` |
@@ -121,8 +121,8 @@ Ollama provider is excluded per the runtime decision.
 
 | Path | Change |
 |------|--------|
-| `C:\Users\alecf\.openclaw\openclaw.json.pre-llamacpp-bak` | Backup of the pre-patch config (created before edit). |
-| `C:\Users\alecf\.openclaw\openclaw.json` | Added `models.providers.lmstudio.{baseUrl,apiKey,models}` and `agents.defaults.model`. Existing `gateway`/`wizard`/`meta` keys untouched. |
+| `$env:USERPROFILE\.openclaw\openclaw.json.pre-llamacpp-bak` | Backup of the pre-patch config (created before edit). |
+| `$env:USERPROFILE\.openclaw\openclaw.json` | Added `models.providers.lmstudio.{baseUrl,apiKey,models}` and `agents.defaults.model`. Existing `gateway`/`wizard`/`meta` keys untouched. |
 
 **Patch shape** (auth token redacted; what's reproducible from this
 repo):
@@ -221,13 +221,13 @@ discovered before `llama_cpp` initialises. Running
 2. **Start llama-cpp-server** with the launcher above, then start the
    OpenClaw Gateway:
    ```
-   C:\Users\alecf\.openclaw\gateway.cmd
+   $env:USERPROFILE\.openclaw\gateway.cmd
    ```
    Run them in two separate shells. The server takes ~30 s to load
    (loads ~5.7 GB VRAM); the Gateway is fast to start.
 3. **Reachability test:**
    ```
-   "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" agent --agent main \
+   "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" agent --agent main \
      -m "Reply with exactly OPENCLAW-LLAMACPP-OK."
    ```
    Pass criterion: response contains the exact token. If not, capture

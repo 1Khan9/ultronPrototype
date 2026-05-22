@@ -680,7 +680,7 @@ def test_normalize_rewrites_windows_drive_path_to_leaf():
 
 def test_normalize_handles_windows_path_with_extension():
     from ultron.tts.xtts_v3 import normalize_text_for_tts
-    out = normalize_text_for_tts("Open C:\\Users\\alecf\\foo\\bar.py please.")
+    out = normalize_text_for_tts("Open C:\\Users\\someuser\\foo\\bar.py please.")
     assert "C:\\" not in out
     assert "bar.py" in out
 

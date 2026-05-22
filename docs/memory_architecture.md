@@ -127,7 +127,7 @@ The plugin is bundled with OpenClaw 2026.5.7 (`@openclaw/memory-wiki`)
 but disabled by default. To enable:
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" plugins enable memory-wiki
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" plugins enable memory-wiki
 ```
 
 Verify and configure per

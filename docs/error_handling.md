@@ -1,5 +1,15 @@
 # Ultron error handling
 
+
+> **Currency note (2026-05-22):** this document is a historical snapshot.
+> For the **current** state (DualSTTRegistry, Kokoro TTS, qwen3.5-4b,
+> intent recognizer, supervisor stack, news-category SearxNG routing,
+> gaming-mode VRAM reclaim, event bus, OPEN_LAST_SOURCE / NAVIGATE_TO_SITE
+> intents, etc.), see [`codebase_structure.md`](codebase_structure.md)
+> which is kept current via the binding maintenance contract. The
+> high-level shape and intent here are still accurate; specific subsystem
+> identities and per-knob defaults have evolved.
+
 Phase 4 of the Foundation phase. Single source for: what fails, how
 we detect it, how we degrade, and how the user finds out.
 

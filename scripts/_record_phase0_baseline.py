@@ -33,8 +33,8 @@ phase0 = {
     "openclaw": {
         "version": "2026.5.7",
         "build": "eeef486",
-        "config_file": r"C:\Users\alecf\.openclaw\openclaw.json",
-        "workspace_dir": r"C:\Users\alecf\.openclaw\workspace",
+        "config_file": str(Path.home() / ".openclaw" / "openclaw.json"),
+        "workspace_dir": str(Path.home() / ".openclaw" / "workspace"),
         "gateway_url": "ws://127.0.0.1:18789",
         "gateway_running": False,
         "gateway_mode": "local",

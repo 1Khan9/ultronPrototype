@@ -21,14 +21,14 @@ documents the pattern for adding custom hooks later.
 ## Enabling the recommended pair
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" hooks enable session-memory
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" hooks enable command-logger
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" hooks enable session-memory
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" hooks enable command-logger
 ```
 
 Verify:
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" hooks list `
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" hooks list `
     | Select-String -Pattern "enabled"
 ```
 

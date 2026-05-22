@@ -69,14 +69,14 @@ The cleanest way is the interactive helper — it knows the schema
 and validates as you go:
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" configure
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" configure
 # Pick: Channels → Add → Telegram → paste token → set allowed users
 ```
 
 Or non-interactively:
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" channels add `
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" channels add `
     --channel telegram `
     --token "$env:TELEGRAM_BOT_TOKEN"
 ```
@@ -84,7 +84,7 @@ Or non-interactively:
 Then verify with:
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" channels list
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" channels list
 ```
 
 You should see `telegram` listed with status enabled.
@@ -108,7 +108,7 @@ After Gateway restart:
 # Restart the Gateway so it picks up the new channel.
 # (Run from the Gateway's terminal: Ctrl+C, then re-run gateway.cmd.)
 
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" channels list
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" channels list
 # expected: telegram listed, enabled=true
 ```
 

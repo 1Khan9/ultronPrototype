@@ -74,7 +74,7 @@ disable lands within one tick (default 1 h). For an immediate
 disable, also stop the matching cron entry:
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" cron remove weekly-review
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" cron remove weekly-review
 ```
 
 ## On-demand "what's running" query

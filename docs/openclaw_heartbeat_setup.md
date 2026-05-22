@@ -106,7 +106,7 @@ sub-object:
 Restart the Gateway, then trigger a tick manually:
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" system event `
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" system event `
     --text "Manual heartbeat trigger" --mode now
 ```
 

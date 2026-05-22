@@ -74,7 +74,7 @@ def test_slugify_for_directory_empty() -> None:
 
 
 def test_speakable_strips_backslashes() -> None:
-    assert _speakable("C:\\Users\\alecf\\test") == "test"
+    assert _speakable("C:\\Users\\someuser\\test") == "test"
 
 
 def test_speakable_strips_forward_slashes() -> None:

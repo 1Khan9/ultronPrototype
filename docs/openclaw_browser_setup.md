@@ -31,7 +31,7 @@ reachable from the Gateway. On a fresh install:
 ### Verify the plugin is loaded
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" plugins list `
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" plugins list `
     | Select-String -Pattern "browser|playwright"
 ```
 
@@ -47,7 +47,7 @@ Playwright to download Chromium. To pre-fetch:
 # Run from the directory where OpenClaw stores its node_modules.
 # OpenClaw's npm-global install is typically at:
 #   C:\Users\<user>\AppData\Roaming\npm\node_modules\openclaw
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" doctor
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" doctor
 ```
 
 `openclaw doctor` reports any missing browser dependencies. If it
@@ -63,7 +63,7 @@ npx playwright install chromium
 After the Gateway is restarted with the browser plugin reachable:
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" agent --agent ultron-main `
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" agent --agent ultron-main `
     -m "Take a screenshot of news.ycombinator.com using the browser tool."
 ```
 

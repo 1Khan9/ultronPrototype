@@ -45,7 +45,7 @@ and saves ~136 MiB KV cache. Both leave plenty of VRAM headroom.
 
 **OpenClaw Gateway:**
 ```
-C:\Users\alecf\.openclaw\gateway.cmd
+$env:USERPROFILE\.openclaw\gateway.cmd
 ```
 Stays in foreground. Gateway is unhealthy after retry-storm errors
 (1006 abnormal closures); if `openclaw status --json` shows

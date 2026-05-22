@@ -30,7 +30,7 @@ three-layer model.
 ## Enabling the plugin
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" plugins enable memory-wiki
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" plugins enable memory-wiki
 ```
 
 Restart the Gateway so the plugin loads:
@@ -42,7 +42,7 @@ Restart the Gateway so the plugin loads:
 Verify:
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" plugins list `
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" plugins list `
     | Select-String -Pattern "memory-wiki"
 ```
 
@@ -127,7 +127,7 @@ After the plugin enables and the Gateway restarts:
 ## Disabling the plugin
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" plugins disable memory-wiki
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" plugins disable memory-wiki
 ```
 
 Existing pages stay on disk; the agent just loses access to the

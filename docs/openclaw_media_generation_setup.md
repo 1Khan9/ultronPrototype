@@ -106,14 +106,14 @@ The exact field names depend on OpenClaw's ComfyUI provider plugin
 version — verify with:
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" plugins inspect comfyui-provider
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" plugins inspect comfyui-provider
 ```
 
 If the OpenClaw ComfyUI provider plugin isn't bundled in your
 install, install it via:
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" plugins install @openclaw/comfyui-provider
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" plugins install @openclaw/comfyui-provider
 ```
 
 Restart Gateway after config changes.

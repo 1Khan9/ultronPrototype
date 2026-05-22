@@ -59,7 +59,7 @@ Once the OpenClaw stdio MCP entrypoint exists (deferred — Phase 3.2's
 `ultron.run_maintenance(scope)` tool directly:
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" cron add `
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" cron add `
     --name nightly-maintenance `
     --cron "0 3 * * *" `
     --tz "$env:USER_TIMEZONE" `
@@ -80,7 +80,7 @@ generates this — it just needs the standard MCP tools (Qdrant
 search, project registry lookup, heartbeat alert log).
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" cron add `
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" cron add `
     --name morning-briefing `
     --cron "0 8 * * *" `
     --tz "$env:USER_TIMEZONE" `
@@ -100,7 +100,7 @@ agent's reply will be vague but in-character.
 ### Weekly review (Friday 5 pm)
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" cron add `
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" cron add `
     --name weekly-review `
     --cron "0 17 * * 5" `
     --tz "$env:USER_TIMEZONE" `
@@ -117,7 +117,7 @@ prompt just references it so the cron entry stays small.
 ## Verifying the cron setup
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" cron list
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" cron list
 ```
 
 Expected output: each registered cron with its schedule, target
@@ -126,7 +126,7 @@ channel, and next-fire time.
 Manually trigger to test:
 
 ```powershell
-& "C:\Users\alecf\AppData\Roaming\npm\openclaw.cmd" cron run nightly-maintenance
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" cron run nightly-maintenance
 ```
 
 For Option A (Windows Task Scheduler) — manually run the task from
