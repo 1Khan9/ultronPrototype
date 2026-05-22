@@ -2704,12 +2704,30 @@ class Orchestrator:
         errors leave the speculative state empty; the caller falls back
         to the foreground STT path.
 
+        2026-05-22 streaming-STT skip: when the active engine supports
+        streaming AND streaming capture is enabled, this method is a
+        no-op. The streaming engine's own listener already maintains a
+        live partial transcript; kicking off ANOTHER snapshot
+        transcribe would race the streaming session, read an empty
+        partial too early, and cache that empty string as the
+        speculative result -- which the main loop would then treat as
+        the final transcript (silently dropping the turn). Skipping
+        this path on streaming engines means the main loop instead
+        reads the engine's stashed final text via
+        ``self.stt.transcribe(speech)`` after capture ends.
+
         Args:
             audio: Float32 PCM at 16 kHz. The audio buffer accumulated
                 so far. Whisper sees this snapshot; later silence
                 appended to the live capture does not change the
                 transcript (silence is silence).
         """
+        # 2026-05-22: streaming-STT race guard. The streaming engine
+        # itself produces partials -- speculative STT is both
+        # redundant and harmful here (it would race the streaming
+        # session and cache an empty partial).
+        if self._stt_streaming_enabled():
+            return
         with self._speculative_stt_lock:
             if self._speculative_stt_active:
                 return
