@@ -260,6 +260,17 @@ class Orchestrator:
         # Roll back with ``stt.engine: whisper`` to confirm whether the
         # regression is Parakeet-specific before chasing other causes.
         self.stt = make_stt_engine()
+        # 2026-05-22 streaming STT: warm the engine's session before the
+        # first real turn so the cold-start cost (ONNX session JIT +
+        # tokenizer load) doesn't land in the user's first interaction.
+        # Fail-open: missing ``warmup`` attribute or any failure is
+        # silent; the first turn just pays the cold cost.
+        try:
+            warmup = getattr(self.stt, "warmup", None)
+            if warmup is not None:
+                warmup()
+        except Exception as e:                                          # noqa: BLE001
+            logger.debug("STT warmup skipped (%s)", e)
         self.memory = self._load_memory_if_enabled()
         self.llm = LLMEngine(memory=self.memory)
         # 2026-05-10 voice swap: select TTS engine via ``tts.engine`` config.
@@ -1612,6 +1623,18 @@ class Orchestrator:
             self._cold_pre_roll_seconds * settings.SAMPLE_RATE
         )
         chunks: list[np.ndarray] = [self.ring.snapshot(cold_pre_roll_samples)]
+        # 2026-05-22: streaming STT integration. When the engine supports
+        # live partials (Moonshine v2 streaming variants), kick off the
+        # session NOW and feed the COLD pre-roll. The capture loop below
+        # will feed each subsequent chunk; on capture-end we call
+        # ``stop_stream`` to finalize and the engine stashes the result
+        # so the post-capture ``transcribe(buffer)`` returns it instantly.
+        # Fail-open at every level -- streaming bugs degrade to the
+        # legacy one-shot path, never to silence.
+        streaming_active = self._maybe_start_stt_stream()
+        if streaming_active:
+            for c in chunks:
+                self._maybe_feed_stt_chunk(c)
         speech_seen = False
         speech_start_samples = 0
         long_utterance_bump_applied = False
@@ -1668,6 +1691,8 @@ class Orchestrator:
                 continue
             chunks.append(chunk)
             elapsed_samples += chunk.shape[0]
+            if streaming_active:
+                self._maybe_feed_stt_chunk(chunk)
 
             result = self.vad.process(chunk)
             if result.event == SpeechEvent.SPEECH_START:
@@ -1838,8 +1863,17 @@ class Orchestrator:
             if not speech_seen:
                 leading_silence += chunk.shape[0]
                 if leading_silence >= silence_grace:
+                    # Stop streaming on the early-bail path so the
+                    # next capture starts with a clean session.
+                    if streaming_active:
+                        self._maybe_stop_stt_stream()
                     return np.zeros(0, dtype=np.float32)
 
+        # Finalize streaming -- the engine stashes the final text so
+        # the orchestrator's downstream ``transcribe(buffer)`` call
+        # returns it instantly without re-running the model.
+        if streaming_active:
+            self._maybe_stop_stt_stream()
         return np.concatenate(chunks).astype(np.float32, copy=False)
 
     # --- phase: follow-up listening -----------------------------------------
@@ -2515,6 +2549,78 @@ class Orchestrator:
             logger.warning(
                 "TTS stream pre-open kickoff failed (%s); live path will "
                 "open fresh inside speak_stream.", e,
+            )
+            return None
+
+    # ----- streaming STT integration (2026-05-22 -------------------------
+    # Three helpers the capture loop calls to wire up live partial
+    # transcription on engines that support it (Moonshine v2 streaming
+    # arches). All helpers are fail-open: any error degrades to the
+    # legacy one-shot path, never to silence. Duck-typed against the
+    # engine via ``hasattr`` so non-streaming engines are unaffected.
+
+    def _stt_streaming_enabled(self) -> bool:
+        """Return True iff the engine supports streaming AND the config
+        flag ``stt.moonshine_streaming_capture`` is on. Cached lazily;
+        construction-time engine swaps re-check via the lazy import."""
+        stt = getattr(self, "stt", None)
+        if stt is None:
+            return False
+        if not getattr(stt, "supports_streaming", lambda: False)():
+            return False
+        try:
+            from ultron.config import get_config
+            return bool(getattr(
+                get_config().stt, "moonshine_streaming_capture", True,
+            ))
+        except Exception:                                              # noqa: BLE001
+            return True
+
+    def _maybe_start_stt_stream(self) -> bool:
+        """Begin a streaming STT session if the engine supports it.
+        Returns True iff streaming is now active and the capture loop
+        should keep feeding chunks."""
+        if not self._stt_streaming_enabled():
+            return False
+        try:
+            self.stt.start_stream()
+            return True
+        except Exception as e:                                         # noqa: BLE001
+            logger.warning(
+                "Streaming STT start failed (%s); falling back to one-shot.",
+                e,
+            )
+            return False
+
+    def _maybe_feed_stt_chunk(self, chunk: np.ndarray) -> None:
+        """Push a single audio chunk to the streaming engine. No-op when
+        streaming isn't active. Per-chunk failures are swallowed so a
+        single bad chunk doesn't kill the entire capture."""
+        try:
+            feed = getattr(self.stt, "feed_audio", None)
+            if feed is not None:
+                feed(chunk, sample_rate=settings.SAMPLE_RATE)
+        except Exception as e:                                         # noqa: BLE001
+            logger.debug("Streaming STT feed_audio failed: %s", e)
+
+    def _maybe_stop_stt_stream(self) -> Optional[str]:
+        """Finalize the streaming session and return the final text.
+
+        The text is also stashed inside the engine (Moonshine
+        :attr:`_last_streaming_text`) so a subsequent
+        ``self.stt.transcribe(buffer)`` call returns it instantly
+        without re-running the model. Returns ``None`` on any error so
+        the caller can fall through to the legacy path.
+        """
+        try:
+            stop = getattr(self.stt, "stop_stream", None)
+            if stop is None:
+                return None
+            return stop()
+        except Exception as e:                                         # noqa: BLE001
+            logger.warning(
+                "Streaming STT stop_stream failed: %s -- the main "
+                "transcribe(buffer) call below will run fresh.", e,
             )
             return None
 

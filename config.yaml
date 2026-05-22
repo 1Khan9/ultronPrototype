@@ -22,10 +22,12 @@
 # ║      The knobs you'll touch most often live, with current values         ║
 # ╠══════════════════════════════════════════════════════════════════════════╣
 # ║                                                                          ║
-# ║   STT     stt.engine                    "whisper"  (or "parakeet")       ║
-# ║           stt.model                     "base.en"  (whisper-only)        ║
-# ║           stt.compute_type              "int8_float16"                   ║
-# ║           stt.beam_size                 1                                ║
+# ║   STT     stt.engine                    "moonshine"  (default; streams) ║
+# ║           stt.moonshine_model           "medium-streaming-en"            ║
+# ║           stt.moonshine_update_interval_s   0.2                         ║
+# ║           stt.moonshine_streaming_capture   true                        ║
+# ║           (Whisper swap-back: stt.engine "whisper" +                    ║
+# ║            stt.model "Systran/faster-distil-whisper-small.en")          ║
 # ║                                                                          ║
 # ║   LLM     llm.preset                    "qwen3.5-4b"                     ║
 # ║           llm.default_temperature       0.7                              ║
@@ -59,12 +61,12 @@
 # ║      "piper_rvc"= legacy fallback (Piper + RVC; never deprecated)        ║
 # ║                                                                          ║
 # ║   How to swap STT engines: edit stt.engine then restart                  ║
-# ║      "whisper"  = active default (faster-distil-whisper-small.en;        ║
-# ║                  ~200-250 MB VRAM, ~3.48% WER, ~3x faster than base.en)  ║
+# ║      "moonshine"= active default (moonshine-voice medium-streaming-en;   ║
+# ║                  ~430 MB on disk, 0 VRAM, streaming partials)           ║
+# ║      "whisper"  = swap-back (faster-distil-whisper-small.en;            ║
+# ║                  ~200-250 MB VRAM, ~3.48% WER on LS-clean)              ║
 # ║      "parakeet" = NVIDIA Parakeet TDT 0.6B v3 (subprocess; ~5.1 GB VRAM, ║
-# ║                  better accuracy on jargon / accents; 2026-05-22 wired)  ║
-# ║      "moonshine"= Moonshine ONNX on CPU (~60-120 MB; streaming-native;   ║
-# ║                  lowest-footprint STT in the stack; 2026-05-22 wired)    ║
+# ║                  best on jargon / accents; 2026-05-22 wired)            ║
 # ║      "auto"     = try parakeet, fall back to whisper                     ║
 # ║                                                                          ║
 # ║   Restart Ultron after any value change in this file:                    ║
@@ -237,10 +239,24 @@ stt:
   # Three engines wired; flip this one field to swap. Restart required --
   # the engine is constructed once at orchestrator startup.
   #
+  #   "moonshine" -- DEFAULT. Moonshine-voice (v2 streaming) on CPU. The
+  #                  "medium-streaming-en" model (200M params) is the
+  #                  English default and beats Whisper Large V3 on the
+  #                  OpenASR leaderboard average (~6.65% WER) despite
+  #                  6x fewer parameters. Streaming-native: emits
+  #                  partial transcripts as audio is fed, so the
+  #                  orchestrator gets a transcript that's already
+  #                  ~complete by the time speech ends. ~430 MB on
+  #                  disk (quantized assets); 0 VRAM (CPU only).
+  #                  Latency: ~5-15 ms / 5 s short clip; partial
+  #                  transcripts every ``moonshine_update_interval_s``
+  #                  (default 0.2 s).
+  #
   #   "whisper"   -- faster-whisper on CUDA, int8_fp16. Default model is
   #                  Systran/faster-distil-whisper-small.en (166M params,
   #                  ~200-250 MB VRAM, ~78 ms / 5 s audio, ~3.48% WER on
-  #                  LibriSpeech-clean). The active production default.
+  #                  LibriSpeech-clean). Easy swap-back if moonshine
+  #                  misbehaves on your voice. NOT streaming-native.
   #
   #   "parakeet"  -- NVIDIA Parakeet TDT 0.6B v3 on CUDA (fp32) in an
   #                  isolated subprocess at .venv-parakeet talking via
@@ -250,19 +266,6 @@ stt:
   #                  technical jargon. Adds ~5 GB to the voice-path
   #                  peak -- check VRAM headroom before flipping.
   #
-  #   "moonshine" -- Moonshine ONNX on CPU (2026-05-22). Smallest
-  #                  footprint of any wired engine -- 58 MB ONNX
-  #                  (model "moonshine/base") or 27 MB ("moonshine/tiny").
-  #                  Streaming-native (no Whisper 30 s window).
-  #                  Latency: ~5-15 ms / 5 s short clip on CPU.
-  #                  WER averaged across OpenASR-leaderboard datasets
-  #                  is ~10% for base / ~12.66% for tiny -- worse on
-  #                  paper than Whisper distil-small.en on LS-clean,
-  #                  but the benchmarks aren't directly comparable.
-  #                  Run a real comparison on your voice before
-  #                  committing. Best for the absolute-lowest-VRAM
-  #                  case or when CPU is preferred for STT.
-  #
   #   "auto"      -- tries Parakeet, falls back to Whisper if the
   #                  server fails to start. Moonshine is NOT auto-
   #                  selected -- swap to it explicitly when wanted.
@@ -270,7 +273,7 @@ stt:
   # *** SUSPECT THIS FLAG FIRST IF VOICE QUALITY REGRESSES. *** Flip to
   # "whisper" to confirm the engine is the cause before chasing other
   # leads.
-  engine: "whisper"
+  engine: "moonshine"
 
   # -------------------------------------------------------------------------
   # WHISPER KNOBS  (ACTIVE WHEN engine == "whisper" OR auto-fallback)
@@ -336,20 +339,40 @@ stt:
   # -------------------------------------------------------------------------
   # MOONSHINE KNOBS  (ACTIVE WHEN engine == "moonshine")
   # -------------------------------------------------------------------------
-  # 2026-05-22 wired live. Moonshine ONNX runs in the MAIN venv (no
-  # subprocess pattern needed -- it's pure onnxruntime, no Keras/TF/
-  # PyTorch deps). Install: pip install useful-moonshine-onnx
-  # (one 729 KB wheel; all transitive deps already satisfied).
+  # 2026-05-22 wired live with full streaming (v2 streaming models).
+  # Moonshine runs in the MAIN venv (no subprocess pattern needed --
+  # it's a portable C++ core + ONNX runtime under the hood; no
+  # Keras/TF/PyTorch deps). Install: pip install moonshine-voice
+  # (single 56 MB wheel includes platform-specific binaries; all
+  # other transitive deps already satisfied).
   #
   # moonshine_model:
-  #   "moonshine/base"  -- 58 MB ONNX, ~10.07% avg WER, default
-  #   "moonshine/tiny"  -- 27 MB ONNX, ~12.66% avg WER, fastest
-  # moonshine_precision:
-  #   "float"      -- fp32 weights; widest CPU compat
-  #   "quantized"  -- int8 weights; slightly faster on most CPUs at
-  #                   ~0.1-0.2 pp WER cost
-  # moonshine_device: kept for API parity; Moonshine is CPU-only.
-  moonshine_model: "moonshine/base"
+  #   Streaming variants (default; emit partials during capture):
+  #     "medium-streaming-en"  -- 200M params, ~6.65% WER, default
+  #     "small-streaming-en"   -- mid-tier
+  #     "base-streaming-en"    -- smaller streaming
+  #     "tiny-streaming-en"    -- 26M params, smallest streaming
+  #   Non-streaming variants (one-shot only):
+  #     "moonshine/base"  -- 58 MB, ~10.07% WER
+  #     "moonshine/tiny"  -- 27 MB, ~12.66% WER
+  #
+  # moonshine_update_interval_s:
+  #   How often the C++ core emits a partial-transcript update during
+  #   streaming. 0.2 s is the sweet spot for a voice agent. Lower =
+  #   fresher partials but more encoder work; higher = less work but
+  #   staler partials (and slower speculative LLM kickoff).
+  #
+  # moonshine_streaming_capture:
+  #   When true, the orchestrator feeds audio chunks to the engine
+  #   live during VAD capture, so partial transcripts are continuously
+  #   available. Set false to bypass streaming and use the one-shot
+  #   transcribe(buffer) path (useful for A/B benchmarking).
+  #
+  # moonshine_precision: legacy field; ignored by the moonshine-voice
+  # path. Precision is selected via the downloaded model assets.
+  moonshine_model: "medium-streaming-en"
+  moonshine_update_interval_s: 0.2
+  moonshine_streaming_capture: true
   moonshine_precision: "float"
   moonshine_device: "cpu"
 

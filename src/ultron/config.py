@@ -335,18 +335,37 @@ class STTConfig(_Strict):
     # ~5-15 ms on a 5 s clip vs Whisper's ~80 ms on the same hardware.
     #
     # Model names:
-    #   "moonshine/tiny"  -- 27 MB, ~12.66% WER, fastest, lowest footprint.
-    #   "moonshine/base"  -- 58 MB, ~10.07% WER, recommended default.
-    # Precision:
-    #   "float"      -- fp32 weights (default; widest CPU compatibility).
-    #   "quantized"  -- int8 weights; slightly faster on most CPUs at
-    #                   ~0.1-0.2 percentage-point WER cost.
-    moonshine_model: str = "moonshine/base"
+    #   Streaming variants (recommended for live voice; emit partial
+    #   transcripts during capture):
+    #     "medium-streaming-en"  -- 200M params, ~6.65% WER avg, default
+    #     "small-streaming-en"   -- mid-tier
+    #     "base-streaming-en"    -- smaller streaming
+    #     "tiny-streaming-en"    -- 26M params, smallest streaming
+    #   Non-streaming variants (lower footprint, one-shot only):
+    #     "moonshine/base"  -- 58 MB, ~10.07% WER avg
+    #     "moonshine/tiny"  -- 27 MB, ~12.66% WER avg
+    moonshine_model: str = "medium-streaming-en"
     # ``device`` is accepted for API parity with the other engines but
-    # Moonshine ONNX runs on CPU. (A future ``onnxruntime-gpu`` swap
-    # could honour cuda; not wired today.)
+    # Moonshine runs on CPU via ONNX runtime. (A future
+    # ``onnxruntime-gpu`` swap could honour cuda; not wired today.)
     moonshine_device: Literal["cpu", "cuda"] = "cpu"
+    # Precision is selected via the model asset bundle in moonshine-voice
+    # (the English default downloads as quantized). The ``moonshine_precision``
+    # field is retained for compatibility with the prior useful-moonshine-onnx
+    # engine; on moonshine-voice it's accepted but doesn't change behavior.
     moonshine_precision: Literal["float", "quantized"] = "float"
+    # How often the C++ core flushes a partial transcript during
+    # streaming. 0.2 s is the sweet spot for a voice agent -- frequent
+    # enough that the speculative LLM hand-off has fresh text,
+    # infrequent enough that the encoder isn't thrashing.
+    moonshine_update_interval_s: float = Field(default=0.2, ge=0.05, le=2.0)
+    # When True, the orchestrator's capture loop calls
+    # ``engine.feed_audio(chunk)`` on every audio block while VAD is
+    # active, so partial transcripts are continuously available via
+    # ``engine.get_partial_text()``. Set False to bypass streaming and
+    # use the one-shot ``transcribe(buffer)`` path even on a streaming
+    # model (useful for benchmarking or debugging).
+    moonshine_streaming_capture: bool = True
 
 
 class LLMServerConfig(_Strict):
