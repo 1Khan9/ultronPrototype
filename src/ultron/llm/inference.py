@@ -584,6 +584,18 @@ class LLMEngine:
                             getattr(cfg, "speculative_num_pred_tokens", 10)
                         ),
                     )
+                    # llama-cpp-python bug compat: when ``draft_model`` is
+                    # set, ``self._logits_all`` is silently forced to True
+                    # (llama.py:344) but ``self.scores`` is still sized via
+                    # the original ``logits_all`` arg (llama.py:469-470).
+                    # Prompts longer than ``n_batch`` (default 512) then
+                    # crash inside ``Llama.eval`` with
+                    # ``could not broadcast input array from shape
+                    # (n_tokens * n_vocab,) into shape (0,)`` because the
+                    # scores slice falls outside the under-sized buffer.
+                    # Pass ``logits_all=True`` explicitly so the buffer is
+                    # sized for ``n_ctx`` rows up front.
+                    llama_kwargs["logits_all"] = True
                     logger.info(
                         "Speculative decoding enabled (PLD, max_ngram=%s, "
                         "num_pred=%s, toggle path=%s)",
