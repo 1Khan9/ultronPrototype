@@ -609,6 +609,51 @@ def test_gaming_mode_pattern_skipped_when_per_feature_off():
     assert intent.kind == RoutingIntentKind.CONVERSATIONAL
 
 
+@pytest.mark.parametrize("phrase", [
+    "switch to gaming mode",
+    "switch over to gaming mode",
+    "switch into gaming mode",
+    "go to gaming mode",
+    "go into gaming mode",
+    "jump into gaming mode",
+    "flip to gaming mode",
+    "swap to gaming mode",
+    "drop into gaming mode",
+    "turn on gaming mode",
+    "activate gaming mode",
+    "start gaming mode",
+    "begin gaming mode",
+    "launch gaming mode",
+])
+def test_gaming_mode_engage_phrasings_route_to_gaming(phrase):
+    intent = _classify_with_flags(phrase, openclaw=True, gaming_mode=True)
+    assert intent.kind == RoutingIntentKind.GAMING_MODE, (
+        f"phrase {phrase!r} should route to GAMING_MODE (engage)"
+    )
+    assert intent.gaming_mode_intent.action == "engage", (
+        f"phrase {phrase!r} should be engage; got {intent.gaming_mode_intent.action}"
+    )
+
+
+@pytest.mark.parametrize("phrase", [
+    "switch out of gaming mode",
+    "switch off of gaming mode",
+    "go away from gaming mode",
+    "turn off gaming mode",
+    "deactivate gaming mode",
+    "stop gaming mode",
+    "cancel gaming mode",
+])
+def test_gaming_mode_disengage_phrasings_route_to_gaming(phrase):
+    intent = _classify_with_flags(phrase, openclaw=True, gaming_mode=True)
+    assert intent.kind == RoutingIntentKind.GAMING_MODE, (
+        f"phrase {phrase!r} should route to GAMING_MODE (disengage)"
+    )
+    assert intent.gaming_mode_intent.action == "disengage", (
+        f"phrase {phrase!r} should be disengage; got {intent.gaming_mode_intent.action}"
+    )
+
+
 def test_desktop_pattern_skipped_when_openclaw_offline():
     """With openclaw.enabled=false, the DESKTOP_AUTOMATION classifier
     branch is skipped. Utterances like "take a screenshot of the

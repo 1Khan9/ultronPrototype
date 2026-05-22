@@ -69,6 +69,40 @@ def test_loaded_starts_false():
     assert vlm.loaded is False
 
 
+def test_unload_clears_model_and_tokenizer():
+    """``unload`` drops both refs so the next describe re-lazy-loads."""
+    vlm = Moondream2VLM()
+    # Simulate a previously-loaded state.
+    vlm._model = object()
+    vlm._tokenizer = object()
+    assert vlm.loaded is True
+
+    vlm.unload()
+
+    assert vlm.loaded is False
+    assert vlm._model is None
+    assert vlm._tokenizer is None
+
+
+def test_unload_is_idempotent():
+    """Calling unload twice (or on a never-loaded VLM) doesn't raise."""
+    vlm = Moondream2VLM()
+    vlm.unload()  # never loaded
+    vlm.unload()  # idempotent
+    assert vlm.loaded is False
+
+
+def test_unload_clears_load_failure_state():
+    """After unload, a cached load failure is cleared so the next
+    ensure_loaded retries instead of failing fast."""
+    vlm = Moondream2VLM()
+    vlm._load_failed = True
+    vlm._load_error = "simulated"
+    vlm.unload()
+    assert vlm._load_failed is False
+    assert vlm._load_error is None
+
+
 # ---------------------------------------------------------------------------
 # describe() fail-open paths (no real model load)
 # ---------------------------------------------------------------------------

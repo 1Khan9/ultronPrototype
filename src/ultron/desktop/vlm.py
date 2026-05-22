@@ -200,6 +200,31 @@ class Moondream2VLM:
             logger.warning("VLM warmup failed: %s", e)
             return False
 
+    def unload(self) -> None:
+        """Release the loaded model + tokenizer.
+
+        Idempotent and thread-safe. After calling, :attr:`loaded` returns
+        False and the next :meth:`describe` / :meth:`warmup` triggers a
+        fresh lazy-load. Used by gaming mode to free RAM (CPU device) or
+        VRAM (CUDA device) for the game; the VLM rarely runs during
+        gameplay, so an explicit unload is cheap defense even though the
+        component is already lazy-loaded.
+        """
+        with self._load_lock:
+            had_model = self._model is not None
+            self._model = None
+            self._tokenizer = None
+            self._load_failed = False
+            self._load_error = None
+        if had_model:
+            try:
+                import torch
+                if self._device == "cuda" and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
+            logger.info("moondream2 unloaded (was on %s)", self._device)
+
     def _ensure_loaded(self) -> None:
         """Lazy-load the model + tokenizer. Idempotent. Thread-safe."""
         if self._model is not None:

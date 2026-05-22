@@ -645,25 +645,34 @@ class Orchestrator:
         try:
             from ultron.openclaw_routing.gaming_mode import GamingModeManager
 
-            # 2026-05-22 Kokoro VRAM toggle: gaming mode flips the
-            # Kokoro engine to CPU to free ~330 MB of VRAM. Disengage
-            # restores whatever device the config has configured
-            # (typically "cuda"). Hooks are best-effort -- a missing
-            # ``move_to_device`` attribute (XTTS/Piper engines) leaves
-            # the callback as a no-op.
+            # 2026-05-22 Gaming mode VRAM/RAM reclaim:
+            # - Kokoro engine flips to CPU (saves ~330 MB VRAM when
+            #   configured on CUDA; disengage restores to configured
+            #   device).
+            # - moondream2 VLM is unloaded if loaded -- frees ~2 GB
+            #   RAM on the CPU default, or ~2 GB VRAM if operator had
+            #   set vlm device to CUDA. The VLM re-loads lazily on
+            #   the next SCREEN_CONTEXT_QUERY after disengage.
+            # All hooks are best-effort: missing attribute / failed
+            # call logs WARN and leaves the original state.
             tts_kokoro_default_device = get_config().tts.kokoro.device
 
-            def _engage_kokoro_to_cpu():
+            def _engage_extra():
                 tts = getattr(self, "tts", None)
-                if tts is None or not hasattr(tts, "move_to_device"):
-                    return
-                tts.move_to_device("cpu")
+                if tts is not None and hasattr(tts, "move_to_device"):
+                    tts.move_to_device("cpu")
+                try:
+                    from ultron.desktop.vlm import get_vlm
+                    vlm = get_vlm()
+                    if vlm is not None and vlm.loaded:
+                        vlm.unload()
+                except Exception as e:                            # noqa: BLE001
+                    logger.warning("gaming engage: VLM unload skipped (%s)", e)
 
-            def _restore_kokoro_device():
+            def _disengage_extra():
                 tts = getattr(self, "tts", None)
-                if tts is None or not hasattr(tts, "move_to_device"):
-                    return
-                tts.move_to_device(tts_kokoro_default_device)
+                if tts is not None and hasattr(tts, "move_to_device"):
+                    tts.move_to_device(tts_kokoro_default_device)
 
             manager = GamingModeManager(
                 client=client,
@@ -672,12 +681,13 @@ class Orchestrator:
                 docker_executable_path=cfg.docker_executable_path,
                 docker_process_name=cfg.docker_process_name,
                 log_path=resolve_path(cfg.log_path) if cfg.log_path else None,
-                on_engaged=_engage_kokoro_to_cpu,
-                on_disengaged=_restore_kokoro_device,
+                on_engaged=_engage_extra,
+                on_disengaged=_disengage_extra,
             )
             logger.info(
                 "GamingModeManager ready (plugins=%s, toggle_docker=%s, "
-                "kokoro_engage_device=cpu, kokoro_disengage_device=%s)",
+                "kokoro_engage_device=cpu, kokoro_disengage_device=%s, "
+                "vlm_unload_on_engage=True)",
                 cfg.plugins_to_disable, cfg.toggle_docker,
                 tts_kokoro_default_device,
             )
