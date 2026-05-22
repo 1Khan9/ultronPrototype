@@ -128,6 +128,35 @@ def test_url_marker_attaches_query():
     assert got.search_queries == ["https://example.com/post"]
 
 
+@pytest.mark.parametrize("utterance", [
+    "what time is it in Atlantis",
+    "what's the time in some random town",
+    "current time in Mars",
+    "tell me the time in Narnia",
+])
+def test_time_in_unknown_city_forces_search(utterance):
+    """local_clock_reply handles known cities via zoneinfo; unknown cities
+    fall through to the gate, which must force SEARCH (not let the
+    preflight LLM say 'no search needed' and return stale RAG)."""
+    got = classify_by_rules(utterance)
+    assert got is not None, f"rule didn't fire for {utterance!r}"
+    assert got.decision == D.SEARCH
+    assert got.source == "rule"
+    assert got.confidence == "high"
+
+
+def test_time_in_location_does_not_match_bare_time_query():
+    """The new rule requires 'in <something>' -- bare 'what time is it'
+    should NOT match (it short-circuits to local_clock_reply BEFORE
+    the gate runs)."""
+    # The gate's NO_SEARCH rules (greeting/ack) catch some of these,
+    # but the time-in-location rule specifically must not fire.
+    from ultron.web_search.gating import _TIME_IN_LOCATION_GATE_RE
+    assert not _TIME_IN_LOCATION_GATE_RE.search("what time is it")
+    assert not _TIME_IN_LOCATION_GATE_RE.search("what's the time")
+    assert not _TIME_IN_LOCATION_GATE_RE.search("current time")
+
+
 def test_empty_utterance_is_no_search():
     got = classify_by_rules("")
     assert got is not None

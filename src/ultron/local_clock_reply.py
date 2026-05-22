@@ -25,6 +25,13 @@ import re
 from datetime import datetime
 from typing import Optional, Tuple
 
+try:
+    from zoneinfo import ZoneInfo
+    _ZONEINFO_AVAILABLE = True
+except ImportError:                                          # pragma: no cover
+    _ZONEINFO_AVAILABLE = False
+    ZoneInfo = None  # type: ignore
+
 
 # ---------------------------------------------------------------------------
 # Pattern matchers
@@ -84,6 +91,138 @@ _DATE_QUERY_RE = re.compile(
     """,
     re.IGNORECASE | re.VERBOSE,
 )
+
+
+# ---------------------------------------------------------------------------
+# Timezone-aware "what time is it in X" (2026-05-22)
+# ---------------------------------------------------------------------------
+#
+# Live session showed "What time is it in Paris?" hit the preflight LLM
+# gate, which decided "no search needed" (incorrect -- the wall-clock
+# time changes every second), and the LLM then regurgitated a stale time
+# from RAG. The fix below short-circuits the common case to a local
+# zoneinfo lookup, returning a fresh time. Unknown cities fall through
+# to the gate (which the new ``_TIME_IN_LOCATION_RE`` rule forces to
+# SEARCH so the LLM gets fresh data instead of stale RAG).
+
+# Map of normalized city names (lowercase, no punctuation) to IANA
+# timezone identifiers. Limited to widely-recognised cities so the
+# regex doesn't false-match arbitrary nouns. Extend as needed -- new
+# entries must use the IANA name (verifiable via `python -c "import
+# zoneinfo; print(sorted(zoneinfo.available_timezones())[:5])"`).
+_CITY_TIMEZONES = {
+    # North America
+    "new york": "America/New_York",
+    "nyc": "America/New_York",
+    "boston": "America/New_York",
+    "atlanta": "America/New_York",
+    "miami": "America/New_York",
+    "toronto": "America/Toronto",
+    "chicago": "America/Chicago",
+    "dallas": "America/Chicago",
+    "houston": "America/Chicago",
+    "denver": "America/Denver",
+    "phoenix": "America/Phoenix",
+    "los angeles": "America/Los_Angeles",
+    "la": "America/Los_Angeles",
+    "san francisco": "America/Los_Angeles",
+    "seattle": "America/Los_Angeles",
+    "vancouver": "America/Vancouver",
+    "anchorage": "America/Anchorage",
+    "honolulu": "Pacific/Honolulu",
+    "mexico city": "America/Mexico_City",
+    # Europe
+    "london": "Europe/London",
+    "dublin": "Europe/Dublin",
+    "paris": "Europe/Paris",
+    "berlin": "Europe/Berlin",
+    "amsterdam": "Europe/Amsterdam",
+    "madrid": "Europe/Madrid",
+    "rome": "Europe/Rome",
+    "athens": "Europe/Athens",
+    "moscow": "Europe/Moscow",
+    "istanbul": "Europe/Istanbul",
+    # Asia
+    "dubai": "Asia/Dubai",
+    "mumbai": "Asia/Kolkata",
+    "delhi": "Asia/Kolkata",
+    "bangkok": "Asia/Bangkok",
+    "singapore": "Asia/Singapore",
+    "hong kong": "Asia/Hong_Kong",
+    "shanghai": "Asia/Shanghai",
+    "beijing": "Asia/Shanghai",
+    "tokyo": "Asia/Tokyo",
+    "seoul": "Asia/Seoul",
+    # Oceania / South America / Africa
+    "sydney": "Australia/Sydney",
+    "melbourne": "Australia/Melbourne",
+    "auckland": "Pacific/Auckland",
+    "sao paulo": "America/Sao_Paulo",
+    "buenos aires": "America/Argentina/Buenos_Aires",
+    "cairo": "Africa/Cairo",
+    "johannesburg": "Africa/Johannesburg",
+}
+
+
+# Same lead-in tolerance as _TIME_QUERY_RE but trailing "in <city>".
+# The city group captures everything up to the trailing punctuation.
+_TIME_IN_LOCATION_RE = re.compile(
+    r"""
+    ^\s*
+    (?:(?:hey\s+|hi\s+|ok\s+|okay\s+)?ultron[,\s]+)?
+    (?:and\s+|so\s+|then\s+|but\s+)?
+    (?:
+        what(?:'s|s|\s+is)?\s+(?:the\s+)?(?:current\s+|local\s+)?time
+      | what\s+time\s+(?:is\s+it|do\s+they\s+have)
+      | (?:please\s+)?(?:tell|give|show)\s+me\s+the\s+(?:current\s+|local\s+)?time
+      | current\s+time
+      | the\s+(?:current\s+|local\s+)?time
+    )
+    \s+in\s+(?P<city>[A-Za-z][A-Za-z\s.]*?)
+    \s*[.!?]?\s*$
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def _maybe_city_time_reply(text: str, now: datetime) -> Optional[str]:
+    """Return a spoken city-time reply when ``text`` is a "what time
+    is it in X" ask AND ``X`` is in the timezone map. Returns ``None``
+    when the regex doesn't match OR the city is unknown -- the caller
+    falls through to the SEARCH path so the user still gets an answer."""
+    if not _ZONEINFO_AVAILABLE:
+        return None
+    m = _TIME_IN_LOCATION_RE.match(text)
+    if m is None:
+        return None
+    city_raw = (m.group("city") or "").strip().rstrip(".!?").lower()
+    if not city_raw:
+        return None
+    tz_name = _CITY_TIMEZONES.get(city_raw)
+    if tz_name is None:
+        return None
+    try:
+        zone = ZoneInfo(tz_name)
+    except Exception:                                        # pragma: no cover
+        return None
+    # Use the system clock anchored to UTC, then convert to the
+    # target zone. ``now`` is assumed to be in local time; if it's
+    # naive we treat it as the system wall clock by converting via
+    # astimezone() (which Python interprets as local time when naive).
+    try:
+        local_now = (
+            now.astimezone(zone) if now.tzinfo is not None
+            else now.astimezone().astimezone(zone)
+        )
+    except Exception:                                        # pragma: no cover
+        return None
+    # Render "It's 9:25 PM in Paris."
+    spoken = _render_time_for_tts(local_now).rstrip(".")
+    # Replace "It's" with "In <City>, it's" for natural phrasing.
+    city_display = m.group("city").strip().rstrip(".!?")
+    # Title-case for spoken form ("paris" -> "Paris").
+    city_display = " ".join(w.capitalize() for w in city_display.split())
+    return f"In {city_display}, {spoken[0].lower()}{spoken[1:]}."
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +303,13 @@ def maybe_local_clock_reply(
         return _render_time_for_tts(clock)
     if _DATE_QUERY_RE.match(text):
         return _render_date_for_tts(clock)
+    # 2026-05-22: "what time is it in <city>" via zoneinfo lookup.
+    # Falls through to None when the city isn't in the map -- the
+    # gate's _TIME_IN_LOCATION_RE rule then forces SEARCH so the
+    # LLM gets fresh data instead of stale RAG.
+    city_reply = _maybe_city_time_reply(text, clock)
+    if city_reply:
+        return city_reply
     return None
 
 

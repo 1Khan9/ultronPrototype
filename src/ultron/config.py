@@ -1105,7 +1105,16 @@ class MemoryRerankingConfig(_Strict):
     the pre-rerank order. The voice path never crashes.
     """
 
-    enabled: bool = True
+    # 2026-05-22 -- flipped from True to False after live testing
+    # measured bge-reranker-v2-m3 at 17-18 seconds per memory retrieval
+    # on this user's CPU even after the 500-char content cap. The
+    # latency cost overwhelms the 15-30% RAGAS quality lift the
+    # literature claims. Cosine + RRF + recency composite (the
+    # fallback path) is good enough; tighter ``rag_min_relevance``
+    # (0.78 in config.yaml) and lower ``rag_top_k`` (3) restore
+    # signal quality without the cross-encoder tax. Flip back to True
+    # if you ever move to a GPU reranker or accept the latency.
+    enabled: bool = False
     # Default model: ``BAAI/bge-reranker-v2-m3`` -- the 2026
     # production-standard cross-encoder reranker. 568M params,
     # ~1.1 GB on disk, multilingual, strong on conversational

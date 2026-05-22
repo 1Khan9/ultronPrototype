@@ -534,7 +534,7 @@ memory:
   enabled: true
   jsonl_legacy_path: "data/memory.jsonl"  # one-shot migration source; not source of truth
   recent_turns: 20             # in-process recent-turns cache size
-  rag_top_k: 5                 # top-K conversations per retrieval
+  rag_top_k: 3                 # 2026-05-22 lowered 5 -> 3: less context volume, less hallucination from weak matches
   rag_exclude_recent: 20       # don't surface RAG hits already in recent-turns window
   facts_top_k: 3
   write_queue_maxsize: 256     # background writer queue cap
@@ -569,13 +569,12 @@ memory:
   # 0.7-0.95. 0.6 sits above the off-topic noise floor and below
   # genuinely-relevant matches. Set 0.0 to disable filtering
   # (legacy behaviour).
-  # 2026-05-22 raised from 0.6 -> 0.72 after a live "switch to gaming
-  # mode" turn pulled in unrelated context ("Scavenge wild nuts..." +
-  # ack snippets) above 0.6 cosine, which caused the LLM to hallucinate
-  # an irrelevant baseball answer. 0.72 stays below genuinely-relevant
-  # matches (0.78+ in field measurements) while pruning the off-topic
-  # noise band that 0.6 was admitting.
-  rag_min_relevance: 0.72
+  # 2026-05-22 raised again 0.72 -> 0.78. The 0.72 still let through
+  # weakly-related context (elephant-weight question pulled "lion/duck
+  # weight" turns; "what time in Paris" pulled a stale time from a
+  # prior session). 0.78 is at the bottom of the genuinely-relevant
+  # band on field measurements; below that turns into noise.
+  rag_min_relevance: 0.78
   # Cap on recent-turn history fed to the LLM as conversation
   # context. The in-process recent-turn CACHE size remains
   # ``recent_turns: 20`` -- this just bounds what reaches the LLM.

@@ -120,7 +120,9 @@ def test_date_query_returns_spoken_date(utterance):
 
 
 @pytest.mark.parametrize("utterance", [
-    "what time is it in Paris",                   # other timezone
+    # NOTE: "what time is it in Paris" REMOVED -- 2026-05-22 the
+    # local clock handles known cities (Paris included) via zoneinfo.
+    # Test moved to test_known_city_returns_timezone_aware_reply.
     "what time is it and the weather",            # mixed intent
     "what time should I leave",                   # different question
     "what time does the store open",              # external knowledge
@@ -156,3 +158,64 @@ def test_default_clock_uses_datetime_now():
     assert reply is not None
     assert reply.startswith("It's ")
     assert reply.endswith(".")
+
+
+# ---------------------------------------------------------------------------
+# 2026-05-22 -- timezone-aware "what time is it in X"
+# ---------------------------------------------------------------------------
+
+import pytest
+
+
+@pytest.mark.parametrize("utterance", [
+    "what time is it in Paris",
+    "what time is it in Paris?",
+    "what's the time in Paris",
+    "what is the current time in Paris",
+    "tell me the time in Paris",
+    "current time in Paris",
+])
+def test_known_city_returns_timezone_aware_reply(utterance):
+    """Known cities return a spoken reply containing the city name +
+    a time, rather than falling through to the LLM path."""
+    reply = maybe_local_clock_reply(utterance)
+    assert reply is not None, f"expected city-time reply for {utterance!r}"
+    assert "Paris" in reply
+    assert "M." in reply or "AM" in reply or "PM" in reply
+
+
+@pytest.mark.parametrize("utterance", [
+    "what time is it in Atlantis",
+    "what time is it in El Dorado",
+    "tell me the time in some random place",
+])
+def test_unknown_city_returns_none_for_search_fallback(utterance):
+    """Unknown cities return None so the gate's _TIME_IN_LOCATION_RE
+    rule can route to SEARCH."""
+    reply = maybe_local_clock_reply(utterance)
+    assert reply is None
+
+
+def test_city_lookup_renders_lowercase_after_in():
+    """In-clause sentence reads naturally: 'In Paris, it's 9:25 PM.'"""
+    reply = maybe_local_clock_reply("what time is it in Paris")
+    assert reply is not None
+    assert reply.startswith("In Paris,")
+
+
+def test_city_match_case_insensitive():
+    reply = maybe_local_clock_reply("what time is it in TOKYO")
+    assert reply is not None
+    assert "Tokyo" in reply
+
+
+def test_known_city_two_word_name():
+    """Cities with spaces (Mexico City, San Francisco, Hong Kong) match."""
+    for utterance in (
+        "what time is it in New York",
+        "what time is it in Mexico City",
+        "what time is it in Hong Kong",
+    ):
+        assert maybe_local_clock_reply(utterance) is not None, (
+            f"expected city-time reply for {utterance!r}"
+        )

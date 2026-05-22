@@ -32,12 +32,14 @@ from ultron.config import MemoryRerankingConfig, MemoryConfig, UltronConfig
 
 
 def test_reranking_config_defaults():
-    """2026-05-21 frontier search pass: default flipped to True
-    now that the cross-encoder is also used for web-search ranking.
-    Model loads once per process; memory.retrieve() pays ~265 ms
-    per call in exchange for better RAG quality."""
+    """2026-05-22: flipped to False after live testing measured the
+    cross-encoder at 17-18 s per memory retrieval on CPU even after
+    the 500-char content cap -- the latency cost overwhelms the
+    quality lift. Cosine + RRF + recency composite (fallback path)
+    + tighter rag_min_relevance (0.78) deliver acceptable signal
+    without the cross-encoder tax."""
     cfg = MemoryRerankingConfig()
-    assert cfg.enabled is True
+    assert cfg.enabled is False
     assert cfg.model == "BAAI/bge-reranker-v2-m3"
     assert cfg.device == "cpu"
     assert cfg.max_length == 512
@@ -56,11 +58,12 @@ def test_reranking_config_validates_ranges():
 
 
 def test_memory_config_includes_reranking():
-    """2026-05-21: default flipped to True alongside the web-search
-    cross-encoder rollout (shared model)."""
+    """2026-05-22: default disabled after the cross-encoder showed
+    17-18 s latency on CPU. Field operators can opt back in via
+    ``memory.reranking.enabled: true`` in config.yaml."""
     cfg = MemoryConfig()
     assert hasattr(cfg, "reranking")
-    assert cfg.reranking.enabled is True
+    assert cfg.reranking.enabled is False
 
 
 def test_full_config_round_trip_enables_reranking():

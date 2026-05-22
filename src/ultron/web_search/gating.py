@@ -154,6 +154,34 @@ _TIME_SENSITIVE = re.compile(
     re.IGNORECASE,
 )
 
+
+# 2026-05-22 -- "what time is it in <city>" / "current time in <city>"
+# patterns reaching the gate. local_clock_reply handles known cities via
+# zoneinfo BEFORE the gate runs; anything reaching this point is an
+# unknown city or unusual phrasing that the preflight LLM was incorrectly
+# routing to NO_SEARCH ("Paris is a fixed location with standard time
+# zones") -- which caused the LLM to regurgitate stale time from RAG
+# context (live session: returned 9:25 PM CEST from a prior session
+# instead of looking up current Paris time).
+_TIME_IN_LOCATION_GATE_RE = re.compile(
+    r"""
+    \b
+    (?:
+        what(?:'s|s|\s+is)?\s+(?:the\s+)?(?:current\s+|local\s+)?time
+      | (?:tell|give|show)\s+me\s+the\s+(?:current\s+|local\s+)?time
+      | current\s+time
+      | the\s+(?:current\s+|local\s+)?time
+    )
+    # Optional "is it" / "do they have" filler before "in <city>".
+    # "what time IS IT in Paris" / "what time do they have in Paris"
+    # are the common phrasings; without this gap the regex would only
+    # match the rarer "what time in Paris" form.
+    (?:\s+(?:is\s+it|do\s+they\s+have))?
+    \s+in\s+\w
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
 # Topical categories that change frequently enough to need fresh data.
 _VOLATILE_TOPICS = re.compile(
     r"\b(?:"
@@ -419,6 +447,22 @@ def classify_by_rules(utterance: str) -> Optional[GateVerdict]:
 
     if _TIME_SENSITIVE.search(text):
         reason = "time-sensitive marker"
+        return GateVerdict(
+            GateDecision.SEARCH, "high", "rule",
+            reason,
+            has_temporal_dependency=True,
+            knowledge_source=_resolve_knowledge_source(
+                needs_search=True, confidence="high", rule_reason=reason,
+            ),
+        )
+
+    # 2026-05-22: "what time is it in <city>" -- unknown cities reach
+    # here because local_clock_reply only handles a curated map. The
+    # preflight LLM was incorrectly saying NO_SEARCH on these; force
+    # SEARCH so the user gets a fresh answer instead of stale RAG.
+    if _TIME_IN_LOCATION_GATE_RE.search(text):
+        reason = "time-in-location query (unknown city) -- needs fresh lookup"
+        _trace("gate:rules_match", rule="time_in_location", decision="SEARCH")
         return GateVerdict(
             GateDecision.SEARCH, "high", "rule",
             reason,
