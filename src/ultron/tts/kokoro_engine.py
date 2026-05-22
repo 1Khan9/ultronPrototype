@@ -688,16 +688,20 @@ class KokoroSpeech:
                     # underflow point. Continuous silence keeps the
                     # device clock fed without adding deliberate delay
                     # beyond what synth latency already costs.
-                    nxt = self._drain_queue_with_silence(
+                    nxt, timed_out = self._drain_queue_with_silence(
                         audio_q, stream, sr,
                     )
-                    if nxt is None:
-                        if self._stop_event.is_set():
-                            return
+                    if timed_out:
                         logger.warning(
                             "Kokoro playback waited %.0fs without next "
                             "clip; ending", _QUEUE_GET_TIMEOUT_SECONDS,
                         )
+                        self._write_silence(stream, sr, 0.05)
+                        break
+                    if nxt is None:
+                        # Synth worker's finally sentinel: normal end.
+                        if self._stop_event.is_set():
+                            return
                         self._write_silence(stream, sr, 0.05)
                         break
                     item = nxt
@@ -1099,7 +1103,7 @@ class KokoroSpeech:
         *,
         poll_seconds: float = 0.020,
         deadline_seconds: float = _QUEUE_GET_TIMEOUT_SECONDS,
-    ) -> Optional[ClipItem]:
+    ) -> Tuple[Optional[ClipItem], bool]:
         """Poll ``audio_q`` while keeping the output stream fed.
 
         Kokoro CPU synth often runs slower than playback of the
@@ -1110,18 +1114,25 @@ class KokoroSpeech:
         blocks between polls, so the device clock stays fed without
         adding deliberate extra delay beyond what synth already costs.
 
-        Returns the next :class:`ClipItem` as soon as it arrives, or
-        ``None`` on timeout / stop signal.
+        Returns a tuple ``(item, timed_out)`` where:
+        - ``item`` is the next :class:`ClipItem`, the sentinel
+          ``None`` from the synth worker's finally, or ``None`` after
+          a timeout / stop signal.
+        - ``timed_out`` is True ONLY when the deadline expired without
+          seeing any value (the genuine starve case). False on
+          sentinel and stop event so callers can distinguish "normal
+          end of stream" from "synth worker hung".
         """
         deadline = time.monotonic() + deadline_seconds
         while time.monotonic() < deadline:
             if self._stop_event.is_set():
-                return None
+                return None, False
             try:
-                return audio_q.get(timeout=poll_seconds)
+                item = audio_q.get(timeout=poll_seconds)
+                return item, False
             except queue.Empty:
                 self._write_silence(stream, sr, poll_seconds)
-        return None
+        return None, True
 
 
 __all__ = [

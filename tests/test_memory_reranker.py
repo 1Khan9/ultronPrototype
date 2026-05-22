@@ -181,6 +181,44 @@ def test_rerank_with_scores_carries_indices(monkeypatch):
     assert pytest.approx(out[0].score, rel=1e-6) == 0.9
 
 
+def test_rerank_truncates_long_content_before_predict(monkeypatch):
+    """Candidates whose ``content`` exceeds ``_PREDICT_CONTENT_CAP_CHARS``
+    must have only the leading slice sent to the cross-encoder's
+    predict call. The MemoryTurn returned to the caller keeps the
+    full original content -- truncation is for the scoring pair only.
+    Without this, augmented memory bodies (4-8 KB stitched web
+    snippets) inflated retrieval to 50+ seconds on CPU."""
+    from ultron.memory import reranker as reranker_module
+    cap = reranker_module.CrossEncoderReranker._PREDICT_CONTENT_CAP_CHARS
+
+    huge_content = "x" * (cap * 4)  # well past the cap
+    cands = [
+        _mock_turn(0, huge_content),
+        _mock_turn(1, "short content"),
+    ]
+    mock_ce_cls, mock_ce = _stub_cross_encoder_with_scores([0.5, 0.8])
+    import sys
+    fake_st_mod = SimpleNamespace(CrossEncoder=mock_ce_cls)
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_st_mod)
+
+    rr = reranker_module.CrossEncoderReranker()
+    out = rr.rerank("q", cands, 2)
+
+    # Predict was called with pairs whose content was truncated.
+    args, _ = mock_ce.predict.call_args
+    pairs = args[0]
+    assert len(pairs[0][1]) == cap, (
+        f"long-content candidate should be truncated to {cap} chars; "
+        f"got {len(pairs[0][1])}"
+    )
+    assert pairs[1][1] == "short content"  # short content untouched
+
+    # The returned MemoryTurns carry the ORIGINAL (untruncated) content.
+    by_id = {c.id: c.content for c in out}
+    assert by_id[0] == huge_content
+    assert by_id[1] == "short content"
+
+
 def test_rerank_truncates_to_top_k(monkeypatch):
     """``top_k`` smaller than candidate count drops the tail."""
     from ultron.memory import reranker as reranker_module

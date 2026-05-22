@@ -845,12 +845,13 @@ def test_drain_queue_writes_silence_when_starved(monkeypatch):
 
     threading.Thread(target=_producer, daemon=True).start()
 
-    got = engine._drain_queue_with_silence(
+    got, timed_out = engine._drain_queue_with_silence(
         audio_q, _CountingStream(), sr,
         poll_seconds=0.020,
         deadline_seconds=5.0,
     )
     assert got is expected, "drain helper should return the clip"
+    assert timed_out is False, "got a clip; timed_out should be False"
     # At least one silence chunk (20 ms = 480 samples) should have
     # been written during the ~100 ms producer wait.
     assert len(writes) >= 2, f"expected silence writes during starve; got {len(writes)}"
@@ -859,9 +860,61 @@ def test_drain_queue_writes_silence_when_starved(monkeypatch):
     )
 
 
+def test_drain_queue_sentinel_returns_none_without_timed_out():
+    """When the synth worker pushes the None sentinel, drain should
+    return (None, False) -- distinguishing normal end-of-stream from
+    a real 60s timeout. This is what stops the spurious 'waited 60s'
+    WARN from firing on every successful turn."""
+    import queue as queue_mod
+
+    engine = KokoroSpeech(model_path=Path("/stub"), voice="am_michael")
+
+    class _NullStream:
+        def write(self, _arr):
+            pass
+
+    audio_q: queue.Queue = queue_mod.Queue()
+    audio_q.put(None)  # synth worker's finally sentinel already enqueued
+
+    got, timed_out = engine._drain_queue_with_silence(
+        audio_q, _NullStream(), 24000,
+        poll_seconds=0.020,
+        deadline_seconds=5.0,
+    )
+    assert got is None
+    assert timed_out is False, (
+        "sentinel must NOT report timed_out -- the caller would log "
+        "a spurious 60s WARN"
+    )
+
+
+def test_drain_queue_timed_out_returns_true_after_deadline():
+    """When the synth worker is hung and the deadline expires, drain
+    must report timed_out=True so the caller logs the WARN correctly."""
+    import queue as queue_mod
+
+    engine = KokoroSpeech(model_path=Path("/stub"), voice="am_michael")
+
+    class _NullStream:
+        def write(self, _arr):
+            pass
+
+    audio_q: queue.Queue = queue_mod.Queue()
+    # Never put anything on the queue.
+
+    got, timed_out = engine._drain_queue_with_silence(
+        audio_q, _NullStream(), 24000,
+        poll_seconds=0.020,
+        deadline_seconds=0.10,  # short deadline so the test is fast
+    )
+    assert got is None
+    assert timed_out is True
+
+
 def test_drain_queue_returns_none_on_stop_event(monkeypatch):
     """When the stop event fires while the helper is waiting, it must
-    return ``None`` instead of blocking indefinitely."""
+    return ``(None, False)`` instead of blocking indefinitely. Stop is
+    NOT a timeout."""
     import queue as queue_mod
 
     engine = KokoroSpeech(model_path=Path("/stub"), voice="am_michael")
@@ -878,12 +931,13 @@ def test_drain_queue_returns_none_on_stop_event(monkeypatch):
 
     threading.Thread(target=_stopper, daemon=True).start()
 
-    got = engine._drain_queue_with_silence(
+    got, timed_out = engine._drain_queue_with_silence(
         audio_q, _NullStream(), 24000,
         poll_seconds=0.020,
         deadline_seconds=5.0,
     )
     assert got is None
+    assert timed_out is False, "stop event is not a timeout"
 
 
 def test_speak_stream_sentinel_terminates_consumer(monkeypatch):

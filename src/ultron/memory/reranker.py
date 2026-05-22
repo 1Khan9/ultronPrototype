@@ -140,6 +140,16 @@ class CrossEncoderReranker:
                 )
                 return False
 
+    # 2026-05-22 -- truncate candidate content before pairing for predict.
+    # Some memory turns store augmented prompts (user question + 4-8 KB of
+    # stitched web-search results); tokenising those on CPU was costing
+    # ~2-3 s PER pair and inflating retrieval to 50+ seconds. The cross-
+    # encoder only needs a leading snippet to judge query relevance --
+    # 500 chars covers the strongest signal-to-noise region while keeping
+    # tokenise time bounded. The original ``MemoryTurn.content`` is
+    # preserved (caller receives the originals, not the truncated copies).
+    _PREDICT_CONTENT_CAP_CHARS: int = 500
+
     def rerank(
         self,
         query: str,
@@ -148,6 +158,10 @@ class CrossEncoderReranker:
     ) -> List["MemoryTurn"]:
         """Rerank ``candidates`` for ``query`` and return the top
         ``top_k`` ordered by cross-encoder score (highest first).
+
+        Candidate content is truncated to ``_PREDICT_CONTENT_CAP_CHARS``
+        for the predict call only -- the returned turns are the
+        originals with full content.
 
         Fail-open: empty query OR empty candidates OR model load
         failure OR predict failure all return ``list(candidates)[:top_k]``
@@ -158,12 +172,24 @@ class CrossEncoderReranker:
         if not self._ensure_model():
             return list(candidates)[:top_k]
         try:
-            pairs = [(query, str(c.content or "")) for c in candidates]
+            cap = self._PREDICT_CONTENT_CAP_CHARS
+            pairs = [
+                (query, str(c.content or "")[:cap]) for c in candidates
+            ]
+            t0 = time.monotonic()
             scores = self._model.predict(
                 pairs,
                 show_progress_bar=False,
                 convert_to_numpy=True,
             )
+            elapsed_ms = (time.monotonic() - t0) * 1000.0
+            if elapsed_ms > 1500:
+                logger.warning(
+                    "CrossEncoderReranker.predict slow: %.0f ms for %d "
+                    "candidates (cap=%d chars). Consider lowering "
+                    "memory.reranking.candidate_count.",
+                    elapsed_ms, len(candidates), cap,
+                )
             ranked = sorted(
                 zip(scores, range(len(candidates)), candidates),
                 key=lambda row: float(row[0]),
@@ -203,7 +229,10 @@ class CrossEncoderReranker:
                 for i, c in enumerate(list(candidates)[:top_k])
             ]
         try:
-            pairs = [(query, str(c.content or "")) for c in candidates]
+            cap = self._PREDICT_CONTENT_CAP_CHARS
+            pairs = [
+                (query, str(c.content or "")[:cap]) for c in candidates
+            ]
             scores = self._model.predict(
                 pairs,
                 show_progress_bar=False,
