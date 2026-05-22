@@ -39,9 +39,10 @@ import io
 import os
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import numpy as np
 
@@ -269,6 +270,27 @@ class ParakeetEngine:
             getattr(stt_cfg, "parakeet_request_timeout_seconds", 30.0)
         )
 
+        # 2026-05-22 streaming state. Mirror of the Moonshine
+        # transcriber's stream-active / cached-text pattern so the
+        # orchestrator's _maybe_start_stt_stream / _kick_off_speculative_stt
+        # paths work without conditionals on engine type. The server-side
+        # re-transcribe pattern means we don't need encoder/decoder cache
+        # state here; just a stream_id + last partial text.
+        self._stream_id: Optional[str] = None
+        self._stream_active: bool = False
+        self._stream_lock = threading.Lock()
+        self._last_streaming_text: Optional[str] = None
+        # Cap on how often feed_audio re-runs the model. Voice loop
+        # feeds ~32 ms blocks; re-running inference for each is wasteful
+        # (Parakeet on GPU is ~10-20 ms per call). Coalesce feeds in a
+        # local accumulator; flush at ``stream_feed_interval_s`` cadence.
+        self._stream_feed_accumulator: list[np.ndarray] = []
+        self._stream_feed_accumulated_samples: int = 0
+        self._stream_last_flush_at: float = 0.0
+        self.stream_feed_interval_s: float = float(
+            getattr(stt_cfg, "parakeet_stream_feed_interval_s", 0.20),
+        )
+
         if self.use_isolated_venv:
             # Surface a clear ImportError BEFORE attempting subprocess
             # spawn when the venv isn't set up. The spawn function
@@ -308,8 +330,241 @@ class ParakeetEngine:
         # Server lifecycle is managed by atexit; nothing to do here.
         pass
 
+    # ----------------------------------------------------------------
+    # Streaming protocol (mirrors :class:`MoonshineEngine`).
+    # ----------------------------------------------------------------
+
+    def supports_streaming(self) -> bool:
+        """True iff this engine can produce partials during ``feed_audio``.
+
+        Parakeet streaming is implemented server-side via the
+        re-transcribe-accumulated-buffer pattern. Both the isolated-venv
+        and main-venv paths can stream; the main-venv path streams
+        locally (calling ``_main_venv_model.transcribe`` per flush)
+        instead of over HTTP.
+        """
+        return True
+
+    def start_stream(self) -> None:
+        """Begin streaming mode. Idempotent."""
+        with self._stream_lock:
+            if self._stream_active:
+                return
+            self._stream_feed_accumulator = []
+            self._stream_feed_accumulated_samples = 0
+            self._stream_last_flush_at = time.monotonic()
+            self._last_streaming_text = None
+            if self.use_isolated_venv:
+                try:
+                    sid = self._stream_start_http()
+                    self._stream_id = sid
+                except Exception as e:                            # noqa: BLE001
+                    logger.warning(
+                        "Parakeet start_stream failed (%s); "
+                        "streaming disabled this turn", e,
+                    )
+                    return
+            else:
+                # Main-venv path: no server session; we just buffer
+                # audio locally and re-transcribe on each flush.
+                self._stream_id = "local"
+            self._stream_active = True
+
+    def feed_audio(
+        self, audio: np.ndarray, sample_rate: Optional[int] = None,
+    ) -> None:
+        """Push an audio chunk into the streaming session.
+
+        Audio is buffered locally and flushed to the server in
+        ``stream_feed_interval_s`` cadence to bound network overhead.
+        Voice loops feeding small ~32 ms chunks would otherwise issue
+        a per-block HTTP round-trip + GPU inference call -- both
+        wasteful when speech ramps up gradually.
+        """
+        if not self._stream_active:
+            return
+        if audio.size == 0:
+            return
+        if audio.dtype != np.float32:
+            audio = audio.astype(np.float32)
+        if audio.ndim > 1:
+            audio = audio.mean(axis=1).astype(np.float32)
+        with self._stream_lock:
+            self._stream_feed_accumulator.append(audio)
+            self._stream_feed_accumulated_samples += audio.size
+            now = time.monotonic()
+            if (
+                now - self._stream_last_flush_at
+                >= self.stream_feed_interval_s
+            ):
+                self._flush_stream_accumulator_locked()
+                self._stream_last_flush_at = now
+
+    def _flush_stream_accumulator_locked(self) -> None:
+        """Send the accumulated chunks to the server (caller holds lock)."""
+        if not self._stream_feed_accumulator:
+            return
+        chunk = np.concatenate(self._stream_feed_accumulator)
+        self._stream_feed_accumulator = []
+        self._stream_feed_accumulated_samples = 0
+        try:
+            if self.use_isolated_venv:
+                text = self._stream_feed_http(chunk)
+            else:
+                text = self._stream_feed_main_venv(chunk)
+            if text is not None:
+                self._last_streaming_text = text
+        except Exception as e:                                # noqa: BLE001
+            logger.warning(
+                "Parakeet stream flush failed (%s); partial may lag", e,
+            )
+
+    def get_partial_text(self, *, completed_only: bool = False) -> str:
+        """Return the current accumulated partial transcript.
+
+        The ``completed_only`` flag mirrors the Moonshine signature for
+        drop-in compatibility but is meaningful only for Moonshine's
+        line-segmented output. Parakeet's accumulated-buffer model
+        produces a single rolling transcript so the flag is ignored
+        here.
+        """
+        with self._stream_lock:
+            if self._stream_feed_accumulator:
+                # Flush pending chunks so the partial reflects current state.
+                self._flush_stream_accumulator_locked()
+            return self._last_streaming_text or ""
+
+    def stop_stream(self) -> str:
+        """Finalize streaming and return the full transcript. Idempotent.
+
+        Stashes the final text on ``self._last_streaming_text`` so a
+        subsequent :meth:`transcribe` call returns the cached value
+        rather than running the model again. Returns "" and stashes
+        ``None`` when no audio was fed (cache-miss signal that lets
+        the orchestrator fall back to one-shot on the full buffer).
+        """
+        with self._stream_lock:
+            if not self._stream_active:
+                return self._last_streaming_text or ""
+            # Flush any pending audio first.
+            self._flush_stream_accumulator_locked()
+            sid = self._stream_id
+            try:
+                if self.use_isolated_venv and sid:
+                    text = self._stream_stop_http(sid)
+                else:
+                    text = self._last_streaming_text or ""
+            except Exception as e:                            # noqa: BLE001
+                logger.warning(
+                    "Parakeet stop_stream failed (%s); "
+                    "returning last partial", e,
+                )
+                text = self._last_streaming_text or ""
+            finally:
+                self._stream_id = None
+                self._stream_active = False
+        if not text:
+            logger.warning(
+                "Parakeet stop_stream: empty result. Cache miss -> "
+                "post-capture transcribe will re-run on the buffer.",
+            )
+            self._last_streaming_text = None
+            return ""
+        self._last_streaming_text = text
+        logger.info(
+            "Parakeet stream finalized: %d chars", len(text),
+        )
+        return text
+
+    # ----------------------------------------------------------------
+    # Streaming HTTP helpers (isolated-venv path)
+    # ----------------------------------------------------------------
+
+    def _stream_url(self) -> str:
+        url = self._server_url or _SERVER_URL_CACHED
+        if not url:
+            raise RuntimeError(
+                "Parakeet server URL not set; streaming requires the "
+                "isolated-venv server to be running.",
+            )
+        return url
+
+    def _stream_start_http(self) -> str:
+        import requests
+        url = self._stream_url()
+        r = requests.post(
+            f"{url}/stream/start", timeout=self.request_timeout,
+        )
+        r.raise_for_status()
+        return str(r.json()["stream_id"])
+
+    def _stream_feed_http(self, chunk: np.ndarray) -> Optional[str]:
+        import requests
+        if self._stream_id is None:
+            return None
+        url = self._stream_url()
+        # Send as raw float32 bytes. The server expects mono 16 kHz.
+        body = chunk.astype(np.float32, copy=False).tobytes()
+        r = requests.post(
+            f"{url}/stream/feed/{self._stream_id}",
+            data=body,
+            headers={"Content-Type": "application/octet-stream"},
+            timeout=self.request_timeout,
+        )
+        r.raise_for_status()
+        return str(r.json().get("partial", ""))
+
+    def _stream_stop_http(self, stream_id: str) -> str:
+        import requests
+        url = self._stream_url()
+        r = requests.post(
+            f"{url}/stream/stop/{stream_id}",
+            timeout=self.request_timeout,
+        )
+        r.raise_for_status()
+        return str(r.json().get("text", ""))
+
+    def _stream_feed_main_venv(self, chunk: np.ndarray) -> Optional[str]:
+        """Local-streaming fallback when use_isolated_venv=False.
+
+        Re-runs full transcription on the accumulated buffer in-process.
+        Slow and memory-hungry but mirrors the server-side semantics so
+        the orchestrator code path is identical.
+        """
+        if not hasattr(self, "_stream_local_buffer"):
+            self._stream_local_buffer = np.zeros(0, dtype=np.float32)
+        self._stream_local_buffer = np.concatenate(
+            [self._stream_local_buffer, chunk],
+        )
+        result = self._main_venv_model.transcribe(
+            audio=[self._stream_local_buffer], batch_size=1,
+        )
+        if not result:
+            return ""
+        hyp = result[0]
+        return (hyp.text if hasattr(hyp, "text") else str(hyp)).strip()
+
     def transcribe(self, audio: np.ndarray, language: Optional[str] = "en") -> str:
-        """Transcribe a mono float32 16 kHz audio segment to text."""
+        """Transcribe a mono float32 16 kHz audio segment to text.
+
+        If a streaming session just finalized successfully, the cached
+        result is returned without re-running the model (mirrors the
+        Moonshine engine's post-stream cache-hit semantics so the
+        orchestrator's post-capture transcribe call returns instantly
+        on the happy path).
+        """
+        # Streaming cache-hit fast path.
+        cached = self._last_streaming_text
+        if cached is not None:
+            self._last_streaming_text = None  # consume
+            if cached:  # non-empty -> trust it
+                logger.info(
+                    "Parakeet: returning cached streaming result "
+                    "(%d chars)", len(cached),
+                )
+                return cached
+            # cached == "" means stop_stream explicitly stashed None
+            # then fell through; fall through to one-shot transcribe.
         if audio.size == 0:
             return ""
         if audio.dtype != np.float32:
