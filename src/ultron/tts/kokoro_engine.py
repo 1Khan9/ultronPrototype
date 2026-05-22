@@ -277,7 +277,7 @@ class KokoroSpeech:
             )
         try:
             # Preferred path: hexgrad/kokoro PyPI package.
-            from kokoro import KPipeline                       # type: ignore
+            from kokoro import KModel, KPipeline                # type: ignore
         except ImportError as e:
             raise KokoroEngineLoadError(
                 "The ``kokoro`` package is not installed. Add it to "
@@ -286,10 +286,51 @@ class KokoroSpeech:
             ) from e
         # ``lang_code='a'`` selects American English. The pipeline
         # internally loads ISTFTNet vocoder + StyleTTS2 acoustic model.
-        self._model = KPipeline(
-            lang_code="a",
-            device=self.device,
-        )
+        #
+        # 2026-05-22 fine-tune integration: if a converted Kokoro-
+        # format fine-tune weights file is present at
+        # ``model_path/ultron_finetune.pth``, construct an explicit
+        # KModel pointing at those weights and hand it to KPipeline.
+        # Without this, voicepack alone only provides the style
+        # vectors; the underlying decoder / predictor / text_encoder
+        # remain stock Kokoro, which dilutes the trained voice
+        # character. The converted file is produced from a StyleTTS2
+        # Stage-2 checkpoint via
+        # ``ultronVoiceAudio/kokoro_finetune/scripts/test_inference.py``
+        # ``convert_checkpoint`` helper (bert + bert_encoder +
+        # predictor + text_encoder + decoder, ~330 MB).
+        finetune_path = self.model_path / "ultron_finetune.pth"
+        if finetune_path.is_file():
+            try:
+                kmodel = KModel(
+                    repo_id="hexgrad/Kokoro-82M",
+                    model=str(finetune_path),
+                ).to(self.device).eval()
+                self._model = KPipeline(
+                    lang_code="a",
+                    repo_id="hexgrad/Kokoro-82M",
+                    model=kmodel,
+                )
+                logger.info(
+                    "Kokoro: loaded fine-tuned model weights from %s "
+                    "(decoder + predictor + text_encoder + bert)",
+                    finetune_path,
+                )
+            except Exception as e:                              # noqa: BLE001
+                logger.warning(
+                    "Kokoro: fine-tuned model load failed (%s); "
+                    "falling back to stock KPipeline with voicepack "
+                    "only.", e,
+                )
+                self._model = KPipeline(
+                    lang_code="a",
+                    device=self.device,
+                )
+        else:
+            self._model = KPipeline(
+                lang_code="a",
+                device=self.device,
+            )
         logger.info(
             "Kokoro ready (voice=%s, device=%s, sample_rate=%d)",
             self._voice_display, self.device, self._sample_rate,
