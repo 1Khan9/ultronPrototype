@@ -2166,6 +2166,21 @@ class GamingModeConfig(_Strict):
     docker_executable_path: Optional[str] = None
     docker_process_name: str = "Docker Desktop"
     log_path: str = "logs/gaming_mode.jsonl"
+    # 2026-05-22 -- gaming mode swaps the active LLM to a smaller
+    # preset on engage to free VRAM for the game. Empty string
+    # disables the swap; any other value must be a key in
+    # ``LLM_PRESETS`` (validated at runtime). The matching disengage
+    # restores whatever preset was active before engage.
+    #
+    # Default ``llama-3.2-3b-abliterated`` (~2.0 GB on GPU vs ~2.7 GB
+    # for Qwen 3.5 4B + ~700 MB for its 8192-ctx KV cache) frees
+    # roughly 1.5 GB of VRAM. The 2048-context KV cache also fits a
+    # short gaming session conversation comfortably. Designed as the
+    # gaming preset (see LLM_PRESETS comment on this preset).
+    #
+    # Set to ``""`` to disable the swap (keep the standby LLM during
+    # gaming -- only Kokoro + VLM swaps fire).
+    llm_preset: str = "llama-3.2-3b-abliterated"
 
 
 class DesktopConfig(_Strict):

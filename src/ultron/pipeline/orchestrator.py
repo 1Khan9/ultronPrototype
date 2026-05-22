@@ -646,6 +646,9 @@ class Orchestrator:
             from ultron.openclaw_routing.gaming_mode import GamingModeManager
 
             # 2026-05-22 Gaming mode VRAM/RAM reclaim:
+            # - LLM hot-swaps to ``gaming_mode.llm_preset`` (default
+            #   llama-3.2-3b-abliterated; ~2.0 GB) on engage; restores
+            #   the prior preset on disengage. Saves ~1.5 GB VRAM.
             # - Kokoro engine flips to CPU (saves ~330 MB VRAM when
             #   configured on CUDA; disengage restores to configured
             #   device).
@@ -655,9 +658,36 @@ class Orchestrator:
             #   the next SCREEN_CONTEXT_QUERY after disengage.
             # All hooks are best-effort: missing attribute / failed
             # call logs WARN and leaves the original state.
-            tts_kokoro_default_device = get_config().tts.kokoro.device
+            full_cfg = get_config()
+            tts_kokoro_default_device = full_cfg.tts.kokoro.device
+            gaming_llm_preset = (cfg.llm_preset or "").strip()
+            # Cell to share the pre-engage preset between callbacks.
+            llm_preset_before_engage: dict = {"value": None}
 
             def _engage_extra():
+                if gaming_llm_preset:
+                    llm = getattr(self, "llm", None)
+                    if llm is not None and hasattr(llm, "reload_for_preset"):
+                        try:
+                            current_preset = get_config().llm.preset
+                            if current_preset != gaming_llm_preset:
+                                ok, msg = llm.reload_for_preset(gaming_llm_preset)
+                                if ok:
+                                    llm_preset_before_engage["value"] = current_preset
+                                    logger.info(
+                                        "gaming engage: LLM swapped %s -> %s",
+                                        current_preset, gaming_llm_preset,
+                                    )
+                                else:
+                                    logger.warning(
+                                        "gaming engage: LLM swap to %s failed (%s); "
+                                        "keeping %s",
+                                        gaming_llm_preset, msg, current_preset,
+                                    )
+                        except Exception as e:                    # noqa: BLE001
+                            logger.warning(
+                                "gaming engage: LLM swap skipped (%s)", e,
+                            )
                 tts = getattr(self, "tts", None)
                 if tts is not None and hasattr(tts, "move_to_device"):
                     tts.move_to_device("cpu")
@@ -673,6 +703,28 @@ class Orchestrator:
                 tts = getattr(self, "tts", None)
                 if tts is not None and hasattr(tts, "move_to_device"):
                     tts.move_to_device(tts_kokoro_default_device)
+                prior_preset = llm_preset_before_engage["value"]
+                if prior_preset is not None:
+                    llm = getattr(self, "llm", None)
+                    if llm is not None and hasattr(llm, "reload_for_preset"):
+                        try:
+                            ok, msg = llm.reload_for_preset(prior_preset)
+                            if ok:
+                                logger.info(
+                                    "gaming disengage: LLM restored to %s",
+                                    prior_preset,
+                                )
+                            else:
+                                logger.warning(
+                                    "gaming disengage: LLM restore to %s failed (%s); "
+                                    "stuck on gaming preset",
+                                    prior_preset, msg,
+                                )
+                        except Exception as e:                    # noqa: BLE001
+                            logger.warning(
+                                "gaming disengage: LLM restore skipped (%s)", e,
+                            )
+                    llm_preset_before_engage["value"] = None
 
             manager = GamingModeManager(
                 client=client,
@@ -687,9 +739,10 @@ class Orchestrator:
             logger.info(
                 "GamingModeManager ready (plugins=%s, toggle_docker=%s, "
                 "kokoro_engage_device=cpu, kokoro_disengage_device=%s, "
-                "vlm_unload_on_engage=True)",
+                "vlm_unload_on_engage=True, llm_preset=%s)",
                 cfg.plugins_to_disable, cfg.toggle_docker,
                 tts_kokoro_default_device,
+                gaming_llm_preset or "(no swap)",
             )
             return manager
         except Exception as e:                                       # noqa: BLE001

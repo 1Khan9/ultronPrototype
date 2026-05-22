@@ -248,6 +248,121 @@ def test_engage_callback_failure_does_not_break_engage(tmp_path):
     assert mgr.status() == GamingModeStatus.ENGAGED
 
 
+# ---------------------------------------------------------------------------
+# LLM preset swap on engage / restore on disengage
+# ---------------------------------------------------------------------------
+
+
+class _StubLLM:
+    """LLMEngine-shaped stub with reload_for_preset + preset state."""
+
+    def __init__(self, preset: str):
+        self.current_preset = preset
+        self.swap_calls: list[str] = []
+
+    def reload_for_preset(self, preset: str):
+        self.swap_calls.append(preset)
+        self.current_preset = preset
+        return True, f"loaded {preset}"
+
+
+def test_llm_swaps_to_gaming_preset_on_engage_and_restores_on_disengage(monkeypatch):
+    """Mirror of the orchestrator wiring: engage swaps to the gaming
+    preset, disengage restores the prior preset captured at engage time.
+    """
+    from ultron.config import get_config
+
+    llm = _StubLLM(preset="qwen3.5-4b")
+    gaming_preset = "llama-3.2-3b-abliterated"
+    preset_before_engage = {"value": None}
+
+    # Mirror get_config().llm.preset by patching it to read from llm.
+    cfg = get_config()
+    saved_preset = cfg.llm.preset
+    cfg.llm.preset = "qwen3.5-4b"
+
+    def _engage_extra():
+        current = get_config().llm.preset
+        if current != gaming_preset:
+            ok, _ = llm.reload_for_preset(gaming_preset)
+            if ok:
+                preset_before_engage["value"] = current
+                cfg.llm.preset = gaming_preset
+
+    def _disengage_extra():
+        prior = preset_before_engage["value"]
+        if prior is not None:
+            llm.reload_for_preset(prior)
+            cfg.llm.preset = prior
+            preset_before_engage["value"] = None
+
+    try:
+        mgr = GamingModeManager(
+            client=_StubClient(), plugins_to_disable=["desktop-control"],
+            on_engaged=_engage_extra,
+            on_disengaged=_disengage_extra,
+        )
+        asyncio.run(mgr.engage())
+        assert llm.swap_calls == [gaming_preset]
+        assert llm.current_preset == gaming_preset
+        assert preset_before_engage["value"] == "qwen3.5-4b"
+
+        asyncio.run(mgr.disengage())
+        assert llm.swap_calls == [gaming_preset, "qwen3.5-4b"]
+        assert llm.current_preset == "qwen3.5-4b"
+        assert preset_before_engage["value"] is None
+    finally:
+        cfg.llm.preset = saved_preset
+
+
+def test_llm_swap_skipped_when_already_on_gaming_preset(monkeypatch):
+    """No swap call if config already has the gaming preset active."""
+    from ultron.config import get_config
+
+    llm = _StubLLM(preset="llama-3.2-3b-abliterated")
+    gaming_preset = "llama-3.2-3b-abliterated"
+    preset_before_engage = {"value": None}
+
+    cfg = get_config()
+    saved_preset = cfg.llm.preset
+    cfg.llm.preset = "llama-3.2-3b-abliterated"
+
+    def _engage_extra():
+        current = get_config().llm.preset
+        if current != gaming_preset:
+            llm.reload_for_preset(gaming_preset)
+            preset_before_engage["value"] = current
+
+    try:
+        mgr = GamingModeManager(
+            client=_StubClient(), plugins_to_disable=["desktop-control"],
+            on_engaged=_engage_extra,
+        )
+        asyncio.run(mgr.engage())
+        assert llm.swap_calls == []
+        assert preset_before_engage["value"] is None
+    finally:
+        cfg.llm.preset = saved_preset
+
+
+def test_gaming_mode_config_has_default_llm_preset():
+    """The default config carries the gaming-mode preset (llama-3.2-3b)
+    so users get the VRAM savings without manual config edits."""
+    from ultron.config import GamingModeConfig
+
+    cfg = GamingModeConfig()
+    assert cfg.llm_preset == "llama-3.2-3b-abliterated"
+
+
+def test_gaming_mode_config_llm_preset_can_be_disabled():
+    """Empty string is the documented disable value -- no swap fires
+    when set, only Kokoro + VLM reclaim run."""
+    from ultron.config import GamingModeConfig
+
+    cfg = GamingModeConfig(llm_preset="")
+    assert cfg.llm_preset == ""
+
+
 def test_no_client_returns_clear_error():
     mgr = GamingModeManager(client=None, plugins_to_disable=["x"])
     report = asyncio.run(mgr.engage())

@@ -1086,6 +1086,10 @@ gaming_mode:
   docker_executable_path: null              # null = use default Windows path
   docker_process_name: "Docker Desktop"
   log_path: "logs/gaming_mode.jsonl"
+  # Smaller LLM swapped in on engage to free ~1.5 GB VRAM for the game.
+  # Disengage restores the prior preset. Set "" to disable the swap and
+  # keep the standby LLM during gaming.
+  llm_preset: "llama-3.2-3b-abliterated"
 
 # ---------------------------------------------------------------------------
 # Desktop control (V1-spec gap C3) — voice routing for the OpenClaw
