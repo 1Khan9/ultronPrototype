@@ -283,6 +283,8 @@ class DirectTaskHandle(TaskHandle):
                 subprocess.run(
                     ["taskkill", "/F", "/T", "/PID", str(self._proc.pid)],
                     capture_output=True, check=False,
+                    creationflags=(subprocess.CREATE_NO_WINDOW
+                                   if hasattr(subprocess, "CREATE_NO_WINDOW") else 0),
                 )
             else:
                 self._proc.send_signal(signal.SIGTERM)
@@ -318,6 +320,8 @@ class DirectTaskHandle(TaskHandle):
                 encoding="utf-8",
                 errors="replace",
                 bufsize=1,  # line-buffered
+                creationflags=(subprocess.CREATE_NO_WINDOW
+                                if hasattr(subprocess, "CREATE_NO_WINDOW") else 0),
             )
         except Exception as e:
             logger.error("Failed to launch claude: %s", e)

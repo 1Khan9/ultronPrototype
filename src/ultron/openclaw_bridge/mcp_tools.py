@@ -255,6 +255,8 @@ def run_maintenance_impl(scope: Optional[List[str]] = None) -> Dict[str, Any]:
             text=True,
             timeout=2400,                                       # 40 min hard cap
             cwd=str(project_root),
+            creationflags=(subprocess.CREATE_NO_WINDOW
+                           if hasattr(subprocess, "CREATE_NO_WINDOW") else 0),
         )
     except subprocess.TimeoutExpired:
         return {

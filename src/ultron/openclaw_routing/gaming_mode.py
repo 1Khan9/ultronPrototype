@@ -322,6 +322,8 @@ class GamingModeManager:
                 capture_output=True,
                 text=True,
                 timeout=10,
+                creationflags=(subprocess.CREATE_NO_WINDOW
+                               if hasattr(subprocess, "CREATE_NO_WINDOW") else 0),
             )
         except (OSError, subprocess.SubprocessError) as e:
             return False, str(e)[:200]

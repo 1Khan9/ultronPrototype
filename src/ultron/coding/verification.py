@@ -391,6 +391,8 @@ class Verifier:
                  str(root)],
                 capture_output=True, text=True, timeout=self.test_timeout_s,
                 cwd=str(root),
+                creationflags=(subprocess.CREATE_NO_WINDOW
+                               if hasattr(subprocess, "CREATE_NO_WINDOW") else 0),
             )
             stdout = (proc.stdout or "")
             stderr = (proc.stderr or "")
@@ -451,6 +453,8 @@ class Verifier:
                 [npm, "test", "--silent"],
                 capture_output=True, text=True, timeout=self.test_timeout_s,
                 cwd=str(root),
+                creationflags=(subprocess.CREATE_NO_WINDOW
+                               if hasattr(subprocess, "CREATE_NO_WINDOW") else 0),
             )
         except subprocess.TimeoutExpired:
             return CheckResult(
@@ -515,6 +519,8 @@ class Verifier:
                 capture_output=True, text=True,
                 cwd=str(session.project_root),
                 timeout=self.smoke_timeout_s,
+                creationflags=(subprocess.CREATE_NO_WINDOW
+                               if hasattr(subprocess, "CREATE_NO_WINDOW") else 0),
             )
         except subprocess.TimeoutExpired:
             # Exceeding the smoke timeout means the program is still
@@ -582,6 +588,8 @@ class Verifier:
                 [self.python_executable, "-c", f"import {pkg_name}"],
                 capture_output=True, text=True, env=env,
                 timeout=self.smoke_timeout_s,
+                creationflags=(subprocess.CREATE_NO_WINDOW
+                               if hasattr(subprocess, "CREATE_NO_WINDOW") else 0),
             )
         except subprocess.TimeoutExpired:
             return CheckResult(
@@ -621,6 +629,8 @@ class Verifier:
                 [self.python_executable, "-m", "py_compile", *map(str, py_files)],
                 capture_output=True, text=True,
                 timeout=self.lint_timeout_s,
+                creationflags=(subprocess.CREATE_NO_WINDOW
+                               if hasattr(subprocess, "CREATE_NO_WINDOW") else 0),
             )
         except subprocess.TimeoutExpired:
             return CheckResult(
