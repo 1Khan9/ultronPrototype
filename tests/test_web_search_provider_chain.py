@@ -194,16 +194,25 @@ def test_chain_falls_through_on_exception(monkeypatch):
 
 def test_chain_skips_unconstructable_provider(monkeypatch):
     """If a provider's factory raises at construction (e.g., missing
-    Brave key), the chain skips it without crashing."""
+    Brave key), the chain skips it without crashing.
+
+    Uses ``monkeypatch.setattr`` so the original ``_PROVIDER_FACTORIES``
+    is restored at teardown — direct class-level assignment would
+    permanently mutate state and break later tests.
+    """
     from ultron.web_search import provider_chain as pc_module
 
-    pc_module.SearchProviderChain._PROVIDER_FACTORIES = {
-        "searxng": lambda: _stub_provider([]),
-        "brave": lambda: (_ for _ in ()).throw(
-            ValueError("Brave API key missing"),
-        ),
-        "duckduckgo": lambda: _stub_provider([_result("https://ddg.test")]),
-    }
+    monkeypatch.setattr(
+        pc_module.SearchProviderChain,
+        "_PROVIDER_FACTORIES",
+        {
+            "searxng": lambda: _stub_provider([]),
+            "brave": lambda: (_ for _ in ()).throw(
+                ValueError("Brave API key missing"),
+            ),
+            "duckduckgo": lambda: _stub_provider([_result("https://ddg.test")]),
+        },
+    )
     chain = pc_module.SearchProviderChain(["searxng", "brave", "duckduckgo"])
     out = chain.search("hello")
     assert len(out) == 1

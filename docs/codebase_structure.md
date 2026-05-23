@@ -11,11 +11,12 @@
 > current — see "Maintenance contract" at the bottom.
 >
 > **Validating HEAD:** `65fc49c` on `origin/main` (this doc-bump is on
-> top of feature commit `8bbc345`). Tests **4593 passing / 16 skipped /
-> 0 failed in ~78 s** via `scripts/run_tests.py` (baseline 4240 +
+> top of feature commit `8bbc345`). Tests **4612 passing / 16 skipped /
+> 0 failed in ~86 s** via `scripts/run_tests.py` (baseline 4240 +
 > 82 batch 1 + 29 batch 2 + 22 batch 3 + 21 batch 4 + 36 batch 5 +
 > 22 batch 6 + 8 batch 7 + 30 batch 8 + 21 batch 9 + 26 batch 10 +
-> 56 batch 11).
+> 56 batch 11 + 19 batch 12; +2 from the sweep-durability test-pollution
+> fix to two pre-existing tests).
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -31,6 +32,55 @@
 > the commit — don't bypass with `--no-verify`. The full hygiene
 > contract lives in the local-only `CLAUDE.md` orientation file and
 > the auto-loaded `MEMORY.md` index.
+
+**2026-05-22 sweep durability fix -- COMPLETE.** Operator-facing fix for the recurring "the test sweep keeps getting killed in the background" frustration. Root causes identified + fixed:
+
+1. **Test pollution.** [`tests/test_web_search_reader_chain.py`](../tests/test_web_search_reader_chain.py) and [`tests/test_web_search_provider_chain.py`](../tests/test_web_search_provider_chain.py) each had a test that PERMANENTLY mutated a class-level dict (`ReaderChain._READER_FACTORIES` / `SearchProviderChain._PROVIDER_FACTORIES`) — the tests accepted `monkeypatch` as a fixture but never used it. After they ran, downstream tests that introspected the original factory set failed. **Fix:** wrap both mutations in `monkeypatch.setattr(...)` so the original dict is restored at teardown. The 2 pre-existing tests in question keep passing; ~2 downstream tests (added in batch 12) no longer fail under sweep ordering.
+
+2. **Harness-orphan pytest accumulation.** The Claude harness sometimes falsely reports a backgrounded tool call as "completed" while its pytest child is still alive. Subsequent sweep invocations then race against the orphan. **Fix:** [`scripts/run_tests.py`](../scripts/run_tests.py) gains a process-mutex lock at `data/.run_tests.lock` containing the active sweep's PID. Stale-lock recovery handles the crashed-instance case. An orphan-kill pass (anything older than `ORPHAN_AGE_SECONDS=5min` killed unconditionally, no operator prompt) catches the specific harness-leak pattern. The double-`psutil.wait_procs` ensures SIGKILL takes effect on Windows where `terminate()` is sometimes slow.
+
+3. **Background-mode opacity.** PowerShell + `Select-Object -Last N` buffers the entire stream before emitting; the operator can't see whether the sweep is alive or stuck. **Fix:** [`tests/conftest.py`](../tests/conftest.py) gains four pytest hooks (`pytest_sessionstart`, `pytest_runtest_logstart`, `pytest_runtest_logreport`, `pytest_sessionfinish` augmented) that maintain three external observation surfaces:
+   * `data/.run_tests_heartbeat` — mtime + content timestamp updated before every test.
+   * `data/.run_tests_current` — name of the currently-running test (or terminal status: `(session_ended status=N)`).
+   * `data/.run_tests_progress.jsonl` — one JSON line per session event + per test start/passed/failed/skipped with duration. Truncated at sweep start so the file always reflects the CURRENT sweep.
+
+4. **`--wait` mode** for legitimate concurrency. Instead of killing competing sweeps, callers can pass `--wait` and `scripts/run_tests.py` polls until the other sweep finishes, then acquires the lock and runs. Useful in CI pipelines where parallel jobs are expected.
+
+End-to-end check: a sweep that previously appeared "hung" via the background mode now exposes its real state via `cat data/.run_tests_current` + `tail data/.run_tests_progress.jsonl`. A killed-prematurely sweep is unambiguously visible because the JSONL never gets a `session_end` event.
+
+The lock file, heartbeat, current-test marker, progress JSONL, and a separate repo-map cache directory are all gitignored ([`.gitignore`](../.gitignore) entries added).
+
+The feedback memory [`feedback_test_sweep_workflow.md`](C:\Users\alecf\.claude\projects\C--STC-ultronPrototype\memory\feedback_test_sweep_workflow.md) (written separately) captures the operator-facing workflow rules.
+
+---
+
+**2026-05-22 catalog batch 12: JS-aware web-search reader tier (T13 — slimdown_html + pandoc + Playwright) -- COMPLETE.** Three new readers slot into the existing `web_search.reader_chain`: `slimdown_html` (aggressive HTML preprocessing that drops scripts/styles/svg/forms + non-href attributes + data: URLs), `pandoc_converter` (HTML→Markdown via pypandoc), and `PlaywrightReader` (JS-aware extraction via headless Chromium, OPT-IN only — the ~150 MB Chromium download is the user's choice). The chain's `_READER_FACTORIES` now knows about `playwright` so operators can flip `web_search.readers: ["trafilatura", "playwright", "jina"]` to escalate to JS rendering before paying for Jina. Tests **4612 passing / 16 skipped / 0 failed in ~78 s** (+19 net; baseline 4593 from batch 11).
+
+* **NEW [`src/ultron/web_search/slimdown_html.py`](../src/ultron/web_search/slimdown_html.py).** Aggressive HTML preprocessing via `bs4`. Drops `<svg>` / `<img>` / `<style>` / `<script>` / `<noscript>` / `<iframe>` / `<video>` / `<audio>` / `<canvas>` / `<button>` / `<input>` / `<select>` / `<form>` / `<textarea>` / `<object>` / `<embed>` subtrees. Strips every attribute EXCEPT `href` / `src` on remaining tags. Drops `data:` / `blob:` / `javascript:` schemes (catches base64-image bombs). Fail-open: missing bs4 returns input unchanged.
+
+* **NEW [`src/ultron/web_search/pandoc_converter.py`](../src/ultron/web_search/pandoc_converter.py).** Thin pypandoc wrapper.
+  * `html_to_markdown(html_text) -> Optional[str]` — converts via `pypandoc.convert_text(text, to="markdown_strict", format="html", extra_args=["--wrap=none", "--columns=200"])`. Returns None on missing pypandoc, missing Pandoc system binary, or conversion exception.
+  * `pandoc_available()` — probes BOTH layers (Python wrapper + system binary). Callers can decide whether to skip the conversion step.
+  * No auto-install of the Pandoc binary (catalog suggestion declined: Pandoc is a 150 MB+ system install; user opts in).
+
+* **NEW [`src/ultron/web_search/playwright_reader.py`](../src/ultron/web_search/playwright_reader.py).** JS-aware reader.
+  * `class PlaywrightReader(*, wait_until="networkidle", navigation_timeout_ms=5000, run_pandoc=True)` matches the `fetch(url) -> Optional[str]` interface used by the rest of the reader chain.
+  * LAZY browser construction: the Chromium process launches on the FIRST `fetch` call, not at construction. Import + construct stay cheap when the feature isn't actually used.
+  * Sanitised User-Agent — strips `HeadlessChrome` → `Chrome` so sites blocking headless browsers serve content.
+  * Pipeline: navigate (wait_until="networkidle") → `page.content()` post-JS DOM → :func:`slimdown_html` → :func:`html_to_markdown`. Pandoc fallback: when pandoc unavailable, returns the slimmed HTML.
+  * `.close()` releases the Chromium process. Idempotent.
+
+* **Integration: [`src/ultron/web_search/reader_chain.py`](../src/ultron/web_search/reader_chain.py).** `_READER_FACTORIES` gains `"playwright"` → lazy `_make_playwright()` factory. Existing `web_search.readers` config can now include `"playwright"`. Chain failure semantics unchanged: a reader returning None falls through; existing trafilatura → jina cascade preserved.
+
+* **Deps:** `beautifulsoup4>=4.12` + `pypandoc>=1.13` added to `pyproject.toml` runtime deps. `playwright` is INTENTIONALLY NOT a hard dep — its Chromium download is ~150 MB and the user should opt in deliberately. The reader gracefully no-ops with an info-level log when the playwright Python package isn't installed.
+
+* **Tests.** 19 new in [`tests/test_web_search_readers.py`](../tests/test_web_search_readers.py):
+  * `slimdown_html` (9): drops script / style / img + svg / form widgets, strips non-href attributes, drops data: URLs, empty input, malformed HTML survived, paragraphs + href preserved.
+  * `pandoc_converter` (4): `pandoc_available()` returns bool, empty input returns None, conversion behaviour depends on system Pandoc (succeeds when available, returns None when not), invalid input handled gracefully.
+  * `PlaywrightReader` (4): constructs without playwright installed, fetch returns None when unavailable, close-when-not-started safe, empty URL returns None.
+  * `ReaderChain` registration (2): `playwright` in `_READER_FACTORIES`, chain construction with playwright-only id works.
+
+---
 
 **2026-05-22 catalog batch 11: spinner + V4A patch + multi-coder mode descriptors (T11 + T17 + T26) -- COMPLETE.** Three small independent items shipped together: an ASCII bounce spinner with cursor-stagger continuity (T11), a V4A patch-format parser/applier with fuzz-tier matching (T17), and a coder-mode descriptor registry (T26). All three are pure utilities with no runtime wiring requirement. Tests **4593 passing / 16 skipped / 0 failed in ~78 s** (+56 net; baseline 4537 from batch 10).
 

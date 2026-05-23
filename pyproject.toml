@@ -28,6 +28,13 @@ dependencies = [
     "tree_sitter>=0.21",
     "grep_ast>=0.3",
     "watchfiles>=0.21",
+    # 2026-05-22 catalog batch 12: slimdown_html (bs4) + pandoc (pypandoc)
+    # for web-search readers. pypandoc additionally requires the Pandoc
+    # SYSTEM binary; readers fail-open + skip the conversion if missing.
+    # Playwright is intentionally NOT a hard dep (~150 MB Chromium
+    # download); PlaywrightReader gracefully no-ops when missing.
+    "beautifulsoup4>=4.12",
+    "pypandoc>=1.13",
 ]
 
 [project.optional-dependencies]

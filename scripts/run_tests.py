@@ -66,15 +66,128 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 
 
+# Sweep-durability tunables (2026-05-22).
+#
+# Any pytest process older than this is treated as an ORPHAN — killed
+# unconditionally with no operator prompt. The Claude harness
+# sometimes backgrounds a tool call, marks it as "completed" while
+# the actual pytest child is still alive, and that orphan then blocks
+# the next sweep's conftest concurrent-run guard. 5 min is more than
+# enough for any legitimate sweep (typical: 75-80 s, slowest ever
+# observed: ~3 min including a CUDA-warmup test).
+ORPHAN_AGE_SECONDS = 5 * 60
+
+
+# Mutex file path. Two concurrent ``scripts/run_tests.py`` invocations
+# clobber each other's MCP port + fixture-file locks; even if both
+# pre-flight kills run successfully against an empty list, the two
+# sweeps race against each other from second one onward. The lock
+# file is the explicit mutex. Cleanup is registered via ``atexit``
+# so a crash leaves a stale lock; the next invocation detects the
+# stale PID and recovers.
+SWEEP_LOCK_FILE = ROOT / "data" / ".run_tests.lock"
+
+
 # ---------------------------------------------------------------------------
 # Pre-flight: kill any other pytest processes on this codebase
 # ---------------------------------------------------------------------------
 
 
-def _list_competing_pytests() -> list[dict]:
+def _acquire_sweep_lock() -> bool:
+    """Acquire the cross-instance sweep lock or return False.
+
+    The lock is a file at :data:`SWEEP_LOCK_FILE` containing the PID
+    of the active sweep. On entry:
+
+      * If the file doesn't exist → write our PID, return True.
+      * If it exists with a live python PID whose cmdline mentions
+        ``run_tests.py`` or ``pytest`` → another sweep is alive,
+        return False.
+      * If it exists with a dead PID (stale lock from a crashed
+        instance) → overwrite with our PID, return True.
+
+    Cleanup is registered via :mod:`atexit`. A SIGTERM bypasses the
+    cleanup, so stale-lock recovery on the next invocation is the
+    real safety net.
+    """
+    try:
+        import psutil  # type: ignore[import]
+    except ImportError:
+        # No psutil → can't check the existing PID's liveness.
+        # Honor the lock conservatively: if it exists, treat as held.
+        if SWEEP_LOCK_FILE.exists():
+            print(
+                f"!!! sweep lock at {SWEEP_LOCK_FILE} held; psutil "
+                "unavailable to check liveness. Delete the file if "
+                "this is a stale lock."
+            )
+            return False
+        SWEEP_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SWEEP_LOCK_FILE.write_text(str(os.getpid()), encoding="utf-8")
+        return True
+
+    SWEEP_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if SWEEP_LOCK_FILE.exists():
+        try:
+            existing_pid_text = SWEEP_LOCK_FILE.read_text(encoding="utf-8").strip()
+            existing_pid = int(existing_pid_text)
+        except (OSError, ValueError):
+            existing_pid = -1
+        if existing_pid > 0 and psutil.pid_exists(existing_pid):
+            try:
+                proc = psutil.Process(existing_pid)
+                cmd_joined = " ".join(proc.cmdline()).lower()
+                if "run_tests.py" in cmd_joined or "pytest" in cmd_joined:
+                    print(
+                        f"!!! Another scripts/run_tests.py instance is "
+                        f"already active (PID {existing_pid}).\n"
+                        f"    Use --wait to wait, or kill it manually."
+                    )
+                    return False
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        # Stale lock file from a crashed previous instance.
+        print(
+            f"  Recovering stale sweep lock at {SWEEP_LOCK_FILE} "
+            f"(was PID {existing_pid}, no longer alive)."
+        )
+
+    try:
+        SWEEP_LOCK_FILE.write_text(str(os.getpid()), encoding="utf-8")
+    except OSError as e:
+        print(f"!!! Could not write sweep lock file: {e}")
+        return False
+    return True
+
+
+def _release_sweep_lock() -> None:
+    """Drop the sweep lock if we own it. Safe to call multiple times."""
+    try:
+        if not SWEEP_LOCK_FILE.exists():
+            return
+        try:
+            held_by = SWEEP_LOCK_FILE.read_text(encoding="utf-8").strip()
+        except OSError:
+            return
+        if held_by != str(os.getpid()):
+            return  # someone else's lock; don't touch
+        SWEEP_LOCK_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _list_competing_pytests(include_age: bool = False) -> list[dict]:
     """Return process info for any python.exe processes running
     pytest on this codebase EXCLUDING this script's own PID + its
-    ancestors."""
+    ancestors.
+
+    Args:
+        include_age: When True, attaches an ``age_seconds`` field
+            computed from ``create_time()``. Used by the orphan-kill
+            pass to distinguish young (probably-legitimate) competing
+            sweeps from old orphans left behind by background harness
+            cancellations.
+    """
     try:
         import psutil  # type: ignore[import]
     except ImportError:
@@ -90,8 +203,9 @@ def _list_competing_pytests() -> list[dict]:
         ancestors = set()
     ancestors.add(me_pid)
 
+    now = time.time()
     found = []
-    for p in psutil.process_iter(attrs=["pid", "name", "cmdline"]):
+    for p in psutil.process_iter(attrs=["pid", "name", "cmdline", "create_time"]):
         try:
             name = (p.info.get("name") or "").lower()
             if "python" not in name:
@@ -104,7 +218,13 @@ def _list_competing_pytests() -> list[dict]:
                 continue
             if p.info["pid"] in ancestors:
                 continue
-            found.append(p.info)
+            info = dict(p.info)
+            if include_age:
+                try:
+                    info["age_seconds"] = now - float(p.info.get("create_time") or now)
+                except (TypeError, ValueError):
+                    info["age_seconds"] = 0.0
+            found.append(info)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
     return found
@@ -112,39 +232,72 @@ def _list_competing_pytests() -> list[dict]:
 
 def _kill_competing_pytests(yes: bool = False) -> bool:
     """Terminate any competing pytest processes. Returns True if the
-    slate is clean afterwards."""
+    slate is clean afterwards.
+
+    Two passes:
+
+      1. **Aggressive orphan kill**: anything older than
+         :data:`ORPHAN_AGE_SECONDS` (5 min) gets killed unconditionally
+         WITH NO PROMPT. These are the leftover pytest workers the
+         Claude harness sometimes orphans when it backgrounds a
+         tool call — they're never legitimate and only cause
+         conftest concurrent-run blocks.
+      2. **Recent-run kill**: anything under that age is also killed
+         but with a printed notice so the operator can see it
+         happen. (Same behaviour as the previous revision.)
+
+    Each pass: ``terminate()`` first, wait up to 3 s, then ``kill()``
+    survivors. Final ``_list_competing_pytests()`` check verifies the
+    slate is clear before we return True.
+    """
     try:
         import psutil  # type: ignore[import]
     except ImportError:
         return True
 
-    competing = _list_competing_pytests()
+    competing = _list_competing_pytests(include_age=True)
     if not competing:
         return True
 
-    print(f"\n!!! Found {len(competing)} other pytest process(es) running "
-          "on this codebase:")
-    for c in competing:
-        cmd_preview = " ".join((c["cmdline"] or [])[:5])
-        print(f"      PID {c['pid']}: {cmd_preview}")
-    if not yes:
-        print("\n  These will be terminated before the new sweep starts.")
-        print("  (Concurrent runs contend for fixture locks + GPU memory")
-        print("   and cause the symptom of 'pytest hangs at 0 % CPU'.)")
+    orphans = [c for c in competing if c.get("age_seconds", 0.0) >= ORPHAN_AGE_SECONDS]
+    recent = [c for c in competing if c.get("age_seconds", 0.0) < ORPHAN_AGE_SECONDS]
 
-    killed = []
-    for c in competing:
+    if orphans:
+        print(
+            f"\n!!! Found {len(orphans)} ORPHAN pytest process(es) "
+            f"(older than {ORPHAN_AGE_SECONDS:.0f}s; killing unconditionally):"
+        )
+        for c in orphans:
+            cmd_preview = " ".join((c["cmdline"] or [])[:5])
+            age = c.get("age_seconds", 0.0)
+            print(f"      PID {c['pid']} ({age:.0f}s old): {cmd_preview}")
+    if recent:
+        print(
+            f"\n!!! Found {len(recent)} other (recent) pytest process(es) "
+            "running on this codebase:"
+        )
+        for c in recent:
+            cmd_preview = " ".join((c["cmdline"] or [])[:5])
+            age = c.get("age_seconds", 0.0)
+            print(f"      PID {c['pid']} ({age:.0f}s old): {cmd_preview}")
+        if not yes:
+            print("\n  These will be terminated before the new sweep starts.")
+            print("  (Concurrent runs contend for fixture locks + GPU memory")
+            print("   and cause the symptom of 'pytest hangs at 0 % CPU'.")
+            print("  Pass --wait to wait for them to finish instead.)")
+
+    killed_pids: list[int] = []
+    for c in (orphans + recent):
         try:
             proc = psutil.Process(c["pid"])
             proc.terminate()
-            killed.append(c["pid"])
+            killed_pids.append(c["pid"])
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
-    if killed:
+    if killed_pids:
         try:
-            # Give them 3 seconds to exit gracefully, then SIGKILL.
             _gone, alive = psutil.wait_procs(
-                [psutil.Process(pid) for pid in killed
+                [psutil.Process(pid) for pid in killed_pids
                  if psutil.pid_exists(pid)],
                 timeout=3.0,
             )
@@ -153,16 +306,61 @@ def _kill_competing_pytests(yes: bool = False) -> bool:
                     p.kill()
                 except psutil.NoSuchProcess:
                     pass
+            # Second wait for SIGKILL to take effect on Windows.
+            psutil.wait_procs(
+                [psutil.Process(pid) for pid in killed_pids
+                 if psutil.pid_exists(pid)],
+                timeout=2.0,
+            )
         except Exception:
             pass
 
-    # Final check
     leftover = _list_competing_pytests()
     if leftover:
         print(f"\n!!! Could not terminate all competing pytest processes; "
               f"{len(leftover)} still running. Bailing out.")
+        print(
+            "   Manual fix: Get-Process -Name python | "
+            "Where-Object {{$_.CommandLine -match 'pytest'}} | "
+            "Stop-Process -Force"
+        )
         return False
     return True
+
+
+def _wait_for_competing_pytests(poll_seconds: float = 2.0) -> bool:
+    """Block until no competing pytest is running, then return True.
+
+    Used by ``--wait`` mode: instead of killing concurrent sweeps,
+    politely wait for them to finish. Useful in CI pipelines where
+    several parallel jobs may legitimately want to run tests against
+    the same checkout.
+
+    Always returns True (we wait forever; the operator's Ctrl-C is
+    the only escape). On psutil unavailability returns True
+    immediately.
+    """
+    try:
+        import psutil  # type: ignore[import]  # noqa: F401
+    except ImportError:
+        return True
+    waited = 0.0
+    while True:
+        competing = _list_competing_pytests()
+        if not competing:
+            if waited > 0:
+                print(f"  Waited {waited:.0f}s for competing sweep(s) to finish.")
+            return True
+        if waited == 0:
+            print(
+                f"\n!!! --wait mode: {len(competing)} competing pytest "
+                "process(es) detected. Waiting for them to finish...",
+            )
+            for c in competing:
+                cmd_preview = " ".join((c["cmdline"] or [])[:5])
+                print(f"      PID {c['pid']}: {cmd_preview}")
+        time.sleep(poll_seconds)
+        waited += poll_seconds
 
 
 # ---------------------------------------------------------------------------
@@ -196,14 +394,47 @@ def main(argv: list[str]) -> int:
         "-y", "--yes", action="store_true",
         help="Don't prompt for the pre-flight kill confirmation.",
     )
+    parser.add_argument(
+        "--wait", action="store_true",
+        help=(
+            "Wait for any competing pytest runs to finish instead of "
+            "killing them. Useful in CI pipelines with parallel jobs."
+        ),
+    )
     args = parser.parse_args(argv)
 
-    # Step 1: pre-flight kill any competing pytest invocations.
+    # Step 1: pre-flight clean-up. ``--wait`` mode politely waits for
+    # competing sweeps; default mode kills orphans + recent
+    # competitors. Either way, the slate must be clear before we
+    # spawn the new pytest, or conftest's concurrent-run guard would
+    # block us.
     print("=" * 70)
     print("Ultron test runner")
     print("=" * 70)
-    if not _kill_competing_pytests(yes=args.yes):
-        return 4
+
+    # Cross-instance mutex: prevents two scripts/run_tests.py copies
+    # from racing each other (a real failure mode when the Claude
+    # harness falsely reports background tool calls as "completed"
+    # while their pytest child is still running).
+    if not _acquire_sweep_lock():
+        if args.wait:
+            print("  --wait mode: blocking until the other sweep finishes...")
+            if not _wait_for_competing_pytests():
+                return 4
+            if not _acquire_sweep_lock():
+                print("!!! Could not acquire sweep lock after wait.")
+                return 4
+        else:
+            return 4
+    import atexit
+    atexit.register(_release_sweep_lock)
+
+    if args.wait:
+        if not _wait_for_competing_pytests():
+            return 4
+    else:
+        if not _kill_competing_pytests(yes=args.yes):
+            return 4
 
     if args.kill_only:
         print("\n  Pre-flight kill complete. Exiting.")

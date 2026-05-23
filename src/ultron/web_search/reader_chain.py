@@ -57,6 +57,10 @@ class ReaderChain:
     _READER_FACTORIES = {
         "trafilatura": lambda: _make_trafilatura(),
         "jina": lambda: _make_jina(),
+        # 2026-05-22 catalog batch 12: JS-aware Playwright reader.
+        # Heavy (~150 MB Chromium); opt-in only. Gracefully no-ops
+        # when the playwright Python package isn't installed.
+        "playwright": lambda: _make_playwright(),
     }
 
     def __init__(self, reader_ids: Optional[List[str]] = None) -> None:
@@ -152,6 +156,11 @@ def _make_trafilatura():
 def _make_jina():
     from ultron.web_search.jina import JinaReaderClient
     return JinaReaderClient()
+
+
+def _make_playwright():
+    from ultron.web_search.playwright_reader import PlaywrightReader
+    return PlaywrightReader()
 
 
 __all__ = ["ReaderChain"]

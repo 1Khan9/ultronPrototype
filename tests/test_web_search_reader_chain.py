@@ -173,15 +173,27 @@ def test_chain_falls_through_on_exception():
 
 
 def test_chain_skips_unconstructable_reader(monkeypatch):
-    """Reader whose factory raises gets skipped without crashing."""
+    """Reader whose factory raises gets skipped without crashing.
+
+    Uses ``monkeypatch.setattr`` so the original ``_READER_FACTORIES``
+    is restored at teardown. Direct assignment (which an earlier
+    revision of this test did) PERMANENTLY mutates class state,
+    causing order-dependent failures in later tests that rely on
+    the original factory set (e.g. catalog batch 12's playwright
+    factory check).
+    """
     from ultron.web_search import reader_chain as rc_module
 
-    rc_module.ReaderChain._READER_FACTORIES = {
-        "trafilatura": lambda: (_ for _ in ()).throw(
-            ImportError("trafilatura missing"),
-        ),
-        "jina": lambda: _stub_reader("# Jina to the rescue"),
-    }
+    monkeypatch.setattr(
+        rc_module.ReaderChain,
+        "_READER_FACTORIES",
+        {
+            "trafilatura": lambda: (_ for _ in ()).throw(
+                ImportError("trafilatura missing"),
+            ),
+            "jina": lambda: _stub_reader("# Jina to the rescue"),
+        },
+    )
     chain = rc_module.ReaderChain(["trafilatura", "jina"])
     out = chain.fetch("https://example.test")
     assert out == "# Jina to the rescue"

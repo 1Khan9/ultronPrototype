@@ -223,3 +223,106 @@ def _kill_test_descendants() -> None:
 def pytest_sessionfinish(session, exitstatus):  # noqa: D401, ARG001
     """Pytest hook: best-effort reap of python descendants at session end."""
     _kill_test_descendants()
+    _finalise_progress_log(exitstatus)
+
+
+# ---------------------------------------------------------------------------
+# Progress + heartbeat surface (2026-05-22 sweep durability)
+# ---------------------------------------------------------------------------
+#
+# Background-mode pytest invocations (via the Claude harness, CI runners,
+# etc.) hide stdout until the pipeline drains, which means a hung test
+# is indistinguishable from "still running" from outside the process.
+# These hooks publish:
+#   * data/.run_tests_heartbeat  -- mtime updated before each test
+#   * data/.run_tests_current    -- name of the currently-running test
+#   * data/.run_tests_progress.jsonl  -- one line per test event
+#
+# External observers (operators, the harness, future CI dashboards)
+# can ``cat data/.run_tests_current`` to see "what's the sweep on?"
+# and ``stat data/.run_tests_heartbeat`` to detect staleness without
+# attaching a debugger. Files are gitignored under ``data/``.
+#
+# Fail-open at every entry: I/O errors don't break tests, the hooks
+# wrap everything in try/except.
+
+
+import json as _hook_json   # noqa: E402
+import time as _hook_time   # noqa: E402
+
+_HEARTBEAT_DIR = ROOT / "data"
+_HEARTBEAT_PATH = _HEARTBEAT_DIR / ".run_tests_heartbeat"
+_CURRENT_TEST_PATH = _HEARTBEAT_DIR / ".run_tests_current"
+_PROGRESS_LOG_PATH = _HEARTBEAT_DIR / ".run_tests_progress.jsonl"
+
+
+def pytest_sessionstart(session):  # noqa: ARG001, D401
+    """Initialise the heartbeat / progress files at sweep start."""
+    try:
+        _HEARTBEAT_DIR.mkdir(parents=True, exist_ok=True)
+        _HEARTBEAT_PATH.write_text(str(_hook_time.time()), encoding="utf-8")
+        # Truncate the progress log: each sweep starts fresh.
+        _PROGRESS_LOG_PATH.write_text("", encoding="utf-8")
+        _CURRENT_TEST_PATH.write_text("(session_starting)", encoding="utf-8")
+        with _PROGRESS_LOG_PATH.open("a", encoding="utf-8") as fh:
+            fh.write(_hook_json.dumps({
+                "event": "session_start",
+                "ts": _hook_time.time(),
+                "rootdir": str(ROOT),
+            }) + "\n")
+    except OSError:
+        pass
+
+
+def pytest_runtest_logstart(nodeid, location):  # noqa: ARG001, D401
+    """Update heartbeat + current-test file before each test."""
+    try:
+        _HEARTBEAT_PATH.write_text(str(_hook_time.time()), encoding="utf-8")
+        _CURRENT_TEST_PATH.write_text(str(nodeid), encoding="utf-8")
+        with _PROGRESS_LOG_PATH.open("a", encoding="utf-8") as fh:
+            fh.write(_hook_json.dumps({
+                "event": "start",
+                "test": str(nodeid),
+                "ts": _hook_time.time(),
+            }) + "\n")
+    except OSError:
+        pass
+
+
+def pytest_runtest_logreport(report):  # noqa: D401
+    """Record per-phase outcomes (setup/call/teardown) in the JSONL."""
+    if report.when != "call":
+        # Only log the actual test call, not setup/teardown noise.
+        # (Setup/teardown errors still surface via the call phase's
+        # outcome when relevant.)
+        return
+    try:
+        _HEARTBEAT_PATH.write_text(str(_hook_time.time()), encoding="utf-8")
+        with _PROGRESS_LOG_PATH.open("a", encoding="utf-8") as fh:
+            fh.write(_hook_json.dumps({
+                "event": str(report.outcome),  # "passed" / "failed" / "skipped"
+                "test": str(report.nodeid),
+                "duration_s": getattr(report, "duration", 0.0),
+                "ts": _hook_time.time(),
+            }) + "\n")
+    except OSError:
+        pass
+
+
+def _finalise_progress_log(exitstatus):  # noqa: D401
+    """Write a session_end event so observers know the sweep wrapped up."""
+    try:
+        with _PROGRESS_LOG_PATH.open("a", encoding="utf-8") as fh:
+            fh.write(_hook_json.dumps({
+                "event": "session_end",
+                "exitstatus": int(exitstatus or 0),
+                "ts": _hook_time.time(),
+            }) + "\n")
+        # Mark current as terminal so a follower of .run_tests_current
+        # sees an unambiguous final state.
+        _CURRENT_TEST_PATH.write_text(
+            f"(session_ended status={int(exitstatus or 0)})",
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
