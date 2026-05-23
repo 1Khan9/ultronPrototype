@@ -10,16 +10,11 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `1e6e577` on `claude/optimistic-turing-d3fb1e`
-> (about to merge to `origin/main`; this doc-bump is on top of feature
-> commit `1e6e577`). Tests **4750 passing / 16 skipped /
-> 0 failed in ~87 s** via `scripts/run_tests.py` (baseline 4240 +
-> 82 batch 1 + 29 batch 2 + 22 batch 3 + 21 batch 4 + 36 batch 5 +
-> 22 batch 6 + 8 batch 7 + 30 batch 8 + 21 batch 9 + 26 batch 10 +
-> 56 batch 11 + 19 batch 12 + 34 batch 13 + 19 sweep-durability
-> rewrite tests + 1 pre-existing test flipped passing after the
-> pollution fix + 25 measurement-infrastructure tests +
-> 60 batch 14 tests).
+> **Validating HEAD:** to be bumped on the SWE-Agent porting commit.
+> Tests **4848 passing / 16 skipped / 0 failed in ~97 s** via
+> `scripts/run_tests.py` (prior baseline 4750 + 98 SWE-Agent batch 1
+> tests for catalog T15 SessionRegistry + T17 sentinels + T10/T19
+> observation formatters).
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -35,6 +30,16 @@
 > the commit — don't bypass with `--no-verify`. The full hygiene
 > contract lives in the local-only `CLAUDE.md` orientation file and
 > the auto-loaded `MEMORY.md` index.
+
+**2026-05-23 SWE-Agent porting -- batch 1 (T15 + T17 + T10 + T19) -- COMPLETE.** First batch of the SWE-Agent catalog (`F:\reference_repos\catalog\02_swe-agent.md`) lands the foundation primitives that later batches depend on. Three new utility modules under `src/ultron/coding/`, all pure-function or thread-safe state with no runtime wiring required yet. Attribution added to `THIRD_PARTY_NOTICES.md` (MIT, Yang et al. 2024, arXiv 2405.15793). Tests **4848 passing / 16 skipped / 0 failed in ~97 s** (+98 batch 1 tests from baseline 4750).
+
+* **NEW [`src/ultron/coding/sentinels.py`](../src/ultron/coding/sentinels.py) (T17).** Pair-marker (`<<TOKEN>> payload <<TOKEN>>`) + single-fire (`###TOKEN###`) sentinel parser modelled on SWE-Agent's submission/forfeit/retry markers. Constants: `ULTRON_SUBMIT`, `ULTRON_SUBMIT_DIFF`, `ULTRON_TEST_SWEEP_PASS`, `ULTRON_TEST_SWEEP_FAIL` (pair); `ULTRON_EXIT_FORFEIT`, `ULTRON_RETRY_WITH_OUTPUT`, `ULTRON_RETRY_WITHOUT_OUTPUT`, `ULTRON_LINT_REVERT`, `ULTRON_BLOCKED_TOOL` (single). `observation_scan(text) -> list[SentinelMatch]` returns every hit in order, longest-prefix wins. `first_match(text, sentinel=...)` is the targeted-lookup convenience. `strip_sentinels(text)` removes every match before LLM forwarding so the model never sees the private channel. Unterminated pair markers degrade to single-fire matches with empty payload so truncated subprocess output still surfaces signals.
+* **NEW [`src/ultron/coding/observation_format.py`](../src/ultron/coding/observation_format.py) (T10 + T19).** `truncate_observation(text, max_chars=10000)` returns the head + tail + `<elided_chars>N characters elided</elided_chars>` shape so a pytest failure summary at the end of huge stdout survives the cap. `wrap_empty_observation(text, suppressed=False)` replaces an empty observation with `"Your command ran successfully and did not produce any output."` (or a distinct suppressed-by-narrator message). `format_observation()` chains them. Constants: `DEFAULT_MAX_OBSERVATION_CHARS=10_000` (matches SWE-Agent's bash_only), `COMPACT_MAX_OBSERVATION_CHARS=4_000` (in-process 4B LLM channel), `EMPTY_OUTPUT_MESSAGE`, `SUPPRESSED_OUTPUT_MESSAGE`.
+* **NEW [`src/ultron/coding/session_registry.py`](../src/ultron/coding/session_registry.py) (T15).** Per-session JSON registry at `data/coding/sessions/<session_id>/registry.json`. Direct port of SWE-Agent's `tools/registry/lib/registry.py:EnvRegistry` with ultron extensions: per-session isolation, thread-safe RLock, atomic temp-file writes, `transaction()` context manager (multi-key atomic commit with rollback on exception), `set_with_ttl(key, value, ttl_seconds)` for ephemeral state, `get_if_none(value, key, default)` for the SWE-Agent CLI-arg / registry / default fallback chain, `fallback_to_env=True` semantic so `os.environ` is consulted on cache miss. Singleton accessor `get_session_registry(session_id)` + `reset_session_registries_for_testing()` test escape hatch + `new_session_id(prefix)` helper. Fail-open at every boundary (corrupt JSON resets to empty + WARN; bad permissions skip write + WARN; in-memory state always survives). Load-bearing for batches 3 (T4 windowed-file state, T20 file_history), 5 (T6 cumulative diff, T13 autosubmission salvage), 6 (T7 SUBMIT_STAGE counter, T14 requery state).
+
+* **3 new test files (98 tests):** [`tests/coding/test_sentinels.py`](../tests/coding/test_sentinels.py) (28 -- constants, pair + single match, unterminated, custom sentinel sets, strip), [`tests/coding/test_observation_format.py`](../tests/coding/test_observation_format.py) (29 -- short input unchanged, head + tail shape, elided count, pytest-summary survives, empty + suppressed messages, custom cap, unicode at boundary), [`tests/coding/test_session_registry.py`](../tests/coding/test_session_registry.py) (41 -- construction, dict-like, disk persistence, env fallback, get_if_none, TTL, transactions with rollback, nested transactions, thread safety smoke, singleton, round-trip across instances).
+
+---
 
 **2026-05-22 catalog batch 14: voice-path additions (T5 Phase 2 + T12 + T14) -- COMPLETE.** Pre-batch-14 baseline captured against the current production stack (Moonshine 16ms / Qwen 3.5 4B TTFT 203ms / Kokoro Ultron 109ms / composite TTFA 313ms / VRAM full_loaded 6597MB / peak 7007MB) -- saved as both `baselines.json` and `baselines_before_batch14.json`. All three new modules default OFF so the contract holds without operator opt-in. Tests **4750 passing / 16 skipped / 0 failed in ~87 s** (+60 batch 14 tests from baseline 4690).
 
@@ -1781,7 +1786,10 @@ For the current decisions and Foundation phase status see
 │       │   ├── architect_narrator.py ← 2026-05-22 batch 14 (T5 Phase 2): ArchitectNarrator speaks plan sentence-by-sentence with should_stop barge-in callback; NarrationResult telemetry; split_into_sentences with decimal + initial guards; narrate_plan() one-shot wrapper
 │       │   ├── confirm_group.py      ← 2026-05-22 batch 14 (T14): ConfirmGroup batches related confirmation items into a single yes/no question; Oxford-comma rendering; overflow summary; single-resolution invariant
 │       │   ├── narration.py          ← StatusNarrator (delta-aware progress narration)
+│       │   ├── observation_format.py ← 2026-05-23 SWE-Agent batch 1 (T10 + T19): truncate_observation (head + tail + elided-char count template) + wrap_empty_observation (explicit no-output message) + format_observation chain; constants DEFAULT_MAX_OBSERVATION_CHARS=10_000 / COMPACT_MAX_OBSERVATION_CHARS=4_000 / EMPTY_OUTPUT_MESSAGE / SUPPRESSED_OUTPUT_MESSAGE
 │       │   ├── project_digest.py     ← 2026-05-22 supervisor Phase A: opencode-style SUMMARY_TEMPLATE port; generate_digest(request, llm_call) -> ProjectDigest; fails open to render_template() (deterministic fallback); parse_digest_sections / extract_files_from_digest helpers
+│       │   ├── sentinels.py          ← 2026-05-23 SWE-Agent batch 1 (T17): pair-marker + single-fire sentinel parser; ULTRON_SUBMIT / ULTRON_SUBMIT_DIFF / ULTRON_TEST_SWEEP_{PASS,FAIL} pair markers; ULTRON_EXIT_FORFEIT / ULTRON_RETRY_WITH_OUTPUT / ULTRON_RETRY_WITHOUT_OUTPUT / ULTRON_LINT_REVERT / ULTRON_BLOCKED_TOOL single-fire; observation_scan / first_match / strip_sentinels helpers
+│       │   ├── session_registry.py   ← 2026-05-23 SWE-Agent batch 1 (T15): per-session JSON registry at data/coding/sessions/<id>/registry.json; thread-safe RLock; atomic temp-file writes; transaction() context manager with rollback; set_with_ttl per-key expiration; get_if_none CLI fallback chain; fallback_to_env=True; get_session_registry singleton; load-bearing for batches 3/5/6
 │       │   ├── stt_bias.py           ← 2026-05-22 batch 14 (T12): STTBiasManager bounded MRU term store; render_prompt() produces engine-ready bias string; apply_bias_prompt() heuristic attribute attach (Whisper initial_prompt etc.); extract_identifiers helper
 │       │   ├── project_index.py    ← 2026-05-22 supervisor Phase B (Qdrant): ProjectIndex(embedder) + ProjectIndexEntry + ProjectMatch; upsert/get/search/search_by_name/delete/count + UUID5-derived stable project_id; publishes ProjectIndexedEvent on bus
 │       │   ├── project_introspect.py ← 2026-05-22 supervisor Phase B (non-LLM): snapshot(project_path) -> ProjectSnapshot; depth-limited walk + language detect + entry-point find + per-file AST via ast_metadata; SKIP_DIRECTORIES skip-list (node_modules / .venv / __pycache__ / etc); render_tree_summary for prompt embedding; per-path TTL cache

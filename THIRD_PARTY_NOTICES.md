@@ -35,6 +35,54 @@ short attribution header. These query files are configuration data describing
 how to extract symbol definitions and references from a parsed AST, not
 executable source code.
 
+## SWE-Agent (MIT License)
+
+Repository: https://github.com/SWE-agent/SWE-agent
+Paper: arXiv 2405.15793 (Yang et al., "SWE-agent: Agent-Computer Interfaces
+Enable Automated Software Engineering").
+Copyright (c) 2024 John Yang, Carlos E. Jimenez, Alexander Wettig,
+Shunyu Yao, Karthik Narasimhan, Ofir Press.
+License: MIT (a copy is included verbatim below).
+
+The following ultron components are clean-room re-implementations whose
+*approach* is informed by the corresponding SWE-Agent modules. Sentinel
+strings + error templates + line-shift arithmetic are quoted verbatim where
+the exact bytes are load-bearing; algorithmic ports are restructured to fit
+ultron's bus + supervisor + safety-validator stack.
+
+| Ultron component | Inspired by | Notes |
+| --- | --- | --- |
+| `src/ultron/coding/sentinels.py` | `tools/submit/bin/submit`, `tools/forfeit/bin/exit_forfeit`, `tools/windowed_edit_replace/bin/edit` | Pair-marker + single-fire sentinel parser (T17). Strings namespaced to `ULTRON_*` to avoid clashing with any SWE-Agent harness that happens to share a process. |
+| `src/ultron/coding/observation_format.py` | `config/bash_only.yaml:next_step_truncated_observation_template`, `config/default.yaml:next_step_no_output_template` | Truncated-observation head + tail + elided-chars template (T10); empty-output explicit message (T19). |
+| `src/ultron/coding/session_registry.py` | `tools/registry/lib/registry.py:EnvRegistry` | Per-session JSON registry (T15). Ultron version adds per-session isolation, thread-safe RLock, atomic temp-file writes, transactions, and per-key TTL. |
+
+### MIT License (verbatim)
+
+```
+MIT License
+
+Copyright (c) 2024 John Yang, Carlos E. Jimenez, Alexander Wettig,
+                   Shunyu Yao, Karthik Narasimhan, Ofir Press
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ### Apache License 2.0 (verbatim)
 
 ```
