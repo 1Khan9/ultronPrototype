@@ -10,7 +10,8 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** to be bumped on the SWE-Agent porting commit.
+> **Validating HEAD:** `8fe8701` on `claude/stoic-cerf-e1a92e` (this
+> commit's parent; doc-bump on top sets the final SHA).
 > Tests **5215 passing / 16 skipped / 0 failed in ~93 s** via
 > `scripts/run_tests.py` (prior baseline 4750 + 98 batch 1 + 39
 > batch 2 + 114 batch 3 + 58 batch 4 + 22 batch 5 + 86 batch 6 +
