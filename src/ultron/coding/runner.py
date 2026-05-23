@@ -285,6 +285,14 @@ class CodingTaskRunner:
         ast_listener = self._make_ast_syntax_listener(handle)
         if ast_listener is not None:
             handle.add_listener(ast_listener)
+        # 2026-05-22 catalog batch 4: pre-write lint cascade. Runs
+        # alongside the AST listener; the two are independent (AST is
+        # Python-only stdlib, lint cascade adds tree-sitter for
+        # non-Python + flake8 fatal-rule subset for Python). Off by
+        # default; enable via ``coding.pre_write_lint.enabled``.
+        lint_listener = self._make_pre_write_lint_listener(handle)
+        if lint_listener is not None:
+            handle.add_listener(lint_listener)
         # Also log a structured "start" record for offline inspection.
         self._log_record({
             "ts": time.time(),
@@ -1000,6 +1008,143 @@ class CodingTaskRunner:
                 # broken syntax check shouldn't bring down event
                 # delivery.
                 logger.debug("ast_metadata listener error: %s", e)
+
+        return _listener
+
+    # --- 2026-05-22 catalog batch 4: pre-write lint cascade ---------------
+
+    def _make_pre_write_lint_listener(self, handle):
+        """Build the FILE_CHANGE listener that runs the catalog
+        batch-4 lint cascade (tree-sitter + Python compile + flake8
+        FATAL-only).
+
+        Returns ``None`` when ``coding.pre_write_lint.enabled`` is
+        False (default) or when the lint modules are unavailable.
+
+        Listener emits ``pre_write_lint_ok`` or
+        ``pre_write_lint_fail`` audit rows + tees to the session
+        audit log. Never cancels the task; the signal feeds back into
+        completion narration honesty checks.
+        """
+        try:
+            from ultron.config import get_config
+            cfg = get_config().coding.pre_write_lint
+        except Exception as e:                                # noqa: BLE001
+            logger.debug("pre_write_lint config read failed: %s", e)
+            return None
+
+        if not cfg.enabled:
+            return None
+
+        try:
+            from ultron.coding.bridge import EventKind
+            from ultron.coding.python_lint import lint_python
+            from ultron.coding.tree_sitter_lint import tree_sitter_lint
+        except Exception as e:                                # noqa: BLE001
+            logger.debug(
+                "pre_write_lint listener unavailable (%s); skipping", e,
+            )
+            return None
+
+        run_full_python_cascade = bool(cfg.python_full_cascade)
+        multi_language = bool(cfg.multi_language)
+        attach_summary = bool(cfg.attach_summary_to_audit)
+        flake8_timeout = float(cfg.flake8_timeout_seconds)
+
+        def _listener(event):
+            try:
+                if getattr(event, "kind", None) != EventKind.FILE_CHANGE:
+                    return
+                file_path_obj = getattr(event, "file_path", None)
+                if file_path_obj is None:
+                    file_path_obj = getattr(event, "path", None)
+                if not file_path_obj:
+                    return
+                from pathlib import Path as _Path
+                path = (
+                    file_path_obj
+                    if isinstance(file_path_obj, _Path)
+                    else _Path(str(file_path_obj))
+                )
+                if not path.exists() or not path.is_file():
+                    return
+                suffix = path.suffix.lower()
+                is_python = suffix in {".py", ".pyi"}
+                if is_python:
+                    report = lint_python(
+                        path,
+                        run_flake8=run_full_python_cascade,
+                        flake8_timeout=flake8_timeout,
+                    )
+                elif multi_language:
+                    report = tree_sitter_lint(path)
+                else:
+                    return
+
+                if report.skipped_reason and not report.errors:
+                    # Lint couldn't actually run (no parser for this
+                    # language, file unreadable, etc.). Don't emit a
+                    # false-positive failure; emit a "skipped" row
+                    # only for visibility.
+                    self._log_record({
+                        "ts": time.time(),
+                        "task_id": handle.task_id(),
+                        "kind": "pre_write_lint_skipped",
+                        "path": str(path),
+                        "language": report.language,
+                        "reason": report.skipped_reason,
+                    })
+                    return
+
+                if report.ok:
+                    audit_kind = "pre_write_lint_ok"
+                else:
+                    audit_kind = "pre_write_lint_fail"
+                    logger.warning(
+                        "pre_write_lint failed for %s: %s",
+                        path, report.summary(),
+                    )
+                    leaf = path.name
+                    with self._ast_lock:
+                        # Reuse the same per-task tracker the AST
+                        # listener uses so completion narration sees
+                        # one unified list of files-with-issues.
+                        self._ast_failures_this_task = [
+                            (p, e) for (p, e) in self._ast_failures_this_task
+                            if p != leaf
+                        ]
+                        self._ast_failures_this_task.append(
+                            (leaf, report.summary()),
+                        )
+
+                fields = {
+                    "ts": time.time(),
+                    "task_id": handle.task_id(),
+                    "kind": audit_kind,
+                    "path": str(path),
+                    "language": report.language,
+                    "error_count": len(report.errors),
+                    "truncated": report.truncated,
+                }
+                if attach_summary:
+                    fields["summary"] = report.summary()
+                    fields["errors"] = [
+                        {
+                            "line": e.line,
+                            "column": e.column,
+                            "kind": e.kind,
+                            "source": e.source,
+                            "message": e.message,
+                        }
+                        for e in report.errors[:20]  # cap at 20
+                    ]
+                self._log_record(fields)
+                self._session_audit(
+                    audit_kind,
+                    **{k: v for k, v in fields.items() if k != "ts"},
+                )
+            except Exception as e:                            # noqa: BLE001
+                logger.debug("pre_write_lint listener error: %s", e)
 
         return _listener
 

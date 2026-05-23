@@ -39,6 +39,11 @@ dev = [
     # this eliminates the "sweep keeps running into issues" failure
     # mode that recurred during the frontier-enhancement pass.
     "pytest-timeout>=2.0",
+    # 2026-05-22 catalog batch 4: FATAL-only flake8 for the pre-write
+    # lint cascade. Listed as a devdep because the listener is opt-in
+    # via ``coding.pre_write_lint.enabled`` and gracefully degrades
+    # to "skip the flake8 layer" when the binary isn't on PATH.
+    "flake8>=6.0",
 ]
 
 [project.scripts]

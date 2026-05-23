@@ -1473,6 +1473,42 @@ class CodingAstMetadataConfig(_Strict):
     attach_metadata_to_audit: bool = True
 
 
+class CodingPreWriteLintConfig(_Strict):
+    """2026-05-22 catalog batch 4: pre-write lint cascade.
+
+    When enabled, the runner's FILE_CHANGE listener runs a syntax-
+    check pass on every written file BEFORE narrating completion.
+    For Python files: tree-sitter ERROR/missing walk + ``compile()``
+    + flake8 FATAL-rule subset (E9, F821, F823, F831, F406, F407,
+    F701, F702, F704, F706 — NEVER style or line-length, only
+    "guaranteed breaks at runtime" rules). For other languages
+    (JS, Bash, Go, Rust, etc.): tree-sitter syntax check only.
+
+    The listener emits ``pre_write_lint_ok`` or
+    ``pre_write_lint_fail`` audit rows and appends failed leaves to
+    the per-task lint-failure tracker so completion narration can
+    fact-check a "Done." claim. The listener never cancels the task;
+    it only surfaces a signal.
+
+    Default OFF: enabling kicks in another ~50-500 ms per file (for
+    .py files; tree-sitter-only is <50 ms). Voice baseline binding
+    means we ship default-OFF and the user flips on after measuring.
+    """
+
+    enabled: bool = False
+    # Apply to .py / .pyi files. When False, those files still get
+    # the tree-sitter base check; only the compile + flake8 layers
+    # are gated.
+    python_full_cascade: bool = True
+    # Apply to non-Python languages (JS, Bash, Go, etc.). When False,
+    # only Python files are linted.
+    multi_language: bool = True
+    # flake8 subprocess timeout (seconds).
+    flake8_timeout_seconds: float = Field(default=5.0, ge=0.5, le=60.0)
+    # Attach the rendered lint summary to the audit row.
+    attach_summary_to_audit: bool = True
+
+
 class CodingGoalAnchorsConfig(_Strict):
     """E2 goal-anchor planning (Phase 0+1 build, 2026-05-18+).
 
@@ -1719,6 +1755,10 @@ class CodingConfig(_Strict):
     # FILE_CHANGE events. Default OFF.
     ast_metadata: CodingAstMetadataConfig = Field(
         default_factory=CodingAstMetadataConfig,
+    )
+    # 2026-05-22 catalog batch 4: pre-write lint cascade. Default OFF.
+    pre_write_lint: CodingPreWriteLintConfig = Field(
+        default_factory=CodingPreWriteLintConfig,
     )
     # A3 wiring -- stored-facts fast-path on clarifications.
     facts: CodingFactsConfig = Field(default_factory=CodingFactsConfig)

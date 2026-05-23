@@ -11,9 +11,10 @@
 > current — see "Maintenance contract" at the bottom.
 >
 > **Validating HEAD:** `65fc49c` on `origin/main` (this doc-bump is on
-> top of feature commit `8bbc345`). Tests **4373 passing / 17 skipped /
+> top of feature commit `8bbc345`). Tests **4394 passing / 17 skipped /
 > 0 failed in ~74 s** via direct pytest invocation (baseline 4240 +
-> 82 catalog batch 1 + 29 catalog batch 2 + 22 catalog batch 3).
+> 82 catalog batch 1 + 29 catalog batch 2 + 22 catalog batch 3 +
+> 21 catalog batch 4).
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -29,6 +30,41 @@
 > the commit — don't bypass with `--no-verify`. The full hygiene
 > contract lives in the local-only `CLAUDE.md` orientation file and
 > the auto-loaded `MEMORY.md` index.
+
+**2026-05-22 catalog batch 4: pre-write lint cascade (tree-sitter + compile + flake8 FATAL-only) -- COMPLETE.** Fourth batch of the external-codebase catalog pass — adds a three-layer lint cascade to the runner's `FILE_CHANGE` listener so the "Done." narration can fact-check itself before reporting success. Layer 1: tree-sitter ERROR/missing walk across all 10 vendored languages. Layer 2: Python `compile()` with formatted traceback. Layer 3: flake8 with a FATAL-only rule subset (E9, F821, F823, F831, F406, F407, F701, F702, F704, F706 — explicitly no style, no line-length, only "guaranteed-breaks-at-runtime"). Default OFF behind `coding.pre_write_lint.enabled`. Tests **4394 passing / 17 skipped / 0 failed in ~74 s** (+21 net; baseline 4373 from batch 3).
+
+* **NEW [`src/ultron/coding/tree_sitter_lint.py`](../src/ultron/coding/tree_sitter_lint.py).**
+  * `class LintError(line, column, kind, message, source="tree_sitter")` — frozen, one row per error.
+  * `class LintReport(path, language, errors, skipped_reason, truncated)` — aggregate. `.ok` is True iff lint ran AND found no errors (skipped is NOT clean). `.summary()` renders a one-line summary suitable for audit logs + voice narration.
+  * `tree_sitter_lint(path) -> LintReport` — runs on any file with a vendored `*-tags.scm` query. Iterative DFS walk bounded by `MAX_NODE_VISITS=50000` (anti-DOS). Constructs a `tree_sitter.Parser(language)` from the language pack (same workaround the repo map needs).
+
+* **NEW [`src/ultron/coding/python_lint.py`](../src/ultron/coding/python_lint.py).**
+  * `lint_python(path, *, run_flake8=True, flake8_timeout=DEFAULT_FLAKE8_TIMEOUT) -> LintReport` — three-layer cascade.
+  * Layer 1: reuses `tree_sitter_lint`.
+  * Layer 2 (`_python_compile_check`): `compile(code, fname, "exec")` with formatted traceback; handles tokenize-level failures (bad encoding, null bytes) gracefully and emits a compile-source `LintError` for them.
+  * Layer 3 (`_python_flake8_check`): subprocess call to `python -m flake8 --select=<FATAL set>` with `creationflags=CREATE_NO_WINDOW` on Windows. Parses the `row:col:code:text` output format. Constants: `FLAKE8_FATAL_SELECT="E9,F821,F823,F831,F406,F407,F701,F702,F704,F706"`, `DEFAULT_FLAKE8_TIMEOUT=5.0`.
+  * Non-Python paths short-circuit to a tree-sitter-only check.
+
+* **Integration: [`src/ultron/coding/runner.py`](../src/ultron/coding/runner.py).**
+  * NEW `_make_pre_write_lint_listener(handle)` method, called alongside the existing `_make_ast_syntax_listener` so both run in parallel. Returns `None` when the flag is off.
+  * On `FILE_CHANGE`: invoke `lint_python` for `.py`/`.pyi` (full cascade), `tree_sitter_lint` for other languages (when `multi_language=True`).
+  * Emits `pre_write_lint_ok` / `pre_write_lint_fail` / `pre_write_lint_skipped` audit rows. Attaches the summary + first 20 errors when `attach_summary_to_audit=True`.
+  * Reuses the AST listener's per-task `_ast_failures_this_task` tracker so completion narration sees ONE unified list of files-with-issues (whether the failure came from the AST listener or the new lint cascade).
+  * Listener never cancels the task — signal-only, consistent with the existing AST listener pattern.
+
+* **NEW `CodingPreWriteLintConfig` in [`src/ultron/config.py`](../src/ultron/config.py).** Five knobs: `enabled` (default `false`), `python_full_cascade` (default `true`), `multi_language` (default `true`), `flake8_timeout_seconds` (default 5.0), `attach_summary_to_audit` (default `true`). Wired into `CodingConfig.pre_write_lint`.
+
+* **Devdep:** `flake8>=6.0` added to `pyproject.toml [project.optional-dependencies] dev`.
+
+* **Tests.** 21 new in [`tests/coding/test_python_lint.py`](../tests/coding/test_python_lint.py):
+  * Tree-sitter layer (6): clean python, broken python, clean JS, unsupported language, missing file, empty file.
+  * LintReport (4): ok property, summary with no errors, summary with skip, summary with errors (multi).
+  * Python compile layer (5): clean file, syntax error caught, unmatched paren, null bytes survived, bad encoding survived.
+  * flake8 FATAL-only layer (4): rule set matches catalog (E9 + F821-F706), F821 undefined-name caught, style errors (E1xx/E2xx) ignored, run_flake8=False short-circuit.
+  * Non-Python (1): .js file goes through tree-sitter-only.
+  * Runner integration (1): default-OFF -> listener is None.
+
+---
 
 **2026-05-22 catalog batch 3: tail-preserve history compression + snapshot-guard race protection -- COMPLETE.** Third batch of the external-codebase catalog pass — implements aider's `ChatSummary` pattern (T6) for compressing over-budget LLM history while preserving the most recent turns verbatim, wired through `SnapshotGuard` (T21 wire) so background-thread compression that races against foreground mutations gets discarded silently. Default OFF behind `memory.history_compression.enabled`. Tests **4373 passing / 17 skipped / 0 failed in ~74 s** (+22 net; baseline 4351 from batch 2).
 
@@ -3696,6 +3732,12 @@ Sections:
   - `enabled` (default FALSE; opt-in because compression changes how history is fed to the LLM)
   - `max_tokens=1024` (target budget for the compressed history)
   - `max_depth=3` (recursion cap before falling back to summarising everything)
+- `coding.pre_write_lint` (2026-05-22 catalog batch 4 lint cascade) — five knobs:
+  - `enabled` (default FALSE; opt-in because compile + flake8 add 50-500 ms per .py write)
+  - `python_full_cascade=true` (run compile + flake8; when false only tree-sitter for .py)
+  - `multi_language=true` (run tree-sitter on .js/.go/.rs/etc.; when false skip non-Python)
+  - `flake8_timeout_seconds=5.0`
+  - `attach_summary_to_audit=true` (attach summary + first 20 errors to audit rows)
 
 ### `config/settings.py` (Phase 3 SHIM)
 
