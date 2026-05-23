@@ -10,8 +10,9 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `65fc49c` on `origin/main` (this doc-bump is on
-> top of feature commit `8bbc345`). Tests **4750 passing / 16 skipped /
+> **Validating HEAD:** `1e6e577` on `claude/optimistic-turing-d3fb1e`
+> (about to merge to `origin/main`; this doc-bump is on top of feature
+> commit `1e6e577`). Tests **4750 passing / 16 skipped /
 > 0 failed in ~87 s** via `scripts/run_tests.py` (baseline 4240 +
 > 82 batch 1 + 29 batch 2 + 22 batch 3 + 21 batch 4 + 36 batch 5 +
 > 22 batch 6 + 8 batch 7 + 30 batch 8 + 21 batch 9 + 26 batch 10 +
