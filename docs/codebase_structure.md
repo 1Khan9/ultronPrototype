@@ -10,11 +10,11 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** (batch-6 feature work lands on top -- doc
-> bumped post-batch). Tests **5576 passing / 16 skipped / 0 failed
-> in ~90 s** via `scripts/run_tests.py` (prior baseline 5525 + 26
-> start-task + 25 pending-message-queue -- OpenHands catalog batch 6
-> lifecycle primitives T5 + T16 landed).
+> **Validating HEAD:** (batch-7 feature work lands on top -- doc
+> bumped post-batch). Tests **5606 passing / 16 skipped / 0 failed
+> in ~90 s** via `scripts/run_tests.py` (prior baseline 5576 + 30
+> project-discovery -- OpenHands catalog batch 7 `.ultron/` project
+> discovery T7 landed).
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -30,6 +30,14 @@
 > the commit — don't bypass with `--no-verify`. The full hygiene
 > contract lives in the local-only `CLAUDE.md` orientation file and
 > the auto-loaded `MEMORY.md` index.
+
+**2026-05-23 OpenHands porting -- batch 7 (T7 `.ultron/` project discovery) -- COMPLETE.** Discovery layer that reads the per-project `.ultron/` directory and returns a frozen `ProjectConfig` snapshot. Mirrors the OpenHands `.openhands/` convention (skills, setup.sh, pre-commit.sh, hooks.json) with ultron-specific extensions (identity_override.md, safety_rules.yaml, test_command.json, voicepack_override.json, intent_triggers.yaml). Each component is optional; missing pieces are `None`. Fail-open per-file -- invalid JSON / YAML records the error in `parse_errors` but doesn't break discovery of the other fields. The discovery layer ONLY reads + parses; the supervisor / safety validator / skill registry / orchestrator decide whether and how to act on the returned config (e.g. `setup.sh` is NEVER auto-invoked here -- callers route the request through `is_explicit_intent` first). Mtime-cached per repo with `invalidate_discovery_cache(repo_root)` escape hatch. Tests **5606 passing / 16 skipped / 0 failed in ~90 s** (+30 batch 7 tests from 5576).
+
+* **NEW [`src/ultron/projects/discovery.py`](../src/ultron/projects/discovery.py) (T7).** `DEFAULT_PROJECT_CONFIG_DIRNAME = ".ultron"`. `ProjectConfig` frozen dataclass with optional fields for every recognised component + `raw_paths` mapping for callers needing the absolute paths + `parse_errors` tuple for per-file failures + `has_any_field` introspection helper + `get_path(field)` helper. `ProjectConfigField` enum gives stable identifiers without on-disk filename coupling. `ProjectDiscoveryStats` frozen dataclass for diagnostic counters. `discover_project_config(repo_root, *, use_cache=True)` is the entry point; returns an empty config when the dir is missing or empty, NEVER raises on per-file errors. `invalidate_discovery_cache(repo_root=None)` clears one repo or every cached entry. Slow-discovery WARN at 100ms. Empty YAML normalised to `{}` (matches PyYAML's `safe_load` returning `None`).
+
+* **One new test file (30 tests):** [`tests/projects/test_discovery.py`](../tests/projects/test_discovery.py) covering missing + empty `.ultron/` dir, each of the eight component fields (skills/, setup.sh, pre_commit.sh, identity_override.md, safety_rules.yaml, test_command.json, voicepack_override.json, intent_triggers.yaml, hooks.json), multiple-fields populated, invalid JSON + YAML recorded in parse_errors, non-mapping JSON / YAML rejection, empty YAML normalised, str-path input, unrecognised files ignored, cache hit on second call, mtime invalidation on new file, per-repo selective invalidation, full cache clear, use_cache=False forces fresh read + doesn't populate cache, get_path returns None for missing field, frozen config, enum + dirname constants pinned, repo_root in config.
+
+---
 
 **2026-05-23 OpenHands porting -- batch 6 (T5 start-task state machine + T16 pending-message queue) -- COMPLETE.** Lifecycle primitives for the cold-start UX win + gaming-mode engage status streaming. Tests **5576 passing / 16 skipped / 0 failed in ~90 s** (+51 batch 6 tests from 5525).
 
@@ -2052,6 +2060,10 @@ For the current decisions and Foundation phase status see
 │       │   ├── models.py           ← Frozen dataclasses: Skill, KeywordTrigger, TaskTrigger, SkillMatch, SkillSource (precedence enum), SkillType; matches_text + find_matched_keywords + find_matched_commands helpers
 │       │   ├── loader.py           ← load_skill_from_path + load_skills_from_directory; frontmatter-driven; "any /-prefix flips to task" semantics; filename-stem fallback
 │       │   └── registry.py         ← SkillRegistry with mtime invalidation + later-wins source dedup; matching_skills (always-on + triggered capped at max_matches_per_turn); format_skills_block render; maybe_get_skills_block orchestrator helper; build_default_registry factory
+│       │
+│       ├── projects/               ← 2026-05-23 OpenHands batch 7 (T7): .ultron/ project discovery
+│       │   ├── __init__.py         ← Public API re-exports
+│       │   └── discovery.py        ← discover_project_config(repo_root) -> frozen ProjectConfig; reads .ultron/{skills/, setup.sh, pre_commit.sh, identity_override.md, safety_rules.yaml, test_command.json, voicepack_override.json, intent_triggers.yaml, hooks.json}; mtime-cached; fail-open per-file
 │       │
 │       ├── lifecycle/              ← 2026-05-23 OpenHands batch 6 (T5 + T16): start-task + pending-message
 │       │   ├── __init__.py         ← Public API re-exports
