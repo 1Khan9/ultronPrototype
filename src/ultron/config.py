@@ -2790,6 +2790,46 @@ class SafetyConfig(_Strict):
     )
     # Audit log path. Relative to PROJECT_ROOT.
     audit_log_path: str = "logs/safety_audit.jsonl"
+    # SWE-Agent batch 4 (T11) -- Category IT (Interactive Tools)
+    # blocklist. Mirrors `ToolFilterConfig` from SWE-Agent.
+    interactive_tools: "InteractiveToolsBlockConfig" = Field(
+        default_factory=lambda: InteractiveToolsBlockConfig(),
+    )
+
+
+class InteractiveToolsBlockConfig(_Strict):
+    """SWE-Agent batch 4 (catalog T11) -- Category IT block configuration.
+
+    Three independent blocklists for hang-prone interactive commands:
+
+    * `prefix_blocklist` -- block any command starting with one of
+      these (e.g. ``vim ...``, ``tail -f ...``, ``python -m venv ...``).
+    * `standalone_blocklist` -- block any command that EXACTLY equals
+      one of these with no arguments (catches bare ``python``,
+      ``bash``, etc. that drop into a REPL).
+    * `unless_regex` -- map of command name -> allow-regex; commands
+      whose first token matches a key are blocked UNLESS the full
+      command matches the regex (e.g. ``radare2`` allowed only with
+      ``-c "..."``).
+
+    Defaults are inherited from `category_it.DEFAULT_*` and mirror
+    SWE-Agent's `ToolFilterConfig` verbatim. Empty list / dict in
+    config.yaml means "use defaults"; pass an explicit list / dict
+    to override entirely.
+    """
+
+    enabled: bool = True
+    prefix_blocklist: list[str] = Field(default_factory=list)
+    standalone_blocklist: list[str] = Field(default_factory=list)
+    unless_regex: dict[str, str] = Field(default_factory=dict)
+    block_message: str = (
+        "Operation '{action}' is not supported by this environment."
+    )
+
+
+# Resolve forward ref so SafetyConfig.interactive_tools points at the
+# class defined just above.
+SafetyConfig.model_rebuild()
 
 
 class UltronConfig(_Strict):

@@ -425,6 +425,7 @@ def build_validator_from_config() -> ToolCallValidator:
     from ultron.safety.rules.category_p import build_category_p_rules
     from ultron.safety.rules.category_q import build_category_q_rules
     from ultron.safety.rules.category_r import build_category_r_rules
+    from ultron.safety.rules.category_it import build_category_it_rules
     from ultron.safety.rules.category_s import build_category_s_rules
 
     rules = []
@@ -452,6 +453,53 @@ def build_validator_from_config() -> ToolCallValidator:
     rules.extend(build_category_q_rules())
     rules.extend(build_category_r_rules())
     rules.extend(build_category_s_rules())
+    # Category IT (SWE-Agent batch 4 / catalog T11): block hang-prone
+    # interactive shell commands (vim / less / bare python / tail -f /
+    # python -m venv / make etc.) before they reach the path resolver.
+    # Fail-open: any config-error in the IT category builder leaves
+    # the rule list unchanged.
+    try:
+        from ultron.config import get_config as _it_get_config
+        cfg_it = _it_get_config().safety
+        it_block = getattr(cfg_it, "interactive_tools", None)
+        if it_block is not None:
+            from ultron.safety.rules.category_it import InteractiveToolsConfig
+            it_cfg = InteractiveToolsConfig(
+                enabled=bool(getattr(it_block, "enabled", True)),
+                prefix_blocklist=list(
+                    getattr(it_block, "prefix_blocklist", None) or []
+                )
+                or list(__import__(
+                    "ultron.safety.rules.category_it",
+                    fromlist=["DEFAULT_PREFIX_BLOCKLIST"],
+                ).DEFAULT_PREFIX_BLOCKLIST),
+                standalone_blocklist=list(
+                    getattr(it_block, "standalone_blocklist", None) or []
+                )
+                or list(__import__(
+                    "ultron.safety.rules.category_it",
+                    fromlist=["DEFAULT_STANDALONE_BLOCKLIST"],
+                ).DEFAULT_STANDALONE_BLOCKLIST),
+                unless_regex=dict(
+                    getattr(it_block, "unless_regex", None) or {}
+                )
+                or dict(__import__(
+                    "ultron.safety.rules.category_it",
+                    fromlist=["DEFAULT_UNLESS_REGEX"],
+                ).DEFAULT_UNLESS_REGEX),
+                block_message=str(
+                    getattr(it_block, "block_message", None)
+                    or __import__(
+                        "ultron.safety.rules.category_it",
+                        fromlist=["DEFAULT_BLOCK_MESSAGE"],
+                    ).DEFAULT_BLOCK_MESSAGE
+                ),
+            )
+            rules.extend(build_category_it_rules(it_cfg))
+        else:
+            rules.extend(build_category_it_rules())
+    except Exception:
+        rules.extend(build_category_it_rules())
     # Capability carve-outs (Cap-1 .. Cap-4 sub-rules).
     rules.extend(build_capability_rules())
 

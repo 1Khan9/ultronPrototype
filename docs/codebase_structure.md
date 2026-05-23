@@ -11,11 +11,11 @@
 > current — see "Maintenance contract" at the bottom.
 >
 > **Validating HEAD:** to be bumped on the SWE-Agent porting commit.
-> Tests **5001 passing / 16 skipped / 0 failed in ~92 s** via
+> Tests **5059 passing / 16 skipped / 0 failed in ~94 s** via
 > `scripts/run_tests.py` (prior baseline 4750 + 98 SWE-Agent batch 1
 > (T15 + T17 + T10 + T19) + 39 batch 2 (T2 + T9) + 114 batch 3
-> (T5 WindowExpander + T20 FileHistory + T4 WindowState + T12
-> EditDiagnostics + T1 LintDiff)).
+> (T5 + T20 + T4 + T12 + T1) + 58 batch 4 (T3 search primitives +
+> T11 IT category)).
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -31,6 +31,27 @@
 > the commit — don't bypass with `--no-verify`. The full hygiene
 > contract lives in the local-only `CLAUDE.md` orientation file and
 > the auto-loaded `MEMORY.md` index.
+
+**2026-05-23 SWE-Agent porting -- batch 4 (T3 search primitives + T11 IT category) -- COMPLETE.** Two new modules: filenames-only search with hard cap + tiered narrowing hint, plus the Category IT (Interactive Tools) safety-validator extension that blocks hang-prone shell commands BEFORE they reach the path resolver. Tests **5059 passing / 16 skipped / 0 failed in ~94 s** (+58 batch 4 tests from 5001).
+
+* **NEW [`src/ultron/coding/search_primitives.py`](../src/ultron/coding/search_primitives.py) (T3).** Three search primitives modelled on SWE-Agent's `tools/search/bin/search_dir|search_file|find_file`:
+  - `search_dir_filenames_only(term, directory, max_files=100)` -> `SearchResult` with `[FileMatch(path, count)]` sorted by count desc. Hard cap at 100 (matches SWE-Agent's `num_files > 100` early return); overflow raises `SearchTooBroadError` with a TIERED narrowing hint (creative extension): the message lists the top 3 extensions present + suggests restricting to a tighter tier (5/25/100).
+  - `search_in_file_with_cap(term, path, max_lines=100)` -> `SearchResult` with `[LineMatch(line_number, content)]`. Overflow yields the first `max_lines` matches + `truncated=True` + `cap_message`.
+  - `find_file_by_pattern(pattern, directory)` -> sorted list of paths matching an `fnmatch` glob.
+  - Backend: prefers ripgrep when on PATH (5-10x faster than grep, respects `.gitignore`); falls back to pure-Python walk. `DEFAULT_SKIP_DIRECTORIES` covers ultron's node_modules / .venv / __pycache__ / etc + hidden dirs (mirrors SWE-Agent's `! -path '*/.*'`).
+
+* **NEW [`src/ultron/safety/rules/category_it.py`](../src/ultron/safety/rules/category_it.py) (T11).** Category IT (Interactive Tools) extends the runtime tool-call validator with three new rule types:
+  - `IT1InteractivePrefixRule` -- blocks commands starting with `vim`, `vi`, `emacs`, `nano`, `nohup`, `gdb`, `less`, `tail -f`, `python -m venv`, `make`. Word-boundary respected (`vim_extension` is NOT blocked by `vim` prefix).
+  - `IT2InteractiveStandaloneRule` -- blocks commands that EXACTLY match one of `python`, `python3`, `ipython`, `bash`, `sh`, `/bin/bash`, `/bin/sh`, `vi`, `vim`, `emacs`, `nano`, `su` with no arguments. Distinguishes `python script.py` (allowed) from bare `python` (blocked -- would drop into REPL).
+  - `IT3InteractiveUnlessRegexRule` -- blocks command name UNLESS the full command matches the regex (e.g. `radare2` allowed only with `-c "..."` non-interactive script mode).
+  - `extract_command(ctx)` heuristic pulls the shell command out of `RuleContext` whether it lives in `tool_name` directly or under `arguments["command"]` / `["cmd"]` / `["shell"]` / etc.
+  - All three rules ship with verbatim defaults from SWE-Agent's `ToolFilterConfig`; `InteractiveToolsConfig` lets operators override per-list. `build_category_it_rules()` factory wired into `validator.build_validator_from_config()`.
+
+* **NEW config schema `InteractiveToolsBlockConfig` in [`src/ultron/config.py`](../src/ultron/config.py).** `SafetyConfig.interactive_tools` holds the per-list overrides (`prefix_blocklist`, `standalone_blocklist`, `unless_regex`, `block_message`). Empty list in YAML means "use defaults"; non-empty replaces.
+
+* **2 new test files (58 tests):** [`tests/coding/test_search_primitives.py`](../tests/coding/test_search_primitives.py) (24 -- caps, basic search, sorting, skip-directories, hidden dirs, overflow + narrowing hint, no-matches, line search + cap + cap_message, find_file glob + recursive + skip-hidden + overflow, frozen dataclasses); [`tests/safety/test_category_it.py`](../tests/safety/test_category_it.py) (34 -- constants, extract_command heuristics, IT1 prefix blocks vim/tail -f/python -m venv and allows normal tail/python script.py with word-boundary, IT2 standalone blocks bare python/bash/su and allows args, IT3 radare2 blocked-without-c allowed-with-c, invalid-regex skipped, factory returns 3 rules, custom-config respected, rule_id stability).
+
+---
 
 **2026-05-23 SWE-Agent porting -- batch 3 (T1 + T5 + T12 + T20 + T4) -- COMPLETE.** Five new modules under `src/ultron/coding/` covering the lint-revert + edit-primitive surfaces. All pure / thread-safe state, all defaults respect the voice-baseline contract. Tests **5001 passing / 16 skipped / 0 failed in ~92 s** (+114 batch 3 tests from 4887).
 
@@ -1744,6 +1765,7 @@ For the current decisions and Foundation phase status see
 │       │       ├── category_q.py   ← Q1-Q4 containers + virtualization
 │       │       ├── category_r.py   ← R2 sensors (webcam)
 │       │       ├── category_s.py   ← S1, S4 AI-specific tampering
+│       │       ├── category_it.py  ← 2026-05-23 SWE-Agent batch 4 (T11): IT1 prefix blocklist + IT2 standalone blocklist + IT3 unless-regex; mirrors ToolFilterConfig (vim/less/tail -f/bare python/etc.); InteractiveToolsConfig override surface
 │       │       └── cap_carveouts.py ← Cap-1..Cap-4 capability bound rules
 │       │
 │       ├── audio/                  ← Audio capture, VAD, wake-word
@@ -1825,6 +1847,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── lint_diff.py          ← 2026-05-23 SWE-Agent batch 3 (T1): parse_flake8_output + shift_pre_edit_errors (line-shift arithmetic verbatim from SWE-Agent flake8_utils) + compute_new_errors + format_revert_message (twin-window "would have looked" + "original code before" + DO NOT re-run hint) + evaluate_edit_lint end-to-end; primitives shipped; runner-side wiring with auto-revert via FileHistory is next-batch wiring
 │       │   ├── observation_format.py ← 2026-05-23 SWE-Agent batch 1 (T10 + T19): truncate_observation (head + tail + elided-char count template) + wrap_empty_observation (explicit no-output message) + format_observation chain; constants DEFAULT_MAX_OBSERVATION_CHARS=10_000 / COMPACT_MAX_OBSERVATION_CHARS=4_000 / EMPTY_OUTPUT_MESSAGE / SUPPRESSED_OUTPUT_MESSAGE
 │       │   ├── project_digest.py     ← 2026-05-22 supervisor Phase A: opencode-style SUMMARY_TEMPLATE port; generate_digest(request, llm_call) -> ProjectDigest; fails open to render_template() (deterministic fallback); parse_digest_sections / extract_files_from_digest helpers
+│       │   ├── search_primitives.py  ← 2026-05-23 SWE-Agent batch 4 (T3): search_dir_filenames_only (count + sort + 100-file hard cap with tiered narrowing hint) + search_in_file_with_cap (line-match cap with cap_message) + find_file_by_pattern (fnmatch glob); ripgrep backend with pure-Python fallback
 │       │   ├── sentinels.py          ← 2026-05-23 SWE-Agent batch 1 (T17): pair-marker + single-fire sentinel parser; ULTRON_SUBMIT / ULTRON_SUBMIT_DIFF / ULTRON_TEST_SWEEP_{PASS,FAIL} pair markers; ULTRON_EXIT_FORFEIT / ULTRON_RETRY_WITH_OUTPUT / ULTRON_RETRY_WITHOUT_OUTPUT / ULTRON_LINT_REVERT / ULTRON_BLOCKED_TOOL single-fire; observation_scan / first_match / strip_sentinels helpers
 │       │   ├── session_registry.py   ← 2026-05-23 SWE-Agent batch 1 (T15): per-session JSON registry at data/coding/sessions/<id>/registry.json; thread-safe RLock; atomic temp-file writes; transaction() context manager with rollback; set_with_ttl per-key expiration; get_if_none CLI fallback chain; fallback_to_env=True; get_session_registry singleton; load-bearing for batches 3/5/6
 │       │   ├── window_expand.py      ← 2026-05-23 SWE-Agent batch 3 (T5): WindowExpander.expand_window scoring (blank=1, double_blank=2, def/class/decorator=3, file_edge=3) verbatim from SWE-Agent's str_replace_editor; direction-aware stop-before-next-def; per-suffix patterns for Python / JS / TS / Go / Rust / Java family

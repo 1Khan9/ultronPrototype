@@ -61,6 +61,8 @@ ultron's bus + supervisor + safety-validator stack.
 | `src/ultron/coding/window_state.py` | `tools/windowed/lib/windowed_file.py:WindowedFile` | Persistent windowed-file state (T4). Registry key names match SWE-Agent for cross-tool legibility; goto offset (1/6 down the window) and scroll overlap (default 2 lines) match; ultron version is read-only (mutation lives in the safety + file_history layers). |
 | `src/ultron/coding/edit_diagnostics.py` | `tools/windowed_edit_replace/bin/edit` error templates | Edit failure diagnostics (T12). Five failure modes + message templates ported verbatim; ultron adds the AMBIGUOUS_CROSS_FILE creative extension that names other session-touched files containing the search string. |
 | `src/ultron/coding/lint_diff.py` | `tools/windowed/lib/flake8_utils.py` (`_update_previous_errors` + `_LINT_ERROR_TEMPLATE`) | Pre/post lint diff + revert (T1). Line-shift arithmetic ported verbatim; twin-window revert template structure preserved; ultron version returns a structured `LintDiffResult` rather than printing to stdout, ready for the runner-side auto-revert wiring. |
+| `src/ultron/coding/search_primitives.py` | `tools/search/bin/search_dir|search_file|find_file` | Filenames-only search with hard cap (T3). The `> 100 files = hard error` semantic is preserved verbatim; ultron adds a tiered-narrowing hint listing the top extensions; ripgrep backend with pure-Python fallback. |
+| `src/ultron/safety/rules/category_it.py` | `sweagent/tools/tools.py:ToolFilterConfig` | Interactive-tool blocklist (T11). All three default lists (prefix / standalone / unless-regex) ported verbatim from `ToolFilterConfig`; ultron integrates them as three rule classes in the existing 19-category validator framework. |
 
 ### MIT License (verbatim)
 
