@@ -10,11 +10,17 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** (batch-7 feature work lands on top -- doc
-> bumped post-batch). Tests **5606 passing / 16 skipped / 0 failed
-> in ~90 s** via `scripts/run_tests.py` (prior baseline 5576 + 30
-> project-discovery -- OpenHands catalog batch 7 `.ultron/` project
-> discovery T7 landed).
+> **Validating HEAD:** (batch-8 feature work lands on top -- doc
+> bumped post-batch). Tests **5640 passing / 16 skipped / 0 failed
+> in ~91 s** via `scripts/run_tests.py` (prior baseline 5606 + 34
+> injector -- OpenHands catalog batch 8 Injector pattern T6 landed).
+>
+> **OpenHands catalog T1-T8 all landed in 8 batches across the
+> 2026-05-23 multi-session pass.** Cumulative: +425 net tests
+> (5215 -> 5640) spanning parsing (T11), util/poll (T14),
+> install/idempotent (T8), skills (T1), events (T2 + T13), event
+> callbacks (T3), llm/condensers (T4), lifecycle (T5 + T16),
+> projects/discovery (T7), and services/injector (T6 partial).
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -30,6 +36,16 @@
 > the commit — don't bypass with `--no-verify`. The full hygiene
 > contract lives in the local-only `CLAUDE.md` orientation file and
 > the auto-loaded `MEMORY.md` index.
+
+**2026-05-23 OpenHands porting -- batch 8 (T6 Injector pattern, partial migration) -- COMPLETE.** Sync :class:`Injector[T]` ABC + free-form :class:`InjectorState` blob + :class:`InjectorRegistry` keyed by service label. Two starter wrappers ship: :class:`STTEngineInjector` and :class:`TTSEngineInjector` that dispatch on ``state.mode`` so gaming-mode engage flips to the gaming variant without touching the orchestrator's engine-construction code. Designed for additive migration -- the existing :func:`ultron.transcription.make_stt_engine` and :func:`ultron.tts.make_tts_engine` factories stay in place; the injectors wrap them. Hot-swap is one attribute write: ``state.mode = "gaming"``. Tests **5640 passing / 16 skipped / 0 failed in ~91 s** (+34 batch 8 tests from 5606).
+
+* **NEW [`src/ultron/services/injector.py`](../src/ultron/services/injector.py).** Sync ABC (single-process voice path; no FastAPI / asyncio binding). `Injector[T]` defines `inject(state) -> T` plus an optional `stream(state) -> Iterator[T]` override for generators that need teardown. `context(state)` is the contextmanager helper that drains the iterator on exit so `try/finally` blocks fire. `SingletonInjector(build_fn)` constructs once and caches. `StreamInjector(stream_fn)` adapts a generator factory. `InjectorState` is a thread-safe key/value blob with attribute + `update` + `snapshot` access; supports nested-injection composition. `InjectorRegistry` keyed by string label (so multiple variants of the same Python type can coexist) with `register` / `unregister` / `get` / `require` / `keys` / `clear`. Module-level singleton accessors `get_injector_registry` / `set_injector_registry` / `reset_injector_registry_for_testing`. `install_default_injectors(registry, stt_injector, tts_injector)` is the one-call orchestrator wiring.
+
+* **NEW [`src/ultron/services/engine_injectors.py`](../src/ultron/services/engine_injectors.py).** `STTEngineInjector(standby_factory, gaming_factory)` resolves the STT engine based on `_resolve_mode(state)`. Default standby calls `make_stt_engine()`; gaming factory falls back to standby on exception with a WARN. `TTSEngineInjector` is identical-shape and preserves the existing `(rvc, engine)` tuple shape of `make_tts_engine`. `build_stt_engine_injector` / `build_tts_engine_injector` are the default constructors used by `install_default_injectors`.
+
+* **One new test file (34 tests):** [`tests/services/test_injector.py`](../tests/services/test_injector.py) covering InjectorState (8 -- get/set / missing-attr raises / get-with-default / contains / update / initial kwargs / snapshot returns copy / thread-safe under concurrent writes), Injector ABC + concretes (10 -- abstract enforced / SingletonInjector caches + reset / context yields / StreamInjector first-yield + teardown + stream-method / custom Injector uses state / context default state / external state propagated), InjectorRegistry (7 -- register / non-Injector rejected / unregister / require raises / require returns / keys sorted / clear), singleton accessors (1), install_default_injectors (3), engine injectors (5 -- STT mode dispatch + gaming exception fallback + TTS mode dispatch + _resolve_mode helper + build helpers return correct types).
+
+---
 
 **2026-05-23 OpenHands porting -- batch 7 (T7 `.ultron/` project discovery) -- COMPLETE.** Discovery layer that reads the per-project `.ultron/` directory and returns a frozen `ProjectConfig` snapshot. Mirrors the OpenHands `.openhands/` convention (skills, setup.sh, pre-commit.sh, hooks.json) with ultron-specific extensions (identity_override.md, safety_rules.yaml, test_command.json, voicepack_override.json, intent_triggers.yaml). Each component is optional; missing pieces are `None`. Fail-open per-file -- invalid JSON / YAML records the error in `parse_errors` but doesn't break discovery of the other fields. The discovery layer ONLY reads + parses; the supervisor / safety validator / skill registry / orchestrator decide whether and how to act on the returned config (e.g. `setup.sh` is NEVER auto-invoked here -- callers route the request through `is_explicit_intent` first). Mtime-cached per repo with `invalidate_discovery_cache(repo_root)` escape hatch. Tests **5606 passing / 16 skipped / 0 failed in ~90 s** (+30 batch 7 tests from 5576).
 
@@ -2060,6 +2076,11 @@ For the current decisions and Foundation phase status see
 │       │   ├── models.py           ← Frozen dataclasses: Skill, KeywordTrigger, TaskTrigger, SkillMatch, SkillSource (precedence enum), SkillType; matches_text + find_matched_keywords + find_matched_commands helpers
 │       │   ├── loader.py           ← load_skill_from_path + load_skills_from_directory; frontmatter-driven; "any /-prefix flips to task" semantics; filename-stem fallback
 │       │   └── registry.py         ← SkillRegistry with mtime invalidation + later-wins source dedup; matching_skills (always-on + triggered capped at max_matches_per_turn); format_skills_block render; maybe_get_skills_block orchestrator helper; build_default_registry factory
+│       │
+│       ├── services/               ← 2026-05-23 OpenHands batch 8 (T6 partial): Injector pattern
+│       │   ├── __init__.py         ← Public API re-exports
+│       │   ├── injector.py         ← Injector[T] ABC + InjectorState + SingletonInjector + StreamInjector + InjectorRegistry + install_default_injectors + singleton accessors
+│       │   └── engine_injectors.py ← STTEngineInjector + TTSEngineInjector with mode-based dispatch (state.mode == "gaming" -> gaming factory)
 │       │
 │       ├── projects/               ← 2026-05-23 OpenHands batch 7 (T7): .ultron/ project discovery
 │       │   ├── __init__.py         ← Public API re-exports
