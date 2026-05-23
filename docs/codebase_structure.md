@@ -11,11 +11,10 @@
 > current — see "Maintenance contract" at the bottom.
 >
 > **Validating HEAD:** to be bumped on the SWE-Agent porting commit.
-> Tests **5059 passing / 16 skipped / 0 failed in ~94 s** via
-> `scripts/run_tests.py` (prior baseline 4750 + 98 SWE-Agent batch 1
-> (T15 + T17 + T10 + T19) + 39 batch 2 (T2 + T9) + 114 batch 3
-> (T5 + T20 + T4 + T12 + T1) + 58 batch 4 (T3 search primitives +
-> T11 IT category)).
+> Tests **5081 passing / 16 skipped / 0 failed in ~92 s** via
+> `scripts/run_tests.py` (prior baseline 4750 + 98 batch 1 + 39
+> batch 2 + 114 batch 3 + 58 batch 4 + 22 batch 5 (T6 diff snapshot
+> + T13 salvage on error)).
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -31,6 +30,20 @@
 > the commit — don't bypass with `--no-verify`. The full hygiene
 > contract lives in the local-only `CLAUDE.md` orientation file and
 > the auto-loaded `MEMORY.md` index.
+
+**2026-05-23 SWE-Agent porting -- batch 5 (T6 diff snapshot + T13 salvage) -- COMPLETE.** Cumulative diff snapshot machinery + autosubmission salvage on error. One new module; one new test file. Tests **5081 passing / 16 skipped / 0 failed in ~92 s** (+22 batch 5 tests from 5059).
+
+* **NEW [`src/ultron/coding/diff_snapshot.py`](../src/ultron/coding/diff_snapshot.py) (T6 + T13).** Two coupled patterns ported from SWE-Agent's `_state_diff_state` + `attempt_autosubmission_after_error`:
+  - `capture_diff_snapshot(repo_root, session_id, registry, sessions_root)` -> :class:`DiffSnapshot` with text + :class:`DiffStats` (files_changed / lines_added / lines_removed). Prefers `git add -A && git diff --cached` when the repo is a git tree; falls back to a directory walk emitting `+ <relpath> (<N> bytes)` rows when git isn't usable. Skips persisting empty diffs so a fresh empty capture doesn't overwrite a previously-persisted good one.
+  - `read_persisted_diff(session_id, sessions_root)` reads the last persisted patch back -- crash-recovery surface.
+  - `salvage_on_error(repo_root, session_id, exit_status, exception)` -> :class:`SalvageResult`. Tries the fresh capture first; falls back to the previously-persisted diff on disk. When successful, decorates the exit status as `submitted (<original>)` matching SWE-Agent's trajectory-recorder convention. Always writes a `last_salvage.json` metadata file (timestamp, exception_type, exception_repr, traceback, snapshot_method, stats) so offline inspection can see what happened. Fail-open at every layer.
+  - `AutosubmissionGuard(repo_root, session_id, on_salvage, ...)` is the context-manager wrapper: clean exit captures one final snapshot; exception path runs the salvage; KeyboardInterrupt RE-RAISES without salvage (user-driven cancellation). Optional `on_salvage` callback fires per result with try/except so a misbehaving subscriber can't break the guard.
+
+* **Registry mirror.** Each capture mirrors `last_diff` (string) + `last_diff_stats` (dict) into the per-session :class:`SessionRegistry` (T15) so other components (architect narrator, completion narrator) can read them without re-running git.
+
+* **NEW [`tests/coding/test_diff_snapshot.py`](../tests/coding/test_diff_snapshot.py) (22 tests):** constants sanity; parse_diff_stats (empty / line counts / multi-file); capture (no git fallback to file_list, missing dir returns empty, persists to session dir, mirrors into registry, git path real-repo round trip [skipped when git not on PATH]); read_persisted_diff (missing returns None, present returns text); salvage (empty writes meta, changed files decorate exit, pre-persisted fallback survives empty fresh, exception metadata captured); AutosubmissionGuard (clean exit, exception triggers salvage and re-raises, KeyboardInterrupt bypasses, on_salvage callback fires, callback exception swallowed); end-to-end crash-recovery round trip.
+
+---
 
 **2026-05-23 SWE-Agent porting -- batch 4 (T3 search primitives + T11 IT category) -- COMPLETE.** Two new modules: filenames-only search with hard cap + tiered narrowing hint, plus the Category IT (Interactive Tools) safety-validator extension that blocks hang-prone shell commands BEFORE they reach the path resolver. Tests **5059 passing / 16 skipped / 0 failed in ~94 s** (+58 batch 4 tests from 5001).
 
@@ -1842,6 +1855,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── architect_narrator.py ← 2026-05-22 batch 14 (T5 Phase 2): ArchitectNarrator speaks plan sentence-by-sentence with should_stop barge-in callback; NarrationResult telemetry; split_into_sentences with decimal + initial guards; narrate_plan() one-shot wrapper
 │       │   ├── confirm_group.py      ← 2026-05-22 batch 14 (T14): ConfirmGroup batches related confirmation items into a single yes/no question; Oxford-comma rendering; overflow summary; single-resolution invariant
 │       │   ├── narration.py          ← StatusNarrator (delta-aware progress narration)
+│       │   ├── diff_snapshot.py     ← 2026-05-23 SWE-Agent batch 5 (T6 + T13): capture_diff_snapshot (git add -A + diff --cached; file-list fallback) + salvage_on_error (decorates exit_status as submitted (<original>); fall back to pre-persisted diff when fresh capture empty) + AutosubmissionGuard (context manager, KeyboardInterrupt bypasses); mirrors last_diff + stats into SessionRegistry; writes last_diff.patch + last_salvage.json under data/coding/sessions/<id>/
 │       │   ├── edit_diagnostics.py  ← 2026-05-23 SWE-Agent batch 3 (T12): diagnose_edit_failure -> EditDiagnosticResult (NOT_FOUND / NOT_FOUND_IN_WINDOW / MULTIPLE_OCCURRENCES_IN_WINDOW / NO_CHANGES_MADE / AMBIGUOUS_CROSS_FILE / OK); SWE-Agent error-template shapes verbatim; cross-file ambiguity is the creative-extension when search appears in other session-touched files
 │       │   ├── file_history.py       ← 2026-05-23 SWE-Agent batch 3 (T20): FileHistory per-session multi-file undo stack backed by SessionRegistry; record_pre_edit (with narration / origin metadata) + undo_last (atomic write-back / delete-on-undo-creation) + peek_last / history_for / find_by_narration substring search; max_history_per_file=10 cap; round-trip across instances tested
 │       │   ├── lint_diff.py          ← 2026-05-23 SWE-Agent batch 3 (T1): parse_flake8_output + shift_pre_edit_errors (line-shift arithmetic verbatim from SWE-Agent flake8_utils) + compute_new_errors + format_revert_message (twin-window "would have looked" + "original code before" + DO NOT re-run hint) + evaluate_edit_lint end-to-end; primitives shipped; runner-side wiring with auto-revert via FileHistory is next-batch wiring
