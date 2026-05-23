@@ -10,9 +10,10 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `8bbc345` on `origin/main`. Tests **4240 passing /
-> 16 skipped / 0 failed in ~76 s** via direct pytest invocation
-> (baseline 4104 + 136 net from the 2026-05-22 review-feedback pass).
+> **Validating HEAD:** `65fc49c` on `origin/main` (this doc-bump is on
+> top of feature commit `8bbc345`). Tests **4240 passing / 16 skipped /
+> 0 failed in ~76 s** via direct pytest invocation (baseline 4104 +
+> 136 net from the 2026-05-22 review-feedback pass).
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
