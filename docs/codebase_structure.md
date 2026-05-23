@@ -10,8 +10,8 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** pending commit on top of `ff847a4`. Tests **4240
-> passing / 16 skipped / 0 failed in ~76 s** via direct pytest invocation
+> **Validating HEAD:** `8bbc345` on `origin/main`. Tests **4240 passing /
+> 16 skipped / 0 failed in ~76 s** via direct pytest invocation
 > (baseline 4104 + 136 net from the 2026-05-22 review-feedback pass).
 >
 > **Public-repo hygiene:** the repo lives at
@@ -29,7 +29,7 @@
 > contract lives in the local-only `CLAUDE.md` orientation file and
 > the auto-loaded `MEMORY.md` index.
 
-**2026-05-22 review-feedback pass: watchdog + diagnostics + flag rollout -- COMPLETE.** Tests **4240 passing / 16 skipped / 0 failed in ~76 s** (+136 net; baseline 4104). Pending commit on top of `ff847a4`. Driven by an external code-review pass on `docs/codebase_structure.md`; the actionable items from that feedback batched + shipped:
+**2026-05-22 review-feedback pass: watchdog + diagnostics + flag rollout -- COMPLETE.** HEAD `8bbc345` on `origin/main`. Tests **4240 passing / 16 skipped / 0 failed in ~76 s** (+136 net; baseline 4104). One commit on top of `ff847a4`. Driven by an external code-review pass on `docs/codebase_structure.md`; the actionable items from that feedback batched + shipped:
 
 * **NEW slow-subscriber watchdog in [`src/ultron/bus/service.py`](../src/ultron/bus/service.py).** Every callback's wall-clock duration is measured; subscribers exceeding `DEFAULT_SLOW_SUBSCRIBER_WARN_MS` (15 ms) emit a WARN log + bump `Bus.slow_subscriber_count()`. Because the bus dispatches synchronously on the publishing thread under an `RLock`, a slow callback blocks every later subscriber on that publish AND every later publish until it returns -- the watchdog surfaces those before they wedge the voice loop. New module-level `set_slow_subscriber_recorder(callback)` lets the fail-open counter receive bus events without a circular import. Exception path is excluded from the slow counter (the WARN is already logged for raising). +9 tests in [`tests/bus/test_service.py`](../tests/bus/test_service.py).
 
