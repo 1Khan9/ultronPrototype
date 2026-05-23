@@ -25,6 +25,8 @@ dependencies = [
     "infer-rvc-python>=1.0",
     "scipy>=1.10",
     "sentence-transformers>=2.7",
+    "tree_sitter>=0.21",
+    "grep_ast>=0.3",
 ]
 
 [project.optional-dependencies]

@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Mapping, Optional, Sequence
 
 from ultron.coding.ast_metadata import AstMetadata, extract_metadata_from_path
+from ultron.coding.important_files import is_important
 
 logger = logging.getLogger("ultron.coding.project_introspect")
 
@@ -225,6 +226,12 @@ class ProjectSnapshot:
         language_counts: per-language file counts (for tie-breaking).
         entry_points: detected entry-point file paths (absolute).
         markers: detected project-marker files (e.g. pyproject.toml).
+        important_files: files matching the
+            :func:`~ultron.coding.important_files.is_important`
+            allowlist — README, linter configs, CI, ultron operational
+            files, etc. Captured even when the file has no inbound
+            references in the source graph, so downstream rankers
+            (PageRank repo map in batch 2) can pin them near the top.
         ast_metadata: per-file AST snapshot for parsed Python files;
             empty when project has no Python files.
         captured_at: monotonic timestamp the snapshot was built.
@@ -240,6 +247,7 @@ class ProjectSnapshot:
     language_counts: Dict[str, int] = field(default_factory=dict)
     entry_points: List[Path] = field(default_factory=list)
     markers: List[str] = field(default_factory=list)
+    important_files: List[FileInfo] = field(default_factory=list)
     ast_metadata: Dict[str, AstMetadata] = field(default_factory=dict)
     captured_at: float = field(default_factory=time.time)
     elapsed_ms: float = 0.0
@@ -258,20 +266,40 @@ class ProjectSnapshot:
         """Build a markdown-style file-tree summary suitable for
         embedding in an LLM prompt.
 
-        Lists directories (capped at 20) then files (capped at the
-        rest of ``max_lines``). Designed to be cheap to render and
-        token-bounded.
+        Lists directories (capped at 20), then important files (the
+        allowlist matches from the walk, capped at 15), then the rest
+        of the files in walk order. Important files are tagged with
+        ``[important]``; entry points with ``[entry]``. Designed to be
+        cheap to render and token-bounded.
         """
         lines: List[str] = []
         lines.append(f"{self.project_name}/  (project root)")
         for d in self.directories[:20]:
             lines.append(f"  {d}/")
+
+        important_shown_paths: set[str] = set()
+        important_cap = 15
+        for f in self.important_files[:important_cap]:
+            tags = ["important"]
+            if f.is_entry_point:
+                tags.append("entry")
+            lines.append(f"  {f.relative_path}  [{','.join(tags)}]")
+            important_shown_paths.add(f.relative_path)
+
         remaining = max(1, max_lines - len(lines))
-        for f in self.files[:remaining]:
+        rest_emitted = 0
+        for f in self.files:
+            if rest_emitted >= remaining:
+                break
+            if f.relative_path in important_shown_paths:
+                continue
             marker = "  [entry]" if f.is_entry_point else ""
             lines.append(f"  {f.relative_path}{marker}")
-        if len(self.files) > remaining:
-            lines.append(f"  ... +{len(self.files) - remaining} more files")
+            rest_emitted += 1
+        total_files = len(self.files)
+        shown_files = rest_emitted + len(important_shown_paths)
+        if total_files > shown_files:
+            lines.append(f"  ... +{total_files - shown_files} more files")
         return "\n".join(lines)
 
 
@@ -587,17 +615,24 @@ def _walk_project(
                 size = 0
             rel = os.path.relpath(str(full), root_str).replace(os.sep, "/")
             ext = full.suffix.lower()
-            snap.files.append(FileInfo(
+            file_info = FileInfo(
                 path=full,
                 relative_path=rel,
                 size_bytes=size,
                 extension=ext,
-            ))
+            )
+            snap.files.append(file_info)
             files_collected += 1
 
             # Track project markers when encountered.
             if fname in MARKER_FILES and fname not in snap.markers:
                 snap.markers.append(fname)
+
+            # Track allowlist matches (T19). MARKER_FILES is a subset
+            # used for language detection; important_files is the
+            # broader "always show this near the top" set.
+            if is_important(rel):
+                snap.important_files.append(file_info)
 
     snap.truncated = truncated_flag
 

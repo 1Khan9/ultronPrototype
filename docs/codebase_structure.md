@@ -11,9 +11,9 @@
 > current — see "Maintenance contract" at the bottom.
 >
 > **Validating HEAD:** `65fc49c` on `origin/main` (this doc-bump is on
-> top of feature commit `8bbc345`). Tests **4240 passing / 16 skipped /
-> 0 failed in ~76 s** via direct pytest invocation (baseline 4104 +
-> 136 net from the 2026-05-22 review-feedback pass).
+> top of feature commit `8bbc345`). Tests **4322 passing / 17 skipped /
+> 0 failed in ~80 s** via direct pytest invocation (baseline 4240 +
+> 82 net from the 2026-05-22 catalog batch-1 foundations pass).
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -29,6 +29,32 @@
 > the commit — don't bypass with `--no-verify`. The full hygiene
 > contract lives in the local-only `CLAUDE.md` orientation file and
 > the auto-loaded `MEMORY.md` index.
+
+**2026-05-22 catalog batch 1: foundations + tree-sitter base -- COMPLETE.** Lands the first batch of an external-codebase catalog pass (`F:\reference_repos\catalog\01_aider.md`) — five reusable utility primitives + a tree-sitter symbol extractor + an important-file allowlist, wired into `project_introspect.py` so the snapshot now surfaces README / pyproject.toml / CLAUDE.md / docs/codebase_structure.md / etc. near the top of the rendered tree. Pattern lineage attributed to aider (Apache 2.0) in the new [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md). Tests **4322 passing / 17 skipped / 0 failed in ~80 s** (+82 net; baseline 4240). One commit on top of `9965c0f`.
+
+* **NEW [`src/ultron/utils/mtime_cache.py`](../src/ultron/utils/mtime_cache.py).** mtime-keyed cache with SQLite (`diskcache`) primary + in-memory `dict` fallback. Reads validate stored mtime against live file's mtime — mismatch is treated as miss so callers re-parse. SQLite errors (corruption, lock contention, FS issues) auto-degrade to dict mode with a single WARN; reads/writes keep working. Versioned cache directory (`<path>.v<n>`) so value-shape bumps drop stale caches automatically. Pattern adapted from aider's `repomap.py` cache layer.
+
+* **NEW [`src/ultron/utils/token_budget.py`](../src/ultron/utils/token_budget.py).** Binary-search the largest prefix `items[:k]` that fits a token budget. Tolerance band (default 15 %) for early termination; explicit max_iterations cap. `pack_to_budget(items, render, count_tokens, max_tokens) -> PackResult`. `BudgetTooSmallError` only when `strict=True`. Will plug into batch 2 repo-map sizing + memory snippet packing.
+
+* **NEW [`src/ultron/utils/snapshot_guard.py`](../src/ultron/utils/snapshot_guard.py).** Snapshot-identity race protection for background work. `take(obj) -> token`, `matches(token, obj) -> bool` for the functional pattern; `SnapshotGuard` class for supervisors juggling multiple keyed jobs. Deep-copies the captured value at snapshot time so subsequent mutations of the original don't bleed into the snapshot. Will plug into batch 3 (background summarizer).
+
+* **NEW [`src/ultron/utils/relative_indent.py`](../src/ultron/utils/relative_indent.py).** Encode/decode text using indentation relative to the previous line. Round-trip property: `T == make_absolute(make_relative(T))`. The `RelativeIndenter` class chooses an unused Unicode outdent marker (default `←`, falls back to high-plane codepoints) so the encoding is self-delimiting. Will plug into batch 6 (architect/editor split — Qwen-as-editor whitespace tolerance).
+
+* **NEW [`src/ultron/coding/important_files.py`](../src/ultron/coding/important_files.py).** Allowlist of well-known root-level files (README, pyproject.toml, package.json, .gitignore, Dockerfile, Cargo.toml, go.mod, etc.) extended with modern Python tooling (`uv.lock`, `ruff.toml`, `conda-lock.yml`) and ultron-specific operational files (`CLAUDE.md`, `MEMORY.md`, `SOUL.md`, `THIRD_PARTY_NOTICES.md`, `config.yaml`, `docs/codebase_structure.md`). `is_important(path) -> bool` matches by basename, full relative path, or `.github/workflows/` prefix. `filter_important(paths)`, `promoted_score(path, base=1.0)`.
+
+* **NEW [`src/ultron/coding/tree_sitter_tags.py`](../src/ultron/coding/tree_sitter_tags.py).** Tree-sitter symbol extraction across 10 vendored languages (Python, JavaScript, Bash, Go, Rust, C, C++, Java, Ruby, C#). `extract_tags(path, root, cache=None) -> List[Tag]` where `Tag = (rel_fname, fname, line, name, kind)` and kind ∈ {def, ref}. Uses `tree_sitter_language_pack.get_language()` for the grammar but constructs its own `tree_sitter.Parser(language)` so the resulting tree exposes the standard tree-sitter Python API (the pack's own `Parser` ships an incompatible `builtins.Node` type). Pygments-based ref backfill for languages whose query files (C, C++) only capture definitions. MtimeCache integration for fast re-parses.
+
+* **NEW [`src/ultron/coding/queries/`](../src/ultron/coding/queries/).** Sub-package containing 10 vendored `<lang>-tags.scm` query files (Python, JavaScript, Bash, Go, Rust, C, C++, Java, Ruby, C#) each with an attribution header. Adapted from `aider/queries/tree-sitter-language-pack/<lang>-tags.scm` (Apache 2.0). `get_query_path(language) -> Optional[Path]` resolves a language name to its `.scm` file.
+
+* **Integration: [`src/ultron/coding/project_introspect.py`](../src/ultron/coding/project_introspect.py).** `ProjectSnapshot.important_files: List[FileInfo]` is now populated during the file walk by calling `is_important(rel)` on every encountered file. `render_tree_summary()` surfaces important files near the top of the rendered string with `[important]` / `[important,entry]` tags before the rest of the file list — so any downstream LLM prompt that embeds the snapshot leads with what the project IS (README, pyproject.toml, CLAUDE.md, etc.) before what it CONTAINS. Backwards-compatible: the new field defaults to an empty list, the old `markers` field is unchanged, existing 32 `test_project_introspect.py` tests still pass.
+
+* **NEW [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) at repo root.** Apache 2.0 attribution for the catalog-pass-derived modules. Lists each ultron component plus its aider source-of-pattern, and includes a short Apache 2.0 excerpt with the URL to the full license.
+
+* **Deps:** `pyproject.toml` gains `tree_sitter>=0.21` and `grep_ast>=0.3` (which pulls in `tree-sitter-language-pack`, `pathspec`). Existing deps (`pygments`, `diskcache`, `networkx`) already cover batches 2-5.
+
+* **Tests:** NEW `tests/utils/` package with `test_mtime_cache.py` (11 tests), `test_token_budget.py` (13), `test_snapshot_guard.py` (17), `test_relative_indent.py` (15). NEW `tests/coding/test_important_files.py` (14) and `tests/coding/test_tree_sitter_tags.py` (13). Plus `tests/utils/__init__.py`.
+
+---
 
 **2026-05-22 review-feedback pass: watchdog + diagnostics + flag rollout -- COMPLETE.** HEAD `8bbc345` on `origin/main`. Tests **4240 passing / 16 skipped / 0 failed in ~76 s** (+136 net; baseline 4104). One commit on top of `ff847a4`. Driven by an external code-review pass on `docs/codebase_structure.md`; the actionable items from that feedback batched + shipped:
 
@@ -2837,6 +2863,31 @@ implementation).
 - `derive_project_name(intent) -> str` — slug from task text
 - `_DETERMINER_NOUN` (private regex fragment, NEW 2026-05-11 follow-up fix): `(the|that|this|your|our|my)(?:\s+(task|project|build|app|code|work|thing|run|job))?`. Plugged into all three sub-patterns of `_PROGRESS_PATTERNS` (`how X going|coming(along)?`, `what's X doing|working on|up to`, `is X done`) so phrasings like "How is that **project** going?" / "How's the **build** coming along?" / "Is **my project** done?" classify as `PROGRESS_QUERY` instead of falling through to the conversational LLM. The noun is optional so the legacy `that going` / `the doing` phrasings still fire bit-identical. The has_active_task gate is preserved so these patterns never hijack ordinary conversation.
 
+#### `coding/important_files.py` (NEW 2026-05-22 catalog batch 1)
+- `IMPORTANT_FILENAMES: frozenset[str]` — bare filenames (README, pyproject.toml, package.json, .gitignore, Dockerfile, Cargo.toml, etc.) plus ultron extensions (CLAUDE.md, MEMORY.md, SOUL.md, THIRD_PARTY_NOTICES.md, config.yaml, uv.lock, ruff.toml, ...)
+- `IMPORTANT_RELATIVE_PATHS: frozenset[str]` — full project-relative paths (`docs/codebase_structure.md`, `.github/workflows`, etc.)
+- `is_important(path) -> bool` — match by basename, full relative path, or `.github/workflows/` prefix; handles Windows backslashes
+- `filter_important(paths) -> List[str]` — order-preserving filter
+- `promoted_score(path, *, base=1.0) -> float` — small numeric bonus for downstream ranking (batch 2 repo-map personalization vector)
+
+#### `coding/tree_sitter_tags.py` (NEW 2026-05-22 catalog batch 1)
+- `class Tag(NamedTuple)` — `rel_fname`, `fname`, `line`, `name`, `kind` (`"def"` | `"ref"`)
+- `extract_tags(path, root, *, cache=None) -> List[Tag]`
+  - Detects language via `grep_ast.filename_to_lang`
+  - Loads grammar via `grep_ast.tsl.get_language` (returns `tree_sitter.Language`)
+  - Constructs `tree_sitter.Parser(language)` directly (tree-sitter-language-pack's own `Parser` ships an incompatible `builtins.Node` type)
+  - Runs the vendored `<lang>-tags.scm` query via `Query` + `QueryCursor`
+  - Maps `@name.definition.*` → `def`, `@name.reference.*` → `ref`
+  - For languages with defs only (C, C++), backfills refs via pygments `Token.Name` tokenization
+  - Optional `MtimeCache` for memoization keyed by `(fname, mtime)`
+- `extract_tags_for_files(paths, root, *, cache=None) -> List[Tag]` — bulk wrapper; single-file failures are logged and skipped
+- `supported_languages() -> List[str]` — sorted list of languages with vendored query files (currently 10)
+
+#### `coding/queries/` (NEW 2026-05-22 catalog batch 1)
+- 10 vendored `<lang>-tags.scm` files with attribution headers: python, javascript, bash, go, rust, c, cpp, java, ruby, csharp
+- Adapted from `aider/queries/tree-sitter-language-pack/<lang>-tags.scm` (Apache 2.0; see [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md))
+- `get_query_path(language) -> Optional[Path]` — resolves a tree-sitter language name to its bundled `.scm`
+
 #### `coding/projects.py`
 - `class Project` — dataclass: name, path, aliases, language
 - `class ProjectRegistry` — atomic JSON CRUD on `data/projects.json`
@@ -2949,8 +3000,10 @@ implementation).
   extension, is_entry_point
 - `@dataclass class ProjectSnapshot` — project_path, project_name, files,
   directories, languages, language_counts, entry_points, markers,
+  **important_files: List[FileInfo]** (NEW 2026-05-22 catalog batch 1 — populated during walk by `is_important()` from `coding/important_files.py`; surfaces README / pyproject.toml / CLAUDE.md / docs/codebase_structure.md / etc. at the top of `render_tree_summary` tagged `[important]`),
   ast_metadata: `Dict[str, AstMetadata]`, captured_at, elapsed_ms, truncated;
   `.dominant_language` property; `.file_count`; `.render_tree_summary(max_lines=50)`
+  — important files lead the output (capped at 15) with `[important]` / `[important,entry]` tags, then the rest of the files in walk order
 - `snapshot(project_path, *, max_depth, max_files, max_directories,
   ast_file_cap, use_cache=True) -> ProjectSnapshot` — main entry
 - `invalidate_snapshot_cache(project_path=None)` — drop entry or full clear
@@ -3463,6 +3516,40 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
 #### `utils/fairseq_compat.py`
 - `patch_fairseq_dataclasses()` — workaround for fairseq's invalid omegaconf metadata
 - `patch_torch_load_for_fairseq()` — torch.load weights_only compat shim
+
+#### `utils/mtime_cache.py` (NEW 2026-05-22 catalog batch 1)
+- `class MtimeCache(path, *, version=1, prefer_disk=True)` — SQLite primary + dict fallback
+  - `.get(key, mtime) -> Optional[Any]` — mtime-validated read; returns None on miss
+  - `.set(key, mtime, value)` — write to both layers; degrades to dict on backend error
+  - `.delete(key)`, `.clear()`, `.close()`, `len(cache)`
+  - `.degraded` property — True when running on dict fallback
+  - `.path` property — versioned cache directory (e.g. `<base>.v1`)
+- `class MtimeCacheError(Exception)` — programmer-error only (non-Path argument); never raised for operational issues
+- `open_mtime_cache(path, *, version=1, prefer_disk=True) -> MtimeCache` — convenience constructor
+
+#### `utils/token_budget.py` (NEW 2026-05-22 catalog batch 1)
+- `pack_to_budget(items, render, count_tokens, max_tokens, *, tolerance=0.15, max_iterations=30, strict=False) -> PackResult`
+  - Binary-searches the largest `items[:k]` that fits in `max_tokens` when rendered
+  - Tolerance band stops the search early once the result is within `[max_tokens*(1-tol), max_tokens]`
+- `@dataclass(frozen=True) class PackResult` — `k`, `token_count`, `iterations`, `terminated_early`
+- `class BudgetTooSmallError(Exception)` — only raised when `strict=True` and item 0 alone exceeds budget
+- `char_count_tokens(text) -> int` — cheap default counter (`len // 4`)
+
+#### `utils/snapshot_guard.py` (NEW 2026-05-22 catalog batch 1)
+- `take(obj, *, deep=True) -> _SnapshotToken` — deep-copy snapshot of `obj`
+- `matches(token, current) -> bool` — `==` comparison of token's captured value to `current`
+- `class SnapshotGuard` — keyed snapshot store with internal lock
+  - `.snapshot(key, value, *, deep=True)`, `.unchanged(key, current) -> bool`
+  - `.require(key, current)` — raises `StaleSnapshotError` on drift
+  - `.drop(key)`, `.has(key)`, `.clear()`, `len(guard)`
+- `class StaleSnapshotError(Exception)`
+
+#### `utils/relative_indent.py` (NEW 2026-05-22 catalog batch 1)
+- `class RelativeIndenter(texts, *, marker=None)` — picks an unused Unicode outdent marker (default `←`; falls back to high-plane codepoints) so encoding is self-delimiting
+  - `.make_relative(text) -> str` — encode to dent/content paired-line stream
+  - `.make_absolute(text) -> str` — decode back; validates pairing and outdent integrity
+- `relative_indent(text, *, marker=None) -> str` — one-shot encode
+- `absolute_indent(text, *, marker=None) -> str` — one-shot decode
 
 ---
 
