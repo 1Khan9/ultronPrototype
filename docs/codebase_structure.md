@@ -11,10 +11,10 @@
 > current — see "Maintenance contract" at the bottom.
 >
 > **Validating HEAD:** `65fc49c` on `origin/main` (this doc-bump is on
-> top of feature commit `8bbc345`). Tests **4490 passing / 16 skipped /
+> top of feature commit `8bbc345`). Tests **4511 passing / 16 skipped /
 > 0 failed in ~75 s** via `scripts/run_tests.py` (baseline 4240 +
 > 82 batch 1 + 29 batch 2 + 22 batch 3 + 21 batch 4 + 36 batch 5 +
-> 22 batch 6 + 8 batch 7 + 30 batch 8).
+> 22 batch 6 + 8 batch 7 + 30 batch 8 + 21 batch 9).
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -30,6 +30,25 @@
 > the commit — don't bypass with `--no-verify`. The full hygiene
 > contract lives in the local-only `CLAUDE.md` orientation file and
 > the auto-loaded `MEMORY.md` index.
+
+**2026-05-22 catalog batch 9: edit-matcher cascade (T2 + T4 caller) -- COMPLETE.** Forward-looking infra for the eventual "ultron generates edits locally" path (Qwen-as-editor, ACP bridge, etc.). Implements aider's `replace_most_similar_chunk` strategy cascade — perfect → skip-leading-blank → whitespace-tolerant → dots-elision → relative-indent wrap — plus the `find_similar_lines` self-correction helper. Closes the batch-1 RelativeIndenter loop: the indenter ships in `utils/`, and the edit_matcher is its primary downstream caller. Tests **4511 passing / 16 skipped / 0 failed in ~75 s** (+21 net; baseline 4490 from batch 8).
+
+* **NEW [`src/ultron/coding/edit_matcher.py`](../src/ultron/coding/edit_matcher.py).**
+  * `class Strategy(Enum)` — `PERFECT / SKIP_LEADING_BLANK / WHITESPACE_TOLERANT / DOTS_ELISION / RELATIVE_INDENT`.
+  * `class EditResult(new_text, success, strategy, attempts, error)` — frozen outcome.
+  * `apply_edit(original, search, replace, *, strategies=None) -> EditResult` — runs the cascade. First strategy whose result is well-defined wins; per the catalog, perfect-match + whitespace-tolerant require UNIQUENESS (a SEARCH that matches twice is ambiguous and the LLM probably meant a specific location).
+  * `apply_edit_to_files(files, search, replace, *, primary_filename, strategies) -> (matched_name, EditResult)` — the "LLM named the wrong file" cross-file fallback. Primary is tried first when supplied.
+  * `find_similar_lines(search, original, *, context_lines=5, threshold=0.6) -> str` — best-effort `difflib.SequenceMatcher` ratio over same-length windows. Returns a formatted block with `>` markers on the matched lines and `context_lines` of leading + trailing context. Character-level comparison (not line-list) because that gives smoother ratios when single chars differ.
+  * Skipped tiers vs the full catalog: `diff-match-patch` (needs the `diff_match_patch` dep for marginal extra coverage) and `git-cherry-pick` (needs a tempdir + git invocation; risky). The 4 included strategies cover the common cases without those costs.
+
+* **Tests.** 21 new in [`tests/coding/test_edit_matcher.py`](../tests/coding/test_edit_matcher.py):
+  * Per-strategy correctness (5): perfect unique, perfect ambiguous falls through, empty inputs, skip-leading-blank, whitespace-tolerant extra-indent-in-file, dots-elision basic + mismatch, relative-indent wrap.
+  * Cascade ordering (2): restricted-list, disable-perfect-forces-lower-tier.
+  * Cross-file fallback (4): finds right file, primary-first, no-match, empty list.
+  * `find_similar_lines` (5): close match returned, below-threshold returns empty, empty inputs, marker on matched lines, threshold sanity.
+  * Frozen dataclass (1).
+
+---
 
 **2026-05-22 catalog batch 8: HTTP-LLM prompt-cache infra (T22 chunked messages + T9 cache warmer) -- COMPLETE.** Forward-looking infrastructure for the eventual HTTP LLM client (Anthropic via litellm, DeepSeek, etc.). Ultron's current LLM paths are in-process llama-cpp (no Anthropic cache_control marker, but the chunked format still helps llama-cpp's KV cache by keeping prompt prefixes stable) + the CLI bridge (Claude Code manages caching internally). When a future ACP bridge or direct HTTP client lands, these primitives are ready. Tests **4490 passing / 16 skipped / 0 failed in ~75 s** (+30 net; baseline 4460 from batch 7).
 
