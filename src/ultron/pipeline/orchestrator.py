@@ -481,6 +481,12 @@ class Orchestrator:
         # bodies into the system prompt per-turn. Default OFF so the
         # voice baseline is unchanged until operators opt in.
         self._load_skill_registry_if_enabled()
+        # 2026-05-23 OpenHands batch 3 (T2 + T13) -- canonical event
+        # store. When ``events.enabled`` is True, build the configured
+        # backend (memory / jsonl / qdrant) and optionally subscribe
+        # the bus so every published event is persisted with a hash
+        # chain. Default OFF so existing bus behaviour is unchanged.
+        self._load_event_store_if_enabled()
         # 2026-05-22 -- consumed by _build_response_stream. Set by the
         # intent dispatcher when a "needs fresh data" phrase matches;
         # forces the gate verdict to SEARCH (skipping preflight LLM).
@@ -710,6 +716,56 @@ class Orchestrator:
             logger.warning(
                 "skills registry init failed (%s) -- skill injection "
                 "disabled for this session", e,
+            )
+
+    def _load_event_store_if_enabled(self) -> None:
+        """2026-05-23 OpenHands batch 3 (T2 + T13) -- construct the event store.
+
+        Reads ``events.*`` config, builds the chosen backend via
+        :func:`build_event_store`, publishes the result via
+        :func:`set_event_store`, and -- when ``install_bus_sink`` is
+        True -- subscribes the bus so every published event lands as a
+        persisted row with a hash chain.
+
+        Fail-open: any error logs WARN and leaves the singleton unset.
+        """
+
+        try:
+            from ultron.config import PROJECT_ROOT, get_config
+
+            cfg = get_config().events
+        except Exception as e:                                    # noqa: BLE001
+            logger.warning("events: config read failed (%s)", e)
+            return
+        if not getattr(cfg, "enabled", False):
+            return
+        try:
+            from pathlib import Path
+            from ultron.events import (
+                build_event_store,
+                install_bus_event_sink,
+                set_event_store,
+            )
+
+            base_dir = Path(cfg.base_dir)
+            if not base_dir.is_absolute():
+                base_dir = PROJECT_ROOT / base_dir
+            store = build_event_store(
+                cfg.store_backend,
+                base_dir=base_dir,
+                qdrant_collection=cfg.qdrant_collection,
+            )
+            set_event_store(store)
+            if cfg.install_bus_sink:
+                install_bus_event_sink(store, default_session_id=cfg.default_session_id)
+            logger.info(
+                "events: store ready (backend=%s base_dir=%s sink=%s)",
+                cfg.store_backend, base_dir, cfg.install_bus_sink,
+            )
+        except Exception as e:                                    # noqa: BLE001
+            logger.warning(
+                "event store init failed (%s) -- persistence disabled "
+                "for this session", e,
             )
 
     def _maybe_dispatch_intent(self, user_text: str) -> bool:

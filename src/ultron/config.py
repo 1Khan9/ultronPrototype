@@ -2832,6 +2832,36 @@ class InteractiveToolsBlockConfig(_Strict):
 SafetyConfig.model_rebuild()
 
 
+class EventsConfig(_Strict):
+    """Canonical event store + bus sink (OpenHands catalog T2 + T13).
+
+    All knobs default to a safe / no-op posture so the voice baseline
+    contract holds: with ``enabled=False`` no events are persisted
+    and the bus dispatch path is byte-identical.
+
+    Attributes:
+        enabled: Master switch. Default False (opt-in).
+        store_backend: One of ``memory`` / ``jsonl`` / ``qdrant``.
+        base_dir: Directory for the JSONL backend (relative paths are
+            resolved against PROJECT_ROOT).
+        qdrant_collection: Collection name when ``store_backend`` is
+            ``qdrant``.
+        default_session_id: Fallback identifier when a bus event
+            doesn't carry an explicit ``session_id`` field.
+        install_bus_sink: When True, subscribe the bus to the store so
+            every bus event becomes a persisted row. Default True when
+            ``enabled`` flips on; can be disabled to use the store as
+            a programmatic-only surface.
+    """
+
+    enabled: bool = False
+    store_backend: str = "jsonl"
+    base_dir: str = "data/events"
+    qdrant_collection: str = "events"
+    default_session_id: str = "default"
+    install_bus_sink: bool = True
+
+
 class SkillsConfig(_Strict):
     """Trigger-loaded skills (OpenHands catalog T1).
 
@@ -2917,6 +2947,13 @@ class UltronConfig(_Strict):
     # matches the current user utterance. Always-on skills (no triggers)
     # fire every turn.
     skills: "SkillsConfig" = Field(default_factory=lambda: SkillsConfig())
+    # 2026-05-23 OpenHands batch 3 (T2 + T13) -- canonical event store
+    # with optional hash chain. When ``events.enabled`` is True, the
+    # orchestrator builds the configured backend (memory / jsonl /
+    # qdrant) and -- when ``install_bus_sink`` is True -- subscribes
+    # the bus so every published event becomes a persisted row.
+    # Default OFF so the voice baseline + bus latency are unchanged.
+    events: "EventsConfig" = Field(default_factory=lambda: EventsConfig())
 
 
 # ---------------------------------------------------------------------------

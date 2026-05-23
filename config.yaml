@@ -1278,6 +1278,24 @@ intent:
 
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
+# Events (2026-05-23 OpenHands batch 3 T2 + T13) -- canonical event store
+# with optional hash chain. When enabled, the orchestrator builds the
+# configured backend (memory / jsonl / qdrant) and subscribes the bus
+# so every published event lands as a persisted row stamped with a
+# SHA-256 chain hash. Default OFF so bus dispatch + voice latency are
+# unchanged. Flip enabled: true to make the bus history queryable +
+# zip-exportable for repro artefacts.
+# ---------------------------------------------------------------------------
+
+events:
+  enabled: false                   # opt-in
+  store_backend: "jsonl"           # memory | jsonl | qdrant
+  base_dir: "data/events"          # relative to PROJECT_ROOT
+  qdrant_collection: "events"      # used when store_backend == qdrant
+  default_session_id: "default"    # fallback for bus events with no session_id
+  install_bus_sink: true           # auto-mirror bus events into the store
+
+# ---------------------------------------------------------------------------
 # Skills (2026-05-23 OpenHands batch 2 T1) — trigger-loaded knowledge bundles.
 #
 # When enabled, the orchestrator walks ``skills/`` (public), ``~/.ultron/skills/``

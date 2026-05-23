@@ -10,12 +10,12 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `0cb78f2` on `claude/silly-lamarr-14194e`
-> (batch-2 feature work lands on top -- doc bumped post-batch).
-> Tests **5351 passing / 16 skipped / 0 failed in ~90 s** via
-> `scripts/run_tests.py` (prior baseline 5281 + 22 models + 16 loader
-> + 27 registry + 5 orchestrator wiring -- OpenHands catalog batch 2
-> trigger-loaded skills T1 landed).
+> **Validating HEAD:** `8e0db9f` on `claude/silly-lamarr-14194e`
+> (batch-3 feature work lands on top -- doc bumped post-batch).
+> Tests **5425 passing / 16 skipped / 0 failed in ~92 s** via
+> `scripts/run_tests.py` (prior baseline 5351 + 16 models + 11 chain
+> + 27 store + 7 export + 13 bus sink -- OpenHands catalog batch 3
+> event store T2 + T13 landed).
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -31,6 +31,26 @@
 > the commit — don't bypass with `--no-verify`. The full hygiene
 > contract lives in the local-only `CLAUDE.md` orientation file and
 > the auto-loaded `MEMORY.md` index.
+
+**2026-05-23 OpenHands porting -- batch 3 (T2 event store + T13 hash chain) -- COMPLETE.** Canonical event store with sync ABC mirroring the OpenHands `EventService` shape (`save_event` / `get_event` / `search_events` / `count_events` / `batch_get_events`), plus a per-session SHA-256 hash chain (T13) extending ultron's existing safety-audit pattern, plus a zip exporter, plus a bus sink that subscribes the typed pub/sub bus and persists every event row. Three backends ship: `MemoryEventStore` (tests + scratch), `JsonlEventStore` (production default, one append-only JSONL per session), `QdrantEventStore` (opt-in, mirrors into the Qdrant `events` collection with JSONL fallback so a Qdrant outage doesn't lose data). Default OFF so the bus dispatch latency + voice baseline are byte-identical until operators opt in. Tests **5425 passing / 16 skipped / 0 failed in ~92 s** (+74 batch 3 tests from 5351).
+
+* **NEW [`src/ultron/events/models.py`](../src/ultron/events/models.py).** `StoredEvent` (id + session_id + kind + timestamp + payload + source + chain_prev_hash + chain_hash + sequence + extra; `.make()` factory + `.with_chain_hashes()` immutable update + `.to_dict()` / `.from_dict()` round-trip), `EventKind` namespace of canonical event-type strings, `EventQuery` value object, `EventPage` (immutable tuple + next_page_token + total_estimated), `EventSortOrder` enum, `canonical_event_json` stable encoder (sorted keys, microsecond timestamp rounding, omits the event's own chain_hash so the hash input is reproducible).
+
+* **NEW [`src/ultron/events/chain.py`](../src/ultron/events/chain.py).** SHA-256 hash chain helpers (T13). `compute_event_chain_hash(event, prev_hash)` produces the link; `verify_chain(events, *, strict)` walks a sequence and asserts each link matches, returning a frozen `ChainVerificationResult` with the broken index + expected vs actual hashes. Generalises the existing `src/ultron/safety/audit.py` chain pattern to any event sequence. Strict mode raises `ChainVerificationError`.
+
+* **NEW [`src/ultron/events/store.py`](../src/ultron/events/store.py).** `EventStore` ABC + three concretes. `MemoryEventStore` is dict-backed with per-session lists, thread-safe via RLock. `JsonlEventStore` writes append-only JSONL at `data/events/<session_id>.jsonl`; rejects path-traversal in session ids (`safe != session_id` raises `EventStoreError`); skips malformed lines on read with WARN log; chain continues correctly across reopen via cold-start scan + per-session last-hash cache. `QdrantEventStore` mirrors writes into a Qdrant collection through an injected client + always-also-persists into a fallback store (default `JsonlEventStore`) so a Qdrant outage degrades gracefully. Module-level singleton accessors `get_event_store` / `set_event_store` / `reset_event_store_for_testing`. `build_event_store(backend, *, base_dir, qdrant_client, qdrant_collection)` factory.
+
+* **NEW [`src/ultron/events/export.py`](../src/ultron/events/export.py).** Zip-format session export. `export_session_to_bytes(store, session_id, *, redact_kinds, extra_meta)` returns a frozen `SessionExport` with the zip bytes + chain-ok flag + redacted-kind list. `export_session_to_path(store, session_id, target)` writes to disk. The zip carries `events.jsonl` (one event per line) + `meta.json` (format_version, exported_at, chain verification result, sha256 of the events.jsonl, extra metadata). Useful for "send Anthropic / GitHub a reproducer" workflows.
+
+* **NEW [`src/ultron/events/bus_sink.py`](../src/ultron/events/bus_sink.py).** `BusEventSink` subscribes to the bus via `subscribe_all` and converts each envelope to a `StoredEvent` (extracts `kind` from `event_def.type`, `session_id` from `properties["session_id"]` falling back to the configured default, `timestamp` from `properties["timestamp"]` or `time.time()`). Per-session sequence counter for stable ordering. Errors swallowed at every step with WARN logs. `install_bus_event_sink(store)` is idempotent (replaces any prior install); `uninstall_bus_event_sink()` removes cleanly.
+
+* **NEW `EventsConfig` in [`src/ultron/config.py`](../src/ultron/config.py).** 6 knobs: `enabled` (default False), `store_backend` (memory / jsonl / qdrant), `base_dir` (default `data/events`), `qdrant_collection` (default `events`), `default_session_id` (default `"default"`), `install_bus_sink` (default True). Wired into `UltronConfig.events`.
+
+* **Orchestrator wiring** in [`src/ultron/pipeline/orchestrator.py`](../src/ultron/pipeline/orchestrator.py): `_load_event_store_if_enabled` reads config, builds the chosen backend via `build_event_store`, calls `set_event_store`, and optionally installs the bus sink. Fail-open at every layer.
+
+* **5 new test files (74 tests):** [`tests/events/test_models.py`](../tests/events/test_models.py) (16 -- new_event_id uniqueness, make/round-trip, with_chain_hashes immutability, from_dict tolerance, frozen, canonical encoding stability + chain_hash exclusion + timestamp rounding, default constants, EventPage immutability, EventQuery overrides, EventKind constants, kinds_in helper); [`tests/events/test_chain.py`](../tests/events/test_chain.py) (11 -- first-event empty-prev / hash sensitivity to prev + content / verify happy path / detects broken hash / broken prev_hash / strict raises / empty ok / missing chain_hash flagged / determinism / payload-change sensitivity); [`tests/events/test_store.py`](../tests/events/test_store.py) (27 -- Memory: chain stamping + verify + search by kind/time/sort/pagination + count + get_event + batch_get + list_sessions + session isolation; JSONL: persist + reload + chain across reopen + list sessions + invalid session-id rejection + skip malformed lines + search + count + missing session; Qdrant: fallback + client upsert + exception swallow + ensure_collection once; factory unknown raises + empty defaults; singleton set/get/reset); [`tests/events/test_export.py`](../tests/events/test_export.py) (7 -- contains meta + events / redaction / empty session / extra meta / write to path + parent dir creation / chain-broken recorded in meta); [`tests/events/test_bus_sink.py`](../tests/events/test_bus_sink.py) (13 -- install/uninstall lifecycle / idempotent / kind + session extraction / session fallback / class-name fallback / kind attribute fallback / strips session_id from payload / timestamp extracted + invalid fallback / dispatches to store / swallows store exceptions / per-session sequence counter).
+
+---
 
 **2026-05-23 OpenHands porting -- batch 2 (T1 trigger-loaded skills) -- COMPLETE.** Highest-impact net-new lift from the catalog. `src/ultron/skills/` package + initial public skill catalog at `skills/` (gaming, coding, security, system_status, memory_notes, image_gen). When `skills.enabled: true`, the LLMEngine prepends matched skill bodies to the system prompt for the current turn only -- keyword triggers fire on whole-word substring match (with a default `min_user_text_chars=8` guard against one-word false-fires), slash triggers fire on `/command` invocations, skills without triggers are always-on. Sources merge later-wins by precedence: PUBLIC (project root `skills/`) < USER (`~/.ultron/skills/`) < PROJECT (`<repo>/.ultron/skills/`). Default OFF so the voice baseline is byte-identical until operators opt in. Tests **5351 passing / 16 skipped / 0 failed in ~90 s** (+70 batch 2 tests from 5281).
 
@@ -2000,6 +2020,14 @@ For the current decisions and Foundation phase status see
 │       │   ├── loader.py           ← load_skill_from_path + load_skills_from_directory; frontmatter-driven; "any /-prefix flips to task" semantics; filename-stem fallback
 │       │   └── registry.py         ← SkillRegistry with mtime invalidation + later-wins source dedup; matching_skills (always-on + triggered capped at max_matches_per_turn); format_skills_block render; maybe_get_skills_block orchestrator helper; build_default_registry factory
 │       │
+│       ├── events/                 ← 2026-05-23 OpenHands batch 3 (T2 + T13): canonical event store + hash chain
+│       │   ├── __init__.py         ← Public API re-exports
+│       │   ├── models.py           ← StoredEvent + EventPage + EventQuery + EventSortOrder + EventKind namespace + canonical_event_json + new_event_id
+│       │   ├── chain.py            ← compute_event_chain_hash + verify_chain (T13 SHA-256 chain)
+│       │   ├── store.py            ← EventStore ABC + MemoryEventStore + JsonlEventStore + QdrantEventStore + build_event_store factory + singleton accessors
+│       │   ├── export.py           ← export_session_to_bytes + export_session_to_path zip builder with meta.json + chain verification
+│       │   └── bus_sink.py         ← BusEventSink subscribes to the bus, converts envelopes to StoredEvent, writes to the store
+│       │
 │       └── utils/
 │           ├── fairseq_compat.py   ← Workarounds for fairseq dataclass + torch.load issues
 │           ├── logging.py          ← configure_logging(), get_logger() (rotating file + console)
@@ -2167,6 +2195,13 @@ For the current decisions and Foundation phase status see
 │   │   ├── test_loader.py          ← 16 tests: frontmatter -> Skill conversion + directory walk + per-file error swallow
 │   │   ├── test_registry.py        ← 27 tests: lazy load, mtime invalidation, dedup, format rendering, singleton, factory
 │   │   └── test_orchestrator_wiring.py ← 5 tests: LLMEngine seam (no registry / match / no match / exception / always-on)
+│   ├── events/                     ← 2026-05-23 OpenHands batch 3 (T2 + T13): event store + hash chain tests
+│   │   ├── __init__.py
+│   │   ├── test_models.py          ← 16 tests: StoredEvent + canonical encoding + EventPage + EventQuery
+│   │   ├── test_chain.py           ← 11 tests: hash chain integrity (happy + broken hash + broken prev + strict + empty + missing + determinism)
+│   │   ├── test_store.py           ← 27 tests: Memory + JSONL + Qdrant backends + factory + singleton + session isolation + pagination
+│   │   ├── test_export.py          ← 7 tests: zip layout + redaction + empty session + extra meta + path write + chain-broken recorded
+│   │   └── test_bus_sink.py        ← 13 tests: lifecycle + envelope conversion + dispatch + exception swallow + sequence counter
 │   ├── routing/                    ← Phase 5 + 2026-05 extensions: classifier + dispatcher + decomposer + ambiguity + gaming_mode + decision_log + dispatcher_a1_c3
 │   │   ├── conftest.py
 │   │   ├── test_classifier.py      ← Top-level classifier with 23 RoutingIntentKind branches + 2026-05-22 _NAVIGATE_TO_SITE + _OPEN_LAST_SOURCE_AMBIGUOUS lists
