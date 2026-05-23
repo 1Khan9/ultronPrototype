@@ -10,8 +10,23 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `b02af04` on `origin/main`. Tests **4104 passing /
+> **Validating HEAD:** `1c887d4` on `origin/main`. Tests **4104 passing /
 > 16 skipped / 0 failed** in ~85 s via `scripts/run_tests.py`.
+>
+> **Public-repo hygiene:** the repo lives at
+> `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
+> public and private as needed). A `.git/hooks/pre-push` hook scans every
+> push and blocks (a) forbidden paths covering local dev-tool
+> orientation files, archived sibling-tool configs, integration-
+> credential dirs, personal-content data files, and install / HF-cache
+> logs; (b) forbidden commit-message + file-content patterns covering
+> co-author trailers, dev-tool email trailers, and dev-tool brand
+> prose; (c) brand-name model-tier mentions in prose (CLI string
+> values are preserved). The hook's source defines the exact regex
+> sets and is the source of truth. If the hook blocks a push, fix
+> the commit — don't bypass with `--no-verify`. The full hygiene
+> contract lives in the local-only `CLAUDE.md` orientation file and
+> the auto-loaded `MEMORY.md` index.
 
 **2026-05-22 session E: opencode-inspired event bus + coding-supervisor stack (5 phases) -- COMPLETE.** Tests **4104 passing / 16 skipped / 0 failed in ~85 s** (+158 net). One commit on top of `9f2ac68`.
 
