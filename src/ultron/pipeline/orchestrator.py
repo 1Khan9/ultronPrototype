@@ -1004,6 +1004,51 @@ class Orchestrator:
                         )
                         repo_map_provider = None
 
+                # 2026-05-22 catalog batch 7: construct the architect-
+                # plan provider when its flag is on. Fail-open: if the
+                # in-process LLM is unavailable or construction errors,
+                # the supervisor falls back to no-plan decisions.
+                architect_provider = None
+                architect_cfg = get_config().coding.architect
+                if architect_cfg.enabled and self.llm is not None:
+                    try:
+                        from ultron.coding.architect_supervisor import (
+                            ArchitectSupervisor,
+                            DEFAULT_ARCHITECT_SYSTEM_PROMPT,
+                        )
+
+                        def _architect_call(rendered_prompt: str) -> str:
+                            # Use the isolated LLM path so SOUL.md
+                            # persona + memory don't contaminate the
+                            # architect plan. Temperature 0.3 because
+                            # plan generation is mildly creative.
+                            return self.llm.generate_isolated(
+                                system_prompt=DEFAULT_ARCHITECT_SYSTEM_PROMPT,
+                                user_prompt=rendered_prompt,
+                                temperature=0.3,
+                            )
+
+                        architect_provider = ArchitectSupervisor(
+                            [_architect_call],
+                        )
+                        logger.info(
+                            "Supervisor: architect provider enabled "
+                            "(max_prompt_chars=%d)",
+                            architect_cfg.max_prompt_chars,
+                        )
+                    except Exception as e2:                          # noqa: BLE001
+                        logger.warning(
+                            "Supervisor: architect provider construction "
+                            "failed (%s); supervisor will run without "
+                            "an architect plan.", e2,
+                        )
+                        architect_provider = None
+                elif architect_cfg.enabled and self.llm is None:
+                    logger.warning(
+                        "coding.architect.enabled=True but llm is None; "
+                        "architect provider disabled.",
+                    )
+
                 supervisor = ProjectSupervisor(
                     index=project_index,
                     registry=registry,
@@ -1017,6 +1062,7 @@ class Orchestrator:
                     ),
                     max_candidates_in_decision=cfg.max_candidates_in_decision,
                     repo_map_provider=repo_map_provider,
+                    architect_provider=architect_provider,
                 )
             except Exception as e:                                  # noqa: BLE001
                 logger.warning(

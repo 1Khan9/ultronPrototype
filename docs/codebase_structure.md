@@ -11,10 +11,10 @@
 > current — see "Maintenance contract" at the bottom.
 >
 > **Validating HEAD:** `65fc49c` on `origin/main` (this doc-bump is on
-> top of feature commit `8bbc345`). Tests **4452 passing / 17 skipped /
-> 0 failed in ~75 s** via direct pytest invocation (baseline 4240 +
+> top of feature commit `8bbc345`). Tests **4460 passing / 16 skipped /
+> 0 failed in ~76 s** via direct pytest invocation (baseline 4240 +
 > 82 batch 1 + 29 batch 2 + 22 batch 3 + 21 batch 4 + 36 batch 5 +
-> 22 batch 6).
+> 22 batch 6 + 8 batch 7).
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -30,6 +30,18 @@
 > the commit — don't bypass with `--no-verify`. The full hygiene
 > contract lives in the local-only `CLAUDE.md` orientation file and
 > the auto-loaded `MEMORY.md` index.
+
+**2026-05-22 catalog batch 7: architect + repo-map wiring into dispatch prompt body (T5 Phase 3) -- COMPLETE.** Closes the dead-weight loop opened by batch 6: previously `decision.architect_plan_text` was generated and stored but nothing prepended it to the Claude prompt. Now `supervisor_dispatch.py`'s prompt builders (for both EDIT and NEW dispatches) prepend `Architect plan:` and `Repo map:` sections when those decision fields are populated. The orchestrator's `_construct_supervisor_stack` now also actually constructs an `ArchitectSupervisor` when `coding.architect.enabled=true`, wiring the in-process LLM via `generate_isolated(temperature=0.3)`. Tests **4460 passing / 16 skipped / 0 failed in ~76 s** (+8 net; baseline 4452 from batch 6).
+
+* **Integration: [`src/ultron/coding/supervisor_dispatch.py`](../src/ultron/coding/supervisor_dispatch.py) `_build_edit_prompt`.** The prompt body now leads with `User request:` (verbatim) → `Architect plan:` (when set) → `Repo map:` (when set) → enriched-context sections (digest + project layout + file hints, when `enriched_context_enabled=true`). The architect/repo-map sections fire INDEPENDENTLY of `enriched_context_enabled` — they come from supervisor providers that are themselves flag-gated, so if the operator turned them on, the dispatch must surface their output even with enriched-context off.
+
+* **Integration: [`src/ultron/coding/supervisor_dispatch.py`](../src/ultron/coding/supervisor_dispatch.py) `_build_new_task_request`.** Same enrichment for NEW (scaffold) dispatches. Plan + map prepended to the prompt body before `User request:`. Mirrors EDIT ordering.
+
+* **Integration: [`src/ultron/pipeline/orchestrator.py`](../src/ultron/pipeline/orchestrator.py) `_construct_supervisor_stack`.** When `coding.architect.enabled=true` AND `self.llm` is non-None, constructs an `ArchitectSupervisor([_architect_call])` where `_architect_call` invokes `self.llm.generate_isolated(system_prompt=DEFAULT_ARCHITECT_SYSTEM_PROMPT, user_prompt=rendered, temperature=0.3)`. Isolated-path call so SOUL.md persona + memory injection don't contaminate the plan. Fail-open: construction errors log WARN and the supervisor runs without an architect plan. When `enabled=true` but `self.llm is None`, logs an explicit warning so misconfiguration is visible.
+
+* **Tests.** 8 new in [`tests/coding/test_supervisor_dispatch_enrichment.py`](../tests/coding/test_supervisor_dispatch_enrichment.py): EDIT prompt with architect plan only, with repo map only, with both (and order — plan before map), with neither (sections omitted), user request stays first, enriched-context coexistence; NEW dispatch with both, NEW dispatch fallback to user-text-only. Existing 22 `test_supervisor_dispatch.py` tests still pass — the enrichment is purely additive.
+
+---
 
 **2026-05-22 catalog batch 6: architect/editor split (Phase 1 — plan generation) -- COMPLETE.** Sixth and final batch of the external-codebase catalog pass. Implements aider's architect/editor split (T5) **Phase 1 only**: a local LLM produces a prose plan from the user's utterance + repo-map + project-digest BEFORE the editor LLM (typically Claude) is invoked. Phase 2 (TTS narration of the plan with a barge-in window) and Phase 3 (forward plan as the editor's user message) are intentionally deferred to follow-up work — both touch the voice hot path and require a fresh `scripts/measure_baseline.py` pass per the voice-baseline binding rule. Default OFF behind `coding.architect.enabled`. Tests **4452 passing / 17 skipped / 0 failed in ~75 s** (+22 net; baseline 4430 from batch 5).
 

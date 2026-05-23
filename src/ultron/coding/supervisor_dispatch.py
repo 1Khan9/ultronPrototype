@@ -355,7 +355,27 @@ class SupervisorDispatchController:
         # Caller is responsible for `mkdir` -- existing runner does
         # this. We don't pre-create here so we don't half-write state
         # if the dispatch never starts.
-        prompt = inputs.user_text
+        # Catalog batches 6/7: prepend architect plan + repo map (if any)
+        # so even NEW scaffolds benefit when the operator has the
+        # architect provider on (rare but supported).
+        prompt_parts: List[str] = []
+        if decision.architect_plan_text:
+            prompt_parts.extend([
+                "Architect plan (follow these instructions):",
+                decision.architect_plan_text.strip(),
+                "",
+            ])
+        if decision.repo_map_text:
+            prompt_parts.extend([
+                "Repo map (PageRank-ranked symbols, for orientation):",
+                decision.repo_map_text.strip(),
+                "",
+            ])
+        prompt_parts.extend([
+            "User request:",
+            inputs.user_text.strip(),
+        ])
+        prompt = "\n".join(prompt_parts)
         return TaskRequest(
             task_prompt=prompt,
             cwd=cwd,
@@ -375,10 +395,23 @@ class SupervisorDispatchController:
         Sections (omitted when empty):
 
           1. The user's request (verbatim).
-          2. "What we know about this project" -- digest sections
-             pulled from the index entry.
-          3. "Project layout" -- file tree snapshot summary.
-          4. "Likely relevant files" -- file hints from the digest.
+          2. "Architect plan" -- 2026-05-22 catalog batch 6/7
+             integration. When ``decision.architect_plan_text`` is set
+             (the supervisor's ``architect_provider`` produced a
+             prose plan), include it so the editor LLM has explicit
+             prose direction. This section is included EVEN when
+             ``enriched_context_enabled`` is off — the plan is the
+             whole point of running the architect.
+          3. "Repo map" -- catalog batch 2/7 integration. When
+             ``decision.repo_map_text`` is set (PageRank-weighted
+             symbol map), include it so the editor starts with
+             structural awareness. Also included when enriched off.
+          4. "What we know about this project" -- digest sections
+             pulled from the index entry (enriched-only).
+          5. "Project layout" -- file tree snapshot summary
+             (enriched-only).
+          6. "Likely relevant files" -- file hints from the digest
+             (enriched-only).
 
         Capped at a reasonable size so we don't bloat Claude's prompt.
         """
@@ -387,6 +420,23 @@ class SupervisorDispatchController:
             f"  {inputs.user_text.strip()}",
             "",
         ]
+
+        # Catalog batches 6/7: architect plan + repo map injected even
+        # when enriched_context is OFF — these come from the supervisor's
+        # own optional providers and only exist if the operator already
+        # opted into them via their respective config flags.
+        if decision.architect_plan_text:
+            parts.extend([
+                "Architect plan (follow these instructions):",
+                _indent_block(decision.architect_plan_text.strip(), "  "),
+                "",
+            ])
+        if decision.repo_map_text:
+            parts.extend([
+                "Repo map (PageRank-ranked symbols, for orientation):",
+                _indent_block(decision.repo_map_text.strip(), "  "),
+                "",
+            ])
 
         if not self.enriched_context_enabled:
             return "\n".join(parts).rstrip() + "\n"
