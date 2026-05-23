@@ -1277,6 +1277,33 @@ intent:
     - "what is the buzz"
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Skills (2026-05-23 OpenHands batch 2 T1) — trigger-loaded knowledge bundles.
+#
+# When enabled, the orchestrator walks ``skills/`` (public), ``~/.ultron/skills/``
+# (user), ``<project>/.ultron/skills/`` (project), parses each .md file's YAML
+# frontmatter, and the LLMEngine prepends matched skill bodies to the system
+# prompt for the current turn only. Always-on skills (no triggers) fire every
+# turn; keyword-trigger skills fire on whole-word substring match; slash-command
+# skills fire on /commands.
+#
+# Default OFF so the voice baseline is unchanged. Flip ``enabled: true`` after
+# auditing the skills/ catalog the operator wants active.
+# ---------------------------------------------------------------------------
+
+skills:
+  enabled: false                       # opt-in; flip to true to wire matching
+  always_on_only: false                # debug toggle: drops triggered skills
+  disabled_skills: []                  # names to suppress even when matched
+  default_min_user_text_chars: 8       # guard against one-word false fires
+  max_matches_per_turn: 6              # cap on triggered (non-always-on) skills
+  max_skill_block_chars: 8000          # hard cap on the injected block; 0 = no cap
+  public_dirname: "skills"             # relative to PROJECT_ROOT
+  user_dirname: ".ultron/skills"       # relative to user home
+  project_dirname: ".ultron/skills"    # relative to PROJECT_ROOT
+  extra_dirs: []                       # additional PROJECT-precedence dirs
+
+# ---------------------------------------------------------------------------
 # Gaming mode (V1-spec gap A1) — anticheat-safe shutdown of OpenClaw
 # desktop / windows control plugins. When engaged, runs
 # ``openclaw plugins disable <id>`` for each slug below so Vanguard /

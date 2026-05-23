@@ -473,6 +473,14 @@ class Orchestrator:
         # (e.g., gaming mode engage/disengage) directly. Default OFF so
         # operators opt in after deciding which phrases to register.
         self._intent_recognizer = self._init_intent_recognizer_if_enabled()
+        # 2026-05-23 OpenHands batch 2 (T1) -- trigger-loaded skills.
+        # When ``skills.enabled`` is True, walks ``skills/`` (public),
+        # ``~/.ultron/skills/`` (user), and ``<project>/.ultron/skills/``
+        # (project), then publishes a SkillRegistry singleton that
+        # LLMEngine._build_messages consults to inject matched skill
+        # bodies into the system prompt per-turn. Default OFF so the
+        # voice baseline is unchanged until operators opt in.
+        self._load_skill_registry_if_enabled()
         # 2026-05-22 -- consumed by _build_response_stream. Set by the
         # intent dispatcher when a "needs fresh data" phrase matches;
         # forces the gate verdict to SEARCH (skipping preflight LLM).
@@ -651,6 +659,58 @@ class Orchestrator:
                 "fall-through enabled", e,
             )
             return None
+
+    def _load_skill_registry_if_enabled(self) -> None:
+        """2026-05-23 OpenHands batch 2 (T1) -- construct the skill registry.
+
+        Walks ``skills/`` (public, under PROJECT_ROOT), ``~/.ultron/skills/``
+        (user), ``<project_root>/.ultron/skills/`` (project), plus any
+        ``skills.extra_dirs`` from config. Publishes the result via
+        ``set_skill_registry`` so :func:`maybe_get_skills_block`
+        (called from LLMEngine._build_messages) injects matching
+        skill bodies into the system prompt.
+
+        Fail-open: any error logs WARN and leaves the singleton unset,
+        which makes the skills hook a no-op (matches the pre-batch-2
+        voice baseline).
+        """
+
+        try:
+            from ultron.config import PROJECT_ROOT, get_config
+
+            cfg = get_config().skills
+        except Exception as e:                                    # noqa: BLE001
+            logger.warning("skills: config read failed (%s)", e)
+            return
+        if not getattr(cfg, "enabled", False):
+            return
+        try:
+            from ultron.skills import build_default_registry, set_skill_registry
+
+            registry = build_default_registry(
+                project_root=PROJECT_ROOT,
+                user_home=None,
+                extra_project_dirs=list(cfg.extra_dirs),
+                disabled_skills=list(cfg.disabled_skills),
+                always_on_only=cfg.always_on_only,
+                default_min_user_text_chars=cfg.default_min_user_text_chars,
+                max_matches_per_turn=cfg.max_matches_per_turn,
+            )
+            # Eager-load so the first user turn doesn't pay the walk
+            # cost on the voice hot path. The walk is ~5-30 ms.
+            stats = registry.reload()
+            set_skill_registry(registry)
+            loaded = sum(s.skills_loaded for s in stats)
+            sources = ", ".join(str(s.directory) for s in stats)
+            logger.info(
+                "skills: registry ready (loaded=%d sources=[%s])",
+                loaded, sources,
+            )
+        except Exception as e:                                    # noqa: BLE001
+            logger.warning(
+                "skills registry init failed (%s) -- skill injection "
+                "disabled for this session", e,
+            )
 
     def _maybe_dispatch_intent(self, user_text: str) -> bool:
         """Run user_text through the intent recognizer.

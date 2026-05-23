@@ -2832,6 +2832,50 @@ class InteractiveToolsBlockConfig(_Strict):
 SafetyConfig.model_rebuild()
 
 
+class SkillsConfig(_Strict):
+    """Trigger-loaded skills (OpenHands catalog T1).
+
+    All knobs default to a no-op posture so the voice baseline contract
+    holds: with ``enabled=False`` the system prompt is byte-identical
+    to the pre-skills path.
+
+    Attributes:
+        enabled: Master switch. Default False (opt-in).
+        always_on_only: When True, ONLY always-on skills are injected.
+            Useful for debug or when keyword-trigger false-fires are
+            suspected.
+        disabled_skills: Names of skills to suppress even when matched.
+        default_min_user_text_chars: Floor for the per-skill
+            ``min_user_text_chars`` guard on keyword triggers. Prevents
+            one-word utterances ("ssh") from loading stale ops skills.
+            Skills can override per-file in their frontmatter.
+        max_matches_per_turn: Cap on the number of triggered (non-
+            always-on) skills injected per turn. Always-on skills are
+            unaffected.
+        max_skill_block_chars: Hard cap on the assembled skills block.
+            ``0`` disables truncation.
+        public_dirname: Relative directory under the project root
+            containing the public skill catalog.
+        user_dirname: Relative directory under the user home containing
+            user-level skills.
+        project_dirname: Relative directory under the active project
+            containing per-project skills.
+        extra_dirs: Additional absolute directories to scan with
+            PROJECT precedence (e.g. a shared team skills repo).
+    """
+
+    enabled: bool = False
+    always_on_only: bool = False
+    disabled_skills: List[str] = Field(default_factory=list)
+    default_min_user_text_chars: int = Field(default=8, ge=0, le=64)
+    max_matches_per_turn: int = Field(default=6, ge=0, le=32)
+    max_skill_block_chars: int = Field(default=8000, ge=0, le=64000)
+    public_dirname: str = "skills"
+    user_dirname: str = ".ultron/skills"
+    project_dirname: str = ".ultron/skills"
+    extra_dirs: List[str] = Field(default_factory=list)
+
+
 class UltronConfig(_Strict):
     """Top-level configuration. Matches the structure of ``config.yaml``."""
     version: str = "1.0"
@@ -2866,6 +2910,13 @@ class UltronConfig(_Strict):
     # 2026-05-22 -- engine-agnostic intent recognizer (Gemma-300M
     # embeddings via moonshine_voice). Works with any STT engine.
     intent: "IntentConfig" = Field(default_factory=lambda: IntentConfig())
+    # 2026-05-23 OpenHands batch 2 (T1) -- trigger-loaded skills.
+    # When enabled, walks ``skills/`` (public), ``~/.ultron/skills/`` (user),
+    # ``<project>/.ultron/skills/`` (project), and injects matching skill
+    # bodies into the system prompt for any keyword / slash-command that
+    # matches the current user utterance. Always-on skills (no triggers)
+    # fire every turn.
+    skills: "SkillsConfig" = Field(default_factory=lambda: SkillsConfig())
 
 
 # ---------------------------------------------------------------------------

@@ -10,12 +10,12 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `bbced3a` on `origin/main` (the OpenHands batch 1
-> feature work lands on top -- doc bumped post-batch on the next commit).
-> Tests **5281 passing / 16 skipped / 0 failed in ~97 s** via
-> `scripts/run_tests.py` (prior baseline 5215 + 22 frontmatter + 24
-> poll + 20 idempotent installer -- OpenHands catalog batch 1
-> foundation primitives T11 + T14 + T8 all landed).
+> **Validating HEAD:** `0cb78f2` on `claude/silly-lamarr-14194e`
+> (batch-2 feature work lands on top -- doc bumped post-batch).
+> Tests **5351 passing / 16 skipped / 0 failed in ~90 s** via
+> `scripts/run_tests.py` (prior baseline 5281 + 22 models + 16 loader
+> + 27 registry + 5 orchestrator wiring -- OpenHands catalog batch 2
+> trigger-loaded skills T1 landed).
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -31,6 +31,26 @@
 > the commit — don't bypass with `--no-verify`. The full hygiene
 > contract lives in the local-only `CLAUDE.md` orientation file and
 > the auto-loaded `MEMORY.md` index.
+
+**2026-05-23 OpenHands porting -- batch 2 (T1 trigger-loaded skills) -- COMPLETE.** Highest-impact net-new lift from the catalog. `src/ultron/skills/` package + initial public skill catalog at `skills/` (gaming, coding, security, system_status, memory_notes, image_gen). When `skills.enabled: true`, the LLMEngine prepends matched skill bodies to the system prompt for the current turn only -- keyword triggers fire on whole-word substring match (with a default `min_user_text_chars=8` guard against one-word false-fires), slash triggers fire on `/command` invocations, skills without triggers are always-on. Sources merge later-wins by precedence: PUBLIC (project root `skills/`) < USER (`~/.ultron/skills/`) < PROJECT (`<repo>/.ultron/skills/`). Default OFF so the voice baseline is byte-identical until operators opt in. Tests **5351 passing / 16 skipped / 0 failed in ~90 s** (+70 batch 2 tests from 5281).
+
+* **NEW [`src/ultron/skills/models.py`](../src/ultron/skills/models.py).** Frozen dataclasses for the skill domain: `Skill` (name + content + optional trigger + source + type + description + extra metadata), `KeywordTrigger` (whole-word case-insensitive substring with `min_user_text_chars` guard), `TaskTrigger` (slash-command match supporting leading + natural-preamble + trailing-punctuation variants), `SkillMatch` (skill + the terms that fired), `SkillSource` (PUBLIC < USER < PROJECT precedence enum), `SkillType` (KNOWLEDGE / TASK / ALWAYS_ON). Helpers `matches_text`, `find_matched_keywords`, `find_matched_commands` are pure functions usable outside the registry.
+
+* **NEW [`src/ultron/skills/loader.py`](../src/ultron/skills/loader.py).** Walks a directory + parses every `.md` file's frontmatter via :func:`ultron.parsing.parse_frontmatter` (T11). `load_skill_from_path(path)` and `load_skills_from_directory(dir, source, recursive, default_min_user_text_chars, skip_directories, skip_filenames)` return `(skills, SkillLoadStats)`. The loader honours the catalog's "any /-prefixed trigger flips the whole list to task semantics" rule, falls back to the filename stem when frontmatter is missing or has no `name`, and treats unparseable / mistyped `triggers` as always-on (with a warning).
+
+* **NEW [`src/ultron/skills/registry.py`](../src/ultron/skills/registry.py).** `SkillRegistry` with mtime-invalidated cache + later-wins source dedup. `matching_skills(user_text)` returns always-on skills + up to `max_matches_per_turn` triggered ones, sorted by source precedence then name. `add_source` / `set_disabled_skills` for runtime tweaks. `reload()` for explicit refresh; lazy reload on stale fingerprint. Module-level singleton accessors `get_skill_registry` / `set_skill_registry` / `reset_skill_registry_for_testing`. `format_skills_block(matches, *, leading_label, max_chars)` renders the `[Skills: name1, name2]\n# name1\n<body>\n# name2\n<body>` block. `maybe_get_skills_block(user_text)` is the one-call orchestrator helper that swallows every error and returns `""` when no registry is set / no skills match. `build_default_registry(project_root, user_home, extra_project_dirs, ...)` wires the three default sources.
+
+* **NEW initial skill catalog [`skills/`](../skills/) (6 skills + README).** Gaming (valorant / csgo / apex / etc.), coding (refactor / pytest / mypy / commit / etc.), security (password / secret / vulnerability / etc.), system_status (slash `/status` / `/diag` / `/health`), memory_notes (slash `/remember` / `/note` / `/save`), image_gen (make a picture / generate / etc.). Each carries ultron-tailored content -- voice-friendly response shaping, project-specific guidance, refusals where appropriate.
+
+* **NEW `SkillsConfig` in [`src/ultron/config.py`](../src/ultron/config.py).** 10 knobs: `enabled` (default False), `always_on_only`, `disabled_skills`, `default_min_user_text_chars` (default 8), `max_matches_per_turn` (default 6), `max_skill_block_chars` (default 8000), `public_dirname` (default `"skills"`), `user_dirname` (default `".ultron/skills"`), `project_dirname` (default `".ultron/skills"`), `extra_dirs`. Wired into `UltronConfig.skills`.
+
+* **Orchestrator wiring** in [`src/ultron/pipeline/orchestrator.py`](../src/ultron/pipeline/orchestrator.py): `_load_skill_registry_if_enabled` constructs the registry on `__init__`, calls `set_skill_registry`, and eager-loads via `registry.reload()`. Fail-open at every layer.
+
+* **LLMEngine wiring** in [`src/ultron/llm/inference.py`](../src/ultron/llm/inference.py): `_build_messages` calls `maybe_get_skills_block(user_message)` right after `_resolve_system_prompt()` and prepends the returned block (when non-empty) to the system prompt. When the registry is unset OR returns no matches, the system prompt is byte-identical to the pre-batch-2 path -- voice baseline preserved.
+
+* **Four new test files (70 tests):** [`tests/skills/test_models.py`](../tests/skills/test_models.py) (22 -- keyword trigger whole-word + case-insensitive + min-chars guard + multi-word substring; task trigger leading slash + natural preamble + missing-slash config + trailing punctuation; matches_text / find_matched_* helpers; SkillSource precedence; Skill always-on / matches / trigger-exception swallow; SkillMatch attribute proxies; frozen dataclass; SkillType default); [`tests/skills/test_loader.py`](../tests/skills/test_loader.py) (16 -- keyword / task / always-on / filename-stem-fallback / missing-name-stem / mixed-trigger-becomes-task / non-list-triggers / min_user_text_chars override + default / passthrough extras / description+version / directory walk / missing dir / per-file error swallow / non-recursive / unknown type defaults); [`tests/skills/test_registry.py`](../tests/skills/test_registry.py) (27 -- lazy load / always-on emit / keyword match population / task slash match / disabled filter + runtime / source precedence / max_matches cap / always_on_only mode / mtime invalidation on add / modify / remove / explicit reload / add_source runtime / list_skill_names sorted / load_stats populated / format_skills_block empty / basic / multi / truncates / descriptions / singleton set+get+reset / build_default_registry includes three sources + extra_dirs / default constant pin); [`tests/skills/test_orchestrator_wiring.py`](../tests/skills/test_orchestrator_wiring.py) (5 -- no registry leaves prompt alone / match injects block / no-match leaves prompt alone / exception swallowed / always-on injected regardless).
+
+---
 
 **2026-05-23 OpenHands porting -- batch 1 (T11 frontmatter + T14 polling + T8 idempotent installer) -- COMPLETE.** Foundation primitives for the OpenHands catalog port. Three new modules under `src/ultron/parsing/`, `src/ultron/utils/`, and `src/ultron/install/` providing the fail-open building blocks the later batches (skills, event store, callbacks, condensers, start tasks, pending message queue, project discovery) depend on. Tests **5281 passing / 16 skipped / 0 failed in ~97 s** (+66 batch 1 tests from 5215).
 
@@ -1974,6 +1994,12 @@ For the current decisions and Foundation phase status see
 │       │   ├── __init__.py         ← Public API re-exports incl. DEFAULT_MARKER
 │       │   └── idempotent.py       ← install_with_marker(target, content, marker, preserve_existing_as, replace_unmarked, dry_run) -> InstallResult with InstallAction enum; atomic writes; logs/install_log.jsonl audit log
 │       │
+│       ├── skills/                 ← 2026-05-23 OpenHands batch 2 (T1): trigger-loaded skills
+│       │   ├── __init__.py         ← Public API re-exports incl. maybe_get_skills_block
+│       │   ├── models.py           ← Frozen dataclasses: Skill, KeywordTrigger, TaskTrigger, SkillMatch, SkillSource (precedence enum), SkillType; matches_text + find_matched_keywords + find_matched_commands helpers
+│       │   ├── loader.py           ← load_skill_from_path + load_skills_from_directory; frontmatter-driven; "any /-prefix flips to task" semantics; filename-stem fallback
+│       │   └── registry.py         ← SkillRegistry with mtime invalidation + later-wins source dedup; matching_skills (always-on + triggered capped at max_matches_per_turn); format_skills_block render; maybe_get_skills_block orchestrator helper; build_default_registry factory
+│       │
 │       └── utils/
 │           ├── fairseq_compat.py   ← Workarounds for fairseq dataclass + torch.load issues
 │           ├── logging.py          ← configure_logging(), get_logger() (rotating file + console)
@@ -2135,6 +2161,12 @@ For the current decisions and Foundation phase status see
 │   ├── parsing/                    ← 2026-05-23 OpenHands batch 1 (T11): frontmatter parser tests
 │   │   ├── __init__.py
 │   │   └── test_frontmatter.py     ← 22 tests: parse / walk / fail-open / CRLF / empty fm / missing closer / non-mapping / decode error / custom extensions / skip dirs / frozen
+│   ├── skills/                     ← 2026-05-23 OpenHands batch 2 (T1): trigger-loaded skills tests
+│   │   ├── __init__.py
+│   │   ├── test_models.py          ← 22 tests: keyword + task triggers, source precedence, Skill+SkillMatch
+│   │   ├── test_loader.py          ← 16 tests: frontmatter -> Skill conversion + directory walk + per-file error swallow
+│   │   ├── test_registry.py        ← 27 tests: lazy load, mtime invalidation, dedup, format rendering, singleton, factory
+│   │   └── test_orchestrator_wiring.py ← 5 tests: LLMEngine seam (no registry / match / no match / exception / always-on)
 │   ├── routing/                    ← Phase 5 + 2026-05 extensions: classifier + dispatcher + decomposer + ambiguity + gaming_mode + decision_log + dispatcher_a1_c3
 │   │   ├── conftest.py
 │   │   ├── test_classifier.py      ← Top-level classifier with 23 RoutingIntentKind branches + 2026-05-22 _NAVIGATE_TO_SITE + _OPEN_LAST_SOURCE_AMBIGUOUS lists

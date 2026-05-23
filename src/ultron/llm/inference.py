@@ -829,6 +829,22 @@ class LLMEngine:
         # so a SOUL.md edit takes effect on the next user turn without
         # restart. Cost is ~6 stat() calls (sub-millisecond).
         system_content = self._resolve_system_prompt()
+
+        # 2026-05-23 OpenHands batch 2 (T1) -- trigger-loaded skills.
+        # When the orchestrator has set a process-wide SkillRegistry,
+        # ask it for any skills matching the current utterance and
+        # prepend their bodies to the system prompt for THIS turn only.
+        # Fail-open: any error returns an empty string, leaving the
+        # system prompt byte-identical to the pre-skills path.
+        try:
+            from ultron.skills import maybe_get_skills_block
+
+            skills_block = maybe_get_skills_block(user_message)
+        except Exception:
+            skills_block = ""
+        if skills_block:
+            system_content = system_content + "\n\n" + skills_block
+
         # Keep ``self.system_prompt`` in sync with the resolved value
         # so external readers (tests, debug log dumps) see the live
         # prompt, not the construction-time snapshot.
