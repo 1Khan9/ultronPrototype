@@ -10,12 +10,11 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `75ee5bf` on `claude/silly-lamarr-14194e`
-> (batch-5 feature work lands on top -- doc bumped post-batch).
-> Tests **5525 passing / 16 skipped / 0 failed in ~90 s** via
-> `scripts/run_tests.py` (prior baseline 5481 + 44 condensers --
-> OpenHands catalog batch 5 history-compression strategies T4
-> landed).
+> **Validating HEAD:** (batch-6 feature work lands on top -- doc
+> bumped post-batch). Tests **5576 passing / 16 skipped / 0 failed
+> in ~90 s** via `scripts/run_tests.py` (prior baseline 5525 + 26
+> start-task + 25 pending-message-queue -- OpenHands catalog batch 6
+> lifecycle primitives T5 + T16 landed).
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -31,6 +30,16 @@
 > the commit — don't bypass with `--no-verify`. The full hygiene
 > contract lives in the local-only `CLAUDE.md` orientation file and
 > the auto-loaded `MEMORY.md` index.
+
+**2026-05-23 OpenHands porting -- batch 6 (T5 start-task state machine + T16 pending-message queue) -- COMPLETE.** Lifecycle primitives for the cold-start UX win + gaming-mode engage status streaming. Tests **5576 passing / 16 skipped / 0 failed in ~90 s** (+51 batch 6 tests from 5525).
+
+* **NEW [`src/ultron/lifecycle/start_task.py`](../src/ultron/lifecycle/start_task.py) (T5).** Typed status state machine streamed as an async generator. `StartTaskStatus` enum (WORKING / READY / ERROR / CANCELLED + voice cold-start states LOADING_LLM / LOADING_STT / LOADING_TTS / LOADING_MEMORY / LOADING_INTENT / LOADING_SKILLS + gaming-engage states STOPPING_PARAKEET / SWAPPING_LLM / MOVING_KOKORO / UNLOADING_VLM / DISABLING_PLUGINS + coding-bootstrap states INDEXING_PROJECT / BUILDING_DIGEST / RESOLVING_MENTIONS). `StartTask` mutable dataclass with `id` + `name` + `status` + `detail` + `started_at` + `updated_at` + `progress` (0-1 clamped) + `error` + `extra` + per-transition `history`. `create_start_task(name, *, task_id, initial_status, detail, extra)` factory. `is_terminal_status(status)` helper. `StartTaskRecorder(event_store, session_id)` persists every transition into the optional event store from batch 3 -- swallows store exceptions at WARN. `drive_start_task(iterator, *, on_transition, on_error, recorder, timeout_seconds)` is the async driver that fires per-transition callbacks (sync OR async accepted), records via the optional recorder, logs WARN past `timeout_seconds`, raises `StartTaskError` on generator failure with the task marked ERROR.
+
+* **NEW [`src/ultron/lifecycle/pending_message_queue.py`](../src/ultron/lifecycle/pending_message_queue.py) (T16).** Thread-safe in-memory queue with optional JSONL persistence. `PendingMessage` value type (id + binding_key + text + created_at + state + delivered_at + extra). `PendingMessageState` enum (QUEUED / DELIVERED / CANCELLED / DROPPED / FAILED). `PendingMessageQueue.enqueue(binding_key, text, ...)` returns the queued message; bucket overflow above `limit_per_key` (default 32) drops the oldest with a WARN. `.rebind(from_key, to_key)` migrates messages in order (matches OpenHands' `update_conversation_id`). `.cancel(binding_key)` marks all CANCELLED + clears. `.drain(binding_key, deliver_fn, *, stop_on_failure)` calls `deliver_fn(msg)` for each in order, marks DELIVERED on success / FAILED on exception, optionally aborts on first failure. Optional JSONL persistence skips DELIVERED + CANCELLED messages on reload. `rebind_pending_messages(queue, from_key, to_key)` module-level alias.
+
+* **Two new test files (51 tests):** [`tests/lifecycle/test_start_task.py`](../tests/lifecycle/test_start_task.py) (26 -- create defaults / overrides / is_terminal helper / advance appends history + clamps progress + returns self / to_dict round-trip / elapsed seconds non-negative / drive reaches READY / records each transition / sync + async on_transition / propagates error + marks ERROR status / empty generator raises / non-terminal exit marks ERROR / timeout warning / recorder with + without store + swallows store exception + drive_start_task calls recorder / status enum values). [`tests/lifecycle/test_pending_message_queue.py`](../tests/lifecycle/test_pending_message_queue.py) (25 -- default limit / enqueue returns PendingMessage + unique ids + invalid args + invalid limit / peek returns copy / count with + without key / keys sorted / overflow drops oldest + warning logged / rebind migrates order + merges into existing + respects limit + no-op when missing / same-key zero / invalid args / module-level alias / cancel marks state + missing zero / clear / drain delivers in order + empty bucket / failure marks FAILED + continues / stop_on_failure aborts / persistence round-trip + skips delivered + failure swallowed + skips malformed lines / message to_dict round-trip / state enum values).
+
+---
 
 **2026-05-23 OpenHands porting -- batch 5 (T4 condensers) -- COMPLETE.** Swappable history-compression strategies as a :class:`Condenser` ABC. Five concretes ship: `NoOpCondenser` (passthrough), `RecentCondenser` (keep head + tail, drop middle), `AmortizedCondenser` (intelligent forgetting without LLM call; pinned roles + per-role preference + token budget), `ObservationMaskingCondenser` (mask tool/system content older than `attention_window`), `LLMSummarizingCondenser` (the heavy variant; fold dropped middle into one synthesised turn via an injected `summarize_fn`). `build_condenser(kind, **knobs)` factory + `select_condenser_for_intent(intent, fallback, summarize_fn)` for adaptive switching (greetings -> NoOp, factual -> Recent, coding -> LLMSummarizing). The closed-window file-view processor from SWE-Agent T2 stays in `llm/history_processors.py` -- it's a different specialisation. Tests **5525 passing / 16 skipped / 0 failed in ~90 s** (+44 batch 5 tests from 5481).
 
@@ -2043,6 +2052,11 @@ For the current decisions and Foundation phase status see
 │       │   ├── models.py           ← Frozen dataclasses: Skill, KeywordTrigger, TaskTrigger, SkillMatch, SkillSource (precedence enum), SkillType; matches_text + find_matched_keywords + find_matched_commands helpers
 │       │   ├── loader.py           ← load_skill_from_path + load_skills_from_directory; frontmatter-driven; "any /-prefix flips to task" semantics; filename-stem fallback
 │       │   └── registry.py         ← SkillRegistry with mtime invalidation + later-wins source dedup; matching_skills (always-on + triggered capped at max_matches_per_turn); format_skills_block render; maybe_get_skills_block orchestrator helper; build_default_registry factory
+│       │
+│       ├── lifecycle/              ← 2026-05-23 OpenHands batch 6 (T5 + T16): start-task + pending-message
+│       │   ├── __init__.py         ← Public API re-exports
+│       │   ├── start_task.py       ← StartTaskStatus enum + StartTask dataclass + create_start_task + StartTaskRecorder (event-store persistence) + drive_start_task async driver + StartTaskError
+│       │   └── pending_message_queue.py ← PendingMessage + PendingMessageState + PendingMessageQueue (enqueue / rebind / cancel / drain) + JSONL persistence + rebind_pending_messages alias
 │       │
 │       ├── llm/condensers/         ← 2026-05-23 OpenHands batch 5 (T4): history-compression strategies
 │       │   ├── __init__.py         ← Public API re-exports
