@@ -10,11 +10,11 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `f35a100` on `claude/silly-lamarr-14194e`
-> (batch-4 feature work lands on top -- doc bumped post-batch).
-> Tests **5481 passing / 16 skipped / 0 failed in ~90 s** via
-> `scripts/run_tests.py` (prior baseline 5425 + 33 callbacks
-> + 23 processors -- OpenHands catalog batch 4 event callbacks T3
+> **Validating HEAD:** `75ee5bf` on `claude/silly-lamarr-14194e`
+> (batch-5 feature work lands on top -- doc bumped post-batch).
+> Tests **5525 passing / 16 skipped / 0 failed in ~90 s** via
+> `scripts/run_tests.py` (prior baseline 5481 + 44 condensers --
+> OpenHands catalog batch 5 history-compression strategies T4
 > landed).
 >
 > **Public-repo hygiene:** the repo lives at
@@ -31,6 +31,18 @@
 > the commit — don't bypass with `--no-verify`. The full hygiene
 > contract lives in the local-only `CLAUDE.md` orientation file and
 > the auto-loaded `MEMORY.md` index.
+
+**2026-05-23 OpenHands porting -- batch 5 (T4 condensers) -- COMPLETE.** Swappable history-compression strategies as a :class:`Condenser` ABC. Five concretes ship: `NoOpCondenser` (passthrough), `RecentCondenser` (keep head + tail, drop middle), `AmortizedCondenser` (intelligent forgetting without LLM call; pinned roles + per-role preference + token budget), `ObservationMaskingCondenser` (mask tool/system content older than `attention_window`), `LLMSummarizingCondenser` (the heavy variant; fold dropped middle into one synthesised turn via an injected `summarize_fn`). `build_condenser(kind, **knobs)` factory + `select_condenser_for_intent(intent, fallback, summarize_fn)` for adaptive switching (greetings -> NoOp, factual -> Recent, coding -> LLMSummarizing). The closed-window file-view processor from SWE-Agent T2 stays in `llm/history_processors.py` -- it's a different specialisation. Tests **5525 passing / 16 skipped / 0 failed in ~90 s** (+44 batch 5 tests from 5481).
+
+* **NEW [`src/ultron/llm/condensers/`](../src/ultron/llm/condensers/) package (7 modules + tests).** `base.py` exposes the `Condenser` ABC + `Turn` type alias + frozen `CondenseResult` (turns + dropped_turn_count + summary_inserted + token_estimate_before/after + notes + error) + `turn_text` / `char_count_tokens_for_turns` helpers. Each concrete lives in its own file (`noop.py`, `recent.py`, `amortized.py`, `observation_masking.py`, `llm_summarizing.py`). `factory.py` is the config-driven selector + adaptive intent map (`_INTENT_KIND_MAP`).
+
+* **Coverage of the catalog's six strategies:** five ship (NoOp / Recent / Amortized / ObservationMasking / LLMSummarizing); the sixth (`LLMAttention`) is deferred -- it requires a per-event relevance score from a side LLM call, which adds latency on the voice hot path without a clear win over the simpler strategies. The deferral is documented in the package's `__init__.py` module docstring.
+
+* **Voice-baseline preservation:** the LLMEngine `_build_messages` path is unchanged in this batch -- condensers ship as importable infrastructure that subsystems can opt into. The catalog's adaptive-by-intent switching is exposed via `select_condenser_for_intent` so a future LLMEngine wiring can ask for a condenser per turn without coupling.
+
+* **One new test file (44 tests):** [`tests/llm/test_condensers.py`](../tests/llm/test_condensers.py) covering turn_text + char_count helpers (3), CondenseResult.ok property (1), Condenser ABC abstract enforcement (1), NoOp (3), Recent (5 -- short-history / drop-middle / keep_first=0 / invalid keep_first / invalid max_events / token estimate), Amortized (6 -- short / max_size / pin_roles preserved / chronological order / invalid keep_first / invalid max_size / invalid max_tokens), ObservationMasking (5 -- short / replaces old / role filter / char_count in template / invalid attention_window), LLMSummarizing (7 -- short / fires at threshold / no fn fallback / exception fallback / empty fallback / negative keeps raise / preamble default), factory (5 -- known kinds + default + aliases + unknown + knobs passed), intent selector (5 -- known / unknown / None+fallback / summarize_fn passthrough / case-insensitive).
+
+---
 
 **2026-05-23 OpenHands porting -- batch 4 (T3 event callbacks) -- COMPLETE.** Polymorphic callback registry + six built-in processors. After every `EventStore.save_event` returns successfully, the bus sink consults the module-level `CallbackRegistry` and fires any active callback whose session/kind filters match the persisted event. Callbacks can self-deactivate (`CallbackResult.deactivate=True`) for one-shot patterns like the OpenHands title-generation processor. Optional JSONL persistence at `data/callbacks.jsonl` preserves registration metadata across restarts (live processor instances are re-attached by the caller; the catalog flags fully-polymorphic auto-resurrection as a T23 follow-up). Tests **5481 passing / 16 skipped / 0 failed in ~90 s** (+56 batch 4 tests from 5425).
 
@@ -2031,6 +2043,16 @@ For the current decisions and Foundation phase status see
 │       │   ├── models.py           ← Frozen dataclasses: Skill, KeywordTrigger, TaskTrigger, SkillMatch, SkillSource (precedence enum), SkillType; matches_text + find_matched_keywords + find_matched_commands helpers
 │       │   ├── loader.py           ← load_skill_from_path + load_skills_from_directory; frontmatter-driven; "any /-prefix flips to task" semantics; filename-stem fallback
 │       │   └── registry.py         ← SkillRegistry with mtime invalidation + later-wins source dedup; matching_skills (always-on + triggered capped at max_matches_per_turn); format_skills_block render; maybe_get_skills_block orchestrator helper; build_default_registry factory
+│       │
+│       ├── llm/condensers/         ← 2026-05-23 OpenHands batch 5 (T4): history-compression strategies
+│       │   ├── __init__.py         ← Public API re-exports
+│       │   ├── base.py             ← Condenser ABC + Turn + CondenseResult + helpers
+│       │   ├── noop.py             ← NoOpCondenser (passthrough)
+│       │   ├── recent.py           ← RecentCondenser (head + tail, drop middle)
+│       │   ├── amortized.py        ← AmortizedCondenser (no-LLM intelligent forgetting)
+│       │   ├── observation_masking.py ← ObservationMaskingCondenser (mask old tool/system content)
+│       │   ├── llm_summarizing.py  ← LLMSummarizingCondenser (fold middle via injected summarize_fn)
+│       │   └── factory.py          ← build_condenser + select_condenser_for_intent
 │       │
 │       ├── events/                 ← 2026-05-23 OpenHands batch 3 (T2 + T13): canonical event store + hash chain
 │       │   ├── __init__.py         ← Public API re-exports

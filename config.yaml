@@ -1295,19 +1295,12 @@ events:
   default_session_id: "default"    # fallback for bus events with no session_id
   install_bus_sink: true           # auto-mirror bus events into the store
 
-# ---------------------------------------------------------------------------
-# Event callbacks (2026-05-23 OpenHands batch 4 T3) -- polymorphic
-# CallbackRegistry that fires after every EventStore.save_event. The
-# orchestrator does NOT pre-register any production callbacks by default
-# (operators wire what they want via Python or future plugin config);
-# this section reserves the namespace + carries the persistence path
-# for future operator-driven catalog management.
-# ---------------------------------------------------------------------------
-
-callbacks:
-  enabled: false                   # opt-in
-  persistence_path: "data/callbacks.jsonl"   # relative to PROJECT_ROOT
-  slow_callback_warn_ms: 50.0      # WARN above this; tracked in registry stats
+# Note: Event callbacks (OpenHands batch 4 T3) are wired via Python API
+# only in this release -- the CallbackRegistry singleton in
+# src/ultron/events/callbacks.py is opt-in by code. A YAML-driven
+# callback catalogue is intentionally deferred until the
+# discriminated-union pattern (T23) lands so processor classes can be
+# round-tripped through config.
 
 # ---------------------------------------------------------------------------
 # Skills (2026-05-23 OpenHands batch 2 T1) — trigger-loaded knowledge bundles.
