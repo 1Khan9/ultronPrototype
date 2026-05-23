@@ -220,7 +220,7 @@ Top-level: `enabled`, `bridge` ("direct" runs AI coding agent as a subprocess; a
 | `mcp` | `log_path` | "logs/mcp_calls.jsonl" | Audit log for tool calls. |
 | (root) | `template_dir` | "prompts/coding" | Jinja templates for Claude prompts. |
 | (root) | `prompt_token_budget` | 4000 | Hard cap on rendered prompt size. |
-| (root) | `default_model` / `escalation_model` | "haiku" / "sonnet" | First try Haiku; escalate after threshold. |
+| (root) | `default_model` / `escalation_model` | "<default-model>" / "<escalation-model>" | First try default model; escalate after threshold. |
 | (root) | `escalation_threshold_default` / `_escalation` | 3 / 2 | Failures before escalating; failures on escalation model before failing the session. |
 | `verification` | `smoke_timeout_seconds` | 5 | Cap on smoke-run check. |
 | `verification` | `test_timeout_seconds` | 120 | |

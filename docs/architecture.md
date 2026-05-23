@@ -86,7 +86,7 @@ VRAM budget: peak ~10.4 GB observed under load (voice stack: Qwen + Whisper + RV
           ▼
 ┌─────────────────────────┐
 │ ConversationCoordinator │ verification + corrective loop
-│ + StatusNarrator        │ + Haiku→Sonnet escalation
+│ + StatusNarrator        │ + default → escalation-model escalation
 └─────────────────────────┘
 ```
 

@@ -2,7 +2,7 @@
 
 > **Purpose:** complete map of the system's source files, scripts,
 > tests, and runtime artifacts, with public APIs and information flow
-> per module. A fresh AI-assistant session should read this document
+> per module. A fresh AI-agent session should read this document
 > together with the memory files (`MEMORY.md`,
 > `project_ultron_foundation.md`, `feedback_*.md`) to get fully
 > oriented without re-exploring the codebase.
@@ -4182,7 +4182,7 @@ the update means future sessions waste time re-deriving ground
 truth from the source. **Don't skip.**
 
 The the project-root standards doc at the top of this prompt's reading
-order calls this contract out explicitly so a fresh AI-assistant
+order calls this contract out explicitly so a fresh AI-agent
 session sees it before its first edit.
 
 ### What "non-trivial change" means
@@ -4273,7 +4273,7 @@ this document before declaring the task done.
 
 ### Why this matters
 
-A fresh AI-assistant session reads this document + the memory files
+A fresh AI-agent session reads this document + the memory files
 and should be fully oriented without re-exploring the codebase. If
 that's not the case after your changes, the maintenance contract
 was violated. Treat that as a regression and fix the doc.

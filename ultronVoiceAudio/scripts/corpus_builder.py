@@ -474,7 +474,7 @@ QUESTION_FORM = [
     "Should I run all the tests or just the affected ones?",
     "Do you want me to commit the change?",
     "Should I create a pull request?",
-    "Would you prefer Haiku or Sonnet for this task?",
+    "Would you prefer default or escalation for this task?",
     "Are you confident in the project reference you gave?",
     "Do you want me to spawn a fresh sandbox?",
     "Should I include the coding session audit log?",

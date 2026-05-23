@@ -2037,7 +2037,7 @@
   {
     "id": "question_form_0026",
     "category": "question_form",
-    "text": "Would you prefer Haiku or Sonnet for this task?"
+    "text": "Would you prefer default or escalation for this task?"
   },
   {
     "id": "question_form_0027",

@@ -7,7 +7,7 @@ prepended to the content before embedding -- the same content is
 preserved unmodified in the payload. At retrieval time, queries that
 share the topic with a stored turn match via the embedded context
 prefix even when the literal text is sparse (e.g., user said
-"yes" + context says "agreeing to launch ChatGPT plugin tomorrow").
+"yes" + context says "agreeing to launch a chat plugin tomorrow").
 
 Why this matters for conversational memory: short utterances ("OK",
 "yes", "later") have almost no embeddable signal on their own. The

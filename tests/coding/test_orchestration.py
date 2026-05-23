@@ -15,7 +15,7 @@ The 10 scenarios mirror the spec's Phase 6 list:
   6. Mid-project adjustment via voice
   7. Status query during execution (narration is delta-aware)
   8. Cancellation tears down cleanly
-  9. Model escalation after Haiku verification failures
+  9. Model escalation after default-model verification failures
   10. Project-root isolation rejection
 
 Real-Claude variants of every scenario live in
@@ -635,7 +635,7 @@ def test_scenario_8_cancellation_terminates_session(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# Scenario 9 — Haiku threshold trips model_escalation_count
+# Scenario 9 — default-model threshold trips model_escalation_count
 # ---------------------------------------------------------------------------
 
 
