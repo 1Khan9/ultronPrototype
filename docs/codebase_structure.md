@@ -10,11 +10,10 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** (in-flight cline batch 6; bumped post-commit)
-> last code-touching commit was `6d66d96` (cline batch 5). Batch 6
-> lands T14 extended `@`-mention resolver + T11 bidirectional
-> focus-chain markdown checklist. Tests **6079 passing / 24 skipped /
-> 0 failed in ~94 s** via `scripts/run_tests.py`.
+> **Validating HEAD:** `75353f7` on `origin/main` (2026-05-24 cline
+> catalog port batch 6 -- T14 extended `@`-mention resolver + T11
+> bidirectional focus-chain markdown checklist). Tests **6079 passing
+> / 24 skipped / 0 failed in ~94 s** via `scripts/run_tests.py`.
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -44,7 +43,7 @@ result of every row. Deep narrative lives in the corresponding
 
 | Date | HEAD | Summary | Tests | Memory file |
 |------|------|---------|-------|-------------|
-| 2026-05-24 | (in-flight) | cline catalog port batch 6 -- mentions + focus-chain (T14 + T11): `coding/mention_resolvers.py` (extended `@`-mention regex covering URLs / `workspace:` / `memory:` / `problems` / `last` / `diff` / `clipboard` / `screenshot` / Windows drive-letter paths + provider-driven resolution + per-mention body cap + per-call cap + dedup); `coding/focus_chain.py` (parse / render / diff markdown checklists + atomic temp+rename writes + `FocusChainWatcher` with 300 ms debounce + manual `poll_now` fallback when watchdog absent + `render_critical_info_block` for the user-edit CRITICAL INFORMATION block + `progress_hint` per-band prompt tailoring). | 6079 | (cline-port memory pending) |
+| 2026-05-24 | `75353f7` | cline catalog port batch 6 -- mentions + focus-chain (T14 + T11): `coding/mention_resolvers.py` (extended `@`-mention regex covering URLs / `workspace:` / `memory:` / `problems` / `last` / `diff` / `clipboard` / `screenshot` / Windows drive-letter paths + provider-driven resolution + per-mention body cap + per-call cap + dedup); `coding/focus_chain.py` (parse / render / diff markdown checklists + atomic temp+rename writes + `FocusChainWatcher` with 300 ms debounce + manual `poll_now` fallback when watchdog absent + `render_critical_info_block` for the user-edit CRITICAL INFORMATION block + `progress_hint` per-band prompt tailoring). | 6079 | (cline-port memory pending) |
 | 2026-05-24 | `6d66d96` | cline catalog port batch 5 -- streaming infrastructure (T8 + T12 + T19 + T20): new `streaming/` package with `window.py` (WindowedOutputWriter with 20-line/2KB/100ms debounce + 1000-line/512KB spill thresholds + head-100/tail-100 preserved + `COMPILING_MARKERS` hot-timeout detection), `presentation_scheduler.py` (priority-banded chunk scheduler with environment-adaptive cadence — local/remote/Bluetooth profiles + `set_drop_low_priority` for `enable_thinking=False`), `reasoning_stream.py` (ReasoningDemultiplexer with first-text-finalises semantics + dedicated audit channel keeps reasoning out of TTS), `coordinator.py` (StreamCoordinator state machine + `RetryStatus` payloads + `on_usage` live token meters). | 6028 | (cline-port memory pending) |
 | 2026-05-24 | `3ca8879` | cline catalog port batch 4 -- auto-approve matrix + structured 8-section condenser (T3 + T15): `safety/auto_approval.py` (four-mode per-rule policy `always_ask` / `allow_local` / `allow_external` / `allow_all` + `yolo_mode` master override + per-session "warming" allowlist after N consecutive user approvals + injected `LocalityProbe` predicate); `llm/condensers/structured_8_section.py` (8 canonical headers Primary Request / Key Technical Concepts / Files and Code Sections / Problem Solving / Pending Tasks / Task Evolution / Current Work / Next Step + tolerant `parse_summary` with alias resolution + `compact_for_voice` 3-section TTS-friendly continuity ack). | 5973 | (cline-port memory pending) |
 | 2026-05-24 | `03019fb` | cline catalog port batch 3 -- ignore + conditional rules (T6 + T10): `safety/ignore.py` (three-layer `.ultronignore` with `!include`, `validate_command` covering POSIX + PowerShell file-readers, registry singleton); new `rules/` package with `conditionals.py` (frontmatter `paths` / `intents` / `topics` / `system_state` evaluator, `all_of` + `not_in_gaming_mode` combinators, comparator-prefixed state matching, path-extraction heuristic that strips fenced code + URLs). | 5928 | (cline-port memory pending) |
