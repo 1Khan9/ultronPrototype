@@ -10,7 +10,25 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `b46ad89` on `main` (2026-05-25 OpenClaw-ClawHub
+> **Validating HEAD:** worktree `claude/blissful-heyrovsky-b11d6e` --
+> Batch 1 of the production-wiring pass (T14 rate-limit recorder
+> threaded into Brave / SearxNG / DuckDuckGo; T3 canonical_codes
+> field on `AuditLog.record` + per-leaf `sanitize_for_log`
+> sanitisation of context dicts; T18 CWE-117 defence on the error
+> log; T11 `materialise_default_pins` runs once at orchestrator
+> startup so the 5 voice-baseline lock anchors land in the workdir
+> lockfile). Tests **7374 passing / 26 skipped / 0 failed in ~117 s**
+> via `scripts/run_tests.py --stale-heartbeat=180` (+6 over the
+> 7368 ClawHub baseline; the 6 new tests cover the chain<->client
+> recorder roundtrip in `tests/web_search/test_provider_chain_recorder.py`).
+> Voice baseline contract intact (no SOUL.md / RVC / Piper / vocal
+> WAV / LLM model file / Kokoro fine-tune voicepack touch). The
+> SearchProviderChain now actively records every Brave / SearxNG /
+> DuckDuckGo response into the `RateLimitTracker` so 429s in one
+> turn cool the provider for the next turn -- the first chain wiring
+> that consumes the T14 primitive.
+>
+> **Earlier validating HEAD:** `b46ad89` on `main` (2026-05-25 OpenClaw-ClawHub
 > catalog port -- all 15 cataloged techniques landed across 9 batches;
 > 12 GREEN drop-ins + 3 YELLOW gated through the existing safety stack
 > + 0 RED). Tests **7368 passing / 26 skipped / 0 failed in ~109 s**
@@ -74,6 +92,7 @@ result of every row. Deep narrative lives in the corresponding
 
 | Date | HEAD | Summary | Tests | Memory file |
 |------|------|---------|-------|-------------|
+| 2026-05-26 | (worktree) | **Production-wiring pass batch 1 (zero-risk foundation).** T14 rate-limit recorder threaded into Brave / SearxNG / DuckDuckGo clients via per-pid `on_response` closure built by `SearchProviderChain._build_recorder`; `_PROVIDER_FACTORIES` lambdas now take a recorder arg + lazy clients call the closure after every HTTP response (success + 429). DDG classifies throttle-shaped exception text (`429` / `403` / `captcha` / `rate` / `throttle` / `blocked`) as `was_429=True` so the chain cools it down without needing response headers (DDG-search lib scrapes HTML). T3 canonical_codes + T16 category + rule_metadata fields added to `AuditLog.record` so safety-validator rules can attach the T3 reason-code namespace and dashboards can group blocks without parsing reason strings. T18 `sanitize_for_log` wraps every tool-supplied string (reason / tool_name / capability / context dict leaves / error message) in audit.py + error_log.py, defending against CWE-117 log forging. T11 `materialise_default_pins(PROJECT_ROOT)` runs once at orchestrator startup so the 5 voice-baseline lock anchors (voicepack:ultron / voicepack:kokoro_finetune / llm:qwen3.5-4b / persona:identity / validator:k_category) land in the workdir lockfile. 6 new recorder roundtrip tests in `tests/web_search/test_provider_chain_recorder.py`. Voice baseline contract intact. | 7374 | (this session) |
 | 2026-05-25 | `b46ad89` | OpenClaw-ClawHub catalog port batch 9 (YELLOW; final) -- T7 trusted-publisher short-lived token mint + verify. Stdlib-only HMAC-SHA256 JWT (HS256) with local signing secret at data/identity/short_lived_token_secret.bin. mint_token (caller_id + audience + scope + ttl + extra_claims; refuses oversized TTL / disallowed scopes via pre-registered TrustedCaller tuples in data/identity/trusted_callers.jsonl). verify_token enforces signature + expiry (60s clock-skew tolerance) + audience + caller-id trust-tuple equality + per-claim match + scope allowlist. Exception hierarchy: TokenMintError / TokenVerifyError / TokenExpiredError / TokenSignatureError / TrustedCallerNotFoundError / TrustedCallerClaimMismatch. Audit log at data/identity/short_lived_tokens.jsonl with SHA-256 hash chain + verify_audit_chain. rotate_secret invalidates historical tokens. Wired use cases: MCP server startup / coding bridge subprocess / skill execution token / voice gaming-mode handoff. RSA-256 + TPM-backed keys documented as future hardening path. New module: `src/ultron/identity/short_lived_token.py`. +30 module tests. | 7368 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
 | 2026-05-25 | `85abd78` | OpenClaw-ClawHub catalog port batch 8 (YELLOW) -- T15 privacy-by-construction aggregate-only telemetry. HashedRootId / HashedSkillId NewType wrappers + hash_root / hash_skill_slug primitives with per-install salted SHA-256 (data/observability/telemetry_salt.txt generated on first call so cross-install correlation is impossible). canonical_label_root for tilde-normalised dashboard labels. PrivateMetricsStore append-only JSONL with type-boundary RawPathLeakError enforcement (raw paths / long unhashed strings rejected; SAFE_ATTRIBUTE_KEYS + _id/_hash-suffix + 12-char threshold carveouts). HashedEvent + RootRecord + SkillRecord aggregates. stale_root_ids implements the upstream 120-day staleness pattern. Fail-private default: telemetry disabled unless explicit ULTRON_TELEMETRY=opt-in. Generalises to per-session metric dashboards / provider health / memory drift detection -- same shape, no exfiltration vector. New package: `src/ultron/observability/` + `tests/observability/`. +42 module tests. | 7338 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
 | 2026-05-25 | `7f168f2` | OpenClaw-ClawHub catalog port batch 7 (YELLOW) -- T12 user-initiated report queue + universal pre-act moderation-plan preview. ReportQueue thread-safe append-only JSONL with SHA-256 hash chain mirroring safety.audit; Report (id + target_kind + target_id + reason + status + version + reporter_voice_session + timestamps + triage_note + final_action + extras); file_report/triage/list_reports/count/get/replay_from_log/verify_log_chain methods; UnknownReportError + IllegalTriageError exceptions. ModerationPlan universal pre-act preview with PlanImpact (message + severity + reversible) tuple + outcome enum + requires_confirmation derivation; render_plan_for_voice returns one-line TTS-safe summary. YELLOW gating: triage paired with safety.two_phase_approval (T2 from OpenClaw port) so a compromised in-process LLM cannot dismiss real reports covertly. New package: `src/ultron/feedback/` (3 modules) + `tests/feedback/` (2 test files). +44 module tests. | 7296 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |

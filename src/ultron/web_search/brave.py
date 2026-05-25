@@ -15,12 +15,22 @@ import os
 import threading
 import time
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Callable, List, Mapping, Optional
 
 from ultron.config import get_config
 from ultron.errors import BraveAPIError
 from ultron.resilience import CircuitBreaker, CircuitOpenError, get_error_log
 from ultron.utils.logging import get_logger
+
+
+#: Callback shape passed by the chain so each request's response
+#: headers can flow into the rate-limit tracker (T14). Signature
+#: matches :meth:`SearchProviderChain.record_provider_outcome`
+#: (provider id is bound in the closure). Headers may be the
+#: :class:`requests.Response.headers` mapping, an httpx case-
+#: insensitive headers object, or any plain dict; the
+#: :func:`parse_rate_limit_headers` consumer normalises case.
+RateLimitRecorder = Callable[[Optional[Mapping[str, object]]], None]
 
 logger = get_logger("web_search.brave")
 
@@ -78,6 +88,8 @@ class BraveSearchClient:
         rate_limit_s: Optional[float] = None,
         timeout_s: Optional[float] = None,
         endpoint: Optional[str] = None,
+        *,
+        on_response: Optional[Callable[[Optional[Mapping[str, object]], bool], None]] = None,
     ) -> None:
         cfg = get_config().web_search
         self.api_key = api_key or os.getenv(cfg.brave_api_key_env, "")
@@ -95,6 +107,12 @@ class BraveSearchClient:
         )
         self._last_call = 0.0
         self._lock = threading.Lock()
+        # T14 (openclaw-clawhub catalog port). Optional callback the
+        # chain installs so rate-limit envelope headers from every
+        # request reach the per-provider tracker. Signature is
+        # ``(headers, was_429)``. ``None`` (the default) keeps the
+        # client legacy-compatible for unit tests + ad-hoc callers.
+        self._on_response = on_response
 
     def search(
         self,
@@ -164,6 +182,12 @@ class BraveSearchClient:
                 params=params,
                 timeout=self.timeout_s,
             )
+            # T14: record headers before raise_for_status so 429s
+            # still mark the tracker even when we're about to raise.
+            self._record_outcome(
+                getattr(resp, "headers", None),
+                was_429=(resp.status_code == 429),
+            )
             resp.raise_for_status()
             data = resp.json()
         except requests.exceptions.Timeout as e:
@@ -209,6 +233,24 @@ class BraveSearchClient:
             query[:80], len(results), elapsed_ms,
         )
         return results
+
+    def _record_outcome(
+        self,
+        headers: Optional[Mapping[str, object]],
+        *,
+        was_429: bool,
+    ) -> None:
+        """Fire the T14 rate-limit recorder if one was injected.
+
+        Fail-open: a broken recorder must never propagate up into the
+        search path. The tracker is best-effort observability.
+        """
+        if self._on_response is None:
+            return
+        try:
+            self._on_response(headers, was_429)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("brave rate-limit recorder raised (swallowed): %s", e)
 
     def _respect_rate_limit(self) -> None:
         """Block in-process until enough time has elapsed since the last call.

@@ -23,7 +23,7 @@ providers have failed.
 from __future__ import annotations
 
 import time
-from typing import List, Optional
+from typing import Callable, List, Mapping, Optional
 
 from ultron.config import get_config
 from ultron.errors import BraveAPIError
@@ -64,6 +64,8 @@ class DuckDuckGoSearchClient:
         timeout_s: Optional[float] = None,
         region: Optional[str] = None,
         safesearch: Optional[str] = None,
+        *,
+        on_response: Optional[Callable[[Optional[Mapping[str, object]], bool], None]] = None,
     ) -> None:
         cfg = get_config().web_search.duckduckgo
         self.timeout_s = (
@@ -73,6 +75,14 @@ class DuckDuckGoSearchClient:
         self.safesearch = (
             safesearch if safesearch is not None else cfg.safesearch
         )
+        # T14 (openclaw-clawhub catalog port). DDG-search lib doesn't
+        # surface response headers (it scrapes HTML), so the recorder
+        # is called with ``headers=None`` on success and ``was_429=True``
+        # when the scrape raises a known throttling shape (CAPTCHA /
+        # 429 / 403 substrings). The tracker treats a None envelope as
+        # "no info -- reset prior 429 state on success" so a single
+        # successful DDG call clears any prior cooldown.
+        self._on_response = on_response
 
     def is_reachable(self) -> bool:
         """The DDG endpoint is reachable when the lib loads + we have
@@ -149,10 +159,25 @@ class DuckDuckGoSearchClient:
                     max_results=min(20, max(1, count)),
                 ))
         except Exception as e:                                         # noqa: BLE001
+            # T14: classify throttle-shaped failures as was_429 so the
+            # chain cools DDG down. Conservative: only well-known
+            # throttle markers count; transient connection errors do
+            # not poison the tracker (they'll fail through to the next
+            # provider on their own).
+            err_text = str(e).lower()
+            was_throttled = any(
+                marker in err_text
+                for marker in ("429", "403", "captcha", "rate", "throttle", "blocked")
+            )
+            self._record_outcome(headers=None, was_429=was_throttled)
             raise DuckDuckGoError(
                 f"DuckDuckGo search failed: {e}",
                 context={"query": query[:200], "error": str(e)[:200]},
             ) from e
+
+        # Success path: reset any prior 429 cooldown by recording with
+        # was_429=False and no headers.
+        self._record_outcome(headers=None, was_429=False)
 
         # DDGS lib row shape:
         #   {"title": "...", "href": "...", "body": "..."}
@@ -177,6 +202,25 @@ class DuckDuckGoSearchClient:
             query[:80], len(out), elapsed_ms,
         )
         return out
+
+
+    def _record_outcome(
+        self,
+        headers: Optional[Mapping[str, object]],
+        *,
+        was_429: bool,
+    ) -> None:
+        """Fire the T14 rate-limit recorder if one was injected.
+
+        Fail-open: a broken recorder must never propagate up into the
+        search path. The tracker is best-effort observability.
+        """
+        if self._on_response is None:
+            return
+        try:
+            self._on_response(headers, was_429)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("ddg rate-limit recorder raised (swallowed): %s", e)
 
 
 __all__ = ["DuckDuckGoSearchClient", "DuckDuckGoError"]

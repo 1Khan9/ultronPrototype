@@ -47,7 +47,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Callable, List, Mapping, Optional
 
 from ultron.config import get_config
 from ultron.errors import BraveAPIError
@@ -96,6 +96,8 @@ class SearxNGSearchClient:
         timeout_s: Optional[float] = None,
         categories: Optional[str] = None,
         engines: Optional[str] = None,
+        *,
+        on_response: Optional[Callable[[Optional[Mapping[str, object]], bool], None]] = None,
     ) -> None:
         cfg = get_config().web_search.searxng
         self.base_url = (base_url or cfg.base_url).rstrip("/")
@@ -106,6 +108,11 @@ class SearxNGSearchClient:
             categories if categories is not None else cfg.categories
         )
         self.engines = engines if engines is not None else cfg.engines
+        # T14 (openclaw-clawhub catalog port). See brave.py for shape.
+        # SearxNG rarely advertises rate-limit headers (it's a meta-
+        # search aggregator over upstreams), but a wedged limiter on
+        # the local container does surface 429s on /search.
+        self._on_response = on_response
 
     def is_reachable(self) -> bool:
         """Cheap healthcheck: GET ``/`` with a tight timeout.
@@ -219,6 +226,12 @@ class SearxNGSearchClient:
                 headers=headers,
                 timeout=self.timeout_s,
             )
+            # T14: record envelope BEFORE raise_for_status so 429s
+            # mark the tracker even on the about-to-raise path.
+            self._record_outcome(
+                getattr(resp, "headers", None),
+                was_429=(resp.status_code == 429),
+            )
             resp.raise_for_status()
             data = resp.json()
         except requests.exceptions.ConnectionError as e:
@@ -274,6 +287,24 @@ class SearxNGSearchClient:
             query[:80], len(out), elapsed_ms,
         )
         return out
+
+    def _record_outcome(
+        self,
+        headers: Optional[Mapping[str, object]],
+        *,
+        was_429: bool,
+    ) -> None:
+        """Fire the T14 rate-limit recorder if one was injected.
+
+        Fail-open: a broken recorder must never propagate up into the
+        search path. The tracker is best-effort observability.
+        """
+        if self._on_response is None:
+            return
+        try:
+            self._on_response(headers, was_429)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("searxng rate-limit recorder raised (swallowed): %s", e)
 
 
 __all__ = ["SearxNGSearchClient", "SearxNGError"]

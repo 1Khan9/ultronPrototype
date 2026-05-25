@@ -58,7 +58,9 @@ import os
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterable, Optional, Sequence
+
+from ultron.utils.ansi_safe import sanitize_for_log
 
 logger = logging.getLogger("ultron.safety.audit")
 
@@ -72,6 +74,31 @@ GENESIS_PREV_HASH = "0" * 64
 def _hash_line(line: str) -> str:
     """SHA-256 of a serialised log line (without trailing newline)."""
     return hashlib.sha256(line.encode("utf-8")).hexdigest()
+
+
+def _sanitize_context(value: Any) -> Any:
+    """Recursively strip ANSI + control chars from string values inside
+    a context dict / list / scalar.
+
+    Used at audit-write time to ensure tool-supplied strings (which can
+    embed CR/CSI cursor-jump bytes intended to forge log lines) are
+    neutered before they reach the JSONL. Non-string leaves pass
+    through unchanged. Fail-open per leaf: a sanitiser exception leaves
+    the original value in place rather than dropping the record.
+    """
+    try:
+        if isinstance(value, str):
+            return sanitize_for_log(value)
+        if isinstance(value, dict):
+            return {
+                str(k): _sanitize_context(v) for k, v in value.items()
+            }
+        if isinstance(value, (list, tuple)):
+            cleaned = [_sanitize_context(v) for v in value]
+            return cleaned if isinstance(value, list) else tuple(cleaned)
+        return value
+    except Exception:  # noqa: BLE001
+        return value
 
 
 class AuditLog:
@@ -166,6 +193,9 @@ class AuditLog:
         capability: str,
         reason: str,
         context: Optional[dict[str, Any]] = None,
+        canonical_codes: Optional[Sequence[str]] = None,
+        category: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         """Append one decision entry to the log + fsync.
 
@@ -180,7 +210,35 @@ class AuditLog:
             reason: short human-readable reason for the verdict.
             context: rule-specific details. Optional. Keep small; the
                 log is hot.
+            canonical_codes: optional sequence of T3 canonical reason
+                codes (e.g. ``"ultron.malicious.k_category_violation"``).
+                When supplied the entry carries them under the
+                ``canonical_codes`` key so downstream consumers
+                (dashboards, voice narration via
+                :func:`ultron.install.reason_codes.summarize_reason_codes`)
+                can cross-reference upstream advisories without parsing
+                ``reason`` strings. Empty / None omits the field.
+            category: optional T16 analytics label (rule-supplied).
+                Surfaces in the audit row's ``category`` key so
+                dashboards can group blocks without re-parsing
+                ``reason``.
+            metadata: optional T16 opaque per-rule blob. Surfaces in
+                the audit row's ``rule_metadata`` key. Keep small;
+                large blobs bloat the log.
         """
+        # T18 (openclaw-main catalog port). CWE-117 defence:
+        # tool-supplied strings (reason / tool_name / capability) may
+        # contain ANSI escapes or C0 control chars (cursor-jump,
+        # fake-newline) intended to forge log lines. Sanitise before
+        # serialising. Fail-open: a sanitiser failure must not block
+        # the record write.
+        try:
+            reason = sanitize_for_log(reason) if reason else reason
+            tool_name = sanitize_for_log(tool_name) if tool_name else tool_name
+            capability = sanitize_for_log(capability) if capability else capability
+        except Exception as e:  # noqa: BLE001
+            logger.debug("audit sanitize failed (proceeding): %s", e)
+
         with self._lock:
             prev_hash = self._tail_hash
             entry: dict[str, Any] = {
@@ -193,7 +251,18 @@ class AuditLog:
                 "prev_hash": prev_hash,
             }
             if context is not None:
-                entry["context"] = context
+                entry["context"] = _sanitize_context(context)
+            if canonical_codes:
+                codes = tuple(
+                    c for c in canonical_codes
+                    if isinstance(c, str) and c.strip()
+                )
+                if codes:
+                    entry["canonical_codes"] = list(codes)
+            if category:
+                entry["category"] = sanitize_for_log(str(category))
+            if metadata:
+                entry["rule_metadata"] = _sanitize_context(metadata)
             line = json.dumps(entry, ensure_ascii=False, default=str, sort_keys=True)
             try:
                 with self._path.open("a", encoding="utf-8") as f:

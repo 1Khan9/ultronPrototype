@@ -42,7 +42,7 @@ change.
 from __future__ import annotations
 
 import time
-from typing import List, Mapping, Optional
+from typing import Callable, List, Mapping, Optional
 
 from ultron.config import get_config
 from ultron.utils.logging import get_logger
@@ -57,6 +57,12 @@ from ultron.web_search.rate_limit import (
 logger = get_logger("web_search.chain")
 
 
+#: Recorder signature passed to per-provider clients: the closure
+#: binds the provider id and forwards to
+#: :meth:`SearchProviderChain.record_provider_outcome`.
+ProviderRecorder = Callable[[Optional[Mapping[str, object]], bool], None]
+
+
 class SearchProviderChain:
     """Sequenced search providers with local-first fallback.
 
@@ -69,13 +75,15 @@ class SearchProviderChain:
     """
 
     # Registry of known providers -> lazy factory functions.
-    # Factories return the client OR raise (e.g., missing API key for
-    # Brave). The chain catches construction errors and skips the
-    # provider so a missing Brave key doesn't break SearxNG+DDG.
+    # Factories accept a ``recorder`` callable (T14 rate-limit
+    # outcome hook bound to a specific provider id by the chain) and
+    # return the client OR raise (e.g. missing API key for Brave).
+    # The chain catches construction errors and skips the provider so
+    # a missing Brave key doesn't break SearxNG+DDG.
     _PROVIDER_FACTORIES = {
-        "searxng": lambda: _make_searxng(),
-        "brave": lambda: _make_brave(),
-        "duckduckgo": lambda: _make_duckduckgo(),
+        "searxng": lambda recorder: _make_searxng(recorder),
+        "brave": lambda recorder: _make_brave(recorder),
+        "duckduckgo": lambda recorder: _make_duckduckgo(recorder),
     }
 
     def __init__(
@@ -152,13 +160,38 @@ class SearchProviderChain:
         self._tracker.record(provider_id, state, was_429=was_429)
         return state
 
+    def _build_recorder(self, pid: str) -> ProviderRecorder:
+        """Return a closure that forwards a request outcome to the tracker.
+
+        Bound to a specific provider id at construction time so each
+        client gets a recorder it can call without knowing its own
+        chain identity.
+        """
+
+        chain = self
+
+        def _on_response(
+            headers: Optional[Mapping[str, object]],
+            was_429: bool,
+        ) -> None:
+            try:
+                chain.record_provider_outcome(pid, headers, was_429=was_429)
+            except Exception as e:  # noqa: BLE001
+                logger.debug(
+                    "tracker record for %r raised (swallowed): %s",
+                    pid, e,
+                )
+
+        return _on_response
+
     def _get_client(self, pid: str):
         """Lazy-construct + cache the client for ``pid``. Returns
         ``None`` if construction failed (provider gets skipped)."""
         if pid in self._clients:
             return self._clients[pid]
         try:
-            client = self._PROVIDER_FACTORIES[pid]()
+            recorder = self._build_recorder(pid)
+            client = self._PROVIDER_FACTORIES[pid](recorder)
             self._clients[pid] = client
             return client
         except Exception as e:                                         # noqa: BLE001
@@ -244,19 +277,19 @@ class SearchProviderChain:
 # --- Lazy factory helpers ---------------------------------------------------
 
 
-def _make_searxng():
+def _make_searxng(recorder: ProviderRecorder):
     from ultron.web_search.searxng import SearxNGSearchClient
-    return SearxNGSearchClient()
+    return SearxNGSearchClient(on_response=recorder)
 
 
-def _make_brave():
+def _make_brave(recorder: ProviderRecorder):
     from ultron.web_search.brave import BraveSearchClient
-    return BraveSearchClient()
+    return BraveSearchClient(on_response=recorder)
 
 
-def _make_duckduckgo():
+def _make_duckduckgo(recorder: ProviderRecorder):
     from ultron.web_search.duckduckgo import DuckDuckGoSearchClient
-    return DuckDuckGoSearchClient()
+    return DuckDuckGoSearchClient(on_response=recorder)
 
 
 __all__ = ["SearchProviderChain"]

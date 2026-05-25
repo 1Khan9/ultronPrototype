@@ -30,9 +30,31 @@ from typing import Any, Dict, Optional
 
 from ultron.config import resolve_path
 from ultron.errors import UltronError
+from ultron.utils.ansi_safe import sanitize_for_log
 from ultron.utils.logging import get_logger
 
 logger = get_logger("resilience.error_log")
+
+
+def _sanitize_record(value: Any) -> Any:
+    """Recursively strip ANSI + control chars from string leaves.
+
+    Defends against CWE-117 log forging via attacker-controlled
+    exception messages (network responses, subprocess stderr, etc.).
+    Fail-open per leaf so a sanitiser exception never drops the
+    record.
+    """
+    try:
+        if isinstance(value, str):
+            return sanitize_for_log(value)
+        if isinstance(value, dict):
+            return {str(k): _sanitize_record(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            cleaned = [_sanitize_record(v) for v in value]
+            return cleaned if isinstance(value, list) else tuple(cleaned)
+        return value
+    except Exception:  # noqa: BLE001
+        return value
 
 
 def _default_log_path() -> Path:
@@ -120,6 +142,14 @@ class ErrorLog:
             )).strip()
             if tb:
                 record["traceback"] = tb
+
+        # T18 (openclaw-main catalog port): strip ANSI + control bytes
+        # from attacker-influenced string fields. CVE-class defence
+        # against log forging via fake-newline / cursor-jump in
+        # exception messages (subprocess stderr, HTTP response bodies,
+        # etc.). Fail-open per leaf -- never drop a record because
+        # sanitisation glitched on an exotic encoding.
+        record = _sanitize_record(record)
 
         try:
             with self._lock:

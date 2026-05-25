@@ -184,6 +184,28 @@ class Orchestrator:
         except Exception as e:                                      # noqa: BLE001
             logger.debug("project_introspect bus invalidator init: %s", e)
 
+        # 2026-05-26 (openclaw-clawhub catalog wiring) -- materialise
+        # the 5 ULTRON_DEFAULT_PINS into the workdir lockfile at
+        # startup. Formalises the binding voice-baseline lock contract
+        # (SOUL.md / Kokoro voicepack / qwen3.5-4b / IDENTITY.md / K
+        # validator rules) into data the install / update / hot-swap
+        # paths can refuse against. Idempotent: re-running on every
+        # startup is a no-op when the lockfile already has the
+        # defaults. Fail-open: a broken lockfile must not block
+        # orchestrator construction.
+        try:
+            from ultron.config import PROJECT_ROOT
+            from ultron.install.pin import materialise_default_pins
+            results = materialise_default_pins(PROJECT_ROOT)
+            new_pins = [r.slug for r in results if not r.idempotent_noop]
+            if new_pins:
+                logger.info(
+                    "voice-baseline default pins materialised: %s",
+                    ", ".join(new_pins),
+                )
+        except Exception as e:                                      # noqa: BLE001
+            logger.warning("materialise_default_pins failed (continuing): %s", e)
+
         self.audio = AudioCapture()
         # Mode-aware pre-roll: ring buffer is sized to the LARGER of
         # cold/warm pre-roll so the WARM path can take a longer slice

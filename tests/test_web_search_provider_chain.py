@@ -206,11 +206,16 @@ def test_chain_skips_unconstructable_provider(monkeypatch):
         pc_module.SearchProviderChain,
         "_PROVIDER_FACTORIES",
         {
-            "searxng": lambda: _stub_provider([]),
-            "brave": lambda: (_ for _ in ()).throw(
+            # 2026-05-26 T14 wiring: factories now take a recorder
+            # callable. Tests that ignore the recorder still work --
+            # the callback is just never invoked.
+            "searxng": lambda _recorder: _stub_provider([]),
+            "brave": lambda _recorder: (_ for _ in ()).throw(
                 ValueError("Brave API key missing"),
             ),
-            "duckduckgo": lambda: _stub_provider([_result("https://ddg.test")]),
+            "duckduckgo": lambda _recorder: _stub_provider(
+                [_result("https://ddg.test")],
+            ),
         },
     )
     chain = pc_module.SearchProviderChain(["searxng", "brave", "duckduckgo"])
