@@ -10,19 +10,22 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** OpenClaw catalog port batches 1-9 in-flight on
+> **Validating HEAD:** OpenClaw catalog port batches 1-11 complete on
 > branch `claude/musing-jones-5835e2`. Pre-port baseline `5c81f80` on
 > `origin/main` (cline catalog port + post-cline integration pass at
 > code-active HEAD `23cbf71`). Tests **6270 passing / 24 skipped / 0
 > failed in ~121 s** via `scripts/run_tests.py` at pre-port baseline;
-> batches 1-9 add ~460 tests across foundation utilities, safety
-> extensions (T16/T4/T13/T2/T5), agent-loop extensions, compaction
-> + edit recovery, activation planner + hierarchical sandbox policy,
-> the process registry, provider auth-profile rotation chain,
-> two-phase exec approval, and install-time static scanner.
-> Continuing the OpenClaw port across batches 10 (MCP transport) +
-> 11 (marketplace); see `THIRD_PARTY_NOTICES.md` for the per-component
-> attribution table.
+> batches 1-11 add ~550 net tests landing 22 OpenClaw techniques
+> (T1-T22 except deferred T17 / T19 / T20 per catalog ★ rating)
+> across `utils/ansi_safe`, `subprocess/{kill_tree, process_registry}`,
+> `safety/{path_resolver realpath, validator T16, policy_chain,
+> two_phase_approval, hierarchical_policy}`, `llm/{context_window_guard,
+> condensers/splitter}`, `agent_loop/{loop_detection_extended,
+> subagent_policy}`, `hooks/lifecycle` (36-event expansion +
+> HookDecision), `coding/edit_recovery`, `skills/{activation,
+> marketplace}`, `providers/` (auth-profile rotation + failover
+> taxonomy), `install/static_scanner`, `mcp/`. See
+> `THIRD_PARTY_NOTICES.md` for the per-component attribution table.
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
