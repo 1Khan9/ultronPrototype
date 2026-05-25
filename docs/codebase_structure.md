@@ -10,10 +10,10 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `34894d9` on `origin/main` (2026-05-24 cline
-> catalog port batch 7 -- T5 + T21 full out-of-process hook lifecycle,
-> 9 cline + 5 ultron-specific lifecycle points). Tests **6119 passing
-> / 24 skipped / 0 failed in ~96 s** via `scripts/run_tests.py`.
+> **Validating HEAD:** `cf0cbef` on `origin/main` (2026-05-24 cline
+> catalog port batch 8 -- T1 shadow-repo checkpoint system with
+> three-axis restore). Tests **6161 passing / 24 skipped / 0 failed
+> in ~113 s** via `scripts/run_tests.py`.
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -43,6 +43,7 @@ result of every row. Deep narrative lives in the corresponding
 
 | Date | HEAD | Summary | Tests | Memory file |
 |------|------|---------|-------|-------------|
+| 2026-05-24 | `cf0cbef` | cline catalog port batch 8 -- shadow-repo checkpoints with three-axis restore (T1): new `checkpoints/` package -- `exclusions.py` (DEFAULT_CHECKPOINT_EXCLUSIONS + VOICE_BASELINE_PROTECTED_PATTERNS guarding SOUL.md / RVC / Piper / Kokoro voicepack / LLM GGUFs from accidental rollback), `shadow_repo.py` (ShadowRepoTracker git CLI wrapper + per-session RLock + 15s init timeout + CREATE_NO_WINDOW + hash_working_dir), `restore.py` (plan-then-execute three-axis restore — voice_history / workspace / both), `registry.py` (SessionCheckpointManager bus subscription + CheckpointRegistry singleton). | 6161 | (cline-port memory pending) |
 | 2026-05-24 | `34894d9` | cline catalog port batch 7 -- hooks lifecycle (T5 + T21): new `hooks/` package -- 9 cline lifecycle points (TaskStart / TaskResume / TaskCancel / TaskComplete / UserPromptSubmit / PreToolUse / PostToolUse / PreCompact / Notification) + 5 ultron-specific (PreLLMRequest / PreMemoryWrite / PreGamingEngage / PreDesktopAction / WakeWordTriggered). `HookRegistry` parallel fan-out + cancel aggregation + `<hook_context>` concatenation; `HookRunner` subprocess executor with per-suffix interpreter selection (.py / .ps1 / .sh / .bat / .cmd / shebang) + JSON stdin/stdout envelope + 10 s default timeout + 8 kB context-mod cap + last-balanced-JSON parser; `HookDiscovery` mtime-validated cache with 30 s TTL; module-level `get_hook_registry()` singleton. | 6119 | (cline-port memory pending) |
 | 2026-05-24 | `75353f7` | cline catalog port batch 6 -- mentions + focus-chain (T14 + T11): `coding/mention_resolvers.py` (extended `@`-mention regex covering URLs / `workspace:` / `memory:` / `problems` / `last` / `diff` / `clipboard` / `screenshot` / Windows drive-letter paths + provider-driven resolution + per-mention body cap + per-call cap + dedup); `coding/focus_chain.py` (parse / render / diff markdown checklists + atomic temp+rename writes + `FocusChainWatcher` with 300 ms debounce + manual `poll_now` fallback when watchdog absent + `render_critical_info_block` for the user-edit CRITICAL INFORMATION block + `progress_hint` per-band prompt tailoring). | 6079 | (cline-port memory pending) |
 | 2026-05-24 | `6d66d96` | cline catalog port batch 5 -- streaming infrastructure (T8 + T12 + T19 + T20): new `streaming/` package with `window.py` (WindowedOutputWriter with 20-line/2KB/100ms debounce + 1000-line/512KB spill thresholds + head-100/tail-100 preserved + `COMPILING_MARKERS` hot-timeout detection), `presentation_scheduler.py` (priority-banded chunk scheduler with environment-adaptive cadence — local/remote/Bluetooth profiles + `set_drop_low_priority` for `enable_thinking=False`), `reasoning_stream.py` (ReasoningDemultiplexer with first-text-finalises semantics + dedicated audit channel keeps reasoning out of TTS), `coordinator.py` (StreamCoordinator state machine + `RetryStatus` payloads + `on_usage` live token meters). | 6028 | (cline-port memory pending) |
@@ -434,6 +435,13 @@ For the current decisions and Foundation phase status see
 │       │   ├── bus_sink.py         ← BusEventSink subscribes to the bus, converts envelopes to StoredEvent, writes to the store + fires callbacks
 │       │   ├── callbacks.py        ← 2026-05-23 OpenHands batch 4 (T3): CallbackRegistry + CallbackProcessor ABC + RegisteredCallback + CallbackResult + FunctionProcessor adapter + JSONL persistence + singleton accessors
 │       │   └── processors.py       ← 2026-05-23 OpenHands batch 4 (T3): built-in processors (Logging, Counting, ThresholdSnapshot, MemoryWrite, ChannelGuard, SkillActivator) + build_default_processors factory
+│       │
+│       ├── checkpoints/             ← 2026-05-24 cline batch 8 (T1): shadow-repo + 3-axis restore
+│       │   ├── __init__.py          ← Public API re-exports
+│       │   ├── exclusions.py        ← DEFAULT_CHECKPOINT_EXCLUSIONS (gitignore: node_modules / .venv / models / logs) + VOICE_BASELINE_PROTECTED_PATTERNS (SOUL.md / RVC / Piper / Kokoro voicepack / LLM GGUFs) + compose_gitignore with LFS-pattern extraction
+│       │   ├── shadow_repo.py       ← ShadowRepoTracker git CLI wrapper; per-session RLock; 15s init / 7s warn / 30s commit timeouts; CREATE_NO_WINDOW; hash_working_dir; initialise / commit / head / log / hard_reset
+│       │   ├── restore.py           ← RestoreAxis enum (VOICE_HISTORY / WORKSPACE / BOTH); plan_restore + execute_restore plan-then-apply; injected WorkspaceReset + VoiceHistoryTruncator + EventLogTruncator
+│       │   └── registry.py          ← SessionCheckpointManager bus-event filter via triggered_event_kinds; on_event commits; plan_voice_history_undo / plan_workspace_rewind / plan_full_rewind helpers; CheckpointRegistry singleton; get_checkpoint_registry accessor
 │       │
 │       ├── hooks/                   ← 2026-05-24 cline batch 7 (T5 + T21): out-of-process hook lifecycle
 │       │   ├── __init__.py          ← Public API re-exports
