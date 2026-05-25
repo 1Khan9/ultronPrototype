@@ -10,15 +10,15 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** OpenClaw catalog port batches 1-2 in-flight on
+> **Validating HEAD:** OpenClaw catalog port batches 1-3 in-flight on
 > branch `claude/musing-jones-5835e2`. Pre-port baseline `5c81f80` on
 > `origin/main` (cline catalog port + post-cline integration pass at
 > code-active HEAD `23cbf71`). Tests **6270 passing / 24 skipped / 0
 > failed in ~121 s** via `scripts/run_tests.py` at pre-port baseline;
-> batch 1 (T18 + T21 + T8) adds 82 tests; batch 2 (T16 + T4 + T13)
-> adds 63 tests. Continuing the OpenClaw port across subsequent
-> batches; see `THIRD_PARTY_NOTICES.md` for the per-component
-> attribution table.
+> batches 1-3 add ~225 tests across foundation utilities, safety
+> extensions, and agent-loop extensions. Continuing the OpenClaw
+> port across subsequent batches; see `THIRD_PARTY_NOTICES.md` for
+> the per-component attribution table.
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -471,6 +471,8 @@ For the current decisions and Foundation phase status see
 │       ├── agent_loop/              ← 2026-05-24 cline batches 2 + 10 (T7b + T2 + T16): outer-loop primitives
 │       │   ├── __init__.py          ← Public API re-exports
 │       │   ├── loop_detection.py    ← LoopDetector with canonical tool_call_signature (JSON sorted-keys minus DEFAULT_NOISE_KEYS like task_progress / turn_id / trace_id); LoopVerdict with soft_warning at DEFAULT_SOFT_THRESHOLD=3 + hard_escalation at DEFAULT_HARD_THRESHOLD=5; halted flag persists across distinct observations once hard tier fires; reset() clears state
+│       │   ├── loop_detection_extended.py ← 2026-05-25 OpenClaw batch 3 (T1): four additional detectors. UnknownToolRepeatDetector (regex-extract unknown tool name from error message; halts at UNKNOWN_TOOL_THRESHOLD=10), KnownPollNoProgressDetector (separate threshold for command_status / process(action=poll|log)), PingPongDetector (alternating A,B,A,B with stable outcomes on both sides), GlobalCircuitBreakerDetector (emergency stop at GLOBAL_CIRCUIT_BREAKER_THRESHOLD=30). LoopDetectionManager aggregates all four into a single per-stream observe() surface with most-restrictive-wins; ToolCallRecord + OutcomeKind for input shaping; SHA-256 canonical JSON for hashing.
+│       │   ├── subagent_policy.py   ← 2026-05-25 OpenClaw batch 3 (T7): depth-aware subagent tool-policy. SUBAGENT_TOOL_DENY_ALWAYS (gateway/agents_list/session_status/cron/sessions_send + ultron tts_speak/kokoro_speak/gaming_mode_engage/set_validator/install_skill); SUBAGENT_TOOL_DENY_LEAF (subagents/sessions_list/sessions_history/sessions_spawn + ultron mcp_add_server/mcp_remove_server). resolve_subagent_tool_policy(depth, config) returns ResolvedSubagentToolPolicy with deny + allow + also_allow + per-tool provenance. is_leaf(depth, max_spawn_depth) matches OpenClaw's depth >= max(1, floor(maxSpawnDepth)). filter_tools_by_policy + ResolvedSubagentToolPolicy.is_permitted enforce the policy on a tool list.
 │       │   ├── mode.py              ← 2026-05-24 cline batch 10 (T2): Mode enum (ACT / PLAN / CODING_ARCHITECT / CODING_EDITOR / GAMING) + frozen ModePolicy (allows_tool_side_effects / requires_confirmation / wrap_prefix_template / confirmation_timeout / preset_override) + DEFAULT_POLICIES (PLAN wraps with "Here is my plan: {plan} / Say 'do it'") + PendingConfirmation (UUID + TTL + intent_topic + callback_token) + ModeSession state machine (flip with invalidate_pending semantics / queue_plan / peek_latest_pending / consume_pending_confirmation with topic filter / cancel_pending / flip_history capped at 32) + module-level get_mode_session(session_id) registry singleton
 │       │   └── subagent.py          ← 2026-05-24 cline batch 10 (T16): DEFAULT_READONLY_TOOL_WHITELIST (file_read / list_files / list_code_definitions / search / ripgrep_search / use_skill / execute_command_readonly / rag_query / web_search) + frozen SubagentTask (per-task whitelist + token caps + wall-clock timeout) + SubagentResult (text + per-task token meter + tool call log) + SubagentBatchStats (n_tasks / n_succeeded / total_input_tokens / max_wall_clock / sum_wall_clock) + ToolGuard whitelist enforcer raising ToolNotPermittedError + thread-safe TokenLedger + SubagentRunner ThreadPoolExecutor-backed dispatcher with max_parallel=1 default for voice baseline safety
 │       │
