@@ -1631,6 +1631,50 @@ via `pywinauto`; same screenshot capability as `desktop-control` via `mss`.
 - `get_vlm()` / `set_vlm(...)` -- singleton + wires the `screen_context.set_vlm_describe(...)` bridge transparently.
 - Model weights pre-fetched via `scripts/download_models.py` step 9/10.
 
+#### `desktop/dialog_control.py` (catalog 08 T1, NEW)
+
+Native Windows dialog detection + CRUD interaction. Closes the
+"automation sequences stall on dialogs" gap from the upstream
+clawhub-windows-control plugin's ``handle_dialog.py``.
+
+- Constants :data:`DIALOG_CLASSES` (`#32770` + 4 standard dialog class
+  names), :data:`DIALOG_CONTROL_TYPES`, :data:`DIALOG_TITLE_KEYWORDS`,
+  :data:`DISMISS_BUTTONS` (9 entries in least-destructive order),
+  :data:`DEFAULT_WAIT_TIMEOUT_S` / :data:`DEFAULT_WAIT_INTERVAL_S`.
+- Frozen dataclasses :class:`DialogInfo` (window + class_name + matched_by),
+  :class:`DialogButton` (name + enabled + rect + center),
+  :class:`DialogField` (name + control_type + enabled + value + rect + center),
+  :class:`DialogCheckbox` (name + control_type + enabled + checked + center),
+  :class:`DialogContent` (title + message + buttons + text_fields +
+  checkboxes + dropdowns + list_items + elapsed_ms),
+  :class:`DialogActionResult` (success + action + dialog_title + target +
+  method + error).
+- :func:`find_dialogs(*, partial_title_filter, exclude_cloaked, include_minimized)`
+  -> list[DialogInfo]: enumerate dialog-style windows matching the
+  class set OR the title-keyword set. Fail-open on enumeration errors.
+- :func:`read_dialog(source, *, max_descendants=500, message_max=8, text_truncate=500)`
+  -> Optional[DialogContent]: walk a dialog's UIA tree into a structured
+  snapshot. Buckets `Button` / `Edit`+`Document` / `CheckBox`+`RadioButton` /
+  `ComboBox` / `ListItem` / `Text`+`Static`. Per-element fail-open.
+- :func:`click_dialog_button(source, button_name, *, exact, user_text)`
+  -> DialogActionResult: case-insensitive substring match by default;
+  ``exact=True`` switches to equality. Goes through Cap-3 verb-click +
+  Cap-4 security-window + explicit-intent validator gates.
+- :func:`type_into_dialog_field(source, text, *, field_index, user_text)`
+  -> DialogActionResult: indexed Edit/ComboBox write. Prefers
+  ``set_text`` over ``type_keys`` to preserve special characters.
+  Same Cap-3 gating; text + dialog title in validator arguments so
+  credential-pattern detectors apply.
+- :func:`dismiss_dialog(source, *, user_text, preferred_buttons)`
+  -> DialogActionResult: iterates :data:`DISMISS_BUTTONS` (or
+  ``preferred_buttons``), per-candidate safety check so blocking one
+  candidate falls through to the next, ESC fallback gated through the
+  validator with ``action="dismiss_escape"``.
+- :func:`wait_for_dialog(*, partial_title, timeout_s, interval_s,
+  exclude_cloaked, sleep_fn, clock_fn)` -> Optional[DialogInfo]:
+  synchronous polling barrier with deterministic-test injection +
+  deadline-clamped final sleep.
+
 #### `desktop/voice.py` (Phase 8 voice handlers)
 
 Bridges :class:`RoutingIntent` (kinds APP_LAUNCH + SCREEN_CONTEXT_QUERY) to the native primitives. Imported by :class:`CapabilityVoiceController` in `coding/voice.py`.
