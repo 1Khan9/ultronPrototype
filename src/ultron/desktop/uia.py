@@ -11,6 +11,17 @@ What this delivers without ClawHub's ``windows-control`` plugin:
   the safety validator (Cap-3 action-verb rule, Cap-4 security-window
   rule).
 - :func:`type_text_into_element` -- find + type into a UIA edit control.
+- :func:`physical_center_of_element` /
+  :func:`physical_rect_of_element` /
+  :func:`dpi_aware_click_at_element_center` (catalog 07 T5) --
+  DPI-aware coordinate helpers for the UIA-to-pyautogui boundary.
+  UIA element bounding rects come from pywinauto's layer (physical
+  pixels in DPI-aware processes), while pyautogui expects physical
+  pixels too. The helpers route through
+  :func:`ultron.desktop.win32_helpers.logical_to_physical` so callers
+  receiving logical-pixel coordinates from non-DPI-aware sources
+  (older VLMs, browser DOM coordinates) land on the right pixel on
+  high-DPI / mixed-DPI displays.
 
 Design notes:
 
@@ -25,6 +36,21 @@ Design notes:
   for "what's visible at the top" without blowing time.
 - Fail-open at every level: a pywinauto exception logs WARN and
   returns ``None`` / empty list. The orchestrator never crashes.
+
+Coordinate-space convention (catalog 07 T5):
+
+- :attr:`UIAElement.rect` carries whatever pywinauto returned. In
+  practice this is physical pixels in a per-monitor-DPI-aware Python
+  process. Callers crossing the UIA -> pyautogui boundary by raw
+  coordinates should use :func:`physical_center_of_element` (or
+  :func:`dpi_aware_click_at_element_center`) which behaves as an
+  identity on 100%-DPI displays and applies DPI conversion only when
+  the caller explicitly opts in via ``assume_logical=True``.
+- :class:`ultron.desktop.capture.Screenshot` returns physical pixels
+  (mss reads the GDI surface). Crosshairs and bounding boxes drawn
+  on those captures must use physical pixels too.
+- :mod:`ultron.desktop.click_preview` uses physical pixel
+  coordinates throughout.
 """
 
 from __future__ import annotations
@@ -558,6 +584,183 @@ def type_text_into_element(
     return UIAActionResult(success=True, element_name=snap.name)
 
 
+# ---------------------------------------------------------------------------
+# T5: DPI-aware coordinate helpers (catalog 07)
+# ---------------------------------------------------------------------------
+
+
+def physical_center_of_element(
+    element: UIAElement,
+    *,
+    assume_logical: bool = False,
+) -> tuple[int, int]:
+    """Return the physical-pixel centre of a :class:`UIAElement`.
+
+    Args:
+        element: a :class:`UIAElement` snapshot.
+        assume_logical: when True, ``element.rect`` is treated as
+            logical (unscaled) pixels and converted to physical via
+            :func:`ultron.desktop.win32_helpers.logical_to_physical`.
+            When False (default), the rect is treated as already
+            physical (pywinauto's normal output in a DPI-aware
+            Python process); the function returns the integer
+            centre with no DPI lookup.
+
+    On 100%-DPI displays the two branches are identical. The flag
+    exists so callers crossing from a known-logical source can
+    request conversion without leaking the implementation detail.
+
+    Returns ``(x_physical, y_physical)``. When the element's rect is
+    degenerate, the geometric centre is still returned -- callers
+    should validate :attr:`UIAElement.is_visible` and the rect
+    dimensions before clicking.
+    """
+
+    left, top, right, bottom = element.rect
+    cx = (left + right) // 2
+    cy = (top + bottom) // 2
+
+    if not assume_logical:
+        return int(cx), int(cy)
+
+    # Lazy-import so the win32_helpers ctypes setup only happens
+    # when DPI conversion is actually requested.
+    try:
+        from ultron.desktop.win32_helpers import logical_to_physical
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("logical_to_physical unavailable: %s", exc)
+        return int(cx), int(cy)
+
+    return logical_to_physical(int(cx), int(cy))
+
+
+def physical_rect_of_element(
+    element: UIAElement,
+    *,
+    assume_logical: bool = False,
+) -> tuple[int, int, int, int]:
+    """Return ``element.rect`` in physical pixels.
+
+    Same DPI conversion semantics as
+    :func:`physical_center_of_element`. Returns
+    ``(left, top, right, bottom)``.
+
+    Useful when the caller needs the full bounding box (region crop
+    on a capture, screen-context VLM prompt). The conversion uses the
+    rect's geometric centre as the DPI lookup reference so both
+    corners map to the same monitor's scale factor on mixed-DPI
+    multi-monitor setups.
+    """
+
+    left, top, right, bottom = element.rect
+    if not assume_logical:
+        return int(left), int(top), int(right), int(bottom)
+
+    try:
+        from ultron.desktop.win32_helpers import logical_to_physical
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("logical_to_physical unavailable: %s", exc)
+        return int(left), int(top), int(right), int(bottom)
+
+    ref_x = (int(left) + int(right)) // 2
+    ref_y = (int(top) + int(bottom)) // 2
+    pl, pt = logical_to_physical(
+        int(left), int(top), reference_x=ref_x, reference_y=ref_y,
+    )
+    pr, pb = logical_to_physical(
+        int(right), int(bottom), reference_x=ref_x, reference_y=ref_y,
+    )
+    return pl, pt, pr, pb
+
+
+def dpi_aware_click_at_element_center(
+    element: UIAElement,
+    *,
+    controller: Optional[object] = None,
+    button: str = "left",
+    clicks: int = 1,
+    user_text: str = "",
+    assume_logical: bool = False,
+) -> UIAActionResult:
+    """Click an element's centre via :class:`InputController` with
+    DPI awareness.
+
+    Designed for callers that already hold a :class:`UIAElement`
+    (from :func:`find_element`) and want the coordinate-based
+    pyautogui path rather than pywinauto's native ``click_input``.
+    The DPI conversion happens at this boundary so pyautogui lands
+    on the right pixel on high-DPI displays.
+
+    Args:
+        element: target element.
+        controller: :class:`InputController` instance. When ``None``,
+            the module-level singleton from
+            :func:`ultron.desktop.input_control.get_input_controller`
+            is used.
+        button: ``"left"`` / ``"right"`` / ``"middle"``.
+        clicks: number of clicks (2 = double click).
+        user_text: forwarded to the controller so the safety
+            validator's ``RuleContext.user_text`` reflects the
+            originating utterance.
+        assume_logical: forwarded to
+            :func:`physical_center_of_element`. Default False.
+
+    Returns a :class:`UIAActionResult` describing the outcome. The
+    function defends against disabled elements and degenerate
+    ``(0, 0, 0, 0)`` rects before touching the controller.
+    """
+
+    if not element.is_enabled:
+        return UIAActionResult(
+            success=False,
+            element_name=element.name,
+            error=f"element '{element.name}' is disabled",
+        )
+
+    if element.rect == (0, 0, 0, 0):
+        return UIAActionResult(
+            success=False,
+            element_name=element.name,
+            error=f"element '{element.name}' has no measurable rect",
+        )
+
+    if controller is None:
+        try:
+            from ultron.desktop.input_control import get_input_controller
+            controller = get_input_controller()
+        except Exception as exc:  # noqa: BLE001
+            return UIAActionResult(
+                success=False,
+                element_name=element.name,
+                error=f"input controller unavailable: {exc}",
+            )
+
+    cx, cy = physical_center_of_element(element, assume_logical=assume_logical)
+
+    try:
+        result = controller.click(
+            x=cx,
+            y=cy,
+            button=button,
+            clicks=int(clicks),
+            user_text=user_text,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return UIAActionResult(
+            success=False,
+            element_name=element.name,
+            error=f"controller.click raised: {exc}",
+        )
+
+    if getattr(result, "success", False):
+        return UIAActionResult(success=True, element_name=element.name)
+    return UIAActionResult(
+        success=False,
+        element_name=element.name,
+        error=getattr(result, "error", None) or "controller refused click",
+    )
+
+
 __all__ = [
     "UIAElement",
     "UIAActionResult",
@@ -565,4 +768,7 @@ __all__ = [
     "find_element",
     "click_element",
     "type_text_into_element",
+    "physical_center_of_element",
+    "physical_rect_of_element",
+    "dpi_aware_click_at_element_center",
 ]

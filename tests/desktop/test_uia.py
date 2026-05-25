@@ -317,3 +317,197 @@ def test_collect_window_text_live_on_foreground():
     out = collect_window_text(fg, max_elements=30, max_depth=4)
     assert isinstance(out, list)
     assert all(isinstance(s, str) for s in out)
+
+
+# ---------------------------------------------------------------------------
+# T5: DPI-aware coordinate helpers
+# ---------------------------------------------------------------------------
+
+
+from ultron.desktop.uia import (  # noqa: E402  -- intentional below test imports
+    dpi_aware_click_at_element_center,
+    physical_center_of_element,
+    physical_rect_of_element,
+)
+
+
+def _elem_with_rect(left=100, top=200, right=300, bottom=400, **kwargs):
+    return UIAElement(
+        name=kwargs.pop("name", "Submit"),
+        rect=(left, top, right, bottom),
+        **kwargs,
+    )
+
+
+class TestPhysicalCenterOfElement:
+
+    def test_identity_default(self):
+        elem = _elem_with_rect(100, 200, 300, 400)
+        # Default assume_logical=False is the identity (centre of rect).
+        assert physical_center_of_element(elem) == (200, 300)
+
+    def test_assume_logical_applies_dpi(self, monkeypatch):
+        elem = _elem_with_rect(100, 200, 300, 400)
+        # Stub logical_to_physical so the test stays hermetic.
+        monkeypatch.setattr(
+            "ultron.desktop.win32_helpers.logical_to_physical",
+            lambda x, y, **_: (x * 2, y * 2),
+        )
+        assert physical_center_of_element(elem, assume_logical=True) == (400, 600)
+
+    def test_assume_logical_falls_back_on_import_error(self, monkeypatch):
+        elem = _elem_with_rect(100, 200, 300, 400)
+        import sys as _sys
+
+        # Force the lazy import to fail so the helper falls back to
+        # the identity centre.
+        monkeypatch.setitem(_sys.modules, "ultron.desktop.win32_helpers", None)
+        assert physical_center_of_element(elem, assume_logical=True) == (200, 300)
+
+    def test_zero_rect_returns_origin(self):
+        elem = UIAElement(name="N/A", rect=(0, 0, 0, 0))
+        assert physical_center_of_element(elem) == (0, 0)
+
+
+class TestPhysicalRectOfElement:
+
+    def test_identity_default(self):
+        elem = _elem_with_rect(10, 20, 110, 220)
+        assert physical_rect_of_element(elem) == (10, 20, 110, 220)
+
+    def test_assume_logical_uses_centre_reference(self, monkeypatch):
+        elem = _elem_with_rect(100, 100, 200, 200)
+        # Spy: record the reference_x/y values passed in.
+        captured: list[dict] = []
+
+        def _stub(x, y, *, reference_x=None, reference_y=None):
+            captured.append({"x": x, "y": y, "ref_x": reference_x, "ref_y": reference_y})
+            return x * 2, y * 2
+
+        monkeypatch.setattr(
+            "ultron.desktop.win32_helpers.logical_to_physical", _stub,
+        )
+        result = physical_rect_of_element(elem, assume_logical=True)
+        assert result == (200, 200, 400, 400)
+        # Both corners look up DPI at the rect's centre.
+        assert {c["ref_x"] for c in captured} == {150}
+        assert {c["ref_y"] for c in captured} == {150}
+
+
+class _FakeController:
+    """Captures InputController.click calls."""
+
+    def __init__(self, *, success: bool = True, error: str = "") -> None:
+        self.success = success
+        self.error = error
+        self.calls: list[dict] = []
+
+    def click(self, *, x, y, button="left", clicks=1, user_text=""):
+        self.calls.append({
+            "x": x, "y": y, "button": button,
+            "clicks": clicks, "user_text": user_text,
+        })
+
+        class _R:
+            def __init__(self, ok, err):
+                self.success = ok
+                self.error = err
+        return _R(self.success, self.error)
+
+
+class TestDpiAwareClickAtElementCenter:
+
+    def test_happy_path_calls_controller_with_physical_coords(self):
+        elem = _elem_with_rect(100, 200, 300, 400)
+        ctrl = _FakeController(success=True)
+        result = dpi_aware_click_at_element_center(elem, controller=ctrl)
+        assert isinstance(result, UIAActionResult)
+        assert result.success is True
+        assert result.element_name == "Submit"
+        assert len(ctrl.calls) == 1
+        assert ctrl.calls[0]["x"] == 200
+        assert ctrl.calls[0]["y"] == 300
+
+    def test_disabled_element_refused_before_click(self):
+        elem = _elem_with_rect(is_enabled=False)
+        ctrl = _FakeController()
+        result = dpi_aware_click_at_element_center(elem, controller=ctrl)
+        assert result.success is False
+        assert "disabled" in (result.error or "")
+        assert ctrl.calls == []
+
+    def test_zero_rect_refused_before_click(self):
+        elem = UIAElement(name="N/A", rect=(0, 0, 0, 0))
+        ctrl = _FakeController()
+        result = dpi_aware_click_at_element_center(elem, controller=ctrl)
+        assert result.success is False
+        assert "no measurable rect" in (result.error or "")
+        assert ctrl.calls == []
+
+    def test_controller_failure_propagates_error(self):
+        elem = _elem_with_rect()
+        ctrl = _FakeController(success=False, error="rate limit exceeded")
+        result = dpi_aware_click_at_element_center(elem, controller=ctrl)
+        assert result.success is False
+        assert "rate limit exceeded" in (result.error or "")
+
+    def test_controller_raises_propagates(self):
+        elem = _elem_with_rect()
+
+        class _BoomController:
+            def click(self, **_):
+                raise RuntimeError("boom")
+
+        result = dpi_aware_click_at_element_center(elem, controller=_BoomController())
+        assert result.success is False
+        assert "boom" in (result.error or "")
+
+    def test_passes_button_and_clicks(self):
+        elem = _elem_with_rect()
+        ctrl = _FakeController(success=True)
+        dpi_aware_click_at_element_center(
+            elem, controller=ctrl, button="right", clicks=2,
+            user_text="please double-click submit",
+        )
+        assert ctrl.calls[0]["button"] == "right"
+        assert ctrl.calls[0]["clicks"] == 2
+        assert ctrl.calls[0]["user_text"] == "please double-click submit"
+
+    def test_assume_logical_applies_conversion(self, monkeypatch):
+        elem = _elem_with_rect(100, 100, 300, 300)
+        ctrl = _FakeController(success=True)
+        monkeypatch.setattr(
+            "ultron.desktop.win32_helpers.logical_to_physical",
+            lambda x, y, **_: (x * 2, y * 2),
+        )
+        dpi_aware_click_at_element_center(
+            elem, controller=ctrl, assume_logical=True,
+        )
+        # Centre of (100,100,300,300) is (200,200); doubled -> (400,400).
+        assert ctrl.calls[0]["x"] == 400
+        assert ctrl.calls[0]["y"] == 400
+
+    def test_default_controller_resolved_from_module(self, monkeypatch):
+        elem = _elem_with_rect()
+        ctrl = _FakeController(success=True)
+        monkeypatch.setattr(
+            "ultron.desktop.input_control.get_input_controller",
+            lambda: ctrl,
+        )
+        result = dpi_aware_click_at_element_center(elem)
+        assert result.success is True
+        assert len(ctrl.calls) == 1
+
+    def test_default_controller_resolution_failure_reported(self, monkeypatch):
+        elem = _elem_with_rect()
+
+        def _boom():
+            raise RuntimeError("singleton broken")
+
+        monkeypatch.setattr(
+            "ultron.desktop.input_control.get_input_controller",
+            _boom,
+        )
+        result = dpi_aware_click_at_element_center(elem)
+        assert result.success is False
+        assert "input controller unavailable" in (result.error or "")
