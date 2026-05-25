@@ -822,12 +822,31 @@ def test_voice_controller_progress_routes_through_session_when_coordinator_wired
     assert "building" in response.text.lower() or "1 file" in response.text
 
 
-def test_voice_controller_progress_falls_back_to_legacy_without_coordinator(tmp_path):
+def test_voice_controller_progress_falls_back_to_legacy_without_coordinator(
+    monkeypatch, tmp_path,
+):
     """When no coordinator is wired but a bridge task is running, the
     voice controller falls back to the runner's legacy bridge-state
-    narration path."""
+    narration path.
+
+    Production-wiring pass (2026-05-26) flipped
+    ``coding.pre_task_confirmation_enabled`` to True, which routes
+    the FIRST handle_utterance through the A4 confirmation path
+    (returns a ``pre_task_confirmation`` + ``deferred_dispatch``
+    response without actually starting the task). This test
+    exercises the LEGACY path explicitly, so we monkeypatch the
+    settings shim back to False so ``_submit`` runs synchronously
+    and the bridge has an active handle for the progress query.
+    """
+    from ultron.coding import voice as voice_module
     from ultron.coding.projects import ProjectRegistry, ProjectResolver
     from ultron.coding.voice import CodingVoiceController
+
+    # Pin the legacy path for this test only -- monkeypatch restores
+    # the setting on teardown.
+    monkeypatch.setattr(
+        voice_module.settings, "CODING_PRE_TASK_CONFIRMATION_ENABLED", False,
+    )
 
     sandbox = tmp_path / "sandbox"
     sandbox.mkdir()

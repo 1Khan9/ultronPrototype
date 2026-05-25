@@ -210,19 +210,51 @@ def test_lint_python_non_python_path_returns_tree_sitter_only(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
-def test_runner_lint_listener_disabled_by_default(tmp_path: Path):
-    """When the flag is off, _make_pre_write_lint_listener returns None."""
-    from ultron.coding.runner import CodingTaskRunner
+def test_runner_lint_listener_disabled_returns_none(monkeypatch, tmp_path: Path):
+    """When ``coding.pre_write_lint.enabled`` is False, the listener
+    factory returns ``None`` (no FILE_CHANGE listener attached).
 
-    # We don't need a full runner construction — call the method on a
-    # stand-in object that has the necessary attributes.
+    Production-wiring pass (2026-05-26) flipped the default of
+    ``coding.pre_write_lint.enabled`` to True, so the test now monkey-
+    patches the live config sub-model to False before invoking the
+    factory. This pins the test to the disabled-case behaviour
+    regardless of the current default.
+    """
+    from ultron.coding.runner import CodingTaskRunner
+    from ultron.config import get_config
+
+    # Pin the flag to False for this test only -- monkeypatch restores
+    # it on teardown.
+    cfg = get_config().coding.pre_write_lint
+    monkeypatch.setattr(cfg, "enabled", False)
+
     class FakeHandle:
         def task_id(self):
             return "test-id"
 
     runner = CodingTaskRunner.__new__(CodingTaskRunner)
-    # Reach into the method directly so we don't need to spin up the
-    # full runner. The config knob is what matters here.
     listener = runner._make_pre_write_lint_listener(FakeHandle())
-    # Default config has enabled=False, so the listener should be None.
     assert listener is None
+
+
+def test_runner_lint_listener_enabled_returns_callable(monkeypatch, tmp_path: Path):
+    """When ``coding.pre_write_lint.enabled`` is True, the factory
+    builds and returns the FILE_CHANGE listener callable.
+
+    Complements the disabled-case verification above by pinning the
+    enabled-case shape so future config-default flips don't silently
+    regress either branch.
+    """
+    from ultron.coding.runner import CodingTaskRunner
+    from ultron.config import get_config
+
+    cfg = get_config().coding.pre_write_lint
+    monkeypatch.setattr(cfg, "enabled", True)
+
+    class FakeHandle:
+        def task_id(self):
+            return "test-id"
+
+    runner = CodingTaskRunner.__new__(CodingTaskRunner)
+    listener = runner._make_pre_write_lint_listener(FakeHandle())
+    assert callable(listener)
