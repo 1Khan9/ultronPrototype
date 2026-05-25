@@ -660,6 +660,14 @@ def stop_parakeet_server(timeout_seconds: float = 5.0) -> bool:
     and successfully terminated, False if it wasn't running.
 
     Safe to call when no server is up (no-op).
+
+    Teardown order:
+    1. POST ``/shutdown`` so uvicorn drains gracefully.
+    2. ``poll()`` for a clean exit within ``timeout_seconds * 0.4``.
+    3. If still alive: T8 ``kill_process_tree`` -- terminate + wait
+       up to the remaining grace, then SIGKILL any survivors. Handles
+       uvicorn forks + any NeMo background threads cleanly without
+       the per-pid retry loop the legacy code carried.
     """
     global _SERVER_PROCESS, _SERVER_URL_CACHED
     url = _SERVER_URL_CACHED or "http://127.0.0.1:8771"
@@ -669,24 +677,38 @@ def stop_parakeet_server(timeout_seconds: float = 5.0) -> bool:
     if _SERVER_PROCESS.poll() is not None:
         logger.debug("stop_parakeet_server: subprocess already exited")
         _SERVER_PROCESS = None
+        _SERVER_URL_CACHED = None
         return False
     try:
         import requests
+        graceful_budget = max(0.5, float(timeout_seconds) * 0.4)
         try:
             requests.post(f"{url}/shutdown", timeout=2.0)
         except Exception as e:                                # noqa: BLE001
-            logger.debug("stop: /shutdown POST failed (%s); will terminate", e)
-        try:
-            _SERVER_PROCESS.terminate()
-            _SERVER_PROCESS.wait(timeout=timeout_seconds)
-        except subprocess.TimeoutExpired:
-            logger.warning(
-                "stop_parakeet_server: terminate timed out; killing",
+            logger.debug("stop: /shutdown POST failed (%s); will kill_tree", e)
+        # Brief grace window for the graceful path to drain.
+        deadline = time.monotonic() + graceful_budget
+        while time.monotonic() < deadline:
+            if _SERVER_PROCESS.poll() is not None:
+                break
+            time.sleep(0.05)
+        if _SERVER_PROCESS.poll() is None:
+            # T8 kill_process_tree: terminate the parakeet root + any
+            # uvicorn worker children + their grandchildren in one
+            # call. Cross-platform; psutil-driven; fail-open on
+            # missing psutil.
+            from ultron.subprocess.kill_tree import kill_process_tree
+            result = kill_process_tree(
+                _SERVER_PROCESS.pid,
+                grace_seconds=max(0.5, float(timeout_seconds) - graceful_budget),
             )
-            _SERVER_PROCESS.kill()
-        finally:
-            _SERVER_PROCESS = None
-            _SERVER_URL_CACHED = None
+            if result.force_killed:
+                logger.warning(
+                    "stop_parakeet_server: force-killed %d pid(s) after grace",
+                    len(result.force_killed),
+                )
+        _SERVER_PROCESS = None
+        _SERVER_URL_CACHED = None
         logger.info("Parakeet server stopped (VRAM should be freed)")
         return True
     except Exception as e:                                    # noqa: BLE001

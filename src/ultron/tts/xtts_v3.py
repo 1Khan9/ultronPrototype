@@ -838,7 +838,17 @@ class XttsV3Speech:
         )
 
     def _stop_server_subprocess(self) -> None:
-        """Best-effort: try graceful /shutdown, then SIGTERM/SIGKILL."""
+        """Best-effort teardown via /shutdown then T8 kill_process_tree.
+
+        Order:
+        1. POST ``/shutdown`` so the FastAPI server drains its queue.
+        2. Wait up to 2 s for clean exit.
+        3. If still alive: T8 ``kill_process_tree`` (terminate + wait
+           + force-kill survivors) -- handles uvicorn worker forks +
+           any Coqui background threads in a single cross-platform
+           call. Replaces the legacy nested-timeout terminate/kill
+           pair which couldn't reach grandchildren.
+        """
         if self._server_proc is None:
             return
         try:
@@ -852,10 +862,10 @@ class XttsV3Speech:
             self._server_proc.wait(timeout=2.0)
         except subprocess.TimeoutExpired:
             try:
-                self._server_proc.terminate()
-                self._server_proc.wait(timeout=2.0)
-            except subprocess.TimeoutExpired:
-                self._server_proc.kill()
+                from ultron.subprocess.kill_tree import kill_process_tree
+                kill_process_tree(self._server_proc.pid, grace_seconds=2.0)
+            except Exception as e:  # noqa: BLE001
+                logger.debug("xtts kill_process_tree raised (swallowed): %s", e)
         finally:
             self._server_proc = None
 

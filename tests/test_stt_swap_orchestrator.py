@@ -128,10 +128,19 @@ def test_stop_parakeet_server_when_not_running_returns_false(monkeypatch):
 
 
 def test_stop_parakeet_server_terminates_alive_process(monkeypatch):
+    """When /shutdown grace expires, stop_parakeet_server falls back to
+    T8 kill_process_tree against the subprocess pid + descendants.
+
+    Updated 2026-05-26: the legacy ``proc.terminate()`` + ``proc.wait()``
+    chain was replaced by ``kill_process_tree(pid)`` so uvicorn worker
+    forks + NeMo helper threads get cleaned up in one cross-platform
+    call.
+    """
     from ultron.transcription import parakeet_engine as pe_mod
 
     proc = MagicMock(name="server_proc")
-    proc.poll.return_value = None  # alive
+    proc.poll.return_value = None  # alive throughout
+    proc.pid = 4242
     monkeypatch.setattr(pe_mod, "_SERVER_PROCESS", proc)
     monkeypatch.setattr(pe_mod, "_SERVER_URL_CACHED", "http://127.0.0.1:8771")
 
@@ -139,8 +148,27 @@ def test_stop_parakeet_server_terminates_alive_process(monkeypatch):
     fake_requests = MagicMock()
     monkeypatch.setitem(__import__("sys").modules, "requests", fake_requests)
 
-    assert pe_mod.stop_parakeet_server() is True
-    proc.terminate.assert_called_once()
+    # Mock the T8 kill primitive so the test doesn't try to terminate
+    # an arbitrary pid on the dev machine.
+    kill_calls = []
+
+    def _fake_kill_tree(pid, *, grace_seconds=3.0, **_):
+        kill_calls.append((pid, grace_seconds))
+
+        class _Result:
+            terminated = (pid,)
+            force_killed = ()
+            unreachable = ()
+        return _Result()
+
+    import ultron.subprocess.kill_tree as kt_mod
+    monkeypatch.setattr(kt_mod, "kill_process_tree", _fake_kill_tree)
+
+    assert pe_mod.stop_parakeet_server(timeout_seconds=1.0) is True
+    # Graceful /shutdown POST was issued via the mocked requests module.
+    fake_requests.post.assert_called_once()
+    # Kill primitive was invoked with the subprocess pid.
+    assert kill_calls and kill_calls[0][0] == 4242
     # Process tracker cleared so subsequent calls return False.
     assert pe_mod._SERVER_PROCESS is None
 

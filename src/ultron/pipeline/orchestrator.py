@@ -206,6 +206,69 @@ class Orchestrator:
         except Exception as e:                                      # noqa: BLE001
             logger.warning("materialise_default_pins failed (continuing): %s", e)
 
+        # 2026-05-26 (openclaw-clawhub catalog wiring) -- T2 voice-
+        # baseline artifact identity verification. Walks the 6
+        # canonical voice-baseline artifacts (LLM GGUF, draft GGUF,
+        # Kokoro voicepack, Kokoro fine-tune weights, wake-word
+        # ONNX, Smart Turn V3 ONNX), computes their digests, and
+        # verifies against data/install/pinned_digests.jsonl.
+        # First-fetch records TOFU pins; subsequent boots verify
+        # against the recorded pins so a tampered model file
+        # surfaces as a voice-baseline integrity warning rather
+        # than a mysterious voice-character regression.
+        #
+        # Runs ASYNC on a daemon thread so the ~5-10 s GGUF hash
+        # doesn't block cold-start. Report deposited on
+        # ``self._voice_baseline_report`` for downstream consumers
+        # (system_status MCP tool, voice intent "are my models OK?")
+        # to poll on demand. Fail-open: digest computation errors
+        # never abort startup.
+        self._voice_baseline_report = None
+        try:
+            from ultron.config import PROJECT_ROOT
+            from ultron.install.voice_baseline_verify import (
+                summarise_report,
+                verify_voice_baseline_artifacts_async,
+            )
+
+            def _on_voice_baseline_complete(report) -> None:
+                try:
+                    summary = summarise_report(report)
+                    if report.mismatches:
+                        logger.warning(
+                            "voice-baseline integrity: %s -- mismatches: %s",
+                            summary,
+                            "; ".join(
+                                f"{o.identifier}: {o.detail}"
+                                for o in report.mismatches
+                            ),
+                        )
+                    elif report.missing_required:
+                        logger.warning(
+                            "voice-baseline integrity: %s -- required missing: %s",
+                            summary,
+                            ", ".join(
+                                o.identifier for o in report.missing_required
+                            ),
+                        )
+                    else:
+                        logger.info("voice-baseline integrity: %s", summary)
+                except Exception as inner:  # noqa: BLE001
+                    logger.debug(
+                        "voice-baseline summary log failed: %s", inner,
+                    )
+
+            self._voice_baseline_report, _ = (
+                verify_voice_baseline_artifacts_async(
+                    PROJECT_ROOT,
+                    on_complete=_on_voice_baseline_complete,
+                )
+            )
+        except Exception as e:                                      # noqa: BLE001
+            logger.warning(
+                "voice-baseline verify async kickoff failed: %s", e,
+            )
+
         self.audio = AudioCapture()
         # Mode-aware pre-roll: ring buffer is sized to the LARGER of
         # cold/warm pre-roll so the WARM path can take a longer slice
