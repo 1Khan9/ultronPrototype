@@ -330,3 +330,238 @@ def test_get_pixel_color_does_not_record_taint(monkeypatch):
         assert tracker.size == 0
     finally:
         set_taint_tracker(None)
+
+
+# ---------------------------------------------------------------------------
+# Catalog 09 T6: find_image_on_screen template matching
+# ---------------------------------------------------------------------------
+
+
+def _allow_path_resolver(monkeypatch):
+    """Force the path resolver to return the input path unchanged."""
+    from pathlib import Path
+
+    class _Fake:
+        def safe_realpath(self, raw):
+            return Path(str(raw))
+
+    monkeypatch.setattr(
+        "ultron.safety.path_resolver.get_path_resolver", lambda: _Fake(),
+    )
+
+
+def _reject_path_resolver(monkeypatch):
+    """Force the path resolver to reject all paths (simulates an evasion
+    pattern or path traversal attempt)."""
+    class _Fake:
+        def safe_realpath(self, raw):
+            return None
+
+    monkeypatch.setattr(
+        "ultron.safety.path_resolver.get_path_resolver", lambda: _Fake(),
+    )
+
+
+def test_find_image_returns_match_on_success(monkeypatch):
+    """Happy path: pyautogui.locateOnScreen returns a Box-like tuple;
+    we wrap it in TemplateMatch with computed centre."""
+    import types
+
+    from ultron.desktop import capture as capture_mod
+    _allow_path_resolver(monkeypatch)
+    fake = types.SimpleNamespace(
+        locateOnScreen=lambda path, **kw: (100, 200, 50, 40),
+    )
+    monkeypatch.setitem(sys.modules, "pyautogui", fake)
+    match = capture_mod.find_image_on_screen("template.png")
+    assert match is not None
+    assert match.left == 100
+    assert match.top == 200
+    assert match.width == 50
+    assert match.height == 40
+    assert match.center_x == 125
+    assert match.center_y == 220
+    assert match.confidence == 0.8
+
+
+def test_find_image_default_confidence_is_zero_point_eight(monkeypatch):
+    import types
+
+    from ultron.desktop import capture as capture_mod
+    _allow_path_resolver(monkeypatch)
+    seen = {}
+
+    def _fake(path, **kw):
+        seen.update(kw)
+        return (0, 0, 10, 10)
+
+    fake = types.SimpleNamespace(locateOnScreen=_fake)
+    monkeypatch.setitem(sys.modules, "pyautogui", fake)
+    capture_mod.find_image_on_screen("t.png")
+    assert seen["confidence"] == 0.8
+
+
+def test_find_image_custom_confidence_forwarded(monkeypatch):
+    import types
+
+    from ultron.desktop import capture as capture_mod
+    _allow_path_resolver(monkeypatch)
+    seen = {}
+
+    def _fake(path, **kw):
+        seen.update(kw)
+        return None  # treat as no-match
+
+    fake = types.SimpleNamespace(locateOnScreen=_fake)
+    monkeypatch.setitem(sys.modules, "pyautogui", fake)
+    capture_mod.find_image_on_screen("t.png", confidence=0.95)
+    assert seen["confidence"] == 0.95
+
+
+def test_find_image_region_forwarded(monkeypatch):
+    import types
+
+    from ultron.desktop import capture as capture_mod
+    _allow_path_resolver(monkeypatch)
+    seen = {}
+
+    def _fake(path, **kw):
+        seen.update(kw)
+        return None
+
+    fake = types.SimpleNamespace(locateOnScreen=_fake)
+    monkeypatch.setitem(sys.modules, "pyautogui", fake)
+    capture_mod.find_image_on_screen("t.png", region=(100, 200, 300, 400))
+    assert seen["region"] == (100, 200, 300, 400)
+
+
+def test_find_image_no_match_returns_none(monkeypatch):
+    """pyautogui returning None (no match found) maps to None."""
+    import types
+
+    from ultron.desktop import capture as capture_mod
+    _allow_path_resolver(monkeypatch)
+    fake = types.SimpleNamespace(locateOnScreen=lambda p, **kw: None)
+    monkeypatch.setitem(sys.modules, "pyautogui", fake)
+    assert capture_mod.find_image_on_screen("missing.png") is None
+
+
+def test_find_image_opencv_missing_returns_none(monkeypatch):
+    """pyautogui.locateOnScreen raises when opencv-python is absent.
+    The wrapper catches and returns None (fail-open contract)."""
+    import types
+
+    from ultron.desktop import capture as capture_mod
+    _allow_path_resolver(monkeypatch)
+
+    def _boom(path, **kw):
+        raise ImportError("opencv-python is required for confidence")
+
+    fake = types.SimpleNamespace(locateOnScreen=_boom)
+    monkeypatch.setitem(sys.modules, "pyautogui", fake)
+    assert capture_mod.find_image_on_screen("t.png") is None
+
+
+def test_find_image_generic_exception_returns_none(monkeypatch):
+    import types
+
+    from ultron.desktop import capture as capture_mod
+    _allow_path_resolver(monkeypatch)
+
+    def _boom(path, **kw):
+        raise RuntimeError("display gone")
+
+    fake = types.SimpleNamespace(locateOnScreen=_boom)
+    monkeypatch.setitem(sys.modules, "pyautogui", fake)
+    assert capture_mod.find_image_on_screen("t.png") is None
+
+
+def test_find_image_rejects_empty_path():
+    from ultron.desktop import capture as capture_mod
+    assert capture_mod.find_image_on_screen("") is None
+
+
+def test_find_image_rejects_non_string_path():
+    from ultron.desktop import capture as capture_mod
+    assert capture_mod.find_image_on_screen(None) is None  # type: ignore[arg-type]
+    assert capture_mod.find_image_on_screen(42) is None  # type: ignore[arg-type]
+
+
+def test_find_image_rejects_out_of_range_confidence(monkeypatch):
+    from ultron.desktop import capture as capture_mod
+    _allow_path_resolver(monkeypatch)
+    # locateOnScreen must not be called; install a sentinel that would
+    # fail if invoked.
+    import types
+
+    def _should_not_be_called(*a, **kw):
+        raise AssertionError("locateOnScreen called despite invalid confidence")
+
+    monkeypatch.setitem(
+        sys.modules, "pyautogui",
+        types.SimpleNamespace(locateOnScreen=_should_not_be_called),
+    )
+    assert capture_mod.find_image_on_screen("t.png", confidence=0.0) is None
+    assert capture_mod.find_image_on_screen("t.png", confidence=-0.1) is None
+    assert capture_mod.find_image_on_screen("t.png", confidence=1.5) is None
+
+
+def test_find_image_rejects_malformed_region(monkeypatch):
+    from ultron.desktop import capture as capture_mod
+    _allow_path_resolver(monkeypatch)
+    import types
+
+    def _should_not_be_called(*a, **kw):
+        raise AssertionError("locateOnScreen called despite bad region")
+
+    monkeypatch.setitem(
+        sys.modules, "pyautogui",
+        types.SimpleNamespace(locateOnScreen=_should_not_be_called),
+    )
+    # too-short tuple
+    assert capture_mod.find_image_on_screen("t.png", region=(1, 2)) is None  # type: ignore[arg-type]
+    # non-positive width/height
+    assert capture_mod.find_image_on_screen("t.png", region=(0, 0, 0, 100)) is None
+
+
+def test_find_image_path_resolver_reject_returns_none(monkeypatch):
+    """Path resolver returning None (evasion pattern, broken symlink,
+    etc.) short-circuits before pyautogui is even imported."""
+    import types
+
+    from ultron.desktop import capture as capture_mod
+    _reject_path_resolver(monkeypatch)
+
+    def _should_not_be_called(*a, **kw):
+        raise AssertionError("locateOnScreen called despite rejected path")
+
+    monkeypatch.setitem(
+        sys.modules, "pyautogui",
+        types.SimpleNamespace(locateOnScreen=_should_not_be_called),
+    )
+    assert capture_mod.find_image_on_screen("evil/../../etc/passwd") is None
+
+
+def test_find_image_malformed_box_returns_none(monkeypatch):
+    """If locateOnScreen returns something we can't unpack into a box,
+    we map it to None."""
+    import types
+
+    from ultron.desktop import capture as capture_mod
+    _allow_path_resolver(monkeypatch)
+    fake = types.SimpleNamespace(
+        locateOnScreen=lambda p, **kw: "not a box",
+    )
+    monkeypatch.setitem(sys.modules, "pyautogui", fake)
+    assert capture_mod.find_image_on_screen("t.png") is None
+
+
+def test_find_image_template_match_is_frozen():
+    from ultron.desktop.capture import TemplateMatch
+
+    m = TemplateMatch(
+        left=0, top=0, width=10, height=10,
+        center_x=5, center_y=5, confidence=0.8,
+    )
+    with pytest.raises(Exception):
+        m.left = 100  # type: ignore[misc]

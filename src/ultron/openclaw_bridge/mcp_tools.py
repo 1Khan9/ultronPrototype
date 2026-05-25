@@ -1121,6 +1121,75 @@ def scroll_impl(
     }
 
 
+def find_image_on_screen_impl(
+    *,
+    template_path: str,
+    confidence: float = 0.8,
+    region_left: Optional[int] = None,
+    region_top: Optional[int] = None,
+    region_width: Optional[int] = None,
+    region_height: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Locate a saved template image on screen (catalog 09 T6, YELLOW).
+
+    Cap-2 read-only observation. The returned coordinates are
+    consumed by a downstream gated ``mouse_click`` / ``InputController``
+    call; the template-matching step itself does not touch input.
+
+    The ``region_*`` kwargs are exposed individually rather than as
+    a tuple so the MCP transport (JSON over stdio) can carry them
+    naturally. Pass all four to constrain the search, or none for a
+    full-screen scan.
+    """
+    try:
+        from ultron.desktop.capture import find_image_on_screen
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+
+    region = None
+    if (
+        region_left is not None or region_top is not None
+        or region_width is not None or region_height is not None
+    ):
+        if (
+            region_left is None or region_top is None
+            or region_width is None or region_height is None
+        ):
+            return {
+                "success": False,
+                "error": "all four region_* args must be set together",
+            }
+        region = (
+            int(region_left), int(region_top),
+            int(region_width), int(region_height),
+        )
+
+    match = find_image_on_screen(
+        template_path,
+        confidence=float(confidence),
+        region=region,
+    )
+    if match is None:
+        return {
+            "success": False,
+            "action": "find_image_on_screen",
+            "error": "no match (template missing, opencv absent, or below threshold)",
+        }
+    return {
+        "success": True,
+        "action": "find_image_on_screen",
+        "match": {
+            "left": match.left,
+            "top": match.top,
+            "width": match.width,
+            "height": match.height,
+            "center_x": match.center_x,
+            "center_y": match.center_y,
+            "confidence": match.confidence,
+        },
+    }
+
+
 def clipboard_read_impl(
     *,
     user_text: str = "",
@@ -1642,6 +1711,36 @@ def build_server():
         )
 
     @mcp.tool(
+        name="find_image_on_screen",
+        description=(
+            "Locate a saved template image on screen (catalog 09 T6). "
+            "Returns center_x/center_y physical pixel coordinates of "
+            "the best match plus the bounding rect; pass these to "
+            "mouse_click to click the located element. Requires "
+            "opencv-python; falls open (returns success=false) if "
+            "opencv is missing OR no match meets the confidence "
+            "threshold. Pass all four region_* args to constrain "
+            "search to a sub-rectangle."
+        ),
+    )
+    def find_image_on_screen(
+        template_path: str,
+        confidence: float = 0.8,
+        region_left: Optional[int] = None,
+        region_top: Optional[int] = None,
+        region_width: Optional[int] = None,
+        region_height: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        return find_image_on_screen_impl(
+            template_path=template_path,
+            confidence=confidence,
+            region_left=region_left,
+            region_top=region_top,
+            region_width=region_width,
+            region_height=region_height,
+        )
+
+    @mcp.tool(
         name="clipboard_read",
         description=(
             "Read the system clipboard text (catalog 09 T4). Cap-2 "
@@ -1707,6 +1806,7 @@ __all__ = [
     "click_uia_impl",
     "clipboard_read_impl",
     "clipboard_write_impl",
+    "find_image_on_screen_impl",
     "focus_window_impl",
     "get_window_text_impl",
     "mouse_click_impl",

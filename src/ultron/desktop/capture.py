@@ -280,6 +280,184 @@ def set_screen_capture(capture: Optional[ScreenCapture]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Catalog 09 T6: image template matching (find a UI element by saved image)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TemplateMatch:
+    """One template-match hit on the screen.
+
+    Attributes:
+        left: left edge of the matched rectangle in physical pixels.
+        top: top edge.
+        width: matched-rect width in pixels (== template width).
+        height: matched-rect height in pixels (== template height).
+        center_x: x coordinate of the rect centre (precomputed for
+            direct routing to :meth:`InputController.click`).
+        center_y: y coordinate of the rect centre.
+        confidence: confidence threshold that was applied (callers
+            can store this alongside the match for audit).
+    """
+
+    left: int
+    top: int
+    width: int
+    height: int
+    center_x: int
+    center_y: int
+    confidence: float
+
+
+_DEFAULT_TEMPLATE_CONFIDENCE: float = 0.8
+
+
+def find_image_on_screen(
+    template_path: str,
+    *,
+    confidence: float = _DEFAULT_TEMPLATE_CONFIDENCE,
+    region: Optional[tuple[int, int, int, int]] = None,
+) -> Optional[TemplateMatch]:
+    """Find a saved template image on screen via OpenCV template matching.
+
+    Catalog 09 T6 (YELLOW): fills the middle tier between fast UIA
+    (semantic, but unavailable for canvas-rendered apps and game HUDs)
+    and slow VLM (semantic, but 300-800 ms + GPU). Template matching
+    is ~10-100 ms per search on typical hardware with a ``region``
+    constraint, and works on every visible pixel-rendered surface --
+    including older Win32 apps without UIA roles, game inventory
+    icons, browser content not exposed via accessibility, and any
+    UI element whose appearance is stable across sessions.
+
+    Routing through the gated :class:`InputController.click` for the
+    returned centre coordinate keeps the whole click safety stack
+    (foreground security, validator, click_preview, rate limit)
+    intact. The template-matching step itself is read-only and
+    therefore Cap-2.
+
+    Args:
+        template_path: filesystem path to the template image (PNG /
+            JPEG). The path is canonicalised via
+            :class:`ultron.safety.path_resolver.PathResolver` -- raw
+            paths with bidi-override / percent-escape evasion patterns
+            are rejected. This protects against attacker-controlled
+            template paths that could match a spoofed UI element.
+        confidence: 0.0-1.0 OpenCV match confidence. Default 0.8
+            (matches the upstream plugin). Higher values reduce false
+            positives at the cost of false negatives on anti-aliased
+            edges and gamma-shifted backgrounds.
+        region: optional ``(left, top, width, height)`` 4-tuple
+            restricting the search to a sub-rectangle of the screen.
+            Cuts search time by 5-20x for small known regions.
+            ``None`` (default) scans the full virtual screen.
+
+    Returns:
+        :class:`TemplateMatch` on a successful match within the
+        confidence threshold. ``None`` when:
+
+        * The template path canonicalisation fails (evasion pattern,
+          path traversal, broken symlink chain).
+        * pyautogui is unavailable.
+        * opencv-python is not installed (pyautogui.locateOnScreen
+          requires opencv for confidence-based matching).
+        * No match meeting the threshold was found.
+        * pyautogui raised any other exception (display unavailable,
+          region out of bounds, etc.).
+
+    Fail-open at every layer: the return shape is always
+    ``Optional[TemplateMatch]`` and the orchestrator can simply branch
+    on ``None`` instead of catching exceptions.
+    """
+    if not isinstance(template_path, str) or not template_path:
+        return None
+    try:
+        conf = float(confidence)
+    except (TypeError, ValueError):
+        return None
+    if not (0.0 < conf <= 1.0):
+        return None
+    if region is not None:
+        try:
+            region_tuple: Optional[tuple[int, int, int, int]] = (
+                int(region[0]), int(region[1]),
+                int(region[2]), int(region[3]),
+            )
+        except (TypeError, IndexError, ValueError):
+            return None
+        if region_tuple[2] <= 0 or region_tuple[3] <= 0:
+            return None
+    else:
+        region_tuple = None
+
+    try:
+        from ultron.safety.path_resolver import get_path_resolver
+
+        resolved = get_path_resolver().safe_realpath(template_path)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "find_image_on_screen path resolver failed: %s", exc,
+        )
+        return None
+    if resolved is None:
+        logger.debug(
+            "find_image_on_screen rejected template path: %s",
+            template_path,
+        )
+        return None
+
+    template_resolved = str(resolved)
+
+    try:
+        import pyautogui  # type: ignore[import]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("find_image_on_screen pyautogui unavailable: %s", exc)
+        return None
+
+    try:
+        box = pyautogui.locateOnScreen(
+            template_resolved,
+            confidence=conf,
+            region=region_tuple,
+        )
+    except Exception as exc:  # noqa: BLE001
+        # pyautogui.locateOnScreen raises ImageNotFoundException when
+        # no match is found AND PyAutoGUIException / ImportError when
+        # opencv-python is missing. All are mapped to a single None
+        # contract so callers can branch on the return value rather
+        # than catching exceptions.
+        logger.debug(
+            "find_image_on_screen locateOnScreen exception: %s", exc,
+        )
+        return None
+
+    if box is None:
+        return None
+
+    try:
+        left = int(box[0])
+        top = int(box[1])
+        width = int(box[2])
+        height = int(box[3])
+    except (TypeError, IndexError, ValueError):
+        return None
+    if width <= 0 or height <= 0:
+        return None
+
+    center_x = left + width // 2
+    center_y = top + height // 2
+
+    return TemplateMatch(
+        left=left,
+        top=top,
+        width=width,
+        height=height,
+        center_x=center_x,
+        center_y=center_y,
+        confidence=conf,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Catalog 09 T2: pixel-color probe (single coordinate, no screenshot)
 # ---------------------------------------------------------------------------
 

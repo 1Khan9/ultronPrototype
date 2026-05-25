@@ -17,6 +17,7 @@ from ultron.openclaw_bridge.mcp_tools import (
     clipboard_write_impl,
     describe_screen_impl,
     enumerate_monitors_impl,
+    find_image_on_screen_impl,
     focus_window_impl,
     get_screen_context_impl,
     get_window_text_impl,
@@ -967,3 +968,75 @@ def test_clipboard_write_impl_failure_propagates(monkeypatch):
     out = clipboard_write_impl(text="my password is hunter2")
     assert out["success"] is False
     assert "credential" in (out.get("error") or "")
+
+
+# ---------------------------------------------------------------------------
+# Catalog 09 T6 -- find_image_on_screen MCP-surface impl
+# ---------------------------------------------------------------------------
+
+
+def test_find_image_on_screen_impl_returns_match_payload(monkeypatch):
+    from ultron.desktop.capture import TemplateMatch
+
+    def _fake(template_path, **kw):
+        return TemplateMatch(
+            left=10, top=20, width=100, height=80,
+            center_x=60, center_y=60, confidence=0.85,
+        )
+
+    monkeypatch.setattr(
+        "ultron.desktop.capture.find_image_on_screen", _fake,
+    )
+    out = find_image_on_screen_impl(template_path="ok.png")
+    assert out["success"] is True
+    m = out["match"]
+    assert m["left"] == 10 and m["top"] == 20
+    assert m["width"] == 100 and m["height"] == 80
+    assert m["center_x"] == 60 and m["center_y"] == 60
+    assert m["confidence"] == 0.85
+
+
+def test_find_image_on_screen_impl_none_match_returns_failure(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.capture.find_image_on_screen",
+        lambda template_path, **kw: None,
+    )
+    out = find_image_on_screen_impl(template_path="missing.png")
+    assert out["success"] is False
+    assert "no match" in (out.get("error") or "")
+
+
+def test_find_image_on_screen_impl_region_forwarded(monkeypatch):
+    seen: dict = {}
+
+    def _fake(template_path, **kw):
+        seen.update(kw)
+        return None
+
+    monkeypatch.setattr(
+        "ultron.desktop.capture.find_image_on_screen", _fake,
+    )
+    find_image_on_screen_impl(
+        template_path="ok.png",
+        region_left=10, region_top=20,
+        region_width=300, region_height=400,
+    )
+    assert seen["region"] == (10, 20, 300, 400)
+
+
+def test_find_image_on_screen_impl_partial_region_rejected(monkeypatch):
+    # locate must not be called when region is partially specified.
+    def _should_not_be_called(*a, **kw):
+        raise AssertionError(
+            "find_image_on_screen called despite incomplete region kwargs",
+        )
+
+    monkeypatch.setattr(
+        "ultron.desktop.capture.find_image_on_screen",
+        _should_not_be_called,
+    )
+    out = find_image_on_screen_impl(
+        template_path="ok.png", region_left=10, region_top=20,
+    )
+    assert out["success"] is False
+    assert "region" in (out.get("error") or "")
