@@ -1288,7 +1288,7 @@ intent:
 # ---------------------------------------------------------------------------
 
 events:
-  enabled: false                   # opt-in
+  enabled: true                    # 2026-05-25: integration flip -- canonical event store + chain
   store_backend: "jsonl"           # memory | jsonl | qdrant
   base_dir: "data/events"          # relative to PROJECT_ROOT
   qdrant_collection: "events"      # used when store_backend == qdrant
@@ -1317,7 +1317,7 @@ events:
 # ---------------------------------------------------------------------------
 
 skills:
-  enabled: false                       # opt-in; flip to true to wire matching
+  enabled: true                        # 2026-05-25: integration flip -- skills inject matched bodies into system prompt
   always_on_only: false                # debug toggle: drops triggered skills
   disabled_skills: []                  # names to suppress even when matched
   default_min_user_text_chars: 8       # guard against one-word false fires
