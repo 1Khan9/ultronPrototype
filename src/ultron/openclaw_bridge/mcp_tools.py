@@ -1121,6 +1121,63 @@ def scroll_impl(
     }
 
 
+def clipboard_read_impl(
+    *,
+    user_text: str = "",
+) -> Dict[str, Any]:
+    """Read the system clipboard text (catalog 09 T4, YELLOW).
+
+    Cap-2 read: routes through the safety validator with
+    ``tool_name=desktop.clipboard.read``; the returned text is
+    recorded in the taint tracker so any subsequent outbound tool
+    call carrying these exact bytes trips the exfil check.
+    """
+    try:
+        from ultron.desktop.clipboard import get_clipboard_manager
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+    mgr = get_clipboard_manager()
+    result = mgr.read_text(user_text=user_text)
+    out: Dict[str, Any] = {
+        "success": result.success,
+        "action": "clipboard_read",
+        "error": result.error,
+    }
+    if result.success:
+        out["text"] = result.text
+        out["tainted"] = result.tainted
+    return out
+
+
+def clipboard_write_impl(
+    *,
+    text: str,
+    user_text: str = "",
+) -> Dict[str, Any]:
+    """Write text to the system clipboard (catalog 09 T4, YELLOW).
+
+    Cap-3 write: routes through the safety validator with the full
+    payload (2 KB preview when very large) so payload-based rules
+    can block. The written bytes are recorded in the taint tracker
+    so the orchestrator can verify a downstream paste lands in the
+    expected target.
+    """
+    if not isinstance(text, str):
+        return {"success": False, "error": "text must be string"}
+    try:
+        from ultron.desktop.clipboard import get_clipboard_manager
+    except Exception as e:                                       # noqa: BLE001
+        return {"success": False, "error": f"import failed: {e}"}
+    mgr = get_clipboard_manager()
+    result = mgr.write_text(text, user_text=user_text)
+    return {
+        "success": result.success,
+        "action": "clipboard_write",
+        "error": result.error,
+        "tainted": result.tainted,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -1584,6 +1641,33 @@ def build_server():
             user_text=user_text,
         )
 
+    @mcp.tool(
+        name="clipboard_read",
+        description=(
+            "Read the system clipboard text (catalog 09 T4). Cap-2 "
+            "observation: returned bytes are taint-tracked so any "
+            "outbound tool carrying them later trips the validator's "
+            "exfil check. The clipboard can hold sensitive content "
+            "(passwords, private keys, confidential snippets); use "
+            "this only when the user explicitly asked to read."
+        ),
+    )
+    def clipboard_read(user_text: str = "") -> Dict[str, Any]:
+        return clipboard_read_impl(user_text=user_text)
+
+    @mcp.tool(
+        name="clipboard_write",
+        description=(
+            "Write text to the system clipboard (catalog 09 T4). Cap-3 "
+            "mutation: validator sees the full payload (2 KB preview "
+            "on very large content) so payload-based rules can block. "
+            "Bytes are taint-tracked so the orchestrator can verify "
+            "the downstream Ctrl+V lands in the expected target."
+        ),
+    )
+    def clipboard_write(text: str, user_text: str = "") -> Dict[str, Any]:
+        return clipboard_write_impl(text=text, user_text=user_text)
+
     return mcp
 
 
@@ -1621,6 +1705,8 @@ __all__ = [
     "take_screenshot_impl",
     # extended desktop tools (Phase 7 polish)
     "click_uia_impl",
+    "clipboard_read_impl",
+    "clipboard_write_impl",
     "focus_window_impl",
     "get_window_text_impl",
     "mouse_click_impl",

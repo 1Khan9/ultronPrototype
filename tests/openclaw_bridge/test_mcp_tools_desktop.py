@@ -13,6 +13,8 @@ import pytest
 
 from ultron.openclaw_bridge.mcp_tools import (
     click_uia_impl,
+    clipboard_read_impl,
+    clipboard_write_impl,
     describe_screen_impl,
     enumerate_monitors_impl,
     focus_window_impl,
@@ -882,3 +884,86 @@ def test_mouse_move_impl_default_smooth_is_false(monkeypatch):
     assert out["success"] is True
     _, kwargs = fake.move_mouse.call_args
     assert kwargs["smooth"] is False
+
+
+# ---------------------------------------------------------------------------
+# Catalog 09 T4 -- clipboard read / write MCP-surface impls
+# ---------------------------------------------------------------------------
+
+
+def _patch_clipboard_manager(monkeypatch, *, result_kwargs):
+    from ultron.desktop.clipboard import ClipboardResult
+
+    fake = MagicMock()
+    fake.read_text.return_value = ClipboardResult(**result_kwargs)
+    fake.write_text.return_value = ClipboardResult(**result_kwargs)
+    monkeypatch.setattr(
+        "ultron.desktop.clipboard.get_clipboard_manager", lambda: fake,
+    )
+    return fake
+
+
+def test_clipboard_read_impl_success(monkeypatch):
+    fake = _patch_clipboard_manager(
+        monkeypatch,
+        result_kwargs={
+            "success": True,
+            "action": "read",
+            "text": "from clipboard",
+            "tainted": True,
+        },
+    )
+    out = clipboard_read_impl(user_text="read it")
+    assert out["success"] is True
+    assert out["action"] == "clipboard_read"
+    assert out["text"] == "from clipboard"
+    assert out["tainted"] is True
+    fake.read_text.assert_called_once()
+
+
+def test_clipboard_read_impl_failure_propagates(monkeypatch):
+    _patch_clipboard_manager(
+        monkeypatch,
+        result_kwargs={
+            "success": False,
+            "action": "read",
+            "error": "pyperclip unavailable",
+        },
+    )
+    out = clipboard_read_impl()
+    assert out["success"] is False
+    assert "pyperclip" in (out.get("error") or "")
+    assert "text" not in out  # absent on failure
+
+
+def test_clipboard_write_impl_success(monkeypatch):
+    fake = _patch_clipboard_manager(
+        monkeypatch,
+        result_kwargs={"success": True, "action": "write", "tainted": True},
+    )
+    out = clipboard_write_impl(text="hello", user_text="copy this")
+    assert out["success"] is True
+    assert out["action"] == "clipboard_write"
+    assert out["tainted"] is True
+    _, kwargs = fake.write_text.call_args
+    assert kwargs["user_text"] == "copy this"
+
+
+def test_clipboard_write_impl_rejects_non_string():
+    out = clipboard_write_impl(text=12345)  # type: ignore[arg-type]
+    assert out["success"] is False
+    assert "string" in (out.get("error") or "")
+
+
+def test_clipboard_write_impl_failure_propagates(monkeypatch):
+    _patch_clipboard_manager(
+        monkeypatch,
+        result_kwargs={
+            "success": False,
+            "action": "write",
+            "error": "safety: payload contains credential",
+        },
+    )
+    out = clipboard_write_impl(text="my password is hunter2")
+    assert out["success"] is False
+    assert "credential" in (out.get("error") or "")
