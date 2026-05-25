@@ -1631,6 +1631,41 @@ via `pywinauto`; same screenshot capability as `desktop-control` via `mss`.
 - `get_vlm()` / `set_vlm(...)` -- singleton + wires the `screen_context.set_vlm_describe(...)` bridge transparently.
 - Model weights pre-fetched via `scripts/download_models.py` step 9/10.
 
+#### `desktop/element_click.py` (catalog 08 T3, NEW)
+
+Cross-window semantic UIA element search + click via the gated
+:class:`InputController`. The primary "act on a UI element by name"
+primitive for LLM-facing automation.
+
+- :data:`CLICKABLE_TYPES` (9 entries: Button / Hyperlink / MenuItem /
+  TabItem / ListItem / CheckBox / RadioButton / TreeItem / DataItem),
+  :data:`DEFAULT_MAX_GLOBAL_WINDOWS=12`, :data:`DEFAULT_MAX_ELEMENTS_PER_WINDOW=500`.
+- Frozen dataclasses :class:`UIElementMatch` (name + control_type +
+  automation_id + enabled + rect + center + window + is_exact),
+  :class:`TextMatch` (name + control_type + rect + center + window),
+  :class:`ClickResult` (success + element_name + window_title +
+  control_type + center + method + candidates + is_exact + error).
+- :func:`find_elements_by_name(name, *, window_title, control_types,
+  exact, enabled_only=True, max_windows, max_elements_per_window,
+  exclude_cloaked)` -> list[UIElementMatch]. Walks
+  :func:`enumerate_windows` (optionally title-filtered), per-window
+  walks UIA descendants in CLICKABLE_TYPES (or control_types). Returns
+  exact-matches-first stable-sorted list. Per-element fail-open.
+- :func:`click_element_by_name(name, *, window_title, control_type,
+  exact, user_text, controller, max_windows, max_elements_per_window,
+  exclude_cloaked)` -> ClickResult. Picks first candidate from
+  :func:`find_elements_by_name` and clicks via the resolved
+  :class:`InputController`. Routes through controller's gate stack:
+  foreground security + rate limit + safety validator
+  (`tool_name=desktop.input.click` with the resolved coordinates) +
+  click-preview VLM gate when enabled. Threads ``user_text`` so the
+  Cap-3 explicit-intent matcher can verify the user actually asked
+  for the action.
+- :func:`find_text_in_window(text, *, window_title, case_insensitive,
+  max_windows, max_elements_per_window, exclude_cloaked)`
+  -> list[TextMatch]. Coordinates-only variant; no click. Per-element
+  fail-open. The "look up coords, hand to VLM" companion.
+
 #### `desktop/dialog_control.py` (catalog 08 T1, NEW)
 
 Native Windows dialog detection + CRUD interaction. Closes the

@@ -97,6 +97,15 @@ from ultron.desktop.dialog_control import (
     type_into_dialog_field,
     wait_for_dialog,
 )
+from ultron.desktop.element_click import (
+    CLICKABLE_TYPES,
+    ClickResult,
+    TextMatch,
+    UIElementMatch,
+    click_element_by_name,
+    find_elements_by_name,
+    find_text_in_window,
+)
 from ultron.desktop.screen_context import (
     ScreenContextSnapshot,
     ScreenContextCache,
@@ -191,6 +200,14 @@ __all__ = [
     "read_dialog",
     "type_into_dialog_field",
     "wait_for_dialog",
+    # element_click (catalog 08 T3)
+    "CLICKABLE_TYPES",
+    "ClickResult",
+    "TextMatch",
+    "UIElementMatch",
+    "click_element_by_name",
+    "find_elements_by_name",
+    "find_text_in_window",
     # screen_context
     "ScreenContextSnapshot",
     "ScreenContextCache",
