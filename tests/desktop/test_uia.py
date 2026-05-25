@@ -8,17 +8,24 @@ from unittest.mock import MagicMock
 import pytest
 
 from ultron.desktop.uia import (
+    BROWSER_NAMES,
+    BrowserContent,
+    BrowserLink,
     DEFAULT_WAIT_INTERVAL_S,
     DEFAULT_WAIT_TIMEOUT_S,
     UIAActionResult,
     UIAElement,
     UIElementInfo,
+    _looks_like_heading,
     _resolve_hwnd,
     _validate_uia_action,
     click_element,
     collect_window_text,
+    extract_browser_content,
+    find_browser_window,
     find_element,
     get_ui_element_inventory,
+    is_browser_window,
     type_text_into_element,
     wait_for_text_in_window,
 )
@@ -1019,3 +1026,474 @@ def test_wait_for_text_skips_collect_exception(monkeypatch):
         sleep_fn=lambda s: None,
         clock_fn=_FakeClock(),
     ) is True
+
+
+# ---------------------------------------------------------------------------
+# Catalog 08 T5: browser content extraction
+# ---------------------------------------------------------------------------
+
+
+def test_browser_names_contains_modern_browsers():
+    assert "chrome" in BROWSER_NAMES
+    assert "firefox" in BROWSER_NAMES
+    assert "edge" in BROWSER_NAMES
+    assert "arc" in BROWSER_NAMES
+
+
+def test_is_browser_window_matches_known_browsers():
+    assert is_browser_window("News - Google Chrome") is True
+    assert is_browser_window("example.com — Mozilla Firefox") is True
+    assert is_browser_window("Inbox - Microsoft Edge") is True
+    assert is_browser_window("Arc - example") is True
+
+
+def test_is_browser_window_rejects_non_browser():
+    assert is_browser_window("Visual Studio Code") is False
+    assert is_browser_window("") is False
+    assert is_browser_window("Notepad") is False
+
+
+def test_browser_link_defaults():
+    link = BrowserLink(name="Read more")
+    assert link.url == ""
+    assert link.center == (0, 0)
+    assert link.enabled is True
+
+
+def test_browser_link_is_frozen():
+    link = BrowserLink(name="link")
+    with pytest.raises(Exception):
+        link.url = "https://evil.example"
+
+
+def test_browser_content_defaults():
+    content = BrowserContent(page_title="Example")
+    assert content.page_title == "Example"
+    assert content.browser_name == ""
+    assert content.headings == ()
+    assert content.text == ()
+    assert content.buttons == ()
+    assert content.links == ()
+    assert content.inputs == ()
+    assert content.images == ()
+    assert content.truncated is False
+
+
+def test_looks_like_heading_uppercase():
+    assert _looks_like_heading("WELCOME", max_len=100) is True
+
+
+def test_looks_like_heading_colon_terminated():
+    assert _looks_like_heading("File name:", max_len=100) is True
+
+
+def test_looks_like_heading_rejects_long():
+    long_text = "x" * 150
+    assert _looks_like_heading(long_text, max_len=100) is False
+
+
+def test_looks_like_heading_rejects_mixed_case_no_colon():
+    assert _looks_like_heading("Some regular paragraph text", max_len=100) is False
+
+
+def test_looks_like_heading_rejects_empty():
+    assert _looks_like_heading("", max_len=100) is False
+
+
+def _make_browser_window(
+    hwnd: int = 100,
+    title: str = "Example Page - Google Chrome",
+    process: str = "chrome.exe",
+) -> WindowInfo:
+    return WindowInfo(
+        hwnd=hwnd, title=title, class_name="Chrome_WidgetWin_1",
+        process_name=process, pid=1234,
+        rect=(0, 0, 1200, 800), monitor_index=0,
+        is_minimized=False, is_foreground=True,
+    )
+
+
+def test_find_browser_window_returns_none_when_no_browser(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows",
+        lambda **kw: [
+            WindowInfo(
+                hwnd=1, title="Visual Studio Code", class_name="VSC",
+                process_name="code.exe", pid=1,
+                rect=(0, 0, 100, 100), monitor_index=0,
+                is_minimized=False, is_foreground=False,
+            ),
+        ],
+    )
+    assert find_browser_window() is None
+
+
+def test_find_browser_window_picks_first_match(monkeypatch):
+    target = _make_browser_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows",
+        lambda **kw: [target],
+    )
+    match = find_browser_window()
+    assert match is not None
+    win, browser = match
+    assert win is target
+    assert browser == "chrome"
+
+
+def test_find_browser_window_respects_hint(monkeypatch):
+    chrome = _make_browser_window(hwnd=1, title="A - Chrome", process="chrome.exe")
+    edge = _make_browser_window(hwnd=2, title="B - Edge", process="msedge.exe")
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows",
+        lambda **kw: [chrome, edge],
+    )
+    match = find_browser_window(browser_hint="edge")
+    assert match is not None
+    win, browser = match
+    assert win is edge
+    assert browser == "edge"
+
+
+def test_find_browser_window_fail_open_on_enumerate_exception(monkeypatch):
+    def _raise(**kw):
+        raise RuntimeError("simulated")
+
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows", _raise,
+    )
+    assert find_browser_window() is None
+
+
+class _BrowserNode:
+    """UIA element stand-in for browser content tests."""
+
+    def __init__(
+        self,
+        *,
+        name: str = "",
+        control_type: str = "",
+        automation_id: str = "",
+        enabled: bool = True,
+        rect: tuple[int, int, int, int] = (0, 0, 0, 0),
+        value: str = "",
+        children: list | None = None,
+    ) -> None:
+        self.name = name
+        self.control_type = control_type
+        self.automation_id = automation_id
+        self.enabled = enabled
+        self.rectangle = _Rect(*rect)
+        if value:
+            self.value = value
+        self._children = list(children or [])
+
+    def children(self):
+        return list(self._children)
+
+
+def _browser_spec(root: _BrowserNode, title: str = "Example Page - Google Chrome") -> MagicMock:
+    spec = MagicMock()
+    spec.element_info = root
+    spec.window_text = lambda: title
+    return spec
+
+
+def test_extract_browser_content_returns_none_when_no_browser(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows", lambda **kw: [],
+    )
+    assert extract_browser_content() is None
+
+
+def test_extract_browser_content_categorises_text_and_headings(monkeypatch):
+    root = _BrowserNode(
+        name="root", control_type="Window",
+        children=[
+            _BrowserNode(name="WELCOME", control_type="Text"),
+            _BrowserNode(name="Article title here", control_type="Text"),
+            _BrowserNode(
+                name="A longer paragraph with several words in it",
+                control_type="Text",
+            ),
+            _BrowserNode(name="Read more:", control_type="Static"),
+        ],
+    )
+    win = _make_browser_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia._connect_window",
+        lambda hwnd: _browser_spec(root),
+    )
+    content = extract_browser_content()
+    assert content is not None
+    assert content.browser_name == "chrome"
+    assert "WELCOME" in content.headings
+    assert "Read more:" in content.headings
+    assert any("longer paragraph" in t for t in content.text)
+
+
+def test_extract_browser_content_deduplicates_text(monkeypatch):
+    root = _BrowserNode(
+        name="root", control_type="Window",
+        children=[
+            _BrowserNode(name="duplicated phrase", control_type="Text"),
+            _BrowserNode(name="duplicated phrase", control_type="Text"),
+            _BrowserNode(name="unique phrase", control_type="Text"),
+        ],
+    )
+    win = _make_browser_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia._connect_window",
+        lambda hwnd: _browser_spec(root),
+    )
+    content = extract_browser_content()
+    assert content is not None
+    # dedup keeps the first occurrence; total count should drop from 3 to 2
+    assert content.text.count("duplicated phrase") == 1
+    assert "unique phrase" in content.text
+
+
+def test_extract_browser_content_buttons_gated_by_flag(monkeypatch):
+    root = _BrowserNode(
+        name="root", control_type="Window",
+        children=[
+            _BrowserNode(name="Submit", control_type="Button", rect=(10, 20, 110, 60)),
+        ],
+    )
+    win = _make_browser_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia._connect_window",
+        lambda hwnd: _browser_spec(root),
+    )
+    # Without include_buttons, the bucket is empty.
+    plain = extract_browser_content()
+    assert plain is not None
+    assert plain.buttons == ()
+    # With include_buttons=True the button surfaces with coordinates.
+    with_buttons = extract_browser_content(include_buttons=True)
+    assert with_buttons is not None
+    assert len(with_buttons.buttons) == 1
+    b = with_buttons.buttons[0]
+    assert b.name == "Submit"
+    assert b.center == (60, 40)
+
+
+def test_extract_browser_content_links_with_url(monkeypatch):
+    root = _BrowserNode(
+        name="root", control_type="Window",
+        children=[
+            _BrowserNode(
+                name="Read the announcement",
+                control_type="Hyperlink",
+                automation_id="https://example.com/blog/post-1",
+                rect=(100, 200, 300, 220),
+            ),
+            _BrowserNode(
+                name="Misc link",
+                control_type="Hyperlink",
+                automation_id="link_42",  # not a URL
+                rect=(100, 240, 300, 260),
+            ),
+        ],
+    )
+    win = _make_browser_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia._connect_window",
+        lambda hwnd: _browser_spec(root),
+    )
+    content = extract_browser_content(include_links=True)
+    assert content is not None
+    assert len(content.links) == 2
+    urls = {link.name: link.url for link in content.links}
+    assert urls["Read the announcement"] == "https://example.com/blog/post-1"
+    assert urls["Misc link"] == ""  # non-URL automation_id is dropped
+
+
+def test_extract_browser_content_inputs_capture_value(monkeypatch):
+    root = _BrowserNode(
+        name="root", control_type="Window",
+        children=[
+            _BrowserNode(
+                name="Search",
+                control_type="Edit",
+                rect=(100, 100, 600, 130),
+                value="current query",
+            ),
+        ],
+    )
+    win = _make_browser_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia._connect_window",
+        lambda hwnd: _browser_spec(root),
+    )
+    content = extract_browser_content(include_inputs=True)
+    assert content is not None
+    assert len(content.inputs) == 1
+    inp = content.inputs[0]
+    assert inp.name == "Search"
+    assert inp.value == "current query"
+
+
+def test_extract_browser_content_images_gated(monkeypatch):
+    root = _BrowserNode(
+        name="root", control_type="Window",
+        children=[
+            _BrowserNode(name="Logo", control_type="Image"),
+            _BrowserNode(name="", control_type="Image"),
+        ],
+    )
+    win = _make_browser_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia._connect_window",
+        lambda hwnd: _browser_spec(root),
+    )
+    content = extract_browser_content(include_images=True)
+    assert content is not None
+    assert "Logo" in content.images
+    assert "(unnamed image)" in content.images
+
+
+def test_extract_browser_content_full_flag_enables_everything(monkeypatch):
+    root = _BrowserNode(
+        name="root", control_type="Window",
+        children=[
+            _BrowserNode(name="HELLO", control_type="Text"),
+            _BrowserNode(name="OK", control_type="Button", rect=(0, 0, 50, 20)),
+            _BrowserNode(
+                name="link",
+                control_type="Hyperlink",
+                automation_id="https://example.com",
+                rect=(0, 25, 50, 45),
+            ),
+            _BrowserNode(name="field", control_type="Edit", value="v"),
+            _BrowserNode(name="img", control_type="Image"),
+        ],
+    )
+    win = _make_browser_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia._connect_window",
+        lambda hwnd: _browser_spec(root),
+    )
+    content = extract_browser_content(full=True)
+    assert content is not None
+    assert content.buttons != ()
+    assert content.links != ()
+    assert content.inputs != ()
+    assert content.images != ()
+
+
+def test_extract_browser_content_respects_caps(monkeypatch):
+    children = [
+        _BrowserNode(name=f"para {i} text content", control_type="Text")
+        for i in range(50)
+    ]
+    root = _BrowserNode(
+        name="root", control_type="Window", children=children,
+    )
+    win = _make_browser_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia._connect_window",
+        lambda hwnd: _browser_spec(root),
+    )
+    content = extract_browser_content(max_text=5)
+    assert content is not None
+    assert len(content.text) == 5
+
+
+def test_extract_browser_content_returns_none_when_connect_fails(monkeypatch):
+    win = _make_browser_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia._connect_window", lambda hwnd: None,
+    )
+    assert extract_browser_content() is None
+
+
+def test_extract_browser_content_explicit_window_skips_autodetect(monkeypatch):
+    """When window is passed explicitly, enumerate_windows is NOT consulted."""
+    root = _BrowserNode(
+        name="root", control_type="Window",
+        children=[_BrowserNode(name="hi there", control_type="Text")],
+    )
+    enumerate_called = [0]
+
+    def _enum(**kw):
+        enumerate_called[0] += 1
+        return []
+
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows", _enum,
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia._connect_window",
+        lambda hwnd: _browser_spec(root, title="x - Firefox"),
+    )
+    win = _make_browser_window(hwnd=42, title="x - Firefox", process="firefox.exe")
+    content = extract_browser_content(window=win)
+    assert content is not None
+    assert content.browser_name == "firefox"
+    assert enumerate_called[0] == 0
+
+
+def test_extract_browser_content_truncated_flag(monkeypatch):
+    """When max_elements is hit, truncated=True on the result."""
+    children = [
+        _BrowserNode(name=f"item {i}", control_type="Text") for i in range(100)
+    ]
+    root = _BrowserNode(name="root", control_type="Window", children=children)
+    win = _make_browser_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia._connect_window",
+        lambda hwnd: _browser_spec(root),
+    )
+    content = extract_browser_content(max_elements=10)
+    assert content is not None
+    assert content.truncated is True
+
+
+def test_extract_browser_content_truncates_text_name(monkeypatch):
+    long = "x" * 5000
+    root = _BrowserNode(
+        name="root", control_type="Window",
+        children=[_BrowserNode(name=long, control_type="Text")],
+    )
+    win = _make_browser_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia._connect_window",
+        lambda hwnd: _browser_spec(root),
+    )
+    content = extract_browser_content(text_name_max=100)
+    assert content is not None
+    assert len(content.text[0]) == 100

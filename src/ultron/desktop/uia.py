@@ -1084,10 +1084,497 @@ def wait_for_text_in_window(
         sleeper(min(poll_interval, remaining))
 
 
+# ---------------------------------------------------------------------------
+# Catalog 08 T5: browser-window-specific structured content extraction
+# ---------------------------------------------------------------------------
+
+
+# Browsers we recognise via window-title substring heuristic. The list
+# mirrors the upstream clawhub-windows-control set + matches every modern
+# Chromium-based browser the user is likely to run on the active hardware.
+# Lower-case for case-insensitive comparison.
+BROWSER_NAMES: tuple[str, ...] = (
+    "chrome",
+    "firefox",
+    "edge",
+    "brave",
+    "opera",
+    "vivaldi",
+    "arc",
+)
+
+
+@dataclass(frozen=True)
+class BrowserLink:
+    """One link discovered in a browser window's UIA tree.
+
+    Attributes:
+        name: link text (accessible name).
+        url: best-effort URL extracted from the AutomationId. Often
+            empty -- not every browser exposes the href as automation_id.
+            Chrome and Edge do for many anchors; Firefox usually doesn't.
+        center: physical-pixel ``(x, y)`` centre of the link's bounding
+            rect, suitable for synthetic clicks.
+        enabled: True iff the link element reports as enabled.
+    """
+
+    name: str
+    url: str = ""
+    center: tuple[int, int] = (0, 0)
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
+class BrowserContent:
+    """Structured content from a browser window.
+
+    Output of :func:`extract_browser_content`. Lists are deduplicated
+    in tree-walk order; clipping caps follow the upstream defaults.
+
+    Attributes:
+        page_title: window title (typically "Page Title - Browser Name").
+        browser_name: which entry in :data:`BROWSER_NAMES` matched
+            (``"chrome"`` / ``"edge"`` / ``"firefox"`` / ...). Empty
+            string when the window was provided explicitly and the
+            title doesn't match any known browser.
+        headings: short text strings classified as headings (uppercase
+            or colon-terminated by the same heuristic the upstream uses).
+        text: longer text strings (everything else under the Text /
+            Static control types that wasn't a heading).
+        buttons: actionable Button controls with centre coordinates,
+            populated when ``include_buttons`` is True.
+        links: anchor-like controls (Hyperlink) with centre coordinates
+            and best-effort URL, populated when ``include_links`` is True.
+        inputs: editable fields (Edit / ComboBox) with current value,
+            populated when ``include_inputs`` is True.
+        images: image alt text (or ``"(unnamed image)"``), populated
+            when ``include_images`` is True.
+        truncated: True when the walk hit ``max_elements`` before
+            exhausting the tree.
+        elapsed_ms: walk duration for monitoring.
+    """
+
+    page_title: str
+    browser_name: str = ""
+    headings: tuple[str, ...] = ()
+    text: tuple[str, ...] = ()
+    buttons: tuple[UIElementInfo, ...] = ()
+    links: tuple[BrowserLink, ...] = ()
+    inputs: tuple[UIElementInfo, ...] = ()
+    images: tuple[str, ...] = ()
+    truncated: bool = False
+    elapsed_ms: float = 0.0
+
+
+def is_browser_window(title: str) -> bool:
+    """True iff ``title`` mentions a known browser (case-insensitive)."""
+
+    if not title:
+        return False
+    title_lower = title.lower()
+    return any(name in title_lower for name in BROWSER_NAMES)
+
+
+def find_browser_window(
+    *,
+    browser_hint: Optional[str] = None,
+    exclude_cloaked: bool = True,
+) -> Optional[tuple[WindowInfo, str]]:
+    """Find the first browser window, optionally filtered by browser name.
+
+    Catalog 08 T5 (GREEN). Walks :func:`enumerate_windows` looking for
+    a title that contains either the caller-supplied ``browser_hint``
+    or any entry in :data:`BROWSER_NAMES`.
+
+    Args:
+        browser_hint: case-insensitive substring; when set, only
+            windows whose title contains it AND match a known browser
+            are returned. When None, any known browser matches.
+        exclude_cloaked: forwarded to :func:`enumerate_windows`.
+
+    Returns:
+        ``(window, browser_name)`` tuple on success where browser_name
+        is the matched entry from :data:`BROWSER_NAMES`. None when no
+        browser window is open.
+    """
+    # Lazy import so this module stays cheap to load when nothing in
+    # the consumer chain needs browser-specific behaviour.
+    from ultron.desktop.windows import enumerate_windows
+
+    try:
+        windows = enumerate_windows(exclude_cloaked=exclude_cloaked)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("find_browser_window enumerate failed: %s", exc)
+        return None
+
+    hint = (browser_hint or "").strip().lower()
+
+    for win in windows:
+        title_lower = (win.title or "").lower()
+        if not title_lower:
+            continue
+        if hint and hint not in title_lower:
+            continue
+        for browser in BROWSER_NAMES:
+            if browser in title_lower:
+                return win, browser
+    return None
+
+
+def _looks_like_heading(name: str, *, max_len: int) -> bool:
+    """Heuristic classifier mirroring the upstream is-this-a-heading test.
+
+    Headings tend to be short, uppercase, or end with a colon (form
+    field labels, section markers, table headers). The heuristic is
+    deliberately approximate; consumers that need precise heading
+    semantics should use the document's own structure (DOM via CDP,
+    once that lands).
+    """
+
+    if not name:
+        return False
+    if len(name) >= max_len:
+        return False
+    if name.isupper():
+        return True
+    if name.rstrip().endswith(":"):
+        return True
+    return False
+
+
+def _extract_url_from_automation_id(node) -> str:
+    """Best-effort URL extraction from a UIA node's AutomationId.
+
+    Some Chromium browsers expose anchor hrefs as the AutomationId on
+    Hyperlink controls. Firefox usually does not. The check is cheap
+    and the empty-string fallback is harmless.
+    """
+
+    try:
+        auto_id = node.automation_id or ""
+    except Exception:  # noqa: BLE001
+        return ""
+    auto_id_str = str(auto_id).strip()
+    if auto_id_str.startswith("http://") or auto_id_str.startswith("https://"):
+        return auto_id_str
+    return ""
+
+
+def extract_browser_content(
+    window: Optional[object] = None,
+    *,
+    browser_hint: Optional[str] = None,
+    include_buttons: bool = False,
+    include_links: bool = False,
+    include_inputs: bool = False,
+    include_images: bool = False,
+    full: bool = False,
+    max_text: int = 50,
+    max_headings: int = 50,
+    max_buttons: int = 100,
+    max_links: int = 200,
+    max_inputs: int = 50,
+    max_images: int = 50,
+    max_elements: int = _DEFAULT_MAX_ELEMENTS * 6,
+    max_depth: int = _DEFAULT_MAX_DEPTH + 4,
+    text_name_max: int = 1000,
+    heading_max_len: int = 100,
+    exclude_cloaked: bool = True,
+) -> Optional[BrowserContent]:
+    """Extract structured content from a browser window via UIA.
+
+    Catalog 08 T5 (GREEN, read-only). Adapted from the upstream
+    ``read_webpage`` script: walks the UIA tree of a browser window and
+    categorises descendants into headings (short uppercase / colon-
+    terminated Text / Static), longer text (everything else under
+    Text / Static), buttons, links (Hyperlink with best-effort URL),
+    inputs (Edit / ComboBox with value), and images.
+
+    The headline win over screenshot + VLM is latency + VRAM: a single
+    UIA walk of a typical webpage finishes in 20-100 ms with zero GPU
+    cost, vs 300-800 ms + ~330 MB VRAM for a moondream2 screenshot
+    pass. For text-heavy pages the UIA tier is preferred; screenshot
+    + VLM stays the fallback when the tree comes back shallow (some
+    Electron-based browsers don't expose useful UIA).
+
+    Args:
+        window: target window, as :class:`WindowInfo` or raw hwnd.
+            When None, :func:`find_browser_window` auto-detects the
+            first open browser matching ``browser_hint`` (or any
+            known browser).
+        browser_hint: forwarded to :func:`find_browser_window` when
+            ``window`` is None.
+        include_buttons: when True, populate :attr:`BrowserContent.buttons`.
+        include_links: when True, populate :attr:`BrowserContent.links`.
+        include_inputs: when True, populate :attr:`BrowserContent.inputs`.
+        include_images: when True, populate :attr:`BrowserContent.images`.
+        full: shorthand -- equivalent to setting all four include flags.
+        max_text / max_headings / max_buttons / max_links / max_inputs
+            / max_images: per-bucket clipping caps applied AFTER
+            deduplication.
+        max_elements: cap on total tree elements visited (browsers can
+            expose 10k+; default is 6x the standard UIA cap).
+        max_depth: cap on tree depth (browsers nest deeper than
+            standard apps).
+        text_name_max: per-element text truncation; mirrors the
+            upstream 1000-char clip.
+        heading_max_len: max length for the heading classifier.
+        exclude_cloaked: forwarded to auto-detection.
+
+    Returns:
+        :class:`BrowserContent` snapshot, or None when no browser
+        window was found / pywinauto unavailable / connect failed.
+    """
+    if full:
+        include_buttons = True
+        include_links = True
+        include_inputs = True
+        include_images = True
+
+    if window is None:
+        match = find_browser_window(
+            browser_hint=browser_hint, exclude_cloaked=exclude_cloaked,
+        )
+        if match is None:
+            return None
+        target_window, browser_name = match
+    else:
+        target_window = window
+        # Try to identify which browser this is from the window title.
+        title_for_match = ""
+        if isinstance(window, WindowInfo):
+            title_for_match = (window.title or "").lower()
+        if title_for_match:
+            browser_name = next(
+                (b for b in BROWSER_NAMES if b in title_for_match), "",
+            )
+        else:
+            browser_name = ""
+
+    hwnd = _resolve_hwnd(target_window)
+    spec = _connect_window(hwnd)
+    if spec is None:
+        return None
+
+    try:
+        root = spec.element_info
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("browser element_info failed hwnd=%d: %s", hwnd, exc)
+        return None
+
+    try:
+        page_title = spec.window_text() or ""
+    except Exception:  # noqa: BLE001
+        page_title = ""
+
+    started = time.monotonic()
+    visited = [0]
+    truncated = [False]
+
+    headings_list: list[str] = []
+    text_list: list[str] = []
+    buttons_list: list[UIElementInfo] = []
+    links_list: list[BrowserLink] = []
+    inputs_list: list[UIElementInfo] = []
+    images_list: list[str] = []
+
+    seen_text: set[str] = set()
+    seen_headings: set[str] = set()
+    seen_button_names: set[str] = set()
+    seen_link_names: set[str] = set()
+    seen_inputs: set[str] = set()
+    seen_images: set[str] = set()
+
+    def _visit(node) -> None:
+        try:
+            ctype = str(node.control_type or "")
+        except Exception:  # noqa: BLE001
+            return
+
+        try:
+            raw_name = node.name or ""
+        except Exception:  # noqa: BLE001
+            raw_name = ""
+        name = str(raw_name).strip()
+        # Upstream caps name length at 1000 chars; mirror that to prevent
+        # a single pathological label from dominating the snapshot.
+        if len(name) > text_name_max:
+            name = name[:text_name_max]
+
+        if ctype in ("Text", "Static"):
+            if not name:
+                return
+            if _looks_like_heading(name, max_len=heading_max_len):
+                if name not in seen_headings:
+                    seen_headings.add(name)
+                    headings_list.append(name)
+            else:
+                if name not in seen_text:
+                    seen_text.add(name)
+                    text_list.append(name)
+            return
+
+        if include_buttons and ctype == "Button":
+            if not name:
+                return
+            key = name + "|" + str(getattr(node, "automation_id", "") or "")
+            if key in seen_button_names:
+                return
+            seen_button_names.add(key)
+            try:
+                enabled = bool(getattr(node, "enabled", True))
+            except Exception:  # noqa: BLE001
+                enabled = True
+            rect: tuple[int, int, int, int] = (0, 0, 0, 0)
+            center: tuple[int, int] = (0, 0)
+            try:
+                r = node.rectangle
+                rect = (int(r.left), int(r.top), int(r.right), int(r.bottom))
+                center = (
+                    (rect[0] + rect[2]) // 2,
+                    (rect[1] + rect[3]) // 2,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                auto_id = str(node.automation_id or "")
+            except Exception:  # noqa: BLE001
+                auto_id = ""
+            buttons_list.append(
+                UIElementInfo(
+                    name=name,
+                    control_type="Button",
+                    automation_id=auto_id,
+                    enabled=enabled,
+                    rect=rect,
+                    center=center,
+                )
+            )
+            return
+
+        if include_links and ctype in ("Hyperlink", "Link"):
+            if not name:
+                return
+            if name in seen_link_names:
+                return
+            seen_link_names.add(name)
+            try:
+                enabled = bool(getattr(node, "enabled", True))
+            except Exception:  # noqa: BLE001
+                enabled = True
+            center: tuple[int, int] = (0, 0)
+            try:
+                r = node.rectangle
+                center = (
+                    (int(r.left) + int(r.right)) // 2,
+                    (int(r.top) + int(r.bottom)) // 2,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            url = _extract_url_from_automation_id(node)
+            links_list.append(
+                BrowserLink(name=name, url=url, center=center, enabled=enabled)
+            )
+            return
+
+        if include_inputs and ctype in ("Edit", "ComboBox"):
+            value = ""
+            try:
+                raw_value = getattr(node, "value", None)
+                if raw_value is not None:
+                    value = str(raw_value)[:text_name_max]
+            except Exception:  # noqa: BLE001
+                value = ""
+            key = (name or value or ctype) + "|" + ctype
+            if key in seen_inputs:
+                return
+            seen_inputs.add(key)
+            try:
+                enabled = bool(getattr(node, "enabled", True))
+            except Exception:  # noqa: BLE001
+                enabled = True
+            rect: tuple[int, int, int, int] = (0, 0, 0, 0)
+            center: tuple[int, int] = (0, 0)
+            try:
+                r = node.rectangle
+                rect = (int(r.left), int(r.top), int(r.right), int(r.bottom))
+                center = (
+                    (rect[0] + rect[2]) // 2,
+                    (rect[1] + rect[3]) // 2,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            inputs_list.append(
+                UIElementInfo(
+                    name=name,
+                    control_type=ctype,
+                    automation_id="",
+                    enabled=enabled,
+                    rect=rect,
+                    center=center,
+                    value=value,
+                )
+            )
+            return
+
+        if include_images and ctype == "Image":
+            label = name if name else "(unnamed image)"
+            if label in seen_images:
+                return
+            seen_images.add(label)
+            images_list.append(label)
+            return
+
+    def _walk(node, depth: int) -> None:
+        if visited[0] >= max_elements:
+            truncated[0] = True
+            return
+        visited[0] += 1
+        try:
+            _visit(node)
+        except Exception:  # noqa: BLE001
+            pass
+        if depth >= max_depth:
+            return
+        try:
+            children = node.children()
+        except Exception:  # noqa: BLE001
+            return
+        for child in children:
+            if visited[0] >= max_elements:
+                truncated[0] = True
+                return
+            _walk(child, depth + 1)
+
+    try:
+        _walk(root, 0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("browser content walk hwnd=%d failed: %s", hwnd, exc)
+
+    elapsed_ms = (time.monotonic() - started) * 1000.0
+
+    # Apply per-bucket caps after deduplication.
+    return BrowserContent(
+        page_title=page_title,
+        browser_name=browser_name,
+        headings=tuple(headings_list[:max_headings]),
+        text=tuple(text_list[:max_text]),
+        buttons=tuple(buttons_list[:max_buttons]),
+        links=tuple(links_list[:max_links]),
+        inputs=tuple(inputs_list[:max_inputs]),
+        images=tuple(images_list[:max_images]),
+        truncated=truncated[0],
+        elapsed_ms=elapsed_ms,
+    )
+
+
 __all__ = [
     "UIAElement",
     "UIAActionResult",
     "UIElementInfo",
+    "BrowserContent",
+    "BrowserLink",
+    "BROWSER_NAMES",
     "DEFAULT_WAIT_TIMEOUT_S",
     "DEFAULT_WAIT_INTERVAL_S",
     "collect_window_text",
@@ -1099,4 +1586,7 @@ __all__ = [
     "dpi_aware_click_at_element_center",
     "get_ui_element_inventory",
     "wait_for_text_in_window",
+    "is_browser_window",
+    "find_browser_window",
+    "extract_browser_content",
 ]
