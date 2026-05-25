@@ -128,6 +128,27 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## cline (Apache License 2.0)
+
+Repository: https://github.com/cline/cline
+License: Apache License, Version 2.0 (a copy is included verbatim below;
+the same text covers the aider attribution above).
+
+The following ultron components are clean-room re-implementations whose
+*approach* is informed by the corresponding cline modules. Algorithm
+shapes, contract names, and template structures are adapted; no source
+code is copied verbatim. Ultron's versions are restructured to fit the
+voice-first, single-host, native-Windows runtime (cline is a VS Code
+extension with React webview + multi-provider LLM abstraction; the
+patterns being borrowed are the agent-loop discipline and the
+user-control surfaces, not the IDE-integration layer).
+
+| Ultron component | Inspired by | Notes |
+| --- | --- | --- |
+| `src/ultron/llm/response_format.py` | `src/core/prompts/responses.ts` | Structured templates for LLM-facing and user-facing notices (T22). Ultron's version is shaped to ultron's tool surfaces (desktop / voice / coding / memory / search) rather than cline's coding-specific set, and adds explicit voice-friendly variants suffixed `_voice` for templates that may be spoken via TTS. The progressive-escalation pattern (tier 1 suggestion / tier 2 directive / tier 3 forbid-and-pivot) is preserved for `write_to_file_missing_content_error` so the LLM learns the same self-correction discipline. |
+| `src/ultron/utils/retry.py` | `src/core/api/retry.ts:withRetry` | Async + sync retry decorator with exponential backoff (T13b). The retry-after header parsing reuses cline's delta-seconds-vs-unix-timestamp heuristic ("integer comfortably greater than current unix time is an absolute timestamp; otherwise delta-seconds"). Ultron's variant adds async-generator decoration, sync-twin, `RetryBudget` for per-session cap, and `asyncio.CancelledError` pass-through so cancellation during the backoff sleep is not swallowed. The default 429 + `RetriableError` classifier matches the upstream contract. |
+| `src/ultron/search/ripgrep.py` | `src/services/ripgrep/index.ts:regexSearchFiles` | Subprocess wrapper around `rg --json` with byte-capped grouped output (T25). The CLI flags (`--json -e <pattern> --glob <filter> --context N <directory>`), the grouped-by-file output shape with `│----` separators, and the dual caps (`MAX_RESULTS = 300` matches; `MAX_RIPGREP_MB = 0.25` matches) are preserved. Ultron's variant adds Windows `CREATE_NO_WINDOW` (consistent with the rest of ultron's subprocess spawns), wall-clock kill on hang, optional `ignore_predicate` for post-filtering against `.ultronignore` policy, and Windows install-location fallback for the binary lookup. |
+
 ### Apache License 2.0 (verbatim)
 
 ```

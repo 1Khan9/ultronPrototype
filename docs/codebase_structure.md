@@ -10,9 +10,11 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `18fab56` on `origin/main` (2026-05-24 OpenHands
-> catalog T1-T8 port; doc bumped post-batch-8). Tests **5640 passing /
-> 16 skipped / 0 failed in ~91 s** via `scripts/run_tests.py`.
+> **Validating HEAD:** `a692faa` (last code-touching commit was
+> `18fab56` OpenHands T1-T8 port; in-flight cline catalog port batch 1
+> lands `src/ultron/llm/response_format.py`, `src/ultron/utils/retry.py`,
+> `src/ultron/search/ripgrep.py`). Tests **5778 passing / 24 skipped /
+> 0 failed in ~103 s** via `scripts/run_tests.py`.
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -42,6 +44,7 @@ result of every row. Deep narrative lives in the corresponding
 
 | Date | HEAD | Summary | Tests | Memory file |
 |------|------|---------|-------|-------------|
+| 2026-05-24 | (in-flight) | cline catalog port batch 1 -- foundation utilities (T22 + T13b + T25): `llm/response_format.py` (30+ structured error/notice templates with voice-friendly variants + progressive-escalation tiers); `utils/retry.py` (async + sync `with_retry` decorator + `RetryBudget` + retry-after header parsing with delta-seconds-vs-unix-timestamp heuristic + `RetriableError` + async-generator decoration + `asyncio.CancelledError` pass-through); `search/ripgrep.py` (subprocess wrapper around `rg --json` with byte-cap 0.25 MB / result-cap 300 / wall-clock kill / Windows `CREATE_NO_WINDOW` / optional ignore-predicate). | 5778 | (in-flight) |
 | 2026-05-24 | `18fab56` | OpenHands catalog T1-T8 port -- 8 batches, 11 new packages: `parsing/`, `install/`, `skills/` + `skills/` catalogue, `events/`, `llm/condensers/`, `lifecycle/`, `projects/`, `services/`. Two opt-in config sections (`skills.*`, `events.*`, default OFF). | 5640 | `project_ultron_2026_05_24_openhands_catalog_porting.md` |
 | 2026-05-23 | `73fafba` | SWE-Agent catalog T1-T20 port -- 7 batches: `coding/{sentinels, session_registry, window_expand, window_state, file_history, edit_diagnostics, lint_diff, search_primitives, diff_snapshot, submit_review, forfeit, observation_format}`, `llm/{history_processors, requery, image_markdown, draft_model}`, `safety/rules/category_it`, `desktop/click_preview`. Two production knobs flipped (`llm.history_compression.enabled: true`, `safety.interactive_tools.enabled: true`). | 5215 | `project_ultron_2026_05_23_swe_agent_catalog_porting.md` |
 | 2026-05-23 | `5f12e7d` | Aider catalog completion (batch 14: `architect_narrator`, `stt_bias`, `confirm_group`) + measurement-infra audit (7 stale scripts modernised via new `make_tts_engine` factory + `scripts/run_tests.py` watchdog race fix) + baselines captured against current Kokoro+Moonshine+Qwen3.5+intent stack (STT 16 ms / LLM TTFT 203 ms / TTFA 313 ms / VRAM 7007 MB peak). | 4750 | `project_ultron_2026_05_23_catalog_completion_and_measurement_audit.md` |
@@ -263,6 +266,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── history_processors.py ← 2026-05-23 SWE-Agent batch 2 (T2 + T9): ClosedWindowHistoryProcessor (collapse repeated file-view snapshots) + LastNObservations (elide all but last N with polling for cache stability) + TagToolCallObservations (tag observations by source tool) + apply_history_processors composer + build_default_processors factory; wired into LLMEngine._build_messages history block (default ON, fail-open)
 │       │   ├── image_markdown.py     ← 2026-05-23 SWE-Agent batch 7 (T18): encode_image_as_markdown (![<alt>](data:<mime>;base64,<b64>) verbatim SWE-Agent format with optional Pillow auto-thumbnail) + parse_image_markdown (regex split into multimodal segments; image/jpg -> image/jpeg normalisation) + history_to_multimodal rewrite helper; allowed MIME types image/png / image/jpeg / image/webp
 │       │   ├── requery.py            ← 2026-05-23 SWE-Agent batch 6 (T14): RequeryLoop temp-history-without-pollution requery cycle; build_requery_history (real + broken-assistant + error-user shape verbatim from SWE-Agent get_model_requery_history); pre-built validators validate_non_empty + validate_json; max_retries default 3 matching SWE-Agent
+│       │   ├── response_format.py    ← 2026-05-24 cline batch 1 (T22): 30+ structured LLM-facing + user-facing notice templates (tool_error / tool_denied / missing_tool_parameter_error / write_to_file_missing_content_error 3-tier escalation / file_edit_with[out]_user_changes / diff_error / context_truncation_notice / file_context_warning / loop_soft_warning / loop_hard_escalation / task_resumption / plan_mode_instructions / format_files_list with ignore_predicate / create_pretty_patch); voice-friendly *_voice variants for templates that may be spoken via TTS
 │       │   └── self_consistency.py ← 4B plan Item 6: N-sample majority-vote driver + aggregators (text/JSON/label) (default OFF)
 │       │
 │       ├── memory/                 ← Phase 3 (original) Qdrant memory + 2026-05 frontier
@@ -422,6 +426,10 @@ For the current decisions and Foundation phase status see
 │       │   ├── callbacks.py        ← 2026-05-23 OpenHands batch 4 (T3): CallbackRegistry + CallbackProcessor ABC + RegisteredCallback + CallbackResult + FunctionProcessor adapter + JSONL persistence + singleton accessors
 │       │   └── processors.py       ← 2026-05-23 OpenHands batch 4 (T3): built-in processors (Logging, Counting, ThresholdSnapshot, MemoryWrite, ChannelGuard, SkillActivator) + build_default_processors factory
 │       │
+│       ├── search/                  ← 2026-05-24 cline batch 1 (T25): direct-search utilities
+│       │   ├── __init__.py          ← Public API re-exports
+│       │   └── ripgrep.py           ← Ripgrep subprocess wrapper: regex_search_files(cwd, directory, pattern, *, file_pattern, context_lines, timeout_s, ignore_predicate, binary_name, extra_args) -> RipgrepResult with grouped-by-file rendering, `│----` separators, byte cap 0.25 MB (MAX_RIPGREP_BYTES), result cap 300 (MAX_RESULTS), line cap MAX_RIPGREP_LINES; rg_binary_available with Windows install-location fallback; CREATE_NO_WINDOW on Windows; per-call wall-clock kill; fail-open on missing binary or malformed JSON lines
+│       │
 │       └── utils/
 │           ├── fairseq_compat.py   ← Workarounds for fairseq dataclass + torch.load issues
 │           ├── logging.py          ← configure_logging(), get_logger() (rotating file + console)
@@ -430,7 +438,8 @@ For the current decisions and Foundation phase status see
 │           ├── snapshot_guard.py   ← aider catalog batch 1: snapshot-identity race protection
 │           ├── relative_indent.py  ← aider catalog batch 1: indent-relative text transform
 │           ├── spinner.py          ← aider catalog batch 11 (T11): ASCII bounce spinner with cursor-stagger continuity
-│           └── poll.py             ← 2026-05-23 OpenHands batch 1 (T14): poll_until + apoll_until bounded-retry helpers with custom is_done predicate + exponential backoff + cancel_check
+│           ├── poll.py             ← 2026-05-23 OpenHands batch 1 (T14): poll_until + apoll_until bounded-retry helpers with custom is_done predicate + exponential backoff + cancel_check
+│           └── retry.py            ← 2026-05-24 cline batch 1 (T13b): with_retry async decorator + with_retry_sync + RetriableError + RetryBudget + RetryAttempt record + parse_retry_after (delta-seconds vs unix-timestamp heuristic) + onRetry async/sync callback + asyncio.CancelledError pass-through + jitter; default classifier matches HTTP 429 + RetriableError; per-session sleep-budget cap
 │
 ├── config/
 │   ├── __init__.py                 ← (empty)
