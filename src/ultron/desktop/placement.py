@@ -189,6 +189,77 @@ def focus_window(hwnd: int) -> PlacementResult:
     return PlacementResult(success=True, hwnd=hwnd)
 
 
+def _is_minimized(hwnd: int) -> Optional[bool]:
+    """Return True iff iconic; None when the probe fails."""
+    try:
+        return bool(win32gui.IsIconic(hwnd))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("IsIconic hwnd=%d failed: %s", hwnd, exc)
+        return None
+
+
+def _is_maximized(hwnd: int) -> Optional[bool]:
+    """Return True iff zoomed (maximised); None when the probe fails."""
+    try:
+        return bool(win32gui.IsZoomed(hwnd))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("IsZoomed hwnd=%d failed: %s", hwnd, exc)
+        return None
+
+
+def minimize_window_idempotent(hwnd: int) -> PlacementResult:
+    """Minimize ``hwnd`` only if it is not already minimized.
+
+    Catalog 08 T6 creative extension. Mirrors the upstream
+    "idempotent state transition" discipline: check
+    :func:`win32gui.IsIconic` before acting, return a result whose
+    ``error`` field carries an explanatory string when the call was a
+    no-op. The ``success=True`` flag covers BOTH the no-op and the
+    actual transition; callers that want to distinguish should inspect
+    ``error`` for the ``"already minimized"`` sentinel.
+
+    Returns:
+        :class:`PlacementResult` with ``success=True`` on both already-
+        minimized AND post-minimize success. ``error="already minimized"``
+        when the call was a no-op.
+    """
+    state = _is_minimized(hwnd)
+    if state is True:
+        return PlacementResult(
+            success=True, hwnd=hwnd, error="already minimized",
+        )
+    return minimize_window(hwnd)
+
+
+def maximize_window_idempotent(hwnd: int) -> PlacementResult:
+    """Maximize ``hwnd`` only if it is not already maximized.
+
+    Same idempotent-state pattern as :func:`minimize_window_idempotent`.
+    """
+    state = _is_maximized(hwnd)
+    if state is True:
+        return PlacementResult(
+            success=True, hwnd=hwnd, error="already maximized",
+        )
+    return maximize_window(hwnd)
+
+
+def restore_window_idempotent(hwnd: int) -> PlacementResult:
+    """Restore ``hwnd`` only when it is in a non-restored state.
+
+    Same idempotent-state pattern: when the window is neither minimized
+    nor maximized (i.e., already in the NORMAL state), the call is a
+    no-op with ``error="already restored"``.
+    """
+    minimized = _is_minimized(hwnd)
+    maximized = _is_maximized(hwnd)
+    if minimized is False and maximized is False:
+        return PlacementResult(
+            success=True, hwnd=hwnd, error="already restored",
+        )
+    return restore_window(hwnd)
+
+
 __all__ = [
     "PlacementResult",
     "move_window_to_monitor",
@@ -196,4 +267,7 @@ __all__ = [
     "minimize_window",
     "restore_window",
     "focus_window",
+    "minimize_window_idempotent",
+    "maximize_window_idempotent",
+    "restore_window_idempotent",
 ]

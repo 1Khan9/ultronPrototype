@@ -632,3 +632,238 @@ def wait_for_window(
             return None
         remaining = deadline - now
         sleeper(min(poll_interval, remaining))
+
+
+# ---------------------------------------------------------------------------
+# Catalog 08 T6: get_active_window_title + graceful close_window
+# ---------------------------------------------------------------------------
+
+
+# Editor convention: many editors prepend ``*`` to the title bar when
+# the document has unsaved changes (Notepad, VS Code, Sublime, GIMP,
+# Office apps). The upstream catalog flags this as the "are you about
+# to lose data" heuristic for the close_window safety gate.
+UNSAVED_CHANGES_TITLE_HINTS: tuple[str, ...] = (
+    "*",
+    "[modified]",
+    "(modified)",
+    "● ",  # VS Code dot
+    " — modified",
+)
+
+
+@dataclass(frozen=True)
+class CloseWindowResult:
+    """Outcome of :func:`close_window`."""
+
+    success: bool
+    window: Optional[WindowInfo] = None
+    method: str = ""  # "wm_close" / "pywinauto_close" / "kill_tree" / ""
+    suspected_unsaved: bool = False
+    error: Optional[str] = None
+
+
+def get_active_window_title() -> Optional[str]:
+    """Return the title of the currently focused window.
+
+    Catalog 08 T6 (GREEN, read-only). The lightweight companion to
+    :func:`get_foreground_window` -- returns only the title string,
+    or ``None`` when no window is focused or the lookup fails.
+
+    Useful as a cheap probe for "what is the user looking at" voice
+    queries without paying for the full :class:`WindowInfo`
+    construction (no psutil process-name lookup, no monitor-index
+    computation, no rect enumeration).
+    """
+
+    try:
+        hwnd = win32gui.GetForegroundWindow()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("GetForegroundWindow failed: %s", exc)
+        return None
+    if not hwnd:
+        return None
+    try:
+        title = win32gui.GetWindowText(int(hwnd)) or ""
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("GetWindowText hwnd=%d failed: %s", hwnd, exc)
+        return None
+    return title or None
+
+
+def _title_suggests_unsaved_changes(title: str) -> bool:
+    """True iff ``title`` matches an "unsaved document" editor convention."""
+
+    if not title:
+        return False
+    title_lower = title.lower()
+    for hint in UNSAVED_CHANGES_TITLE_HINTS:
+        if hint.lower() in title_lower:
+            return True
+    return False
+
+
+def _validate_close_window(
+    *,
+    window: WindowInfo,
+    user_text: str,
+    suspected_unsaved: bool,
+) -> object:
+    """Run the runtime tool-call validator against a close-window action."""
+
+    try:
+        from ultron.safety.validator import RuleContext, get_validator
+
+        ctx = RuleContext(
+            tool_name="desktop.window.close",
+            arguments={
+                "window_title": window.title,
+                "process_name": window.process_name,
+                "hwnd": int(window.hwnd),
+                "suspected_unsaved": bool(suspected_unsaved),
+            },
+            capability="desktop_window_close",
+            user_text=user_text,
+        )
+        return get_validator().check(ctx)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("close_window validator skipped: %s", exc)
+        from ultron.safety.validator import ValidatorVerdict, Verdict
+        return ValidatorVerdict(
+            verdict=Verdict.ALLOW, reason="validator unavailable",
+        )
+
+
+def _post_wm_close(hwnd: int) -> bool:
+    """Send a graceful ``WM_CLOSE`` to ``hwnd``. True on success."""
+
+    try:
+        win32gui.PostMessage(int(hwnd), win32con.WM_CLOSE, 0, 0)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("WM_CLOSE post hwnd=%d failed: %s", hwnd, exc)
+        return False
+
+
+def _force_kill_window_process(window: WindowInfo) -> tuple[bool, str]:
+    """Force-terminate the process owning ``window`` via kill_process_tree."""
+
+    pid = int(window.pid or 0)
+    if pid <= 0:
+        return False, "no pid recorded for window"
+    try:
+        from ultron.subprocess.kill_tree import kill_process_tree
+    except Exception as exc:  # noqa: BLE001
+        return False, f"kill_process_tree unavailable: {exc}"
+    try:
+        result = kill_process_tree(pid)
+    except Exception as exc:  # noqa: BLE001
+        return False, f"kill_process_tree raised: {exc}"
+    ok = bool(getattr(result, "terminated", 0)) or bool(
+        getattr(result, "force_killed", 0)
+    )
+    if not ok:
+        return False, "kill_process_tree reported no terminations"
+    return True, ""
+
+
+def close_window(
+    partial_title: str,
+    *,
+    force: bool = False,
+    user_text: str = "",
+    prefer_monitor: Optional[int] = None,
+    exclude_cloaked: bool = True,
+) -> CloseWindowResult:
+    """Close a window by title, gracefully by default.
+
+    Catalog 08 T6 (YELLOW). The "graceful" path sends ``WM_CLOSE`` via
+    :func:`win32gui.PostMessage` -- this triggers the app's own close
+    hook, so apps with unsaved changes will prompt the user. The
+    "force" path falls through to
+    :func:`ultron.subprocess.kill_tree.kill_process_tree` which is the
+    same primitive ultron uses for Parakeet / XTTS shutdown.
+
+    Args:
+        partial_title: case-insensitive substring match against the
+            target window's title. Resolves via :func:`find_window`.
+        force: when True, skip the graceful ``WM_CLOSE`` step and
+            terminate the owning process tree. When False (default),
+            only the graceful path is tried; apps with save-prompts
+            will surface them.
+        user_text: forwarded to the safety validator so the Cap-3
+            explicit-intent matcher can verify the user actually
+            asked for the close.
+        prefer_monitor: tiebreaker forwarded to :func:`find_window`.
+        exclude_cloaked: forwarded to :func:`find_window`.
+
+    Returns:
+        :class:`CloseWindowResult`. ``suspected_unsaved`` reflects
+        whether the title matched :data:`UNSAVED_CHANGES_TITLE_HINTS`;
+        callers can use this to decide whether to gate the close
+        behind a two-phase voice confirmation.
+    """
+
+    title = (partial_title or "").strip()
+    if not title:
+        return CloseWindowResult(
+            success=False, error="empty title",
+        )
+
+    candidate = find_window(
+        query=title,
+        prefer_foreground=False,
+        prefer_monitor=prefer_monitor,
+        exclude_cloaked=exclude_cloaked,
+    )
+    if candidate is None:
+        return CloseWindowResult(
+            success=False,
+            error=f"no window matching '{title}'",
+        )
+
+    suspected_unsaved = _title_suggests_unsaved_changes(candidate.title)
+
+    verdict = _validate_close_window(
+        window=candidate,
+        user_text=user_text,
+        suspected_unsaved=suspected_unsaved,
+    )
+    if not verdict.is_allowed:
+        return CloseWindowResult(
+            success=False,
+            window=candidate,
+            suspected_unsaved=suspected_unsaved,
+            error=f"safety: {verdict.reason}",
+        )
+
+    if force:
+        ok, err = _force_kill_window_process(candidate)
+        if ok:
+            return CloseWindowResult(
+                success=True,
+                window=candidate,
+                method="kill_tree",
+                suspected_unsaved=suspected_unsaved,
+            )
+        return CloseWindowResult(
+            success=False,
+            window=candidate,
+            suspected_unsaved=suspected_unsaved,
+            error=err or "force-kill failed",
+        )
+
+    if _post_wm_close(int(candidate.hwnd)):
+        return CloseWindowResult(
+            success=True,
+            window=candidate,
+            method="wm_close",
+            suspected_unsaved=suspected_unsaved,
+        )
+
+    return CloseWindowResult(
+        success=False,
+        window=candidate,
+        suspected_unsaved=suspected_unsaved,
+        error="WM_CLOSE post failed; pass force=True to escalate",
+    )

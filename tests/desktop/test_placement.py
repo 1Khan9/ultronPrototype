@@ -9,11 +9,14 @@ import pytest
 from ultron.desktop.monitors import Monitor
 from ultron.desktop.placement import (
     PlacementResult,
-    move_window_to_monitor,
-    maximize_window,
-    minimize_window,
-    restore_window,
     focus_window,
+    maximize_window,
+    maximize_window_idempotent,
+    minimize_window,
+    minimize_window_idempotent,
+    move_window_to_monitor,
+    restore_window,
+    restore_window_idempotent,
 )
 
 
@@ -85,3 +88,162 @@ def test_restore_window_bad_hwnd_returns_result():
 def test_focus_window_bad_hwnd_returns_result():
     r = focus_window(hwnd=999999999)
     assert isinstance(r, PlacementResult)
+
+
+# ---------------------------------------------------------------------------
+# Catalog 08 T6: idempotent state-check-before-act helpers
+# ---------------------------------------------------------------------------
+
+
+def test_minimize_idempotent_skips_when_already_minimized(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.placement._is_minimized", lambda hwnd: True,
+    )
+    invoked = [0]
+    monkeypatch.setattr(
+        "ultron.desktop.placement.minimize_window",
+        lambda hwnd: invoked.__setitem__(0, invoked[0] + 1)
+        or PlacementResult(success=True, hwnd=hwnd),
+    )
+    r = minimize_window_idempotent(123)
+    assert r.success is True
+    assert r.error == "already minimized"
+    assert invoked[0] == 0
+
+
+def test_minimize_idempotent_acts_when_not_minimized(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.placement._is_minimized", lambda hwnd: False,
+    )
+    invoked = [0]
+    monkeypatch.setattr(
+        "ultron.desktop.placement.minimize_window",
+        lambda hwnd: (invoked.__setitem__(0, invoked[0] + 1)
+                      or PlacementResult(success=True, hwnd=hwnd)),
+    )
+    r = minimize_window_idempotent(123)
+    assert r.success is True
+    assert r.error is None
+    assert invoked[0] == 1
+
+
+def test_minimize_idempotent_acts_when_state_probe_fails(monkeypatch):
+    """When _is_minimized returns None (probe failed), fall through to act."""
+    monkeypatch.setattr(
+        "ultron.desktop.placement._is_minimized", lambda hwnd: None,
+    )
+    invoked = [0]
+    monkeypatch.setattr(
+        "ultron.desktop.placement.minimize_window",
+        lambda hwnd: (invoked.__setitem__(0, invoked[0] + 1)
+                      or PlacementResult(success=True, hwnd=hwnd)),
+    )
+    r = minimize_window_idempotent(123)
+    assert r.success is True
+    assert invoked[0] == 1
+
+
+def test_maximize_idempotent_skips_when_already_maximized(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.placement._is_maximized", lambda hwnd: True,
+    )
+    invoked = [0]
+    monkeypatch.setattr(
+        "ultron.desktop.placement.maximize_window",
+        lambda hwnd: (invoked.__setitem__(0, invoked[0] + 1)
+                      or PlacementResult(success=True, hwnd=hwnd)),
+    )
+    r = maximize_window_idempotent(123)
+    assert r.success is True
+    assert r.error == "already maximized"
+    assert invoked[0] == 0
+
+
+def test_maximize_idempotent_acts_when_not_maximized(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.placement._is_maximized", lambda hwnd: False,
+    )
+    invoked = [0]
+    monkeypatch.setattr(
+        "ultron.desktop.placement.maximize_window",
+        lambda hwnd: (invoked.__setitem__(0, invoked[0] + 1)
+                      or PlacementResult(success=True, hwnd=hwnd)),
+    )
+    r = maximize_window_idempotent(123)
+    assert r.success is True
+    assert invoked[0] == 1
+
+
+def test_restore_idempotent_skips_when_already_restored(monkeypatch):
+    """A window that is neither minimized nor maximized is in NORMAL state."""
+    monkeypatch.setattr(
+        "ultron.desktop.placement._is_minimized", lambda hwnd: False,
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.placement._is_maximized", lambda hwnd: False,
+    )
+    invoked = [0]
+    monkeypatch.setattr(
+        "ultron.desktop.placement.restore_window",
+        lambda hwnd: (invoked.__setitem__(0, invoked[0] + 1)
+                      or PlacementResult(success=True, hwnd=hwnd)),
+    )
+    r = restore_window_idempotent(123)
+    assert r.success is True
+    assert r.error == "already restored"
+    assert invoked[0] == 0
+
+
+def test_restore_idempotent_acts_when_minimized(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.placement._is_minimized", lambda hwnd: True,
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.placement._is_maximized", lambda hwnd: False,
+    )
+    invoked = [0]
+    monkeypatch.setattr(
+        "ultron.desktop.placement.restore_window",
+        lambda hwnd: (invoked.__setitem__(0, invoked[0] + 1)
+                      or PlacementResult(success=True, hwnd=hwnd)),
+    )
+    r = restore_window_idempotent(123)
+    assert r.success is True
+    assert invoked[0] == 1
+
+
+def test_restore_idempotent_acts_when_maximized(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.placement._is_minimized", lambda hwnd: False,
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.placement._is_maximized", lambda hwnd: True,
+    )
+    invoked = [0]
+    monkeypatch.setattr(
+        "ultron.desktop.placement.restore_window",
+        lambda hwnd: (invoked.__setitem__(0, invoked[0] + 1)
+                      or PlacementResult(success=True, hwnd=hwnd)),
+    )
+    r = restore_window_idempotent(123)
+    assert r.success is True
+    assert invoked[0] == 1
+
+
+def test_restore_idempotent_acts_when_state_probe_fails(monkeypatch):
+    """When either probe returns None, fall through to act."""
+    monkeypatch.setattr(
+        "ultron.desktop.placement._is_minimized", lambda hwnd: None,
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.placement._is_maximized", lambda hwnd: False,
+    )
+    invoked = [0]
+    monkeypatch.setattr(
+        "ultron.desktop.placement.restore_window",
+        lambda hwnd: (invoked.__setitem__(0, invoked[0] + 1)
+                      or PlacementResult(success=True, hwnd=hwnd)),
+    )
+    r = restore_window_idempotent(123)
+    assert r.success is True
+    assert invoked[0] == 1

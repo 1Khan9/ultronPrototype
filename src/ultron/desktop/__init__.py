@@ -35,8 +35,11 @@ from ultron.desktop.capture import (
     set_screen_capture,
 )
 from ultron.desktop.windows import (
+    CloseWindowResult,
     WindowInfo,
+    close_window,
     enumerate_windows,
+    get_active_window_title,
     get_foreground_window,
     find_window,
     wait_for_window,
@@ -48,6 +51,9 @@ from ultron.desktop.placement import (
     minimize_window,
     restore_window,
     focus_window,
+    maximize_window_idempotent,
+    minimize_window_idempotent,
+    restore_window_idempotent,
 )
 from ultron.desktop.launcher import (
     AppEntry,
@@ -144,8 +150,11 @@ __all__ = [
     "get_screen_capture",
     "set_screen_capture",
     # windows
+    "CloseWindowResult",
     "WindowInfo",
+    "close_window",
     "enumerate_windows",
+    "get_active_window_title",
     "get_foreground_window",
     "find_window",
     "wait_for_window",
@@ -156,6 +165,9 @@ __all__ = [
     "minimize_window",
     "restore_window",
     "focus_window",
+    "maximize_window_idempotent",
+    "minimize_window_idempotent",
+    "restore_window_idempotent",
     # launcher
     "AppEntry",
     "AppLauncher",

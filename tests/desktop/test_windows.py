@@ -12,15 +12,20 @@ from ultron.desktop.monitors import Monitor
 from ultron.desktop.windows import (
     DEFAULT_WAIT_INTERVAL_S,
     DEFAULT_WAIT_TIMEOUT_S,
+    UNSAVED_CHANGES_TITLE_HINTS,
+    CloseWindowResult,
     FocusResult,
     WindowInfo,
     _appactivate_via_powershell,
     _appactivate_via_wscript_shell,
     _monitor_index_for_rect,
     _set_foreground_window,
+    _title_suggests_unsaved_changes,
+    close_window,
     enumerate_windows,
     find_window,
     focus_by_title,
+    get_active_window_title,
     get_foreground_window,
     wait_for_window,
 )
@@ -950,3 +955,274 @@ def test_wait_for_window_caps_sleep_to_deadline(monkeypatch):
     )
     # The first sleep should be clamped down from 0.5 to <= 0.3.
     assert sleeps[0] <= 0.3
+
+
+# ---------------------------------------------------------------------------
+# Catalog 08 T6: get_active_window_title
+# ---------------------------------------------------------------------------
+
+
+def test_get_active_window_title_returns_title(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.windows.win32gui.GetForegroundWindow",
+        lambda: 123,
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.windows.win32gui.GetWindowText",
+        lambda hwnd: "Notepad - test.txt",
+    )
+    assert get_active_window_title() == "Notepad - test.txt"
+
+
+def test_get_active_window_title_returns_none_when_no_window(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.windows.win32gui.GetForegroundWindow",
+        lambda: 0,
+    )
+    assert get_active_window_title() is None
+
+
+def test_get_active_window_title_fail_open_on_exception(monkeypatch):
+    def _raise():
+        raise RuntimeError("simulated")
+
+    monkeypatch.setattr(
+        "ultron.desktop.windows.win32gui.GetForegroundWindow",
+        _raise,
+    )
+    assert get_active_window_title() is None
+
+
+def test_get_active_window_title_returns_none_for_empty_title(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.windows.win32gui.GetForegroundWindow",
+        lambda: 99,
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.windows.win32gui.GetWindowText",
+        lambda hwnd: "",
+    )
+    assert get_active_window_title() is None
+
+
+# ---------------------------------------------------------------------------
+# Catalog 08 T6: _title_suggests_unsaved_changes
+# ---------------------------------------------------------------------------
+
+
+def test_unsaved_hints_include_asterisk_and_modified():
+    assert "*" in UNSAVED_CHANGES_TITLE_HINTS
+    assert any("modified" in h.lower() for h in UNSAVED_CHANGES_TITLE_HINTS)
+
+
+def test_title_suggests_unsaved_changes_asterisk():
+    assert _title_suggests_unsaved_changes("*report.docx") is True
+
+
+def test_title_suggests_unsaved_changes_modified_marker():
+    assert _title_suggests_unsaved_changes("test.txt [Modified] - Notepad") is True
+
+
+def test_title_suggests_unsaved_changes_vscode_dot():
+    assert _title_suggests_unsaved_changes("● main.py - VS Code") is True
+
+
+def test_title_suggests_unsaved_changes_clean_title():
+    assert _title_suggests_unsaved_changes("Notepad - clean.txt") is False
+
+
+def test_title_suggests_unsaved_changes_empty():
+    assert _title_suggests_unsaved_changes("") is False
+
+
+# ---------------------------------------------------------------------------
+# Catalog 08 T6: close_window
+# ---------------------------------------------------------------------------
+
+
+def _allow_close_validator(monkeypatch):
+    from ultron.safety.validator import ValidatorVerdict, Verdict
+    monkeypatch.setattr(
+        "ultron.safety.validator.get_validator",
+        lambda: type("V", (), {"check": lambda self, ctx: ValidatorVerdict(
+            verdict=Verdict.ALLOW, reason="ok",
+        )})(),
+    )
+
+
+def _block_close_validator(monkeypatch, reason: str = "blocked"):
+    from ultron.safety.validator import ValidatorVerdict, Verdict
+    blocked = ValidatorVerdict(
+        verdict=Verdict.BLOCK_HARD, reason=reason,
+        triggered_rule_id="t", user_message="refused",
+    )
+    monkeypatch.setattr(
+        "ultron.safety.validator.get_validator",
+        lambda: type("V", (), {"check": lambda self, ctx: blocked})(),
+    )
+
+
+def _target_window(**overrides) -> WindowInfo:
+    defaults = dict(
+        hwnd=42, title="Notepad - report.docx", class_name="Notepad",
+        process_name="notepad.exe", pid=4444,
+        rect=(0, 0, 600, 400), monitor_index=0,
+        is_minimized=False, is_foreground=False,
+    )
+    defaults.update(overrides)
+    return WindowInfo(**defaults)
+
+
+def test_close_window_rejects_empty_title():
+    r = close_window("")
+    assert r.success is False
+    assert "empty" in (r.error or "")
+
+
+def test_close_window_no_match_returns_failure(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.windows.find_window", lambda **kw: None,
+    )
+    r = close_window("ghost")
+    assert r.success is False
+    assert "no window" in (r.error or "")
+
+
+def test_close_window_graceful_success(monkeypatch):
+    target = _target_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.find_window", lambda **kw: target,
+    )
+    _allow_close_validator(monkeypatch)
+    posts: list[tuple[int, int, int, int]] = []
+    monkeypatch.setattr(
+        "ultron.desktop.windows.win32gui.PostMessage",
+        lambda hwnd, msg, w, l: posts.append((hwnd, msg, w, l)) or 1,
+    )
+    r = close_window("notepad", user_text="close my notepad")
+    assert r.success is True
+    assert r.method == "wm_close"
+    assert r.window is target
+    assert r.suspected_unsaved is False
+    assert len(posts) == 1
+    assert posts[0][0] == 42
+
+
+def test_close_window_detects_suspected_unsaved(monkeypatch):
+    target = _target_window(title="*Unsaved.docx - Word")
+    monkeypatch.setattr(
+        "ultron.desktop.windows.find_window", lambda **kw: target,
+    )
+    _allow_close_validator(monkeypatch)
+    monkeypatch.setattr(
+        "ultron.desktop.windows.win32gui.PostMessage",
+        lambda *a, **kw: 1,
+    )
+    r = close_window("Word")
+    assert r.success is True
+    assert r.suspected_unsaved is True
+
+
+def test_close_window_blocked_by_validator(monkeypatch):
+    target = _target_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.find_window", lambda **kw: target,
+    )
+    _block_close_validator(monkeypatch, reason="cap-3 close blocked")
+    posts: list = []
+    monkeypatch.setattr(
+        "ultron.desktop.windows.win32gui.PostMessage",
+        lambda *a, **kw: posts.append(a) or 1,
+    )
+    r = close_window("notepad")
+    assert r.success is False
+    assert "safety" in (r.error or "")
+    assert posts == []
+
+
+def test_close_window_wm_close_failure_returns_error(monkeypatch):
+    target = _target_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.find_window", lambda **kw: target,
+    )
+    _allow_close_validator(monkeypatch)
+
+    def _post_fails(hwnd, msg, w, l):
+        raise OSError("post failed")
+
+    monkeypatch.setattr(
+        "ultron.desktop.windows.win32gui.PostMessage", _post_fails,
+    )
+    r = close_window("notepad")
+    assert r.success is False
+    assert "WM_CLOSE post failed" in (r.error or "")
+    # Method is empty because the close didn't succeed via wm_close.
+    assert r.window is target
+
+
+def test_close_window_force_uses_kill_tree(monkeypatch):
+    target = _target_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.find_window", lambda **kw: target,
+    )
+    _allow_close_validator(monkeypatch)
+    captured: dict = {}
+
+    class _Result:
+        terminated = 1
+        force_killed = 0
+        unreachable = 0
+
+    def _kt(pid, **kw):
+        captured["pid"] = pid
+        return _Result()
+
+    monkeypatch.setattr(
+        "ultron.subprocess.kill_tree.kill_process_tree", _kt,
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.windows.win32gui.PostMessage",
+        lambda *a, **kw: 1,
+    )
+    r = close_window("notepad", force=True)
+    assert r.success is True
+    assert r.method == "kill_tree"
+    assert captured["pid"] == 4444
+
+
+def test_close_window_force_kill_no_pid_fails(monkeypatch):
+    target = _target_window(pid=0)
+    monkeypatch.setattr(
+        "ultron.desktop.windows.find_window", lambda **kw: target,
+    )
+    _allow_close_validator(monkeypatch)
+    r = close_window("notepad", force=True)
+    assert r.success is False
+    assert "no pid" in (r.error or "")
+
+
+def test_close_window_force_kill_reports_zero_terminations(monkeypatch):
+    target = _target_window()
+    monkeypatch.setattr(
+        "ultron.desktop.windows.find_window", lambda **kw: target,
+    )
+    _allow_close_validator(monkeypatch)
+
+    class _NoneKilled:
+        terminated = 0
+        force_killed = 0
+        unreachable = 1
+
+    monkeypatch.setattr(
+        "ultron.subprocess.kill_tree.kill_process_tree",
+        lambda pid, **kw: _NoneKilled(),
+    )
+    r = close_window("notepad", force=True)
+    assert r.success is False
+    assert "kill_process_tree" in (r.error or "")
+
+
+def test_close_window_result_is_frozen():
+    r = CloseWindowResult(success=True)
+    with pytest.raises(Exception):
+        r.success = False
