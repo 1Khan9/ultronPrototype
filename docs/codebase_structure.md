@@ -10,11 +10,10 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `a692faa` (last code-touching commit was
-> `18fab56` OpenHands T1-T8 port; in-flight cline catalog port batch 1
-> lands `src/ultron/llm/response_format.py`, `src/ultron/utils/retry.py`,
-> `src/ultron/search/ripgrep.py`). Tests **5778 passing / 24 skipped /
-> 0 failed in ~103 s** via `scripts/run_tests.py`.
+> **Validating HEAD:** `a7d03dd` on `origin/main` (2026-05-24 cline
+> catalog port batch 1 -- T22 response_format + T13b retry decorator +
+> T25 ripgrep wrapper). Tests **5778 passing / 24 skipped / 0 failed
+> in ~103 s** via `scripts/run_tests.py`.
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -44,7 +43,7 @@ result of every row. Deep narrative lives in the corresponding
 
 | Date | HEAD | Summary | Tests | Memory file |
 |------|------|---------|-------|-------------|
-| 2026-05-24 | (in-flight) | cline catalog port batch 1 -- foundation utilities (T22 + T13b + T25): `llm/response_format.py` (30+ structured error/notice templates with voice-friendly variants + progressive-escalation tiers); `utils/retry.py` (async + sync `with_retry` decorator + `RetryBudget` + retry-after header parsing with delta-seconds-vs-unix-timestamp heuristic + `RetriableError` + async-generator decoration + `asyncio.CancelledError` pass-through); `search/ripgrep.py` (subprocess wrapper around `rg --json` with byte-cap 0.25 MB / result-cap 300 / wall-clock kill / Windows `CREATE_NO_WINDOW` / optional ignore-predicate). | 5778 | (in-flight) |
+| 2026-05-24 | `a7d03dd` | cline catalog port batch 1 -- foundation utilities (T22 + T13b + T25): `llm/response_format.py` (30+ structured error/notice templates with voice-friendly variants + progressive-escalation tiers); `utils/retry.py` (async + sync `with_retry` decorator + `RetryBudget` + retry-after header parsing with delta-seconds-vs-unix-timestamp heuristic + `RetriableError` + async-generator decoration + `asyncio.CancelledError` pass-through); `search/ripgrep.py` (subprocess wrapper around `rg --json` with byte-cap 0.25 MB / result-cap 300 / wall-clock kill / Windows `CREATE_NO_WINDOW` / optional ignore-predicate). | 5778 | (cline-port memory pending; see `THIRD_PARTY_NOTICES.md`) |
 | 2026-05-24 | `18fab56` | OpenHands catalog T1-T8 port -- 8 batches, 11 new packages: `parsing/`, `install/`, `skills/` + `skills/` catalogue, `events/`, `llm/condensers/`, `lifecycle/`, `projects/`, `services/`. Two opt-in config sections (`skills.*`, `events.*`, default OFF). | 5640 | `project_ultron_2026_05_24_openhands_catalog_porting.md` |
 | 2026-05-23 | `73fafba` | SWE-Agent catalog T1-T20 port -- 7 batches: `coding/{sentinels, session_registry, window_expand, window_state, file_history, edit_diagnostics, lint_diff, search_primitives, diff_snapshot, submit_review, forfeit, observation_format}`, `llm/{history_processors, requery, image_markdown, draft_model}`, `safety/rules/category_it`, `desktop/click_preview`. Two production knobs flipped (`llm.history_compression.enabled: true`, `safety.interactive_tools.enabled: true`). | 5215 | `project_ultron_2026_05_23_swe_agent_catalog_porting.md` |
 | 2026-05-23 | `5f12e7d` | Aider catalog completion (batch 14: `architect_narrator`, `stt_bias`, `confirm_group`) + measurement-infra audit (7 stale scripts modernised via new `make_tts_engine` factory + `scripts/run_tests.py` watchdog race fix) + baselines captured against current Kokoro+Moonshine+Qwen3.5+intent stack (STT 16 ms / LLM TTFT 203 ms / TTFA 313 ms / VRAM 7007 MB peak). | 4750 | `project_ultron_2026_05_23_catalog_completion_and_measurement_audit.md` |
