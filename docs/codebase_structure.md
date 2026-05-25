@@ -10,10 +10,11 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `75353f7` on `origin/main` (2026-05-24 cline
-> catalog port batch 6 -- T14 extended `@`-mention resolver + T11
-> bidirectional focus-chain markdown checklist). Tests **6079 passing
-> / 24 skipped / 0 failed in ~94 s** via `scripts/run_tests.py`.
+> **Validating HEAD:** (in-flight cline batch 7; bumped post-commit)
+> last code-touching commit was `75353f7` (cline batch 6). Batch 7
+> lands T5 + T21 full out-of-process hook lifecycle (9 cline +
+> 5 ultron-specific lifecycle points). Tests **6119 passing / 24
+> skipped / 0 failed in ~96 s** via `scripts/run_tests.py`.
 >
 > **Public-repo hygiene:** the repo lives at
 > `https://github.com/1v9Khan/ultronPrototype` (visibility flips between
@@ -43,6 +44,7 @@ result of every row. Deep narrative lives in the corresponding
 
 | Date | HEAD | Summary | Tests | Memory file |
 |------|------|---------|-------|-------------|
+| 2026-05-24 | (in-flight) | cline catalog port batch 7 -- hooks lifecycle (T5 + T21): new `hooks/` package -- 9 cline lifecycle points (TaskStart / TaskResume / TaskCancel / TaskComplete / UserPromptSubmit / PreToolUse / PostToolUse / PreCompact / Notification) + 5 ultron-specific (PreLLMRequest / PreMemoryWrite / PreGamingEngage / PreDesktopAction / WakeWordTriggered). `HookRegistry` parallel fan-out + cancel aggregation + `<hook_context>` concatenation; `HookRunner` subprocess executor with per-suffix interpreter selection (.py / .ps1 / .sh / .bat / .cmd / shebang) + JSON stdin/stdout envelope + 10 s default timeout + 8 kB context-mod cap + last-balanced-JSON parser; `HookDiscovery` mtime-validated cache with 30 s TTL; module-level `get_hook_registry()` singleton. | 6119 | (cline-port memory pending) |
 | 2026-05-24 | `75353f7` | cline catalog port batch 6 -- mentions + focus-chain (T14 + T11): `coding/mention_resolvers.py` (extended `@`-mention regex covering URLs / `workspace:` / `memory:` / `problems` / `last` / `diff` / `clipboard` / `screenshot` / Windows drive-letter paths + provider-driven resolution + per-mention body cap + per-call cap + dedup); `coding/focus_chain.py` (parse / render / diff markdown checklists + atomic temp+rename writes + `FocusChainWatcher` with 300 ms debounce + manual `poll_now` fallback when watchdog absent + `render_critical_info_block` for the user-edit CRITICAL INFORMATION block + `progress_hint` per-band prompt tailoring). | 6079 | (cline-port memory pending) |
 | 2026-05-24 | `6d66d96` | cline catalog port batch 5 -- streaming infrastructure (T8 + T12 + T19 + T20): new `streaming/` package with `window.py` (WindowedOutputWriter with 20-line/2KB/100ms debounce + 1000-line/512KB spill thresholds + head-100/tail-100 preserved + `COMPILING_MARKERS` hot-timeout detection), `presentation_scheduler.py` (priority-banded chunk scheduler with environment-adaptive cadence — local/remote/Bluetooth profiles + `set_drop_low_priority` for `enable_thinking=False`), `reasoning_stream.py` (ReasoningDemultiplexer with first-text-finalises semantics + dedicated audit channel keeps reasoning out of TTS), `coordinator.py` (StreamCoordinator state machine + `RetryStatus` payloads + `on_usage` live token meters). | 6028 | (cline-port memory pending) |
 | 2026-05-24 | `3ca8879` | cline catalog port batch 4 -- auto-approve matrix + structured 8-section condenser (T3 + T15): `safety/auto_approval.py` (four-mode per-rule policy `always_ask` / `allow_local` / `allow_external` / `allow_all` + `yolo_mode` master override + per-session "warming" allowlist after N consecutive user approvals + injected `LocalityProbe` predicate); `llm/condensers/structured_8_section.py` (8 canonical headers Primary Request / Key Technical Concepts / Files and Code Sections / Problem Solving / Pending Tasks / Task Evolution / Current Work / Next Step + tolerant `parse_summary` with alias resolution + `compact_for_voice` 3-section TTS-friendly continuity ack). | 5973 | (cline-port memory pending) |
@@ -433,6 +435,13 @@ For the current decisions and Foundation phase status see
 │       │   ├── bus_sink.py         ← BusEventSink subscribes to the bus, converts envelopes to StoredEvent, writes to the store + fires callbacks
 │       │   ├── callbacks.py        ← 2026-05-23 OpenHands batch 4 (T3): CallbackRegistry + CallbackProcessor ABC + RegisteredCallback + CallbackResult + FunctionProcessor adapter + JSONL persistence + singleton accessors
 │       │   └── processors.py       ← 2026-05-23 OpenHands batch 4 (T3): built-in processors (Logging, Counting, ThresholdSnapshot, MemoryWrite, ChannelGuard, SkillActivator) + build_default_processors factory
+│       │
+│       ├── hooks/                   ← 2026-05-24 cline batch 7 (T5 + T21): out-of-process hook lifecycle
+│       │   ├── __init__.py          ← Public API re-exports
+│       │   ├── lifecycle.py         ← HookKind enum (9 cline + 5 ultron-specific), HookPayload, HookOutcome dataclasses; DEFAULT_HOOK_TIMEOUT_SECONDS=10.0, DEFAULT_CONTEXT_MOD_CAP_CHARS=8192
+│       │   ├── discovery.py         ← HookDiscovery walks `~/.ultron/hooks/<kind>(.py|.ps1|.sh|.bat|.cmd)` + project equivalent; mtime-validated cache with DEFAULT_DISCOVERY_TTL_SECONDS=30
+│       │   ├── runner.py            ← HookRunner with per-suffix interpreter selection (.py → sys.executable, .ps1 → powershell.exe -NoProfile -ExecutionPolicy Bypass, .sh → bash, .bat/.cmd → cmd.exe /c, no suffix → shebang); JSON stdin/stdout envelope; CREATE_NO_WINDOW on Windows; last-balanced-JSON-object stdout parser
+│       │   └── registry.py          ← HookRegistry parallel fan-out via concurrent.futures.ThreadPoolExecutor (max 4 default); any cancel:true blocks; every context_modification concatenated as `<hook_context source="..." script="..." layer="...">...</hook_context>`; get_hook_registry() module-level singleton
 │       │
 │       ├── streaming/               ← 2026-05-24 cline batch 5 (T8 + T12 + T19 + T20)
 │       │   ├── __init__.py          ← Public API re-exports
