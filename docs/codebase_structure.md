@@ -10,7 +10,61 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `29ffe49` on `origin/main` (2026-05-26
+> **Validating HEAD:** pending commit of the clawhub-windows-ui-automation
+> catalog 07 port (2026 session). Six techniques (T1-T6) landed across
+> 5 batches on top of `c3966a7`:
+>
+> * **T1 + T3 (doc-only):** code comments in
+>   `src/ultron/desktop/input_control.py` documenting that pyautogui
+>   uses the modern atomic `SendInput` API (not legacy `mouse_event`)
+>   and that `pyautogui.hotkey` returns BEFORE the target processes
+>   the keystroke (unlike PowerShell `SendKeys.SendWait`).
+>
+> * **T2 (new module):** `src/ultron/desktop/win32_helpers.py` --
+>   ctypes wrappers for `GetDpiForMonitor` (per-monitor DPI),
+>   `GetLastInputInfo` (idle detection), `DwmGetWindowAttribute`
+>   with `DWMWA_CLOAKED` (cloaked window detection), and a hardened
+>   `block_input_context` (watchdog + try/finally + UIPI safety
+>   floor + hard cap at 30s). Plus :func:`logical_to_physical` /
+>   :func:`physical_to_logical` coordinate-space primitives.
+>
+> * **T6 (`focus_by_title` two-tier focus):** new
+>   `desktop.windows.focus_by_title` -- primary
+>   `find_window` + `SetForegroundWindow`, fallback to in-process
+>   `WScript.Shell.AppActivate` via `win32com.client`, final
+>   fallback to `CREATE_NO_WINDOW` PowerShell subprocess. `find_window`
+>   + `enumerate_windows` gain `exclude_cloaked: bool = True` keyword
+>   bridging to `is_window_cloaked`.
+>
+> * **T5 (DPI-aware UIA -> input boundary):**
+>   `desktop.uia.physical_center_of_element` + `physical_rect_of_element`
+>   + `dpi_aware_click_at_element_center` -- safe coordinate conversion
+>   helpers for the UIA-to-pyautogui boundary. Identity on 100%-DPI
+>   displays; opt-in `assume_logical=True` routes through
+>   `logical_to_physical` for callers integrating non-DPI-aware sources.
+>
+> * **T4 (frontmatter `capability_tags:` -> SkillRegistry filter):**
+>   `SkillRegistry.matching_skills` accepts `gaming_mode` /
+>   `vlm_loaded` / `has_internet` kwargs; new
+>   `_skill_active_for_capability_tags` predicate reads optional
+>   `capability_tags` from frontmatter (via `skill.extra`),
+>   converts to `CapabilityTag` enum values, and filters via the
+>   same gating rules as `filter_capabilities`. `maybe_get_skills_block`
+>   forwards the context. `LLMEngine._build_messages` calls new
+>   `_resolve_vlm_loaded_for_skills()` to thread the live VLM holder
+>   state. Closes the catalog 07 "skill registry filters on modes but
+>   not capability_tags" safety gap.
+>
+> ≈ +160 net tests (Batches 2/3/4/5 each shipped a test file). Tests
+> 7394 baseline (no my-batch regressions); 2 pre-existing failures from
+> the prior production-wiring flag-flip pass are unrelated to this work.
+> Voice baseline contract intact (no SOUL.md / RVC / Piper / vocal WAV
+> / LLM model file / Kokoro fine-tune voicepack touch; no orchestrator
+> hot-path edit). `THIRD_PARTY_NOTICES.md` extended with
+> clawhub-windows-ui-automation MIT attribution + per-component mapping
+> for T1-T6.
+>
+> **Earlier validating HEAD:** `29ffe49` on `origin/main` (2026-05-26
 > production-wiring pass closing baseline-re-measure commit). The
 > 7-commit production-wiring pass consumed the catalog-port
 > primitives into their canonical hot-path consumers: T14 rate-limit
@@ -117,6 +171,7 @@ result of every row. Deep narrative lives in the corresponding
 
 | Date | HEAD | Summary | Tests | Memory file |
 |------|------|---------|-------|-------------|
+| 2026 | pending | **clawhub-windows-ui-automation catalog 07 port.** Five batches landing T1-T6 from the catalog. T1+T3 doc comments in `desktop/input_control.py` (pyautogui uses modern atomic `SendInput`; `pyautogui.hotkey` is async-ish). T2 new `desktop/win32_helpers.py` with ctypes wrappers for `GetDpiForMonitor` (per-monitor DPI), `GetLastInputInfo` (idle ms), `DwmGetWindowAttribute(DWMWA_CLOAKED)` (cloaked window detection), and a hardened `block_input_context` (watchdog + try/finally + UIPI safety floor + 30s hard cap). T6 `focus_by_title` two-tier focus in `desktop/windows.py` (primary `SetForegroundWindow`, fallback in-process `WScript.Shell.AppActivate` via `win32com.client`, final fallback `CREATE_NO_WINDOW` PowerShell subprocess); `enumerate_windows`/`find_window` gain `exclude_cloaked: bool = True` keyword. T5 DPI-aware coordinate helpers in `desktop/uia.py`: `physical_center_of_element` / `physical_rect_of_element` / `dpi_aware_click_at_element_center` (identity on 100%-DPI; opt-in `assume_logical=True` routes through `logical_to_physical`). T4 frontmatter `capability_tags:` filter wiring in `skills/registry.py` (`SkillRegistry.matching_skills` accepts `gaming_mode` / `vlm_loaded` / `has_internet` kwargs; new `_skill_active_for_capability_tags` predicate reads frontmatter, converts to `CapabilityTag` enum, drops skills with incompatible tags); `LLMEngine._build_messages` threads live VLM holder state via new `_resolve_vlm_loaded_for_skills()`. ≈+160 net tests across 4 new/extended test files; voice baseline contract intact; no orchestrator hot-path wiring beyond the additive `vlm_loaded` thread. `THIRD_PARTY_NOTICES.md` extended with clawhub-windows-ui-automation MIT attribution. | 7550+ (≈+160 net) | (pending) |
 | 2026-05-26 | `29ffe49` | **Production-wiring pass batch 10 (voice baseline re-measure post-flags).** `scripts/measure_baseline.py` ran cleanly under the new config: VRAM loaded **6254 MB (-343 MB vs 2026-05-23 baseline)**, peak **6664 MB (-343 MB)**, STT median **16 ms** (unchanged), LLM TTFT median **172 ms (-31 ms)**, TTS synth median **78 ms (-31 ms)**, composite TTFA median **266 ms (-47 ms)**. The Batch 9 flag flips (supervisor.tier=full, architect, click_preview, contextual_retrieval, background_summary, pre_write_lint, goal_anchors, etc.) did NOT regress the voice baseline -- they only fire on coding / desktop / write paths, not on the simple voice-query path measured by measure_baseline. No optimisation pass needed; the production wiring is net-positive on every measured axis. `baselines.json` updated. | (no test change) | [project_ultron_2026_05_26_production_wiring_pass.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_26_production_wiring_pass.md) |
 | 2026-05-26 | `2e1f8b8` | **Production-wiring pass batch 6 (SWE-Agent T7 SubmitReviewLoop into supervisor COMPLETE listener).** New `CapabilityVoiceController._attach_submit_review_listener` registers on every supervisor-dispatched task's COMPLETE event. The listener walks `event.files_created`/`files_modified`/`files_deleted`, runs `detect_voice_lock_hits()` (matches SOUL.md / IDENTITY.md / Piper / RVC / Qwen GGUFs / Kokoro voicepack + fine-tune / tts/rvc.py / tts/ultron_filter.py), and on any hit: logs WARN with the hit list AND queues a voice narration ("Voice-baseline contract: the session touched X. Review before continuing.") onto `controller._pending_completion` for the orchestrator's idle drain. Wired in after `_attach_supervisor_digest_listener` in `_dispatch_supervisor_task`. Fail-open: listener registration / dispatch errors log WARN, never abort. Skipped T14 edit_recovery + SWE-Agent T1 auto-revert (need pre-edit snapshot of agent-owned writes — needs deeper agent-tool integration). Also updated `tests/test_coding_voice.py::test_pre_task_confirmation_disabled_dispatches_immediately` to monkeypatch the legacy-shim flag after the Batch 9 flip. | 7394 | [project_ultron_2026_05_26_production_wiring_pass.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_26_production_wiring_pass.md) |
 | 2026-05-26 | `8a7759d` | **Production-wiring pass batches 8+9 (OpenClaw live dispatch + flag flips).** Per user direction ("wire and flip everything on ... accept high latency for now, optimize later"), config.yaml flipped these knobs ON: `openclaw.enabled` (Gateway at `http://127.0.0.1:11280`; bridge now lives, dispatcher returns real plugin invocations instead of stub voice messages), `openclaw.bridge.inbound_voice_handoff_enabled` (`[voice]`-prefix routing into ultron's voice pipeline), `coding.pre_task_confirmation_enabled` (~0.5 s TTS playback with barge-in before each coding dispatch), `coding.supervisor.tier: "indexing_only" -> "full"` (decide + narration + enriched-context TaskRequest), `coding.repo_map.enabled` (50-300 ms pre-dispatch PageRank repo map prepended to AI coding agent prompt), `coding.pre_write_lint.enabled` (compile + flake8 + tree-sitter on every write; 50-500 ms per .py write), `coding.architect.enabled` + `narrate_enabled` (3-5 s pre-dispatch plan + sentence-by-sentence narration with barge-in), `coding.goal_anchors.enabled` (anchor decomposition + per-anchor voice progress), `desktop.click_preview.enabled` (1-2 s VLM round-trip on the first click in a region; auto-pass within 100 px), `memory.contextual_retrieval.enabled` (80-150 ms per write turn), `memory.background_summary.enabled` (idle-gated). Kept OFF per user veto: `llm.draft_kind` (real .8b PLD `llama_decode -1` bug; not a preference), `memory.reranking.enabled` (17-18 s/turn CPU cost). `notifications.telegram.enabled` stays OFF per user (no bot token configured). Validated via `scripts/validate_config.py`. Voice baseline TTFT will regress notably during this pass; per user direction the optimisation pass (Batch 10) is the follow-up to claw back. | (7394, no code change in this batch) | [project_ultron_2026_05_26_production_wiring_pass.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_26_production_wiring_pass.md) |
@@ -298,6 +353,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── screen_context.py     ← orchestrator: assemble foreground + windows + UIA text + optional VLM description for LLM injection
 │       │   ├── vlm.py                ← Moondream2 VLM wrapper (transformers + trust_remote_code), CPU-only on-demand, lazy-loaded, fail-open; 2026-05-22 Moondream2VLM.unload() for gaming-mode engage callback
 │       │   ├── click_preview.py      ← 2026-05-23 SWE-Agent batch 7 (T16): preview_click VLM-confirmed click target with confidence-gated auto-pass; ConfirmationHistory bounded recent-click store; draw_crosshair_on_image pure-Pillow renderer; first click always confirms then subsequent clicks within AUTO_PASS_RADIUS_PX (100px) auto-pass
+│       │   ├── win32_helpers.py      ← 2026 catalog 07 batch 2 (T2 + T5 building blocks): ctypes wrappers for documented public Win32 APIs. :func:`get_monitor_dpi(x, y) -> MonitorDpi` via `MonitorFromPoint` + `GetDpiForMonitor` (MDT_EFFECTIVE_DPI); :func:`get_monitor_dpi_for_window(hwnd)` resolves via window centre. :func:`get_last_input_idle_ms() -> Optional[int]` via `GetLastInputInfo` + `GetTickCount` with uint32 wrap-around arithmetic. :func:`is_window_cloaked(hwnd) -> Optional[bool]` via `DwmGetWindowAttribute(DWMWA_CLOAKED=14)`. :func:`block_input_context(max_duration_s=5.0)` is a hardened context manager around `BlockInput` with try/finally guarantee + watchdog daemon (clamps to 30s hard cap) + UIPI safety floor (non-admin processes auto-no-op). :func:`logical_to_physical(x, y, ...)` / :func:`physical_to_logical(x, y, ...)` are the coordinate-space conversion primitives -- identity on 100%-DPI displays. Lazy `ctypes.windll` DLL cache thread-safe. Off-Windows: every public function is a graceful no-op returning a documented default. Fail-open at every layer.
 │       │   ├── file_read_cache.py    ← 2026-05-24 cline batch 2 (T7a): per-session mtime-validated file-read cache; FileReadCache (RLock-guarded) with maybe_serve_from_cache (consult + increment read_count) / record_read (capture mtime + content) / invalidate / clear; CachedReadEntry returns the cached_read_notice template; get_file_read_cache(session_id, max_entries=None) module-level registry; optional LRU eviction by lowest read_count
 │       │   ├── voice.py              ← Phase 8 voice handlers (handle_app_launch / handle_screen_context_query) + 2026-05-14 third-pass handlers (handle_window_move / handle_window_close) bridging RoutingIntent -> native primitives
 │       │   └── preferences.py        ← Phase 10 preference learning (JSONL log + optional OpenClaw workspace mirror; find_preference_for_phrase for recency-weighted lookup)
