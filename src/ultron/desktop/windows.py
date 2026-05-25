@@ -7,13 +7,33 @@ sits on. Use cases:
 - "what app is the user looking at right now" -> :func:`get_foreground_window`
 - "find the Chrome window on monitor 2" -> :func:`find_window`
 - "list everything visible" -> :func:`enumerate_windows`
+- "focus the window titled X, fall back to AppActivate when HWND is
+  stale" -> :func:`focus_by_title` (catalog 07 T6)
 
 Fail-open: any pywin32 / psutil exception per window degrades to skipping
 that window rather than raising up to the caller.
+
+2026 catalog 07 additions:
+
+* ``enumerate_windows`` and ``find_window`` now filter out DWM-cloaked
+  windows by default (``exclude_cloaked=True``). Cloaked windows are
+  on inactive virtual desktops, hidden by UWP suspend, or offscreened
+  by a compositor trick -- ``IsWindowVisible`` returns True for them,
+  but the user can't see or interact with them. The new flag bridges
+  to :func:`ultron.desktop.win32_helpers.is_window_cloaked`.
+
+* :func:`focus_by_title` provides a title-substring focus with a
+  primary ``SetForegroundWindow`` path and an AppActivate fallback for
+  stale-HWND recovery. Uses pywin32's WScript.Shell COM dispatch when
+  available, falls back to a PowerShell subprocess (with
+  ``CREATE_NO_WINDOW``) when the COM dispatcher fails.
 """
 
 from __future__ import annotations
 
+import shlex
+import subprocess
+import sys
 from dataclasses import dataclass
 from typing import Optional
 
@@ -26,6 +46,14 @@ from ultron.desktop.monitors import Monitor, enumerate_monitors
 from ultron.utils.logging import get_logger
 
 logger = get_logger("desktop.windows")
+
+# PowerShell subprocess fallback for AppActivate. CREATE_NO_WINDOW
+# suppresses the brief console flash; we time the subprocess out so a
+# wedged PowerShell never holds the orchestrator.
+_APP_ACTIVATE_TIMEOUT_S: float = 2.0
+_CREATE_NO_WINDOW = (
+    0x08000000 if sys.platform == "win32" else 0
+)  # subprocess.CREATE_NO_WINDOW
 
 
 @dataclass(frozen=True)
@@ -144,6 +172,7 @@ def enumerate_windows(
     include_minimized: bool = False,
     include_invisible: bool = False,
     require_title: bool = True,
+    exclude_cloaked: bool = True,
 ) -> list[WindowInfo]:
     """List top-level windows.
 
@@ -153,6 +182,14 @@ def enumerate_windows(
             and tool windows that don't appear in the alt-tab list.
         require_title: skip windows with empty title text (Explorer's
             shell windows, hidden helper windows, etc.).
+        exclude_cloaked: skip DWM-cloaked windows (default True, catalog 07
+            T2 creative extension). ``IsWindowVisible`` returns True for
+            cloaked windows because the style bits stay set; the desktop
+            window manager hides them. Filtering them out improves the
+            accuracy of "what's actually visible" lookups for
+            foreground-window security checks and ``find_window``
+            tiebreakers. Pass ``False`` to include cloaked windows (e.g.
+            when explicitly enumerating windows across virtual desktops).
 
     Returns the visible windows, in arbitrary order. Sort externally
     if a particular order is needed (e.g. foreground first).
@@ -172,6 +209,21 @@ def enumerate_windows(
             return True
         if not include_invisible and not visible:
             return True
+
+        if exclude_cloaked:
+            # Lazy-import so the win32_helpers module load (and its
+            # ctypes setup) only happens when the cloak filter is
+            # actually consulted.
+            try:
+                from ultron.desktop.win32_helpers import is_window_cloaked
+                cloaked = is_window_cloaked(int(hwnd))
+            except Exception:  # noqa: BLE001
+                cloaked = None
+            # Only EXCLUDE on a positive True; None / False keep the
+            # window so the legacy IsWindowVisible behaviour is the
+            # fallback when the cloak probe is unavailable.
+            if cloaked is True:
+                return True
 
         info = _build_window_info(hwnd, monitors, fg)
         if info is None:
@@ -213,6 +265,7 @@ def find_window(
     prefer_foreground: bool = True,
     prefer_monitor: Optional[int] = None,
     by_process: bool = True,
+    exclude_cloaked: bool = True,
 ) -> Optional[WindowInfo]:
     """Find a window whose title (and optionally process name) matches ``query``.
 
@@ -230,13 +283,17 @@ def find_window(
     3. ``prefer_monitor`` (when set) prefers windows whose
        ``monitor_index`` matches.
     4. Most recently enumerated (z-order) wins last.
+
+    ``exclude_cloaked`` (default True): forwarded to
+    :func:`enumerate_windows` so cloaked / virtual-desktop-occluded
+    windows are skipped at the source. Pass ``False`` to include them.
     """
     q = (query or "").strip().lower()
     if not q:
         return None
 
     candidates: list[WindowInfo] = []
-    for w in enumerate_windows():
+    for w in enumerate_windows(exclude_cloaked=exclude_cloaked):
         title_lower = w.title.lower()
         proc_lower = w.process_name.lower()
         title_match = q in title_lower
@@ -256,3 +313,226 @@ def find_window(
 
     candidates.sort(key=_score, reverse=True)
     return candidates[0]
+
+
+# ---------------------------------------------------------------------------
+# T6: title-based focus with AppActivate fallback
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FocusResult:
+    """Outcome of :func:`focus_by_title`.
+
+    Attributes:
+        success: True iff the target window now holds the foreground.
+        window: :class:`WindowInfo` of the focused window when known
+            (always set on success unless the focus changed via
+            AppActivate and the foreground window can't be re-resolved).
+        method: which path actually focused the window:
+            ``"set_foreground_window"`` (primary path, HWND-based) or
+            ``"app_activate_com"`` (WScript.Shell COM via pywin32) or
+            ``"app_activate_powershell"`` (PowerShell subprocess
+            fallback). Empty string when no method succeeded.
+        error: short human-readable error string when ``success`` is
+            False, otherwise None.
+    """
+
+    success: bool
+    window: Optional[WindowInfo] = None
+    method: str = ""
+    error: Optional[str] = None
+
+
+def _set_foreground_window(hwnd: int) -> bool:
+    """Try ``SetForegroundWindow(hwnd)``. Returns True on success.
+
+    Windows' foreground-lock rules can make this return False even with
+    a valid HWND (e.g., another process has the foreground lock). The
+    AppActivate path is the documented workaround for that case.
+    """
+
+    try:
+        # SetForegroundWindow returns BOOL; 0 means failure.
+        result = win32gui.SetForegroundWindow(int(hwnd))
+        return bool(result)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("SetForegroundWindow(%d) failed: %s", hwnd, exc)
+        return False
+
+
+def _appactivate_via_wscript_shell(partial_title: str) -> bool:
+    """Try the WScript.Shell COM ``AppActivate(title)`` path.
+
+    Returns True iff a window was activated. Fail-open on import error
+    or COM dispatch failure -- caller can fall through to the
+    PowerShell subprocess path.
+    """
+
+    try:
+        import win32com.client  # type: ignore[import]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("win32com.client unavailable: %s", exc)
+        return False
+
+    try:
+        shell = win32com.client.Dispatch("WScript.Shell")
+        # AppActivate returns True / False; can also raise on COM
+        # errors (com_error subclass).
+        return bool(shell.AppActivate(partial_title))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("WScript.Shell AppActivate(%r) failed: %s", partial_title, exc)
+        return False
+
+
+def _appactivate_via_powershell(
+    partial_title: str,
+    *,
+    timeout_s: float = _APP_ACTIVATE_TIMEOUT_S,
+) -> bool:
+    """Last-resort fallback: spawn PowerShell to invoke AppActivate.
+
+    Used when ``win32com.client`` isn't available (e.g., minimal pywin32
+    install). The subprocess is suppressed with ``CREATE_NO_WINDOW``
+    and time-bounded so a wedged PowerShell never holds the
+    orchestrator. Returns True on successful activation, False
+    otherwise.
+    """
+
+    if sys.platform != "win32":
+        return False
+
+    # PowerShell single-quoted strings escape ' as ''.
+    title_escaped = partial_title.replace("'", "''")
+    ps_command = (
+        "$ws = New-Object -ComObject WScript.Shell; "
+        f"$result = $ws.AppActivate('{title_escaped}'); "
+        "[Console]::Out.Write($result.ToString())"
+    )
+    try:
+        completed = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                ps_command,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=max(0.1, float(timeout_s)),
+            creationflags=_CREATE_NO_WINDOW,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        logger.debug("PowerShell AppActivate(%r) failed: %s", partial_title, exc)
+        return False
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("PowerShell AppActivate(%r) raised: %s", partial_title, exc)
+        return False
+
+    stdout = (completed.stdout or "").strip().lower()
+    return stdout == "true"
+
+
+def focus_by_title(
+    partial_title: str,
+    *,
+    prefer_monitor: Optional[int] = None,
+    fall_back_to_app_activate: bool = True,
+    timeout_s: float = _APP_ACTIVATE_TIMEOUT_S,
+) -> FocusResult:
+    """Focus a window by title substring (catalog 07 T6).
+
+    Two-tier resolution:
+
+    1. **Primary path** -- :func:`find_window` resolves the HWND, then
+       :func:`_set_foreground_window` attempts ``SetForegroundWindow``.
+       This is the fast path and works for almost every case.
+
+    2. **AppActivate fallback** -- when the HWND is stale (window was
+       recreated at the same title), or Windows' foreground-lock
+       prevents ``SetForegroundWindow`` from succeeding, the title-
+       substring AppActivate path takes over. Two sub-fallbacks:
+
+       * ``win32com.client.Dispatch("WScript.Shell").AppActivate(title)``
+         (in-process, no subprocess).
+       * PowerShell subprocess invoking the same COM (used when
+         ``win32com.client`` isn't available; CREATE_NO_WINDOW +
+         time-bounded).
+
+    Args:
+        partial_title: Case-insensitive substring against the target
+            window title. AppActivate matches the full title
+            substring; the primary path also matches process name.
+        prefer_monitor: Forward to :func:`find_window` as a tiebreaker
+            when multiple windows match the substring.
+        fall_back_to_app_activate: When False, the AppActivate
+            fallbacks are skipped (caller wants HWND-only semantics).
+        timeout_s: Wall-clock timeout for the PowerShell subprocess
+            fallback. The COM path has no separate timeout knob.
+
+    Returns:
+        :class:`FocusResult` describing which method succeeded.
+    """
+
+    title = (partial_title or "").strip()
+    if not title:
+        return FocusResult(
+            success=False,
+            error="empty title",
+        )
+
+    # ---- Primary path ----
+    candidate = find_window(title, prefer_monitor=prefer_monitor)
+    if candidate is not None:
+        if _set_foreground_window(candidate.hwnd):
+            return FocusResult(
+                success=True,
+                window=candidate,
+                method="set_foreground_window",
+            )
+        logger.debug(
+            "primary SetForegroundWindow path failed for hwnd=%d title=%r; "
+            "attempting AppActivate fallback",
+            candidate.hwnd,
+            candidate.title,
+        )
+
+    if not fall_back_to_app_activate:
+        return FocusResult(
+            success=False,
+            window=candidate,
+            error=(
+                f"no window matching '{title}'"
+                if candidate is None
+                else f"SetForegroundWindow refused (hwnd={candidate.hwnd})"
+            ),
+        )
+
+    # ---- AppActivate fallbacks ----
+    if _appactivate_via_wscript_shell(title):
+        focused = get_foreground_window()
+        return FocusResult(
+            success=True,
+            window=focused,
+            method="app_activate_com",
+        )
+
+    if _appactivate_via_powershell(title, timeout_s=timeout_s):
+        focused = get_foreground_window()
+        return FocusResult(
+            success=True,
+            window=focused,
+            method="app_activate_powershell",
+        )
+
+    return FocusResult(
+        success=False,
+        window=candidate,
+        error=(
+            f"no AppActivate fallback succeeded for '{title}'"
+        ),
+    )

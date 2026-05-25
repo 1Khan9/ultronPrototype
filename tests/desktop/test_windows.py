@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
+from typing import Any
 
 import pytest
 
 from ultron.desktop.monitors import Monitor
 from ultron.desktop.windows import (
+    FocusResult,
     WindowInfo,
+    _appactivate_via_powershell,
+    _appactivate_via_wscript_shell,
     _monitor_index_for_rect,
+    _set_foreground_window,
     enumerate_windows,
     find_window,
+    focus_by_title,
     get_foreground_window,
 )
 
@@ -137,7 +144,7 @@ def test_find_window_substring_match(monkeypatch):
         _mk("Cursor - main.py", "Cursor.exe"),
         _mk("Discord", "Discord.exe"),
     ]
-    monkeypatch.setattr("ultron.desktop.windows.enumerate_windows", lambda: candidates)
+    monkeypatch.setattr("ultron.desktop.windows.enumerate_windows", lambda **_: candidates)
     w = find_window("cursor")
     assert w is not None
     assert w.process_name == "Cursor.exe"
@@ -147,7 +154,7 @@ def test_find_window_by_process_name(monkeypatch):
     candidates = [
         _mk("My Document - Word", "WINWORD.EXE"),
     ]
-    monkeypatch.setattr("ultron.desktop.windows.enumerate_windows", lambda: candidates)
+    monkeypatch.setattr("ultron.desktop.windows.enumerate_windows", lambda **_: candidates)
     w = find_window("winword")
     assert w is not None
     assert w.process_name == "WINWORD.EXE"
@@ -158,7 +165,7 @@ def test_find_window_exact_title_outranks_substring(monkeypatch):
         _mk("My Project - Cursor", "Cursor.exe"),
         _mk("cursor", "Cursor.exe"),  # exact-match (case-insensitive)
     ]
-    monkeypatch.setattr("ultron.desktop.windows.enumerate_windows", lambda: candidates)
+    monkeypatch.setattr("ultron.desktop.windows.enumerate_windows", lambda **_: candidates)
     w = find_window("cursor")
     assert w is not None
     # exact title match (after lower()) ranks ahead of partial title
@@ -170,7 +177,7 @@ def test_find_window_foreground_breaks_tie(monkeypatch):
         _mk("chrome.exe", "chrome.exe", fg=False, hwnd=1),
         _mk("chrome.exe", "chrome.exe", fg=True, hwnd=2),
     ]
-    monkeypatch.setattr("ultron.desktop.windows.enumerate_windows", lambda: candidates)
+    monkeypatch.setattr("ultron.desktop.windows.enumerate_windows", lambda **_: candidates)
     w = find_window("chrome", prefer_foreground=True)
     assert w.is_foreground
 
@@ -180,13 +187,13 @@ def test_find_window_monitor_preference_breaks_tie(monkeypatch):
         _mk("chrome - tab 1", "chrome.exe", mon=0, hwnd=1),
         _mk("chrome - tab 2", "chrome.exe", mon=2, hwnd=2),
     ]
-    monkeypatch.setattr("ultron.desktop.windows.enumerate_windows", lambda: candidates)
+    monkeypatch.setattr("ultron.desktop.windows.enumerate_windows", lambda **_: candidates)
     w = find_window("chrome", prefer_monitor=2)
     assert w.monitor_index == 2
 
 
 def test_find_window_empty_query(monkeypatch):
-    monkeypatch.setattr("ultron.desktop.windows.enumerate_windows", lambda: [])
+    monkeypatch.setattr("ultron.desktop.windows.enumerate_windows", lambda **_: [])
     assert find_window("") is None
     assert find_window("   ") is None
 
@@ -194,7 +201,7 @@ def test_find_window_empty_query(monkeypatch):
 def test_find_window_no_match(monkeypatch):
     monkeypatch.setattr(
         "ultron.desktop.windows.enumerate_windows",
-        lambda: [_mk("Cursor", "Cursor.exe")],
+        lambda **_: [_mk("Cursor", "Cursor.exe")],
     )
     assert find_window("nonexistent") is None
 
@@ -202,7 +209,7 @@ def test_find_window_no_match(monkeypatch):
 def test_find_window_disable_process_match(monkeypatch):
     candidates = [_mk("My Document", "WINWORD.EXE")]
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda: candidates,
+        "ultron.desktop.windows.enumerate_windows", lambda **_: candidates,
     )
     # With by_process=False, "winword" doesn't match title.
     assert find_window("winword", by_process=False) is None
@@ -255,3 +262,503 @@ def test_get_foreground_window_live():
         pytest.skip("no foreground window in current session")
     assert fg.is_foreground
     assert fg.hwnd > 0
+
+
+# ---------------------------------------------------------------------------
+# T6 focus_by_title
+# ---------------------------------------------------------------------------
+
+
+def _focus_target() -> WindowInfo:
+    return _mk("Cursor - main.py", "Cursor.exe", hwnd=42, mon=1)
+
+
+class TestFocusByTitle:
+
+    def test_empty_title_returns_failure(self):
+        result = focus_by_title("")
+        assert isinstance(result, FocusResult)
+        assert result.success is False
+        assert "empty" in (result.error or "").lower()
+
+    def test_whitespace_only_returns_failure(self):
+        result = focus_by_title("    ")
+        assert result.success is False
+
+    def test_primary_path_success(self, monkeypatch):
+        target = _focus_target()
+        monkeypatch.setattr(
+            "ultron.desktop.windows.find_window",
+            lambda *a, **k: target,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows._set_foreground_window",
+            lambda hwnd: True,
+        )
+        result = focus_by_title("cursor")
+        assert result.success is True
+        assert result.window is target
+        assert result.method == "set_foreground_window"
+
+    def test_primary_path_failure_falls_through_to_com(self, monkeypatch):
+        target = _focus_target()
+        focused_after = _mk("Cursor - main.py", "Cursor.exe", fg=True, hwnd=42)
+        monkeypatch.setattr(
+            "ultron.desktop.windows.find_window",
+            lambda *a, **k: target,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows._set_foreground_window",
+            lambda hwnd: False,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows._appactivate_via_wscript_shell",
+            lambda title: True,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows.get_foreground_window",
+            lambda: focused_after,
+        )
+        result = focus_by_title("cursor")
+        assert result.success is True
+        assert result.method == "app_activate_com"
+        assert result.window is focused_after
+
+    def test_no_match_falls_through_to_com(self, monkeypatch):
+        monkeypatch.setattr(
+            "ultron.desktop.windows.find_window",
+            lambda *a, **k: None,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows._appactivate_via_wscript_shell",
+            lambda title: True,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows.get_foreground_window",
+            lambda: None,
+        )
+        result = focus_by_title("nothing-here")
+        assert result.success is True
+        assert result.method == "app_activate_com"
+
+    def test_com_failure_falls_through_to_powershell(self, monkeypatch):
+        target = _focus_target()
+        monkeypatch.setattr(
+            "ultron.desktop.windows.find_window",
+            lambda *a, **k: target,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows._set_foreground_window",
+            lambda hwnd: False,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows._appactivate_via_wscript_shell",
+            lambda title: False,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows._appactivate_via_powershell",
+            lambda title, *, timeout_s=2.0: True,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows.get_foreground_window",
+            lambda: None,
+        )
+        result = focus_by_title("cursor")
+        assert result.success is True
+        assert result.method == "app_activate_powershell"
+
+    def test_all_paths_fail(self, monkeypatch):
+        target = _focus_target()
+        monkeypatch.setattr(
+            "ultron.desktop.windows.find_window",
+            lambda *a, **k: target,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows._set_foreground_window",
+            lambda hwnd: False,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows._appactivate_via_wscript_shell",
+            lambda title: False,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows._appactivate_via_powershell",
+            lambda title, *, timeout_s=2.0: False,
+        )
+        result = focus_by_title("cursor")
+        assert result.success is False
+        assert "no AppActivate fallback" in (result.error or "")
+        # The candidate window is reported in the result so caller can
+        # inspect what we tried.
+        assert result.window is target
+
+    def test_fallback_disabled_returns_after_primary_failure(self, monkeypatch):
+        target = _focus_target()
+        monkeypatch.setattr(
+            "ultron.desktop.windows.find_window",
+            lambda *a, **k: target,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows._set_foreground_window",
+            lambda hwnd: False,
+        )
+        # Sentinels: if we DO reach a fallback, the test fails loudly.
+        monkeypatch.setattr(
+            "ultron.desktop.windows._appactivate_via_wscript_shell",
+            lambda title: pytest.fail("fallback should not have run"),
+        )
+        result = focus_by_title("cursor", fall_back_to_app_activate=False)
+        assert result.success is False
+        assert "SetForegroundWindow refused" in (result.error or "")
+        assert result.window is target
+
+    def test_fallback_disabled_with_no_candidate(self, monkeypatch):
+        monkeypatch.setattr(
+            "ultron.desktop.windows.find_window",
+            lambda *a, **k: None,
+        )
+        result = focus_by_title("nothing", fall_back_to_app_activate=False)
+        assert result.success is False
+        assert result.window is None
+        assert "no window matching" in (result.error or "")
+
+    def test_prefer_monitor_threaded_to_find_window(self, monkeypatch):
+        captured: dict[str, Any] = {}
+
+        def _fake_find_window(query, *, prefer_monitor=None, **kwargs):
+            captured["query"] = query
+            captured["prefer_monitor"] = prefer_monitor
+            return None
+
+        monkeypatch.setattr(
+            "ultron.desktop.windows.find_window", _fake_find_window
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows._appactivate_via_wscript_shell",
+            lambda title: False,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows._appactivate_via_powershell",
+            lambda title, *, timeout_s=2.0: False,
+        )
+        focus_by_title("cursor", prefer_monitor=2)
+        assert captured["query"] == "cursor"
+        assert captured["prefer_monitor"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Helper exposure: _set_foreground_window / AppActivate paths
+# ---------------------------------------------------------------------------
+
+
+class TestSetForegroundWindow:
+
+    def test_success(self, monkeypatch):
+        monkeypatch.setattr(
+            "ultron.desktop.windows.win32gui.SetForegroundWindow",
+            lambda hwnd: 1,
+        )
+        assert _set_foreground_window(12345) is True
+
+    def test_failure_returns_false(self, monkeypatch):
+        monkeypatch.setattr(
+            "ultron.desktop.windows.win32gui.SetForegroundWindow",
+            lambda hwnd: 0,
+        )
+        assert _set_foreground_window(12345) is False
+
+    def test_exception_returns_false(self, monkeypatch):
+        def _boom(hwnd):
+            raise RuntimeError("foreground lock")
+
+        monkeypatch.setattr(
+            "ultron.desktop.windows.win32gui.SetForegroundWindow", _boom,
+        )
+        assert _set_foreground_window(12345) is False
+
+
+class TestAppActivateWscriptShell:
+
+    def test_returns_true_when_com_returns_true(self, monkeypatch):
+        class _FakeShell:
+            def AppActivate(self, title):  # noqa: N802
+                return True
+
+        class _FakeClient:
+            @staticmethod
+            def Dispatch(name):  # noqa: N802
+                return _FakeShell()
+
+        class _FakeModule:
+            client = _FakeClient
+
+        monkeypatch.setitem(sys.modules, "win32com", _FakeModule)
+        monkeypatch.setitem(sys.modules, "win32com.client", _FakeClient)
+        assert _appactivate_via_wscript_shell("cursor") is True
+
+    def test_returns_false_when_com_returns_false(self, monkeypatch):
+        class _FakeShell:
+            def AppActivate(self, title):  # noqa: N802
+                return False
+
+        class _FakeClient:
+            @staticmethod
+            def Dispatch(name):  # noqa: N802
+                return _FakeShell()
+
+        class _FakeModule:
+            client = _FakeClient
+
+        monkeypatch.setitem(sys.modules, "win32com", _FakeModule)
+        monkeypatch.setitem(sys.modules, "win32com.client", _FakeClient)
+        assert _appactivate_via_wscript_shell("cursor") is False
+
+    def test_returns_false_when_dispatch_raises(self, monkeypatch):
+        class _FakeClient:
+            @staticmethod
+            def Dispatch(name):  # noqa: N802
+                raise RuntimeError("COM error")
+
+        class _FakeModule:
+            client = _FakeClient
+
+        monkeypatch.setitem(sys.modules, "win32com", _FakeModule)
+        monkeypatch.setitem(sys.modules, "win32com.client", _FakeClient)
+        assert _appactivate_via_wscript_shell("cursor") is False
+
+    def test_returns_false_when_module_unavailable(self, monkeypatch):
+        # Force the import to fail by stashing a sentinel non-module.
+        monkeypatch.setitem(sys.modules, "win32com", None)
+        assert _appactivate_via_wscript_shell("cursor") is False
+
+
+class TestAppActivateViaPowershell:
+
+    def _fake_completed(self, *, stdout: str, returncode: int = 0):
+        cp = subprocess.CompletedProcess(args=[], returncode=returncode)
+        cp.stdout = stdout
+        cp.stderr = ""
+        return cp
+
+    def test_success_returns_true(self, monkeypatch):
+        if sys.platform != "win32":
+            pytest.skip("platform guard short-circuits off-Windows")
+        monkeypatch.setattr(
+            "ultron.desktop.windows.subprocess.run",
+            lambda *a, **k: self._fake_completed(stdout="True"),
+        )
+        assert _appactivate_via_powershell("cursor") is True
+
+    def test_false_output_returns_false(self, monkeypatch):
+        if sys.platform != "win32":
+            pytest.skip("platform guard short-circuits off-Windows")
+        monkeypatch.setattr(
+            "ultron.desktop.windows.subprocess.run",
+            lambda *a, **k: self._fake_completed(stdout="False"),
+        )
+        assert _appactivate_via_powershell("cursor") is False
+
+    def test_off_windows_returns_false_without_subprocess(self, monkeypatch):
+        monkeypatch.setattr("ultron.desktop.windows.sys.platform", "linux")
+
+        def _boom(*a, **k):
+            raise AssertionError("subprocess should not run off-Windows")
+
+        monkeypatch.setattr(
+            "ultron.desktop.windows.subprocess.run", _boom,
+        )
+        assert _appactivate_via_powershell("cursor") is False
+
+    def test_timeout_returns_false(self, monkeypatch):
+        if sys.platform != "win32":
+            pytest.skip("platform guard short-circuits off-Windows")
+
+        def _timeout(*a, **k):
+            raise subprocess.TimeoutExpired(cmd="powershell.exe", timeout=2.0)
+
+        monkeypatch.setattr(
+            "ultron.desktop.windows.subprocess.run", _timeout,
+        )
+        assert _appactivate_via_powershell("cursor", timeout_s=0.1) is False
+
+    def test_filenotfound_returns_false(self, monkeypatch):
+        if sys.platform != "win32":
+            pytest.skip("platform guard short-circuits off-Windows")
+
+        def _missing(*a, **k):
+            raise FileNotFoundError("powershell.exe not found")
+
+        monkeypatch.setattr(
+            "ultron.desktop.windows.subprocess.run", _missing,
+        )
+        assert _appactivate_via_powershell("cursor") is False
+
+    def test_escapes_single_quotes_in_title(self, monkeypatch):
+        if sys.platform != "win32":
+            pytest.skip("platform guard short-circuits off-Windows")
+        captured: dict[str, Any] = {}
+
+        def _capture(args, *a, **k):
+            captured["args"] = list(args)
+            return self._fake_completed(stdout="True")
+
+        monkeypatch.setattr(
+            "ultron.desktop.windows.subprocess.run", _capture,
+        )
+        assert _appactivate_via_powershell("It's a Title") is True
+        cmd_arg = captured["args"][-1]
+        # Single quotes must be doubled-up so PowerShell parses the
+        # literal apostrophe instead of closing the string early.
+        assert "It''s a Title" in cmd_arg
+
+    def test_creation_flags_suppress_console(self, monkeypatch):
+        if sys.platform != "win32":
+            pytest.skip("platform guard short-circuits off-Windows")
+        captured: dict[str, Any] = {}
+
+        def _capture(args, *a, **k):
+            captured["kwargs"] = k
+            return self._fake_completed(stdout="True")
+
+        monkeypatch.setattr(
+            "ultron.desktop.windows.subprocess.run", _capture,
+        )
+        _appactivate_via_powershell("anything")
+        # CREATE_NO_WINDOW = 0x08000000 must be set so no console flashes.
+        assert captured["kwargs"].get("creationflags", 0) == 0x08000000
+
+
+# ---------------------------------------------------------------------------
+# enumerate_windows -- exclude_cloaked plumbing
+# ---------------------------------------------------------------------------
+
+
+class TestEnumerateWindowsExcludeCloaked:
+
+    def _patch_enumeration(
+        self,
+        monkeypatch,
+        *,
+        hwnds: list[int],
+        cloaked_hwnds: set[int],
+        visible: bool = True,
+    ) -> None:
+        """Stub win32gui.EnumWindows + is_window_cloaked + per-window
+        inspection so the filter logic is testable off Windows too."""
+
+        def _fake_enum_windows(callback, _arg):
+            for hwnd in hwnds:
+                callback(hwnd, None)
+
+        monkeypatch.setattr(
+            "ultron.desktop.windows.win32gui.EnumWindows",
+            _fake_enum_windows,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows.win32gui.IsWindowVisible",
+            lambda hwnd: visible,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows.win32gui.GetForegroundWindow",
+            lambda: 0,
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.windows.enumerate_monitors",
+            lambda: [],
+        )
+
+        def _fake_build(hwnd, monitors, fg_hwnd):
+            return WindowInfo(
+                hwnd=int(hwnd),
+                title=f"win-{hwnd}",
+                class_name="Cls",
+                process_name="proc.exe",
+                pid=0,
+                rect=(0, 0, 100, 100),
+                monitor_index=None,
+                is_minimized=False,
+                is_foreground=False,
+            )
+
+        monkeypatch.setattr(
+            "ultron.desktop.windows._build_window_info", _fake_build,
+        )
+
+        def _fake_is_cloaked(hwnd):
+            return True if hwnd in cloaked_hwnds else False
+
+        monkeypatch.setattr(
+            "ultron.desktop.win32_helpers.is_window_cloaked",
+            _fake_is_cloaked,
+        )
+
+    def test_default_excludes_cloaked(self, monkeypatch):
+        self._patch_enumeration(
+            monkeypatch,
+            hwnds=[1, 2, 3, 4],
+            cloaked_hwnds={2, 4},
+        )
+        wins = enumerate_windows()
+        hwnds = sorted(w.hwnd for w in wins)
+        assert hwnds == [1, 3]
+
+    def test_explicit_false_includes_cloaked(self, monkeypatch):
+        self._patch_enumeration(
+            monkeypatch,
+            hwnds=[1, 2, 3, 4],
+            cloaked_hwnds={2, 4},
+        )
+        wins = enumerate_windows(exclude_cloaked=False)
+        hwnds = sorted(w.hwnd for w in wins)
+        assert hwnds == [1, 2, 3, 4]
+
+    def test_unknown_cloaked_state_includes(self, monkeypatch):
+        # is_window_cloaked returning None must NOT exclude (legacy behaviour).
+        def _patch_unknown(hwnd):  # noqa: ARG001
+            return None
+
+        self._patch_enumeration(
+            monkeypatch,
+            hwnds=[7, 8],
+            cloaked_hwnds=set(),
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.win32_helpers.is_window_cloaked",
+            _patch_unknown,
+        )
+        wins = enumerate_windows()
+        hwnds = sorted(w.hwnd for w in wins)
+        assert hwnds == [7, 8]
+
+    def test_cloaked_probe_exception_includes_legacy(self, monkeypatch):
+        def _boom(hwnd):  # noqa: ARG001
+            raise RuntimeError("dwmapi unavailable")
+
+        self._patch_enumeration(
+            monkeypatch,
+            hwnds=[10, 11],
+            cloaked_hwnds=set(),
+        )
+        monkeypatch.setattr(
+            "ultron.desktop.win32_helpers.is_window_cloaked", _boom,
+        )
+        wins = enumerate_windows()
+        hwnds = sorted(w.hwnd for w in wins)
+        # Exception means "couldn't tell" -> include both.
+        assert hwnds == [10, 11]
+
+
+def test_find_window_forwards_exclude_cloaked(monkeypatch):
+    captured: dict[str, Any] = {}
+
+    def _fake_enum(*, exclude_cloaked=True, **kwargs):
+        captured["exclude_cloaked"] = exclude_cloaked
+        return []
+
+    monkeypatch.setattr(
+        "ultron.desktop.windows.enumerate_windows", _fake_enum,
+    )
+    find_window("anything", exclude_cloaked=False)
+    assert captured["exclude_cloaked"] is False
+    find_window("anything", exclude_cloaked=True)
+    assert captured["exclude_cloaked"] is True
