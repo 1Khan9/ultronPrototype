@@ -389,9 +389,20 @@ def test_pending_completion_returns_none_until_transition(setup):
 # ---------------------------------------------------------------------------
 
 
-def test_pre_task_confirmation_disabled_by_default_dispatches_immediately(setup):
-    """Default config has pre_task_confirmation_enabled=False; behaviour
-    must be byte-for-byte identical to the legacy path."""
+def test_pre_task_confirmation_disabled_dispatches_immediately(setup, monkeypatch):
+    """When pre_task_confirmation_enabled is OFF, behaviour is the legacy
+    immediate-dispatch path.
+
+    2026-05-26: the production-wiring pass flipped this flag to ON by
+    default (config.yaml). The legacy path is now an explicit opt-out;
+    the test temporarily disables the flag to exercise it.
+    """
+    # Force the flag OFF for this scenario via the legacy settings shim
+    # (voice.py reads settings.CODING_PRE_TASK_CONFIRMATION_ENABLED).
+    from config import settings as _settings  # noqa: E402
+    monkeypatch.setattr(
+        _settings, "CODING_PRE_TASK_CONFIRMATION_ENABLED", False, raising=False,
+    )
     out = setup["controller"].handle_utterance(
         "Create a Python script called sample_one that prints hello."
     )

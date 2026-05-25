@@ -630,6 +630,12 @@ class CapabilityVoiceController:
             project_path=request.cwd,
             user_goal_hint=intent.task_text or "",
         )
+        # SWE-Agent T7: voice-lock review on COMPLETE.
+        self._attach_submit_review_listener(
+            handle=handle,
+            project_name=project_name,
+            project_path=request.cwd,
+        )
 
         # Voice message: the supervisor already narrated (if narrate_enabled);
         # outcome.voice_message is "" in that case. Otherwise narrate now.
@@ -639,6 +645,85 @@ class CapabilityVoiceController:
             f"Working on {project_name}. I'll let you know when it's done."
         )
         return VoiceResponse(text=text)
+
+    def _attach_submit_review_listener(
+        self,
+        handle,
+        *,
+        project_name: str,
+        project_path: Path,
+    ) -> None:
+        """Register a COMPLETE listener that runs SubmitReviewLoop checks.
+
+        Passive review: detects voice-lock hits in the session diff +
+        records audit rows + queues a voice narration when a locked
+        file was touched. Doesn't run the full interactive loop --
+        that's for explicit-invocation paths. Fail-open: listener
+        registration failures log WARN.
+
+        2026-05-26 (production-wiring batch 6): the canonical
+        wire-point for SWE-Agent T7 (SubmitReviewLoop).
+        """
+        try:
+            from ultron.coding.bridge import EventKind
+            from ultron.coding.submit_review import detect_voice_lock_hits
+        except Exception as e:  # noqa: BLE001
+            logger.debug(
+                "submit_review listener unavailable (%s); skipping", e,
+            )
+            return
+
+        controller_ref = self
+
+        def _review_listener(event) -> None:
+            try:
+                if event.kind != EventKind.COMPLETE:
+                    return
+                files_touched: list[str] = []
+                for attr in ("files_created", "files_modified", "files_deleted"):
+                    for path in (getattr(event, attr, None) or []):
+                        try:
+                            files_touched.append(str(path))
+                        except Exception:  # noqa: BLE001
+                            continue
+                if not files_touched:
+                    return
+                hits = detect_voice_lock_hits(files_touched)
+                summary = (
+                    f"submit-review: {len(files_touched)} file(s); "
+                    f"voice-lock hits={len(hits)}"
+                )
+                logger.info(summary)
+                if hits:
+                    msg = (
+                        "Voice-baseline contract: the session touched "
+                        + ", ".join(Path(h).name for h in hits[:3])
+                        + (f" (+{len(hits)-3} more)" if len(hits) > 3 else "")
+                        + ". Review before continuing."
+                    )
+                    logger.warning(
+                        "submit_review voice-lock hits in %s: %s",
+                        project_name, hits,
+                    )
+                    try:
+                        # Queue a voice narration the orchestrator can
+                        # drain on the next idle window.
+                        controller_ref._pending_completion = (
+                            controller_ref._pending_completion or ""
+                        ) + ("\n" if controller_ref._pending_completion else "") + msg
+                    except Exception as e:  # noqa: BLE001
+                        logger.debug(
+                            "submit_review narration queue failed: %s", e,
+                        )
+            except Exception as e:  # noqa: BLE001
+                logger.debug("submit_review listener error: %s", e)
+
+        try:
+            handle.add_listener(_review_listener)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "Could not attach submit_review listener (%s)", e,
+            )
 
     def _attach_supervisor_digest_listener(
         self,
