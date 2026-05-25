@@ -262,6 +262,8 @@ def test_build_server_registers_all_tools():
 
     2026-05-12 Phase 7: heartbeat/coding (5) + desktop automation (9) = 14.
     Phase 7 polish: window-actions + UIA + input primitives (10 more) = 24.
+    Catalog 09 (2026): clipboard read+write + find_image_on_screen
+    (3 more) = 27.
     """
     import asyncio
 
@@ -301,5 +303,11 @@ def test_build_server_registers_all_tools():
         "press_hotkey",
         "scroll",
     }
-    expected = core_tools | desktop_tools | extended_tools
+    # Catalog 09 (clawhub-desktop-control): clipboard + template matching.
+    catalog_09_tools = {
+        "clipboard_read",
+        "clipboard_write",
+        "find_image_on_screen",
+    }
+    expected = core_tools | desktop_tools | extended_tools | catalog_09_tools
     assert names == expected, f"missing: {expected - names}; extra: {names - expected}"
