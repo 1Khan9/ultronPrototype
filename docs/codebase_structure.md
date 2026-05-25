@@ -10,7 +10,9 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `188931a` on `origin/main` (2026-05-25 post-
+> **Validating HEAD:** `b066533` on `origin/main` (2026-05-25 session-
+> end handoff cleanup: linked Recent-sessions table to new cline-port
+> memory file. Code-active HEAD is `23cbf71` which shipped the post-
 > cline integration pass -- orchestrator startup wiring for OpenHands
 > T6 + T7, SWE-Agent T16 click-preview gate, skills + events flag
 > flips, OpenHands deep API docs backfill). Tests **6270 passing /
