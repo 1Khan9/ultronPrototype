@@ -277,3 +277,118 @@ def test_duckduckgo_search_empty_query_returns_empty():
     from ultron.web_search.duckduckgo import DuckDuckGoSearchClient
     client = DuckDuckGoSearchClient()
     assert client.search("") == []
+
+
+# ---------------------------------------------------------------------------
+# T14 rate-limit tracker integration
+# ---------------------------------------------------------------------------
+
+
+def test_chain_construction_attaches_tracker():
+    from ultron.web_search.provider_chain import SearchProviderChain
+    from ultron.web_search.rate_limit import RateLimitTracker
+    chain = SearchProviderChain(["searxng"])
+    assert isinstance(chain.tracker, RateLimitTracker)
+
+
+def test_chain_uses_injected_tracker():
+    from ultron.web_search.provider_chain import SearchProviderChain
+    from ultron.web_search.rate_limit import RateLimitTracker
+    custom = RateLimitTracker()
+    chain = SearchProviderChain(["searxng"], tracker=custom)
+    assert chain.tracker is custom
+
+
+def test_chain_should_skip_passes_through_to_tracker():
+    """SearchProviderChain.should_skip mirrors the tracker's verdict."""
+    from datetime import datetime, timezone
+    from ultron.web_search.provider_chain import SearchProviderChain
+    from ultron.web_search.rate_limit import RateLimitState, RateLimitTracker
+
+    custom = RateLimitTracker()
+    chain = SearchProviderChain(["searxng", "brave"], tracker=custom)
+    assert not chain.should_skip("searxng")
+    custom.record(
+        "searxng",
+        RateLimitState(retry_after_seconds=60.0),
+        was_429=True,
+        now=datetime.now(timezone.utc),
+    )
+    assert chain.should_skip("searxng")
+
+
+def test_chain_record_outcome_parses_and_records():
+    from ultron.web_search.provider_chain import SearchProviderChain
+    from ultron.web_search.rate_limit import RateLimitTracker
+
+    custom = RateLimitTracker()
+    chain = SearchProviderChain(["brave"], tracker=custom)
+    state = chain.record_provider_outcome(
+        "brave",
+        {"Retry-After": "30", "RateLimit-Limit": "3000"},
+        was_429=True,
+    )
+    assert state is not None
+    assert state.retry_after_seconds == 30.0
+    assert state.limit == 3000
+    assert custom.should_skip("brave")
+
+
+def test_chain_record_outcome_none_headers_clears_tracker_on_success():
+    """A success after a 429 with no rate-limit headers clears the cooldown."""
+    from ultron.web_search.provider_chain import SearchProviderChain
+    from ultron.web_search.rate_limit import RateLimitTracker
+
+    custom = RateLimitTracker()
+    chain = SearchProviderChain(["brave"], tracker=custom)
+    chain.record_provider_outcome(
+        "brave", {"Retry-After": "30"}, was_429=True,
+    )
+    assert custom.should_skip("brave")
+    chain.record_provider_outcome("brave", None, was_429=False)
+    assert not custom.should_skip("brave")
+
+
+def test_chain_skips_provider_in_cooldown():
+    """A provider in cooldown is skipped without invoking its client."""
+    from ultron.web_search.provider_chain import SearchProviderChain
+    from ultron.web_search.rate_limit import RateLimitTracker
+
+    custom = RateLimitTracker()
+    sxng = _stub_provider([])
+    brave = _stub_provider([_result("https://brave.test")])
+    chain = SearchProviderChain(["searxng", "brave"], tracker=custom)
+    chain._clients = {"searxng": sxng, "brave": brave}
+
+    # Cool down searxng.
+    chain.record_provider_outcome(
+        "searxng",
+        {"Retry-After": "120"},
+        was_429=True,
+    )
+    out = chain.search("hello")
+    assert len(out) == 1
+    assert out[0].url == "https://brave.test"
+    sxng.search.assert_not_called()
+    brave.search.assert_called_once()
+
+
+def test_chain_tracker_isolated_from_global_when_injected():
+    """A test-local tracker doesn't leak into the global singleton."""
+    from ultron.web_search.provider_chain import SearchProviderChain
+    from ultron.web_search.rate_limit import (
+        RateLimitTracker,
+        get_global_tracker,
+        reset_global_tracker_for_testing,
+    )
+
+    reset_global_tracker_for_testing()
+    custom = RateLimitTracker()
+    chain = SearchProviderChain(["brave"], tracker=custom)
+    chain.record_provider_outcome(
+        "brave", {"Retry-After": "30"}, was_429=True,
+    )
+    # Custom tracker has the cooldown.
+    assert custom.should_skip("brave")
+    # Global tracker is untouched.
+    assert not get_global_tracker().should_skip("brave")

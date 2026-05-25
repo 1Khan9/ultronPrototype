@@ -123,6 +123,45 @@ class ScanReport:
         return sum(1 for f in self.findings if f.severity == FindingSeverity.WARN)
 
 
+def canonical_code_for_finding(finding: "Finding") -> Optional[str]:
+    """Return the canonical T3 reason code for ``finding`` (or None).
+
+    Lazy-imports :mod:`ultron.install.reason_codes` so the static
+    scanner stays usable without the reason-code catalogue (the
+    catalogue depends on ``FindingSeverity`` from this module; the
+    helper closes the loop without re-introducing a cycle).
+
+    Returns ``None`` for finding kinds not in
+    :data:`ultron.install.reason_codes.KIND_TO_CODE` — callers that
+    require strict mapping should raise on ``None`` themselves.
+    """
+    from ultron.install.reason_codes import code_for_kind
+
+    return code_for_kind(finding.kind)
+
+
+def canonical_codes_for_report(report: "ScanReport") -> tuple[str, ...]:
+    """Return all canonical reason codes referenced by ``report.findings``.
+
+    Result is deduplicated + alphabetically sorted via the
+    :mod:`ultron.install.reason_codes` ``normalize_reason_codes``
+    helper, so consumers get a stable per-report code list suitable
+    for audit-log enrichment.
+
+    Findings whose ``kind`` is not in the catalogue are silently
+    skipped (the underlying Finding is preserved; only the canonical
+    code mapping is absent).
+    """
+    from ultron.install.reason_codes import normalize_reason_codes
+
+    raw: list[str] = []
+    for f in report.findings:
+        code = canonical_code_for_finding(f)
+        if code is not None:
+            raw.append(code)
+    return normalize_reason_codes(raw)
+
+
 # ----------------------------------------------------------------------
 # Pattern catalogue
 

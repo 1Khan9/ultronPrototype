@@ -42,11 +42,17 @@ change.
 from __future__ import annotations
 
 import time
-from typing import List, Optional
+from typing import List, Mapping, Optional
 
 from ultron.config import get_config
 from ultron.utils.logging import get_logger
 from ultron.web_search.brave import SearchResult
+from ultron.web_search.rate_limit import (
+    RateLimitState,
+    RateLimitTracker,
+    get_global_tracker,
+    parse_rate_limit_headers,
+)
 
 logger = get_logger("web_search.chain")
 
@@ -72,7 +78,12 @@ class SearchProviderChain:
         "duckduckgo": lambda: _make_duckduckgo(),
     }
 
-    def __init__(self, provider_ids: Optional[List[str]] = None) -> None:
+    def __init__(
+        self,
+        provider_ids: Optional[List[str]] = None,
+        *,
+        tracker: Optional[RateLimitTracker] = None,
+    ) -> None:
         if provider_ids is None:
             cfg = get_config().web_search
             provider_ids = list(getattr(cfg, "providers", ["brave"]))
@@ -81,6 +92,12 @@ class SearchProviderChain:
 
         self.provider_ids: List[str] = []
         self._clients: dict = {}
+        # T14 (openclaw-clawhub catalog port). Per-provider rate-limit
+        # tracker. Default to the process-wide singleton so a 429
+        # observed in one search call cools the provider down for
+        # subsequent calls in the same session. Tests pass an
+        # explicit tracker to keep state isolated.
+        self._tracker: RateLimitTracker = tracker or get_global_tracker()
         for pid in provider_ids:
             pid = pid.lower().strip()
             if pid not in self._PROVIDER_FACTORIES:
@@ -93,6 +110,47 @@ class SearchProviderChain:
             "Search provider chain: %s (in order; first non-empty wins)",
             " -> ".join(self.provider_ids),
         )
+
+    @property
+    def tracker(self) -> RateLimitTracker:
+        """Return the chain's rate-limit tracker (for inspection + tests)."""
+        return self._tracker
+
+    def should_skip(self, provider_id: str) -> bool:
+        """Return True iff ``provider_id`` is currently in cooldown.
+
+        Mirrors :meth:`RateLimitTracker.should_skip` against the
+        chain's tracker. Callers that wrap the chain (e.g. the
+        speculative-classification path) can consult this before
+        kicking off a fan-out to avoid burning latency on a
+        known-cooled provider.
+        """
+        return self._tracker.should_skip(provider_id)
+
+    def record_provider_outcome(
+        self,
+        provider_id: str,
+        headers: Optional[Mapping[str, object]],
+        *,
+        was_429: bool = False,
+    ) -> Optional[RateLimitState]:
+        """Record a parsed rate-limit envelope for ``provider_id``.
+
+        Provider clients call this after each request to keep the
+        chain's tracker fresh. ``headers`` may be a
+        :class:`requests.Response.headers` mapping, an ``httpx``
+        ``Headers`` object, or a plain dict; case-insensitive lookup
+        happens inside :func:`parse_rate_limit_headers`. Returns the
+        parsed state (or ``None`` when no recognised headers were
+        present) so the caller can also use it for in-call decisions.
+
+        Providers that don't expose rate-limit headers don't need to
+        call this; the tracker simply stays empty for them and the
+        chain falls back to its legacy empty-list-cascade behaviour.
+        """
+        state = parse_rate_limit_headers(headers) if headers else None
+        self._tracker.record(provider_id, state, was_429=was_429)
+        return state
 
     def _get_client(self, pid: str):
         """Lazy-construct + cache the client for ``pid``. Returns
@@ -131,6 +189,17 @@ class SearchProviderChain:
             return []
 
         for pid in self.provider_ids:
+            # T14: skip providers still in rate-limit cooldown.
+            # Tracker is empty for any provider that hasn't surfaced
+            # rate-limit headers via :meth:`record_provider_outcome`
+            # so this is a no-op for legacy clients that haven't been
+            # extended.
+            if self._tracker.should_skip(pid):
+                logger.debug(
+                    "Chain: %r still in rate-limit cooldown; skipping",
+                    pid,
+                )
+                continue
             client = self._get_client(pid)
             if client is None:
                 continue
