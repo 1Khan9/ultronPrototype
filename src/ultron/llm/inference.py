@@ -1153,6 +1153,77 @@ class LLMEngine:
         if current == preset:
             return True, f"already on {preset}"
 
+        # 2026-05-26 (openclaw-clawhub T1 + T9 wiring) -- enforce the
+        # version-exact contract before loading the target GGUF. Preset
+        # names are concrete (qwen3.5-4b, llama-3.2-3b-abliterated, ...)
+        # so they always pass; floating tokens like "latest" / "*" are
+        # caught upstream by LLM_PRESETS lookup. Then verify the on-disk
+        # GGUF identity against the recorded TOFU pin -- a tampered
+        # model file is refused BEFORE the (expensive) Llama load.
+        try:
+            from ultron.config import PROJECT_ROOT
+            from ultron.install.trust_envelope import (
+                VersionExactRequest,
+                VersionExactViolation,
+                validate_version_exact_request,
+            )
+            from ultron.install.voice_baseline_verify import (
+                PIN_IDENTIFIER_PREFIX,
+                verify_single_artifact_sync,
+            )
+
+            version_request = VersionExactRequest(
+                package_name=f"llm:{preset}",
+                resolved_version=preset,
+                purpose="reload",
+                actor="voice MODEL_SWITCH",
+            )
+            try:
+                validate_version_exact_request(version_request)
+            except VersionExactViolation as exc:
+                logger.warning(
+                    "reload_for_preset(%s) rejected version-exact: %s",
+                    preset, exc.reason,
+                )
+                return False, f"version-exact violation: {exc.reason}"
+
+            # Resolve the target preset's GGUF path WITHOUT applying
+            # the preset (we still want a clean rollback path on
+            # failure). Re-use the preset table directly.
+            preset_table = LLM_PRESETS.get(preset, {})
+            relative_model = preset_table.get("model_path")
+            if relative_model:
+                target_path = (PROJECT_ROOT / relative_model).resolve()
+                identifier = f"{PIN_IDENTIFIER_PREFIX}llm:{preset}"
+                outcome = verify_single_artifact_sync(
+                    identifier=identifier,
+                    path=target_path,
+                    project_root=PROJECT_ROOT,
+                    notes=f"LLM preset {preset}",
+                    required=True,
+                )
+                if outcome.status == "mismatch":
+                    logger.warning(
+                        "reload_for_preset(%s) refused: GGUF digest "
+                        "mismatch -- %s",
+                        preset, outcome.detail,
+                    )
+                    return False, (
+                        f"refused {preset}: model GGUF digest mismatch; "
+                        f"file may have been tampered with"
+                    )
+                # status in {"verified", "pinned", "missing", "error"}
+                # all proceed -- missing file errors get caught by the
+                # actual Llama load below with a clearer message.
+        except Exception as e:  # noqa: BLE001
+            # Fail-open: trust check broken should NOT block the swap;
+            # the Llama load itself + the existing voice-baseline
+            # verifier already provide a defence in depth.
+            logger.debug(
+                "reload_for_preset(%s) trust pre-check raised (continuing): %s",
+                preset, e,
+            )
+
         # Make the env override authoritative for the upcoming reload —
         # this is the same path the user would take from the shell.
         # Save originals so we can restore on failure.

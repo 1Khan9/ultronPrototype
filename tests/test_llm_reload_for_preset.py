@@ -224,3 +224,107 @@ def test_reload_failure_when_env_was_unset_clears_it() -> None:
         rc.return_value.llm = MagicMock()
         eng.reload_for_preset("qwen3.5-4b")
         assert "ULTRON_LLM_PRESET" not in os.environ
+
+
+# ---------------------------------------------------------------------------
+# 2026-05-26 openclaw-clawhub T1 + T9 wiring: trust pre-check
+# ---------------------------------------------------------------------------
+
+
+def test_reload_refuses_on_digest_mismatch(monkeypatch, tmp_path) -> None:
+    """Tampered GGUF -> reload_for_preset refuses BEFORE the Llama load.
+
+    Verifies the trust pre-check: when verify_single_artifact_sync
+    returns status='mismatch', reload bails out with a clear error
+    and does NOT call _build_llama.
+    """
+    eng = _make_engine()
+
+    # Patch the verifier to claim a mismatch.
+    from ultron.install import voice_baseline_verify as vbv
+
+    def _fake_verify(*a, **kw):
+        return vbv.ArtifactVerificationOutcome(
+            identifier=kw["identifier"],
+            path=kw["path"],
+            status="mismatch",
+            detail="pinned=aaa actual=bbb",
+        )
+
+    monkeypatch.setattr(vbv, "verify_single_artifact_sync", _fake_verify)
+
+    # Ensure _build_llama is NOT reached.
+    build_calls = []
+    monkeypatch.setattr(
+        eng, "_build_llama",
+        lambda *a, **kw: build_calls.append((a, kw)),
+    )
+
+    with patch("ultron.config.get_config") as gc:
+        gc.return_value.llm.preset = "qwen3.5-9b"
+        ok, msg = eng.reload_for_preset("qwen3.5-4b")
+
+    assert ok is False
+    assert "digest mismatch" in msg.lower() or "tampered" in msg.lower()
+    assert build_calls == []  # never called
+
+
+def test_reload_proceeds_when_digest_verified(monkeypatch) -> None:
+    """status='verified' / 'pinned' / 'missing' / 'error' all allow
+    the swap to proceed.
+    """
+    from ultron.install import voice_baseline_verify as vbv
+
+    # 'verified' outcome -> proceed
+    def _fake_verify_ok(*a, **kw):
+        return vbv.ArtifactVerificationOutcome(
+            identifier=kw["identifier"],
+            path=kw["path"],
+            status="verified",
+            detail="digest matches pin",
+        )
+
+    eng = _make_engine()
+    monkeypatch.setattr(vbv, "verify_single_artifact_sync", _fake_verify_ok)
+
+    fake_llm = MagicMock(name="new_llm")
+    monkeypatch.setattr(
+        eng, "_build_llama",
+        lambda *a, **kw: (fake_llm, "models/Qwen3.5-4B-Q4_K_M.gguf"),
+    )
+
+    with patch("ultron.config.get_config") as gc, \
+         patch("ultron.config.reload_config") as rc:
+        gc.return_value.llm.preset = "qwen3.5-9b"
+        rc.return_value.llm = MagicMock()
+        ok, _ = eng.reload_for_preset("qwen3.5-4b")
+    assert ok is True
+
+
+def test_reload_continues_when_pre_check_raises(monkeypatch) -> None:
+    """Fail-open: a broken trust pre-check must NOT block the swap.
+
+    The actual Llama load + the async voice-baseline verifier provide
+    defence in depth.
+    """
+    from ultron.install import voice_baseline_verify as vbv
+
+    def _boom(*a, **kw):
+        raise RuntimeError("simulated pre-check failure")
+
+    monkeypatch.setattr(vbv, "verify_single_artifact_sync", _boom)
+
+    eng = _make_engine()
+    fake_llm = MagicMock(name="new_llm")
+    monkeypatch.setattr(
+        eng, "_build_llama",
+        lambda *a, **kw: (fake_llm, "models/Qwen3.5-4B-Q4_K_M.gguf"),
+    )
+
+    with patch("ultron.config.get_config") as gc, \
+         patch("ultron.config.reload_config") as rc:
+        gc.return_value.llm.preset = "qwen3.5-9b"
+        rc.return_value.llm = MagicMock()
+        ok, _ = eng.reload_for_preset("qwen3.5-4b")
+    # Pre-check failure was swallowed -> swap proceeded.
+    assert ok is True

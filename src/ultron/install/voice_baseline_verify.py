@@ -444,6 +444,61 @@ def verify_voice_baseline_artifacts_async(
     return report, thread
 
 
+def verify_single_artifact_sync(
+    identifier: str,
+    path: Path,
+    *,
+    pin_file: Optional[Path] = None,
+    project_root: Optional[Path] = None,
+    pin_on_first_use: bool = True,
+    notes: str = "",
+    required: bool = True,
+) -> ArtifactVerificationOutcome:
+    """Verify a single artifact synchronously (no thread spawn).
+
+    Used by ``LLMEngine.reload_for_preset`` (T1 + T9 wiring) to refuse
+    a model hot-swap when the target GGUF's on-disk digest doesn't
+    match the pinned digest. Returns the outcome so the caller can
+    branch on ``status in {"verified", "pinned"}`` -> allow swap, else
+    refuse + log.
+
+    Args:
+        identifier: pin-file key (e.g.
+            ``"voice_baseline:llm:qwen3.5-4b"``).
+        path: absolute path to the artifact on disk.
+        pin_file: explicit pin-file path. Defaults to
+            ``<project_root>/data/install/pinned_digests.jsonl``.
+        project_root: required when ``pin_file`` is None.
+        pin_on_first_use: TOFU behaviour for the missing-pin case.
+        notes: written into the pin row on first-fetch TOFU.
+        required: surfaces in the outcome detail when the file is
+            missing.
+
+    Returns:
+        :class:`ArtifactVerificationOutcome`.
+    """
+    if pin_file is None:
+        if project_root is None:
+            raise ValueError("project_root or pin_file must be supplied")
+        pin_file = project_root / DEFAULT_PIN_FILE_RELATIVE
+    try:
+        pin_file.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        LOGGER.warning(
+            "verify_single_artifact_sync: cannot create pin dir %s: %s",
+            pin_file.parent, e,
+        )
+    artifact = VoiceBaselineArtifact(
+        identifier=identifier, path=path, required=required, notes=notes,
+    )
+    return _verify_one(
+        artifact,
+        pin_file=pin_file,
+        pin_on_first_use=pin_on_first_use,
+        budget_seconds=DEFAULT_PER_FILE_BUDGET_SECONDS,
+    )
+
+
 def summarise_report(report: VerificationReport) -> str:
     """Render a one-line summary suitable for the orchestrator log."""
     if not report.is_complete:
@@ -465,5 +520,6 @@ __all__ = [
     "default_voice_baseline_artifacts",
     "verify_voice_baseline_artifacts",
     "verify_voice_baseline_artifacts_async",
+    "verify_single_artifact_sync",
     "summarise_report",
 ]
