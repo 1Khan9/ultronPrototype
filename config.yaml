@@ -652,6 +652,26 @@ memory:
   reranking:
     enabled: false                 # see asymmetry note above
 
+  # 2026-05-26 (production-wiring pass) -- flipped ON per user
+  # direction. Anthropic-style contextual retrieval: before embedding
+  # each turn, the LLM generates a brief situational anchor so the
+  # dense vector carries surrounding context. ~80-150 ms per write
+  # turn (off the voice hot path -- writes happen async after the
+  # response completes). Improves "what did I say about X earlier?"
+  # retrieval quality on cross-session lookups.
+  contextual_retrieval:
+    enabled: true
+
+  # 2026-05-26 (production-wiring pass) -- flipped ON. Idle-gated
+  # background-summary worker condenses chunks of memory turns into
+  # fact rows + topical summaries while the orchestrator is idle
+  # between voice turns. Worker locks the LLM for 1-2 s when it
+  # fires; the gate ensures it never collides with an active user
+  # turn (debounce on speech-start events).
+  background_summary:
+    enabled: true
+    idle_threshold_seconds: 30.0
+
 # ---------------------------------------------------------------------------
 # Web search (Brave + Jina Reader)
 # ---------------------------------------------------------------------------
@@ -771,7 +791,11 @@ coding:
   # every coding-task dispatch is a UX cost that fires universally,
   # so the operator opts in explicitly. Errors during TTS are treated
   # as 'no barge-in' so a Piper hiccup never silently drops a task.
-  pre_task_confirmation_enabled: false
+  # 2026-05-26 (production-wiring pass) -- flipped ON per user
+  # direction. Adds ~0.5 s of TTS playback ("I'll have the AI coding
+  # agent do X. Going ahead.") before each coding dispatch with a
+  # barge-in window. User can interrupt to cancel mistaken dispatches.
+  pre_task_confirmation_enabled: true
   pre_task_confirmation_max_words: 30
   pre_task_barge_in_window_seconds: 0.5
 
@@ -855,7 +879,13 @@ coding:
   # value. Per-phase docs live in
   # src/ultron/config.py:CodingSupervisorConfig.
   supervisor:
-    tier: "indexing_only"
+    # 2026-05-26 (production-wiring pass) -- bumped indexing_only -> full.
+    # "full" enables: decide (RESUME/EDIT/CLARIFY/NEW) + narration with
+    # barge-in + enriched-context TaskRequest (digest + tree snapshot +
+    # file hints prepended to AI coding agent prompt). Adds ~3-5 s
+    # pre-dispatch LLM time but dramatically improves task continuity
+    # ("resume my flask app" actually resumes the right session).
+    tier: "full"
     narration_barge_in_window_seconds: 1.5
     resolve_threshold: 0.75
     clarify_threshold: 0.55
@@ -874,10 +904,44 @@ coding:
   # identifiers (snake_case/camelCase/etc.) to bias the personalization
   # vector. Default OFF -- adds 50-300 ms pre-dispatch latency.
   repo_map:
-    enabled: false
+    # 2026-05-26 (production-wiring pass) -- flipped ON. Adds 50-300 ms
+    # pre-dispatch latency for the PageRank-weighted repo map computation
+    # but gives the AI coding agent the file-importance signal that
+    # significantly improves EDIT and RESUME dispatch quality.
+    enabled: true
     max_map_tokens: 1024
     max_map_tokens_no_chat: 8192
     cache_dir: "data/.ultron_repomap_cache"
+
+  # 2026-05-26 (production-wiring pass) -- pre-write lint cascade
+  # flipped ON. Runs python compile + flake8 (when fatal-only) +
+  # tree-sitter syntax pass on every file the AI coding agent writes.
+  # 50-500 ms per .py write but catches syntax errors / undefined-name
+  # before the agent moves on; the agent narration's "Done." comes out
+  # honest. Multi-language tree-sitter pass for .js/.go/.rs/etc.
+  pre_write_lint:
+    enabled: true
+    python_full_cascade: true
+    multi_language: true
+    flake8_timeout_seconds: 5.0
+    attach_summary_to_audit: true
+
+  # 2026-05-26 (production-wiring pass) -- pre-dispatch architect.
+  # When a coding task is dispatched, a quick LLM pass generates a
+  # plan that ArchitectNarrator then speaks sentence-by-sentence with
+  # barge-in. Adds 3-5 s LLM time on local Qwen but gives the user
+  # the chance to interrupt before the AI coding agent starts work.
+  architect:
+    enabled: true
+    narrate_enabled: true
+    max_prompt_chars: 32000
+
+  # 2026-05-26 (production-wiring pass) -- goal-anchor planning ON.
+  # Decomposes long-running coding tasks into anchors with per-anchor
+  # voice narration (opening / warning / transition / completion) so
+  # the user has audio progress without polling.
+  goal_anchors:
+    enabled: true
 
 # ---------------------------------------------------------------------------
 # Context projections (Phase C / Phase 1; verified Foundation Phase 2)
@@ -1079,8 +1143,17 @@ routing:
 # ---------------------------------------------------------------------------
 
 openclaw:
-  enabled: false                      # flip to true once Gateway is up
-  gateway_url: null                   # e.g. "http://127.0.0.1:11280"
+  # 2026-05-26 (production-wiring pass) -- user confirmed Gateway is
+  # installed and running locally. Flipping ``enabled: true`` switches
+  # the dispatcher from stub voice messages to live OpenClaw plugin
+  # invocations for BROWSER_AUTOMATION / MESSAGING / MEDIA_GENERATION
+  # / FILE_OPERATION / SHELL_OPERATION / HYBRID_TASK / DESKTOP_AUTOMATION
+  # / WINDOW_AUTOMATION intents. Bridge construction is fail-open --
+  # if the Gateway is unreachable at startup, the bridge logs WARN +
+  # falls back to the in-character stub message ("the gateway isn't
+  # connected yet") and a daemon retry thread polls in the background.
+  enabled: true
+  gateway_url: "http://127.0.0.1:11280"
   auth_token_env: "OPENCLAW_AUTH_TOKEN"
   health_check_timeout_seconds: 30.0
   health_check_interval_seconds: 60.0
@@ -1119,8 +1192,11 @@ openclaw:
     workspace_dir: null
     workspace_lock_timeout_seconds: 5.0
 
-    # Inbound voice handoff. Off by default; opt-in for Phase 4+.
-    inbound_voice_handoff_enabled: false
+    # Inbound voice handoff. 2026-05-26 (production-wiring pass)
+    # -- flipped ON now that the Gateway is live, so messages prefixed
+    # with [voice] in OpenClaw channels (e.g. Telegram if/when wired)
+    # route into ultron's voice pipeline.
+    inbound_voice_handoff_enabled: true
     inbound_voice_handoff_prefix: "[voice]"
 
     # Per-call timeouts.
@@ -1371,6 +1447,18 @@ desktop:
   tool_slug_screenshot: "desktop_screenshot"
   tool_slug_list_windows: "desktop_list_windows"
   tool_slug_find_window: "desktop_find_window"
+  # 2026-05-26 (production-wiring pass) -- click-preview gate ON.
+  # Every click on a previously-unseen region runs through a VLM
+  # round-trip (Moondream2) to confirm what's under the cursor. First
+  # click in a region pays the ~1-2 s VLM cost; subsequent clicks
+  # within auto_pass_radius_px=100 auto-pass. When the VLM is
+  # unloaded (gaming mode), the gate goes DEGRADED + falls through
+  # to the legacy allow path.
+  click_preview:
+    enabled: true
+    auto_pass_radius_px: 100
+    crosshair_size: 20
+    block_on_degraded: false
 
 # ---------------------------------------------------------------------------
 # Window control (V1-spec gap C3) — voice routing for the OpenClaw
