@@ -277,3 +277,54 @@ def set_screen_capture(capture: Optional[ScreenCapture]) -> None:
     global _capture_singleton
     with _capture_lock:
         _capture_singleton = capture
+
+
+# ---------------------------------------------------------------------------
+# Catalog 09 T2: pixel-color probe (single coordinate, no screenshot)
+# ---------------------------------------------------------------------------
+
+
+def get_pixel_color(x: int, y: int) -> Optional[tuple[int, int, int]]:
+    """Return the on-screen RGB colour at ``(x, y)`` without a full capture.
+
+    Catalog 09 T2 (GREEN, read-only observation). Wraps
+    :func:`pyautogui.pixel` which internally calls Win32 ``GetPixel``
+    on Windows -- a single GDI call, no PNG encoding, no taint tracker
+    record (the RGB tuple is ephemeral data, not durable bytes).
+
+    Use cases:
+
+    * Cheap game-state polling (HUD pixel, health bar tip) where a VLM
+      capture + analyse round-trip is overkill.
+    * Loading-spinner disappearance detection (poll the spinner pixel
+      until it matches the background colour).
+    * Pixel-based "is this dialog gone yet?" after a dismiss attempt
+      when UIA tree presence is not a reliable signal.
+    * Status-LED indicators in legacy Win32 dashboards that expose no
+      UIA accessibility role.
+
+    Fail-open: any exception (out-of-bounds coordinate, mss / pyautogui
+    error, missing display) returns ``None`` rather than raising so the
+    polling-loop caller can simply continue. The upstream plugin lets
+    the underlying pyautogui exception propagate; ultron's contract is
+    "observation primitives never crash the orchestrator".
+
+    Returns:
+        ``(r, g, b)`` 3-tuple of 0-255 integers when successful, or
+        ``None`` on failure.
+    """
+    try:
+        # Local import to avoid pulling pyautogui at module load (mss
+        # is the standard capture path; pyautogui is only needed here).
+        import pyautogui  # type: ignore[import]
+
+        rgb = pyautogui.pixel(int(x), int(y))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("get_pixel_color(%d, %d) failed: %s", x, y, exc)
+        return None
+    if rgb is None:
+        return None
+    try:
+        return (int(rgb[0]), int(rgb[1]), int(rgb[2]))
+    except (TypeError, IndexError, ValueError):
+        return None

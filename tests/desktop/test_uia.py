@@ -1497,3 +1497,184 @@ def test_extract_browser_content_truncates_text_name(monkeypatch):
     content = extract_browser_content(text_name_max=100)
     assert content is not None
     assert len(content.text[0]) == 100
+
+
+# ---------------------------------------------------------------------------
+# Catalog 09 T2: wait_for_pixel_color synchronous polling barrier
+# ---------------------------------------------------------------------------
+
+
+def test_wait_for_pixel_color_returns_false_on_zero_timeout():
+    from ultron.desktop.uia import wait_for_pixel_color
+    assert wait_for_pixel_color(
+        10, 10, (255, 0, 0), timeout_s=0.0,
+    ) is False
+
+
+def test_wait_for_pixel_color_returns_false_on_invalid_target():
+    from ultron.desktop.uia import wait_for_pixel_color
+    # Two-tuple (missing third channel) -> caller error, returns False
+    # rather than raising IndexError.
+    assert wait_for_pixel_color(0, 0, (255, 0)) is False  # type: ignore[arg-type]
+
+
+def test_wait_for_pixel_color_matches_first_sample(monkeypatch):
+    """Exact match on the first poll returns True without sleeping."""
+    from ultron.desktop.uia import wait_for_pixel_color
+
+    monkeypatch.setattr(
+        "ultron.desktop.capture.get_pixel_color",
+        lambda x, y: (12, 34, 56),
+    )
+    clock = _FakeClock()
+    slept: list = []
+    ok = wait_for_pixel_color(
+        100, 200, (12, 34, 56),
+        timeout_s=5.0, interval_s=0.5,
+        sleep_fn=lambda s: slept.append(s),
+        clock_fn=clock,
+    )
+    assert ok is True
+    assert slept == []  # matched on first poll, never slept
+
+
+def test_wait_for_pixel_color_matches_with_tolerance(monkeypatch):
+    """Per-channel L-infinity tolerance covers anti-aliased / jpeg
+    rendered pixels that are a couple of units off the ideal colour."""
+    from ultron.desktop.uia import wait_for_pixel_color
+
+    monkeypatch.setattr(
+        "ultron.desktop.capture.get_pixel_color",
+        lambda x, y: (200, 100, 50),
+    )
+    clock = _FakeClock()
+    slept: list = []
+    ok = wait_for_pixel_color(
+        0, 0, (205, 103, 48),
+        tolerance=8,
+        timeout_s=5.0, interval_s=0.1,
+        sleep_fn=lambda s: slept.append(s),
+        clock_fn=clock,
+    )
+    assert ok is True
+
+
+def test_wait_for_pixel_color_tolerance_zero_requires_exact(monkeypatch):
+    """tolerance=0 (default) requires exact channel-wise equality."""
+    from ultron.desktop.uia import wait_for_pixel_color
+
+    samples = iter([(200, 100, 50), (200, 100, 50), (200, 100, 50)])
+    monkeypatch.setattr(
+        "ultron.desktop.capture.get_pixel_color",
+        lambda x, y: next(samples, (200, 100, 50)),
+    )
+
+    clock = _FakeClock()
+    def _sleep(s):
+        clock.advance(max(s, 0.1))
+
+    ok = wait_for_pixel_color(
+        0, 0, (201, 100, 50),  # off-by-one on red channel
+        timeout_s=0.5, interval_s=0.1,
+        sleep_fn=_sleep,
+        clock_fn=clock,
+    )
+    assert ok is False
+
+
+def test_wait_for_pixel_color_returns_false_on_timeout(monkeypatch):
+    from ultron.desktop.uia import wait_for_pixel_color
+
+    monkeypatch.setattr(
+        "ultron.desktop.capture.get_pixel_color",
+        lambda x, y: (0, 0, 0),  # never matches the bright-green target
+    )
+    clock = _FakeClock()
+    def _sleep(s):
+        clock.advance(max(s, 0.05))
+
+    ok = wait_for_pixel_color(
+        0, 0, (0, 255, 0),
+        timeout_s=0.5, interval_s=0.1,
+        sleep_fn=_sleep,
+        clock_fn=clock,
+    )
+    assert ok is False
+
+
+def test_wait_for_pixel_color_polls_until_match(monkeypatch):
+    """Returns True as soon as a sample matches, even if earlier samples
+    were misses."""
+    from ultron.desktop.uia import wait_for_pixel_color
+
+    samples = iter([
+        (0, 0, 0),
+        (10, 20, 30),
+        (255, 255, 255),  # match here
+    ])
+    monkeypatch.setattr(
+        "ultron.desktop.capture.get_pixel_color",
+        lambda x, y: next(samples, (255, 255, 255)),
+    )
+    clock = _FakeClock()
+    def _sleep(s):
+        clock.advance(max(s, 0.05))
+
+    ok = wait_for_pixel_color(
+        50, 50, (255, 255, 255),
+        timeout_s=5.0, interval_s=0.1,
+        sleep_fn=_sleep,
+        clock_fn=clock,
+    )
+    assert ok is True
+
+
+def test_wait_for_pixel_color_fail_open_on_sample_exception(monkeypatch):
+    """A per-sample exception is treated as "no match" so the loop
+    re-tries on the next poll."""
+    from ultron.desktop.uia import wait_for_pixel_color
+
+    call_count = {"n": 0}
+    def _probe(x, y):
+        call_count["n"] += 1
+        if call_count["n"] < 3:
+            raise RuntimeError("transient mss failure")
+        return (10, 20, 30)
+
+    monkeypatch.setattr(
+        "ultron.desktop.capture.get_pixel_color", _probe,
+    )
+    clock = _FakeClock()
+    def _sleep(s):
+        clock.advance(max(s, 0.05))
+
+    ok = wait_for_pixel_color(
+        1, 2, (10, 20, 30),
+        timeout_s=5.0, interval_s=0.1,
+        sleep_fn=_sleep,
+        clock_fn=clock,
+    )
+    assert ok is True
+    assert call_count["n"] >= 3
+
+
+def test_wait_for_pixel_color_handles_none_sample(monkeypatch):
+    """If the probe returns None (capture fail), the loop continues."""
+    from ultron.desktop.uia import wait_for_pixel_color
+
+    samples = iter([None, None, (0, 0, 0)])
+    monkeypatch.setattr(
+        "ultron.desktop.capture.get_pixel_color",
+        lambda x, y: next(samples, (0, 0, 0)),
+    )
+    clock = _FakeClock()
+    def _sleep(s):
+        clock.advance(max(s, 0.05))
+
+    ok = wait_for_pixel_color(
+        0, 0, (0, 0, 0),
+        timeout_s=5.0, interval_s=0.1,
+        sleep_fn=_sleep,
+        clock_fn=clock,
+    )
+    assert ok is True

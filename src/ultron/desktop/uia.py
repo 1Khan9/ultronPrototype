@@ -1085,6 +1085,127 @@ def wait_for_text_in_window(
 
 
 # ---------------------------------------------------------------------------
+# Catalog 09 T2: pixel-colour synchronous polling barrier
+# ---------------------------------------------------------------------------
+
+
+def _colour_within_tolerance(
+    sample: tuple[int, int, int],
+    target: tuple[int, int, int],
+    *,
+    tolerance: int,
+) -> bool:
+    """True iff ``sample`` and ``target`` agree on every RGB channel
+    within ``tolerance`` units. ``tolerance=0`` is exact match.
+
+    Tolerance is the standard L-infinity (max-channel) metric: each
+    channel must individually be within ``tolerance`` of the target.
+    This matches what an operator usually means by "close colour" --
+    anti-aliased edges, jpeg-compressed icons, and slight monitor
+    gamma differences all stay under a small tolerance without leaking
+    into perceptually-different shades.
+    """
+    tol = max(0, int(tolerance))
+    return (
+        abs(int(sample[0]) - int(target[0])) <= tol
+        and abs(int(sample[1]) - int(target[1])) <= tol
+        and abs(int(sample[2]) - int(target[2])) <= tol
+    )
+
+
+def wait_for_pixel_color(
+    x: int,
+    y: int,
+    target_color: tuple[int, int, int],
+    *,
+    tolerance: int = 0,
+    timeout_s: float = DEFAULT_WAIT_TIMEOUT_S,
+    interval_s: float = DEFAULT_WAIT_INTERVAL_S,
+    sleep_fn: Optional[object] = None,
+    clock_fn: Optional[object] = None,
+) -> bool:
+    """Poll the pixel at ``(x, y)`` until it matches ``target_color``.
+
+    Catalog 09 T2 (YELLOW, gated through screen-observation Cap-2).
+    Mirrors the :func:`wait_for_text_in_window` polling shape from
+    catalog 08 T4: deterministic ``sleep_fn`` / ``clock_fn`` injection,
+    deadline-clamped final sleep, fail-open per-sample. Combines with
+    :func:`ultron.desktop.capture.get_pixel_color` for the read.
+
+    Use cases:
+
+    * **Game-state machine** -- poll a HUD pixel (health bar tip,
+      reload indicator) until it reaches a known colour state.
+    * **Loading-spinner completion** -- after launching an application
+      or navigating a browser, wait for the spinner pixel to match the
+      background colour (i.e. the spinner is gone).
+    * **Status LED probes** -- legacy Win32 dashboards expose status
+      via coloured rectangles; poll the centre pixel until green.
+    * **Progress-bar completion** -- poll the rightmost edge of a
+      progress bar until it reaches the "filled" colour.
+
+    Args:
+        x, y: physical-pixel screen coordinates.
+        target_color: ``(r, g, b)`` 3-tuple of 0-255 ints.
+        tolerance: per-channel slack (L-infinity). 0 = exact match.
+            Useful for anti-aliased edges and jpeg-compressed icons
+            where the rendered pixel may be a couple of units off the
+            ideal colour.
+        timeout_s: wall-clock timeout in seconds.
+        interval_s: poll interval in seconds.
+        sleep_fn: optional ``(float) -> None`` injection for tests.
+            Defaults to :func:`time.sleep`.
+        clock_fn: optional ``() -> float`` injection for tests.
+            Defaults to :func:`time.monotonic`.
+
+    Returns:
+        True when a sample matches within tolerance, False on timeout.
+
+    Fail-open: per-sample exceptions are treated as "no match" so the
+    next poll re-tries. Non-positive ``timeout_s`` returns False
+    without polling.
+    """
+    if timeout_s <= 0:
+        return False
+    try:
+        target = (
+            int(target_color[0]),
+            int(target_color[1]),
+            int(target_color[2]),
+        )
+    except (TypeError, IndexError, ValueError):
+        return False
+
+    sleeper = sleep_fn if callable(sleep_fn) else time.sleep
+    clock = clock_fn if callable(clock_fn) else time.monotonic
+
+    deadline = clock() + float(timeout_s)
+    poll_interval = max(0.01, float(interval_s))
+
+    # Lazy import so a test that monkeypatches get_pixel_color in this
+    # module picks up the test double via the module-level binding.
+    from ultron.desktop.capture import get_pixel_color
+
+    while True:
+        try:
+            sample = get_pixel_color(int(x), int(y))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("wait_for_pixel_color sample failed: %s", exc)
+            sample = None
+
+        if sample is not None and _colour_within_tolerance(
+            sample, target, tolerance=tolerance,
+        ):
+            return True
+
+        now = clock()
+        if now >= deadline:
+            return False
+        remaining = deadline - now
+        sleeper(min(poll_interval, remaining))
+
+
+# ---------------------------------------------------------------------------
 # Catalog 08 T5: browser-window-specific structured content extraction
 # ---------------------------------------------------------------------------
 
@@ -1586,6 +1707,7 @@ __all__ = [
     "dpi_aware_click_at_element_center",
     "get_ui_element_inventory",
     "wait_for_text_in_window",
+    "wait_for_pixel_color",
     "is_browser_window",
     "find_browser_window",
     "extract_browser_content",

@@ -247,3 +247,86 @@ def test_capture_skips_taint_when_disabled():
         assert tracker.size == 0
     finally:
         set_taint_tracker(None)
+
+
+# ---------------------------------------------------------------------------
+# Catalog 09 T2: get_pixel_color probe
+# ---------------------------------------------------------------------------
+
+
+def test_get_pixel_color_passes_coords_to_pyautogui(monkeypatch):
+    """The probe is a thin wrapper around pyautogui.pixel; coords are
+    forwarded as integers and the RGB tuple is returned."""
+    import types
+
+    from ultron.desktop import capture as capture_mod
+    fake = types.SimpleNamespace(pixel=lambda x, y: (10, 20, 30))
+    monkeypatch.setitem(sys.modules, "pyautogui", fake)
+    rgb = capture_mod.get_pixel_color(123, 456)
+    assert rgb == (10, 20, 30)
+
+
+def test_get_pixel_color_normalises_floats(monkeypatch):
+    """pyautogui occasionally returns numpy-like floats; the probe
+    coerces every channel to a plain Python int."""
+    import types
+
+    from ultron.desktop import capture as capture_mod
+    fake = types.SimpleNamespace(pixel=lambda x, y: (255.0, 128.0, 0.0))
+    monkeypatch.setitem(sys.modules, "pyautogui", fake)
+    rgb = capture_mod.get_pixel_color(0, 0)
+    assert rgb == (255, 128, 0)
+    assert all(isinstance(c, int) for c in rgb)
+
+
+def test_get_pixel_color_returns_none_on_exception(monkeypatch):
+    """Fail-open: any exception from pyautogui yields None instead of
+    propagating. The polling-loop caller simply continues."""
+    import types
+
+    from ultron.desktop import capture as capture_mod
+
+    def _boom(x, y):
+        raise RuntimeError("display gone")
+    fake = types.SimpleNamespace(pixel=_boom)
+    monkeypatch.setitem(sys.modules, "pyautogui", fake)
+    assert capture_mod.get_pixel_color(0, 0) is None
+
+
+def test_get_pixel_color_returns_none_on_malformed_result(monkeypatch):
+    """A non-tuple / wrong-length result is treated as failure."""
+    import types
+
+    from ultron.desktop import capture as capture_mod
+    fake = types.SimpleNamespace(pixel=lambda x, y: (255,))  # too short
+    monkeypatch.setitem(sys.modules, "pyautogui", fake)
+    assert capture_mod.get_pixel_color(0, 0) is None
+
+
+def test_get_pixel_color_returns_none_when_pyautogui_returns_none(monkeypatch):
+    import types
+
+    from ultron.desktop import capture as capture_mod
+    fake = types.SimpleNamespace(pixel=lambda x, y: None)
+    monkeypatch.setitem(sys.modules, "pyautogui", fake)
+    assert capture_mod.get_pixel_color(0, 0) is None
+
+
+def test_get_pixel_color_does_not_record_taint(monkeypatch):
+    """RGB tuples are ephemeral and never go through the taint tracker --
+    only durable image bytes do."""
+    import types
+
+    from ultron.desktop import capture as capture_mod
+
+    fake = types.SimpleNamespace(pixel=lambda x, y: (1, 2, 3))
+    monkeypatch.setitem(sys.modules, "pyautogui", fake)
+
+    tracker = TaintTracker()
+    set_taint_tracker(tracker)
+    try:
+        for _ in range(5):
+            capture_mod.get_pixel_color(0, 0)
+        assert tracker.size == 0
+    finally:
+        set_taint_tracker(None)
