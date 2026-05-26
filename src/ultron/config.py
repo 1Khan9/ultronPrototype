@@ -1619,6 +1619,44 @@ class CodingAiCommentWatcherConfig(_Strict):
     poll_interval_seconds: float = Field(default=0.5, ge=0.05, le=10.0)
 
 
+class CodingPreEditSnapshotConfig(_Strict):
+    """2026 catalog 08 / SWE-Agent T1 + T14 wiring: pre-edit snapshot.
+
+    When enabled (default ON because the safety value is large vs the
+    one-file-read overhead), the AI coding agent's
+    :class:`DirectClaudeCodeBridge` parses each agent ``tool_use``
+    event for file-write tools (``Edit`` / ``Write`` / ``MultiEdit``)
+    and reads the file's current content into
+    :class:`ultron.coding.file_history.FileHistory` BEFORE the CLI's
+    tool executor runs the actual write.
+
+    This unlocks:
+
+    * **SWE-Agent T1 auto-revert** -- when the pre-write lint
+      cascade (``coding.pre_write_lint``) detects a new flake8 error
+      introduced by the edit, the runner can call
+      :meth:`FileHistory.undo_last(path)` to roll the file back to
+      the captured snapshot.
+    * **SWE-Agent T14 edit_recovery** --
+      :func:`ultron.coding.edit_recovery.run_edit_with_recovery` can
+      use the captured ``original`` content to compare against the
+      post-edit ``current`` content and decide whether a tool
+      exception was spurious (i.e. the edit DID land despite the
+      reported error).
+
+    The snapshot is taken at the narrowest possible window: the
+    bridge parses the assistant's ``tool_use`` event, then the CLI's
+    tool executor runs the edit asynchronously. The disk file is
+    almost always still in its pre-edit state when the snapshot
+    fires; a worst-case race (executor faster than the bridge's
+    parse) results in capturing the post-edit content, which means
+    undo would be a no-op (the saved content matches current).
+    Either outcome is safe.
+    """
+
+    enabled: bool = True
+
+
 class CodingArchitectConfig(_Strict):
     """2026-05-22 catalog batch 6 (Phase 1): pre-dispatch architect.
 
@@ -1911,6 +1949,18 @@ class CodingConfig(_Strict):
     # Default OFF. See CodingAiCommentWatcherConfig.
     ai_comment_watcher: CodingAiCommentWatcherConfig = Field(
         default_factory=CodingAiCommentWatcherConfig,
+    )
+    # 2026 catalog 08 / SWE-Agent T1 + T14 wiring: pre-edit content
+    # snapshot in direct_bridge.py. When the AI coding agent's
+    # tool_use event surfaces a file write, the bridge reads the
+    # current file content and stashes it in FileHistory BEFORE the
+    # CLI's tool executor runs. This unlocks SWE-Agent T1 auto-revert
+    # (lint-revert via FileHistory.undo_last) AND T14 edit_recovery
+    # (run_edit_with_recovery on SEARCH/REPLACE failures). Default
+    # ON because the safety value is large and the overhead is one
+    # file-read per write tool-call (~1-5 ms).
+    pre_edit_snapshot: "CodingPreEditSnapshotConfig" = Field(
+        default_factory=lambda: CodingPreEditSnapshotConfig(),
     )
     # A4 pre-task confirmation. Default OFF -- the spoken confirmation
     # adds ~0.5 s of TTS playback before every coding task dispatch,

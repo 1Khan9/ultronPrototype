@@ -724,6 +724,27 @@ class DirectTaskHandle(TaskHandle):
         if name in _FILE_TOUCHING_TOOLS:
             file_path = inp.get("file_path") or inp.get("path")
             if isinstance(file_path, str) and file_path:
+                # Pre-edit snapshot: SWE-Agent T1 + T14 wiring.
+                # The bridge sees the tool_use event as soon as the
+                # assistant message is parsed -- which is BEFORE the
+                # CLI's tool executor runs the actual edit (the CLI
+                # uses async tool executors so there's a narrow but
+                # reliable window). Reading the file NOW captures the
+                # pre-edit state so FileHistory.undo_last can roll
+                # back if the runner detects a lint regression OR if
+                # run_edit_with_recovery decides the edit was
+                # spurious. Fail-open: any error path leaves the
+                # bridge contract identical to today's behaviour.
+                try:
+                    self._record_pre_edit_snapshot(
+                        file_path=file_path,
+                        tool_name=name,
+                        tool_input=inp,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug(
+                        "pre-edit snapshot raised at %s: %s", name, exc,
+                    )
                 try:
                     rel = Path(file_path)
                     if rel.is_absolute():
@@ -760,6 +781,131 @@ class DirectTaskHandle(TaskHandle):
             tool_input=inp,
             raw=raw,
         ))
+
+    # --- pre-edit snapshot (SWE-Agent T1 + T14 wiring) ----------------------
+
+    def _record_pre_edit_snapshot(
+        self,
+        *,
+        file_path: str,
+        tool_name: str,
+        tool_input: Dict[str, Any],
+    ) -> None:
+        """Capture the file's pre-edit content into FileHistory.
+
+        Fired from :meth:`_record_tool_use` immediately upon parsing
+        the assistant's tool_use event -- BEFORE the CLI's tool
+        executor actually runs the edit. This is the only seam in
+        the bridge where we observe the agent's intent to write with
+        the file still in its pre-edit state on disk.
+
+        Idempotent: when a tool_use event is re-emitted (e.g.
+        Path B partial-message after Path A complete-message), the
+        FileHistory's per-session stack still records the snapshot
+        but the duplicate entries are harmless (undo_last pops the
+        most recent).
+
+        Args:
+            file_path: absolute or cwd-relative path from
+                ``tool_input["file_path"]`` (Write/MultiEdit) or
+                ``tool_input["path"]`` (Edit).
+            tool_name: ``"Edit"`` / ``"Write"`` / ``"MultiEdit"``.
+            tool_input: full tool_input dict for the audit narration.
+        """
+        # Resolve to absolute. Without an absolute path, FileHistory
+        # can't read the disk content reliably (cwd-relative reads
+        # depend on the test environment).
+        try:
+            target = Path(file_path)
+            if not target.is_absolute():
+                target = (self._cwd / target).resolve()
+            else:
+                target = target.resolve()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "pre-edit path resolve failed for %s: %s", file_path, exc,
+            )
+            return
+
+        # Config gate -- the orchestrator can flip
+        # ``coding.pre_edit_snapshot.enabled`` to False to disable the
+        # whole branch (useful for tests, debugging, or when the
+        # runner-side undo path isn't wired yet).
+        try:
+            from ultron.config import get_config
+            cfg = get_config().coding
+            snap_cfg = getattr(cfg, "pre_edit_snapshot", None)
+            if snap_cfg is not None and not getattr(snap_cfg, "enabled", True):
+                return
+        except Exception:  # noqa: BLE001
+            # Missing config is treated as "feature enabled" so the
+            # safety net is always present in production.
+            pass
+
+        # Session id keys the per-task FileHistory store. Use the
+        # bridge's claude_session_id when present (one stack per Claude
+        # CLI session); fall back to the cwd-hash so manual single-
+        # shot runs still get tracked under a stable key.
+        session_id = self.claude_session_id or f"cwd-{abs(hash(str(self._cwd))):x}"
+
+        try:
+            from ultron.coding.file_history import get_file_history
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "FileHistory import failed for pre-edit snapshot: %s", exc,
+            )
+            return
+
+        try:
+            history = get_file_history(session_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "FileHistory construct failed for session %s: %s",
+                session_id, exc,
+            )
+            return
+
+        # Brief narration field carries the tool name + a payload
+        # preview so the find_by_narration helper can locate this
+        # snapshot via natural-language search later (e.g. "undo the
+        # change about adding the close button").
+        narration_preview = ""
+        try:
+            if tool_name == "Write":
+                content = tool_input.get("content", "")
+                if isinstance(content, str):
+                    narration_preview = content[:120]
+            elif tool_name == "Edit":
+                replacement = tool_input.get("new_str", "")
+                if isinstance(replacement, str):
+                    narration_preview = replacement[:120]
+            elif tool_name == "MultiEdit":
+                edits = tool_input.get("edits") or []
+                if isinstance(edits, list) and edits:
+                    first = edits[0]
+                    if isinstance(first, dict):
+                        narration_preview = (
+                            str(first.get("new_str", ""))[:120]
+                        )
+        except Exception:  # noqa: BLE001
+            narration_preview = ""
+
+        narration = (
+            f"{tool_name}: {narration_preview}"
+            if narration_preview else tool_name
+        )
+
+        try:
+            history.record_pre_edit(
+                str(target),
+                narration=narration,
+                origin=f"direct_bridge.{tool_name}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "FileHistory.record_pre_edit failed for %s: %s",
+                target, exc,
+            )
 
     # --- listener fan-out ---------------------------------------------------
 
