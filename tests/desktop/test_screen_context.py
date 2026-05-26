@@ -722,3 +722,223 @@ def test_render_for_llm_live_produces_readable_output():
     out = snap.render_for_llm()
     assert "Visual context" in out
     assert "End visual context" in out
+
+
+# ---------------------------------------------------------------------------
+# Catalog 09 wiring: extract_browser_content into screen_context
+# ---------------------------------------------------------------------------
+
+
+def _browser_content(*, page_title="GitHub", headings=(), text=(), buttons=(),
+                     links=(), inputs=(), images=(), truncated=False):
+    """Build a minimal BrowserContent for test injection."""
+    from ultron.desktop.uia import BrowserContent
+    return BrowserContent(
+        page_title=page_title,
+        browser_name="chrome",
+        headings=tuple(headings),
+        text=tuple(text),
+        buttons=tuple(buttons),
+        links=tuple(links),
+        inputs=tuple(inputs),
+        images=tuple(images),
+        truncated=truncated,
+        elapsed_ms=12,
+    )
+
+
+def test_browser_foreground_uses_extract_browser_content(monkeypatch):
+    """When the foreground is a browser, extract_browser_content
+    feeds ui_text instead of collect_window_text."""
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.get_foreground_window",
+        lambda: _win(title="GitHub - Chrome", proc="chrome.exe", mon=0, fg=True),
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+    )
+    # Force collect_window_text to a sentinel so we'd notice if it ran.
+    collect_called = []
+
+    def _sentinel(*a, **kw):
+        collect_called.append(True)
+        return ["should not appear"]
+
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.collect_window_text", _sentinel,
+    )
+    # Browser detection returns True.
+    monkeypatch.setattr(
+        "ultron.desktop.uia.is_browser_window", lambda title: True,
+    )
+    # extract_browser_content returns content.
+    fake_content = _browser_content(
+        page_title="Repo Home",
+        headings=("Overview", "Issues"),
+        text=("Welcome to the repo",),
+        buttons=("Code", "Star"),
+        links=(),
+        inputs=(),
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia.extract_browser_content",
+        lambda win, **kw: fake_content,
+    )
+
+    snap = build_screen_context(capture=False, include_uia=True)
+    # collect_window_text must NOT have been called.
+    assert collect_called == []
+    # ui_text composition: title, headings, text, buttons.
+    assert snap.ui_text[0] == "Repo Home"
+    assert "Overview" in snap.ui_text
+    assert "Welcome to the repo" in snap.ui_text
+    assert any(s.startswith("button: ") for s in snap.ui_text)
+
+
+def test_browser_foreground_falls_back_when_extract_returns_none(monkeypatch):
+    """If extract_browser_content returns None, fall back to
+    collect_window_text so we still get *some* ui_text."""
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.get_foreground_window",
+        lambda: _win(title="Mozilla Firefox", proc="firefox.exe", mon=0, fg=True),
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.collect_window_text",
+        lambda *a, **kw: ["fallback ui text"],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia.is_browser_window", lambda title: True,
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia.extract_browser_content",
+        lambda win, **kw: None,
+    )
+    snap = build_screen_context(capture=False, include_uia=True)
+    assert snap.ui_text == ("fallback ui text",)
+
+
+def test_browser_foreground_falls_back_when_extract_raises(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.get_foreground_window",
+        lambda: _win(title="Brave", proc="brave.exe", mon=0, fg=True),
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.collect_window_text",
+        lambda *a, **kw: ["safe fallback"],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia.is_browser_window", lambda title: True,
+    )
+
+    def _boom(*a, **kw):
+        raise RuntimeError("uia tree broken")
+
+    monkeypatch.setattr(
+        "ultron.desktop.uia.extract_browser_content", _boom,
+    )
+    snap = build_screen_context(capture=False, include_uia=True)
+    assert snap.ui_text == ("safe fallback",)
+
+
+def test_non_browser_foreground_uses_collect_window_text(monkeypatch):
+    """Non-browser foreground still uses the legacy collect_window_text
+    -- existing behaviour preserved."""
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.get_foreground_window",
+        lambda: _win(title="Visual Studio Code", proc="code.exe", mon=0, fg=True),
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.collect_window_text",
+        lambda *a, **kw: ["legacy UIA path", "still works"],
+    )
+    # extract_browser_content must not be called.
+    def _should_not_be_called(*a, **kw):
+        raise AssertionError("extract_browser_content called for non-browser")
+
+    monkeypatch.setattr(
+        "ultron.desktop.uia.extract_browser_content", _should_not_be_called,
+    )
+    snap = build_screen_context(capture=False, include_uia=True)
+    assert snap.ui_text == ("legacy UIA path", "still works")
+
+
+def test_browser_links_with_urls_are_rendered(monkeypatch):
+    from ultron.desktop.uia import BrowserLink
+
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.get_foreground_window",
+        lambda: _win(title="Chrome", proc="chrome.exe", mon=0, fg=True),
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia.is_browser_window", lambda title: True,
+    )
+    content = _browser_content(
+        page_title="links",
+        links=(
+            BrowserLink(name="GitHub", url="https://github.com",
+                        center=(0, 0), enabled=True),
+            BrowserLink(name="No URL", url=None,
+                        center=(0, 0), enabled=True),
+        ),
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia.extract_browser_content",
+        lambda win, **kw: content,
+    )
+    snap = build_screen_context(capture=False, include_uia=True)
+    assert any("link: GitHub -> https://github.com" in s for s in snap.ui_text)
+    assert any(s == "link: No URL" for s in snap.ui_text)
+
+
+def test_browser_inputs_with_values_are_rendered(monkeypatch):
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.get_foreground_window",
+        lambda: _win(title="Edge", proc="msedge.exe", mon=0, fg=True),
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia.is_browser_window", lambda title: True,
+    )
+    content = _browser_content(
+        page_title="login",
+        inputs=(("Email", "user@x.com"), ("Password", "")),
+    )
+    monkeypatch.setattr(
+        "ultron.desktop.uia.extract_browser_content",
+        lambda win, **kw: content,
+    )
+    snap = build_screen_context(capture=False, include_uia=True)
+    assert "input: Email: user@x.com" in snap.ui_text
+    assert "input: Password" in snap.ui_text

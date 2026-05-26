@@ -235,13 +235,85 @@ def build_screen_context(
 
     # UIA text from foreground -- only useful when foreground is real.
     ui_text: tuple[str, ...] = ()
+    browser_text: tuple[str, ...] = ()
+    is_browser_foreground = False
     if include_uia and foreground is not None:
+        # Catalog 09 wiring: when the foreground window is a browser,
+        # prefer catalog 08 T5 structured browser content extraction
+        # (`extract_browser_content`) FIRST. It returns headings +
+        # body text + buttons + links + inputs in 20-100 ms with zero
+        # GPU cost, versus the VLM tier's 300-800 ms + ~330 MB VRAM
+        # for the same surface. The result feeds `ui_text` so all
+        # existing consumers see the richer content without any
+        # downstream changes.
         try:
-            ui_text = tuple(collect_window_text(
-                foreground, max_elements=ui_text_max_elements,
-            ))
+            from ultron.desktop.uia import (
+                extract_browser_content,
+                is_browser_window,
+            )
+            is_browser_foreground = bool(is_browser_window(foreground.title))
         except Exception as e:  # noqa: BLE001
-            logger.warning("collect_window_text failed: %s", e)
+            logger.debug("browser detection import failed: %s", e)
+            is_browser_foreground = False
+
+        if is_browser_foreground:
+            try:
+                content = extract_browser_content(
+                    foreground,
+                    include_buttons=True,
+                    include_links=True,
+                    include_inputs=True,
+                    include_images=False,
+                    max_text=ui_text_max_elements,
+                    max_headings=min(20, ui_text_max_elements),
+                    max_buttons=min(40, ui_text_max_elements),
+                    max_links=min(40, ui_text_max_elements * 2),
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.debug("extract_browser_content failed: %s", e)
+                content = None
+
+            if content is not None:
+                # Compose the textual content into a single tuple that
+                # downstream consumers (LLM prompt builder, VLM
+                # prompt assembly) can iterate uniformly.
+                composed: list[str] = []
+                if content.page_title:
+                    composed.append(content.page_title)
+                composed.extend(content.headings)
+                composed.extend(content.text)
+                if content.buttons:
+                    composed.extend(
+                        f"button: {b}" for b in content.buttons
+                    )
+                if content.links:
+                    composed.extend(
+                        (f"link: {ln.name} -> {ln.url}" if ln.url else f"link: {ln.name}")
+                        for ln in content.links
+                    )
+                if content.inputs:
+                    composed.extend(
+                        f"input: {label}: {value}" if value else f"input: {label}"
+                        for (label, value) in content.inputs
+                    )
+                browser_text = tuple(composed[:ui_text_max_elements])
+                # On a non-truncated browser walk the structured
+                # output is strictly better than the generic
+                # `collect_window_text` traversal -- use it directly.
+                # On a truncated walk we still prefer it (the structure
+                # is more useful than a wider but flat collection), but
+                # we leave `collect_window_text` as the fallback below
+                # if browser_text came back empty for any reason.
+                if browser_text:
+                    ui_text = browser_text
+
+        if not ui_text:
+            try:
+                ui_text = tuple(collect_window_text(
+                    foreground, max_elements=ui_text_max_elements,
+                ))
+            except Exception as e:  # noqa: BLE001
+                logger.warning("collect_window_text failed: %s", e)
 
     # Screen capture -- foreground monitor or all monitors.
     shot: Optional[Screenshot] = None
