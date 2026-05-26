@@ -10,15 +10,33 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `aa00bb9` on `claude/priceless-swanson-59e65b`
+> **Validating HEAD:** `bca58b0` on `claude/priceless-swanson-59e65b`
+> -- handoff-cleanup commit on top of the default-ON sweep (`aa00bb9`)
+> + doc-bump (`169da18`). Fixes two stale-test / sloppy-iteration
+> surfaces revealed once the production-wiring defaults turned more
+> listeners on: (1) `screen_context.py` browser-content inputs
+> iterator now tolerates both the production `UIElementInfo` dataclass
+> shape AND the legacy `(label, value)` tuple shape used by some
+> test fixtures; (2) the two `test_listener_*` cases in
+> `test_canonical_monitor_runner_wiring.py` were asserting exact
+> listener counts (1 / 2) that assumed only safety-validator +
+> canonical-monitor would attach — now production defaults also
+> attach goal-anchors / AST-syntax / pre-write-lint / dialog-auto-handler.
+> Replaced with a qualname-introspecting `_has_canonical_monitor_listener`
+> helper so the test only asserts on the wire it's named after.
+>
+> Tests: **8046 passing / 26 skipped / 0 failed in ~107 s**. This is
+> the correct count for HEAD; the prior "7821 passing" report came
+> from a sweep the heartbeat watchdog killed at 400s before all
+> tests were collected.
+>
+> **Earlier validating HEAD:** `aa00bb9` on `claude/priceless-swanson-59e65b`
 > -- default-ON sweep on top of the catalog 09 production-wiring pass.
 > Flips `llm.history_compression.intent_adaptive` from False to True
 > (NoOp on the common conversational path is zero-cost; fail-open at
 > every layer) AND starts the `DialogPoller` daemon in
 > `Orchestrator.__init__` so batch A's bus events actually fire in
 > production (the subscription chain in batch B was dead without it).
-> Tests: **7821 passing / 26 skipped / 0 failed in ~153 s** (no
-> regressions vs the pre-flip baseline).
 >
 > **Earlier validating HEAD:** `8ba52bd` on `claude/priceless-swanson-59e65b`
 > -- catalog 09 production-wiring pass closing commit. Eight + one
