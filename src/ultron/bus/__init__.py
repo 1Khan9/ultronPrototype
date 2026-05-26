@@ -52,6 +52,8 @@ from ultron.bus.service import (
 from ultron.bus.events import (
     BUS_EVENT_CATALOG,
     CodingFileChangedEvent,
+    DialogAppearedEvent,
+    DialogResolvedEvent,
     GamingEngagedEvent,
     GamingDisengagedEvent,
     GateVerdictEvent,
@@ -76,6 +78,8 @@ __all__ = [
     "BusEvent",
     "CodingFileChangedEvent",
     "DEFAULT_SLOW_SUBSCRIBER_WARN_MS",
+    "DialogAppearedEvent",
+    "DialogResolvedEvent",
     "EventPayload",
     "GamingEngagedEvent",
     "GamingDisengagedEvent",

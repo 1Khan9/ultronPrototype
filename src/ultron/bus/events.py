@@ -231,6 +231,45 @@ VRAMReclaimedEvent = BusEvent.define(
 )
 
 # ---------------------------------------------------------------------------
+# Desktop automation (catalog 08 + 09 wirings)
+# ---------------------------------------------------------------------------
+
+DialogAppearedEvent = BusEvent.define(
+    type="desktop.dialog.appeared",
+    schema={
+        "hwnd": int,
+        "title": str,
+        "class_name": str,
+        "matched_by": str,  # "class" / "control_type" / "title_keyword"
+        "process_name": str,
+        "monitor_index": int,
+        "first_seen_at": float,  # time.time() of first detection
+    },
+    description=(
+        "Background dialog poller detected a NEW dialog (not seen on the "
+        "previous tick). Subscribers (coding bridge auto-handler, voice "
+        "narrator, autonomy gate) react to dialog appearance without "
+        "polling themselves."
+    ),
+)
+
+DialogResolvedEvent = BusEvent.define(
+    type="desktop.dialog.resolved",
+    schema={
+        "hwnd": int,
+        "title": str,
+        "resolution": str,  # "dismissed" | "closed_by_user" | "stale" | "auto_filled"
+        "lifetime_ms": int,
+    },
+    description=(
+        "A previously-announced dialog is no longer present. ``stale`` "
+        "means the poller stopped seeing the hwnd without us knowing why; "
+        "``dismissed`` means the orchestrator explicitly clicked / typed "
+        "to close it; ``closed_by_user`` means the human did it directly."
+    ),
+)
+
+# ---------------------------------------------------------------------------
 # Catalog (every event listed here for introspection / docs)
 # ---------------------------------------------------------------------------
 
@@ -252,4 +291,6 @@ BUS_EVENT_CATALOG: list = [
     GamingEngagedEvent,
     GamingDisengagedEvent,
     VRAMReclaimedEvent,
+    DialogAppearedEvent,
+    DialogResolvedEvent,
 ]
