@@ -10,7 +10,46 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `1c62068` on `claude/priceless-swanson-59e65b` (pre-push)
+> **Validating HEAD:** `8ba52bd` on `claude/priceless-swanson-59e65b` (pre-push)
+> -- catalog 09 production-wiring pass closing commit. Eight + one
+> feature commits on top of catalog 09's closing `6add7a6` doc-bump
+> landed the previously-deferred wirings (`a` through `i` plus G + H):
+>
+> | SHA | Title |
+> |---|---|
+> | `1f0ef86` | feat(desktop+bus+tests): batch A -- DialogAppearedEvent + DialogResolvedEvent + background DialogPoller |
+> | `087fa85` | feat(desktop+tests): batch I -- T7 Tesseract OCR tier (catalog 08 deferred) |
+> | `36e293e` | feat(desktop+tests): batch D -- wire extract_browser_content into screen_context |
+> | `d005757` | feat(routing+voice+tests): batch C -- ACTIVE_WINDOW_QUERY + SEMANTIC_CLICK + WINDOW_CLOSE_CONFIRMATION voice intents |
+> | `bd97155` | feat(coding+config+tests): batch F -- pre-edit content snapshot in direct_bridge (SWE-Agent T1 + T14 wiring) |
+> | `c4113e2` | feat(coding+config+tests): batch B -- wire dialog auto-handler into coding bridge |
+> | `45932e4` | feat(coding+tests): batch E -- two-phase approval voice yes/no for close_window with suspected_unsaved |
+> | `c9350a1` | feat(llm+orchestrator+tests): batch G -- per-intent condenser selection |
+> | `8ba52bd` | feat(lifecycle+orchestrator+tests): batch H -- drive_start_task gaming-engage state machine |
+>
+> Tests: **7821 passing / 26 skipped / 0 failed in ~146 s** (+106 net
+> over the catalog 09 baseline of 7715). New modules added across the
+> session: `src/ultron/desktop/dialog_poller.py`, `src/ultron/desktop/ocr.py`,
+> `src/ultron/lifecycle/gaming_engage.py`. Three new RoutingIntentKind
+> values land voice intents for active-window-query / semantic-click /
+> window-close-confirmation. Two-phase approval registers via
+> `ApprovalRegistry` on `suspected_unsaved=True` and the spoken yes/no
+> consumes it; "no" cancels, "yes" triggers gated force-close. Pre-edit
+> snapshot hook in `coding/direct_bridge.py` records the pre-edit file
+> content via `FileHistory.record_pre_edit` BEFORE the CLI executes the
+> tool so SWE-Agent T1 auto-revert + T14 edit_recovery has the
+> required snapshot. Browser foreground detection in `screen_context.py`
+> uses `extract_browser_content` first (20-100 ms UIA), falls back to
+> `collect_window_text` on None / empty / raise. T7 OCR ships as
+> importable `desktop/ocr.py` (pytesseract lazy import, fail-open). The
+> per-intent condenser branch in `LLMEngine._build_messages` is gated by
+> `llm.history_compression.intent_adaptive` (default OFF -- legacy
+> fixed pipeline preserved). Gaming-engage gains observable substep
+> transitions + per-stage voice acks via `drive_start_task` driving
+> `gaming_engage_iterator` / `gaming_disengage_iterator` async
+> generators -- semantics unchanged from the prior synchronous callbacks.
+>
+> **Earlier validating HEAD:** `1c62068` on `claude/priceless-swanson-59e65b` (pre-push)
 > -- clawhub-desktop-control catalog 09 port batch 5 closing commit. Five
 > feature commits on top of catalog 08's `ee5f8dc` README refresh:
 >
