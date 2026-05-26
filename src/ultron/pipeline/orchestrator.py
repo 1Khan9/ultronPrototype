@@ -1553,136 +1553,123 @@ class Orchestrator:
             # Stash the pre-engage STT engine so disengage knows what to restore to.
             stt_name_before_engage: dict = {"value": None}
 
-            def _engage_extra():
-                if gaming_llm_preset:
-                    llm = getattr(self, "llm", None)
-                    if llm is not None and hasattr(llm, "reload_for_preset"):
-                        try:
-                            current_preset = get_config().llm.preset
-                            if current_preset != gaming_llm_preset:
-                                ok, msg = llm.reload_for_preset(gaming_llm_preset)
-                                if ok:
-                                    llm_preset_before_engage["value"] = current_preset
-                                    logger.info(
-                                        "gaming engage: LLM swapped %s -> %s",
-                                        current_preset, gaming_llm_preset,
-                                    )
-                                else:
-                                    logger.warning(
-                                        "gaming engage: LLM swap to %s failed (%s); "
-                                        "keeping %s",
-                                        gaming_llm_preset, msg, current_preset,
-                                    )
-                        except Exception as e:                    # noqa: BLE001
-                            logger.warning(
-                                "gaming engage: LLM swap skipped (%s)", e,
-                            )
-                # STT swap (Parakeet -> Moonshine on the typical setup).
-                registry = getattr(self, "_stt_registry", None)
-                if registry is not None and registry.has_gaming():
-                    try:
-                        prior_stt = registry.active_name
-                        if self.swap_stt_engine(registry.gaming_name):
-                            stt_name_before_engage["value"] = prior_stt
-                            # Kill the Parakeet HTTP server to free its VRAM.
-                            # Safe to call when Parakeet isn't running -- no-op.
-                            try:
-                                from ultron.transcription.parakeet_engine import (
-                                    stop_parakeet_server,
-                                )
-                                if stop_parakeet_server():
-                                    logger.info(
-                                        "gaming engage: Parakeet server stopped "
-                                        "(~700 MB VRAM freed)",
-                                    )
-                            except Exception as e:                # noqa: BLE001
-                                logger.warning(
-                                    "gaming engage: Parakeet server stop "
-                                    "failed (%s); STT swap still in effect", e,
-                                )
-                    except Exception as e:                        # noqa: BLE001
-                        logger.warning(
-                            "gaming engage: STT swap skipped (%s)", e,
-                        )
-                tts = getattr(self, "tts", None)
-                if tts is not None and hasattr(tts, "move_to_device"):
-                    tts.move_to_device("cpu")
+            # Catalog 09 batch H wiring: replace the prior pair of
+            # synchronous monolithic callbacks with an async-generator
+            # state machine driven by :func:`drive_start_task`. Each
+            # substep (LLM swap, Parakeet stop, Kokoro move, VLM unload)
+            # is now an observable transition that produces a per-stage
+            # voice-ack opportunity via the ``on_transition`` callback
+            # AND a stable audit row in the start-task history. Stage
+            # ordering and fail-open behavior are preserved bit-for-bit
+            # so VRAM/RAM reclaim accounting is unchanged.
+            def _build_engage_deps():
+                from ultron.lifecycle.gaming_engage import GamingEngageDeps
+
+                stt_registry = getattr(self, "_stt_registry", None)
                 try:
-                    from ultron.desktop.vlm import get_vlm
-                    vlm = get_vlm()
-                    if vlm is not None and vlm.loaded:
-                        vlm.unload()
+                    from ultron.transcription.parakeet_engine import (
+                        start_parakeet_server, stop_parakeet_server,
+                    )
+                except Exception:
+                    start_parakeet_server = None
+                    stop_parakeet_server = None
+                try:
+                    from ultron.desktop.vlm import get_vlm as _get_vlm
+                except Exception:
+                    _get_vlm = None
+                return GamingEngageDeps(
+                    llm=getattr(self, "llm", None),
+                    tts=getattr(self, "tts", None),
+                    stt_registry=stt_registry,
+                    swap_stt_engine=getattr(self, "swap_stt_engine", None),
+                    get_vlm=_get_vlm,
+                    start_parakeet_server=start_parakeet_server,
+                    stop_parakeet_server=stop_parakeet_server,
+                    gaming_llm_preset=gaming_llm_preset,
+                    tts_kokoro_default_device=tts_kokoro_default_device,
+                    llm_preset_holder=llm_preset_before_engage,
+                    stt_name_holder=stt_name_before_engage,
+                )
+
+            def _gaming_voice_ack(task) -> None:
+                """on_transition callback -- speak a short voice ack
+                for each substep so the user hears the progress. Fail-
+                open: any TTS failure leaves the state machine running."""
+                if not task.detail:
+                    return
+                tts = getattr(self, "tts", None)
+                if tts is None or not hasattr(tts, "speak"):
+                    return
+                # Skip the terminal READY ack to avoid stepping on the
+                # higher-level GamingModeManager voice line.
+                from ultron.lifecycle.start_task import StartTaskStatus
+                if task.status == StartTaskStatus.READY:
+                    return
+                if task.status == StartTaskStatus.WORKING:
+                    return
+                try:
+                    tts.speak(task.detail)
                 except Exception as e:                            # noqa: BLE001
-                    logger.warning("gaming engage: VLM unload skipped (%s)", e)
+                    logger.debug(
+                        "gaming voice ack speak failed (%s); continuing",
+                        e,
+                    )
+
+            def _engage_extra():
+                from ultron.lifecycle.gaming_engage import (
+                    gaming_engage_iterator,
+                )
+                from ultron.lifecycle.start_task import (
+                    StartTaskError, drive_start_task,
+                )
+                import asyncio
+
+                deps = _build_engage_deps()
+                try:
+                    asyncio.run(
+                        drive_start_task(
+                            gaming_engage_iterator(deps),
+                            on_transition=_gaming_voice_ack,
+                        ),
+                    )
+                except StartTaskError as e:
+                    logger.warning(
+                        "gaming engage state machine raised (%s); "
+                        "partial engage left in place", e,
+                    )
+                except Exception as e:                            # noqa: BLE001
+                    logger.warning(
+                        "gaming engage driver failed (%s); falling back "
+                        "to no-op", e,
+                    )
 
             def _disengage_extra():
-                tts = getattr(self, "tts", None)
-                if tts is not None and hasattr(tts, "move_to_device"):
-                    tts.move_to_device(tts_kokoro_default_device)
-                # STT restore: stay on gaming engine while Parakeet
-                # respawns in the background; swap back when ready.
-                prior_stt = stt_name_before_engage["value"]
-                registry = getattr(self, "_stt_registry", None)
-                if prior_stt is not None and registry is not None:
-                    if prior_stt == "parakeet":
-                        # Spawn Parakeet server in background; swap pointer
-                        # only when /healthz reports ready so transcribes
-                        # in the interim still hit the gaming engine.
-                        try:
-                            from ultron.transcription.parakeet_engine import (
-                                start_parakeet_server,
-                            )
+                from ultron.lifecycle.gaming_engage import (
+                    gaming_disengage_iterator,
+                )
+                from ultron.lifecycle.start_task import (
+                    StartTaskError, drive_start_task,
+                )
+                import asyncio
 
-                            def _restore_when_ready():
-                                try:
-                                    start_parakeet_server(wait_for_ready=True)
-                                    self.swap_stt_engine(prior_stt)
-                                    logger.info(
-                                        "gaming disengage: Parakeet ready; "
-                                        "STT swapped back to %s", prior_stt,
-                                    )
-                                except Exception as e:            # noqa: BLE001
-                                    logger.warning(
-                                        "gaming disengage: Parakeet restore "
-                                        "failed (%s); staying on gaming engine", e,
-                                    )
-
-                            threading.Thread(
-                                target=_restore_when_ready,
-                                daemon=True,
-                                name="parakeet-restore",
-                            ).start()
-                        except Exception as e:                    # noqa: BLE001
-                            logger.warning(
-                                "gaming disengage: failed to spawn restore "
-                                "thread (%s)", e,
-                            )
-                    else:
-                        # Non-Parakeet primary: swap pointer immediately.
-                        self.swap_stt_engine(prior_stt)
-                    stt_name_before_engage["value"] = None
-                prior_preset = llm_preset_before_engage["value"]
-                if prior_preset is not None:
-                    llm = getattr(self, "llm", None)
-                    if llm is not None and hasattr(llm, "reload_for_preset"):
-                        try:
-                            ok, msg = llm.reload_for_preset(prior_preset)
-                            if ok:
-                                logger.info(
-                                    "gaming disengage: LLM restored to %s",
-                                    prior_preset,
-                                )
-                            else:
-                                logger.warning(
-                                    "gaming disengage: LLM restore to %s failed (%s); "
-                                    "stuck on gaming preset",
-                                    prior_preset, msg,
-                                )
-                        except Exception as e:                    # noqa: BLE001
-                            logger.warning(
-                                "gaming disengage: LLM restore skipped (%s)", e,
-                            )
-                    llm_preset_before_engage["value"] = None
+                deps = _build_engage_deps()
+                try:
+                    asyncio.run(
+                        drive_start_task(
+                            gaming_disengage_iterator(deps),
+                            on_transition=_gaming_voice_ack,
+                        ),
+                    )
+                except StartTaskError as e:
+                    logger.warning(
+                        "gaming disengage state machine raised (%s); "
+                        "partial disengage left in place", e,
+                    )
+                except Exception as e:                            # noqa: BLE001
+                    logger.warning(
+                        "gaming disengage driver failed (%s); falling back "
+                        "to no-op", e,
+                    )
 
             manager = GamingModeManager(
                 client=client,
