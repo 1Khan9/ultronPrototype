@@ -10,7 +10,17 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** `8ba52bd` on `claude/priceless-swanson-59e65b` (pre-push)
+> **Validating HEAD:** `aa00bb9` on `claude/priceless-swanson-59e65b`
+> -- default-ON sweep on top of the catalog 09 production-wiring pass.
+> Flips `llm.history_compression.intent_adaptive` from False to True
+> (NoOp on the common conversational path is zero-cost; fail-open at
+> every layer) AND starts the `DialogPoller` daemon in
+> `Orchestrator.__init__` so batch A's bus events actually fire in
+> production (the subscription chain in batch B was dead without it).
+> Tests: **7821 passing / 26 skipped / 0 failed in ~153 s** (no
+> regressions vs the pre-flip baseline).
+>
+> **Earlier validating HEAD:** `8ba52bd` on `claude/priceless-swanson-59e65b`
 > -- catalog 09 production-wiring pass closing commit. Eight + one
 > feature commits on top of catalog 09's closing `6add7a6` doc-bump
 > landed the previously-deferred wirings (`a` through `i` plus G + H):
