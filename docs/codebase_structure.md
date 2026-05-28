@@ -29,10 +29,14 @@
 > 20s probe (still under the 30s per-test deadline); new hermetic
 > `test_client.py::test_run_cli_timeout_reaps_whole_process_tree`
 > pins the reaper contract. **The full sweep now runs green WITHOUT
-> any deselection** -- the formerly-flaky test passes in-sweep. This
-> SUPERSEDES the "deselect that test" guidance in the wiring-pass +
-> catalog-10 notes below. Voice baseline contract intact (`_run_cli`
-> is the OpenClaw bridge transport, not the voice hot path).
+> any deselection: 8475 passed / 26 skipped / 0 failed in ~106s** --
+> the formerly-flaky test passes in-sweep (verified on the integrated
+> tree, which adds the deferred-primitive wiring pass's ~51 tests on
+> top of the fix author's 8424 baseline). This SUPERSEDES the
+> "deselect that test" guidance in the wiring-pass + catalog-10 notes
+> below -- routine sweeps no longer need the `-- --deselect ...`
+> form. Voice baseline contract intact (`_run_cli` is the OpenClaw
+> bridge transport, not the voice hot path).
 >
 > **Deferred-primitive wiring pass (2026-05-30, on top of catalog 10).**
 > Consumes previously-shipped-but-unwired catalog primitives into
