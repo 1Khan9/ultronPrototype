@@ -8,6 +8,16 @@ machinery along.
 
 from __future__ import annotations
 
+from .base import (
+    DEFAULT_LOOP_REPEAT_CAP,
+    DEFAULT_MAX_STEPS,
+    AgentLoop,
+    AgentLoopError,
+    LoopResult,
+    LoopStatus,
+    StepOutcome,
+    StepRecord,
+)
 from .loop_detection import (
     DEFAULT_HARD_THRESHOLD,
     DEFAULT_SOFT_THRESHOLD,
@@ -41,8 +51,16 @@ from .subagent import (
 )
 
 __all__ = [
+    "AgentLoop",
+    "AgentLoopError",
     "DEFAULT_CODING_ARCHITECT_PREFIX",
     "DEFAULT_HARD_THRESHOLD",
+    "DEFAULT_LOOP_REPEAT_CAP",
+    "DEFAULT_MAX_STEPS",
+    "LoopResult",
+    "LoopStatus",
+    "StepOutcome",
+    "StepRecord",
     "DEFAULT_PLAN_ACK",
     "DEFAULT_PLAN_PREFIX",
     "DEFAULT_POLICIES",

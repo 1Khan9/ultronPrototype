@@ -442,3 +442,60 @@ The MIT license text governing the `browser-use` project is identical
 in substantive terms to the MIT license already reproduced in the
 SWE-Agent section above. This file satisfies the attribution
 requirement for the components listed in the table above.
+
+
+## clawhub-browser-agent (MIT License)
+
+Project: `clawhub-browser-agent` (a ClawHub plugin by peng yi /
+`@Justinyi4413`; catalog 11). License: MIT (substantive terms match
+the SWE-Agent / OpenClaw copy reproduced earlier). The plugin is a
+thin Chrome DevTools Protocol (CDP) WebSocket primitives wrapper
+(`navigate` / `screenshot` / `click` / `type_text` / `evaluate` over a
+raw CDP socket, plus a session keep-alive daemon). It predates and is
+architecturally superseded by the `browser-use` CLI tier ultron
+already ships (catalog 10), so the port does NOT reproduce the plugin's
+CDP transport. Instead it extracts the genuinely transferable hardening
+patterns and the agent-loop meta-pattern, re-implemented clean-room and
+adapted to ultron's architecture.
+
+The plugin source (`scripts/browser_agent.py`, `scripts/session_manager.py`,
+`references/api_reference.md`, `SKILL.md`, `README.md`, the two
+Chinese-language engineering-journal docs) was read read-only under the
+binding ClawHub-batch security rules (per
+`feedback_reference_repo_catalog_workflow.md`). Three independent
+Sonnet 4.6 Explore agents performed pattern extraction + an
+independent zero-RED security review, confirming the catalog's finding:
+all network I/O is localhost-CDP only, with no subprocess / exec /
+ctypes / registry / persistence / anti-forensics / credential-harvest /
+obfuscation / exfiltration. No source code was copied verbatim; the
+documented CDP command shapes (`Page.printToPDF`, `Runtime.evaluate`,
+`DOM.getBoxModel`, the `MutationObserver` element-wait snippet) are the
+public Chrome DevTools Protocol API surface, not the plugin's IP. One
+real defect in the plugin's click code (a box-model centre formula that
+averaged one corner's x and y) was deliberately NOT reproduced.
+
+Tier summary for the port: 4 GREEN + 3 YELLOW + 0 RED. Per ultron's
+CLI-based browser architecture, the plugin's idle-reconnect (T1),
+keep-alive heartbeat (T2), CDP health check (T4), and
+`--remote-allow-origins` launch flag (T5) do not map to a literal
+wiring target (ultron's `browser-use` CLI owns its own Chrome process
+and ultron never opens a raw CDP socket; the launcher deliberately
+blocks CDP flags on the user's real Chrome). T2 + T4 therefore ship as
+reusable importable primitives; T1 + T5 are documented findings rather
+than forced code changes.
+
+| Ultron component | Inspired by (pattern source) | Notes |
+| --- | --- | --- |
+| `src/ultron/utils/heartbeat.py` (`HeartbeatThread`, T2) | `session_manager.py` keep-alive daemon (`Runtime.evaluate "1"` every 60 s) | Generalised, reusable daemon-thread keep-alive for any long-lived connection. Improved over the upstream's unstoppable `while True: time.sleep()`: stoppable via `threading.Event.wait` (immediate stop, no leaked thread -- satisfies the test-sweep binding rules), fail-open (target exceptions counted + optionally forwarded, never propagated), observable (`HeartbeatStats`). GREEN. Importable primitive. |
+| `src/ultron/utils/health_check.py` (`http_health_check` + `cdp_health_check`, T4) | `browser_agent.py` `GET /json/list` + `/json/version` pre-flight | Cheap "is this endpoint answering?" probe before an expensive operation. `cdp_health_check` is the Chrome-DevTools-specific variant (counts `type=="page"` tabs). Both fail-open; the transport is injectable so tests never touch the network. GREEN. Importable primitive. |
+| `src/ultron/desktop/browser_use.py` (`click_css_selector`, T3) | `browser_agent.py` CSS-selector -> `DOM.getBoxModel` -> coordinate click | ARIA-ref-miss fallback. Avoids raw CDP entirely: a benign `getBoundingClientRect` probe (through the gated `eval`) yields the viewport rect; the *correct* centre is computed (NOT the upstream's buggy formula); the click goes through the Cap-3 gated `click_at_coords`. Selector is `json.dumps`-encoded so it cannot break out of the probe JS. YELLOW. |
+| `src/ultron/desktop/browser_use.py` (`wait_for_element_js`, T7) | `references/api_reference.md` `MutationObserver` element-wait snippet | Event-driven element-appear wait via an injected `MutationObserver`, routed through the gated `eval`. Improved over the upstream's unbounded promise with a `setTimeout` fallback that resolves `false` at the timeout, and observes `document.documentElement` so `<head>` / body-replacing SPA mounts are caught. YELLOW. |
+| `src/ultron/desktop/browser_use.py` (`export_pdf`, T6) | `references/api_reference.md` `Page.printToPDF` | Render the current page to a PDF file via the browser's own print engine. PathResolver-validated destination + Cap-2 (read page) / Cap-3 (write file) safety gate, mirroring the proven `screenshot` file-output path. Fail-open if the CLI PDF surface is absent. YELLOW. |
+| `src/ultron/agent_loop/base.py` (`AgentLoop`, meta-pattern) | The catalog's `AgentLoop` base-class proposal (synthesised from the loop patterns across catalogs 02-10) | Additive, safety-instrumented observe -> plan -> act -> verify base class. The load-bearing invariant is the `max_steps` cap (no loop can take unbounded autonomous steps -- the prerequisite for the later capability-evolver catalogs). Built-in repeated-signature loop detection, per-step records, per-step verification hook, fail-open execution. Does NOT modify any existing runner. GREEN. Importable infrastructure. |
+
+### MIT License (verbatim)
+
+The MIT license text governing the `clawhub-browser-agent` plugin is
+identical in substantive terms to the MIT license already reproduced
+in the SWE-Agent section above. This file satisfies the attribution
+requirement for the components listed in the table above.

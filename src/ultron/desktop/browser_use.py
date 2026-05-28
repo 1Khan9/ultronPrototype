@@ -2095,6 +2095,116 @@ class BrowserUseTool:
             return denial
         return resolved_path
 
+    # -- Catalog 11 (clawhub-browser-agent) T6: PDF export (YELLOW) ----
+
+    def export_pdf(
+        self,
+        destination_path: str,
+        *,
+        paper_width: float = 8.5,
+        paper_height: float = 11.0,
+        landscape: bool = False,
+        print_background: bool = True,
+        user_text: str = "",
+        timeout_s: Optional[float] = None,
+        path_resolver: Optional[PathResolver] = None,
+    ) -> BrowserActionResult:
+        """Catalog 11 T6 (YELLOW) -- render the current page to a PDF file
+        using the browser's own print engine.
+
+        The browser renders the page (CSS, JS-rendered content, print
+        media queries) to a high-fidelity PDF -- better quality than any
+        Python PDF library. Useful for "save this as a PDF" on a
+        document-like page (a README, a web report, a docs page).
+
+        Gating (mirrors :meth:`screenshot`'s file-output path):
+
+        * The destination is canonicalised + parent-dir-checked via
+          :class:`PathResolver` BEFORE any subprocess runs, so a write
+          can never escape an allowed directory.
+        * The call runs through the Cap-2 (read authenticated page
+          content) + Cap-3 (write to disk) safety validator with the
+          resolved path in ``arguments`` + ``paths`` so payload / path
+          rules apply. The source URL + destination land in the audit
+          log; no page *content* is logged.
+
+        CLI-shape note: this targets the ``browser-use`` CLI's
+        file-output PDF command (analogous to its proven ``screenshot
+        <path>`` command). The exact subcommand name is environment-
+        dependent; per the module's fail-open contract, an unsupported
+        invocation returns ``success=False`` with the CLI error rather
+        than raising -- it never breaks the caller. ``paper_width`` /
+        ``paper_height`` are inches (CDP ``Page.printToPDF`` convention,
+        US-Letter default).
+        """
+        raw = (destination_path or "").strip()
+        if not raw:
+            return _failed_action("export_pdf", "empty destination path")
+        if paper_width <= 0 or paper_height <= 0:
+            return _failed_action(
+                "export_pdf",
+                f"paper dimensions must be positive, got "
+                f"{paper_width!r}x{paper_height!r}",
+            )
+        resolver = (
+            path_resolver if path_resolver is not None else get_path_resolver()
+        )
+        # ``safe_realpath`` returns None for not-yet-existing output
+        # paths (the common case); fall back to ``resolve`` + parent
+        # check, exactly as :meth:`_safety_check_screenshot` does.
+        resolved = resolver.safe_realpath(raw)
+        if resolved is None:
+            try:
+                resolved = resolver.resolve(raw)
+            except (ValueError, OSError) as exc:
+                return _failed_action(
+                    "export_pdf", f"path canonicalisation failed: {exc}"
+                )
+            if not resolved.parent.is_dir():
+                return _failed_action(
+                    "export_pdf",
+                    f"parent directory does not exist: {resolved.parent}",
+                )
+        denial = self._safety_check(
+            action="export_pdf",
+            arguments={
+                "path": str(resolved),
+                "paper_width": paper_width,
+                "paper_height": paper_height,
+                "landscape": landscape,
+                "print_background": print_background,
+            },
+            user_text=user_text,
+            paths=(resolved,),
+            extra_result_kwargs={"target": str(resolved)},
+        )
+        if denial is not None:
+            return denial
+        args: list[str] = [
+            "pdf",
+            str(resolved),
+            "--paper-width",
+            str(paper_width),
+            "--paper-height",
+            str(paper_height),
+        ]
+        if landscape:
+            args.append("--landscape")
+        if print_background:
+            args.append("--print-background")
+        result = self._invoke(args, action="export_pdf", timeout_s=timeout_s)
+        return BrowserActionResult(
+            success=result.success,
+            action="export_pdf",
+            stdout=result.stdout,
+            stderr=result.stderr,
+            error=result.error,
+            elapsed_ms=result.elapsed_ms,
+            exit_code=result.exit_code,
+            target=str(resolved),
+            safety_verdict="ALLOW",
+        )
+
     # -- T3 JavaScript evaluation (YELLOW) -----------------------------
 
     def eval(
@@ -2257,6 +2367,264 @@ class BrowserUseTool:
             categories=analysis.categories,
             script_preview=analysis.script_preview,
             safety_verdict="ALLOW",
+        )
+
+    # -- Catalog 11 (clawhub-browser-agent): selector-coordinate click +
+    # -- event-driven wait (T3 + T7, YELLOW) ---------------------------
+
+    def click_css_selector(
+        self,
+        selector: str,
+        *,
+        user_text: str = "",
+        assume_preapproved: bool = False,
+        approval_registry: Optional[ApprovalRegistry] = None,
+        approval_timeout_s: Optional[float] = None,
+        approval_scope_key: str = "",
+        timeout_s: Optional[float] = None,
+    ) -> BrowserActionResult:
+        """Catalog 11 T3 (YELLOW) -- click an element addressed by CSS
+        selector; the ARIA-ref-miss fallback.
+
+        ultron's primary click path is index-based
+        (:meth:`click_at_index` against a prior :meth:`state` ARIA
+        snapshot). When the ARIA snapshot misses an element (dynamic
+        insertion, canvas overlay, shadow DOM, iframe content), this
+        fallback resolves the element by CSS selector and clicks its
+        centre coordinate.
+
+        Re-implementation note: the upstream plugin derives the centre
+        via raw CDP ``DOM.getBoxModel`` AND ships a real bug
+        (``y = (border[0]+border[1])/2`` averages one corner's x and y
+        instead of top + bottom y). We avoid raw CDP entirely: a benign
+        ``getBoundingClientRect`` probe (routed through the gated
+        :meth:`eval`) returns the element's viewport rect, we compute the
+        *correct* centre, and the click goes through
+        :meth:`click_at_coords` (Cap-3 gated). Two gated passes, no
+        raw-CDP escape hatch, and the box-model math is right.
+
+        The selector is embedded into the probe JS via ``json.dumps`` so
+        a hostile selector (quotes / backslashes) cannot break out of
+        the string literal into injected code.
+        """
+        selector = (selector or "").strip()
+        if not selector:
+            return _failed_action("click_css_selector", "empty selector")
+        lowered = selector.lower()
+        if any(scheme in lowered for scheme in ("javascript:", "data:", "vbscript:")):
+            return _failed_action(
+                "click_css_selector",
+                "selector contains a disallowed URI scheme",
+            )
+        # Step 1: resolve the element's viewport centre via a benign
+        # getBoundingClientRect probe. json.dumps -> injection-safe JS
+        # string literal. The probe contains no risky markers, so
+        # :meth:`eval` clears static analysis without a two-phase prompt.
+        probe = (
+            "(() => { const el = document.querySelector("
+            + json.dumps(selector)
+            + "); if (!el) return null; const r = el.getBoundingClientRect();"
+            " return {x: r.x, y: r.y, width: r.width, height: r.height}; })()"
+        )
+        probe_result = self.eval(
+            probe,
+            user_text=user_text,
+            assume_preapproved=assume_preapproved,
+            approval_registry=approval_registry,
+            approval_timeout_s=approval_timeout_s,
+            approval_scope_key=approval_scope_key,
+            timeout_s=timeout_s,
+        )
+        if probe_result.requires_two_phase:
+            # The benign getBoundingClientRect probe should never trip
+            # two-phase, but if a custom validator flags it we honour the
+            # contract and do not proceed to the click.
+            return BrowserActionResult(
+                success=False,
+                action="click_css_selector",
+                target=_preview(selector, cap=80),
+                error=probe_result.error or "selector probe needs approval",
+                safety_verdict=probe_result.safety_verdict,
+            )
+        if not probe_result.success:
+            return BrowserActionResult(
+                success=False,
+                action="click_css_selector",
+                stdout=probe_result.stdout,
+                stderr=probe_result.stderr,
+                error=probe_result.error or "selector probe failed",
+                elapsed_ms=probe_result.elapsed_ms,
+                exit_code=probe_result.exit_code,
+                target=_preview(selector, cap=80),
+                safety_verdict=probe_result.safety_verdict or "ALLOW",
+            )
+        rect = probe_result.value
+        if not isinstance(rect, Mapping):
+            return BrowserActionResult(
+                success=False,
+                action="click_css_selector",
+                target=_preview(selector, cap=80),
+                error="selector matched no element",
+                safety_verdict="ALLOW",
+            )
+        try:
+            width = float(rect.get("width") or 0.0)
+            height = float(rect.get("height") or 0.0)
+            cx = int(float(rect.get("x") or 0.0) + width / 2.0)
+            cy = int(float(rect.get("y") or 0.0) + height / 2.0)
+        except (TypeError, ValueError):
+            return BrowserActionResult(
+                success=False,
+                action="click_css_selector",
+                target=_preview(selector, cap=80),
+                error="selector rect was not numeric",
+                safety_verdict="ALLOW",
+            )
+        if width <= 0 or height <= 0:
+            return BrowserActionResult(
+                success=False,
+                action="click_css_selector",
+                target=_preview(selector, cap=80),
+                error="selector matched a zero-size / hidden element",
+                safety_verdict="ALLOW",
+            )
+        # Step 2: click the centre through the Cap-3 gated coord click.
+        click_result = self.click_at_coords(
+            cx, cy, user_text=user_text, timeout_s=timeout_s
+        )
+        # Re-label so the audit log records the CSS-selector intent + the
+        # resolved coordinate, not a bare coordinate click.
+        return BrowserActionResult(
+            success=click_result.success,
+            action="click_css_selector",
+            stdout=click_result.stdout,
+            stderr=click_result.stderr,
+            error=click_result.error,
+            elapsed_ms=click_result.elapsed_ms,
+            exit_code=click_result.exit_code,
+            target=f"{_preview(selector, cap=64)} @ ({cx},{cy})",
+            safety_verdict=click_result.safety_verdict or "ALLOW",
+        )
+
+    def wait_for_element_js(
+        self,
+        selector: str,
+        *,
+        timeout_ms: int = DEFAULT_WAIT_TIMEOUT_MS,
+        user_text: str = "",
+        assume_preapproved: bool = False,
+        approval_registry: Optional[ApprovalRegistry] = None,
+        approval_timeout_s: Optional[float] = None,
+        approval_scope_key: str = "",
+        timeout_s: Optional[float] = None,
+    ) -> BrowserWaitResult:
+        """Catalog 11 T7 (YELLOW) -- event-driven wait for a CSS selector
+        to appear, via an injected ``MutationObserver``.
+
+        Companion to :meth:`wait_selector` (which uses the CLI's native
+        polling wait). This variant is event-driven: the observer fires
+        synchronously the instant the element is inserted, so it resolves
+        with zero polling overhead and is more reliable across SPA
+        component mounts. Routed through the gated :meth:`eval`.
+
+        Re-implementation note: the upstream's MutationObserver snippet
+        has NO timeout -- a never-appearing element hangs the promise
+        forever. We add a ``setTimeout`` fallback that resolves ``false``
+        at ``timeout_ms`` so the wait is always bounded, and observe
+        ``document.documentElement`` (the ``<html>`` root) rather than
+        ``document.body`` so a selector that targets ``<head>`` content
+        or a body-replacing SPA mount is still caught. The selector is
+        ``json.dumps``-encoded so it cannot break out of the JS string.
+
+        Returns a :class:`BrowserWaitResult` whose ``matched`` is True
+        iff the element appeared before the timeout. ``success`` tracks
+        ``matched`` (mirroring :meth:`wait_selector`, where a timeout is
+        a non-zero CLI exit).
+        """
+        selector = (selector or "").strip()
+        if not selector:
+            return BrowserWaitResult(
+                success=False,
+                action="wait_for_element_js",
+                error="empty selector",
+                target=selector,
+                state="js_observer",
+            )
+        if timeout_ms <= 0:
+            return BrowserWaitResult(
+                success=False,
+                action="wait_for_element_js",
+                error=f"timeout_ms must be positive, got {timeout_ms!r}",
+                target=selector,
+                state="js_observer",
+            )
+        sel_literal = json.dumps(selector)
+        # Playwright's ``page.evaluate`` (which the upstream ``eval``
+        # command maps to) auto-awaits a returned Promise, so the
+        # expression resolves to true (found) / false (timed out).
+        js = (
+            "new Promise((resolve) => {"
+            f" const sel = {sel_literal};"
+            " const hit = () => document.querySelector(sel);"
+            " if (hit()) { resolve(true); return; }"
+            " let done = false;"
+            " let obs = null;"
+            " const finish = (v) => { if (done) return; done = true;"
+            " try { if (obs) obs.disconnect(); } catch (e) {} resolve(v); };"
+            " obs = new MutationObserver(() => { if (hit()) finish(true); });"
+            " obs.observe(document.documentElement, {childList: true, subtree: true});"
+            f" setTimeout(() => finish(false), {int(timeout_ms)});"
+            "})"
+        )
+        effective_subprocess_timeout = (
+            timeout_s if timeout_s is not None else (timeout_ms / 1000.0 + 5.0)
+        )
+        eval_result = self.eval(
+            js,
+            user_text=user_text,
+            assume_preapproved=assume_preapproved,
+            approval_registry=approval_registry,
+            approval_timeout_s=approval_timeout_s,
+            approval_scope_key=approval_scope_key,
+            timeout_s=effective_subprocess_timeout,
+        )
+        if eval_result.requires_two_phase:
+            return BrowserWaitResult(
+                success=False,
+                action="wait_for_element_js",
+                error=eval_result.error or "observer eval needs approval",
+                target=selector,
+                state="js_observer",
+                stdout=eval_result.stdout,
+                stderr=eval_result.stderr,
+            )
+        if not eval_result.success:
+            return BrowserWaitResult(
+                success=False,
+                action="wait_for_element_js",
+                error=eval_result.error or "observer eval failed",
+                target=selector,
+                state="js_observer",
+                stdout=eval_result.stdout,
+                stderr=eval_result.stderr,
+                elapsed_ms=eval_result.elapsed_ms,
+                exit_code=eval_result.exit_code,
+            )
+        value = eval_result.value
+        matched = value is True or (
+            isinstance(value, str) and value.strip().lower() == "true"
+        )
+        return BrowserWaitResult(
+            success=matched,
+            action="wait_for_element_js",
+            stdout=eval_result.stdout,
+            stderr=eval_result.stderr,
+            error=None if matched else "element did not appear before timeout",
+            elapsed_ms=eval_result.elapsed_ms,
+            exit_code=eval_result.exit_code,
+            matched=matched,
+            target=selector,
+            state="js_observer",
         )
 
     # -- T4 cookie management (YELLOW) ---------------------------------
