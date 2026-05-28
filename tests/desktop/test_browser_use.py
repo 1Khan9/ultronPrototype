@@ -2644,3 +2644,556 @@ class TestTryParseEvalPayload:
         value, raw = bu._try_parse_eval_payload("not valid json")
         assert value is None
         assert raw == "not valid json"
+
+
+# ===========================================================================
+# Batch 4 -- T4 YELLOW cookie management
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# cookies_get
+# ---------------------------------------------------------------------------
+
+
+class TestCookiesGetScoped:
+    def test_scoped_executes(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        fake_subprocess.stdout = json.dumps(
+            [{"name": "session", "value": "abc", "domain": ".github.com"}]
+        )
+        result = tool.cookies_get("https://github.com", user_text="read")
+        assert result.success is True
+        assert result.requires_two_phase is False
+        assert result.risky_action == "get_scoped"
+        assert result.url_filter == "https://github.com"
+        assert result.cookies_count == 1
+        cmd = fake_subprocess.calls[0].cmd
+        assert "--url" in cmd
+        assert "https://github.com" in cmd
+
+    def test_empty_url_rejected(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        result = tool.cookies_get("   ", user_text="read")
+        assert result.success is False
+        assert fake_subprocess.calls == []
+
+    def test_safety_block(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        fake_validator.block(message="not on this domain")
+        result = tool.cookies_get("https://x.com", user_text="read")
+        assert result.success is False
+        assert result.safety_verdict == "BLOCK_HARD"
+        assert fake_subprocess.calls == []
+
+
+class TestCookiesGetAllOrigins:
+    def test_requires_approval_by_default(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        registry = _FakeApprovalRegistry()
+        result = tool.cookies_get(
+            None,
+            user_text="dump cookies",
+            approval_registry=registry,
+        )
+        assert result.success is False
+        assert result.requires_two_phase is True
+        assert result.risky_action == "get_all"
+        assert result.approval_request_id == "test-approval-1"
+        assert fake_subprocess.calls == []
+        assert fake_validator.call_count == 0
+
+    def test_preapproved_executes(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        fake_subprocess.stdout = json.dumps([])
+        registry = _FakeApprovalRegistry()
+        result = tool.cookies_get(
+            None,
+            user_text="dump",
+            assume_preapproved=True,
+            approval_registry=registry,
+        )
+        assert result.success is True
+        assert result.requires_two_phase is True
+        assert len(registry.registrations) == 0
+        assert fake_validator.call_count == 1
+
+    def test_approval_metadata_carries_action(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        registry = _FakeApprovalRegistry()
+        tool.cookies_get(None, user_text="dump", approval_registry=registry)
+        req = registry.registrations[0]
+        assert req.kind == bu.BROWSER_COOKIES_APPROVAL_KIND
+        assert req.metadata["risky_action"] == "get_all"
+        assert req.metadata["reason_code"] == bu.BROWSER_COOKIES_REASON_CODE
+        assert "all loaded origins" in req.metadata["target_summary"].lower()
+
+
+# ---------------------------------------------------------------------------
+# cookies_set
+# ---------------------------------------------------------------------------
+
+
+class TestCookiesSet:
+    def test_canonical(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        result = tool.cookies_set("session", "abc123", user_text="set cookie")
+        assert result.success is True
+        assert result.risky_action == "set"
+        cmd = fake_subprocess.calls[0].cmd
+        assert cmd[-4:] == ["cookies", "set", "session", "abc123"]
+
+    def test_with_flags(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        tool.cookies_set(
+            "name",
+            "value",
+            domain=".example.com",
+            path="/",
+            expires=1700000000,
+            secure=True,
+            http_only=True,
+            same_site="Strict",
+            user_text="set",
+        )
+        cmd = fake_subprocess.calls[0].cmd
+        assert "--domain" in cmd
+        assert ".example.com" in cmd
+        assert "--path" in cmd
+        assert "--expires" in cmd
+        assert "1700000000" in cmd
+        assert "--secure" in cmd
+        assert "--http-only" in cmd
+        assert "--same-site" in cmd
+        assert "Strict" in cmd
+
+    def test_empty_name_rejected(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        result = tool.cookies_set("   ", "value", user_text="set")
+        assert result.success is False
+        assert fake_subprocess.calls == []
+
+    def test_invalid_same_site(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        result = tool.cookies_set(
+            "n", "v", same_site="bogus", user_text="set"
+        )
+        assert result.success is False
+        assert fake_subprocess.calls == []
+
+    def test_negative_expires(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        result = tool.cookies_set("n", "v", expires=-1, user_text="set")
+        assert result.success is False
+
+    def test_value_preview_not_full_in_validator_args(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        long_value = "x" * 500
+        tool.cookies_set("name", long_value, user_text="set")
+        ctx = fake_validator.contexts[0]
+        assert "value_preview" in ctx.arguments
+        assert "value" not in ctx.arguments  # raw value never lands
+
+
+# ---------------------------------------------------------------------------
+# cookies_clear
+# ---------------------------------------------------------------------------
+
+
+class TestCookiesClearScoped:
+    def test_scoped_executes(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        result = tool.cookies_clear(
+            "https://github.com", user_text="clear github"
+        )
+        assert result.success is True
+        assert result.risky_action == "clear_scoped"
+        cmd = fake_subprocess.calls[0].cmd
+        assert "--url" in cmd
+        assert "https://github.com" in cmd
+
+    def test_empty_url_rejected(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        result = tool.cookies_clear("   ", user_text="clear")
+        assert result.success is False
+
+
+class TestCookiesClearAll:
+    def test_requires_approval(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        registry = _FakeApprovalRegistry()
+        result = tool.cookies_clear(
+            None, user_text="clear all", approval_registry=registry
+        )
+        assert result.success is False
+        assert result.requires_two_phase is True
+        assert result.risky_action == "clear_all"
+        assert fake_subprocess.calls == []
+
+    def test_preapproved_executes(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        registry = _FakeApprovalRegistry()
+        result = tool.cookies_clear(
+            None,
+            user_text="approved clear all",
+            assume_preapproved=True,
+            approval_registry=registry,
+        )
+        assert result.success is True
+        assert len(registry.registrations) == 0
+        cmd = fake_subprocess.calls[0].cmd
+        assert "--url" not in cmd
+
+
+# ---------------------------------------------------------------------------
+# cookies_export
+# ---------------------------------------------------------------------------
+
+
+class TestCookiesExport:
+    def test_empty_path_rejected(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        result = tool.cookies_export("   ", user_text="export")
+        assert result.success is False
+        assert fake_subprocess.calls == []
+
+    def test_missing_parent_rejected_before_approval(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        fake_path_resolver: _FakePathResolver,
+        tool: bu.BrowserUseTool,
+        tmp_path: Any,
+    ) -> None:
+        target = tmp_path / "nonexistent" / "cookies.json"
+        fake_path_resolver.resolves[str(target)] = target
+        registry = _FakeApprovalRegistry()
+        result = tool.cookies_export(
+            str(target),
+            user_text="export",
+            approval_registry=registry,
+        )
+        assert result.success is False
+        assert "parent directory" in (result.error or "")
+        # Approval registry NOT consulted -- fail fast.
+        assert len(registry.registrations) == 0
+
+    def test_requires_approval_by_default(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        fake_path_resolver: _FakePathResolver,
+        tool: bu.BrowserUseTool,
+        tmp_path: Any,
+    ) -> None:
+        target = tmp_path / "cookies.json"
+        fake_path_resolver.resolves[str(target)] = target
+        registry = _FakeApprovalRegistry()
+        result = tool.cookies_export(
+            str(target),
+            user_text="export",
+            approval_registry=registry,
+        )
+        assert result.success is False
+        assert result.requires_two_phase is True
+        assert result.risky_action == "export_all"
+        assert result.approval_request_id == "test-approval-1"
+        assert result.path == str(target)
+        assert fake_subprocess.calls == []
+
+    def test_preapproved_executes_with_resolved_path(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        fake_path_resolver: _FakePathResolver,
+        tool: bu.BrowserUseTool,
+        tmp_path: Any,
+    ) -> None:
+        target = tmp_path / "cookies.json"
+        fake_path_resolver.resolves[str(target)] = target
+        result = tool.cookies_export(
+            str(target),
+            user_text="approved",
+            assume_preapproved=True,
+        )
+        assert result.success is True
+        assert result.path == str(target)
+        cmd = fake_subprocess.calls[0].cmd
+        assert str(target) in cmd
+        # Validator saw the resolved path.
+        ctx = fake_validator.contexts[0]
+        assert ctx.paths == (target,)
+
+    def test_inject_path_resolver(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+        tmp_path: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        target = tmp_path / "x.json"
+        injected = _FakePathResolver()
+        injected.resolves[str(target)] = target
+        global_resolver = _FakePathResolver()
+        monkeypatch.setattr(bu, "get_path_resolver", lambda: global_resolver)
+        result = tool.cookies_export(
+            str(target),
+            user_text="approved",
+            assume_preapproved=True,
+            path_resolver=injected,
+        )
+        assert result.success is True
+        assert injected.resolve_calls == [str(target)]
+        assert global_resolver.resolve_calls == []
+
+
+# ---------------------------------------------------------------------------
+# cookies_import
+# ---------------------------------------------------------------------------
+
+
+class TestCookiesImport:
+    def test_empty_path_rejected(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        result = tool.cookies_import("   ", user_text="import")
+        assert result.success is False
+
+    def test_unresolved_path_rejected(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        fake_path_resolver: _FakePathResolver,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        # safe_realpath returns None -> reject (file must exist).
+        result = tool.cookies_import("/nope.json", user_text="import")
+        assert result.success is False
+        assert "does not resolve" in (result.error or "")
+
+    def test_directory_rejected(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        fake_path_resolver: _FakePathResolver,
+        tool: bu.BrowserUseTool,
+        tmp_path: Any,
+    ) -> None:
+        a_dir = tmp_path / "subdir"
+        a_dir.mkdir()
+        fake_path_resolver.real_paths[str(a_dir)] = a_dir
+        result = tool.cookies_import(str(a_dir), user_text="import")
+        assert result.success is False
+        assert "not a regular file" in (result.error or "")
+
+    def test_requires_approval(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        fake_path_resolver: _FakePathResolver,
+        tool: bu.BrowserUseTool,
+        tmp_path: Any,
+    ) -> None:
+        source = tmp_path / "cookies.json"
+        source.write_text("[]")
+        fake_path_resolver.real_paths[str(source)] = source
+        registry = _FakeApprovalRegistry()
+        result = tool.cookies_import(
+            str(source),
+            user_text="import",
+            approval_registry=registry,
+        )
+        assert result.success is False
+        assert result.requires_two_phase is True
+        assert result.risky_action == "import"
+        assert result.approval_request_id == "test-approval-1"
+        assert fake_subprocess.calls == []
+
+    def test_preapproved_executes(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        fake_path_resolver: _FakePathResolver,
+        tool: bu.BrowserUseTool,
+        tmp_path: Any,
+    ) -> None:
+        source = tmp_path / "cookies.json"
+        source.write_text("[]")
+        fake_path_resolver.real_paths[str(source)] = source
+        result = tool.cookies_import(
+            str(source),
+            user_text="approved import",
+            assume_preapproved=True,
+        )
+        assert result.success is True
+        ctx = fake_validator.contexts[0]
+        assert ctx.paths == (source,)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+class TestFailedCookiesAction:
+    def test_shape(self) -> None:
+        r = bu._failed_cookies_action("cookies_get", "boom")
+        assert r.success is False
+        assert r.action == "cookies_get"
+        assert r.error == "boom"
+
+
+class TestHumanizeCookieRiskyAction:
+    def test_known_actions(self) -> None:
+        for action in [
+            "export_all",
+            "import",
+            "clear_all",
+            "clear_scoped",
+            "get_all",
+            "get_scoped",
+            "set",
+        ]:
+            phrase = bu._humanize_cookie_risky_action(action)
+            assert phrase.startswith("Browser is about to")
+
+    def test_unknown_action(self) -> None:
+        phrase = bu._humanize_cookie_risky_action("mystery")
+        assert "cookie operation" in phrase
+
+
+class TestParseCookiesJson:
+    def test_list_shape(self) -> None:
+        payload = json.dumps(
+            [{"name": "s", "value": "v", "domain": ".x.com"}]
+        )
+        cookies, err = bu._parse_cookies_json(payload)
+        assert err is None
+        assert len(cookies) == 1
+        assert cookies[0].name == "s"
+        assert cookies[0].value == "v"
+        assert cookies[0].domain == ".x.com"
+
+    def test_mapping_shape(self) -> None:
+        payload = json.dumps({"cookies": [{"name": "x"}]})
+        cookies, err = bu._parse_cookies_json(payload)
+        assert err is None
+        assert len(cookies) == 1
+
+    def test_camel_case_http_only(self) -> None:
+        payload = json.dumps([{"name": "s", "httpOnly": True}])
+        cookies, err = bu._parse_cookies_json(payload)
+        assert cookies[0].http_only is True
+
+    def test_snake_case_http_only(self) -> None:
+        payload = json.dumps([{"name": "s", "http_only": True}])
+        cookies, err = bu._parse_cookies_json(payload)
+        assert cookies[0].http_only is True
+
+    def test_expires_unix_seconds(self) -> None:
+        payload = json.dumps([{"name": "s", "expires": 1700000000.5}])
+        cookies, err = bu._parse_cookies_json(payload)
+        assert cookies[0].expires == 1700000000.5
+
+    def test_missing_name_skipped(self) -> None:
+        payload = json.dumps(
+            [{"value": "no-name"}, {"name": "ok", "value": "v"}]
+        )
+        cookies, err = bu._parse_cookies_json(payload)
+        # Entry without name is dropped; only "ok" survives.
+        assert len(cookies) == 1
+        assert cookies[0].name == "ok"
+
+    def test_empty_input(self) -> None:
+        cookies, err = bu._parse_cookies_json("")
+        assert cookies == ()
+        assert err is not None
+
+    def test_non_json(self) -> None:
+        cookies, err = bu._parse_cookies_json("garbage")
+        assert cookies == ()
+        assert err is not None
+
+    def test_missing_cookies_key_in_mapping(self) -> None:
+        cookies, err = bu._parse_cookies_json('{"other": []}')
+        assert cookies == ()
+        assert err is not None
+
+    def test_expires_bool_treated_as_none(self) -> None:
+        # ``True`` / ``False`` are valid bools but should not produce
+        # a numeric expires timestamp.
+        payload = json.dumps([{"name": "s", "expires": True}])
+        cookies, err = bu._parse_cookies_json(payload)
+        assert cookies[0].expires is None

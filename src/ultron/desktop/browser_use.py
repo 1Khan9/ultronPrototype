@@ -345,6 +345,20 @@ BROWSER_JS_APPROVAL_KIND: str = "browser_use_js_exec"
 # blocked OR approved. Mirrors the catalog 06 T3 reason-code namespace.
 BROWSER_JS_REASON_CODE: str = "ultron.suspicious.browser_js_exec_unrestricted"
 
+# Canonical approval-request kind for cookie operations that move
+# bulk auth state (export / import / cross-origin clear). The channel
+# router picks a cookie-specific TTS narration template based on this.
+BROWSER_COOKIES_APPROVAL_KIND: str = "browser_use_cookies_destructive"
+
+# Reason-code label for bulk cookie operations in the audit log.
+BROWSER_COOKIES_REASON_CODE: str = "ultron.suspicious.browser_cookies_unrestricted"
+
+# Allowed values for the ``--same-site`` flag on ``cookies set``.
+# The upstream CLI follows the Chrome / Playwright convention.
+COOKIE_SAME_SITE_VALUES: frozenset[str] = frozenset(
+    {"Strict", "Lax", "None"}
+)
+
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -549,6 +563,58 @@ class BrowserActionResult(BrowserUseResult):
     """
 
     target: str = ""
+    safety_verdict: str = ""
+
+
+@dataclass(frozen=True)
+class BrowserCookie:
+    """One parsed cookie row.
+
+    Mirrors the Chrome DevTools ``Network.Cookie`` shape that the
+    upstream CLI emits. ``expires`` is a Unix timestamp (float
+    seconds since epoch) or ``None`` for session-only cookies.
+    ``same_site`` is one of :data:`COOKIE_SAME_SITE_VALUES` or empty.
+    """
+
+    name: str
+    value: str = ""
+    domain: str = ""
+    path: str = ""
+    expires: Optional[float] = None
+    secure: bool = False
+    http_only: bool = False
+    same_site: str = ""
+
+
+@dataclass(frozen=True)
+class BrowserCookiesResult(BrowserUseResult):
+    """T4 -- cookie operations outcome.
+
+    Same three-state shape as :class:`BrowserEvalResult`:
+
+    * **Approval required**: ``requires_two_phase=True`` and
+      ``approval_request_id`` populated; caller drives the voice flow.
+    * **Safety denied** / argument-invalid: ``success=False`` plus a
+      populated ``error`` and (when the validator ran)
+      ``safety_verdict``.
+    * **Executed**: ``success=True``; ``cookies`` populated for reads,
+      ``path`` populated for export / import, ``cookies_count`` is
+      the row count for any operation that reports it.
+
+    ``risky_action`` distinguishes the operation flavour for audit
+    + telemetry: ``"export_all"`` / ``"import"`` / ``"clear_all"`` /
+    ``"clear_scoped"`` / ``"get_all"`` / ``"get_scoped"`` / ``"set"``.
+    ``url_filter`` carries the URL the operation was scoped to (or
+    empty when the operation targets every loaded cookie).
+    """
+
+    cookies: tuple[BrowserCookie, ...] = ()
+    cookies_count: int = 0
+    path: Optional[str] = None
+    risky_action: str = ""
+    requires_two_phase: bool = False
+    approval_request_id: str = ""
+    url_filter: str = ""
     safety_verdict: str = ""
 
 
@@ -1992,6 +2058,481 @@ class BrowserUseTool:
             safety_verdict="ALLOW",
         )
 
+    # -- T4 cookie management (YELLOW) ---------------------------------
+
+    def cookies_get(
+        self,
+        url: Optional[str] = None,
+        *,
+        user_text: str = "",
+        assume_preapproved: bool = False,
+        approval_registry: Optional[ApprovalRegistry] = None,
+        approval_timeout_s: Optional[float] = None,
+        approval_scope_key: str = "",
+        timeout_s: Optional[float] = None,
+    ) -> BrowserCookiesResult:
+        """T4 -- read cookies for the current page OR a specific URL.
+
+        Two flavours:
+
+        * ``url`` given: scoped read of one origin's cookies. Cap-2
+          information access -- the safety validator runs but no
+          two-phase approval is required.
+        * ``url`` is None: cross-origin dump of every cookie the
+          browser instance holds, including third-party tracking +
+          auth tokens for sites the user has logged into. Triggers
+          two-phase approval unless ``assume_preapproved=True``.
+
+        The cross-origin gate matches the catalog's safety posture:
+        a scoped read of, e.g., the active tab's GitHub cookies is
+        a routine operation; a bulk dump of every loaded cookie is
+        a credential-exfiltration vector that must surface to the
+        user before it runs.
+        """
+        if url is not None:
+            url = url.strip()
+            if not url:
+                return _failed_cookies_action("cookies_get", "empty url")
+        risky_action = "get_scoped" if url else "get_all"
+        if url is None and not assume_preapproved:
+            return self._register_cookies_approval_result(
+                action="cookies_get",
+                risky_action=risky_action,
+                target_summary="all loaded origins",
+                approval_registry=approval_registry,
+                approval_timeout_s=approval_timeout_s,
+                scope_key=approval_scope_key,
+                user_text=user_text,
+                url_filter="",
+            )
+        denial = self._safety_check(
+            action="cookies_get",
+            arguments={
+                "url": url or "",
+                "risky_action": risky_action,
+                "assume_preapproved": assume_preapproved,
+            },
+            user_text=user_text,
+            result_factory=BrowserCookiesResult,
+            extra_result_kwargs={
+                "risky_action": risky_action,
+                "url_filter": url or "",
+                "requires_two_phase": (url is None),
+            },
+        )
+        if denial is not None:
+            return denial
+        args: list[str] = ["cookies", "get"]
+        if url:
+            args.extend(["--url", url])
+        args.append("--json")
+        result = self._invoke(args, action="cookies_get", timeout_s=timeout_s)
+        cookies: tuple[BrowserCookie, ...] = ()
+        parse_error: Optional[str] = result.error
+        if result.success:
+            cookies, parse_error = _parse_cookies_json(result.stdout)
+        return BrowserCookiesResult(
+            success=result.success,
+            action="cookies_get",
+            stdout=result.stdout,
+            stderr=result.stderr,
+            error=parse_error,
+            elapsed_ms=result.elapsed_ms,
+            exit_code=result.exit_code,
+            cookies=cookies,
+            cookies_count=len(cookies),
+            risky_action=risky_action,
+            url_filter=url or "",
+            requires_two_phase=(url is None),
+            safety_verdict="ALLOW",
+        )
+
+    def cookies_set(
+        self,
+        name: str,
+        value: str,
+        *,
+        domain: Optional[str] = None,
+        path: Optional[str] = None,
+        expires: Optional[float] = None,
+        secure: bool = False,
+        http_only: bool = False,
+        same_site: Optional[str] = None,
+        user_text: str = "",
+        timeout_s: Optional[float] = None,
+    ) -> BrowserCookiesResult:
+        """T4 -- set a single cookie. Cap-3 write; no two-phase
+        required because the call is bounded to one (name, value)
+        pair that the caller had to construct explicitly.
+
+        Flag conventions match the upstream CLI: ``--domain``,
+        ``--secure``, ``--http-only``, ``--same-site Strict|Lax|None``,
+        ``--expires <unix timestamp>``.
+        """
+        name = (name or "").strip()
+        if not name:
+            return _failed_cookies_action("cookies_set", "empty name")
+        if same_site is not None and same_site not in COOKIE_SAME_SITE_VALUES:
+            return _failed_cookies_action(
+                "cookies_set",
+                f"same_site must be one of {sorted(COOKIE_SAME_SITE_VALUES)}, "
+                f"got {same_site!r}",
+            )
+        if expires is not None and expires < 0:
+            return _failed_cookies_action(
+                "cookies_set", f"expires must be non-negative, got {expires!r}"
+            )
+        denial = self._safety_check(
+            action="cookies_set",
+            arguments={
+                "name": name,
+                "value_preview": _preview(value),
+                "domain": domain or "",
+                "secure": secure,
+                "http_only": http_only,
+                "same_site": same_site or "",
+                "risky_action": "set",
+            },
+            user_text=user_text,
+            result_factory=BrowserCookiesResult,
+            extra_result_kwargs={"risky_action": "set"},
+        )
+        if denial is not None:
+            return denial
+        args: list[str] = ["cookies", "set", name, value or ""]
+        if domain:
+            args.extend(["--domain", domain])
+        if path:
+            args.extend(["--path", path])
+        if expires is not None:
+            args.extend(["--expires", str(int(expires))])
+        if secure:
+            args.append("--secure")
+        if http_only:
+            args.append("--http-only")
+        if same_site:
+            args.extend(["--same-site", same_site])
+        result = self._invoke(args, action="cookies_set", timeout_s=timeout_s)
+        return BrowserCookiesResult(
+            success=result.success,
+            action="cookies_set",
+            stdout=result.stdout,
+            stderr=result.stderr,
+            error=result.error,
+            elapsed_ms=result.elapsed_ms,
+            exit_code=result.exit_code,
+            risky_action="set",
+            safety_verdict="ALLOW",
+        )
+
+    def cookies_clear(
+        self,
+        url: Optional[str] = None,
+        *,
+        user_text: str = "",
+        assume_preapproved: bool = False,
+        approval_registry: Optional[ApprovalRegistry] = None,
+        approval_timeout_s: Optional[float] = None,
+        approval_scope_key: str = "",
+        timeout_s: Optional[float] = None,
+    ) -> BrowserCookiesResult:
+        """T4 -- clear cookies. Scoped (``url`` given) is Cap-3 only;
+        bulk (``url`` is None) requires two-phase approval because
+        the operation drops auth state for every site loaded.
+        """
+        if url is not None:
+            url = url.strip()
+            if not url:
+                return _failed_cookies_action("cookies_clear", "empty url")
+        risky_action = "clear_scoped" if url else "clear_all"
+        if url is None and not assume_preapproved:
+            return self._register_cookies_approval_result(
+                action="cookies_clear",
+                risky_action=risky_action,
+                target_summary="every loaded origin (destructive)",
+                approval_registry=approval_registry,
+                approval_timeout_s=approval_timeout_s,
+                scope_key=approval_scope_key,
+                user_text=user_text,
+                url_filter="",
+            )
+        denial = self._safety_check(
+            action="cookies_clear",
+            arguments={
+                "url": url or "",
+                "risky_action": risky_action,
+                "assume_preapproved": assume_preapproved,
+            },
+            user_text=user_text,
+            result_factory=BrowserCookiesResult,
+            extra_result_kwargs={
+                "risky_action": risky_action,
+                "url_filter": url or "",
+                "requires_two_phase": (url is None),
+            },
+        )
+        if denial is not None:
+            return denial
+        args: list[str] = ["cookies", "clear"]
+        if url:
+            args.extend(["--url", url])
+        result = self._invoke(args, action="cookies_clear", timeout_s=timeout_s)
+        return BrowserCookiesResult(
+            success=result.success,
+            action="cookies_clear",
+            stdout=result.stdout,
+            stderr=result.stderr,
+            error=result.error,
+            elapsed_ms=result.elapsed_ms,
+            exit_code=result.exit_code,
+            risky_action=risky_action,
+            url_filter=url or "",
+            requires_two_phase=(url is None),
+            safety_verdict="ALLOW",
+        )
+
+    def cookies_export(
+        self,
+        path: str,
+        *,
+        user_text: str = "",
+        assume_preapproved: bool = False,
+        approval_registry: Optional[ApprovalRegistry] = None,
+        approval_timeout_s: Optional[float] = None,
+        approval_scope_key: str = "",
+        timeout_s: Optional[float] = None,
+        path_resolver: Optional[PathResolver] = None,
+    ) -> BrowserCookiesResult:
+        """T4 (YELLOW) -- export every cookie to a JSON file on disk.
+
+        The path goes through :class:`PathResolver` before the
+        approval is even registered so an invalid path fails fast
+        without the user round-trip. Approval is ALWAYS required
+        because the operation captures `HttpOnly` cookies and
+        cross-origin auth tokens. ``assume_preapproved=True`` is the
+        post-voice-confirmation re-entry point.
+        """
+        raw_path = (path or "").strip()
+        if not raw_path:
+            return _failed_cookies_action("cookies_export", "empty path")
+        resolver = (
+            path_resolver if path_resolver is not None else get_path_resolver()
+        )
+        # Output path may not exist yet -- resolve + parent dir check.
+        try:
+            resolved = resolver.resolve(raw_path)
+        except (ValueError, OSError) as exc:
+            return _failed_cookies_action(
+                "cookies_export",
+                f"path canonicalisation failed: {exc}",
+            )
+        if not resolved.parent.is_dir():
+            return _failed_cookies_action(
+                "cookies_export",
+                f"parent directory does not exist: {resolved.parent}",
+            )
+        if not assume_preapproved:
+            return self._register_cookies_approval_result(
+                action="cookies_export",
+                risky_action="export_all",
+                target_summary=f"all loaded cookies to {resolved}",
+                approval_registry=approval_registry,
+                approval_timeout_s=approval_timeout_s,
+                scope_key=approval_scope_key,
+                user_text=user_text,
+                url_filter="",
+                path=str(resolved),
+            )
+        denial = self._safety_check(
+            action="cookies_export",
+            arguments={
+                "path": str(resolved),
+                "raw_path": raw_path,
+                "risky_action": "export_all",
+                "assume_preapproved": True,
+            },
+            user_text=user_text,
+            paths=(resolved,),
+            result_factory=BrowserCookiesResult,
+            extra_result_kwargs={
+                "risky_action": "export_all",
+                "path": str(resolved),
+                "requires_two_phase": True,
+            },
+        )
+        if denial is not None:
+            return denial
+        result = self._invoke(
+            ["cookies", "export", str(resolved)],
+            action="cookies_export",
+            timeout_s=timeout_s,
+        )
+        return BrowserCookiesResult(
+            success=result.success,
+            action="cookies_export",
+            stdout=result.stdout,
+            stderr=result.stderr,
+            error=result.error,
+            elapsed_ms=result.elapsed_ms,
+            exit_code=result.exit_code,
+            path=str(resolved),
+            risky_action="export_all",
+            requires_two_phase=True,
+            safety_verdict="ALLOW",
+        )
+
+    def cookies_import(
+        self,
+        path: str,
+        *,
+        user_text: str = "",
+        assume_preapproved: bool = False,
+        approval_registry: Optional[ApprovalRegistry] = None,
+        approval_timeout_s: Optional[float] = None,
+        approval_scope_key: str = "",
+        timeout_s: Optional[float] = None,
+        path_resolver: Optional[PathResolver] = None,
+    ) -> BrowserCookiesResult:
+        """T4 (YELLOW) -- import a cookie set from a JSON file.
+
+        Input path must exist + be a real file (uses
+        :meth:`PathResolver.safe_realpath`). Approval is ALWAYS
+        required because importing cookies can poison the user's
+        authenticated session OR introduce session tokens from an
+        attacker-controlled file.
+
+        SECURITY NOTE: when combined with a subsequent
+        :meth:`connect_profile` (batch 6) call, a cookies_import can
+        silently poison the user's live Chrome session. The two
+        operations are independently gated; the catalog 10 security
+        review flagged the combination as a workflow-level concern
+        rather than a per-method one.
+        """
+        raw_path = (path or "").strip()
+        if not raw_path:
+            return _failed_cookies_action("cookies_import", "empty path")
+        resolver = (
+            path_resolver if path_resolver is not None else get_path_resolver()
+        )
+        resolved = resolver.safe_realpath(raw_path)
+        if resolved is None:
+            return _failed_cookies_action(
+                "cookies_import",
+                f"path does not resolve to a real file: {raw_path!r}",
+            )
+        if not resolved.is_file():
+            return _failed_cookies_action(
+                "cookies_import",
+                f"resolved path is not a regular file: {resolved}",
+            )
+        if not assume_preapproved:
+            return self._register_cookies_approval_result(
+                action="cookies_import",
+                risky_action="import",
+                target_summary=f"cookies from {resolved}",
+                approval_registry=approval_registry,
+                approval_timeout_s=approval_timeout_s,
+                scope_key=approval_scope_key,
+                user_text=user_text,
+                url_filter="",
+                path=str(resolved),
+            )
+        denial = self._safety_check(
+            action="cookies_import",
+            arguments={
+                "path": str(resolved),
+                "raw_path": raw_path,
+                "risky_action": "import",
+                "assume_preapproved": True,
+            },
+            user_text=user_text,
+            paths=(resolved,),
+            result_factory=BrowserCookiesResult,
+            extra_result_kwargs={
+                "risky_action": "import",
+                "path": str(resolved),
+                "requires_two_phase": True,
+            },
+        )
+        if denial is not None:
+            return denial
+        result = self._invoke(
+            ["cookies", "import", str(resolved)],
+            action="cookies_import",
+            timeout_s=timeout_s,
+        )
+        return BrowserCookiesResult(
+            success=result.success,
+            action="cookies_import",
+            stdout=result.stdout,
+            stderr=result.stderr,
+            error=result.error,
+            elapsed_ms=result.elapsed_ms,
+            exit_code=result.exit_code,
+            path=str(resolved),
+            risky_action="import",
+            requires_two_phase=True,
+            safety_verdict="ALLOW",
+        )
+
+    def _register_cookies_approval_result(
+        self,
+        *,
+        action: str,
+        risky_action: str,
+        target_summary: str,
+        approval_registry: Optional[ApprovalRegistry],
+        approval_timeout_s: Optional[float],
+        scope_key: str,
+        user_text: str,
+        url_filter: str,
+        path: Optional[str] = None,
+    ) -> BrowserCookiesResult:
+        """Register a cookies-approval request and pack the result.
+
+        Centralised so every risky cookie path produces a uniform
+        ``requires_two_phase=True`` shape with the registry's
+        approval_id surfaced on the result.
+        """
+        registry = (
+            approval_registry
+            if approval_registry is not None
+            else get_approval_registry()
+        )
+        request = ApprovalRequest(
+            kind=BROWSER_COOKIES_APPROVAL_KIND,
+            prompt=_humanize_cookie_risky_action(risky_action) + " Proceed?",
+            actor="desktop_browser_use",
+            scope_key=scope_key or self._session or "",
+            metadata={
+                "risky_action": risky_action,
+                "target_summary": target_summary,
+                "url_filter": url_filter,
+                "path": path or "",
+                "user_text": user_text,
+                "reason_code": BROWSER_COOKIES_REASON_CODE,
+            },
+            timeout_seconds=approval_timeout_s,
+            delivery_channel="voice",
+        )
+        handle = registry.register(request)
+        preapproved_decision = (
+            handle.pre_resolved.outcome.value
+            if handle.pre_resolved is not None
+            else ""
+        )
+        return BrowserCookiesResult(
+            success=False,
+            action=action,
+            error=f"two-phase approval required for {risky_action}",
+            risky_action=risky_action,
+            requires_two_phase=True,
+            approval_request_id=handle.approval_id,
+            path=path,
+            url_filter=url_filter,
+            safety_verdict=preapproved_decision,
+        )
+
     def _register_eval_approval(
         self,
         *,
@@ -2499,6 +3040,100 @@ def _short_target_label(arguments: Mapping[str, Any]) -> str:
     return ""
 
 
+def _failed_cookies_action(action: str, error: str) -> BrowserCookiesResult:
+    """Pre-validator failure shape for cookie methods. Equivalent to
+    :func:`_failed_action` but for the cookie result type."""
+    return BrowserCookiesResult(
+        success=False,
+        action=action,
+        error=error,
+    )
+
+
+def _humanize_cookie_risky_action(risky_action: str) -> str:
+    """Render a cookie risky-action label into a TTS-safe phrase for
+    the approval prompt. The script body / cookie names are NOT in
+    the prompt -- only a one-line description of WHAT the call would
+    do. Audit log metadata carries the specifics."""
+    mapping = {
+        "export_all": "Browser is about to export every loaded cookie to disk.",
+        "import": "Browser is about to import cookies from a file.",
+        "clear_all": "Browser is about to clear every loaded cookie.",
+        "clear_scoped": "Browser is about to clear cookies for one site.",
+        "get_all": "Browser is about to read every loaded cookie.",
+        "get_scoped": "Browser is about to read cookies for one site.",
+        "set": "Browser is about to set a cookie.",
+    }
+    return mapping.get(
+        risky_action,
+        "Browser is about to perform a cookie operation.",
+    )
+
+
+def _parse_cookies_json(
+    stdout: str,
+) -> tuple[tuple[BrowserCookie, ...], Optional[str]]:
+    """Parse ``cookies get --json`` output into a tuple of
+    :class:`BrowserCookie`.
+
+    Tolerates two shapes:
+
+    * Top-level list of cookie objects.
+    * ``{"cookies": [...]}`` envelope.
+
+    Per-entry parsing is forgiving: missing fields default to their
+    dataclass defaults; non-mapping entries are skipped. Returns
+    ``((), error_string)`` on full parse failure.
+    """
+    if not stdout:
+        return (), "empty cookies output"
+    try:
+        payload = json.loads(stdout)
+    except (ValueError, json.JSONDecodeError):
+        return (), "json parse failed"
+    if isinstance(payload, Mapping):
+        entries = payload.get("cookies")
+        if entries is None:
+            return (), "no 'cookies' key in mapping"
+    elif isinstance(payload, Sequence) and not isinstance(payload, str):
+        entries = payload
+    else:
+        return (), "unexpected cookies payload shape"
+    cookies: list[BrowserCookie] = []
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        name = entry.get("name")
+        if name is None:
+            continue
+        try:
+            expires_raw = entry.get("expires")
+            expires = (
+                float(expires_raw)
+                if expires_raw is not None and not isinstance(expires_raw, bool)
+                else None
+            )
+        except (TypeError, ValueError):
+            expires = None
+        cookies.append(
+            BrowserCookie(
+                name=str(name),
+                value=str(entry.get("value", "") or ""),
+                domain=str(entry.get("domain", "") or ""),
+                path=str(entry.get("path", "") or ""),
+                expires=expires,
+                secure=bool(entry.get("secure", False)),
+                http_only=bool(
+                    entry.get("httpOnly", entry.get("http_only", False))
+                ),
+                same_site=str(
+                    entry.get("sameSite", entry.get("same_site", "")) or ""
+                ),
+            )
+        )
+    return tuple(cookies), None
+
+
 def _humanize_categories(categories: tuple[str, ...]) -> str:
     """Render a category tuple into a short TTS-safe phrase for the
     approval prompt. Maps the internal labels onto user-readable
@@ -2622,6 +3257,8 @@ def _try_parse_tabs(
 
 
 __all__ = [
+    "BROWSER_COOKIES_APPROVAL_KIND",
+    "BROWSER_COOKIES_REASON_CODE",
     "BROWSER_JS_APPROVAL_KIND",
     "BROWSER_JS_REASON_CODE",
     "BROWSER_USE_BINARY_CANDIDATES",
@@ -2629,6 +3266,8 @@ __all__ = [
     "BrowserAttributesResult",
     "BrowserBbox",
     "BrowserBboxResult",
+    "BrowserCookie",
+    "BrowserCookiesResult",
     "BrowserElement",
     "BrowserEvalResult",
     "BrowserHtmlResult",
@@ -2642,6 +3281,7 @@ __all__ = [
     "BrowserUseTool",
     "BrowserValueResult",
     "BrowserWaitResult",
+    "COOKIE_SAME_SITE_VALUES",
     "DEFAULT_TIMEOUT_S",
     "DEFAULT_WAIT_TIMEOUT_MS",
     "JsScriptAnalysis",
