@@ -71,9 +71,10 @@ SLUG_MAX_CHARS: int = 48
 SUMMARY_MIN_CHARS: int = 30
 SUMMARY_MAX_CHARS: int = 200
 
-#: Tool names that must never become a skill slug on their own.
+#: Generic tool / runtime names that must never become a skill slug on
+#: their own (a slug should describe a CAPABILITY, not an editor / runtime).
 _TOOL_NAME_SLUGS: frozenset[str] = frozenset(
-    {"cursor", "vscode", "vim", "emacs", "windsurf", "copilot", "cline", "codex", "node", "npm"}
+    {"vscode", "vim", "emacs", "nano", "node", "npm", "pip", "git", "shell", "terminal"}
 )
 
 _STOPWORDS: frozenset[str] = frozenset(

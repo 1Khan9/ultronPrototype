@@ -182,8 +182,8 @@ def test_sanitize_skill_slug():
     assert D.sanitize_skill_slug(DISTILLED_ID_PREFIX + "perf_fix_1700000000000") == "perf-fix"
     fallback = D.sanitize_skill_slug("gene_distilled_99999999999999", signals=["perf_bottleneck"], summary="speed")
     assert fallback and not fallback.isdigit()
-    tool = D.sanitize_skill_slug("gene_distilled_cursor", signals=["perf_bottleneck"], summary="speed")
-    assert tool != "cursor"
+    tool = D.sanitize_skill_slug("gene_distilled_vscode", signals=["perf_bottleneck"], summary="speed")
+    assert tool != "vscode"
 
 
 def test_derive_triggers_non_empty():
