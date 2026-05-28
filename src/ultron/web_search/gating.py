@@ -242,6 +242,60 @@ _VOLATILE_TOPICS = re.compile(
     re.IGNORECASE,
 )
 
+# 2026 catalog 12 (felo-search T2): comparison / how-to / shopping queries
+# almost always benefit from fresh web sources -- library/version diffs,
+# product specs, current prices, up-to-date tutorials. These tokens were
+# absent from _TIME_SENSITIVE / _VOLATILE_TOPICS / _NEWS_QUERIES, so such
+# queries previously fell through to the (slower, less reliable) preflight
+# LLM. Deterministic SEARCH here is faster + more predictable. The patterns
+# are deliberately tight (no bare "better"/"best"/"buy"/"cost") to keep the
+# false-positive rate near zero; the anti-search rules (greeting/ack,
+# personal, creative) run BEFORE these in classify_by_rules so e.g.
+# "write a poem about Python vs Java" still routes NO_SEARCH.
+_COMPARISON_QUERIES = re.compile(
+    r"""
+    (?:
+        \bvs\b | \bversus\b
+      | \bcompared?\s+(?:to|with|against)\b
+      | \bcomparison\s+(?:of|between)\b
+      | \bwhich\s+(?:is|one\s+is)\s+(?:better|best|faster|cheaper|safer|stronger|worse|superior)\b
+      | \bbetter\s+than\b
+      | \bpros\s+and\s+cons\b
+      | \btrade[\s-]?offs?\b
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+_HOWTO_QUERIES = re.compile(
+    r"""
+    (?:
+        \bhow\s+to\b
+      | \btutorials?\b
+      | \bstep[\s-]?by[\s-]?step\b
+      | \bwalkthroughs?\b
+      | \bbest\s+practices?\b
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+_SHOPPING_QUERIES = re.compile(
+    r"""
+    (?:
+        \bprices?\b | \bpricing\b
+      | \bhow\s+much\s+(?:is|are|does|do|would|will)\b
+      | \bcost\s+of\b
+      | \bwhere\s+(?:to|can\s+i)\s+buy\b
+      | \bbuy\s+online\b
+      | \bdeals?\b | \bdiscounts?\b | \bcoupons?\b
+      | \bon\s+sale\b | \bcheapest\b
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
 # Year mentions that look post-cutoff. The training cutoff for Qwen3.5 is
 # ~Feb 2026 per project memory; queries about 2026+ events should search.
 # We don't try to be too clever -- any 4-digit year >= cutoff_year qualifies.
@@ -558,6 +612,49 @@ def classify_by_rules(utterance: str) -> Optional[GateVerdict]:
                     needs_search=True, confidence="high", rule_reason=reason,
                 ),
             )
+
+    # 2026 catalog 12 (felo-search T2): comparison / how-to / shopping
+    # queries. These run AFTER the anti-search rules above (so creative
+    # "write a poem about X vs Y" and personal "do you remember how to..."
+    # still route NO_SEARCH) and BEFORE the stable-factual catch-all below
+    # (so "how to install X" / "X vs Y" / "price of X" route SEARCH rather
+    # than being swallowed by the conceptual fast-path or escalated to the
+    # preflight LLM).
+    if _COMPARISON_QUERIES.search(text):
+        reason = "comparison query -- benefits from fresh sources"
+        _trace("gate:rules_match", rule="comparison_query", decision="SEARCH")
+        return GateVerdict(
+            GateDecision.SEARCH, "high", "rule",
+            reason,
+            has_temporal_dependency=True,
+            knowledge_source=_resolve_knowledge_source(
+                needs_search=True, confidence="high", rule_reason=reason,
+            ),
+        )
+
+    if _HOWTO_QUERIES.search(text):
+        reason = "how-to / tutorial query -- benefits from current docs"
+        _trace("gate:rules_match", rule="howto_query", decision="SEARCH")
+        return GateVerdict(
+            GateDecision.SEARCH, "high", "rule",
+            reason,
+            has_temporal_dependency=True,
+            knowledge_source=_resolve_knowledge_source(
+                needs_search=True, confidence="high", rule_reason=reason,
+            ),
+        )
+
+    if _SHOPPING_QUERIES.search(text):
+        reason = "shopping / price query -- needs fresh lookup"
+        _trace("gate:rules_match", rule="shopping_query", decision="SEARCH")
+        return GateVerdict(
+            GateDecision.SEARCH, "high", "rule",
+            reason,
+            has_temporal_dependency=True,
+            knowledge_source=_resolve_knowledge_source(
+                needs_search=True, confidence="high", rule_reason=reason,
+            ),
+        )
 
     # Catch-all NO_SEARCH for clear stable/conceptual question stems with
     # no time/volatile markers above. Confidence is "medium" -- we may be

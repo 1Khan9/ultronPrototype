@@ -10,7 +10,42 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** catalog 11 (clawhub-browser-agent) port on
+> **Validating HEAD:** catalog 12 (clawhub-felo-search) port IN PROGRESS on
+> worktree branch `claude/serene-bose-b88298` (base `0aa228d` = catalog 11
+> on `origin/main`). felo-search is a DOCUMENTATION-ONLY plugin (README +
+> SKILL + _meta.json, no Python) that wraps the PAID `felo.ai` search API,
+> so the direct API integration is RED (out of scope per the no-paid-APIs
+> rule); the port implements the transferable PATTERNS over ultron's
+> existing FREE local-first search ladder. Independent zero-RED security
+> confirmation via 3 Sonnet read-only scanners. 3 GREEN + 1 YELLOW + 1 RED.
+> Batches land incrementally on the worktree branch:
+> * **Batch A (T2, GREEN) — DONE:** comparison / how-to / shopping trigger
+>   regexes (`_COMPARISON_QUERIES` / `_HOWTO_QUERIES` / `_SHOPPING_QUERIES`)
+>   added to `web_search/gating.py` `classify_by_rules`. Additive to the
+>   always-on regex layer; placed AFTER the anti-search rules (greeting /
+>   personal / creative still win) and BEFORE the stable-factual catch-all
+>   (so "how to install X" / "X vs Y" / "price of X" route deterministic
+>   SEARCH instead of escalating to the preflight LLM). Patterns kept tight
+>   (no bare "better"/"best"/"buy"/"cost") to keep the false-positive rate
+>   near zero. No new config knob; zero latency. +21 hermetic tests.
+> * Batch B (T1, GREEN): query reformulation pre-search step — PENDING.
+> * Batch C (T4, GREEN): search-strategy transparency — PENDING.
+> * Batch D (T3, YELLOW): `DeepResearchLoop(AgentLoop)` + `DEEP_RESEARCH`
+>   intent over the free ladder — PENDING.
+> * Batch E: cross-system deep loops (memory / codebase / desktop) — PENDING.
+>
+> Test baseline (main-checkout projection): 8546 (catalog 11) + 21 (Batch A)
+> = **8567 passed / 26 skipped / 0 failed**. The new gating tests are
+> pure-regex + filesystem-independent so they pass identically in main; the
+> canonical absolute count is finalised from a main-checkout sweep at
+> session end. (Worktree sweeps report a lower absolute count because
+> `models/` + some filesystem-parametrized fixtures live only in the main
+> checkout: Batch A worktree sweep = 8545 passed / 27 skipped / 1 deselected
+> [bridge-e2e flake] / 0 failed.) Voice baseline contract intact — gate
+> rules are pure regex on the SEARCH-classification path; no voice hot-path,
+> model, or config-default touch.
+>
+> **Earlier validating HEAD:** catalog 11 (clawhub-browser-agent) port on
 > `origin/main` (worktree branch `claude/eloquent-solomon-fc0df3`; the
 > `main` checkout at `C:\STC\ultronPrototype\` fast-forwarded to the
 > same SHA. Feature commit `cfc1d27`; this doc-bump finalises the
@@ -877,7 +912,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── brave.py            ← BraveSearchClient + circuit breaker (Phase 4 Foundation); BraveResult/SearchResult rename with backwards-compat alias
 │       │   ├── cache.py            ← WebResultsCache (Qdrant-backed)
 │       │   ├── duckduckgo.py       ← 2026-05-22: DuckDuckGoSearchClient (HTML scrape via duckduckgo-search lib); last-fallback in provider chain
-│       │   ├── gating.py           ← Two-stage gate (rules + LLM pre-flight); _TIME_SENSITIVE / _VOLATILE_TOPICS / _NEWS_QUERIES / _TIME_IN_LOCATION_GATE_RE rules; classify_by_rules() short-circuit
+│       │   ├── gating.py           ← Two-stage gate (rules + LLM pre-flight); _TIME_SENSITIVE / _VOLATILE_TOPICS / _NEWS_QUERIES / _TIME_IN_LOCATION_GATE_RE rules; classify_by_rules() short-circuit. 2026 catalog 12 (felo-search T2): _COMPARISON_QUERIES / _HOWTO_QUERIES / _SHOPPING_QUERIES deterministic-SEARCH rules (run after anti-search rules, before the stable-factual catch-all)
 │       │   ├── jina.py             ← JinaReaderClient + circuit breaker
 │       │   ├── provider_chain.py   ← 2026-05-22 frontier: SearchProviderChain (searxng -> brave -> duckduckgo); first-non-empty-wins cascade; per-provider client construction memoized; forwards categories= only to SearxNG. 2026-05-25 openclaw-clawhub batch 1 (T14): RateLimitTracker integration -- constructor `tracker` kwarg (defaults to process-wide singleton via :func:`get_global_tracker`); `should_skip(pid)` consults the tracker before each provider attempt; `record_provider_outcome(pid, headers, was_429)` is the public hook clients call after each request to keep cooldowns fresh. Purely additive: existing clients unchanged; chain skips known-cooled providers silently.
 │       │   ├── rate_limit.py       ← 2026-05-25 openclaw-clawhub batch 1 (T14): HTTP rate-limit envelope parser + backoff helpers + per-provider tracker. Header constants for the legacy `X-RateLimit-*` family + standard `RateLimit-*` family + `Retry-After`. :func:`parse_retry_after` handles numeric seconds, IMF-fixdate, large-value-as-epoch (>=31_000_000s) heuristic, past-date clamping. :func:`parse_rate_limit_headers` returns frozen :class:`RateLimitState` with preferred-fallback order Retry-After -> RateLimit-Reset -> X-RateLimit-Reset. :class:`BackoffConfig` defaults base=0.3s / cap=5.0s / jitter=0.3s. :func:`compute_backoff` server-hint-or-exponential. :class:`RateLimitTracker` per-provider cooldown + 429 counter + RLock-guarded. Module-level :func:`get_global_tracker` singleton + :func:`reset_global_tracker_for_testing` test hook. Generalised beyond web-search (re-usable for future MCP transport, Jina reader, remote-LLM cascade).
@@ -2408,7 +2443,7 @@ Module is I/O-free. Callers wire their own persistence (Qdrant payload, JSONL au
 - `class GateDecision(str, Enum)` — SEARCH / NO_SEARCH / UNCERTAIN
 - `class GateVerdict` — decision, confidence, source, search_queries, knowledge signals (knowledge_confidence, knowledge_source, has_temporal_dependency), **context_categories** + **memory_search_queries** (V1-gap A2 — populated by the LLM preflight pass; rule-only verdicts leave them empty so the multi-pass retrieval path stays inactive).
 - `_resolve_knowledge_source(*, needs_search, confidence, memory_snippets, rule_reason)` (V1-gap B1) — single-source helper that maps gate inputs to the spec's five-value enumeration (`weights / retrieved_memory / retrieved_facts / web_search_needed / unknown`). Every `GateVerdict` construction site routes through this.
-- `classify_by_rules(utterance) -> Optional[GateVerdict]` — hard rules (time markers, URL, etc.)
+- `classify_by_rules(utterance) -> Optional[GateVerdict]` — hard rules (time markers, URL, etc.). 2026 catalog 12 (felo-search T2): three additional deterministic-SEARCH rules — `_COMPARISON_QUERIES` (`vs`/`versus`/`compared to`/`comparison of`/`which is better`/`better than`/`pros and cons`/`trade-offs`), `_HOWTO_QUERIES` (`how to`/`tutorial`/`step-by-step`/`walkthrough`/`best practices`), `_SHOPPING_QUERIES` (`price`/`pricing`/`how much is`/`cost of`/`where to buy`/`deal`/`discount`/`coupon`/`on sale`/`cheapest`). They fire after the anti-search rules (greeting/personal/creative win) and before `_STABLE_FACTUAL_REQUEST` (so `how does X work` / `how tall is X` stay NO_SEARCH while `how to X` routes SEARCH). All `high` confidence, `knowledge_source=web_search_needed`.
 - `classify_by_preflight(utterance, llm, memory_snippets) -> GateVerdict` — LLM call
 - `class WebSearchGate` — orchestrates rules → LLM
   - `classify(utterance, recent_memory) -> GateVerdict`

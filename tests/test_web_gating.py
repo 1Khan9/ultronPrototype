@@ -194,6 +194,93 @@ def test_time_in_location_does_not_match_bare_time_query():
     assert not _TIME_IN_LOCATION_GATE_RE.search("current time")
 
 
+@pytest.mark.parametrize("utterance", [
+    "Python vs Go for backend services",
+    "Vue 3 versus React for new projects",
+    "compare AWS pricing with Azure",
+    "comparison of Postgres and MySQL",
+    "which is better, Rust or C++",
+    "is TypeScript better than JavaScript",
+    "pros and cons of microservices",
+    "trade-offs between threads and async",
+])
+def test_comparison_query_rule_forces_search(utterance):
+    """Comparison phrasings (felo-search catalog 12 T2) route SEARCH
+    deterministically instead of falling through to the preflight LLM."""
+    got = classify_by_rules(utterance)
+    assert got is not None, f"rule didn't fire for {utterance!r}"
+    assert got.decision == D.SEARCH, (
+        f"expected SEARCH for {utterance!r}; got {got.decision} ({got.reason})"
+    )
+    assert got.source == "rule"
+    assert got.confidence == "high"
+    assert got.knowledge_source == "web_search_needed"
+
+
+@pytest.mark.parametrize("utterance", [
+    "how to install Docker on Windows",
+    "React 19 tutorial",
+    "step-by-step to set up nginx",
+    "kubernetes walkthrough",
+    "best practices for REST API design",
+])
+def test_howto_query_rule_forces_search(utterance):
+    """How-to / tutorial phrasings (felo-search catalog 12 T2) route SEARCH."""
+    got = classify_by_rules(utterance)
+    assert got is not None, f"rule didn't fire for {utterance!r}"
+    assert got.decision == D.SEARCH, (
+        f"expected SEARCH for {utterance!r}; got {got.decision} ({got.reason})"
+    )
+    assert got.source == "rule"
+    assert got.confidence == "high"
+
+
+@pytest.mark.parametrize("utterance", [
+    "price of an iPhone 15 Pro",
+    "how much does a Tesla Model 3 cost",
+    "where to buy a Steam Deck",
+    "cheapest flights to Tokyo",
+    "any deals on noise-cancelling headphones",
+    "MacBook Air M3 pricing",
+])
+def test_shopping_query_rule_forces_search(utterance):
+    """Shopping / price phrasings (felo-search catalog 12 T2) route SEARCH."""
+    got = classify_by_rules(utterance)
+    assert got is not None, f"rule didn't fire for {utterance!r}"
+    assert got.decision == D.SEARCH, (
+        f"expected SEARCH for {utterance!r}; got {got.decision} ({got.reason})"
+    )
+    assert got.source == "rule"
+    assert got.confidence == "high"
+
+
+def test_new_t2_triggers_do_not_override_anti_search_rules():
+    """Creative / personal rules still win over the new T2 SEARCH triggers
+    (they run earlier in classify_by_rules). Guards against the new
+    deterministic triggers silently walking back existing NO_SEARCH cases."""
+    # Creative task that also contains a comparison token.
+    got = classify_by_rules("Write me a poem about Python vs Java.")
+    assert got is not None and got.decision == D.NO_SEARCH
+    # Personal/memory question that also contains a how-to token.
+    got = classify_by_rules("Do you remember how to get to my house?")
+    assert got is not None and got.decision == D.NO_SEARCH
+
+
+def test_new_t2_triggers_do_not_break_stable_factual_cases():
+    """Conceptual 'how does X work' / 'how tall is X' must still route
+    NO_SEARCH -- the how-to trigger only matches 'how to', not 'how does'."""
+    for utt in (
+        "How does photosynthesis work?",
+        "How tall is Mount Everest?",
+        "Walk me through how a transistor works.",
+    ):
+        got = classify_by_rules(utt)
+        assert got is not None and got.decision == D.NO_SEARCH, (
+            f"{utt!r} should stay NO_SEARCH; got "
+            f"{got.decision if got else 'None'}"
+        )
+
+
 def test_empty_utterance_is_no_search():
     got = classify_by_rules("")
     assert got is not None
