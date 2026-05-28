@@ -3197,3 +3197,242 @@ class TestParseCookiesJson:
         payload = json.dumps([{"name": "s", "expires": True}])
         cookies, err = bu._parse_cookies_json(payload)
         assert cookies[0].expires is None
+
+
+# ===========================================================================
+# Batch 6 -- T10 YELLOW Chrome profile connect
+# ===========================================================================
+
+
+class TestProfileList:
+    def test_parses_list(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        fake_subprocess.stdout = json.dumps(
+            [
+                {"name": "Default", "browser": "chrome", "path": "/p/Default"},
+                {"name": "Profile 1", "browser": "chrome"},
+            ]
+        )
+        result = tool.profile_list()
+        assert result.success is True
+        assert len(result.profiles) == 2
+        assert result.profiles[0].name == "Default"
+        assert result.profiles[0].browser == "chrome"
+        cmd = fake_subprocess.calls[0].cmd
+        assert cmd[-3:] == ["profile", "list", "--json"]
+
+    def test_mapping_shape(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        fake_subprocess.stdout = json.dumps(
+            {"profiles": [{"profile": "Work"}]}
+        )
+        result = tool.profile_list()
+        assert len(result.profiles) == 1
+        assert result.profiles[0].name == "Work"
+
+    def test_parse_failure(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        fake_subprocess.stdout = "garbage"
+        result = tool.profile_list()
+        assert result.profiles == ()
+        assert "parse" in (result.error or "").lower()
+
+    def test_no_two_phase_for_list(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        # profile_list is Cap-2; it does NOT go through the validator
+        # or approval (read-only enumeration).
+        fake_subprocess.stdout = json.dumps([])
+        tool.profile_list()
+        assert fake_validator.call_count == 0
+
+
+class TestConnect:
+    def test_requires_approval(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        registry = _FakeApprovalRegistry()
+        result = tool.connect(
+            user_text="connect to chrome",
+            approval_registry=registry,
+        )
+        assert result.success is False
+        assert result.requires_two_phase is True
+        assert result.approval_request_id == "test-approval-1"
+        assert fake_subprocess.calls == []
+        req = registry.registrations[0]
+        assert req.kind == bu.BROWSER_PROFILE_APPROVAL_KIND
+        assert req.metadata["reason_code"] == bu.BROWSER_PROFILE_REASON_CODE
+
+    def test_preapproved_executes(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        result = tool.connect(
+            user_text="connect",
+            assume_preapproved=True,
+        )
+        assert result.success is True
+        assert result.connected is True
+        cmd = fake_subprocess.calls[0].cmd
+        assert cmd[-1] == "connect"
+
+    def test_preapproved_safety_block(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        fake_validator.block(message="not allowed")
+        result = tool.connect(user_text="connect", assume_preapproved=True)
+        assert result.success is False
+        assert result.safety_verdict == "BLOCK_HARD"
+        assert fake_subprocess.calls == []
+
+
+class TestConnectProfile:
+    def test_requires_approval(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        registry = _FakeApprovalRegistry()
+        result = tool.connect_profile(
+            "Default",
+            url="https://github.com",
+            user_text="use my chrome",
+            approval_registry=registry,
+        )
+        assert result.success is False
+        assert result.requires_two_phase is True
+        assert result.profile == "Default"
+        assert fake_subprocess.calls == []
+        req = registry.registrations[0]
+        assert req.metadata["profile"] == "Default"
+        assert req.metadata["url"] == "https://github.com"
+
+    def test_preapproved_executes(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        result = tool.connect_profile(
+            "Default",
+            url="https://github.com",
+            user_text="approved",
+            assume_preapproved=True,
+        )
+        assert result.success is True
+        cmd = fake_subprocess.calls[0].cmd
+        # --profile flag comes before the subcommand.
+        assert "--profile" in cmd
+        assert "Default" in cmd
+        assert "open" in cmd
+        assert "https://github.com" in cmd
+        profile_idx = cmd.index("--profile")
+        open_idx = cmd.index("open")
+        assert profile_idx < open_idx
+
+    def test_empty_profile_rejected(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        result = tool.connect_profile("  ", user_text="x")
+        assert result.success is False
+        assert "empty profile" in (result.error or "")
+
+    def test_invalid_profile_rejected(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        # Path separators must be rejected so the name can't escape.
+        for bad in ["../etc", "a/b", "a\\b", "a;rm", "a&b"]:
+            result = tool.connect_profile(bad, user_text="x")
+            assert result.success is False, bad
+            assert "match" in (result.error or "")
+
+    def test_profile_with_space_accepted(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        # "Profile 1" is a real Chrome profile name -- spaces allowed.
+        result = tool.connect_profile(
+            "Profile 1",
+            user_text="approved",
+            assume_preapproved=True,
+        )
+        assert result.success is True
+
+    def test_default_url_is_about_blank(
+        self,
+        fake_subprocess: _FakeSubprocess,
+        fake_validator: _FakeValidator,
+        tool: bu.BrowserUseTool,
+    ) -> None:
+        tool.connect_profile(
+            "Default", user_text="approved", assume_preapproved=True
+        )
+        cmd = fake_subprocess.calls[0].cmd
+        assert "about:blank" in cmd
+
+
+class TestParseProfilesJson:
+    def test_list_shape(self) -> None:
+        profiles, err = bu._parse_profiles_json(
+            json.dumps([{"name": "Default", "browser": "chrome"}])
+        )
+        assert err is None
+        assert len(profiles) == 1
+        assert profiles[0].name == "Default"
+
+    def test_alternative_keys(self) -> None:
+        profiles, err = bu._parse_profiles_json(
+            json.dumps([{"label": "X", "browser_name": "edge", "directory": "/d"}])
+        )
+        assert profiles[0].name == "X"
+        assert profiles[0].browser == "edge"
+        assert profiles[0].path == "/d"
+
+    def test_missing_name_skipped(self) -> None:
+        profiles, err = bu._parse_profiles_json(
+            json.dumps([{"browser": "chrome"}, {"name": "ok"}])
+        )
+        assert len(profiles) == 1
+        assert profiles[0].name == "ok"
+
+    def test_empty(self) -> None:
+        profiles, err = bu._parse_profiles_json("")
+        assert profiles == ()
+        assert err is not None
+
+    def test_garbage(self) -> None:
+        profiles, err = bu._parse_profiles_json("nope")
+        assert profiles == ()

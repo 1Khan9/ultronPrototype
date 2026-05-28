@@ -359,6 +359,21 @@ COOKIE_SAME_SITE_VALUES: frozenset[str] = frozenset(
     {"Strict", "Lax", "None"}
 )
 
+# Approval-request kind for Chrome profile attach (connect /
+# connect_profile). Full live-Chrome session takeover -- the most
+# sensitive non-RED browser operation.
+BROWSER_PROFILE_APPROVAL_KIND: str = "browser_use_profile_connect"
+BROWSER_PROFILE_REASON_CODE: str = (
+    "ultron.suspicious.browser_profile_connect"
+)
+
+# Profile-name allowlist: Chrome profile directory names are
+# "Default" / "Profile 1" / "Profile 2" / etc., plus user-renamed
+# profiles. Allow letters, digits, spaces, underscores, hyphens,
+# dots; 1-64 chars. Rejects path separators + shell metacharacters
+# so a profile name can never escape into a hostile argument.
+_PROFILE_NAME_RE = re.compile(r"^[A-Za-z0-9 ._-]{1,64}$")
+
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -615,6 +630,39 @@ class BrowserCookiesResult(BrowserUseResult):
     requires_two_phase: bool = False
     approval_request_id: str = ""
     url_filter: str = ""
+    safety_verdict: str = ""
+
+
+@dataclass(frozen=True)
+class BrowserProfile:
+    """One Chrome profile discovered by ``profile list``."""
+
+    name: str
+    browser: str = ""
+    path: str = ""
+
+
+@dataclass(frozen=True)
+class BrowserProfilesResult(BrowserUseResult):
+    """T10 -- ``profile list`` outcome (Cap-2 read)."""
+
+    profiles: tuple[BrowserProfile, ...] = ()
+
+
+@dataclass(frozen=True)
+class BrowserConnectResult(BrowserUseResult):
+    """T10 -- ``connect`` / ``connect_profile`` outcome.
+
+    Same three-state shape as :class:`BrowserEvalResult`:
+    approval-required (``requires_two_phase=True`` +
+    ``approval_request_id``), safety-denied (``safety_verdict`` set),
+    or executed (``success=True``, ``connected=True``).
+    """
+
+    connected: bool = False
+    profile: str = ""
+    requires_two_phase: bool = False
+    approval_request_id: str = ""
     safety_verdict: str = ""
 
 
@@ -2533,6 +2581,207 @@ class BrowserUseTool:
             safety_verdict=preapproved_decision,
         )
 
+    # -- T10 Chrome profile connect (YELLOW) ---------------------------
+
+    def profile_list(
+        self, *, timeout_s: Optional[float] = None
+    ) -> BrowserProfilesResult:
+        """T10 -- enumerate detected browsers + profiles (Cap-2 read).
+
+        Read-only, no two-phase approval. The result feeds the voice
+        flow's "which profile do you want me to use?" prompt before
+        a :meth:`connect_profile` call.
+        """
+        result = self._invoke(
+            ["profile", "list", "--json"],
+            action="profile_list",
+            timeout_s=timeout_s,
+        )
+        profiles: tuple[BrowserProfile, ...] = ()
+        parse_error: Optional[str] = result.error
+        if result.success:
+            profiles, parse_error = _parse_profiles_json(result.stdout)
+        return BrowserProfilesResult(
+            success=result.success,
+            action="profile_list",
+            stdout=result.stdout,
+            stderr=result.stderr,
+            error=parse_error,
+            elapsed_ms=result.elapsed_ms,
+            exit_code=result.exit_code,
+            profiles=profiles,
+        )
+
+    def connect(
+        self,
+        *,
+        user_text: str = "",
+        assume_preapproved: bool = False,
+        approval_registry: Optional[ApprovalRegistry] = None,
+        approval_timeout_s: Optional[float] = None,
+        approval_scope_key: str = "",
+        timeout_s: Optional[float] = None,
+    ) -> BrowserConnectResult:
+        """T10 (YELLOW) -- attach to the user's already-running Chrome
+        via CDP.
+
+        Full live-session takeover: after connect, every subsequent
+        command targets the user's real Chrome including all
+        authenticated tabs + password-autofilled forms. Two-phase
+        approval is ALWAYS required (one-time per session, not
+        per-command). ``--cdp-url`` is never emitted -- this only
+        attaches to the local Chrome the upstream auto-discovers.
+        """
+        return self._connect_impl(
+            action="connect",
+            profile="",
+            url=None,
+            user_text=user_text,
+            assume_preapproved=assume_preapproved,
+            approval_registry=approval_registry,
+            approval_timeout_s=approval_timeout_s,
+            approval_scope_key=approval_scope_key,
+            timeout_s=timeout_s,
+        )
+
+    def connect_profile(
+        self,
+        profile: str = "Default",
+        *,
+        url: str = "about:blank",
+        user_text: str = "",
+        assume_preapproved: bool = False,
+        approval_registry: Optional[ApprovalRegistry] = None,
+        approval_timeout_s: Optional[float] = None,
+        approval_scope_key: str = "",
+        timeout_s: Optional[float] = None,
+    ) -> BrowserConnectResult:
+        """T10 (YELLOW) -- launch Chrome with a specific profile and
+        open ``url``, preserving that profile's logged-in sessions.
+
+        Profile name is validated against an allowlist (letters,
+        digits, spaces, dots, underscores, hyphens; 1-64 chars) so
+        it can never escape into a hostile argument. Two-phase
+        approval ALWAYS required.
+
+        SECURITY NOTE: combined with a prior :meth:`cookies_import`,
+        this can attach to the user's authenticated Chrome with
+        externally-sourced cookies. The two operations are
+        independently gated; the catalog 10 review flagged the
+        sequence as a workflow-level concern.
+        """
+        profile = (profile or "").strip()
+        if not profile:
+            return BrowserConnectResult(
+                success=False, action="connect_profile", error="empty profile name"
+            )
+        if not _PROFILE_NAME_RE.match(profile):
+            return BrowserConnectResult(
+                success=False,
+                action="connect_profile",
+                error=(
+                    f"profile name must match [A-Za-z0-9 ._-]{{1,64}}, "
+                    f"got {profile!r}"
+                ),
+            )
+        url = (url or "").strip() or "about:blank"
+        return self._connect_impl(
+            action="connect_profile",
+            profile=profile,
+            url=url,
+            user_text=user_text,
+            assume_preapproved=assume_preapproved,
+            approval_registry=approval_registry,
+            approval_timeout_s=approval_timeout_s,
+            approval_scope_key=approval_scope_key,
+            timeout_s=timeout_s,
+        )
+
+    def _connect_impl(
+        self,
+        *,
+        action: str,
+        profile: str,
+        url: Optional[str],
+        user_text: str,
+        assume_preapproved: bool,
+        approval_registry: Optional[ApprovalRegistry],
+        approval_timeout_s: Optional[float],
+        approval_scope_key: str,
+        timeout_s: Optional[float],
+    ) -> BrowserConnectResult:
+        """Shared connect / connect_profile pipeline: two-phase
+        approval -> Cap-3 validator -> subprocess."""
+        if not assume_preapproved:
+            registry = (
+                approval_registry
+                if approval_registry is not None
+                else get_approval_registry()
+            )
+            target = (
+                f"profile {profile!r}" if profile else "the running Chrome session"
+            )
+            request = ApprovalRequest(
+                kind=BROWSER_PROFILE_APPROVAL_KIND,
+                prompt=(
+                    f"Browser wants to connect to {target}, taking control "
+                    f"of your authenticated session. Proceed?"
+                ),
+                actor="desktop_browser_use",
+                scope_key=approval_scope_key or self._session or "",
+                metadata={
+                    "action": action,
+                    "profile": profile,
+                    "url": url or "",
+                    "user_text": user_text,
+                    "reason_code": BROWSER_PROFILE_REASON_CODE,
+                },
+                timeout_seconds=approval_timeout_s,
+                delivery_channel="voice",
+            )
+            handle = registry.register(request)
+            preapproved_decision = (
+                handle.pre_resolved.outcome.value
+                if handle.pre_resolved is not None
+                else ""
+            )
+            return BrowserConnectResult(
+                success=False,
+                action=action,
+                error="two-phase approval required for Chrome session takeover",
+                profile=profile,
+                requires_two_phase=True,
+                approval_request_id=handle.approval_id,
+                safety_verdict=preapproved_decision,
+            )
+        denial = self._safety_check(
+            action=action,
+            arguments={"profile": profile, "url": url or ""},
+            user_text=user_text,
+            result_factory=BrowserConnectResult,
+            extra_result_kwargs={"profile": profile, "requires_two_phase": True},
+        )
+        if denial is not None:
+            return denial
+        if profile:
+            args = ["--profile", profile, "open", url or "about:blank"]
+        else:
+            args = ["connect"]
+        result = self._invoke(args, action=action, timeout_s=timeout_s)
+        return BrowserConnectResult(
+            success=result.success,
+            action=action,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            error=result.error,
+            elapsed_ms=result.elapsed_ms,
+            exit_code=result.exit_code,
+            connected=result.success,
+            profile=profile,
+            requires_two_phase=True,
+            safety_verdict="ALLOW",
+        )
+
     def _register_eval_approval(
         self,
         *,
@@ -3040,6 +3289,50 @@ def _short_target_label(arguments: Mapping[str, Any]) -> str:
     return ""
 
 
+def _parse_profiles_json(
+    stdout: str,
+) -> tuple[tuple[BrowserProfile, ...], Optional[str]]:
+    """Parse ``profile list --json`` output.
+
+    Tolerates a top-level list of profile objects OR a
+    ``{"profiles": [...]}`` envelope. Per-entry keys vary by upstream
+    version: name / profile / label for the profile name; browser /
+    browser_name for the browser; path / directory for the on-disk
+    location. Returns ``((), error)`` on parse failure.
+    """
+    if not stdout:
+        return (), "empty profile output"
+    try:
+        payload = json.loads(stdout)
+    except (ValueError, json.JSONDecodeError):
+        return (), "json parse failed"
+    if isinstance(payload, Mapping):
+        entries = payload.get("profiles")
+        if entries is None:
+            return (), "no 'profiles' key in mapping"
+    elif isinstance(payload, Sequence) and not isinstance(payload, str):
+        entries = payload
+    else:
+        return (), "unexpected profile payload shape"
+    profiles: list[BrowserProfile] = []
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        name = entry.get("name") or entry.get("profile") or entry.get("label")
+        if not name:
+            continue
+        profiles.append(
+            BrowserProfile(
+                name=str(name),
+                browser=str(
+                    entry.get("browser", entry.get("browser_name", "")) or ""
+                ),
+                path=str(entry.get("path", entry.get("directory", "")) or ""),
+            )
+        )
+    return tuple(profiles), None
+
+
 def _failed_cookies_action(action: str, error: str) -> BrowserCookiesResult:
     """Pre-validator failure shape for cookie methods. Equivalent to
     :func:`_failed_action` but for the cookie result type."""
@@ -3261,16 +3554,21 @@ __all__ = [
     "BROWSER_COOKIES_REASON_CODE",
     "BROWSER_JS_APPROVAL_KIND",
     "BROWSER_JS_REASON_CODE",
+    "BROWSER_PROFILE_APPROVAL_KIND",
+    "BROWSER_PROFILE_REASON_CODE",
     "BROWSER_USE_BINARY_CANDIDATES",
     "BrowserActionResult",
     "BrowserAttributesResult",
     "BrowserBbox",
     "BrowserBboxResult",
+    "BrowserConnectResult",
     "BrowserCookie",
     "BrowserCookiesResult",
     "BrowserElement",
     "BrowserEvalResult",
     "BrowserHtmlResult",
+    "BrowserProfile",
+    "BrowserProfilesResult",
     "BrowserScreenshotResult",
     "BrowserState",
     "BrowserTabInfo",
