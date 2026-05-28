@@ -10,7 +10,93 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** catalog 12 (clawhub-felo-search) port -- ALL FIVE
+> **Validating HEAD:** catalog 13 (clawhub-capability-evolver clean-room)
+> port -- bounded autonomous self-improvement -- on worktree branch
+> `claude/elated-vaughan-b90f7e` (base `6334b41` = catalog 12), pushed to
+> `origin/main` with the `main` checkout fast-forwarded. **The source plugin
+> was QUARANTINED and NEVER read / imported / executed / deobfuscated** (it
+> is treated as high-risk for malicious code); the `src/ultron/evolution/`
+> package was built clean-room from the catalog entry + eight independent
+> static scan reports ONLY -- no source code, constant, or string was ever
+> in context to copy. The new package is a NEW top-level subsystem (10
+> modules) wired into the live voice pipeline default-ON + fail-open. The
+> upstream's dangerous core (an agent that rewrites its own executable code
+> and runs shell / network "verify" steps) is excluded BY CONSTRUCTION:
+> ultron's engine proposes DATA only (a Markdown skill under
+> `data/evolution/skills/*.md` or an in-range config value), NEVER generated
+> code, NEVER `src/ultron/`, NEVER a Category-K surface; the safety
+> validator / audit ledger / engine itself sit behind a Tier-3 hard wall;
+> zero network / shell / eval; every change is pre-flight-gated (fail-closed)
+> + checkpointed + reversible + hash-chain-audited, bounded by the
+> `AgentLoop.max_steps` cap. Voice baseline LOCKED (the personality tuner is
+> a Tier-0 `[Tone: ...]` system-prompt hint only -- no SOUL.md / RVC / Piper
+> / Kokoro touch; the orchestrator hot path gains only microsecond setter +
+> signal-extraction calls). Tier summary: 7 GREEN + 2 YELLOW + (the
+> self-rewriting / network / shell core) RED, excluded.
+>
+> The ten modules + the wiring:
+> * **`models.py` (GREEN):** GEP data model -- frozen dataclasses (Gene /
+>   Capsule / Mutation / EvolutionEvent / PersonalityState / BlastRadius /
+>   Outcome / EnvFingerprint) with `__post_init__` coercion, content-
+>   addressable `sha256` asset ids, clamp/canonicalize helpers, schema
+>   version. `EnvFingerprint` omits the upstream device id (safety departure).
+> * **`signals.py` (GREEN):** opportunity-signal extraction -- two LOCAL
+>   layers (regex + weighted-keyword scoring + multilingual user-request
+>   detection + history-aware post-processing). The upstream's third
+>   LLM/Hub-network layer is NOT ported.
+> * **`blast_radius.py` (GREEN):** change-scope policy spine --
+>   counted-file policy, 5 severity tiers, `CRITICAL_PROTECTED_PREFIXES`
+>   /`FILES` Tier-3 wall (includes `src/`), ethics-block regexes, numstat
+>   parsing with an injectable git provider. The load-bearing safety wall.
+> * **`skill_distiller.py` (GREEN):** capsule -> pattern -> new-skill
+>   distillation. Local-only synthesis of a trigger-loaded skill
+>   (ultron-compatible frontmatter) from >=10 recurring success capsules (or
+>   a repair gene from failures), 24h cooldown + data-hash idempotency.
+>   Output is DATA (`skills/*.md`), never code.
+> * **`guardrails.py` (GREEN):** four in-process regression detectors
+>   (latency / quality / error / resource ceiling) + a rollback-frequency
+>   audit that demotes a churny surface. Replaces the upstream's
+>   run-commands-to-verify step.
+> * **`autonomy.py` (GREEN):** `TieredAutonomyController` -- Tier 0/1
+>   auto-apply, Tier 2 propose -> two-phase approval (graduates after a clean
+>   track record: >=20 changes, <10% revert, 0 hard trips), Tier 3 hard
+>   wall; rollback-rate demotion.
+> * **`personality.py` (GREEN):** Tier-0 DATA self-tune -- an adaptive
+>   response temperament (verbosity / rigor / creativity) nudged by per-turn
+>   satisfaction (corrections / re-asks / barge-ins) + an outcome-ranking
+>   aggregator, expressed purely as a `[Tone: ...]` hint distinct from
+>   `response_style`'s `[Style:`. Never touches the locked voice character.
+> * **`evolution_loop.py` (YELLOW):** `EvolutionLoop(AgentLoop)` -- pre-flight
+>   (fail-closed) -> autonomy gate -> reversible checkpoint -> write -> blast
+>   /constraint check -> guardrails -> keep or auto-revert -> hash-chained
+>   audit, bounded by `max_steps`. The first cross-subsystem consumer of the
+>   catalog-11 `AgentLoop` base alongside the catalog-12 deep loops.
+> * **`service.py` + `intent.py` (YELLOW):** the runtime bundle --
+>   `EvolutionStore` (lock-guarded JSONL: capsules / failures / hash-chained
+>   events / state / personality), `EvolutionService` (from_config /
+>   record_turn / single-flight run_cycle / daemon-thread autonomous cycle /
+>   temperament / digest / shutdown), and a strict voice-command matcher
+>   ("evolve now" / "evolution status").
+> * **Production wiring (`config.py` + `config.yaml` + `pipeline/
+>   orchestrator.py` + `llm/inference.py`):** `EvolutionConfig` (default ON);
+>   `_load_evolution_if_enabled` at startup (before the skill registry, whose
+>   extra dirs now include `data/evolution/skills` so a kept proposal is live
+>   next turn); a run-loop short-circuit `_maybe_handle_evolution_command`;
+>   per-turn `_record_evolution_turn` (opportunity capsule + barge-in ->
+>   temperament + autonomous-cycle trigger); `LLMEngine.set_temperament_hint`
+>   injecting the `[Tone: ...]` directive into the SYSTEM prompt (never the
+>   user text, so the web-gate / local-clock detectors see the raw
+>   utterance); shutdown persistence.
+>
+> Test baseline: catalog-12 + 265 (evolution package, batches 1-9a) + 21
+> (llm + orchestrator wiring, batch 9b) = **8949 passed / 26 skipped / 0
+> failed** in ~119 s, worktree full sweep via `scripts/run_tests.py
+> --stale-heartbeat=400`, NO deselect, exit 0 (the Windows
+> subprocess-cold-start flake family did not trip on this unloaded run). All
+> new tests are filesystem-independent (frozen-dataclass / fake-service /
+> fake-LLM) so they pass identically in the main checkout.
+>
+> **Earlier validating HEAD:** catalog 12 (clawhub-felo-search) port -- ALL FIVE
 > BATCHES (A-E) COMPLETE -- on worktree branch `claude/serene-bose-b88298`
 > (base `0aa228d` = catalog 11), pushed to `origin/main` with the `main`
 > checkout fast-forwarded. felo-search is a DOCUMENTATION-ONLY plugin (README +
@@ -691,6 +777,7 @@ result of every row. Deep narrative lives in the corresponding
 
 | Date | HEAD | Summary | Tests | Memory file |
 |------|------|---------|-------|-------------|
+| 2026-06-02 | (catalog 13) | **clawhub-capability-evolver catalog 13 port -- bounded autonomous self-improvement (NEW `src/ultron/evolution/` subsystem).** A QUARANTINED, high-risk plugin: the source was **NEVER read / imported / executed / deobfuscated**; the 10-module package was built clean-room from the catalog entry + eight static scan reports ONLY (no source code, constant, or string ever in context to copy). ultron observes its own turns, mints success/failure *capsules*, and -- once a pattern recurs (>=10 successes, >=7 of last 10, 24h cooldown) -- distills a new trigger-loaded skill into `data/evolution/skills/*.md` (a gitignored, checkpointed, revertible live skills source). Every proposal runs the bounded `EvolutionLoop(AgentLoop)`: pre-flight (fail-closed) -> autonomy-tier gate -> reversible checkpoint -> write -> blast-radius + constraint check -> 4 regression guardrails -> keep or auto-revert -> hash-chained audit, bounded by `max_steps`. **HARD SAFETY CONTRACT (the upstream's self-rewriting / network / shell core excluded BY CONSTRUCTION):** proposals are DATA ONLY (skills markdown / in-range config), NEVER generated code, NEVER `src/ultron/`, NEVER a Category-K surface; the safety validator / audit ledger / engine itself sit behind a Tier-3 hard wall (`blast_radius.CRITICAL_PROTECTED_PREFIXES` includes `src/`); zero network / shell / eval; `EnvFingerprint` omits the upstream device id. Modules: `models.py` (GEP data model), `signals.py` (local opportunity-signal extraction, no LLM/Hub layer), `blast_radius.py` (policy spine + protected-path wall), `skill_distiller.py` (capsule->skill distillation), `guardrails.py` (latency/quality/error/resource detectors + rollback audit), `autonomy.py` (`TieredAutonomyController` + trust graduation), `personality.py` (Tier-0 `[Tone: ...]` temperament tune), `evolution_loop.py` (the bounded loop), `service.py`+`intent.py` (JSONL runtime + voice commands). Wired default-ON + fail-open: `EvolutionConfig`; `_load_evolution_if_enabled` at startup (before the skill registry, whose extra dirs gain `data/evolution/skills`); run-loop short-circuit `_maybe_handle_evolution_command` ("evolve now" / "evolution status"); per-turn `_record_evolution_turn` (opportunity capsule + barge-in -> temperament + autonomous-cycle trigger); `LLMEngine.set_temperament_hint` injecting the tone directive into the SYSTEM prompt only (the web-gate / local-clock detectors see the raw utterance); shutdown persistence. Tier summary: 7 GREEN + 2 YELLOW + (self-rewriting/network/shell core) RED, excluded. Voice baseline contract intact (no SOUL.md / RVC / Piper / Kokoro touch; hot path gains only microsecond setter + signal-extraction calls; the cycle runs single-flight on a daemon thread off the hot path). `THIRD_PARTY_NOTICES.md` extended with the quarantined-source provenance record + per-component table. +286 tests (265 evolution package + 21 llm/orchestrator wiring). | 8949 | [project_ultron_2026_06_02_clawhub_capability_evolver.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_06_02_clawhub_capability_evolver.md) |
 | 2026-05-31 | (catalog 11) | **clawhub-browser-agent catalog 11 port.** A raw-CDP-WebSocket primitives plugin (≈350 LOC, no agent loop) architecturally superseded by the catalog-10 `browser-use` CLI tier, so the port extracts the genuinely transferable hardening patterns + the agent-loop meta-pattern (4 GREEN + 3 YELLOW + 0 RED), NOT the CDP transport. NEW modules: `src/ultron/utils/heartbeat.py` (T2 `HeartbeatThread` -- stoppable, fail-open daemon keep-alive; `Event.wait`-based + `HeartbeatStats`, improving on the upstream's unstoppable `while True: sleep`), `src/ultron/utils/health_check.py` (T4 `http_health_check` + `cdp_health_check` -- cheap fail-open pre-flight probes with injectable transport), `src/ultron/agent_loop/base.py` (the `AgentLoop` meta-pattern: an ADDITIVE observe->plan->act->verify base whose load-bearing invariant is the `max_steps` cap, plus built-in repeated-signature loop detection + per-step `StepRecord`s + a verify hook + fail-open execution; does NOT modify any existing runner). `desktop/browser_use.py` `BrowserUseTool` gains three gated methods: `click_css_selector` (T3 ARIA-ref-miss fallback -- CSS selector -> `getBoundingClientRect` -> Cap-3-gated `click_at_coords`, computing the *correct* box-model centre rather than the upstream's buggy `(border[0]+border[1])/2`; selector `json.dumps`-encoded against injection), `wait_for_element_js` (T7 event-driven `MutationObserver` element-appear wait via the gated `eval`, with a bounded `setTimeout` fallback the upstream lacked), `export_pdf` (T6 `Page.printToPDF` page-to-PDF export, `PathResolver` + Cap-2/Cap-3 gated, fail-open). T1 idle-reconnect / T2 heartbeat / T4 health-check / T5 `--remote-allow-origins` have NO literal wiring target in ultron's CLI-based browser architecture (the `browser-use` CLI owns its own Chrome + CDP; ultron never opens a raw CDP socket; the launcher deliberately blocks CDP flags on the user's real Chrome) -- so T2 + T4 ship as importable primitives and T1 + T5 are documented findings, not forced code. Clean-room re-implementation from a zero-RED-confirmed read-only source scan (3 Sonnet 4.6 Explore agents); no source copied verbatim. No new config knobs (always-available gated methods on the already-default-ON `browser_use` tool + importable utils). +71 hermetic tests (`tests/utils/test_heartbeat.py` 10, `tests/utils/test_health_check.py` 18, `tests/desktop/test_browser_use_catalog11.py` 25, `tests/agent_loop/test_base.py` 18). Voice baseline contract intact; no orchestrator hot-path edit. `THIRD_PARTY_NOTICES.md` extended with clawhub-browser-agent (MIT) attribution. | 8546 | (this session) |
 | 2026-05-30 | `f176f29` (fix `7b53ea1`) | **Bridge-e2e subprocess-reap flake fix.** Fixes the long-deselected `tests/integration/test_bridge_e2e.py::test_health_through_real_subprocess` flake. `OpenClawClient._run_cli`'s timeout cleanup (`src/ultron/openclaw_bridge/client.py`) now reaps the WHOLE process tree via a new `_reap_process_tree` helper → `subprocess.kill_tree.kill_process_tree`, instead of `proc.kill()`: on Windows the openclaw CLI is a `.cmd` shim that spawns the real interpreter as a grandchild, and killing only the immediate child orphaned that grandchild — which held the stdout/stderr pipes open and wedged the event loop's subprocess transport at teardown (the historical "hung full sweep until the wall-clock watchdog" symptom; the conftest session-end reaper is useless because the session never ends while pytest stalls mid-run). The tree is collected while the root is still alive so psutil can reach the grandchild; the synchronous kill runs in the default executor so the loop stays free to drain the closing pipes. `test_health_through_real_subprocess` now uses a 20s health probe (vs 5s) to absorb Windows `.cmd`→`python` cold-start under sweep load (still under the 30s per-test deadline). New hermetic `tests/openclaw_bridge/test_client.py::test_run_cli_timeout_reaps_whole_process_tree` spies on `kill_process_tree` to pin the reap contract. Greatly improves the flake (passes in isolation ~0.5s; on an unloaded machine the prior session saw the full sweep green without deselection at 8475/106s) but does NOT fully fix it -- the test spawns the real openclaw `.cmd`->python subprocess, so under heavy machine contention the 20s health probe can be exceeded, failing the test + wedging the sweep to the wall-clock watchdog (observed 2026-05-30: a contended audit stalled at ~33% on exactly this test, exit 5; the deselected sweep was clean at 8474 passed / 26 skipped / 1 deselected / 0 failed in ~160s). Keep `-- --deselect "tests/integration/test_bridge_e2e.py::test_health_through_real_subprocess"` as the loaded-machine fallback; a 33%-stall here is the flake, not a regression. Voice baseline contract intact (`_run_cli` is the OpenClaw bridge transport, not the voice hot path). | 8475 (8474 + flake) | [project_ultron_2026_05_30_clawhub_browser_use.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_30_clawhub_browser_use.md) (Branch-integration section) |
 | 2026-05-30 | `d220b50` | **Deferred-primitive wiring pass.** Wired the previously-ported-but-unconsumed openclaw-clawhub primitives into orchestrator hot paths. **T15 private telemetry** (`observability/private_telemetry.py`): `Orchestrator._init_telemetry_store` at startup + `_emit_turn_telemetry` in `_respond`'s `finally` (one aggregate `HashedEvent` per turn -- routing-intent under the `category` safe key + `searched` bool + numeric `latency_ms` + `tier` bucket + `outcome`; `_latency_bucket` labels kept <=12 chars to pass the raw-path leak check). **FAIL-PRIVATE: no-ops unless `ULTRON_TELEMETRY=opt-in`** -- the one feature deliberately NOT default-on (privacy-by-construction; the fail-open exception does not apply to a privacy gate). **T7 short-lived token** (`identity/short_lived_token.py`): `_mint_forensic_token` registers an idempotent trusted-caller tuple + mints an HS256 JWT at MCP-server start (`mcp:tools`) + gaming-engage (`voice:gaming-engage`, revoke-by-expiry on disengage); forensic / defense-in-depth (single-user in-process runtime: minter + verifier share the trust boundary), audit-logged, fail-open. **T12 report queue** (`feedback/report_queue.py` + NEW `feedback/report_intent.py`): strict `match_report_concern` regex (no LLM round-trip; "report on the weather" does NOT trip it) intercepted in the run loop BEFORE routing; `_maybe_handle_report_concern` files a `Report` to hash-chained `data/feedback/reports.jsonl` + speaks an ack; deliberately avoided a new `RoutingIntentKind` (the 23-value enum is asserted by many tests). **T18 image markdown verified consumer-less** -- text-only Qwen 4B + `claude --print` text-argv coding bridge + moondream2 raw-bytes mean no inline-data-URL consumer exists; left importable, NOT fake-wired (honest no-op per "don't build for hypothetical futures"). `.gitignore` extended for the wiring-pass runtime-data dirs (incl. `data/identity/`, which holds the HMAC token-signing secret). +51 hermetic tests (all `Orchestrator.__new__` pattern; real round-trips redirect `PROJECT_ROOT` to `tmp_path`). Voice baseline contract intact (hot path gains one cheap fail-private emit). | 8474 | [project_ultron_2026_05_30_clawhub_browser_use.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_30_clawhub_browser_use.md) (Follow-on section) |
@@ -1179,6 +1266,19 @@ For the current decisions and Foundation phase status see
 │       │   ├── subagent_policy.py   ← 2026-05-25 OpenClaw batch 3 (T7): depth-aware subagent tool-policy. SUBAGENT_TOOL_DENY_ALWAYS (gateway/agents_list/session_status/cron/sessions_send + ultron tts_speak/kokoro_speak/gaming_mode_engage/set_validator/install_skill); SUBAGENT_TOOL_DENY_LEAF (subagents/sessions_list/sessions_history/sessions_spawn + ultron mcp_add_server/mcp_remove_server). resolve_subagent_tool_policy(depth, config) returns ResolvedSubagentToolPolicy with deny + allow + also_allow + per-tool provenance. is_leaf(depth, max_spawn_depth) matches OpenClaw's depth >= max(1, floor(maxSpawnDepth)). filter_tools_by_policy + ResolvedSubagentToolPolicy.is_permitted enforce the policy on a tool list.
 │       │   ├── mode.py              ← 2026-05-24 cline batch 10 (T2): Mode enum (ACT / PLAN / CODING_ARCHITECT / CODING_EDITOR / GAMING) + frozen ModePolicy (allows_tool_side_effects / requires_confirmation / wrap_prefix_template / confirmation_timeout / preset_override) + DEFAULT_POLICIES (PLAN wraps with "Here is my plan: {plan} / Say 'do it'") + PendingConfirmation (UUID + TTL + intent_topic + callback_token) + ModeSession state machine (flip with invalidate_pending semantics / queue_plan / peek_latest_pending / consume_pending_confirmation with topic filter / cancel_pending / flip_history capped at 32) + module-level get_mode_session(session_id) registry singleton
 │       │   └── subagent.py          ← 2026-05-24 cline batch 10 (T16): DEFAULT_READONLY_TOOL_WHITELIST (file_read / list_files / list_code_definitions / search / ripgrep_search / use_skill / execute_command_readonly / rag_query / web_search) + frozen SubagentTask (per-task whitelist + token caps + wall-clock timeout) + SubagentResult (text + per-task token meter + tool call log) + SubagentBatchStats (n_tasks / n_succeeded / total_input_tokens / max_wall_clock / sum_wall_clock) + ToolGuard whitelist enforcer raising ToolNotPermittedError + thread-safe TokenLedger + SubagentRunner ThreadPoolExecutor-backed dispatcher with max_parallel=1 default for voice baseline safety
+│       │
+│       ├── evolution/               ← 2026 catalog 13 (clawhub-capability-evolver clean-room): bounded autonomous self-improvement. QUARANTINED source NEVER read; built from catalog + scan reports only. Data-only proposals (skills/*.md), Tier-3-walled, zero network/shell/eval, fully fail-open. Wired default-ON via pipeline/orchestrator.py.
+│       │   ├── __init__.py          ← Public API re-exports (78 symbols across the package)
+│       │   ├── models.py            ← GEP data model: frozen dataclasses Gene / Capsule / Mutation / EvolutionEvent / PersonalityState / BlastRadius / Outcome / GeneConstraints / EnvFingerprint (NO device_id -- safety departure) + EvolutionCategory / OutcomeStatus / RiskLevel enums + clamp01 / canonicalize / compute_asset_id (sha256) / verify_asset_id + id generators (new_capsule_id appends a 6-hex suffix to avoid same-ms collisions) + schema constants
+│       │   ├── signals.py           ← Opportunity-signal extraction: 17 OPPORTUNITY_SIGNALS + COSMETIC_SIGNALS + 7 weighted SIGNAL_PROFILES; extract_signals (two LOCAL layers: regex + keyword scoring + multilingual user-request) + analyze_recent_history + apply_post_processing (dedup / repair-loop / saturation / failure-streak / ban) + has_opportunity_signal. The upstream's 3rd LLM/Hub-network layer is NOT ported.
+│       │   ├── blast_radius.py      ← Change-scope policy spine: CountedFilePolicy + BLAST_RADIUS_HARD_CAP_FILES/LINES + BlastSeverity (5 tiers) + CRITICAL_PROTECTED_PREFIXES/FILES Tier-3 wall (includes "src/") + ETHICS_BLOCK_PATTERNS + compute_blast_radius / classify_blast_severity / check_constraints / classify_failure_mode / is_critical_protected_path; injectable git_numstat provider
+│       │   ├── skill_distiller.py   ← Capsule->pattern->skill distillation: auto_distill / auto_distill_from_failures + analyze_patterns + synthesize_gene_from_patterns + gene_to_skill_proposal + render_skill_markdown (ultron-compatible frontmatter: name/type/version/description/triggers/min_user_text_chars) + should_distill (>=10 successes, >=7 of last 10, 24h cooldown, data-hash idempotency) + SkillProposal / DistillResult. Output is DATA, never code.
+│       │   ├── guardrails.py        ← Regression guardrails: GuardrailBaseline (TTFA 266 / TTFT 172 / TTS 78 / VRAM 6664 defaults) + 4 detectors (detect_latency_regression / detect_quality_regression / detect_error_regression / detect_resource_ceiling) + evaluate_guardrails + RollbackAudit (note_outcome / rollback_rate / should_demote) + ROLLBACK_DEMOTE_THRESHOLD=0.30 + VRAM_CAP_MB=11500. Replaces the upstream's run-commands-to-verify step.
+│       │   ├── autonomy.py          ← Tiered autonomy: AutonomyTier (PARAM/SKILL/GATED/WALL IntEnum) + AutonomyMode + DEFAULT_SURFACE_TIERS (skills=SKILL; safety_validator/audit/engine/category_k=WALL) + TieredAutonomyController (mode_for / can_auto_apply / requires_approval / record_outcome->AutonomyTransition / digest) + graduation ladder (>=20 changes, <10% revert, 0 hard trips) + rollback-rate demotion
+│       │   ├── personality.py       ← Tier-0 adaptive temperament: PersonalityTuner (record_feedback nudges rigor/creativity/verbosity from corrections/re-asks/barge-ins; record_outcome + best_personality ranking; to_dict/from_dict) + temperament_hint -> "[Tone: ...]" directive (distinct from response_style's "[Style:") + apply_temperament. NEVER touches SOUL.md / the voicepack.
+│       │   ├── evolution_loop.py    ← EvolutionLoop(AgentLoop): pre-flight (fail-closed) -> autonomy gate -> checkpoint -> write -> blast+constraints -> guardrails -> keep/revert -> hash-chained audit, bounded by max_steps. ApplyStatus (KEPT/REVERTED/BLOCKED/REJECTED/GATED_NO_CHANNEL) + ApplyResult + EvolutionState + CheckpointHook + EvolutionLoopConfig. Injected collaborators (capsules_provider / guardrail_sampler / checkpoint / approval / audit_sink / ...).
+│       │   ├── service.py           ← Runtime bundle: EvolutionStore (lock-guarded JSONL: capsules / failed_capsules / events hash-chain + verify_event_chain / state / personality) + EvolutionService (from_config / record_turn / single-flight run_cycle / maybe_run_autonomous_cycle daemon thread / temperament_hint / apply_temperament / digest / status_line / shutdown). Checkpoint over data/evolution/skills via CheckpointRegistry(data/checkpoints).
+│       │   └── intent.py            ← Strict voice-command matcher: match_evolution_command -> EvolutionCommand(kind=RUN_CYCLE|STATUS). Status patterns checked first. Mirrors the established short-circuit matchers; only trips on explicit self-improvement phrasing.
 │       │
 │       ├── search/                  ← 2026-05-24 cline batch 1 (T25): direct-search utilities
 │       │   ├── __init__.py          ← Public API re-exports
@@ -3745,6 +3845,7 @@ Sections:
 - `window_control` (V1-gap C3) — enabled=false, default_action_timeout_seconds, plugin_slug, tool_slug_focus / tool_slug_click / tool_slug_type
 - `browser_use` (2026-05-30 catalog 10) — top-level section for the external `browser-use` CLI browser-automation tier. **8 knobs, all default ON**: `enabled=true`, `binary_path=null` (null = auto-discover `browser-use`/`bu`/`browseruse` on PATH), `default_session=null`, `default_timeout_seconds=30.0`, `default_wait_timeout_ms=30000`, `max_sessions=3` (hard ceiling 16, enforced by `BrowserSessionsManager`), `headed=false`, `screen_context_fallback_enabled=true` (folds a best-effort browser-use page-state line into `screen_context` ONLY when UIA browser extraction is empty AND the tool has an active page). Fail-open: when the binary is absent every method returns a structured "not found" result, so default-ON costs nothing until both the binary is installed AND a browser action is requested.
 - `deep_research` (2026 catalog 12, felo-search T3) — top-level section for the bounded agentic deep-research loop over the FREE search ladder. **5 knobs, default ON**: `enabled=true`, `max_steps=3` (research rounds; the load-bearing AgentLoop cap), `max_sub_queries_per_step=3`, `top_n_per_query=3`, `max_accumulated_sources=8` (hard cap bounding the synthesis prompt). EXPLICIT per-turn opt-in via `match_deep_research` ("research X in depth" / "deep dive on X"); the normal sub-second search path is untouched. A deep-research turn runs several full searches (~10-18 s) and fails open at every layer.
+- `evolution` (2026 catalog 13, clawhub-capability-evolver clean-room) — top-level section for the bounded autonomous self-improvement subsystem. **5 knobs, default ON**: `enabled=true`, `max_steps=3` (AgentLoop step cap per cycle), `cycle_check_interval_turns=25` (recorded turns between autonomous-cycle checks; a cycle still only proposes when the distiller thresholds are met), `pause_on_demote=false` (demote a churny surface to propose-only rather than pausing it), `apply_temperament=true` (prepend the learned `[Tone: ...]` hint to turns via the system prompt). Maps to `EvolutionConfig`. Fail-open: a construction/runtime failure degrades to a disabled service (every per-turn hook becomes a no-op). Data-only proposals, Tier-3-walled, zero network/shell/eval — see the `src/ultron/evolution/` tree above + the THIRD_PARTY_NOTICES quarantined-source record.
 - `intent` (2026-05-22 semantic intent recognizer) — enabled (default TRUE), model="embeddinggemma-300m", variant="q4", threshold=0.65, phrases: list of `{name, phrase, threshold?}` (25 registered: 12 gaming-mode variants + 2 time/date + 11 "needs fresh data" / freshness intents)
 - `safety` (2026-05-12 Phases 2-5 runtime tool-call validator) — enabled (default TRUE), per-rule toggles via `rules.{rule_id}: bool`, sandbox_roots override, extra_protected_files / extra_protected_dirs, screen_cache_dir, approved_outbound_apis, audit_log_path
 - `coding.supervisor` (2026-05-22 supervisor stack) — eleven knobs:
@@ -4148,8 +4249,8 @@ Two responsibilities:
 ### Default suite (no env gate) — per-file snapshot (frozen 2026-05-22)
 
 > **The CANONICAL current pass count lives in the validating-HEAD header at
-> the TOP of this file** (catalog 12: ~8663 passed / 26 skipped / 0 failed,
-> main-checkout projection). The per-file enumeration in THIS section is a
+> the TOP of this file** (catalog 13: **8949 passed / 26 skipped / 0 failed**,
+> worktree full sweep, no deselect, exit 0). The per-file enumeration in THIS section is a
 > historical snapshot frozen at the 2026-05-22 review-feedback pass (4240
 > passed / 16 skipped) and is intentionally NOT re-counted per commit — the
 > top-of-file header is the source of truth for the running total. Always
@@ -4157,6 +4258,8 @@ Two responsibilities:
 > binding `feedback_test_sweep_workflow.md` + `docs/test_sweep_binding_rules.md`).
 > Original 2026-05-22 snapshot: **4240 passed / 16 skipped (GPU-gated)** in
 > ~76 s (+136 from the session-E baseline of 4104).
+
+**Catalog 13 (evolution) test files (+286):** [`tests/evolution/`](../tests/evolution/) mirrors the package layout (265 tests) -- `test_models.py` (GEP dataclasses + asset-id round-trip), `test_signals.py`, `test_blast_radius.py`, `test_skill_distiller.py` (incl. a skills-loader round-trip on a distilled `.md`), `test_guardrails.py`, `test_autonomy.py`, `test_personality.py`, `test_evolution_loop.py` (fake collaborators; keep/revert/block paths), `test_intent.py`, `test_service.py` (hermetic JSONL store + service; all persistence to `tmp_path`). Wiring (+21): [`tests/test_llm_temperament_hint.py`](../tests/test_llm_temperament_hint.py) (5; `set_temperament_hint` -> `_build_messages` system-prompt injection, user-text untouched) + [`tests/test_orchestrator_evolution_wiring.py`](../tests/test_orchestrator_evolution_wiring.py) (16; `Orchestrator.__new__` pattern -- `_load_evolution_if_enabled` real round-trip under `tmp_path`, `_maybe_handle_evolution_command` status/run/fail-open, `_record_evolution_turn` + `_consume_last_barge_in`).
 
 **New test files in this pass:**
 - [`tests/resilience/test_fail_open_log.py`](../tests/resilience/test_fail_open_log.py) (+26) — per-session counter: record / accumulate / unknown-category open-ended / fail-safe on broken lock; configure + flush JSONL + previous-session read; render_summary alphabetisation + empty + None handling; KNOWN_CATEGORIES uniqueness + bus_slow_subscriber present.
@@ -4403,6 +4506,11 @@ Set `$env:PYTEST_RUN_GPU_TESTS = "1"` before pytest. Includes real Claude API ca
 | `summaries.jsonl` | `scripts/maintenance.py` | Conversation summaries |
 | `maintenance.sqlite` | `scripts/maintenance.py` | Maintenance state (cursors, etc.) |
 | `ollama_compat_test/` | (Foundation Phase 0) | Modelfile from Ollama compat test (not in active use) |
+| `evolution/skills/*.md` | `evolution.skill_distiller` (via `EvolutionLoop`) | 2026 catalog 13: autonomously distilled trigger-loaded skills -- a LIVE skills source (registered as a PROJECT-precedence dir; reloaded after a kept proposal). Gitignored, checkpointed (revertible), DATA-only (never code). |
+| `evolution/capsules.jsonl` + `failed_capsules.jsonl` | `evolution.service.EvolutionStore` | Per-turn success / failure capsules that feed pattern distillation (lock-guarded append-only) |
+| `evolution/events.jsonl` | `evolution.service.EvolutionStore.append_event` | Hash-chained evolution audit ledger; `verify_event_chain()` rebuilds to detect tampering |
+| `evolution/state.json` + `personality.json` | `evolution.service.EvolutionStore` | Distillation cooldown / last-data-hash gate state + the learned Tier-0 response temperament (resumed next session) |
+| `checkpoints/evolution-skills/` | `checkpoints.registry.CheckpointRegistry` (via `EvolutionService`) | Shadow-repo checkpoint over the proposal dir so a failed proposal auto-reverts. Gitignored. |
 
 ### `ultronVoiceAudio/` (workshop dir, mostly gitignored)
 

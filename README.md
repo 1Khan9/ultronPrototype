@@ -6,7 +6,7 @@
 
 *Say "ultron." Talk. Get answers in a custom voice. Everything runs on your GPU.*
 
-[![tests](https://img.shields.io/badge/tests-7715%20passing-brightgreen?style=flat-square)](https://github.com/1v9Khan/ultronPrototype)
+[![tests](https://img.shields.io/badge/tests-8949%20passing-brightgreen?style=flat-square)](https://github.com/1v9Khan/ultronPrototype)
 [![latency](https://img.shields.io/badge/TTFA-~266ms-blueviolet?style=flat-square)](#-at-a-glance)
 [![VRAM](https://img.shields.io/badge/VRAM-6.3GB%20standby-orange?style=flat-square)](#-at-a-glance)
 [![python](https://img.shields.io/badge/python-3.11+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)

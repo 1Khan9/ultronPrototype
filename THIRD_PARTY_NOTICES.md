@@ -537,3 +537,80 @@ Tier summary for the port: 3 GREEN + 1 YELLOW + 1 RED (the Felo API itself).
 | `web_search/deep_research.py` (`DeepResearchLoop`, T3) | the server-side decompose/search/synthesize loop evidenced by `query_analysis` | Bounded agentic deep-research over the FREE ladder, on the catalog-11 `AgentLoop` base (load-bearing `max_steps` cap). Wired via an explicit voice opt-in. YELLOW. |
 | `agent_loop/deep_loops.py` (`DeepMemoryLoop` / `DeepExplorationLoop` / `DeepUIDiscoveryLoop`, T3 cross-system extensions) | the same loop pattern, generalised | Cross-system deep-gather loops (memory / codebase / UI), importable primitives. YELLOW. |
 | (NOT PORTED) direct Felo API call | `https://openapi.felo.ai/v2/chat` | RED: paid external search API; excluded per `feedback_no_paid_apis.md`. |
+
+
+## clawhub-capability-evolver (QUARANTINED; source never read -- catalog + scan reports only)
+
+Project: `clawhub-capability-evolver` (a ClawHub plugin; catalog 13). The
+plugin implements an autonomous "self-improvement / capability evolution"
+engine (a Genome Evolution Protocol of genes / capsules / mutations, an
+agentic apply-and-verify loop, skill distillation, and tiered autonomy).
+
+**Provenance is materially different from every other entry in this file,
+and the difference is the point.** clawhub / openclaw plugins are treated as
+HIGH-RISK for malicious / harmful code, so this plugin's source was stored
+in a QUARANTINED folder (`F:\reference_repos\quarantine\`) and was
+**NEVER read, imported, executed, or deobfuscated** at any point. There was
+no read-only Explore-agent pass over the source (unlike the
+clawhub-windows-control / clawhub-desktop-control entries above, where the
+source WAS read read-only). ultron's `src/ultron/evolution/` package was
+built clean-room from TWO non-executable inputs only: (1) the human-authored
+catalog entry describing the techniques, and (2) eight independent static
+scan reports of the quarantined tree. No source code, data, constant, or
+string was copied verbatim -- none was ever in context to copy. This entry
+is therefore a provenance record and a statement of the safety departures,
+not a code-license obligation (no license text was observed; the manifest
+was not read).
+
+**The dangerous core of the upstream is deliberately NOT ported (RED).**
+The upstream's power comes from an agent that can rewrite its own executable
+code, run shell / network actions to "verify" a mutation, and persist
+self-modifications. ultron's re-implementation keeps the *useful, safe*
+shape of the idea (learn from experience -> distill a new skill ->
+gate it -> keep or revert) under a HARD SAFETY CONTRACT that the upstream
+does not have:
+
+* **Data-only proposals.** A kept proposal is a Markdown skill file under
+  `data/evolution/skills/*.md` (a gitignored, checkpointed, revertible
+  runtime source) or an in-range config value. The engine NEVER writes
+  generated *code*, NEVER touches `src/ultron/`, and NEVER touches a
+  Category-K surface.
+* **Tier-3 hard wall.** The safety validator, the audit ledger, and the
+  evolution engine itself are never autonomously rewritten
+  (`blast_radius.CRITICAL_PROTECTED_PREFIXES` includes `src/`).
+* **Zero network, zero shell, zero eval.** Nothing in the package opens a
+  socket, makes an HTTP call, spawns a subprocess of generated content, or
+  `eval`s anything. The "verify" step is a set of in-process regression
+  guardrails (latency / quality / error / resource) over local metrics, not
+  a sandbox that runs attacker-influenced commands.
+* **Pre-flight fails closed; every change is checkpointed + reversible; the
+  `AgentLoop.max_steps` cap bounds every cycle; a full hash-chained audit
+  ledger records every event.**
+* **No device fingerprint.** The upstream stamps an environment fingerprint
+  that included a device id; ultron's `EnvFingerprint` deliberately omits
+  it (no stable hardware identifier is collected or persisted).
+* **Voice baseline locked.** The personality tuner is a Tier-0 DATA profile
+  that shapes response verbosity / precision via a `[Tone: ...]` system-
+  prompt hint only; it NEVER touches SOUL.md, RVC, Piper, or the Kokoro
+  voicepack.
+
+Tier summary for the port: 7 GREEN + 2 YELLOW + (the upstream's self-
+rewriting / network / shell core) RED, excluded by construction.
+
+| Ultron component | Inspired by (technique) | Notes |
+| --- | --- | --- |
+| `src/ultron/evolution/models.py` | GEP data model (genes / capsules / mutations / events / personality) | Frozen dataclasses with `__post_init__` coercion, content-addressable `sha256` asset ids, clamp/canonicalize helpers, schema version. `EnvFingerprint` omits the upstream device id (safety departure). GREEN. |
+| `src/ultron/evolution/signals.py` | opportunity-signal detection | Two LOCAL layers only -- regex + weighted-keyword scoring + multilingual user-request detection + history-aware post-processing. The upstream's third layer (an LLM / Hub network call to "discover" signals) is NOT ported (RED). GREEN. |
+| `src/ultron/evolution/blast_radius.py` | change-scope policy + protected-path wall | Counted-file policy, severity tiers, `CRITICAL_PROTECTED_PREFIXES`/`FILES` Tier-3 wall (includes `src/`), ethics-block regexes, numstat parsing (injectable git provider). The wall is the load-bearing safety primitive. GREEN. |
+| `src/ultron/evolution/skill_distiller.py` | capsule -> pattern -> new-skill distillation | Local-only synthesis of a trigger-loaded skill (ultron-compatible frontmatter) from >=10 recurring success capsules (or a repair gene from failures), with a 24h cooldown + data-hash idempotency. Output is DATA (`skills/*.md`), never code. GREEN. |
+| `src/ultron/evolution/guardrails.py` | apply-verification | Four in-process regression detectors (latency / quality / error / resource ceiling) over local metrics + a rollback-frequency audit that demotes a churny surface. Replaces the upstream's run-commands-to-verify step (RED). GREEN. |
+| `src/ultron/evolution/autonomy.py` | tiered autonomy + trust graduation | `TieredAutonomyController`: Tier 0/1 auto-apply, Tier 2 propose -> two-phase approval (graduates after a clean track record), Tier 3 hard wall. Rollback-rate demotion. GREEN. |
+| `src/ultron/evolution/personality.py` | outcome-ranked "temperament" | Tier-0 DATA self-tune: an adaptive response temperament (verbosity / rigor / creativity) nudged by per-turn satisfaction (corrections / re-asks / barge-ins) + an outcome-ranking aggregator. Expressed purely as a `[Tone: ...]` system-prompt hint; never touches the locked voice character. GREEN. |
+| `src/ultron/evolution/evolution_loop.py` | agentic apply-and-verify loop | `EvolutionLoop(AgentLoop)`: pre-flight (fail-closed) -> autonomy gate -> reversible checkpoint -> write -> blast/constraint check -> guardrails -> keep or auto-revert -> hash-chained audit, bounded by `max_steps`. The write target is DATA only; "verify" is the local guardrails, not a sandbox. YELLOW. |
+| `src/ultron/evolution/service.py` + `intent.py` | runtime engine + control surface | Lock-guarded JSONL persistence (capsules / failures / hash-chained events / state / personality), single-flight cycle on a daemon thread, strict voice-command matcher ("evolve now" / "evolution status"). Fail-open at every seam. YELLOW. |
+| (NOT PORTED) self-rewriting code + network/shell "verify" + self-mod persistence + device fingerprint | the upstream's autonomous-mutation core | RED: excluded by construction. ultron proposes DATA only, verifies with local guardrails, walls off `src/` + the safety/audit/engine surfaces, and makes zero network/shell/eval calls. |
+
+This file satisfies the provenance / attribution record for the
+`src/ultron/evolution/` package. Because the source was never read and no
+license was observed, no license text is reproduced; the package is
+original work whose *approach* is informed by the catalog description.
