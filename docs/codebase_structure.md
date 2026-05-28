@@ -13,7 +13,8 @@
 > **Validating HEAD:** catalog 11 (clawhub-browser-agent) port on
 > `origin/main` (worktree branch `claude/eloquent-solomon-fc0df3`; the
 > `main` checkout at `C:\STC\ultronPrototype\` fast-forwarded to the
-> same SHA -- exact SHA recorded in the closing doc-bump commit).
+> same SHA. Feature commit `cfc1d27`; this doc-bump finalises the
+> validating-HEAD reference).
 > Catalog 11 is a raw-CDP-WebSocket primitives plugin architecturally
 > superseded by the catalog-10 `browser-use` CLI tier, so the port
 > extracts the genuinely transferable hardening patterns + the
