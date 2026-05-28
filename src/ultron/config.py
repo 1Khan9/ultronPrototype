@@ -2816,6 +2816,71 @@ class WindowControlConfig(_Strict):
     tool_slug_type: str = "windows_type_text"
 
 
+class BrowserUseConfig(_Strict):
+    """Catalog 10: CDP-backed browser automation via the external
+    ``browser-use`` CLI.
+
+    Adds a second-tier browser surface on top of the existing UIA
+    extraction in :func:`ultron.desktop.uia.extract_browser_content`.
+    Covers everything the UIA tier cannot: CSS-selector-scoped HTML
+    extraction, JavaScript evaluation (batch 3, YELLOW),
+    cookie management (batch 4, YELLOW), named-session isolation
+    (batch 5, YELLOW), profile-attached automation (batch 6, YELLOW),
+    raw CDP passthrough (batch 7, YELLOW), and screenshot+VLM
+    sequence verification via :class:`BrowserSequenceRunner` (batch 8).
+
+    Default ON: every method fails-open when the ``browser-use``
+    binary is missing, so flipping enabled does not crash the
+    orchestrator on systems without the CLI installed. The
+    ``binary_path`` knob accepts an explicit path; ``None`` triggers
+    PATH-based discovery against ``browser-use`` / ``bu`` / ``browseruse``.
+
+    Per the catalog's binding skip list:
+
+    * Cloud mode (``cloud connect`` / ``cloud signup``) is OUT OF SCOPE
+      under ``feedback_no_paid_apis.md`` -- the wrappers refuse to
+      emit ``cloud`` subcommands at the implementation level.
+    * Cloudflare tunnel (``tunnel`` subcommand) is OUT OF SCOPE --
+      inbound attack surface + outbound exfiltration vector.
+    * ``--cdp-url`` external URL argument is BLOCKED at the wrapper.
+    * ``BROWSER_USE_SESSION`` env var is SCRUBBED on every subprocess
+      call -- session selection is always explicit.
+
+    Attributes:
+        enabled: master switch. Default True; flip to False to
+            short-circuit every call without invoking the binary.
+        binary_path: explicit absolute path to the ``browser-use``
+            executable. ``None`` triggers PATH discovery.
+        default_session: bind a session name on the singleton tool
+            constructed at orchestrator startup. ``None`` means "no
+            session flag" (the upstream defaults to ``default``).
+        default_timeout_seconds: per-call subprocess wall-clock
+            timeout. The upstream documents ~50 ms warm, ~200-500 ms
+            cold-start.
+        default_wait_timeout_ms: default page-level timeout for
+            :meth:`BrowserUseTool.wait_selector` and
+            :meth:`BrowserUseTool.wait_text`.
+        max_sessions: cap on simultaneous named sessions managed by
+            :class:`BrowserSessionManager` (batch 5).
+        headed: when True, every ``open`` call appends ``--headed``.
+            Useful for debugging.
+        screen_context_fallback_enabled: when True, the new tier
+            slots into :func:`ultron.desktop.screen_context.build_screen_context`
+            between the UIA tier and the Moondream2 VLM tier (wired
+            in batch 9). When False, the new tier ships as standalone
+            infrastructure callable directly via the module singleton.
+    """
+
+    enabled: bool = True
+    binary_path: Optional[str] = None
+    default_session: Optional[str] = None
+    default_timeout_seconds: float = Field(default=30.0, gt=0.0, le=600.0)
+    default_wait_timeout_ms: int = Field(default=30_000, gt=0, le=600_000)
+    max_sessions: int = Field(default=3, ge=1, le=16)
+    headed: bool = False
+    screen_context_fallback_enabled: bool = True
+
+
 class IntentConfig(_Strict):
     """Engine-agnostic intent recognizer (2026-05-22).
 
@@ -3065,6 +3130,12 @@ class UltronConfig(_Strict):
     gaming_mode: GamingModeConfig = Field(default_factory=GamingModeConfig)
     desktop: DesktopConfig = Field(default_factory=DesktopConfig)
     window_control: WindowControlConfig = Field(default_factory=WindowControlConfig)
+    # Catalog 10 -- CDP-backed browser automation via the external
+    # ``browser-use`` CLI. Second-tier alongside the UIA extraction
+    # in ``ultron.desktop.uia.extract_browser_content``. Default ON
+    # with fail-open contract: every method returns a structured
+    # failure when the binary is missing.
+    browser_use: BrowserUseConfig = Field(default_factory=BrowserUseConfig)
     # 2026-05-12 Phase 2 -- runtime tool-call validator (paired with the
     # abliterated Josiefied Qwen3-8B default LLM).
     safety: "SafetyConfig" = Field(default_factory=lambda: SafetyConfig())

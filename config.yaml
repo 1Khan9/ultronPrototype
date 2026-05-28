@@ -1475,6 +1475,52 @@ window_control:
   tool_slug_type: "windows_type_text"
 
 # ---------------------------------------------------------------------------
+# browser-use CDP browser tier (catalog 10, 2026-05-29)
+# ---------------------------------------------------------------------------
+# Second-tier browser surface on top of the existing UIA extraction
+# in ``desktop/uia.py:extract_browser_content``. Wraps the external
+# open-source ``browser-use`` CLI (Playwright + CDP) -- the upstream
+# binary is NOT a hard dependency: every method fails-open with a
+# clear "binary missing" error when ``browser-use`` is not on PATH.
+#
+# Default ON because the fail-open contract covers the missing-binary
+# case. Operators who want the CDP tier just ``pip install browser-use``
+# (or set ``binary_path`` to an explicit absolute path). Voice baseline
+# is unchanged either way -- the voice path does not currently call
+# the CDP tier; ``screen_context.py`` integration arrives in batch 9.
+#
+# Catalog 10 binding skip list (enforced at the wrapper level, not
+# just here):
+#   * Cloud mode (``cloud connect`` / ``cloud signup``) -- OUT
+#     under feedback_no_paid_apis.md
+#   * Cloudflare tunnel (``tunnel`` subcommand) -- OUT (inbound attack
+#     surface + outbound exfiltration vector)
+#   * ``--cdp-url`` external URL arg -- BLOCKED at wrapper
+#   * ``BROWSER_USE_SESSION`` env var -- SCRUBBED on every call
+#
+# Knobs in this section:
+#   enabled                          master switch
+#   binary_path                      explicit path; null triggers PATH discovery
+#   default_session                  null = "no session flag"; or a name like "ultron"
+#   default_timeout_seconds          per-call subprocess wall-clock cap
+#   default_wait_timeout_ms          ``wait_selector`` / ``wait_text`` default
+#   max_sessions                     cap on simultaneous named sessions (batch 5)
+#   headed                           append ``--headed`` to every ``open``
+#   screen_context_fallback_enabled  whether to slot into screen_context tier chain
+#                                    (wired in batch 9; the knob ships ON so the
+#                                     batch-9 wiring activates without re-flipping)
+
+browser_use:
+  enabled: true
+  binary_path: null
+  default_session: null
+  default_timeout_seconds: 30.0
+  default_wait_timeout_ms: 30000
+  max_sessions: 3
+  headed: false
+  screen_context_fallback_enabled: true
+
+# ---------------------------------------------------------------------------
 # Error phrases (Phase 4) — user-facing voice messages for dependency failures
 # ---------------------------------------------------------------------------
 # Each list is a phrase pool. Empty list disables narration for that
