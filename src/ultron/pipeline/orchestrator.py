@@ -799,6 +799,18 @@ class Orchestrator:
             )
             server.start(ready_timeout_s=5.0)
             logger.info("MCP server listening at %s", server.sse_url)
+            # openclaw-clawhub T7: mint a short-lived forensic token
+            # scoped to this MCP server's PID + tool capabilities,
+            # replacing the long-lived-secret pattern the catalog
+            # called out. Audit-logged; fail-open (the token is not a
+            # hard gate in the single-user in-process runtime).
+            self._mint_forensic_token(
+                caller_id="mcp:tools",
+                audience="ultron-mcp",
+                scope=("mcp.tools.read", "mcp.tools.invoke"),
+                ttl_seconds=6 * 60 * 60,  # == short_lived_token.MAX_TTL_SECONDS
+                extra_claims={"sse_url": str(getattr(server, "sse_url", ""))},
+            )
             return server
         except Exception as e:
             logger.warning("MCP server start failed (%s) -- disabled", e)
@@ -1018,6 +1030,65 @@ class Orchestrator:
             store.record_event(event)
         except Exception as e:  # noqa: BLE001
             logger.debug("telemetry emit failed: %s", e)
+
+    def _mint_forensic_token(
+        self,
+        *,
+        caller_id: str,
+        audience: str,
+        scope: tuple[str, ...],
+        ttl_seconds: int,
+        extra_claims: Optional[dict] = None,
+    ) -> Optional[str]:
+        """openclaw-clawhub T7 -- mint a short-lived forensic token at a
+        privilege-grant boundary (MCP server start, gaming-mode engage).
+
+        Registers the trusted-caller tuple on first use (idempotent --
+        ``load_trusted_caller`` short-circuits the re-register), then
+        mints an HS256 JWT. Every mint is recorded in the module's
+        hash-chained audit log at ``data/identity/short_lived_tokens.jsonl``
+        so a later tamper still leaves forensic evidence of what was
+        authorised + when.
+
+        In ultron's single-user in-process runtime the minter and
+        verifier share a trust boundary, so this is defense-in-depth /
+        forensic record-keeping rather than a hard gate. Fail-open:
+        returns ``None`` on any error so a token-subsystem failure
+        never blocks the underlying grant.
+        """
+        try:
+            import os
+
+            from ultron.config import PROJECT_ROOT
+            from ultron.identity.short_lived_token import (
+                TrustedCaller,
+                load_trusted_caller,
+                mint_token,
+                register_trusted_caller,
+            )
+
+            if load_trusted_caller(caller_id, project_root=PROJECT_ROOT) is None:
+                register_trusted_caller(
+                    TrustedCaller(
+                        caller_id=caller_id,
+                        allowed_scopes=tuple(scope),
+                        notes="auto-registered at runtime",
+                    ),
+                    project_root=PROJECT_ROOT,
+                )
+            claims = dict(extra_claims or {})
+            claims.setdefault("pid", os.getpid())
+            return mint_token(
+                project_root=PROJECT_ROOT,
+                caller_id=caller_id,
+                audience=audience,
+                scope=scope,
+                ttl_seconds=ttl_seconds,
+                extra_claims=claims,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("forensic token mint failed (%s): %s", caller_id, e)
+            return None
 
     def _init_intent_recognizer_if_enabled(self):
         """2026-05-22 -- construct the intent recognizer when enabled.
@@ -1809,6 +1880,17 @@ class Orchestrator:
                 import asyncio
 
                 deps = _build_engage_deps()
+                # openclaw-clawhub T7: mint a short-lived forensic token
+                # authorising the gaming-preset takeover. Disengage lets
+                # it expire (revocation-by-expiry). Audit-logged;
+                # fail-open; not a hard gate.
+                self._mint_forensic_token(
+                    caller_id="voice:gaming-engage",
+                    audience="ultron-llm",
+                    scope=("llm.preset.swap",),
+                    ttl_seconds=6 * 60 * 60,
+                    extra_claims={"action": "gaming_engage"},
+                )
                 try:
                     asyncio.run(
                         drive_start_task(

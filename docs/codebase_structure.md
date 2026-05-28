@@ -26,8 +26,19 @@
 >   ported-but-unwired primitives: cline T9 (MCP-hub) already closed
 >   by OpenClaw T22's `mcp/` package; OpenClaw T17/T19/T20 were never
 >   ported (deferred per the catalog star rating) so there is nothing
->   to wire. T7 (short-lived token), T12 (report queue), T18 (image
->   markdown) wiring in subsequent commits of this pass.
+>   to wire.
+> * **T7 short-lived token** (`identity/short_lived_token.py`) --
+>   `_mint_forensic_token` registers a trusted-caller tuple
+>   (idempotent) + mints an HS256 JWT at two privilege-grant
+>   boundaries: MCP-server start (`mcp:tools`, scope
+>   `mcp.tools.read`/`invoke`) and gaming-mode engage
+>   (`voice:gaming-engage`, scope `llm.preset.swap`, revoke-by-expiry
+>   on disengage). Every mint hits the module's hash-chained audit
+>   log. Forensic / defense-in-depth in the single-user in-process
+>   runtime (minter + verifier share a trust boundary), not a hard
+>   gate. Fail-open.
+> * T12 (report queue), T18 (image markdown) wiring in subsequent
+>   commits of this pass.
 >
 > **Validating HEAD:** catalog 10 (clawhub-browser-use) port on
 > `claude/stoic-banach-74402b` (pushed to `origin/main`). Nine-batch
