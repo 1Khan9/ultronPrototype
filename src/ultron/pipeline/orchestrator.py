@@ -642,6 +642,15 @@ class Orchestrator:
         # binary on PATH leaves every method returning a structured
         # "binary missing" result). Default ON.
         self._load_browser_use_if_enabled()
+        # openclaw-clawhub T15 -- privacy-by-construction telemetry store.
+        # Constructed always but FAIL-PRIVATE: record_event no-ops unless
+        # the operator explicitly set ULTRON_TELEMETRY=opt-in. The
+        # per-turn emit lives in _respond's finally. Construction is cheap
+        # (just resolves paths; the salt file is created lazily on first
+        # hash). Kept env-gated (not config-gated) by design -- the
+        # privacy-by-construction contract is the documented reason this
+        # one feature does not default-on.
+        self._metrics_store = self._init_telemetry_store()
         # 2026-05-24 SWE-Agent batch 7 (T16) -- visual click-preview
         # gate. When ``desktop.click_preview.enabled: true`` AND a VLM
         # is loaded, install a new InputController singleton that
@@ -927,6 +936,88 @@ class Orchestrator:
             logger.warning(
                 "browser_use session manager construction skipped (%s).", e,
             )
+
+    def _init_telemetry_store(self):
+        """openclaw-clawhub T15 -- construct the private telemetry store.
+
+        Returns a :class:`PrivateMetricsStore` (or None on import /
+        construction failure). The store is fail-private: every
+        :meth:`record_event` no-ops unless ``ULTRON_TELEMETRY=opt-in``
+        is set, so constructing it unconditionally leaks nothing.
+        """
+        try:
+            from ultron.config import PROJECT_ROOT
+            from ultron.observability.private_telemetry import (
+                PrivateMetricsStore,
+            )
+
+            return PrivateMetricsStore(project_root=PROJECT_ROOT)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("telemetry store construction skipped: %s", e)
+            return None
+
+    @staticmethod
+    def _latency_bucket(latency_ms: int) -> str:
+        """Map a turn latency to a short, leak-safe bucket label.
+
+        Buckets keep the telemetry aggregate-only -- the exact ms is
+        also recorded (numeric, safe) but the bucket is the dashboard-
+        friendly axis. All labels are <= 12 chars so they pass the
+        telemetry leak check without needing a safe-key carve-out.
+        """
+        if latency_ms < 500:
+            return "fast"
+        if latency_ms < 1500:
+            return "normal"
+        if latency_ms < 5000:
+            return "slow"
+        return "very_slow"
+
+    def _emit_turn_telemetry(
+        self,
+        intent_kind: Optional[str],
+        turn_start: float,
+        *,
+        errored: bool,
+    ) -> None:
+        """openclaw-clawhub T15 -- emit one aggregate per-turn event.
+
+        Called from :meth:`_respond`'s finally so every conversational
+        turn is counted. The event carries only leak-safe fields:
+        the routing-intent kind under the ``category`` safe key, a
+        ``searched`` bool, the numeric ``latency_ms``, a coarse
+        ``tier`` bucket, and an ``outcome`` enum. NO user text /
+        response body / path ever reaches the store.
+
+        Fail-private (the store no-ops unless opted in) AND fail-open
+        (any error is swallowed at debug level so the voice path is
+        never affected).
+        """
+        store = getattr(self, "_metrics_store", None)
+        if store is None:
+            return
+        try:
+            from ultron.config import PROJECT_ROOT
+            from ultron.observability.private_telemetry import (
+                HashedEvent,
+                hash_root,
+            )
+
+            latency_ms = int((time.monotonic() - turn_start) * 1000.0)
+            event = HashedEvent(
+                kind="voice_turn",
+                root_id=hash_root(PROJECT_ROOT, project_root=PROJECT_ROOT),
+                attributes={
+                    "category": (str(intent_kind) if intent_kind else "none"),
+                    "searched": self._last_search_payload is not None,
+                    "latency_ms": latency_ms,
+                    "tier": self._latency_bucket(latency_ms),
+                    "outcome": "error" if errored else "ok",
+                },
+            )
+            store.record_event(event)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("telemetry emit failed: %s", e)
 
     def _init_intent_recognizer_if_enabled(self):
         """2026-05-22 -- construct the intent recognizer when enabled.
@@ -4068,6 +4159,10 @@ class Orchestrator:
         """
         self._interrupt.clear()
         self._last_search_payload = None
+        # openclaw-clawhub T15: per-turn telemetry timer + error flag.
+        # Emitted in the finally so every turn is counted exactly once.
+        turn_start = time.monotonic()
+        turn_errored = False
         # 2026-05-22 OPEN_LAST_SOURCE: accumulate the spoken response so
         # the next-turn "show me that article" handler can match cited
         # publication names back to the source list.
@@ -4133,6 +4228,7 @@ class Orchestrator:
             if self._last_search_payload and self._last_search_payload.sources:
                 print(f"  {format_sources_for_transcript(self._last_search_payload.sources)}")
         except Exception as e:
+            turn_errored = True
             logger.exception("Response pipeline failed: %s", e)
             print(f"\n  [error] {e}")
         finally:
@@ -4148,6 +4244,11 @@ class Orchestrator:
                     self.llm.set_current_intent_kind(None)
             except Exception as e:                                   # noqa: BLE001
                 logger.debug("set_current_intent_kind(None) failed: %s", e)
+            # openclaw-clawhub T15: emit the aggregate per-turn metric.
+            # Fail-private (no-op unless opted in) + fail-open.
+            self._emit_turn_telemetry(
+                routing_intent_kind, turn_start, errored=turn_errored,
+            )
 
     def _maybe_emit_thinking_drift_sample(
         self, user_text: str, response_text: str,

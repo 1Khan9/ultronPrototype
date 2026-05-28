@@ -10,6 +10,25 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
+> **Deferred-primitive wiring pass (2026-05-30, on top of catalog 10).**
+> Consumes previously-shipped-but-unwired catalog primitives into
+> their canonical hot-path consumers:
+> * **T15 private telemetry** (`observability/private_telemetry.py`) --
+>   the orchestrator constructs a `PrivateMetricsStore` at startup
+>   (`_init_telemetry_store`) and emits one aggregate `HashedEvent`
+>   per conversational turn from `_respond`'s finally
+>   (`_emit_turn_telemetry`: routing-intent kind under the `category`
+>   safe key + `searched` bool + numeric `latency_ms` + coarse `tier`
+>   bucket + `outcome` enum). FAIL-PRIVATE (no-op unless
+>   `ULTRON_TELEMETRY=opt-in`) -- the one feature deliberately NOT
+>   default-on, because privacy-by-construction is the documented
+>   reason. Fail-open at every layer. Triage of the remaining
+>   ported-but-unwired primitives: cline T9 (MCP-hub) already closed
+>   by OpenClaw T22's `mcp/` package; OpenClaw T17/T19/T20 were never
+>   ported (deferred per the catalog star rating) so there is nothing
+>   to wire. T7 (short-lived token), T12 (report queue), T18 (image
+>   markdown) wiring in subsequent commits of this pass.
+>
 > **Validating HEAD:** catalog 10 (clawhub-browser-use) port on
 > `claude/stoic-banach-74402b` (pushed to `origin/main`). Nine-batch
 > port wrapping the external open-source `browser-use` CLI as ultron's
