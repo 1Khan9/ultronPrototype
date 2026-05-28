@@ -66,6 +66,10 @@ class SearchPayload:
     cache_hit: bool
     elapsed_ms: float
     notes: List[str] = field(default_factory=list)
+    # Catalog 12 (felo-search T4): the query list actually fanned out
+    # (post-reformulation + dedup) -- the "search strategy" surfaced to the
+    # user in the transcript (mirrors felo's query_analysis disclosure).
+    queries: List[str] = field(default_factory=list)
 
     def __bool__(self) -> bool:
         return bool(self.sources)
@@ -502,6 +506,7 @@ class WebSearchExecutor:
                         cache_hit=True,
                         elapsed_ms=(time.monotonic() - t0) * 1000,
                         notes=notes,
+                        queries=list(queries),
                     )
 
         # Brave fanout. Dedupe by URL; preserve first-seen order.
@@ -636,6 +641,7 @@ class WebSearchExecutor:
             cache_hit=False,
             elapsed_ms=(time.monotonic() - t0) * 1000,
             notes=notes,
+            queries=list(queries),
         )
 
 
@@ -644,7 +650,30 @@ class WebSearchExecutor:
 # ---------------------------------------------------------------------------
 
 
-def format_sources_for_prompt(sources: List[SearchSource], max_chars_per_source: int = 1500) -> str:
+def _format_strategy_line(strategy_queries: Optional[List[str]]) -> str:
+    """Join the fanned-out queries into a ``' | '``-separated one-liner.
+
+    Catalog 12 (felo-search T4). Returns ``""`` when there's nothing
+    meaningful to surface -- ``None`` / empty, or a single query (which is
+    just the user's question, so there's no multi-query "strategy" to
+    show). Only multi-query searches (reformulation or preflight fan-out)
+    produce a line, so callers can pass the payload's query list
+    unconditionally and it self-suppresses on the uninteresting case.
+    """
+    if not strategy_queries:
+        return ""
+    qs = [q.strip() for q in strategy_queries if q and q.strip()]
+    if len(qs) <= 1:
+        return ""
+    return " | ".join(qs)
+
+
+def format_sources_for_prompt(
+    sources: List[SearchSource],
+    max_chars_per_source: int = 1500,
+    *,
+    strategy_queries: Optional[List[str]] = None,
+) -> str:
     """Render sources into a prompt-ready block.
 
     Each source gets a numbered header (V1-gap B3: inline marker matches
@@ -676,10 +705,21 @@ def format_sources_for_prompt(sources: List[SearchSource], max_chars_per_source:
         blocks.append(
             f"{marker} {s.title}\n    URL: {s.url}\n    {body}"
         )
-    return "\n\n".join(blocks)
+    block = "\n\n".join(blocks)
+    # Catalog 12 (felo-search T4): optionally surface the search strategy
+    # (the reformulated queries fanned out) as reference metadata. The voice
+    # orchestrator routes the strategy to the visible TRANSCRIPT instead of
+    # here, to keep spoken replies concise; this param serves text / GUI
+    # channels that want it inline. Mirrors felo-search's "Query Analysis".
+    strat = _format_strategy_line(strategy_queries)
+    if strat:
+        block = f"{block}\n\n[Search strategy: {strat}]"
+    return block
 
 
-def format_sources_for_transcript(sources: List[SearchSource]) -> str:
+def format_sources_for_transcript(
+    sources: List[SearchSource], *, strategy_queries: Optional[List[str]] = None
+) -> str:
     """Render a one-line-per-source list for the visible transcript.
 
     The orchestrator prints this AFTER the spoken response so the user can
@@ -691,4 +731,7 @@ def format_sources_for_transcript(sources: List[SearchSource]) -> str:
     for i, s in enumerate(sources, 1):
         title = s.title or s.url
         lines.append(f"  [{i}] {title} -- {s.url}")
+    strat = _format_strategy_line(strategy_queries)
+    if strat:
+        lines.append(f"  strategy: {strat}")
     return "\n".join(lines)

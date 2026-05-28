@@ -1457,6 +1457,12 @@ class WebSearchConfig(_Strict):
     query_reformulation: WebSearchQueryReformulationConfig = Field(
         default_factory=WebSearchQueryReformulationConfig,
     )
+    # Catalog 12 (felo-search T4): surface the search strategy (the
+    # reformulated queries actually fanned out) to the user. Default ON --
+    # the orchestrator appends it to the VISIBLE TRANSCRIPT only (never
+    # spoken), so there is zero voice-reply impact. Mirrors felo-search's
+    # "Query Analysis" disclosure. Set False to suppress the transcript line.
+    expose_search_strategy: bool = True
 
 
 class AddressingConfig(_Strict):

@@ -734,6 +734,12 @@ web_search:
     use_llm: false
     max_variants: 2
 
+  # Catalog 12 (felo-search T4) -- surface the search strategy (the
+  # reformulated queries actually fanned out) to the user. Default ON; the
+  # orchestrator appends it to the VISIBLE TRANSCRIPT only (never spoken),
+  # so spoken replies are untouched. Set false to suppress the line.
+  expose_search_strategy: true
+
 # ---------------------------------------------------------------------------
 # Addressing (warm/cold mode + classifier)
 # ---------------------------------------------------------------------------

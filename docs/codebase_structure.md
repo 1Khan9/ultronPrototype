@@ -39,22 +39,41 @@
 >   max_variants:2}` config (default ON, rule-based; LLM opt-in per the
 >   catalog's latency note). Logs to `logs/search_reformulations.jsonl`.
 >   +40 hermetic tests.
-> * Batch C (T4, GREEN): search-strategy transparency — PENDING.
+> * **Batch C (T4, GREEN) — DONE:** search-strategy transparency. The
+>   reformulated query list is recorded on `SearchPayload.queries` and
+>   surfaced to the user as a `strategy: q1 | q2` line in the VISIBLE
+>   TRANSCRIPT only (never spoken -> zero spoken-reply impact) via
+>   `format_sources_for_transcript`; `_format_strategy_line` self-suppresses
+>   for single-query searches. `format_sources_for_prompt` gains the same
+>   optional `strategy_queries` param for future text / GUI channels (the
+>   voice orchestrator deliberately does NOT inject it into the LLM prompt,
+>   to protect spoken concision). New `web_search.expose_search_strategy:
+>   true` config. Mirrors felo's "Query Analysis" disclosure. +14 tests.
 > * Batch D (T3, YELLOW): `DeepResearchLoop(AgentLoop)` + `DEEP_RESEARCH`
 >   intent over the free ladder — PENDING.
 > * Batch E: cross-system deep loops (memory / codebase / desktop) — PENDING.
 >
 > Test baseline (main-checkout projection): 8546 (catalog 11) + 21 (Batch A)
-> + 40 (Batch B) = **8607 passed / 26 skipped / 0 failed**. New tests are
-> filesystem-independent (pure-function regex + fake-LLM/fake-config) so
-> they pass identically in main; the canonical absolute count is finalised
-> from a main-checkout sweep at session end. (Worktree sweeps report a lower
-> absolute count because `models/` + some filesystem-parametrized fixtures
-> live only in the main checkout: latest Batch B worktree sweep = 8606
-> passed / 27 skipped / 1 deselected [bridge-e2e flake] / 0 failed.) Voice
-> baseline contract intact — gate rules + rule-based reformulation are pure
-> functions on the SEARCH-classification path; the LLM reformulation variant
-> is opt-in (`use_llm`); no voice hot-path or model-default touch.
+> + 40 (Batch B) + 14 (Batch C) = **8621 passed / 26 skipped / 0 failed**.
+> New tests are filesystem-independent (pure-function regex + fake-LLM /
+> fake-config) so they pass identically in main; the canonical absolute
+> count is finalised from a main-checkout sweep at session end. (Worktree
+> sweeps report a lower absolute count because `models/` + some
+> filesystem-parametrized fixtures live only in the main checkout. Batch C
+> worktree sweep = 8614 passed / 27 skipped / 0 failed with the WHOLE
+> `tests/integration/test_bridge_e2e.py` file `--ignore`d: under the current
+> machine state EVERY real-subprocess bridge-e2e test -- not just the
+> documented `test_health_through_real_subprocess` but its
+> `test_send_message_*` / `test_trigger_heartbeat_*` /
+> `test_mcp_set_show_unset_*` siblings -- fails at ~7s and leaks a
+> subprocess that wedges the sweep to the watchdog. This is the documented
+> bridge-e2e environmental flake family [the openclaw CLI is not answering
+> its probe window], NOT a regression from this catalog -- the catalog-12
+> changes never touch the OpenClaw bridge path.) Voice baseline contract
+> intact — gate rules + rule-based reformulation are pure functions on the
+> SEARCH-classification path; the LLM reformulation variant is opt-in
+> (`use_llm`); the search-strategy line is transcript-only; no voice
+> hot-path or model-default touch.
 >
 > **Earlier validating HEAD:** catalog 11 (clawhub-browser-agent) port on
 > `origin/main` (worktree branch `claude/eloquent-solomon-fc0df3`; the
@@ -2506,7 +2525,7 @@ Module is I/O-free. Callers wire their own persistence (Qdrant payload, JSONL au
 - `class WebSearchExecutor` — orchestrates SearchProviderChain → rank → ReaderProviderChain → cache. **2026-05-09 latency fix:** reader fetches run IN PARALLEL via `concurrent.futures.ThreadPoolExecutor` with a collective deadline cap. Pre-fix the loop was sequential and one slow page (~10 s on a Quora result) blocked the entire search path while the TTS playback queue starved waiting for tokens. Post-fix wall time is `max(per-fetch durations)` instead of `sum(...)`, capped further by `collective_deadline_seconds`. Any fetch still in flight at deadline is abandoned (its source falls back to snippet-only with a `jina_deadline:<url>` note). Threads keep running in the background and exit on per-fetch HTTP timeout; `pool.shutdown(wait=False)` ensures the executor returns immediately.
   - `__init__(brave, jina, llm, cache=None, max_fetch=None, collective_deadline_seconds=None)` — `brave` is actually the SearchProviderChain (legacy field name retained for compatibility with internal call sites).
   - `run(user_query, search_queries?, top_n=3, categories=None) -> SearchPayload` — 2026-05-22: `categories` param forwarded to the chain (only SearxNG accepts; Brave/DDG ignore). Set to `"news"` from the orchestrator when `_NEWS_QUERIES` regex matches.
-- `format_sources_for_prompt(sources)` / `format_sources_for_transcript(sources)` — references list always uses bracket form for monospace clarity.
+- `format_sources_for_prompt(sources, *, strategy_queries=None)` / `format_sources_for_transcript(sources, *, strategy_queries=None)` — references list always uses bracket form for monospace clarity. 2026 catalog 12 (felo-search T4): `SearchPayload.queries` records the fanned-out (reformulated) query list; `_format_strategy_line` joins a multi-query strategy into a `q1 | q2` one-liner (self-suppresses for a single query); both formatters append the strategy when `strategy_queries` is passed (`[Search strategy: …]` in the prompt block / `strategy: …` in the transcript). The orchestrator wires it to the TRANSCRIPT ONLY (gated by `web_search.expose_search_strategy`, default ON) so spoken replies stay concise; the prompt param is reserved for future text / GUI channels.
 
 #### `web_search/query_rewrite.py` (2026 catalog 12, felo-search T1)
 - `class QueryReformulation` — frozen `(original, variants, method)`; `.all_queries` = original + variants deduped case-insensitively, order-preserving.
@@ -3668,7 +3687,7 @@ Sections:
 - `embeddings` (dense_model, sparse_model, dense_dim)
 - `qdrant` (data_dir="data/qdrant", collections.{conversations, facts, web_results, **projects** [2026-05-22 supervisor stack]})
 - `memory` (enabled, jsonl_legacy_path, recent_turns, rag_top_k, rag_exclude_recent, facts_top_k, write_queue_maxsize, **retrieval.{multi_pass_enabled=false, max_categories_per_query=4, candidates_per_category_multiplier=4}** (V1-gap A2), **ranking.{rrf_weight=1.0, recency_weight=0.2, recency_half_life_days=7.0, surprise_weight=0.15, redundancy_weight=0.3}** (V1-gap A2), **rag_min_relevance=0.6** (NEW 2026-05-09: cosine-similarity floor for RAG candidates; tuned empirically with bge-small INT8 -- off-topic content peaks ~0.55-0.57, truly relevant 0.7-0.95), **history_turns_for_llm=4** (NEW 2026-05-09: cap on recent-turn history fed to LLM per call; prevents topic-bleed when user pivots topics))
-- `web_search` (enabled, brave_api_key_env, brave/jina/cache subsections, **citation.inline_marker_format="bracket"** [V1-gap B3]). 2026-05-09 latency fix tunables: **`jina.timeout_seconds: 6.0`** (was 15.0), **`jina.max_fetch: 2`** (was 3), **`jina.collective_deadline_seconds: 6.0`** (NEW — executor-side cap on parallel fetch wait; 0 disables). 2026 catalog 12 (felo-search T1): **`query_reformulation.{enabled: true, use_llm: false, max_variants: 2}`** — pre-search query expansion (rule-based default, zero-cost; LLM decomposition opt-in via `use_llm`).
+- `web_search` (enabled, brave_api_key_env, brave/jina/cache subsections, **citation.inline_marker_format="bracket"** [V1-gap B3]). 2026-05-09 latency fix tunables: **`jina.timeout_seconds: 6.0`** (was 15.0), **`jina.max_fetch: 2`** (was 3), **`jina.collective_deadline_seconds: 6.0`** (NEW — executor-side cap on parallel fetch wait; 0 disables). 2026 catalog 12 (felo-search T1): **`query_reformulation.{enabled: true, use_llm: false, max_variants: 2}`** — pre-search query expansion (rule-based default, zero-cost; LLM decomposition opt-in via `use_llm`). 2026 catalog 12 (felo-search T4): **`expose_search_strategy: true`** — surface the fanned-out reformulated queries in the visible transcript (never spoken).
 - `addressing` (follow_up_enabled, **warm_mode_duration_seconds: 30.0** ← user override, NOT 10s; rule_confidence_threshold, **zero_shot_addressed_min_confidence: 0.80** [NEW 2026-05-11: demotes low-confidence zero-shot YES verdicts to NOT_ADDRESSED via default_silent; catches the borderline third-person utterances flan-t5-small saturates on at 0.75. Set to 0.0 for legacy permissive behaviour.], zero_shot_model, log_path)
 - `coding` (enabled, bridge="direct", mcp.{host,port,...}, template_dir, prompt_token_budget, default/escalation models + thresholds, verification.{smoke,test,lint}_timeout, session_audit_dir, **token_budget_per_session=400000** [2026-05-11 bump from 100000 — new-project sessions burn 100k+ on tool exploration alone before writing files; 400k gives headroom while the 80% warning still fires. Paired with the 2026-05-11 narration honesty fix so users get an explicit "no files written" signal when budget is exhausted mid-exploration], claude_cli, sandbox_root, project_registry_path, audit_log_path, task_timeout, skip_permissions, **voice_task_require_testing=false** [NEW 2026-05-11 token-efficiency fix: was implicitly true via voice.py hardcode, which prepended a "MUST write tests, run, fix, re-run" preamble to every voice-dispatched Claude prompt and 3-5x'd the token spend. Default false lets small voice asks land lean. Users who want tests can say "with unit tests" in their voice request or flip this flag], **facts.{top_k=5, min_confidence=0.75, min_score=0.85, max_age_days=null}** [V1-gap A3], **pre_task_confirmation_enabled=false, pre_task_confirmation_max_words=30, pre_task_barge_in_window_seconds=0.5** [V1-gap A4])
 - `projections` (tokenizer, budgets.{clarification,status_delta,adjustment,correction,completion}_context, truncation_warning_threshold, log_truncations)

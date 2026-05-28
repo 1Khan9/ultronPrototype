@@ -4417,7 +4417,22 @@ class Orchestrator:
             # citations interleaved with the spoken answer would clutter the
             # voice output. The user can scan the printed list to verify.
             if self._last_search_payload and self._last_search_payload.sources:
-                print(f"  {format_sources_for_transcript(self._last_search_payload.sources)}")
+                # Catalog 12 (felo-search T4): surface the search strategy
+                # (the reformulated queries fanned out) in the TRANSCRIPT
+                # only -- never spoken, so spoken-reply concision is
+                # untouched. Gated by web_search.expose_search_strategy
+                # (default ON); _format_strategy_line self-suppresses when
+                # only a single query was used.
+                strat_qs = None
+                try:
+                    from ultron.config import get_config as _get_cfg
+                    if _get_cfg().web_search.expose_search_strategy:
+                        strat_qs = self._last_search_payload.queries
+                except Exception:                                       # noqa: BLE001
+                    strat_qs = None
+                print(
+                    f"  {format_sources_for_transcript(self._last_search_payload.sources, strategy_queries=strat_qs)}"
+                )
         except Exception as e:
             turn_errored = True
             logger.exception("Response pipeline failed: %s", e)
