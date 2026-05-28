@@ -56,6 +56,7 @@ into :mod:`ultron.desktop.screen_context`.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import shutil
@@ -63,8 +64,15 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
+from ultron.safety.path_resolver import PathResolver, get_path_resolver
+from ultron.safety.validator import (
+    RuleContext,
+    Verdict,
+    get_validator,
+)
 from ultron.utils.logging import get_logger
 
 logger = get_logger("desktop.browser_use")
@@ -126,6 +134,25 @@ _ENV_VARS_TO_SCRUB: tuple[str, ...] = (
 # non-JSON. Treated as a soft failure -- the raw text is preserved on
 # the result so callers can fall back to substring matching.
 _JSON_PARSE_FAILED: str = "__json_parse_failed__"
+
+# Validator ``capability`` tag for every write-side method. Separates
+# browser-use calls from the existing UIA + native input surfaces so
+# per-capability rules can target them independently.
+_VALIDATOR_CAPABILITY: str = "desktop_browser_use"
+
+# Validator ``tool_name`` prefix. Audit log + dashboards group by this
+# prefix when summarising browser-use activity.
+_TOOL_NAME_PREFIX: str = "desktop.browser_use"
+
+# Mime-type ordering for ``screenshot --no-path`` base64 decoding.
+# The upstream CLI emits PNG by default; JPEG is the only other shape
+# we tolerate so we don't surface a misleading "decoded successfully"
+# for an unexpected payload.
+_SCREENSHOT_DATA_URI_PREFIXES: tuple[str, ...] = (
+    "data:image/png;base64,",
+    "data:image/jpeg;base64,",
+    "data:image/jpg;base64,",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +337,53 @@ class BrowserTabsResult(BrowserUseResult):
     """T6 -- ``tab list`` outcome."""
 
     tabs: tuple[BrowserTabInfo, ...] = ()
+
+
+@dataclass(frozen=True)
+class BrowserActionResult(BrowserUseResult):
+    """T7 -- generic outcome for write actions (click / type / input /
+    select / upload / hover / keys / dblclick / rightclick).
+
+    ``action`` (inherited from :class:`BrowserUseResult`) carries the
+    label (``"click_at_index"``, ``"type_text"``, etc.); ``target``
+    carries the action-specific subject (the element index as a
+    string, the typed text, the dropdown option, the file path, the
+    key combo) for audit + telemetry.
+
+    ``safety_verdict`` is the validator's aggregated verdict label
+    (``"ALLOW"`` / ``"LOG_ONLY"`` / ``"BLOCK_HARD"`` /
+    ``"NEEDS_EXPLICIT_INTENT"``); blank when the call short-circuited
+    before the validator ran (binary missing, argument validation
+    failure).
+    """
+
+    target: str = ""
+    safety_verdict: str = ""
+
+
+@dataclass(frozen=True)
+class BrowserScreenshotResult(BrowserUseResult):
+    """T9 -- ``screenshot`` outcome.
+
+    Two output shapes:
+
+    * ``path`` set: the CLI wrote a file to ``path`` and the result's
+      ``image_bytes`` is None unless ``read_back=True`` was requested.
+    * ``path`` unset: the CLI emitted a base64 payload on stdout; we
+      attempt to decode and populate ``image_bytes``.
+
+    ``full_page`` mirrors the constructor arg so callers can verify
+    they got what they asked for. The bytes can be handed directly to
+    :meth:`ultron.desktop.vlm.Moondream2VLM.describe` for VLM
+    analysis, matching the analyze-and-discard contract that
+    :class:`ultron.desktop.sequence.DesktopSequenceRunner` uses on
+    the desktop side (batch 8 builds the browser analog).
+    """
+
+    image_bytes: Optional[bytes] = None
+    path: Optional[str] = None
+    full_page: bool = False
+    safety_verdict: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -979,6 +1053,600 @@ class BrowserUseTool:
         args = ["tab", "close", *(str(i) for i in indices)]
         return self._invoke(args, action="tab_close", timeout_s=timeout_s)
 
+    # -- T7 form interaction (write primitives, Cap-3 gated) ----------
+
+    def click_at_index(
+        self,
+        index: int,
+        *,
+        user_text: str = "",
+        timeout_s: Optional[float] = None,
+    ) -> BrowserActionResult:
+        """T7 -- click the element at ``index`` (from a prior
+        :meth:`state` call). Routed through the safety validator with
+        ``tool_name=desktop.browser_use.click_at_index``."""
+        if index < 0:
+            return _failed_action(
+                "click_at_index", f"index must be non-negative, got {index!r}"
+            )
+        denial = self._safety_check(
+            action="click_at_index",
+            arguments={"index": index},
+            user_text=user_text,
+        )
+        if denial is not None:
+            return denial
+        result = self._invoke(
+            ["click", str(index)],
+            action="click_at_index",
+            timeout_s=timeout_s,
+        )
+        return _action_from_invoke(
+            result,
+            target=str(index),
+            safety_verdict="ALLOW",
+        )
+
+    def click_at_coords(
+        self,
+        x: int,
+        y: int,
+        *,
+        user_text: str = "",
+        timeout_s: Optional[float] = None,
+    ) -> BrowserActionResult:
+        """T7 -- click at pixel ``(x, y)`` in the active tab's viewport.
+
+        Coordinate clicks are less typical than indexed clicks but
+        the CLI exposes them; used by :class:`BrowserSequenceRunner`
+        (batch 8) when handing off from a VLM-derived target to a
+        direct page click without re-running ``state``.
+        """
+        if x < 0 or y < 0:
+            return _failed_action(
+                "click_at_coords",
+                f"coords must be non-negative, got ({x!r}, {y!r})",
+            )
+        denial = self._safety_check(
+            action="click_at_coords",
+            arguments={"x": x, "y": y},
+            user_text=user_text,
+        )
+        if denial is not None:
+            return denial
+        result = self._invoke(
+            ["click", str(x), str(y)],
+            action="click_at_coords",
+            timeout_s=timeout_s,
+        )
+        return _action_from_invoke(
+            result,
+            target=f"{x},{y}",
+            safety_verdict="ALLOW",
+        )
+
+    def type_text(
+        self,
+        text: str,
+        *,
+        user_text: str = "",
+        timeout_s: Optional[float] = None,
+    ) -> BrowserActionResult:
+        """T7 -- type ``text`` into whatever element currently has
+        focus. Use :meth:`input` to combine click + type.
+        """
+        if not text:
+            return _failed_action("type_text", "empty text")
+        denial = self._safety_check(
+            action="type_text",
+            arguments={"text_preview": _preview(text)},
+            user_text=user_text,
+        )
+        if denial is not None:
+            return denial
+        result = self._invoke(
+            ["type", text],
+            action="type_text",
+            timeout_s=timeout_s,
+        )
+        return _action_from_invoke(
+            result,
+            target=_preview(text),
+            safety_verdict="ALLOW",
+        )
+
+    def input(
+        self,
+        index: int,
+        text: str,
+        *,
+        user_text: str = "",
+        timeout_s: Optional[float] = None,
+    ) -> BrowserActionResult:
+        """T7 -- click element at ``index`` then type ``text`` into it.
+
+        Compound atomic primitive: the CLI handles the click+type
+        sequence inside the daemon so focus loss between the two is
+        not observable from the caller side.
+        """
+        if index < 0:
+            return _failed_action(
+                "input", f"index must be non-negative, got {index!r}"
+            )
+        if not text:
+            return _failed_action("input", "empty text")
+        denial = self._safety_check(
+            action="input",
+            arguments={"index": index, "text_preview": _preview(text)},
+            user_text=user_text,
+        )
+        if denial is not None:
+            return denial
+        result = self._invoke(
+            ["input", str(index), text],
+            action="input",
+            timeout_s=timeout_s,
+        )
+        return _action_from_invoke(
+            result,
+            target=f"{index}:{_preview(text)}",
+            safety_verdict="ALLOW",
+        )
+
+    def select(
+        self,
+        index: int,
+        option: str,
+        *,
+        user_text: str = "",
+        timeout_s: Optional[float] = None,
+    ) -> BrowserActionResult:
+        """T7 -- set dropdown ``index`` to ``option``."""
+        if index < 0:
+            return _failed_action(
+                "select", f"index must be non-negative, got {index!r}"
+            )
+        if not option:
+            return _failed_action("select", "empty option")
+        denial = self._safety_check(
+            action="select",
+            arguments={"index": index, "option": option},
+            user_text=user_text,
+        )
+        if denial is not None:
+            return denial
+        result = self._invoke(
+            ["select", str(index), option],
+            action="select",
+            timeout_s=timeout_s,
+        )
+        return _action_from_invoke(
+            result,
+            target=f"{index}:{option}",
+            safety_verdict="ALLOW",
+        )
+
+    def upload(
+        self,
+        index: int,
+        path: str,
+        *,
+        user_text: str = "",
+        timeout_s: Optional[float] = None,
+        path_resolver: Optional[PathResolver] = None,
+    ) -> BrowserActionResult:
+        """T7 upload (YELLOW per security review) -- provide a local
+        file to a file-input element at ``index``.
+
+        Goes through stricter gating than the other T7 writes because
+        the path argument reads a local file and sends its contents
+        into the browser process. Steps:
+
+        1. Reject blank / negative arguments at the wrapper boundary.
+        2. Canonicalise the path via :meth:`PathResolver.safe_realpath`
+           so attacker-controlled symlinks / junctions / bidi-override
+           filenames can never escape into the subprocess.
+        3. Confirm the resolved path exists + is a regular file.
+        4. Pass the resolved path tuple to the safety validator with
+           ``capability=desktop_browser_use`` so Cap-3 and the
+           file-read rules in category D / category A / Cap-2 see it.
+        5. On allow, invoke the CLI with the resolved (NOT the raw)
+           path so the daemon also sees the canonical form.
+
+        The resolver argument is dependency-injected for tests.
+        """
+        if index < 0:
+            return _failed_action(
+                "upload", f"index must be non-negative, got {index!r}"
+            )
+        raw_path = (path or "").strip()
+        if not raw_path:
+            return _failed_action("upload", "empty path")
+        resolver = path_resolver if path_resolver is not None else get_path_resolver()
+        resolved = resolver.safe_realpath(raw_path)
+        if resolved is None:
+            return _failed_action(
+                "upload",
+                f"path does not resolve to a real file: {raw_path!r}",
+            )
+        if not resolved.is_file():
+            return _failed_action(
+                "upload",
+                f"resolved path is not a regular file: {resolved}",
+            )
+        denial = self._safety_check(
+            action="upload",
+            arguments={
+                "index": index,
+                "path": str(resolved),
+                "raw_path": raw_path,
+            },
+            user_text=user_text,
+            paths=(resolved,),
+        )
+        if denial is not None:
+            return denial
+        result = self._invoke(
+            ["upload", str(index), str(resolved)],
+            action="upload",
+            timeout_s=timeout_s,
+        )
+        return _action_from_invoke(
+            result,
+            target=f"{index}:{resolved}",
+            safety_verdict="ALLOW",
+        )
+
+    def hover(
+        self,
+        index: int,
+        *,
+        user_text: str = "",
+        timeout_s: Optional[float] = None,
+    ) -> BrowserActionResult:
+        """T7 -- hover the element at ``index`` to reveal hidden
+        menus / CSS hover state. Cheap; no actual click."""
+        if index < 0:
+            return _failed_action(
+                "hover", f"index must be non-negative, got {index!r}"
+            )
+        denial = self._safety_check(
+            action="hover",
+            arguments={"index": index},
+            user_text=user_text,
+        )
+        if denial is not None:
+            return denial
+        result = self._invoke(
+            ["hover", str(index)],
+            action="hover",
+            timeout_s=timeout_s,
+        )
+        return _action_from_invoke(
+            result,
+            target=str(index),
+            safety_verdict="ALLOW",
+        )
+
+    def keys(
+        self,
+        combo: str,
+        *,
+        user_text: str = "",
+        timeout_s: Optional[float] = None,
+    ) -> BrowserActionResult:
+        """T7 -- send a key combo (``"Enter"`` / ``"Control+a"`` etc.)
+        to the focused element.
+
+        The upstream CLI accepts the same key-name syntax as Playwright's
+        ``page.keyboard.press`` (modifier names ``Control`` / ``Alt`` /
+        ``Shift`` / ``Meta`` joined with ``+`` before a key name like
+        ``Enter`` / ``a`` / ``ArrowDown``). We do NOT validate the
+        combo string at our boundary -- the surface is large and the
+        CLI is a better validator than us.
+        """
+        combo = (combo or "").strip()
+        if not combo:
+            return _failed_action("keys", "empty key combo")
+        denial = self._safety_check(
+            action="keys",
+            arguments={"combo": combo},
+            user_text=user_text,
+        )
+        if denial is not None:
+            return denial
+        result = self._invoke(
+            ["keys", combo],
+            action="keys",
+            timeout_s=timeout_s,
+        )
+        return _action_from_invoke(
+            result,
+            target=combo,
+            safety_verdict="ALLOW",
+        )
+
+    def dblclick(
+        self,
+        index: int,
+        *,
+        user_text: str = "",
+        timeout_s: Optional[float] = None,
+    ) -> BrowserActionResult:
+        """T7 -- double-click the element at ``index``."""
+        if index < 0:
+            return _failed_action(
+                "dblclick", f"index must be non-negative, got {index!r}"
+            )
+        denial = self._safety_check(
+            action="dblclick",
+            arguments={"index": index},
+            user_text=user_text,
+        )
+        if denial is not None:
+            return denial
+        result = self._invoke(
+            ["dblclick", str(index)],
+            action="dblclick",
+            timeout_s=timeout_s,
+        )
+        return _action_from_invoke(
+            result,
+            target=str(index),
+            safety_verdict="ALLOW",
+        )
+
+    def rightclick(
+        self,
+        index: int,
+        *,
+        user_text: str = "",
+        timeout_s: Optional[float] = None,
+    ) -> BrowserActionResult:
+        """T7 -- right-click the element at ``index`` (context menus)."""
+        if index < 0:
+            return _failed_action(
+                "rightclick", f"index must be non-negative, got {index!r}"
+            )
+        denial = self._safety_check(
+            action="rightclick",
+            arguments={"index": index},
+            user_text=user_text,
+        )
+        if denial is not None:
+            return denial
+        result = self._invoke(
+            ["rightclick", str(index)],
+            action="rightclick",
+            timeout_s=timeout_s,
+        )
+        return _action_from_invoke(
+            result,
+            target=str(index),
+            safety_verdict="ALLOW",
+        )
+
+    # -- T9 screenshot -------------------------------------------------
+
+    def screenshot(
+        self,
+        path: Optional[str] = None,
+        *,
+        full_page: bool = False,
+        user_text: str = "",
+        timeout_s: Optional[float] = None,
+        path_resolver: Optional[PathResolver] = None,
+    ) -> BrowserScreenshotResult:
+        """T9 -- capture a screenshot of the current page.
+
+        Two output modes:
+
+        * ``path`` set -- the CLI writes the PNG to disk at ``path``.
+          The path is canonicalised + sandbox-checked via
+          :class:`PathResolver` BEFORE the subprocess runs. The result
+          carries the resolved path; ``image_bytes`` is None (callers
+          read the file themselves if they need the bytes).
+        * ``path`` unset -- the CLI emits base64 on stdout. We decode
+          and populate ``image_bytes``; ``path`` is None on the result.
+
+        ``full_page=True`` appends ``--full`` so the entire scrollable
+        page is captured. The base64 output mode is the analyze-and-
+        discard path (caller feeds the bytes to the VLM and lets the
+        result dataclass go out of scope); the path output mode is
+        for the "save this for the user to look at" path.
+        """
+        denial = self._safety_check_screenshot(
+            path=path,
+            full_page=full_page,
+            user_text=user_text,
+            path_resolver=path_resolver,
+        )
+        if isinstance(denial, BrowserScreenshotResult):
+            return denial
+        resolved_path: Optional[Path] = denial  # type: ignore[assignment]
+        args: list[str] = ["screenshot"]
+        if resolved_path is not None:
+            args.append(str(resolved_path))
+        if full_page:
+            args.append("--full")
+        result = self._invoke(
+            args,
+            action="screenshot",
+            timeout_s=timeout_s,
+        )
+        if not result.success:
+            return BrowserScreenshotResult(
+                success=False,
+                action="screenshot",
+                stdout=result.stdout,
+                stderr=result.stderr,
+                error=result.error,
+                elapsed_ms=result.elapsed_ms,
+                exit_code=result.exit_code,
+                path=str(resolved_path) if resolved_path is not None else None,
+                full_page=full_page,
+                safety_verdict="ALLOW",
+            )
+        image_bytes: Optional[bytes] = None
+        decode_error: Optional[str] = None
+        if resolved_path is None:
+            image_bytes, decode_error = _decode_screenshot_payload(result.stdout)
+        return BrowserScreenshotResult(
+            success=True,
+            action="screenshot",
+            stdout=result.stdout,
+            stderr=result.stderr,
+            error=decode_error,
+            elapsed_ms=result.elapsed_ms,
+            exit_code=result.exit_code,
+            image_bytes=image_bytes,
+            path=str(resolved_path) if resolved_path is not None else None,
+            full_page=full_page,
+            safety_verdict="ALLOW",
+        )
+
+    def _safety_check_screenshot(
+        self,
+        *,
+        path: Optional[str],
+        full_page: bool,
+        user_text: str,
+        path_resolver: Optional[PathResolver],
+    ) -> Optional[Path] | BrowserScreenshotResult:
+        """Run the safety + path checks for ``screenshot``.
+
+        Returns:
+            * the resolved :class:`Path` (or ``None`` for base64 mode)
+              on success.
+            * a fully-populated :class:`BrowserScreenshotResult` with
+              ``success=False`` on denial.
+
+        Splitting this out keeps the main ``screenshot`` method linear.
+        """
+        resolved_path: Optional[Path] = None
+        paths_for_safety: tuple[Path, ...] = ()
+        if path is not None:
+            raw_path = path.strip()
+            if not raw_path:
+                return BrowserScreenshotResult(
+                    success=False,
+                    action="screenshot",
+                    error="empty path",
+                    full_page=full_page,
+                )
+            resolver = (
+                path_resolver if path_resolver is not None else get_path_resolver()
+            )
+            # ``safe_realpath`` returns None for paths that don't
+            # exist on disk yet -- which is the common case for
+            # screenshot output. Fall back to ``resolve`` (which
+            # accepts non-existing paths) and validate the parent
+            # directory exists + is writable separately.
+            resolved = resolver.safe_realpath(raw_path)
+            if resolved is None:
+                # Path doesn't exist yet -- resolve via the lighter
+                # path canonicalisation and check the parent.
+                try:
+                    resolved = resolver.resolve(raw_path)
+                except (ValueError, OSError) as exc:
+                    return BrowserScreenshotResult(
+                        success=False,
+                        action="screenshot",
+                        error=f"path canonicalisation failed: {exc}",
+                        full_page=full_page,
+                    )
+                if not resolved.parent.is_dir():
+                    return BrowserScreenshotResult(
+                        success=False,
+                        action="screenshot",
+                        error=f"parent directory does not exist: {resolved.parent}",
+                        full_page=full_page,
+                    )
+            resolved_path = resolved
+            paths_for_safety = (resolved,)
+        denial = self._safety_check(
+            action="screenshot",
+            arguments={
+                "path": str(resolved_path) if resolved_path is not None else None,
+                "full_page": full_page,
+                "output_mode": "file" if resolved_path is not None else "base64",
+            },
+            user_text=user_text,
+            paths=paths_for_safety,
+            result_factory=BrowserScreenshotResult,
+            extra_result_kwargs={
+                "path": str(resolved_path) if resolved_path is not None else None,
+                "full_page": full_page,
+            },
+        )
+        if denial is not None:
+            return denial
+        return resolved_path
+
+    # -- safety helper --------------------------------------------------
+
+    def _safety_check(
+        self,
+        *,
+        action: str,
+        arguments: dict[str, Any],
+        user_text: str,
+        paths: tuple[Path, ...] = (),
+        result_factory: Any = None,
+        extra_result_kwargs: Optional[Mapping[str, Any]] = None,
+    ) -> Any:
+        """Run the validator. Returns ``None`` when the call is
+        allowed, otherwise returns a populated failure result.
+
+        The default ``result_factory`` is :class:`BrowserActionResult`.
+        :meth:`screenshot` overrides to get a
+        :class:`BrowserScreenshotResult` shape back.
+        """
+        factory = result_factory if result_factory is not None else BrowserActionResult
+        try:
+            validator = get_validator()
+        except Exception:  # pragma: no cover -- defensive
+            return None  # Validator unavailable -> permissive fall-through.
+        try:
+            ctx = RuleContext(
+                tool_name=f"{_TOOL_NAME_PREFIX}.{action}",
+                arguments=dict(arguments),
+                capability=_VALIDATOR_CAPABILITY,
+                paths=paths,
+                user_text=user_text or "",
+            )
+            verdict = validator.check(ctx)
+        except Exception as exc:
+            logger.warning(
+                "browser_use safety check raised; treating as deny: %s", exc
+            )
+            kwargs = {
+                "success": False,
+                "action": action,
+                "error": f"safety check raised: {type(exc).__name__}",
+                "safety_verdict": "BLOCK_HARD",
+            }
+            if extra_result_kwargs:
+                kwargs.update(extra_result_kwargs)
+            return factory(**kwargs)
+        if verdict.is_allowed:
+            return None
+        verdict_label = verdict.verdict.value if isinstance(verdict.verdict, Verdict) else str(verdict.verdict)
+        message = verdict.user_message or verdict.reason or "safety validator blocked the call"
+        kwargs = {
+            "success": False,
+            "action": action,
+            "error": f"safety denied ({verdict_label}): {message}",
+            "safety_verdict": verdict_label,
+        }
+        if extra_result_kwargs:
+            kwargs.update(extra_result_kwargs)
+        if factory is BrowserActionResult:
+            # BrowserActionResult also tracks ``target`` so callers
+            # know what was attempted even when blocked.
+            kwargs.setdefault("target", _short_target_label(arguments))
+        return factory(**kwargs)
+
     # -- core subprocess invocation ------------------------------------
 
     def _invoke(
@@ -1303,6 +1971,126 @@ def _try_parse_bbox(stdout: str) -> tuple[Optional[BrowserBbox], Optional[str]]:
     return BrowserBbox(x=x, y=y, width=width, height=height), None
 
 
+def _failed_action(action: str, error: str) -> BrowserActionResult:
+    """Build a pre-subprocess failure result for a write method.
+
+    Used when argument validation rejects the call before the safety
+    validator or the subprocess can run (negative index, empty text,
+    etc.). ``safety_verdict`` is blank because the validator never
+    ran.
+    """
+    return BrowserActionResult(
+        success=False,
+        action=action,
+        error=error,
+        safety_verdict="",
+    )
+
+
+def _action_from_invoke(
+    invoke_result: BrowserUseResult,
+    *,
+    target: str,
+    safety_verdict: str,
+) -> BrowserActionResult:
+    """Project a generic ``_invoke`` result into a
+    :class:`BrowserActionResult` with the action-specific fields
+    populated. Subprocess outcomes (success / failure / timeout /
+    spawn error) all flow through here uniformly.
+    """
+    return BrowserActionResult(
+        success=invoke_result.success,
+        action=invoke_result.action,
+        stdout=invoke_result.stdout,
+        stderr=invoke_result.stderr,
+        error=invoke_result.error,
+        elapsed_ms=invoke_result.elapsed_ms,
+        exit_code=invoke_result.exit_code,
+        target=target,
+        safety_verdict=safety_verdict,
+    )
+
+
+def _preview(text: str, *, cap: int = 80) -> str:
+    """Compact preview of arbitrary text for audit + denial messages.
+
+    Caps at ``cap`` chars, replaces newlines with spaces, appends an
+    elision marker when truncated. Used as the ``target`` field for
+    :meth:`BrowserUseTool.type_text` and :meth:`BrowserUseTool.input`
+    so the audit log can record what was typed without echoing
+    arbitrarily long payloads.
+    """
+    if not text:
+        return ""
+    flat = " ".join(text.split())
+    if len(flat) <= cap:
+        return flat
+    return flat[: cap - 1] + "…"  # ellipsis
+
+
+def _short_target_label(arguments: Mapping[str, Any]) -> str:
+    """Build a short human-readable target label from a write-method's
+    arguments dict. Used as the ``target`` field on safety-denial
+    results so audit log readers can see what the call was attempting
+    even when the validator blocked it."""
+    if "index" in arguments and "text_preview" in arguments:
+        return f"{arguments['index']}:{arguments['text_preview']}"
+    if "index" in arguments and "option" in arguments:
+        return f"{arguments['index']}:{arguments['option']}"
+    if "index" in arguments and "path" in arguments:
+        return f"{arguments['index']}:{arguments['path']}"
+    if "x" in arguments and "y" in arguments:
+        return f"{arguments['x']},{arguments['y']}"
+    if "index" in arguments:
+        return str(arguments["index"])
+    if "combo" in arguments:
+        return str(arguments["combo"])
+    if "text_preview" in arguments:
+        return str(arguments["text_preview"])
+    if "path" in arguments and arguments["path"] is not None:
+        return str(arguments["path"])
+    return ""
+
+
+def _decode_screenshot_payload(
+    stdout: str,
+) -> tuple[Optional[bytes], Optional[str]]:
+    """Decode the base64 payload the CLI emits when ``screenshot`` is
+    called without an output path.
+
+    Tolerates two shapes:
+
+    * ``data:image/<png|jpeg|jpg>;base64,<payload>`` URI form
+    * raw base64 text (no prefix)
+
+    Returns ``(bytes, None)`` on success, ``(None, error_string)`` on
+    parse failure. Bytes-too-small (< 16 bytes after decode) is
+    treated as a parse failure -- a real PNG / JPEG has more than
+    that just in its header.
+    """
+    if not stdout:
+        return None, "empty screenshot payload"
+    raw = stdout.strip()
+    # Strip a known data URI prefix if present.
+    for prefix in _SCREENSHOT_DATA_URI_PREFIXES:
+        if raw.startswith(prefix):
+            raw = raw[len(prefix):]
+            break
+    # base64 can include whitespace + newlines from CLI line-wrapping;
+    # the upstream `base64.b64decode` strips them when validate=False
+    # but we pass validate=True so we strip them ourselves first.
+    raw = "".join(raw.split())
+    if not raw:
+        return None, "no base64 body after prefix strip"
+    try:
+        decoded = base64.b64decode(raw, validate=True)
+    except (ValueError, base64.binascii.Error):  # type: ignore[attr-defined]
+        return None, "base64 decode failed"
+    if len(decoded) < 16:
+        return None, f"decoded payload too small ({len(decoded)} bytes)"
+    return decoded, None
+
+
 def _try_parse_tabs(
     stdout: str,
 ) -> tuple[tuple[BrowserTabInfo, ...], Optional[str]]:
@@ -1346,11 +2134,13 @@ def _try_parse_tabs(
 
 __all__ = [
     "BROWSER_USE_BINARY_CANDIDATES",
+    "BrowserActionResult",
     "BrowserAttributesResult",
     "BrowserBbox",
     "BrowserBboxResult",
     "BrowserElement",
     "BrowserHtmlResult",
+    "BrowserScreenshotResult",
     "BrowserState",
     "BrowserTabInfo",
     "BrowserTabsResult",
