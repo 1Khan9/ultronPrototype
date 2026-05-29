@@ -531,6 +531,24 @@ class Orchestrator:
         except Exception as e:                                          # noqa: BLE001
             logger.debug("Reranker warmup skipped (%s)", e)
         self.llm = LLMEngine(memory=self.memory)
+        # Latency hygiene: warm the LLM so the first real turn doesn't pay the
+        # cold-context prefill (~100-200 ms of TTFT shaved off the user's first
+        # interaction). SYNCHRONOUS, not a daemon thread: llama-cpp's single
+        # context is not safe for concurrent generation, so a background warmup
+        # racing the first real turn could corrupt it. ``record_history=False``
+        # keeps the warmup turn out of conversation history; fail-open -- any
+        # error is swallowed and the first turn just pays the cold cost as
+        # before. The proven generate_stream(record_history=False) path is the
+        # same one the e2e harness + speculative-LLM path use.
+        try:
+            from ultron.latency_hygiene import warmup_llm
+            warmup_llm(
+                lambda p: list(self.llm.generate_stream(
+                    p, record_history=False, enable_thinking=False,
+                )),
+            )
+        except Exception as e:                                          # noqa: BLE001
+            logger.debug("LLM warmup skipped (%s)", e)
         # 2026-05-10 voice swap: select TTS engine via ``tts.engine`` config.
         # ``"piper_rvc"`` (default) keeps the legacy Piper + RVC stack;
         # ``"xtts_v3"`` swaps in the XTTS v2 streaming + v3 Ultron filter
