@@ -52,6 +52,7 @@ class _FakeEvolution:
         self.recorded: list[dict] = []
         self.autonomous_calls = 0
         self.shutdown_called = False
+        self.command_failures: list[dict] = []
 
     def run_cycle(self) -> dict:
         if self._raise_run:
@@ -66,6 +67,14 @@ class _FakeEvolution:
 
     def record_turn(self, **kwargs: Any) -> None:
         self.recorded.append(kwargs)
+
+    def record_command_failure(self, command: str = "", output: str = "", *, exit_code=None) -> None:
+        self.command_failures.append(
+            {"command": command, "output": output, "exit_code": exit_code}
+        )
+
+    def pre_turn_system_hint(self) -> str:
+        return self._hint
 
     def maybe_run_autonomous_cycle(self) -> None:
         self.autonomous_calls += 1
@@ -200,6 +209,24 @@ class TestRecordEvolutionTurn:
         # The flag is consumed (reset) so it doesn't leak to later turns.
         assert o._last_turn_barged_in is False
 
+    def test_passes_prior_response_for_correction(self) -> None:
+        # Catalog 14 (T1): the prior turn's response is threaded in as the
+        # agent claim a correction would be correcting.
+        o = _bare_orchestrator()
+        fake = _FakeEvolution()
+        o.evolution = fake
+        o._last_response_text = "Fixtures are session scoped by default."
+        o._record_evolution_turn("no, that's wrong")
+        assert fake.recorded[0]["prior_response"] == "Fixtures are session scoped by default."
+
+    def test_prior_response_defaults_empty_when_unset(self) -> None:
+        o = _bare_orchestrator()
+        fake = _FakeEvolution()
+        o.evolution = fake
+        # _last_response_text not set on the bare orchestrator -> getattr "".
+        o._record_evolution_turn("hello there")
+        assert fake.recorded[0]["prior_response"] == ""
+
     def test_record_fail_open_on_raise(self) -> None:
         o = _bare_orchestrator()
 
@@ -225,3 +252,54 @@ class TestConsumeLastBargeIn:
         o = Orchestrator.__new__(Orchestrator)
         # No _last_turn_barged_in set at all -> defaults to False.
         assert o._consume_last_barge_in() is False
+
+
+# ---------------------------------------------------------------------------
+# _drain_evolution_command_failures (catalog 14, T1)
+# ---------------------------------------------------------------------------
+
+
+class TestDrainEvolutionCommandFailures:
+    @staticmethod
+    def _voice_with_failures(failures: list) -> Any:
+        runner = SimpleNamespace(drain_command_failures=lambda: list(failures))
+        return SimpleNamespace(runner=runner)
+
+    def test_noop_when_evolution_disabled(self) -> None:
+        o = _bare_orchestrator()
+        o.evolution = None
+        o.coding_voice = self._voice_with_failures([("pytest", "boom", 1)])
+        o._drain_evolution_command_failures()  # must not raise
+
+    def test_noop_when_coding_disabled(self) -> None:
+        o = _bare_orchestrator()
+        o.evolution = _FakeEvolution()
+        o.coding_voice = None
+        o._drain_evolution_command_failures()
+        assert o.evolution.command_failures == []
+
+    def test_feeds_failures_to_service(self) -> None:
+        o = _bare_orchestrator()
+        fake = _FakeEvolution()
+        o.evolution = fake
+        o.coding_voice = self._voice_with_failures(
+            [("pytest", "Traceback: boom", 1), ("npm", "err", None)]
+        )
+        o._drain_evolution_command_failures()
+        assert len(fake.command_failures) == 2
+        assert fake.command_failures[0] == {
+            "command": "pytest",
+            "output": "Traceback: boom",
+            "exit_code": 1,
+        }
+
+    def test_fail_open_on_runner_raise(self) -> None:
+        o = _bare_orchestrator()
+        o.evolution = _FakeEvolution()
+
+        def _boom() -> list:
+            raise RuntimeError("drain boom")
+
+        o.coding_voice = SimpleNamespace(runner=SimpleNamespace(drain_command_failures=_boom))
+        o._drain_evolution_command_failures()  # swallowed
+        assert o.evolution.command_failures == []
