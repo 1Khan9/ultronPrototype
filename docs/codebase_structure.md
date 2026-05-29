@@ -15,8 +15,9 @@
 > complete the voice-controlled coding engineer end to end, build a real-usage
 > e2e suite, make the system pervasively self-improving, and cut latency +
 > resources. On worktree branch `claude/vigorous-mclaren-56a5a7`, on top of the
-> infra-wiring tip `9d51cec`, **validating code HEAD `8b43517`**. **9171 passed /
-> 26 skipped / 0 failed (~118s)** (worktree sweep, no deselect). Voice baseline
+> infra-wiring tip `9d51cec`, **validating code HEAD `4698ae3`**. **9171 passed /
+> 26 skipped / 0 failed (~118s)** (worktree sweep, no deselect; under agent load
+> use the bridge-e2e deselect recipe -> 9170 + 1 deselected). Voice baseline
 > contract intact throughout (no SOUL.md / RVC / Piper / LLM-GGUF / voicepack
 > touch; all changes are on the coding + fail-open seams). **Coding-engineer
 > commits landed so far** (the campaign's first phase -- a fully capable
@@ -110,11 +111,17 @@
 > Phase 5 measured pass), #51/#52b/#82 (intentional default-OFF: architect 3-5s
 > latency, lint/repo_map/pre_task UX cost, background_summary blocked on #83's
 > Qdrant writer), #26 (empty policy chain = no value until a concrete policy
-> exists). **QUEUED verified-safe (next):** config-default alignment
-> (#49 token_budget 100k->400k, #50 intent threshold, #53 ambiguity/IRMA,
-> #54 LLM compression/self-consistency, #140 inference.py fallback, #156
-> provider/reader fallback literals) + #121 desktop exports + #124 clipboard
-> singleton.
+> exists).
+>
+> **Config alignment DONE (`4698ae3`, 0 test breakage):** #49 token_budget
+> 100k->400k, #50 IntentConfig.threshold 0.8->0.65, #140 inference.py
+> intent_adaptive getattr fallback False->True, #156 provider/reader fallback
+> literals aligned to WebSearchConfig defaults, #121 desktop window-voice
+> re-exports -- all verified-safe (gated / inert / stub-only fallbacks). **STILL
+> QUEUED (flip ACTIVE behavior -> need per-test default-assertion fixes via
+> monkeypatch, the `ee9eca5` pattern):** #52a canonical_monitor/ast_metadata,
+> #53 ambiguity/IRMA, #54 LLM compression/self-consistency; plus #124 clipboard
+> singleton (marginal -- no current in-process consumer).
 >
 > **Earlier validating HEAD:** **infrastructure-wiring campaign (2026-05-29)** -- a
 > sweep wiring dormant imported-but-unconsumed infrastructure across catalogs
