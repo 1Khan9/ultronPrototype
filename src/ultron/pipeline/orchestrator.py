@@ -1577,6 +1577,11 @@ class Orchestrator:
                 user_text=user_text,
                 signals=signals,
                 barged_in=self._consume_last_barge_in(),
+                # Catalog 14 (T1): the PRIOR turn's response is the agent claim
+                # a correction would be correcting. At this point in the run
+                # loop _last_response_text still holds turn N-1's response
+                # (it is rewritten later, inside _respond on turn N).
+                prior_response=getattr(self, "_last_response_text", ""),
             )
             self.evolution.maybe_run_autonomous_cycle()
         except Exception as e:                                    # noqa: BLE001
@@ -2976,6 +2981,10 @@ class Orchestrator:
                 # E2 goal-anchor planning: surface anchor lifecycle
                 # narration (opening / warning / transition / completion).
                 self._announce_pending_anchor_narration()
+                # 2026 catalog 14 (T1): feed any command/tool failures the
+                # coding runner observed into the EvolutionService (repair
+                # distillation). Zero-cost no-op when nothing failed.
+                self._drain_evolution_command_failures()
                 # 2026-05-19 Tracks 1c-1e: opportunistic background
                 # summarisation. Cheap no-op when disabled or when a
                 # previous pass is still in flight; the summarizer's
@@ -4071,6 +4080,23 @@ class Orchestrator:
             return True
         return False
 
+    def _drain_evolution_command_failures(self) -> None:
+        """Catalog 14 (T1): drain command/tool failures the coding runner
+        queued during a task and feed each to the EvolutionService (which runs
+        the failure detector + the repair-distillation feed). Fail-open + a
+        zero-cost no-op when evolution or coding is disabled."""
+        if self.evolution is None or self.coding_voice is None:
+            return
+        try:
+            runner = getattr(self.coding_voice, "runner", None)
+            drain = getattr(runner, "drain_command_failures", None)
+            if drain is None:
+                return
+            for command, output, exit_code in drain():
+                self.evolution.record_command_failure(command, output, exit_code=exit_code)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("evolution command-failure drain failed: %s", e)
+
     def _announce_coding_completion_if_pending(self) -> None:
         """If a background coding task just finished, speak its summary
         before we go back to listening for the next utterance.
@@ -4758,14 +4784,16 @@ class Orchestrator:
         except Exception as e:                                       # noqa: BLE001
             logger.debug("set_current_intent_kind failed: %s", e)
 
-        # Catalog 13 (evolution): apply the learned response-temperament
-        # hint for THIS turn. It is injected into the system prompt by the
-        # LLM engine (NOT into the user text, so the gate / clock detectors
-        # are unaffected). A balanced temperament yields "" -> the prompt
-        # is byte-identical to the pre-evolution path. Fail-open.
+        # Catalog 13/14 (evolution): apply the learned response-temperament
+        # hint PLUS (catalog 14 T3) a bounded "[Evolution: ...]" pending-queue
+        # nudge for THIS turn, through the SAME set_temperament_hint seam.
+        # Both inject into the SYSTEM prompt (NOT the user text, so the gate /
+        # clock detectors are unaffected). Empty when the temperament is
+        # balanced AND the queue is empty -> the prompt is byte-identical to
+        # the pre-evolution path. Fail-open.
         try:
             if self.llm is not None and self.evolution is not None:
-                self.llm.set_temperament_hint(self.evolution.temperament_hint())
+                self.llm.set_temperament_hint(self.evolution.pre_turn_system_hint())
         except Exception as e:                                       # noqa: BLE001
             logger.debug("set_temperament_hint failed: %s", e)
 

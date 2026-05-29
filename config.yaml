@@ -1572,6 +1572,13 @@ evolution:
   cycle_check_interval_turns: 25  # recorded turns between autonomous cycle checks
   pause_on_demote: false          # demote a churny surface to propose-only, don't pause it
   apply_temperament: true         # prepend the learned concise/detailed tone hint to turns
+  # Catalog 14 (clawhub-self-improving-agent) qualitative-capture knobs (all default ON):
+  correction_detection_enabled: true     # capture user corrections + knowledge gaps -> repair distillation
+  feature_request_capture_enabled: true  # capture "I wish you could X" to a non-distilled backlog (digest only)
+  command_failure_capture_enabled: true  # capture coding-task command/tool failures -> repair distillation
+  pre_turn_nudge_enabled: true           # bounded "[Evolution: ...]" system-prompt nudge when the queue is non-empty
+  pre_turn_nudge_max_chars: 240          # hard char cap on the nudge (~<=50 tokens; 0 disables)
+  recurrence_threshold: 3                # a pattern must recur this many times to be distill-ready
 
 # ---------------------------------------------------------------------------
 # Error phrases (Phase 4) — user-facing voice messages for dependency failures

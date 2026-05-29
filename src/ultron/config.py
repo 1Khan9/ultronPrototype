@@ -3220,6 +3220,26 @@ class EvolutionConfig(_Strict):
     # is prepended to the user turn before LLM generation. Tier-0 trait
     # tuning only -- never touches SOUL.md or the voicepack.
     apply_temperament: bool = True
+    # ---- Catalog 14 (clawhub-self-improving-agent) qualitative capture ----
+    # All default-ON + fail-open; the detectors are microsecond regex passes
+    # over the turn text, so the voice baseline is unaffected.
+    # Detect "the user corrected me" / "the user supplied a fact I lacked" on
+    # the turn following a response, feeding them to the repair distiller.
+    correction_detection_enabled: bool = True
+    # Capture "I wish you could X" feature requests to a separate, never-
+    # distilled backlog surfaced in the evolution digest.
+    feature_request_capture_enabled: bool = True
+    # Detect command / tool failures routed in from the coding task stream.
+    command_failure_capture_enabled: bool = True
+    # Inject a bounded "[Evolution: N pending ...]" self-evaluation nudge
+    # through the SAME system-prompt seam personality uses (never the user
+    # text, so the web-gate / local-clock raw-text detectors are unaffected).
+    pre_turn_nudge_enabled: bool = True
+    # Hard character cap on that nudge (~<=50 tokens). 0 disables the cap.
+    pre_turn_nudge_max_chars: int = Field(default=240, ge=0, le=2000)
+    # A pattern_key must recur at least this many times to count as
+    # distill-ready -- the explicit, auditable promote threshold.
+    recurrence_threshold: int = Field(default=3, ge=2, le=20)
 
 
 class UltronConfig(_Strict):

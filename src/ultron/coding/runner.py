@@ -190,6 +190,13 @@ class CodingTaskRunner:
         # tears it down when the task COMPLETEs so subsequent dialogs
         # don't fire for the previous task's listener.
         self._dialog_unsubscribe: Optional[object] = None
+        # 2026 catalog 14 (T1): command/tool failures observed on the bridge
+        # event stream, queued here + drained by the orchestrator each loop
+        # iteration into the EvolutionService. Decoupled -- the runner never
+        # imports the evolution package; each entry is
+        # ``(command, output, exit_code)``.
+        self._pending_command_failures: List[tuple] = []
+        self._command_failure_lock = threading.Lock()
 
     # --- task lifecycle -----------------------------------------------------
 
@@ -317,6 +324,13 @@ class CodingTaskRunner:
         dialog_listener = self._attach_dialog_auto_handler(handle)
         if dialog_listener is not None:
             handle.add_listener(dialog_listener)
+        # 2026 catalog 14 (T1): observe command/tool failures on this task's
+        # event stream + queue them for the orchestrator to feed the
+        # EvolutionService. Gated + fail-open + a no-op when evolution or its
+        # command-failure capture is disabled.
+        evo_failure_listener = self._make_evolution_failure_listener(handle)
+        if evo_failure_listener is not None:
+            handle.add_listener(evo_failure_listener)
         # Also log a structured "start" record for offline inspection.
         self._log_record({
             "ts": time.time(),
@@ -918,6 +932,68 @@ class CodingTaskRunner:
             text = self._pending_canonical_abort
             self._pending_canonical_abort = None
         return text
+
+    # --- 2026 catalog 14 (T1): command-failure observation ----------------
+
+    def _make_evolution_failure_listener(self, handle):
+        """Build a fail-open ``TaskEvent`` listener that captures command /
+        tool failures into ``self._pending_command_failures`` (catalog 14, T1)
+        for the orchestrator to feed the EvolutionService. Returns ``None``
+        (a zero-cost no-op) when evolution or its command-failure capture is
+        disabled. The runner never imports the evolution package -- it only
+        queues ``(command, output, exit_code)`` tuples."""
+        try:
+            from ultron.coding.bridge import EventKind
+            from ultron.config import get_config
+        except Exception as e:  # noqa: BLE001
+            logger.debug("evolution failure listener unavailable (%s); skipping", e)
+            return None
+        try:
+            ev = getattr(get_config(), "evolution", None)
+            if ev is None or not getattr(ev, "enabled", False):
+                return None
+            if not getattr(ev, "command_failure_capture_enabled", True):
+                return None
+        except Exception:  # noqa: BLE001
+            return None
+
+        def _queue(command: str, output: str, exit_code) -> None:
+            with self._command_failure_lock:
+                # Bound the queue so a pathological task can't grow it without
+                # limit before the orchestrator next drains it.
+                if len(self._pending_command_failures) < 200:
+                    self._pending_command_failures.append((command, output, exit_code))
+
+        def _listener(event) -> None:
+            try:
+                kind = getattr(event, "kind", None)
+                if kind == EventKind.ERROR:
+                    _queue("coding task", str(getattr(event, "error", "") or ""), None)
+                elif kind == EventKind.TOOL_RESULT and getattr(event, "tool_success", None) is False:
+                    _queue(
+                        str(getattr(event, "tool_name", "") or "tool"),
+                        str(getattr(event, "tool_brief", "") or ""),
+                        None,
+                    )
+                elif kind == EventKind.COMPLETE:
+                    code = getattr(event, "exit_status", None)
+                    if code is not None and int(code) != 0:
+                        _queue("coding task", str(getattr(event, "summary", "") or ""), int(code))
+            except Exception as e:  # noqa: BLE001 -- never raise back into the bridge
+                logger.debug("evolution failure listener error: %s", e)
+
+        return _listener
+
+    def drain_command_failures(self) -> List[tuple]:
+        """Pop + clear all queued command/tool failures (catalog 14, T1). The
+        orchestrator polls this each loop iteration and feeds each
+        ``(command, output, exit_code)`` to the EvolutionService."""
+        with self._command_failure_lock:
+            if not self._pending_command_failures:
+                return []
+            out = list(self._pending_command_failures)
+            self._pending_command_failures.clear()
+            return out
 
     # --- 2026 catalog 08 + 09 wiring: dialog auto-handler ---------------
 
