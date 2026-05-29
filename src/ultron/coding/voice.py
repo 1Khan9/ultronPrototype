@@ -145,6 +145,14 @@ class CapabilityVoiceController:
         # spoken yes/no to record_decision. None when no close is
         # awaiting confirmation.
         self._pending_close_approval: Optional[dict] = None
+        # T2 (generalised two-phase voice approval): a pending approval for
+        # ANY Cap-gated action that called :meth:`request_voice_confirmation`.
+        # Carries the approval_id + registry + on_approve/on_deny callbacks;
+        # the WINDOW_CLOSE_CONFIRMATION yes/no classifier path consumes it via
+        # :meth:`consume_voice_approval`. Keeps the validator fail-closed --
+        # this is the additive "ask instead of silently refuse" layer ABOVE
+        # it, opt-in per call site.
+        self._pending_voice_approval: Optional[dict] = None
 
     # --- public API ---------------------------------------------------------
 
@@ -1715,6 +1723,136 @@ class CapabilityVoiceController:
         err = getattr(result, "error", None) or ""
         return f'I tried to close "{window_query}" but it failed. {err}'.strip()
 
+    # --- general two-phase voice approval (T2) -----------------------------
+
+    def request_voice_confirmation(
+        self,
+        prompt: str,
+        *,
+        on_approve,
+        on_deny=None,
+        kind: str = "voice_confirmation",
+        scope_key: str = "",
+        timeout_seconds: float = 30.0,
+        actor: str = "voice",
+    ) -> Optional[str]:
+        """Ask the user a yes/no for a Cap-gated action and DEFER the action
+        to the spoken reply (T2 two-phase approval, generalised).
+
+        This is the reusable "regulated power" seam: instead of silently
+        refusing a Cap-2/3/4 action that needs explicit intent, a voice
+        handler calls this with the action as ``on_approve``. The returned
+        prompt is spoken; the user's next "yes"/"no" is captured by the same
+        classifier path that handles window-close confirmations and routed to
+        :meth:`consume_voice_approval`, which runs ``on_approve`` (yes) or
+        ``on_deny`` (no) and returns its narration.
+
+        Returns the prompt to speak, or ``None`` (caller proceeds without a
+        confirmation) when the approval registry is unavailable OR a cached
+        verdict pre-resolves the request (the action then runs immediately and
+        its narration is queued for the orchestrator's idle drain). The safety
+        validator stays fail-closed underneath; this layer only adds the
+        opt-in confirmation. Fail-open.
+        """
+        try:
+            from ultron.safety.two_phase_approval import (
+                ApprovalOutcome,
+                ApprovalRequest,
+                get_approval_registry,
+            )
+
+            registry = get_approval_registry()
+        except Exception as exc:  # noqa: BLE001
+            self._logger_safe("voice approval registry unavailable: %s", exc)
+            return None
+
+        self._clear_pending_voice_approval()
+        request = ApprovalRequest(
+            kind=kind,
+            prompt=prompt,
+            actor=actor,
+            scope_key=scope_key,
+            delivery_channel="voice",
+            timeout_seconds=timeout_seconds,
+        )
+        try:
+            handle = registry.register(request)
+        except Exception as exc:  # noqa: BLE001
+            self._logger_safe("register voice approval raised: %s", exc)
+            return None
+
+        pre = handle.pre_resolved
+        if pre is not None:
+            # Cached verdict -- run the action now + queue its narration for
+            # the orchestrator's idle drain (no caller is waiting to speak).
+            try:
+                if pre.outcome is ApprovalOutcome.ALLOW:
+                    narration = on_approve() if callable(on_approve) else None
+                else:
+                    narration = on_deny() if callable(on_deny) else None
+            except Exception as exc:  # noqa: BLE001
+                self._logger_safe("pre-resolved voice approval action raised: %s", exc)
+                narration = None
+            if narration:
+                with self._lock:
+                    self._pending_completion = narration
+            return None
+
+        self._pending_voice_approval = {
+            "approval_id": handle.approval_id,
+            "registry": registry,
+            "on_approve": on_approve,
+            "on_deny": on_deny,
+        }
+        return prompt
+
+    def _clear_pending_voice_approval(self) -> None:
+        """Drop any pending general voice approval state."""
+        if getattr(self, "_pending_voice_approval", None):
+            self._pending_voice_approval = None
+
+    def has_pending_voice_approval(self) -> bool:
+        """True iff a general voice approval is awaiting a spoken yes/no."""
+        return bool(getattr(self, "_pending_voice_approval", None))
+
+    def consume_voice_approval(self, decision_text: str) -> Optional[str]:
+        """Consume a spoken yes/no for a general voice approval.
+
+        Records the decision in the approval registry, runs the stored
+        ``on_approve`` (yes) / ``on_deny`` (no) callback, and returns its
+        narration for the caller to speak. Returns ``None`` when no general
+        approval is pending (caller falls through). Fail-open.
+        """
+        pending = getattr(self, "_pending_voice_approval", None)
+        if not pending:
+            return None
+        approval_id = pending.get("approval_id")
+        registry = pending.get("registry")
+        on_approve = pending.get("on_approve")
+        on_deny = pending.get("on_deny")
+        self._clear_pending_voice_approval()
+        if not approval_id or registry is None:
+            return None
+        approved = (decision_text or "").lower() == "yes"
+        try:
+            from ultron.safety.two_phase_approval import ApprovalOutcome
+
+            registry.record_decision(
+                approval_id,
+                ApprovalOutcome.ALLOW if approved else ApprovalOutcome.DENY,
+                reason="voice_confirmation",
+                decider="user_voice",
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._logger_safe("record voice approval decision raised: %s", exc)
+        try:
+            if approved:
+                return on_approve() if callable(on_approve) else None
+            return on_deny() if callable(on_deny) else None
+        except Exception as exc:  # noqa: BLE001
+            self._logger_safe("voice approval action raised: %s", exc)
+            return None
+
     @staticmethod
     def _logger_safe(fmt: str, *args) -> None:
         try:
@@ -1889,6 +2027,19 @@ class CapabilityVoiceController:
                 extra={"decision": decision},
             )
             return VoiceResponse(text=narration, handled=True)
+
+        # No window-close approval pending -- try a GENERAL voice approval
+        # (any Cap-gated action that requested confirmation via
+        # request_voice_confirmation). Same spoken yes/no, generalised.
+        general = self.consume_voice_approval(decision)
+        if general is not None:
+            get_routing_log().record(
+                routing_intent,
+                handler="voice.window_close_confirmation",
+                outcome="voice_approval_consumed",
+                extra={"decision": decision},
+            )
+            return VoiceResponse(text=general, handled=True)
 
         get_routing_log().record(
             routing_intent,
