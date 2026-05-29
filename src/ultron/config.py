@@ -2062,6 +2062,16 @@ class CodingConfig(_Strict):
     dialog_auto_handler: "CodingDialogAutoHandlerConfig" = Field(
         default_factory=lambda: CodingDialogAutoHandlerConfig(),
     )
+    # 2026 catalog wiring (T1): per-task loop detection on the coding
+    # event stream. When enabled (default ON), CodingTaskRunner runs the
+    # 5-detector LoopDetectionManager over each task's TOOL_RESULT stream
+    # and speaks a single heads-up if a hard escalation fires (the same
+    # tool failing identically ~20-30 times). It LOGS + NARRATES only --
+    # it never cancels the task (canceling the coding subprocess mid-flight
+    # could lose work; the user can say "stop", which routes to the existing
+    # cancel path). A backstop layer above the coding subprocess's + the
+    # OpenClaw agents' own turn limits. Flip False for silent operation.
+    loop_detection_enabled: bool = True
     # A4 pre-task confirmation. Default OFF -- the spoken confirmation
     # adds ~0.5 s of TTS playback before every coding task dispatch,
     # which is a UX cost that has to fire universally to provide its

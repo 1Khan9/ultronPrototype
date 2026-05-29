@@ -3139,6 +3139,10 @@ class Orchestrator:
                 # coding runner observed into the EvolutionService (repair
                 # distillation). Zero-cost no-op when nothing failed.
                 self._drain_evolution_command_failures()
+                # 2026 catalog wiring (T1): speak any loop-detection heads-up
+                # the coding runner queued when a task's tool-call stream
+                # tripped a hard escalation. Zero-cost no-op when none.
+                self._drain_coding_loop_alerts()
                 # 2026-05-19 Tracks 1c-1e: opportunistic background
                 # summarisation. Cheap no-op when disabled or when a
                 # previous pass is still in flight; the summarizer's
@@ -4272,6 +4276,28 @@ class Orchestrator:
                 self.evolution.record_command_failure(command, output, exit_code=exit_code)
         except Exception as e:  # noqa: BLE001
             logger.debug("evolution command-failure drain failed: %s", e)
+
+    def _drain_coding_loop_alerts(self) -> None:
+        """T1: speak any loop-detection heads-up the coding runner queued when
+        a task's tool-call stream tripped a hard escalation (the same tool
+        failing identically the circuit-breaker number of times). The runner
+        narrates at most once per task; this drains + speaks each queued line.
+        Fail-open + a zero-cost no-op when coding is disabled."""
+        if self.coding_voice is None:
+            return
+        try:
+            runner = getattr(self.coding_voice, "runner", None)
+            pop = getattr(runner, "pop_loop_alert", None)
+            if pop is None:
+                return
+            while True:
+                alert = pop()
+                if not alert:
+                    break
+                self._speak(alert)
+                self._last_response_finished_monotonic = time.monotonic()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("coding loop-alert drain failed: %s", e)
 
     def _announce_coding_completion_if_pending(self) -> None:
         """If a background coding task just finished, speak its summary

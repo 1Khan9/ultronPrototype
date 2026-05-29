@@ -197,6 +197,12 @@ class CodingTaskRunner:
         # ``(command, output, exit_code)``.
         self._pending_command_failures: List[tuple] = []
         self._command_failure_lock = threading.Lock()
+        # 2026 catalog wiring (T1): loop-detection heads-up lines. The
+        # per-task LoopDetectionManager listener queues a single line here
+        # when a task's tool-call stream trips a hard escalation; the
+        # orchestrator drains + speaks it each voice-loop iteration.
+        self._pending_loop_alerts: List[str] = []
+        self._loop_alert_lock = threading.Lock()
 
     # --- task lifecycle -----------------------------------------------------
 
@@ -331,6 +337,13 @@ class CodingTaskRunner:
         evo_failure_listener = self._make_evolution_failure_listener(handle)
         if evo_failure_listener is not None:
             handle.add_listener(evo_failure_listener)
+        # 2026 catalog wiring (T1): per-task 5-detector loop detection over
+        # the tool-call stream. Surfaces a single spoken heads-up (never a
+        # cancel) when a hard escalation fires. Gated + fail-open + a no-op
+        # when ``coding.loop_detection_enabled`` is False.
+        loop_listener = self._make_loop_detection_listener(handle)
+        if loop_listener is not None:
+            handle.add_listener(loop_listener)
         # Also log a structured "start" record for offline inspection.
         self._log_record({
             "ts": time.time(),
@@ -994,6 +1007,103 @@ class CodingTaskRunner:
             out = list(self._pending_command_failures)
             self._pending_command_failures.clear()
             return out
+
+    # --- 2026 catalog wiring (T1): per-task loop detection --------------
+
+    def _make_loop_detection_listener(self, handle):
+        """Build a fail-open ``TaskEvent`` listener that watches this task's
+        TOOL_RESULT stream for pathological repetition (T1, the 5-detector
+        :class:`LoopDetectionManager`) and queues a single spoken heads-up when
+        a hard escalation fires (e.g. the same tool failing identically the
+        circuit-breaker number of times). Returns ``None`` (a zero-cost no-op)
+        when ``coding.loop_detection_enabled`` is False or the detector package
+        can't be imported.
+
+        This is a BACKSTOP: the coding subprocess and OpenClaw agents each
+        enforce their own turn limits, so it only trips on a genuine
+        stuck-in-place loop the inner limits missed. It LOGS + NARRATES only --
+        it never cancels the handle (canceling the coding subprocess mid-flight
+        could lose work). The user hears the heads-up and can say "stop", which
+        routes to the existing cancel path. One manager per task (closure
+        local) so history never bleeds across tasks; narrates at most once per
+        task.
+        """
+        try:
+            from ultron.agent_loop.loop_detection_extended import (
+                LoopDetectionManager,
+                OutcomeKind,
+                ToolCallRecord,
+            )
+            from ultron.coding.bridge import EventKind
+            from ultron.config import get_config
+        except Exception as e:  # noqa: BLE001
+            logger.debug("loop-detection listener unavailable (%s); skipping", e)
+            return None
+        try:
+            if not getattr(get_config().coding, "loop_detection_enabled", True):
+                return None
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            manager = LoopDetectionManager()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("loop-detection manager construction failed: %s", e)
+            return None
+
+        state = {"narrated": False}
+
+        def _listener(event) -> None:
+            if state["narrated"]:
+                return
+            try:
+                if getattr(event, "kind", None) is not EventKind.TOOL_RESULT:
+                    return
+                success = getattr(event, "tool_success", None)
+                brief = str(getattr(event, "tool_brief", "") or "")[:200]
+                record = ToolCallRecord(
+                    tool_name=str(getattr(event, "tool_name", "") or "tool"),
+                    params={},
+                    outcome_kind=(
+                        OutcomeKind.ERROR if success is False else OutcomeKind.SUCCESS
+                    ),
+                    result_summary={"brief": brief},
+                    error_message=brief if success is False else "",
+                )
+                dominant, _ = manager.observe(record)
+                if dominant.hard_escalation is not None:
+                    state["narrated"] = True
+                    logger.warning(
+                        "loop-detection hard escalation on coding task: "
+                        "signature=%s count=%d",
+                        dominant.signature, dominant.count,
+                    )
+                    alert = (
+                        "Heads up -- the coding agent has repeated the same "
+                        "step many times without making progress. Say stop if "
+                        "you'd like me to halt it."
+                    )
+                    with self._loop_alert_lock:
+                        if len(self._pending_loop_alerts) < 8:
+                            self._pending_loop_alerts.append(alert)
+                elif dominant.soft_warning is not None:
+                    logger.debug(
+                        "loop-detection soft warning on coding task: "
+                        "signature=%s count=%d",
+                        dominant.signature, dominant.count,
+                    )
+            except Exception as e:  # noqa: BLE001 -- never raise into the bridge
+                logger.debug("loop-detection listener error: %s", e)
+
+        return _listener
+
+    def pop_loop_alert(self) -> Optional[str]:
+        """Pop the OLDEST queued loop-detection heads-up, or ``None`` (T1).
+        Drained by the orchestrator each voice-loop iteration; mirrors
+        :meth:`pop_dialog_narration`."""
+        with self._loop_alert_lock:
+            if not self._pending_loop_alerts:
+                return None
+            return self._pending_loop_alerts.pop(0)
 
     # --- 2026 catalog 08 + 09 wiring: dialog auto-handler ---------------
 
