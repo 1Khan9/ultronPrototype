@@ -75,7 +75,11 @@ from ultron.evolution.models import (
     new_capsule_id,
     new_event_id,
 )
-from ultron.evolution.skill_distiller import SkillProposal, auto_distill
+from ultron.evolution.skill_distiller import (
+    SkillProposal,
+    auto_distill,
+    auto_distill_from_failures,
+)
 from ultron.utils.logging import get_logger
 
 logger = get_logger("evolution.loop")
@@ -164,6 +168,7 @@ class EvolutionLoop(AgentLoop):
         autonomy: TieredAutonomyController,
         signals_provider: Callable[[], Sequence[str]] = lambda: (),
         existing_genes_provider: Callable[[], Sequence[Any]] = lambda: (),
+        failures_provider: Callable[[], Sequence[Any]] = lambda: (),
         baseline: Optional[GuardrailBaseline] = None,
         guardrail_sampler: Callable[[], GuardrailSample] = lambda: GuardrailSample(),
         checkpoint: Optional[CheckpointHook] = None,
@@ -187,6 +192,7 @@ class EvolutionLoop(AgentLoop):
         self._autonomy = autonomy
         self._signals_provider = signals_provider
         self._existing_genes_provider = existing_genes_provider
+        self._failures_provider = failures_provider
         self._baseline = baseline or GuardrailBaseline()
         self._guardrail_sampler = guardrail_sampler
         self._checkpoint = checkpoint
@@ -272,7 +278,28 @@ class EvolutionLoop(AgentLoop):
             now=self._clock(),
             enabled=self._config.enabled,
         )
-        return result.proposal if result.ok else None
+        if result.ok and result.proposal is not None:
+            return result.proposal
+        # Catalog 14 (T1): no success pattern distilled -> try the repair
+        # path over accumulated failures (user corrections / knowledge gaps /
+        # command failures are fed here via their ``to_failure_record``), so a
+        # recurring mistake distils into a DEFENSIVE skill through the very
+        # same pre-flight -> autonomy gate -> checkpoint -> guardrails ->
+        # keep/revert pipeline. Fail-open: a broken provider yields nothing.
+        try:
+            failures = list(self._failures_provider())
+        except Exception:  # noqa: BLE001
+            return None
+        if not failures:
+            return None
+        repair = auto_distill_from_failures(
+            failures,
+            existing_genes=existing,
+            last_distillation_at=self._state.last_distillation_at,
+            now=self._clock(),
+            enabled=self._config.enabled,
+        )
+        return repair.proposal if repair.ok else None
 
     def _target_path(self, proposal: SkillProposal) -> Path:
         return self._proposal_dir / proposal.filename

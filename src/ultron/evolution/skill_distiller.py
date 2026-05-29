@@ -63,6 +63,10 @@ FAILURE_DISTILLER_INTERVAL_HOURS: float = 12.0
 
 MIN_STRATEGY_STEPS: int = 3
 HIGH_FREQUENCY_THRESHOLD: int = 5
+#: Catalog 14 (T4): a pattern_key whose summed recurrence reaches this is
+#: "promotion-worthy" -- the explicit, auditable form of the upstream's
+#: "Recurrence-Count >= 3 across 2+ tasks" promote rule.
+RECURRENCE_PROMOTE_THRESHOLD: int = 3
 STRATEGY_DRIFT_JACCARD: float = 0.6
 COVERAGE_GAP_MIN_OCCURRENCES: int = 3
 MAX_TRIGGERS_PER_SKILL: int = 6
@@ -160,6 +164,8 @@ class GeneGroup:
     avg_score: float
     triggers: tuple[tuple[str, int], ...] = ()  # (signal, frequency), desc
     summaries: tuple[str, ...] = ()
+    dominant_pattern_key: str = ""  # catalog 14 T4: most-common pattern_key among members
+    pattern_recurrence: int = 0  # catalog 14 T4: summed recurrence for the dominant key
 
 
 @dataclass(frozen=True)
@@ -170,6 +176,7 @@ class DistillationData:
     all_capsules: tuple[Any, ...] = ()
     grouped: Mapping[str, GeneGroup] = field(default_factory=dict)
     data_hash: str = ""
+    pattern_recurrence: Mapping[str, int] = field(default_factory=dict)  # catalog 14 T4
 
 
 @dataclass(frozen=True)
@@ -180,6 +187,7 @@ class PatternAnalysis:
     strategy_drift: tuple[str, ...] = ()  # gene ids whose summaries diverged
     coverage_gaps: tuple[str, ...] = ()  # frequent signals no gene covers
     total_success: int = 0
+    recurring_patterns: tuple[str, ...] = ()  # catalog 14 T4: pattern_keys >= RECURRENCE_PROMOTE_THRESHOLD
 
 
 @dataclass(frozen=True)
@@ -260,6 +268,74 @@ def _capsule_score(c: Any) -> float:
         return 0.0
 
 
+def _capsule_pattern_key(c: Any) -> str:
+    """The stable recurrence key on a capsule (``""`` when absent)."""
+    return str(_get(c, "pattern_key", "") or "")
+
+
+def _capsule_recurrence(c: Any) -> int:
+    """The recurrence count on a capsule (>=1; defaults to 1 when absent)."""
+    try:
+        return max(1, int(_get(c, "recurrence_count", 1) or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+# --- pattern-key recurrence (catalog 14, T4) --------------------------------
+
+
+@dataclass(frozen=True)
+class MergedPattern:
+    """Capsules collapsed by their shared ``pattern_key`` (catalog 14, T4).
+
+    The explicit, auditable form of "this pattern recurred N times" -- used
+    by the distiller's recurrence gate + the service digest.
+    """
+
+    pattern_key: str
+    capsule_count: int
+    total_recurrence: int
+    triggers: tuple[tuple[str, int], ...] = ()
+    first_seen: str = ""
+    last_seen: str = ""
+    representative_summary: str = ""
+
+
+def merge_capsules_by_pattern_key(capsules: Sequence[Any]) -> dict[str, "MergedPattern"]:
+    """Collapse capsules sharing a non-empty ``pattern_key`` into one
+    :class:`MergedPattern` each (summing recurrence, unioning triggers,
+    tracking first / last seen). Capsules with no pattern_key are skipped
+    so each stays distinct -- back-compatible with the legacy capsule log."""
+    groups: dict[str, list[Any]] = {}
+    for c in capsules:
+        pk = _capsule_pattern_key(c)
+        if pk:
+            groups.setdefault(pk, []).append(c)
+    out: dict[str, MergedPattern] = {}
+    for pk, members in groups.items():
+        trig: Counter[str] = Counter()
+        for m in members:
+            for t in _capsule_triggers(m):
+                trig[t] += 1
+        firsts = [s for s in (str(_get(m, "first_seen", "") or "") for m in members) if s]
+        lasts = [s for s in (str(_get(m, "last_seen", "") or "") for m in members) if s]
+        summaries = [_capsule_summary(m) for m in members if _capsule_summary(m)]
+        out[pk] = MergedPattern(
+            pattern_key=pk,
+            capsule_count=len(members),
+            # Recurrence = number of recorded occurrences (rows) of this
+            # pattern. Robust regardless of whether a row's recurrence_count
+            # field is per-occurrence (1) or cumulative -- the service appends
+            # one row per occurrence, so the row count is the true frequency.
+            total_recurrence=len(members),
+            triggers=tuple(trig.most_common()),
+            first_seen=min(firsts) if firsts else "",
+            last_seen=max(lasts) if lasts else "",
+            representative_summary=_best_summary(summaries),
+        )
+    return out
+
+
 # --- expand signals ---------------------------------------------------------
 
 
@@ -312,6 +388,11 @@ def collect_distillation_data(
         if _capsule_status(c) == "success" and _capsule_score(c) >= min_score
     )
 
+    # catalog 14 T4: summed recurrence per non-empty pattern_key (auditable).
+    pattern_recurrence = {
+        pk: mp.total_recurrence for pk, mp in merge_capsules_by_pattern_key(successes).items()
+    }
+
     by_gene: dict[str, list[Any]] = {}
     for c in successes:
         by_gene.setdefault(_capsule_gene(c), []).append(c)
@@ -321,10 +402,15 @@ def collect_distillation_data(
         count = len(members)
         total = sum(_capsule_score(m) for m in members)
         trig_counter: Counter[str] = Counter()
+        pk_counter: Counter[str] = Counter()
         for m in members:
             for t in _capsule_triggers(m):
                 trig_counter[t] += 1
+            pk = _capsule_pattern_key(m)
+            if pk:
+                pk_counter[pk] += 1  # row count == recurrence (see merge_capsules_by_pattern_key)
         summaries = tuple(_capsule_summary(m) for m in members if _capsule_summary(m))
+        dom_pk, dom_rec = pk_counter.most_common(1)[0] if pk_counter else ("", 0)
         grouped[gene_id] = GeneGroup(
             gene_id=gene_id,
             count=count,
@@ -332,6 +418,8 @@ def collect_distillation_data(
             avg_score=(total / count) if count else 0.0,
             triggers=tuple(trig_counter.most_common()),
             summaries=summaries,
+            dominant_pattern_key=dom_pk,
+            pattern_recurrence=dom_rec,
         )
 
     return DistillationData(
@@ -339,6 +427,7 @@ def collect_distillation_data(
         all_capsules=all_capsules,
         grouped=grouped,
         data_hash=compute_data_hash(successes),
+        pattern_recurrence=pattern_recurrence,
     )
 
 
@@ -384,11 +473,21 @@ def analyze_patterns(
         if n >= COVERAGE_GAP_MIN_OCCURRENCES and sig not in covered
     )
 
+    # catalog 14 T4: pattern_keys whose summed recurrence is promotion-worthy.
+    recurring = tuple(
+        sorted(
+            pk
+            for pk, total in data.pattern_recurrence.items()
+            if total >= RECURRENCE_PROMOTE_THRESHOLD
+        )
+    )
+
     return PatternAnalysis(
         high_frequency=high_freq,
         strategy_drift=tuple(drift),
         coverage_gaps=gaps,
         total_success=len(data.success_capsules),
+        recurring_patterns=recurring,
     )
 
 
@@ -447,7 +546,17 @@ def synthesize_gene_from_patterns(
     """
     if not data.grouped:
         return None
-    best_id = max(data.grouped, key=lambda g: data.grouped[g].count * 2 + data.grouped[g].avg_score)
+
+    def _group_score(gid: str) -> float:
+        grp = data.grouped[gid]
+        # catalog 14 T4: a strongly-recurring pattern (by pattern_key) is
+        # preferred. Capsules without a pattern_key contribute 0 here, so the
+        # legacy ``count * 2 + avg_score`` ordering is byte-identical when no
+        # capsule carries recurrence metadata.
+        recurrence_bonus = min(grp.pattern_recurrence, 10) * 0.5
+        return grp.count * 2 + grp.avg_score + recurrence_bonus
+
+    best_id = max(data.grouped, key=_group_score)
     group = data.grouped[best_id]
     if group.count <= 0:
         return None
@@ -931,13 +1040,16 @@ __all__ = [
     "FAILURE_DISTILLER_INTERVAL_HOURS",
     "MIN_STRATEGY_STEPS",
     "HIGH_FREQUENCY_THRESHOLD",
+    "RECURRENCE_PROMOTE_THRESHOLD",
     "GeneGroup",
+    "MergedPattern",
     "DistillationData",
     "PatternAnalysis",
     "SkillProposal",
     "DistillResult",
     "expand_signals",
     "compute_data_hash",
+    "merge_capsules_by_pattern_key",
     "collect_distillation_data",
     "analyze_patterns",
     "synthesize_gene_from_patterns",

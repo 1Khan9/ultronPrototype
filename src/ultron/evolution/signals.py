@@ -37,6 +37,18 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping, Optional, Sequence
 
+from ultron.evolution.models import (
+    CommandFailureSignal,
+    ComplexityHint,
+    CorrectionCapsule,
+    FeatureRequestCapsule,
+    FeatureRequestStatus,
+    KnowledgeGapCapsule,
+    KnowledgeSource,
+    derive_pattern_key,
+    new_record_id,
+)
+
 # --- the canonical taxonomy -------------------------------------------------
 
 #: The 17 named opportunity signals (the stable vocabulary the loop reasons
@@ -686,6 +698,298 @@ def apply_post_processing(
     return result
 
 
+# ---------------------------------------------------------------------------
+# Catalog 14 (clawhub-self-improving-agent) -- qualitative conversation-event
+# detectors. Pure functions over turn text producing the structured capture
+# records in :mod:`ultron.evolution.models`; never raise; zero IO / network.
+# Correction detection is gated on a non-empty ``prior_response`` so a bare
+# "actually..." with no preceding ultron claim is not mistaken for a
+# correction. Only the detect-the-event-in-text BEHAVIOUR is ported -- the
+# upstream's dangerous PostToolUse BASH-hook mechanism is excluded.
+# ---------------------------------------------------------------------------
+
+#: Named qualitative signals -- kept SEPARATE from :data:`OPPORTUNITY_SIGNALS`
+#: so the documented 17-signal taxonomy count is unchanged; recognised as
+#: actionable by :func:`has_opportunity_signal`.
+QUALITATIVE_CAPTURE_SIGNALS: tuple[str, ...] = (
+    "user_correction",
+    "knowledge_gap",
+    "command_failure",
+)
+
+#: Known command / tool failure tokens (clean-room list; the in-process,
+#: zero-shell analogue of the upstream error detector's hardcoded set).
+COMMAND_FAILURE_TOKENS: tuple[str, ...] = (
+    "traceback (most recent call last)",
+    "npm err!",
+    "permission denied",
+    "command not found",
+    "no such file or directory",
+    "segmentation fault",
+    "fatal error",
+    "fatal:",
+    "error:",
+    "exception:",
+    "exited with code",
+    "non-zero exit",
+    "cannot find module",
+    "modulenotfounderror",
+    "syntaxerror",
+    "build failed",
+    "compilation failed",
+    "operation not permitted",
+    "access is denied",
+    "connection refused",
+    "killed",
+)
+
+_TOPIC_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "the", "and", "for", "with", "that", "this", "from", "into", "your", "you",
+        "are", "was", "but", "not", "what", "why", "how", "when", "its", "really",
+        "just", "please", "can", "could", "would", "should", "about", "there",
+        "here", "they", "them", "were", "have", "has", "had", "did", "does", "done",
+        "get", "got", "use", "uses", "using", "know", "knew", "actually", "wrong",
+        "incorrect", "meant", "said", "thing", "things", "want", "wanted", "fyi",
+        "wish", "like", "love", "also", "ever", "able", "way",
+    }
+)
+
+
+def derive_topic_area(text: str, *, max_words: int = 4) -> str:
+    """Extract a short, human-readable subject from ``text`` (a few content
+    words; stopwords + punctuation stripped). Labels a correction /
+    knowledge-gap / feature-request record."""
+    words: list[str] = []
+    for raw in re.findall(r"[A-Za-z0-9][A-Za-z0-9_+.\-]*", text.lower()):
+        w = raw.strip("-._+")
+        if len(w) >= 3 and w not in _TOPIC_STOPWORDS:
+            words.append(w)
+        if len(words) >= max_words:
+            break
+    return " ".join(words)
+
+
+#: Strong correction phrases -- an explicit "you were wrong" that always
+#: counts as a correction.
+_CORRECTION_STRONG_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\b(?:that'?s|that\s+is|you'?re|you\s+are|it'?s|it\s+is)\s+"
+        r"(?:wrong|incorrect|not\s+right|mistaken|inaccurate|outdated)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bnot\s+what\s+i\s+(?:asked|meant|said|wanted)\b", re.IGNORECASE),
+    re.compile(r"\bthat'?s\s+not\s+(?:what\s+i|right|correct)\b", re.IGNORECASE),
+    re.compile(r"\byou\s+(?:got|have)\s+(?:it|that|this)\s+wrong\b", re.IGNORECASE),
+    re.compile(r"\b(?:correction|i\s+stand\s+corrected)\b", re.IGNORECASE),
+)
+
+#: Weak openers -- only count as a correction when the utterance does NOT
+#: also read as a positive acknowledgement (see :data:`_POSITIVE_ACK_RE`).
+_CORRECTION_WEAK_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^\s*(?:no|nope)[,.\s]+(?:actually|that|you|it|i)\b", re.IGNORECASE),
+    re.compile(r"^\s*actually[,\s]", re.IGNORECASE),
+    re.compile(r"\bi\s+meant\b", re.IGNORECASE),
+)
+
+#: Positive-acknowledgement cues. When ONLY a weak opener matched and one of
+#: these is present, the turn is praise/agreement, not a correction.
+_POSITIVE_ACK_RE = re.compile(
+    r"\b(?:thanks|thank\s+you|great|perfect|awesome|excellent|brilliant|"
+    r"nice(?:\s+one)?|love\s+it|loved\s+it|agree|agreed|exactly|makes\s+sense|"
+    r"sounds\s+good|that'?s\s+right|you'?re\s+right|appreciate|"
+    r"good\s+(?:job|idea|call|work|one))\b",
+    re.IGNORECASE,
+)
+
+_KNOWLEDGE_GAP_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bfor\s+(?:future\s+reference|the\s+record)\b", re.IGNORECASE),
+    re.compile(r"\bjust\s+so\s+you\s+know\b", re.IGNORECASE),
+    re.compile(r"\bf\.?y\.?i\.?\b", re.IGNORECASE),
+    re.compile(r"\bfor\s+your\s+information\b", re.IGNORECASE),
+    re.compile(r"\bthe\s+correct\s+\w+\s+(?:is|are|was|were)\b", re.IGNORECASE),
+    re.compile(r"\bactually\s+it'?s\b", re.IGNORECASE),
+    re.compile(
+        r"\bthis\s+(?:project|repo|repository|codebase|machine|system|app)\s+uses\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(?:keep\s+in\s+mind|note\s+that|remember\s+that|bear\s+in\s+mind)\b", re.IGNORECASE),
+    re.compile(r"\byou\s+(?:didn'?t|did\s+not|don'?t|do\s+not)\s+know\b", re.IGNORECASE),
+)
+
+_FEATURE_REQUEST_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bi\s+wish\s+you\s+could\b", re.IGNORECASE),
+    re.compile(r"\bit\s+would\s+be\s+(?:nice|great|cool|helpful)\s+if\b", re.IGNORECASE),
+    re.compile(
+        r"\bcan\s+you\s+(?:also\s+|ever\s+|please\s+)?(?:add|support|build|make|create|integrate)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bcould\s+you\s+(?:add|support|build|make|create|integrate)\b", re.IGNORECASE),
+    re.compile(r"\bis\s+there\s+a\s+way\s+(?:to|for\s+you\s+to)\b", re.IGNORECASE),
+    re.compile(r"\bwhy\s+can'?t\s+you\b", re.IGNORECASE),
+    re.compile(r"\b(?:please\s+)?add\s+support\s+for\b", re.IGNORECASE),
+    re.compile(r"\bi'?d\s+(?:like|love)\s+(?:it\s+)?(?:if\s+)?you\s+(?:to|could|would)\b", re.IGNORECASE),
+    re.compile(r"\bwould\s+love\s+(?:it\s+)?if\b", re.IGNORECASE),
+)
+
+_COMPLEXITY_COMPLEX_HINTS: tuple[str, ...] = (
+    "integrate", "pipeline", "system", "framework", "architecture", "database",
+    "real-time", "realtime", "train", "fine-tune", "distributed", "multi-step",
+)
+_COMPLEXITY_SIMPLE_HINTS: tuple[str, ...] = (
+    "just", "simply", "quick", "toggle", "rename", "small", "minor", "button", "flag",
+)
+
+
+def _estimate_complexity(text: str) -> ComplexityHint:
+    """Rough effort estimate for a feature request from keyword cues."""
+    low = text.lower()
+    if any(h in low for h in _COMPLEXITY_COMPLEX_HINTS):
+        return ComplexityHint.COMPLEX
+    if any(h in low for h in _COMPLEXITY_SIMPLE_HINTS):
+        return ComplexityHint.SIMPLE
+    return ComplexityHint.MEDIUM
+
+
+def extract_correction(
+    user_text: str, *, prior_response: str = ""
+) -> Optional[CorrectionCapsule]:
+    """Detect that the user corrected ultron on the turn FOLLOWING a
+    response. Fires only when a correction phrase matches AND
+    ``prior_response`` is non-empty (there was an agent claim to correct).
+    Returns a :class:`CorrectionCapsule`, else ``None``. Never raises."""
+    try:
+        if not user_text or not user_text.strip() or not (prior_response or "").strip():
+            return None
+        strong = any(p.search(user_text) for p in _CORRECTION_STRONG_PATTERNS)
+        weak = any(p.search(user_text) for p in _CORRECTION_WEAK_PATTERNS)
+        if not (strong or weak):
+            return None
+        # A weak opener ("actually..." / "no, ...") that also reads as a
+        # positive acknowledgement is praise, not a correction. A strong
+        # phrase ("that's wrong") always counts even if praise is present.
+        if not strong and _POSITIVE_ACK_RE.search(user_text):
+            return None
+        topic = derive_topic_area(user_text) or derive_topic_area(prior_response)
+        return CorrectionCapsule(
+            id=new_record_id("correction_"),
+            user_utterance_fragment=user_text,
+            topic_area=topic,
+            prior_agent_claim_summary=prior_response,
+            confidence=0.85,
+        )
+    except Exception:  # noqa: BLE001 -- detection never breaks a turn
+        return None
+
+
+def extract_knowledge_gap(
+    user_text: str,
+    *,
+    prior_response: str = "",
+    source: KnowledgeSource = KnowledgeSource.USER,
+) -> Optional[KnowledgeGapCapsule]:
+    """Detect the user supplying a fact ultron lacked / had wrong. Returns
+    a :class:`KnowledgeGapCapsule`, else ``None``. Never raises."""
+    try:
+        if not user_text or not user_text.strip():
+            return None
+        if not any(p.search(user_text) for p in _KNOWLEDGE_GAP_PATTERNS):
+            return None
+        return KnowledgeGapCapsule(
+            id=new_record_id("knowledge_gap_"),
+            topic_area=derive_topic_area(user_text),
+            gap_description=user_text,
+            source=source,
+            confidence=0.8,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def extract_feature_request(user_text: str) -> Optional[FeatureRequestCapsule]:
+    """Detect a user-expressed wish for a capability that does not exist.
+    Returns a :class:`FeatureRequestCapsule` (status PENDING), else
+    ``None``. Reuses the existing multilingual feature-request triggers as a
+    fallback. Never raises."""
+    try:
+        if not user_text or not user_text.strip():
+            return None
+        lower = user_text.lower()
+        matched = any(p.search(user_text) for p in _FEATURE_REQUEST_PATTERNS) or any(
+            t in lower for t in _FEATURE_REQUEST_TRIGGERS
+        )
+        if not matched:
+            return None
+        capability = user_text.strip()
+        for sent in re.split(r"(?<=[.!?\n])\s+", user_text):
+            sl = sent.lower()
+            if any(p.search(sent) for p in _FEATURE_REQUEST_PATTERNS) or any(
+                t in sl for t in _FEATURE_REQUEST_TRIGGERS
+            ):
+                capability = sent.strip()
+                break
+        context = user_text.strip()
+        if context == capability:
+            context = ""
+        return FeatureRequestCapsule(
+            id=new_record_id("feature_request_"),
+            requested_capability=capability,
+            user_context=context,
+            complexity_hint=_estimate_complexity(capability),
+            status=FeatureRequestStatus.PENDING,
+            user_utterance_fragment=user_text,
+            # Key on the stopword-stripped capability (not lead filler like
+            # "i wish you") so distinct phrasings of the same wish can align.
+            pattern_key=derive_pattern_key(
+                kind="feature_request", topic=derive_topic_area(capability)
+            ),
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def extract_command_failure(
+    output: str, *, command: str = "", exit_code: Optional[int] = None
+) -> Optional[CommandFailureSignal]:
+    """Detect a command / tool failure in ``output`` (or via a non-zero
+    ``exit_code``). In-process, zero-shell analogue of the upstream's
+    PostToolUse error detector. Returns a :class:`CommandFailureSignal`,
+    else ``None``. Never raises."""
+    try:
+        has_nonzero = exit_code is not None and int(exit_code) != 0
+        low = (output or "").lower()
+        matched_token = next((t for t in COMMAND_FAILURE_TOKENS if t in low), "")
+        if not has_nonzero and not matched_token:
+            return None
+        summary = ""
+        for line in (output or "").splitlines():
+            ls = line.strip()
+            if not ls:
+                continue
+            ll = ls.lower()
+            if matched_token and matched_token in ll:
+                summary = ls
+                break
+            if _ERROR_LINE_RE.search(ls):
+                summary = ls
+                break
+        if not summary:
+            summary = " ".join((output or "").split())[:ERRSIG_MAX_CHARS] or (
+                f"exit code {exit_code}" if has_nonzero else "command failed"
+            )
+        cmd_words = command.split()
+        topic = derive_topic_area(command) or (cmd_words[0] if cmd_words else "tooling")
+        return CommandFailureSignal(
+            id=new_record_id("command_failure_"),
+            command=command,
+            error_summary=summary,
+            topic_area=topic,
+            exit_code=int(exit_code) if exit_code is not None else None,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+
 # --- top-level --------------------------------------------------------------
 
 
@@ -737,6 +1041,9 @@ def has_opportunity_signal(signals: Sequence[str]) -> bool:
             "recurring_errsig",
             "user_feature_request",
             "user_improvement_suggestion",
+            "user_correction",
+            "knowledge_gap",
+            "command_failure",
         ):
             return True
     return False
@@ -767,4 +1074,12 @@ __all__ = [
     "apply_post_processing",
     "extract_signals",
     "has_opportunity_signal",
+    # catalog 14 -- qualitative conversation-event detectors
+    "QUALITATIVE_CAPTURE_SIGNALS",
+    "COMMAND_FAILURE_TOKENS",
+    "derive_topic_area",
+    "extract_correction",
+    "extract_knowledge_gap",
+    "extract_feature_request",
+    "extract_command_failure",
 ]

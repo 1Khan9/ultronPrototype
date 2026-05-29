@@ -23,6 +23,8 @@ import hashlib
 import json
 import threading
 import time
+from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence
 
@@ -37,10 +39,15 @@ from ultron.evolution.evolution_loop import (
 from ultron.evolution.guardrails import GuardrailBaseline, GuardrailSample
 from ultron.evolution.models import (
     Capsule,
+    CommandFailureSignal,
+    CorrectionCapsule,
+    FeatureRequestCapsule,
+    KnowledgeGapCapsule,
     Outcome,
     OutcomeStatus,
     PersonalityState,
     canonicalize,
+    derive_pattern_key,
     new_capsule_id,
 )
 from ultron.evolution.personality import (
@@ -48,7 +55,15 @@ from ultron.evolution.personality import (
     PersonalityTuner,
     apply_temperament,
 )
-from ultron.evolution.signals import COSMETIC_SIGNALS, has_opportunity_signal, signal_base
+from ultron.evolution.signals import (
+    COSMETIC_SIGNALS,
+    extract_command_failure,
+    extract_correction,
+    extract_feature_request,
+    extract_knowledge_gap,
+    has_opportunity_signal,
+    signal_base,
+)
 from ultron.utils.logging import get_logger
 
 logger = get_logger("evolution.service")
@@ -58,6 +73,13 @@ DEFAULT_CAPSULE_LOAD_LIMIT = 400
 DEFAULT_CYCLE_CHECK_INTERVAL_TURNS = 25
 DEFAULT_TURN_CAPSULE_SCORE = 0.8
 PERSONALITY_SAVE_EVERY_TURNS = 10
+DEFAULT_RECURRENCE_THRESHOLD = 3
+DEFAULT_PRE_TURN_NUDGE_MAX_CHARS = 240
+
+
+def _now_iso() -> str:
+    """Current UTC time as an ISO-8601 string (matches models._now_iso)."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 class EvolutionStore:
@@ -71,6 +93,11 @@ class EvolutionStore:
         self.events_path = self._dir / "events.jsonl"
         self.state_path = self._dir / "state.json"
         self.personality_path = self._dir / "personality.json"
+        # Catalog 14 -- qualitative conversation-event ledgers.
+        self.corrections_path = self._dir / "corrections.jsonl"
+        self.knowledge_gaps_path = self._dir / "knowledge_gaps.jsonl"
+        self.command_failures_path = self._dir / "command_failures.jsonl"
+        self.feature_requests_path = self._dir / "feature_requests.jsonl"
 
     def _append(self, path: Path, line: str) -> None:
         with self._lock:
@@ -122,6 +149,41 @@ class EvolutionStore:
             except Exception:  # noqa: BLE001 -- skip a torn / malformed tail line
                 continue
         return out
+
+    def _count_lines(self, path: Path) -> int:
+        return len([ln for ln in self._read_lines(path) if ln.strip()])
+
+    # -- catalog 14 qualitative ledgers -------------------------------------
+
+    def append_correction(self, record: Any) -> None:
+        self._append(self.corrections_path, canonicalize(record))
+
+    def load_corrections(self, limit: int = DEFAULT_CAPSULE_LOAD_LIMIT) -> list[dict]:
+        return self._parse_jsonl(self.corrections_path, limit)
+
+    def count_corrections(self) -> int:
+        return self._count_lines(self.corrections_path)
+
+    def append_knowledge_gap(self, record: Any) -> None:
+        self._append(self.knowledge_gaps_path, canonicalize(record))
+
+    def load_knowledge_gaps(self, limit: int = DEFAULT_CAPSULE_LOAD_LIMIT) -> list[dict]:
+        return self._parse_jsonl(self.knowledge_gaps_path, limit)
+
+    def append_command_failure(self, record: Any) -> None:
+        self._append(self.command_failures_path, canonicalize(record))
+
+    def load_command_failures(self, limit: int = DEFAULT_CAPSULE_LOAD_LIMIT) -> list[dict]:
+        return self._parse_jsonl(self.command_failures_path, limit)
+
+    def append_feature_request(self, record: Any) -> None:
+        self._append(self.feature_requests_path, canonicalize(record))
+
+    def load_feature_requests(self, limit: int = DEFAULT_CAPSULE_LOAD_LIMIT) -> list[dict]:
+        return self._parse_jsonl(self.feature_requests_path, limit)
+
+    def count_feature_requests(self) -> int:
+        return self._count_lines(self.feature_requests_path)
 
     # -- hash-chained audit ledger ------------------------------------------
 
@@ -280,6 +342,13 @@ class EvolutionService:
         self._cycle_lock = threading.Lock()
         self._turns_since_check = 0
         self._closed = False
+        # Catalog 14: in-memory recurrence + pending counters, rebuilt once
+        # from the persisted ledgers (zero per-turn IO thereafter).
+        self._pattern_recurrence: dict[str, int] = {}
+        self._pattern_first_seen: dict[str, str] = {}
+        self._pending_feature_requests: int = 0
+        self._pending_corrections: int = 0
+        self._load_capture_state()
 
     @classmethod
     def from_config(
@@ -314,6 +383,7 @@ class EvolutionService:
                 repo_root=Path(project_root),
                 proposal_dir=proposal_dir,
                 capsules_provider=store.load_recent_capsules,
+                failures_provider=store.load_failures,
                 autonomy=autonomy,
                 baseline=GuardrailBaseline(),
                 guardrail_sampler=sampler,
@@ -357,33 +427,168 @@ class EvolutionService:
         re_asked: bool = False,
         barged_in: bool = False,
         response_summary: str = "",
+        prior_response: str = "",
     ) -> None:
-        """Record a turn's satisfaction signals (tune the temperament) and,
-        on a successfully-handled opportunity, a success capsule that feeds
-        future distillation. Fail-open."""
+        """Record a turn's satisfaction signals (tune the temperament), the
+        catalog-14 qualitative capture events (corrections / knowledge gaps /
+        feature requests detected from the utterance + the PRIOR response),
+        and -- on a successfully-handled opportunity -- a success capsule that
+        feeds future distillation. Fail-open."""
         if self._closed:
             return
         try:
+            # Catalog 14 (T1/T2): qualitative conversation-event capture. A
+            # detected correction also flips ``corrected`` so the temperament
+            # tuner reacts (raise rigor / lower risk) even when the caller did
+            # not pre-classify the turn.
+            detected_correction = self._maybe_capture_correction(user_text, prior_response)
+            self._maybe_capture_knowledge_gap(user_text, prior_response)
+            self._maybe_capture_feature_request(user_text)
+            corrected = corrected or detected_correction
+
             feedback = PersonalityFeedback(corrected=corrected, re_asked=re_asked, barged_in=barged_in)
             self._personality.record_feedback(feedback)
             self._personality.record_outcome(1.0 if feedback.satisfied else 0.0)
             if feedback.satisfied and has_opportunity_signal(signals):
                 opportunity = [s for s in signals if has_opportunity_signal([s])]
+                trigger = opportunity or list(signals)
                 capsule = Capsule(
                     id=new_capsule_id(),
-                    trigger=opportunity or list(signals),
+                    trigger=trigger,
                     gene="ad_hoc",
                     summary=(response_summary or user_text)[:200],
                     confidence=DEFAULT_TURN_CAPSULE_SCORE,
                     outcome=Outcome(status=OutcomeStatus.SUCCESS, score=DEFAULT_TURN_CAPSULE_SCORE),
                     success_streak=1,
+                    pattern_key=derive_pattern_key(signals=trigger, gene="ad_hoc", kind="capsule"),
                 )
+                capsule = self._stamp_recurrence(capsule)
                 self._store.append_capsule(capsule)
             self._turns_since_check += 1
             if self._turns_since_check % PERSONALITY_SAVE_EVERY_TURNS == 0:
                 self._store.save_personality(self._personality.to_dict())
         except Exception as exc:  # noqa: BLE001
             logger.debug("evolution record_turn failed: %s", exc)
+
+    # -- catalog 14: qualitative capture + recurrence -----------------------
+
+    def _recurrence_threshold(self) -> int:
+        """The configured pattern recurrence threshold (>=2; default 3)."""
+        try:
+            return max(2, int(getattr(self._config, "recurrence_threshold", DEFAULT_RECURRENCE_THRESHOLD)))
+        except (TypeError, ValueError):
+            return DEFAULT_RECURRENCE_THRESHOLD
+
+    def _load_capture_state(self) -> None:
+        """Rebuild the in-memory recurrence + pending counters from the
+        persisted ledgers (one-time, at construction). Fail-open."""
+        try:
+            rows: list[dict] = []
+            rows.extend(self._store.load_recent_capsules())
+            rows.extend(self._store.load_corrections())
+            rows.extend(self._store.load_knowledge_gaps())
+            rows.extend(self._store.load_command_failures())
+            frs = self._store.load_feature_requests()
+            rows.extend(frs)
+            for row in rows:
+                pk = str(row.get("pattern_key", "") or "")
+                if not pk:
+                    continue
+                self._pattern_recurrence[pk] = self._pattern_recurrence.get(pk, 0) + 1
+                if pk not in self._pattern_first_seen:
+                    fs = str(row.get("first_seen", "") or row.get("created_at", "") or "")
+                    if fs:
+                        self._pattern_first_seen[pk] = fs
+            self._pending_feature_requests = len(frs)
+            self._pending_corrections = self._store.count_corrections()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("evolution capture-state load failed: %s", exc)
+
+    def _stamp_recurrence(self, record: Any) -> Any:
+        """Stamp a fresh record with the cumulative recurrence_count +
+        first/last-seen for its pattern_key (tracked in-memory). A record with
+        no pattern_key is returned unchanged. Fail-open."""
+        try:
+            pk = getattr(record, "pattern_key", "") or ""
+            if not pk:
+                return record
+            occurred = getattr(record, "created_at", "") or _now_iso()
+            first = self._pattern_first_seen.setdefault(pk, occurred)
+            count = self._pattern_recurrence.get(pk, 0) + 1
+            self._pattern_recurrence[pk] = count
+            return replace(
+                record, recurrence_count=count, first_seen=first, last_seen=occurred, asset_id=""
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("evolution recurrence stamp failed: %s", exc)
+            return record
+
+    def _maybe_capture_correction(self, user_text: str, prior_response: str) -> bool:
+        """Detect + persist a user correction and feed the repair-distillation
+        path. Returns True iff a correction was captured. Fail-open."""
+        if not getattr(self._config, "correction_detection_enabled", True):
+            return False
+        try:
+            cap = extract_correction(user_text, prior_response=prior_response)
+            if cap is None:
+                return False
+            cap = self._stamp_recurrence(cap)
+            self._store.append_correction(cap)
+            self._store.append_failure(cap.to_failure_record())
+            self._pending_corrections += 1
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("evolution correction capture failed: %s", exc)
+            return False
+
+    def _maybe_capture_knowledge_gap(self, user_text: str, prior_response: str) -> None:
+        """Detect + persist a knowledge gap and feed the repair-distillation
+        path (gated under correction detection). Fail-open."""
+        if not getattr(self._config, "correction_detection_enabled", True):
+            return
+        try:
+            gap = extract_knowledge_gap(user_text, prior_response=prior_response)
+            if gap is None:
+                return
+            gap = self._stamp_recurrence(gap)
+            self._store.append_knowledge_gap(gap)
+            self._store.append_failure(gap.to_failure_record())
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("evolution knowledge-gap capture failed: %s", exc)
+
+    def _maybe_capture_feature_request(self, user_text: str) -> None:
+        """Detect + persist a feature request (NEVER distilled; surfaced in
+        the digest). Fail-open."""
+        if not getattr(self._config, "feature_request_capture_enabled", True):
+            return
+        try:
+            fr = extract_feature_request(user_text)
+            if fr is None:
+                return
+            fr = self._stamp_recurrence(fr)
+            self._store.append_feature_request(fr)
+            self._pending_feature_requests += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("evolution feature-request capture failed: %s", exc)
+
+    def record_command_failure(
+        self, command: str = "", output: str = "", *, exit_code: Optional[int] = None
+    ) -> None:
+        """Observe command / tool output (catalog 14, T1). On a detected
+        failure, persist a CommandFailureSignal + feed the repair-distillation
+        path. Gated, fail-open, zero-cost when nothing failed. Public so the
+        orchestrator can route coding-task ERROR / failed-tool events here."""
+        if self._closed or not getattr(self._config, "command_failure_capture_enabled", True):
+            return
+        try:
+            sig = extract_command_failure(output, command=command, exit_code=exit_code)
+            if sig is None:
+                return
+            sig = self._stamp_recurrence(sig)
+            self._store.append_command_failure(sig)
+            self._store.append_failure(sig.to_failure_record())
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("evolution command-failure capture failed: %s", exc)
 
     def maybe_run_autonomous_cycle(self) -> None:
         """If enough turns have elapsed and no cycle is running, run one on a
@@ -469,14 +674,86 @@ class EvolutionService:
         except Exception:  # noqa: BLE001
             return user_text
 
+    def pre_turn_system_hint(self) -> str:
+        """The combined per-turn SYSTEM-prompt hint pushed through the LLM's
+        existing ``set_temperament_hint`` seam (catalog 14, T3): the learned
+        ``[Tone: ...]`` temperament directive plus, when the pending-capsule
+        queue is non-empty, a bounded ``[Evolution: ...]`` self-evaluation
+        nudge. System-layer only -- NEVER the user text, so the web-gate /
+        local-clock raw-text detectors are unaffected. Token-capped +
+        fail-open; ``""`` when both are empty (prompt byte-identical)."""
+        if self._closed:
+            return ""
+        try:
+            tone = self.temperament_hint() if getattr(self._config, "apply_temperament", True) else ""
+            nudge = self._pre_turn_nudge()
+            return " ".join(p for p in (tone, nudge) if p)
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _pre_turn_nudge(self) -> str:
+        """The bounded ``[Evolution: ...]`` nudge (or ``""``). Fires only when
+        a recurring pattern is distill-ready OR a feature request is pending;
+        char-capped so it stays well under ~50 tokens."""
+        if not getattr(self._config, "pre_turn_nudge_enabled", True):
+            return ""
+        threshold = self._recurrence_threshold()
+        recurring = sum(1 for v in self._pattern_recurrence.values() if v >= threshold)
+        feats = self._pending_feature_requests
+        if recurring <= 0 and feats <= 0:
+            return ""
+        bits: list[str] = []
+        if recurring > 0:
+            bits.append(f"{recurring} recurring pattern{'s' if recurring != 1 else ''} ready to distill")
+        if feats > 0:
+            bits.append(f"{feats} feature request{'s' if feats != 1 else ''} logged")
+        nudge = "[Evolution: " + "; ".join(bits) + ". Note any correction the user makes.]"
+        cap = int(getattr(self._config, "pre_turn_nudge_max_chars", DEFAULT_PRE_TURN_NUDGE_MAX_CHARS) or 0)
+        if cap > 0 and len(nudge) > cap:
+            nudge = nudge[:cap].rstrip()
+        return nudge
+
     # -- reporting ----------------------------------------------------------
 
     def digest(self) -> str:
-        """The multi-line periodic digest (autonomy + personality ranking)."""
+        """The multi-line periodic digest (autonomy + personality ranking +
+        the catalog-14 qualitative-capture summary)."""
         try:
-            return f"{self._autonomy.digest()}\n{self._personality.report()}"
+            base = f"{self._autonomy.digest()}\n{self._personality.report()}"
+            extra = self._capture_digest()
+            return f"{base}\n{extra}" if extra else base
         except Exception:  # noqa: BLE001
             return "Evolution digest unavailable."
+
+    def _capture_digest(self) -> str:
+        """A short summary of pending feature requests + recurring patterns +
+        corrections (catalog 14). Reads the ledgers on demand (not per turn)."""
+        lines: list[str] = []
+        try:
+            from collections import Counter
+
+            frs = self._store.load_feature_requests()
+            if frs:
+                counts: Counter[str] = Counter()
+                for row in frs:
+                    cap = str(row.get("requested_capability", "") or "").strip()
+                    if cap:
+                        counts[cap] += 1
+                top = counts.most_common(3)
+                if top:
+                    lines.append("Feature requests:")
+                    for cap, n in top:
+                        times = f"{n}x " if n > 1 else ""
+                        lines.append(f"  - {times}{cap}")
+            threshold = self._recurrence_threshold()
+            recurring = sorted(pk for pk, v in self._pattern_recurrence.items() if v >= threshold)
+            if recurring:
+                lines.append(f"Recurring patterns at/over the distill threshold: {len(recurring)}")
+            if self._pending_corrections:
+                lines.append(f"User corrections recorded: {self._pending_corrections}")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("evolution capture digest failed: %s", exc)
+        return "\n".join(lines)
 
     def status_line(self) -> str:
         """A short, TTS-safe one-line status for a voice query."""
@@ -489,10 +766,17 @@ class EvolutionService:
             kept = sum(s.kept for s in surfaces)
             reverted = sum(s.reverted for s in surfaces)
             capsules = self._store.count_capsules()
-            return (
+            msg = (
                 f"I've recorded {capsules} learning samples; "
                 f"kept {kept} self-improvements and auto-reverted {reverted}."
             )
+            try:
+                feats = self._store.count_feature_requests()
+                if feats:
+                    msg += f" {feats} feature request{'s' if feats != 1 else ''} logged."
+            except Exception:  # noqa: BLE001
+                pass
+            return msg
         except Exception:  # noqa: BLE001
             return "Evolution is active."
 

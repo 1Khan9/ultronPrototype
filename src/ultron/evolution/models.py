@@ -46,6 +46,7 @@ import hashlib
 import json
 import math
 import platform as _platform
+import re
 import sys
 import time
 import uuid
@@ -100,6 +101,36 @@ class RiskLevel(str, Enum):
     HIGH = "high"
 
 
+class KnowledgeSource(str, Enum):
+    """Where a :class:`KnowledgeGapCapsule`'s correct information came from
+    (catalog 14, T1)."""
+
+    USER = "user"  # the user supplied the fact
+    TOOL = "tool"  # discovered from tool / command output
+    DISCOVERED = "discovered"  # ultron worked it out mid-task
+    UNKNOWN = "unknown"
+
+
+class ComplexityHint(str, Enum):
+    """A rough effort estimate for a :class:`FeatureRequestCapsule`
+    (catalog 14, T2)."""
+
+    SIMPLE = "simple"
+    MEDIUM = "medium"
+    COMPLEX = "complex"
+
+
+class FeatureRequestStatus(str, Enum):
+    """Lifecycle of a captured feature request (catalog 14, T2). A
+    feature request is a forward-looking backlog item ultron surfaces to
+    the user -- it is NEVER auto-acted on or distilled into a skill."""
+
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    SHIPPED = "shipped"
+    WONT_SHIP = "wont_ship"
+
+
 def clamp01(value: Any) -> float:
     """Clamp ``value`` to the closed unit interval ``[0.0, 1.0]``.
 
@@ -149,6 +180,114 @@ def new_mutation_id() -> str:
 def new_gene_id(prefix: str = "gene_") -> str:
     """Generate a fresh gene id with the given prefix (``<prefix><10 hex>``)."""
     return f"{prefix}{uuid.uuid4().hex[:10]}"
+
+
+def new_record_id(prefix: str) -> str:
+    """Generate a fresh, collision-resistant id with ``prefix``
+    (``<prefix><epoch-ms>_<6 hex>`` -- the same shape as
+    :func:`new_capsule_id`). Used for the qualitative-capture records
+    (corrections / knowledge gaps / command failures / feature requests)."""
+    return f"{prefix}{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}"
+
+
+# ---------------------------------------------------------------------------
+# Qualitative-capture helpers (catalog 14, T1/T2/T4): PII redaction +
+# stable recurrence keys for the conversation-event capsules. Pure +
+# stdlib-only; nothing here transmits anything (local-only data).
+# ---------------------------------------------------------------------------
+
+_REDACT_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+_REDACT_SECRET_RE = re.compile(
+    r"\b(?:sk|pk|ghp|gho|ghs|ghu|xox[abprs]|AKIA|AIza)[A-Za-z0-9_\-]{8,}\b"
+)
+_REDACT_IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+_REDACT_PHONE_RE = re.compile(r"(?<![\w.])\+?\d[\d\-().\s]{7,}\d(?![\w.])")
+_REDACT_LONG_DIGITS_RE = re.compile(r"\b\d{6,}\b")
+
+#: Default cap on a stored user-utterance excerpt.
+DEFAULT_FRAGMENT_MAX_CHARS: int = 200
+
+
+def redact_fragment(text: Any, *, max_chars: int = DEFAULT_FRAGMENT_MAX_CHARS) -> str:
+    """Collapse whitespace, scrub common PII / secret shapes, and truncate.
+
+    Applied before any user-utterance excerpt is persisted to the local
+    evolution ledgers so a stored correction / feature request never
+    retains an email address, IPv4, phone number, API-key-shaped token,
+    or long digit run. Order-sensitive (email + token before the generic
+    digit rules). Returns ``""`` for falsy input. Local-only data --
+    nothing is ever transmitted regardless of this scrub.
+    """
+    if not text:
+        return ""
+    flat = " ".join(str(text).split())
+    flat = _REDACT_EMAIL_RE.sub("[redacted-email]", flat)
+    flat = _REDACT_SECRET_RE.sub("[redacted-token]", flat)
+    flat = _REDACT_IPV4_RE.sub("[redacted-ip]", flat)
+    flat = _REDACT_PHONE_RE.sub("[redacted-phone]", flat)
+    flat = _REDACT_LONG_DIGITS_RE.sub("[redacted-number]", flat)
+    if max_chars > 0 and len(flat) > max_chars:
+        flat = flat[:max_chars].rstrip()
+    return flat
+
+
+_PATTERN_KEY_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+#: Max signal-base tokens folded into a derived pattern key.
+PATTERN_KEY_MAX_TOKENS: int = 3
+
+
+def _slugify_key(text: str) -> str:
+    """Lowercase + hyphenate a string into a key-safe slug."""
+    return _PATTERN_KEY_SLUG_RE.sub("-", str(text).lower()).strip("-")
+
+
+def derive_pattern_key(
+    *,
+    signals: Sequence[str] = (),
+    gene: str = "",
+    kind: str = "capsule",
+    topic: str = "",
+) -> str:
+    """Build a stable, content-derived recurrence key (catalog 14, T4).
+
+    Deterministic -- same inputs always produce the same key -- so it can
+    de-duplicate + count repeated patterns across capsule / record
+    instances. This is the durable form of the upstream ledger's
+    ``Pattern-Key`` field (e.g. ``simplify.dead_code``); the ultron form
+    is ``<kind>:<a-b-c>`` built from the sorted base names of the
+    triggering signals (``:payload`` suffix stripped), falling back to a
+    slug of ``topic`` then ``gene``.
+    """
+    bases: list[str] = []
+    seen: set[str] = set()
+    for s in signals:
+        base = _slugify_key(str(s).split(":", 1)[0])
+        if base and base not in seen:
+            seen.add(base)
+            bases.append(base)
+    bases.sort()
+    body = "-".join(bases[:PATTERN_KEY_MAX_TOKENS])
+    if not body and topic:
+        body = "-".join(_slugify_key(topic).split("-")[:PATTERN_KEY_MAX_TOKENS])
+    if not body and gene and gene != "ad_hoc":
+        body = _slugify_key(gene)
+    return f"{kind}:{body or 'general'}"
+
+
+def bump_recurrence(record: Any, *, at: str = "") -> Any:
+    """Return a copy of a capsule / record with ``recurrence_count``
+    incremented, ``last_seen`` stamped, and ``asset_id`` recomputed
+    (cleared so ``__post_init__`` rehashes the new content). Works for any
+    frozen record carrying those three fields (the base :class:`Capsule`
+    and the four catalog-14 capture types)."""
+    stamp = at or _now_iso()
+    return replace(
+        record,
+        recurrence_count=int(getattr(record, "recurrence_count", 1)) + 1,
+        last_seen=stamp,
+        asset_id="",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -542,6 +681,10 @@ class Capsule:
     blast_radius: BlastRadius = field(default_factory=BlastRadius)
     outcome: Outcome = field(default_factory=Outcome)
     success_streak: int = 0
+    pattern_key: str = ""
+    recurrence_count: int = 1
+    first_seen: str = ""
+    last_seen: str = ""
     env_fingerprint: EnvFingerprint = field(default_factory=EnvFingerprint.capture)
     schema_version: str = EVOLUTION_SCHEMA_VERSION
     type: str = "Capsule"
@@ -551,6 +694,10 @@ class Capsule:
         object.__setattr__(self, "trigger", _as_str_tuple(self.trigger))
         object.__setattr__(self, "confidence", clamp01(self.confidence))
         object.__setattr__(self, "success_streak", max(0, int(self.success_streak)))
+        object.__setattr__(self, "pattern_key", str(self.pattern_key or ""))
+        object.__setattr__(self, "recurrence_count", max(1, int(self.recurrence_count)))
+        object.__setattr__(self, "first_seen", str(self.first_seen or ""))
+        object.__setattr__(self, "last_seen", str(self.last_seen or ""))
         if not isinstance(self.blast_radius, BlastRadius):
             br = self.blast_radius or {}
             object.__setattr__(
@@ -632,6 +779,246 @@ class EvolutionEvent:
             object.__setattr__(self, "asset_id", compute_asset_id(self))
 
 
+# ---------------------------------------------------------------------------
+# Catalog 14 (clawhub-self-improving-agent) -- qualitative conversation-event
+# capture types. These complement the metric-driven :class:`Capsule`: they
+# record high-SNR conversational events (the user corrected me / supplied a
+# fact I lacked / a command failed / wished for a capability) as structured,
+# PII-redacted, local-only data. Corrections / knowledge gaps / command
+# failures feed the existing repair-distillation pipeline via
+# :meth:`to_failure_record`; feature requests are a forward-looking backlog
+# (NEVER distilled). Built clean-room from the catalog + scan reports only.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CorrectionCapsule:
+    """A recorded user correction (catalog 14, T1).
+
+    The single highest-value learning signal a personal assistant can get:
+    the user explicitly said ultron was wrong on the turn FOLLOWING a
+    response. Captured as a structured, PII-redacted record that (a) feeds
+    the repair / failure distillation path (so a recurring mistake distils
+    into a defensive skill), and (b) surfaces in the evolution digest. The
+    :attr:`asset_id` is the content hash of every field except itself.
+    """
+
+    id: str
+    user_utterance_fragment: str = ""
+    topic_area: str = ""
+    prior_agent_claim_summary: str = ""
+    confidence: float = 0.0
+    pattern_key: str = ""
+    recurrence_count: int = 1
+    first_seen: str = ""
+    last_seen: str = ""
+    created_at: str = ""
+    env_fingerprint: EnvFingerprint = field(default_factory=EnvFingerprint.capture)
+    schema_version: str = EVOLUTION_SCHEMA_VERSION
+    type: str = "CorrectionCapsule"
+    asset_id: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "user_utterance_fragment", redact_fragment(self.user_utterance_fragment)
+        )
+        object.__setattr__(self, "topic_area", str(self.topic_area or ""))
+        object.__setattr__(
+            self, "prior_agent_claim_summary", redact_fragment(self.prior_agent_claim_summary)
+        )
+        object.__setattr__(self, "confidence", clamp01(self.confidence))
+        object.__setattr__(self, "recurrence_count", max(1, int(self.recurrence_count)))
+        object.__setattr__(self, "first_seen", str(self.first_seen or ""))
+        object.__setattr__(self, "last_seen", str(self.last_seen or ""))
+        if not self.created_at:
+            object.__setattr__(self, "created_at", _now_iso())
+        if not self.pattern_key:
+            object.__setattr__(
+                self, "pattern_key", derive_pattern_key(kind="correction", topic=self.topic_area)
+            )
+        if not self.asset_id:
+            object.__setattr__(self, "asset_id", compute_asset_id(self))
+
+    def to_failure_record(self) -> dict:
+        """Project this correction into the failure-record shape the repair
+        distiller consumes, so recurring corrections distil into a
+        defensive skill."""
+        topic = self.topic_area or "general"
+        return {
+            "gene": "ad_hoc",
+            "trigger": ["user_correction", f"area:{topic}"],
+            "reason_class": "user_correction",
+            "learning_signals": [f"area:{topic}", "problem:reliability", "action:repair"],
+            "pattern_key": self.pattern_key,
+        }
+
+
+@dataclass(frozen=True)
+class KnowledgeGapCapsule:
+    """A recorded knowledge gap (catalog 14, T1).
+
+    The user supplied (or a tool revealed) information ultron's internal
+    knowledge lacked or had wrong. Distinct from a correction in that it
+    carries the CORRECT fact, not just "you were wrong". Feeds the repair
+    distillation path + the digest. PII-redacted, local-only.
+    """
+
+    id: str
+    topic_area: str = ""
+    gap_description: str = ""
+    source: KnowledgeSource = KnowledgeSource.USER
+    confidence: float = 0.0
+    pattern_key: str = ""
+    recurrence_count: int = 1
+    first_seen: str = ""
+    last_seen: str = ""
+    created_at: str = ""
+    env_fingerprint: EnvFingerprint = field(default_factory=EnvFingerprint.capture)
+    schema_version: str = EVOLUTION_SCHEMA_VERSION
+    type: str = "KnowledgeGapCapsule"
+    asset_id: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "topic_area", str(self.topic_area or ""))
+        object.__setattr__(self, "gap_description", redact_fragment(self.gap_description, max_chars=300))
+        object.__setattr__(self, "source", KnowledgeSource(self.source))
+        object.__setattr__(self, "confidence", clamp01(self.confidence))
+        object.__setattr__(self, "recurrence_count", max(1, int(self.recurrence_count)))
+        object.__setattr__(self, "first_seen", str(self.first_seen or ""))
+        object.__setattr__(self, "last_seen", str(self.last_seen or ""))
+        if not self.created_at:
+            object.__setattr__(self, "created_at", _now_iso())
+        if not self.pattern_key:
+            object.__setattr__(
+                self, "pattern_key", derive_pattern_key(kind="knowledge_gap", topic=self.topic_area)
+            )
+        if not self.asset_id:
+            object.__setattr__(self, "asset_id", compute_asset_id(self))
+
+    def to_failure_record(self) -> dict:
+        """Project this gap into the repair-distiller failure-record shape."""
+        topic = self.topic_area or "general"
+        return {
+            "gene": "ad_hoc",
+            "trigger": ["knowledge_gap", f"area:{topic}"],
+            "reason_class": "knowledge_gap",
+            "learning_signals": [f"area:{topic}", "problem:capability", "action:add_capability"],
+            "pattern_key": self.pattern_key,
+        }
+
+
+@dataclass(frozen=True)
+class CommandFailureSignal:
+    """A recorded command / tool failure (catalog 14, T1).
+
+    A command returned a non-zero exit code, a tool reported failure, or
+    the output carried an exception / known error token. The in-process,
+    zero-shell re-implementation of the upstream's PostToolUse error
+    detector (the dangerous bash mechanism is excluded; only the
+    detect-failure-in-output behaviour is ported). Feeds the repair
+    distillation path. PII-redacted, local-only.
+    """
+
+    id: str
+    command: str = ""
+    error_summary: str = ""
+    topic_area: str = ""
+    exit_code: Optional[int] = None
+    pattern_key: str = ""
+    recurrence_count: int = 1
+    first_seen: str = ""
+    last_seen: str = ""
+    created_at: str = ""
+    schema_version: str = EVOLUTION_SCHEMA_VERSION
+    type: str = "CommandFailureSignal"
+    asset_id: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "command", redact_fragment(self.command, max_chars=160))
+        object.__setattr__(self, "error_summary", redact_fragment(self.error_summary, max_chars=260))
+        object.__setattr__(self, "topic_area", str(self.topic_area or ""))
+        if self.exit_code is not None:
+            try:
+                object.__setattr__(self, "exit_code", int(self.exit_code))
+            except (TypeError, ValueError):
+                object.__setattr__(self, "exit_code", None)
+        object.__setattr__(self, "recurrence_count", max(1, int(self.recurrence_count)))
+        object.__setattr__(self, "first_seen", str(self.first_seen or ""))
+        object.__setattr__(self, "last_seen", str(self.last_seen or ""))
+        if not self.created_at:
+            object.__setattr__(self, "created_at", _now_iso())
+        if not self.pattern_key:
+            object.__setattr__(
+                self,
+                "pattern_key",
+                derive_pattern_key(kind="command_failure", topic=self.topic_area or self.command),
+            )
+        if not self.asset_id:
+            object.__setattr__(self, "asset_id", compute_asset_id(self))
+
+    def to_failure_record(self) -> dict:
+        """Project this failure into the repair-distiller failure-record
+        shape."""
+        topic = self.topic_area or "tooling"
+        return {
+            "gene": "ad_hoc",
+            "trigger": ["command_failure", f"area:{topic}"],
+            "reason_class": "command_failure",
+            "learning_signals": [f"area:{topic}", "problem:reliability", "action:repair"],
+            "pattern_key": self.pattern_key,
+        }
+
+
+@dataclass(frozen=True)
+class FeatureRequestCapsule:
+    """A captured user feature request (catalog 14, T2).
+
+    The user expressed a desire for a capability that does not exist yet.
+    A forward-looking backlog item ultron surfaces back to the user in the
+    evolution digest ("you've asked 3x for a way to X") -- it is NEVER
+    auto-acted on and NEVER distilled into a skill (deliberately no
+    ``to_failure_record`` / no skill path). PII-redacted, local-only.
+    """
+
+    id: str
+    requested_capability: str = ""
+    user_context: str = ""
+    complexity_hint: ComplexityHint = ComplexityHint.MEDIUM
+    status: FeatureRequestStatus = FeatureRequestStatus.PENDING
+    user_utterance_fragment: str = ""
+    pattern_key: str = ""
+    recurrence_count: int = 1
+    first_seen: str = ""
+    last_seen: str = ""
+    created_at: str = ""
+    env_fingerprint: EnvFingerprint = field(default_factory=EnvFingerprint.capture)
+    schema_version: str = EVOLUTION_SCHEMA_VERSION
+    type: str = "FeatureRequestCapsule"
+    asset_id: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "requested_capability", redact_fragment(self.requested_capability, max_chars=160))
+        object.__setattr__(self, "user_context", redact_fragment(self.user_context))
+        object.__setattr__(
+            self, "user_utterance_fragment", redact_fragment(self.user_utterance_fragment)
+        )
+        object.__setattr__(self, "complexity_hint", ComplexityHint(self.complexity_hint))
+        object.__setattr__(self, "status", FeatureRequestStatus(self.status))
+        object.__setattr__(self, "recurrence_count", max(1, int(self.recurrence_count)))
+        object.__setattr__(self, "first_seen", str(self.first_seen or ""))
+        object.__setattr__(self, "last_seen", str(self.last_seen or ""))
+        if not self.created_at:
+            object.__setattr__(self, "created_at", _now_iso())
+        if not self.pattern_key:
+            object.__setattr__(
+                self,
+                "pattern_key",
+                derive_pattern_key(kind="feature_request", topic=self.requested_capability),
+            )
+        if not self.asset_id:
+            object.__setattr__(self, "asset_id", compute_asset_id(self))
+
+
 __all__ = [
     "EVOLUTION_SCHEMA_VERSION",
     "DEFAULT_GENE_MAX_FILES",
@@ -661,4 +1048,18 @@ __all__ = [
     "Mutation",
     "Capsule",
     "EvolutionEvent",
+    # catalog 14 -- qualitative capture
+    "KnowledgeSource",
+    "ComplexityHint",
+    "FeatureRequestStatus",
+    "CorrectionCapsule",
+    "KnowledgeGapCapsule",
+    "CommandFailureSignal",
+    "FeatureRequestCapsule",
+    "new_record_id",
+    "redact_fragment",
+    "derive_pattern_key",
+    "bump_recurrence",
+    "DEFAULT_FRAGMENT_MAX_CHARS",
+    "PATTERN_KEY_MAX_TOKENS",
 ]
