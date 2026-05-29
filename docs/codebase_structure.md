@@ -10,7 +10,101 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** catalog 14 (clawhub-self-improving-agent) -- FOUR
+> **Validating HEAD:** **infrastructure-wiring campaign (2026-05-29)** -- a
+> sweep wiring dormant imported-but-unconsumed infrastructure across catalogs
+> 1-14 to production polish, on worktree branch `claude/frosty-murdock-ba8981`,
+> **validating code HEAD `296e1f6`** (this doc-bump is the trailing tip),
+> pushed to `origin/main`. Every commit independently green; the voice baseline
+> contract is intact (no SOUL.md / RVC / Piper / LLM-model / voicepack touch;
+> the orchestrator hot path gains only fail-open, default-safe, no-op-until-used
+> seams). **9117 passed / 27 skipped / 2 deselected** (loaded-machine deselect
+> recipe; see the test-count note below). Fourteen commits:
+> * **Process discipline (T12):** the coding subprocess + Parakeet/XTTS daemons
+>   register in the process-registry + zombie-killer at spawn and unregister on
+>   stop (`runner._launch`/`_finalize`, `parakeet_engine`, `xtts_v3`,
+>   orchestrator start/shutdown); a latent `_maybe_handle_deep_research` `trace`
+>   NameError was fixed in the same pass.
+> * **Deep-memory recall:** NEW `memory/deep_recall.py` strict matcher +
+>   `Orchestrator._maybe_handle_deep_recall` short-circuit (iterative RAG).
+> * **Skill trust gate (T5/T9):** NEW `skills/scan.py` (`scan_skill_content` --
+>   tag-injection / jailbreak / system-override detection) gating untrusted
+>   (non-PUBLIC) skills in `loader`/`registry`; `scan_untrusted_skills` default-ON.
+> * **Decomposer requery (T14):** `HybridTaskDecomposer._requery_decomposition`
+>   re-queries a malformed plan before the coding-only fallback.
+> * **Two-phase voice approval (T2):** generalised `request_voice_confirmation`
+>   / `consume_voice_approval` on `CapabilityVoiceController` -- any Cap-gated
+>   handler can ask-instead-of-refuse; the window-close yes/no path also
+>   consumes a general approval; the validator stays fail-closed underneath.
+> * **Loop detection (T1):** a per-task `LoopDetectionManager` over the coding
+>   TOOL_RESULT stream -> one spoken heads-up on hard escalation (logs +
+>   narrates, never cancels); `coding.loop_detection_enabled` default-ON.
+> * **Dialog-narration surfacing fix:** `_drain_coding_dialog_narrations` in the
+>   voice loop -- the catalog-08/09 dialog auto-handler had been queuing
+>   narrations that were never spoken (`pop_dialog_narration` had no caller).
+> * **Brave key rotation (T6):** `RotatingBraveClient` + `resolve_brave_api_keys`
+>   + `web_search.brave_additional_api_key_envs` -- 2+ keys rotate via the
+>   auth-profile store; the single-key path is unchanged. Jina/SearxNG/DDG are
+>   no-auth/local and documented as needing no rotation.
+> * **Dual-history recall:** NEW `memory/history_recall.py` "what did I say
+>   earlier?" matcher + `DualHistoryStore` wired into the orchestrator (records
+>   every addressed user utterance + LLM response) + `_maybe_handle_history_recall`;
+>   `memory.history_recall_enabled` default-ON; works even when Qdrant is off.
+> * **Hooks lifecycle:** coding TaskStart (cancel-capable) + TaskComplete fire
+>   the out-of-process hook registry; `hooks.enabled` default-ON, zero-cost when
+>   no scripts are installed (cached discovery + empty fast path). Voice-hot-path
+>   lifecycle points intentionally not auto-fired (latency contract).
+> * **Observability:** the `resolve_observation_outcomes` maintenance task gives
+>   the offline `OutcomeResolver` a runnable home; the live emits were already
+>   wired.
+> * **MCP client (T22):** NEW `mcp/builder.py` + `McpConfig` -- a sandboxed
+>   external-MCP-server lifecycle manager (env-filtered spawn + process-registry
+>   tracking + `kill_process_tree` reap-on-shutdown); `mcp.enabled` /
+>   `mcp.autostart` both default-OFF. Managed servers reach `claude` via
+>   `--mcp-config`; JSON-RPC tool invocation is the optional `mcp`-SDK adapter.
+> * **`.ultronignore` (safety Category U):** NEW `safety/rules/category_ignore.py`
+>   `UltronIgnoreRule` -- blocks reads/writes of ignored paths + file-reading
+>   shell commands targeting them (secrets protection); default-SAFE no-op until
+>   a `.ultronignore` exists; `safety.rules.U1`-toggleable.
+> * **Explicit-intent unblock:** the `safety.intent` matcher is wired into the
+>   validator -- a `NEEDS_EXPLICIT_INTENT` verdict upgrades to an audited allow
+>   ONLY when the user's current utterance names the action (verb + object);
+>   NEVER overrides `BLOCK_HARD`; `safety.explicit_intent_matching_enabled`
+>   default-ON.
+>
+> **Architecturally-inactive (assessed, deliberately DOCUMENTED rather than
+> force-wired -- consistent with the user's "keep + document as inactive"
+> decision on the dead coding modules):** these stem from concurrent-server /
+> agent-harness catalog sources whose assumptions don't hold in Ultron's
+> single-threaded run loop + delegate-to-`claude --print` design, so
+> force-wiring them would add hot-path latency / risk for a window that does
+> not exist (a degradation the binding constraints forbid):
+> * **`memory/dual_history.truncate_*` ("undo that"):** a robust conversation
+>   "undo" needs `DualHistoryStore` promoted to the unified LLM-context source.
+>   Today `ConversationMemory.recent()` drives context and records ONLY LLM-path
+>   turns, so "the last exchange in memory" != "the user's last utterance"
+>   (capability/search short-circuits never enter it). The truncate primitive is
+>   ready; the context-source unification is the prerequisite.
+> * **`lifecycle/pending_message_queue`:** its concurrency windows (cold-start,
+>   model-swap) don't exist -- the LLM loads in `Orchestrator.__init__` BEFORE
+>   audio capture starts, and the gaming LLM swap (`reload_for_preset`) is
+>   synchronous within a turn (the single-threaded loop is blocked, so no
+>   utterance is captured to queue).
+> * **Coding edit auto-revert:** silently restoring `claude`'s files mid-task
+>   breaks its black-box mental model; the architecture-fitting use
+>   (AST-syntax-failure fact-checking in the completion narration) is already
+>   wired.
+> * **`safety/auto_approval.AutoApprovalMatrix` session-warming:** the NEI path
+>   is now complete (explicit-intent unblock + the T2 two-phase-approval "ask"
+>   fallback). Auto-allow-by-warming is a further, security-sensitive layer left
+>   for focused review rather than bundled into a marathon session.
+>
+> **Test-count note:** sweeps used the loaded-machine deselect recipe
+> (`--ignore=tests/integration/test_bridge_e2e.py` + the two
+> `tests/openclaw_bridge/test_client.py::test_run_cli_*` subprocess tests) ->
+> 9117 passed / 27 skipped / 2 deselected. The deselected tests spawn the real
+> `.cmd`->python subprocess and are the documented loaded-machine flake.
+>
+> **Earlier validating HEAD:** catalog 14 (clawhub-self-improving-agent) -- FOUR
 > bounded extensions to the EXISTING `src/ultron/evolution/` package (NOT a
 > new subsystem), **HEAD `b55697e`** (catalog-14 commits `e52c364` …
 > `b55697e`; this doc-bump is the trailing tip), pushed to `origin/main`
