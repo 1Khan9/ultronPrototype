@@ -798,6 +798,17 @@ class XttsV3Speech:
         except FileNotFoundError as e:
             raise XttsServerStartError(f"Failed to spawn XTTS server: {e}") from e
 
+        # T12/T23: track the XTTS daemon as PERSISTENT (tracked in the
+        # "what's running" registry, never auto-reaped). Fail-open.
+        try:
+            from ultron.subprocess.zombie_killer import get_zombie_killer
+            if self._server_proc is not None:
+                get_zombie_killer().register(
+                    self._server_proc.pid, "xtts-server", persistent=True,
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
         # Poll /healthz until ready or timeout.
         deadline = time.monotonic() + _SERVER_STARTUP_TIMEOUT_S
         while time.monotonic() < deadline:
@@ -867,6 +878,12 @@ class XttsV3Speech:
             except Exception as e:  # noqa: BLE001
                 logger.debug("xtts kill_process_tree raised (swallowed): %s", e)
         finally:
+            try:
+                from ultron.subprocess.zombie_killer import get_zombie_killer
+                if self._server_proc is not None:
+                    get_zombie_killer().unregister(self._server_proc.pid)
+            except Exception:  # noqa: BLE001
+                pass
             self._server_proc = None
 
     def __enter__(self) -> "XttsV3Speech":

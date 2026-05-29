@@ -197,6 +197,16 @@ def _spawn_server_if_needed(stt_cfg) -> str:
     )
     _SERVER_PROCESS = proc
 
+    # T12/T23: track the daemon in the subprocess reaper as PERSISTENT --
+    # it appears in the "what's running" registry but is NEVER auto-reaped
+    # (it is a long-lived server, managed by stop_parakeet_server below).
+    # Fail-open: tracking must never break the spawn.
+    try:
+        from ultron.subprocess.zombie_killer import get_zombie_killer
+        get_zombie_killer().register(proc.pid, "parakeet-server", persistent=True)
+    except Exception:  # noqa: BLE001
+        pass
+
     # Register cleanup so the server dies with us. Best-effort -- if
     # the user kills the orchestrator with -9, the server stays
     # running (operator can check `tasklist` and kill manually).
@@ -707,6 +717,11 @@ def stop_parakeet_server(timeout_seconds: float = 5.0) -> bool:
                     "stop_parakeet_server: force-killed %d pid(s) after grace",
                     len(result.force_killed),
                 )
+        try:
+            from ultron.subprocess.zombie_killer import get_zombie_killer
+            get_zombie_killer().unregister(_SERVER_PROCESS.pid)
+        except Exception:  # noqa: BLE001
+            pass
         _SERVER_PROCESS = None
         _SERVER_URL_CACHED = None
         logger.info("Parakeet server stopped (VRAM should be freed)")

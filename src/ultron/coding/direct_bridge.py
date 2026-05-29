@@ -341,6 +341,32 @@ class DirectTaskHandle(TaskHandle):
             self._finalize(success=False, exit_status=-1, error=str(e), summary="")
             return
 
+        # T12/T23: track the coding subprocess. ProcessRegistry = fine-grained
+        # per-session lifecycle ("what coding job is running"); ZombieKiller =
+        # orphan backstop reaped only past 2x the task timeout, so a legit long
+        # turn finishes + unregisters well before. Both fail-open -- tracking
+        # must never break a launch.
+        try:
+            from ultron.subprocess.process_registry import get_process_registry
+            get_process_registry().register(
+                f"claude-{self._task_id}",
+                scope_key=self._task_id,
+                pid=self._proc.pid,
+                command="claude --print (coding bridge)",
+                tags=("coding", "claude-cli"),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from ultron.subprocess.zombie_killer import get_zombie_killer
+            _backstop = max(2.0 * float(getattr(self._request, "timeout_s", 0.0) or 0.0), 1800.0)
+            get_zombie_killer().register(
+                self._proc.pid, f"claude-cli:{self._task_id}",
+                hard_timeout_s=_backstop,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
         self._emit(TaskEvent(kind=EventKind.STATUS, stage="starting"))
 
         self._stdout_thread = threading.Thread(
@@ -546,6 +572,18 @@ class DirectTaskHandle(TaskHandle):
             files_modified=result.files_modified,
             duration_s=duration,
         ))
+        # T12/T23: release the coding-subprocess tracking entries.
+        try:
+            from ultron.subprocess.process_registry import get_process_registry
+            get_process_registry().mark_exited(f"claude-{self._task_id}", int(exit_status))
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from ultron.subprocess.zombie_killer import get_zombie_killer
+            if self._proc is not None:
+                get_zombie_killer().unregister(self._proc.pid)
+        except Exception:  # noqa: BLE001
+            pass
         self._done.set()
 
     # --- event translation --------------------------------------------------

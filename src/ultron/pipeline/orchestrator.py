@@ -402,6 +402,20 @@ class Orchestrator:
                 "DialogPoller startup skipped (%s); "
                 "dialog auto-handler will not receive events", e,
             )
+        # T23 (cline) / T12 (OpenClaw): start the subprocess reaper so every
+        # Ultron-spawned subprocess (Parakeet / XTTS daemons, the coding-bridge
+        # claude subprocess) is tracked in one registry, heavy long-runners are
+        # RSS-warned, and a wedged non-daemon is reaped past a generous backstop.
+        # Daemons register persistent (never auto-killed); legit coding turns
+        # finish + unregister long before the backstop. Fail-open.
+        try:
+            from ultron.subprocess.zombie_killer import get_zombie_killer
+            self._zombie_killer = get_zombie_killer()
+            self._zombie_killer.start()
+            logger.info("ZombieKiller subprocess reaper started")
+        except Exception as e:                                       # noqa: BLE001
+            self._zombie_killer = None
+            logger.warning("ZombieKiller startup skipped (%s)", e)
         self.wake = WakeWordDetector()
         # 2026-05-12 Smart Turn V3: build the detector BEFORE the VAD so
         # we can wire the fast-path silence baseline into the VAD's
@@ -2915,6 +2929,13 @@ class Orchestrator:
         if poller is not None:
             try:
                 poller.stop()
+            except Exception:
+                pass
+        # Stop the subprocess reaper thread so the process exits cleanly.
+        killer = getattr(self, "_zombie_killer", None)
+        if killer is not None:
+            try:
+                killer.shutdown()
             except Exception:
                 pass
         # Catalog 13: persist the evolution state + learned personality so
