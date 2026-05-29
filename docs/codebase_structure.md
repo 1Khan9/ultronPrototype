@@ -915,7 +915,7 @@ result of every row. Deep narrative lives in the corresponding
 ## Quick orientation
 
 Ultron is a local voice-first AI assistant. The pipeline (current as of
-HEAD `b02af04`):
+the validating HEAD in the header above):
 
 ```
 mic → wake word ("ultron") OR addressing classifier (WARM follow-up mode)
@@ -4299,7 +4299,7 @@ Two responsibilities:
 ### Default suite (no env gate) — per-file snapshot (frozen 2026-05-22)
 
 > **The CANONICAL current pass count lives in the validating-HEAD header at
-> the TOP of this file** (catalog 13: **8949 passed / 26 skipped / 0 failed**,
+> the TOP of this file** (catalog 14: **8999 passed / 26 skipped / 0 failed**,
 > worktree full sweep, no deselect, exit 0). The per-file enumeration in THIS section is a
 > historical snapshot frozen at the 2026-05-22 review-feedback pass (4240
 > passed / 16 skipped) and is intentionally NOT re-counted per commit — the
@@ -4583,7 +4583,7 @@ State as of 2026-05-20 round 8: only the active LLM + draft remain on disk. All 
 |---|---|---|
 | `Qwen3.5-4B-Q4_K_M.gguf` | `LLMEngine` (when `llm.preset == "qwen3.5-4b"`, **CURRENT DEFAULT 2026-05-20 round 8**). Stock Qwen 3.5 4B (not abliterated); ~3.0 GB VRAM loaded. Paired with the 0.8B draft below for speculative decoding. | 2.55 GB |
 | `Qwen3.5-0.8B-Q4_K_M.gguf` | speculative-decoding draft for the qwen3.5-4b preset. | 0.50 GB |
-| `kokoro/` | `KokoroSpeech` (**CURRENT DEFAULT TTS engine 2026-05-20 round 8**). Sanity-gate directory; actual weights (`hexgrad/Kokoro-82M`) cached in HF Hub cache (~330 MB). CPU device; voice `am_michael`; no v3 filter chain. | empty dir |
+| `kokoro/` | `KokoroSpeech` (**CURRENT DEFAULT TTS engine 2026-05-20 round 8**). Sanity-gate directory; actual weights (`hexgrad/Kokoro-82M`) cached in HF Hub cache (~330 MB). CUDA device (gaming mode auto-flips to CPU); voice `ultron` (partial fine-tune voicepack -- Stage 1 + Stage 2 epoch 0 only; `apply_trim_fade=true`, `apply_spectral_smooth=false`); no v3 pedalboard filter chain (`apply_runtime_filter=false`). | empty dir |
 | `openwakeword/ultron.onnx` | `WakeWordDetector` | small |
 | `piper/en_US-ryan-medium.onnx[.json]` | `TextToSpeech` (legacy `piper_rvc` engine fallback) | ~60 MB |
 | `rvc/hubert_base.pt` | `RvcConverter` (legacy fallback) | ~362 MB |
@@ -4684,7 +4684,7 @@ codebase must update this document in the same change. Skipping
 the update means future sessions waste time re-deriving ground
 truth from the source. **Don't skip.**
 
-The the project-root standards doc at the top of this prompt's reading
+The project-root standards doc at the top of this prompt's reading
 order calls this contract out explicitly so a fresh AI-agent
 session sees it before its first edit.
 

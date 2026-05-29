@@ -36,7 +36,7 @@
 # ║                                                                          ║
 # ║   TTS     tts.engine                    "kokoro"                         ║
 # ║           tts.pause_ms                  50    (inter-sentence silence)   ║
-# ║           tts.kokoro.voice              "am_michael"                     ║
+# ║           tts.kokoro.voice              "ultron"                     ║
 # ║           tts.kokoro.speed              1.3                              ║
 # ║           tts.kokoro.device             "cuda"  (gaming mode -> cpu)     ║
 # ║                                                                          ║
