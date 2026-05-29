@@ -473,6 +473,14 @@ def build_validator_from_config() -> ToolCallValidator:
     # logs (the first matching rule's id is the dominant when multiple
     # rules return the same verdict severity).
     rules.extend(build_category_k_rules())
+    # Category U: .ultronignore path/command block (secrets protection).
+    # Default-safe -- a no-op until the user creates a .ultronignore. Placed
+    # after K so self-protection still reports first on a tie.
+    try:
+        from ultron.safety.rules.category_ignore import build_ignore_rules
+        rules.extend(build_ignore_rules())
+    except Exception:  # noqa: BLE001 -- keep the validator importable
+        pass
     # Categories A-J: load-bearing safety items.
     rules.extend(build_category_a_rules())
     rules.extend(build_category_b_rules())
