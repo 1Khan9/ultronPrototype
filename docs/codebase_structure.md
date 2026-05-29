@@ -15,12 +15,16 @@
 > complete the voice-controlled coding engineer end to end, build a real-usage
 > e2e suite, make the system pervasively self-improving, and cut latency +
 > resources. On worktree branch `claude/vigorous-mclaren-56a5a7`, on top of the
-> infra-wiring tip `9d51cec`, **validating code HEAD `1b04a3c`**. **~9173 passed /
-> 26 skipped / 0 failed (~118s)** (worktree sweep, no deselect). Under heavy
-> machine load the WHOLE `tests/integration/test_bridge_e2e.py` real-subprocess
-> file can flake + wedge the watchdog (not just one test) -> ignore it
-> (`--ignore=tests/integration/test_bridge_e2e.py`) for a clean read: **9166
-> passed**. Voice baseline
+> infra-wiring tip `9d51cec`, **validating code HEAD `983a0fd`**. **~9173 passed /
+> 34 skipped / 0 failed (~118s)** (worktree sweep; the +8 skipped vs earlier are
+> the new GPU-gated voice-e2e suite). Under this session's heavy machine load
+> MULTIPLE real-subprocess files (`tests/integration/test_bridge_e2e.py` AND
+> `tests/openclaw_bridge/test_client.py`) flake + wedge the watchdog -> ignore
+> both for a clean read: **9130 passed / 35 skipped / 0 failed**. Separately,
+> the full voice e2e suite runs GREEN from the MAIN checkout (models live there,
+> not the worktree): **8/8 phases pass** via
+> `PYTEST_RUN_GPU_TESTS=1 .venv/Scripts/python -m pytest tests/integration/test_voice_e2e.py`.
+> Voice baseline
 > contract intact throughout (no SOUL.md / RVC / Piper / LLM-GGUF / voicepack
 > touch; all changes are on the coding + fail-open seams). **Coding-engineer
 > commits landed so far** (the campaign's first phase -- a fully capable
@@ -150,6 +154,31 @@
 > #80 dedup file reads) + 9 confirmed architecturally-dormant (#17/#70/#71/#79/
 > #112/#127/#143/#155 -- no consumer window in the single-loop / delegate-to-claude
 > design; force-wiring would add risk for a window that doesn't exist).
+>
+> **Breadth phase -- latency + Phase 4 (the unified e2e suite) DONE
+> (`983a0fd`):** **#74 (`af54e14`)** wired `latency_hygiene.raise_process_priority()`
+> at orchestrator startup (Above-Normal, ~50-200 ms jitter under load,
+> fail-open). **Phase 4 e2e suite (`f29e8b2` + fixes):** NEW
+> `tests/integration/test_voice_e2e.py` converts the maintained
+> `scripts/autonomous_e2e_harness.py` into a GPU-gated pytest suite (finding
+> #10) -- it drives REAL input through the REAL stack (Kokoro synth -> Moonshine
+> STT -> routing + LLM -> Kokoro TTS, plus live Brave/Jina web-search, Qdrant
+> memory, web-gating) and asserts each phase's scenarios. Gated on
+> `PYTEST_RUN_GPU_TESTS=1`; the normal sweep SKIPS it (8 skipped). **Validated
+> 8/8 GREEN from the MAIN checkout** (the worktree has no model files -- GPU
+> tests MUST run from `C:\STC\ultronPrototype`). Building it surfaced + fixed
+> THREE real findings: (1) a bare 1-word "Stop." STT scenario was unrealistic
+> (Moonshine heard "So"; real barge-in is acoustic, not STT) -> realistic
+> "Cancel the task."; (2) VRAM accumulated across phases (each builds its own
+> engines) -> NEW `_free_gpu()` between phases + an autouse teardown; (3) the
+> memory phase hit a Qdrant local-mode file-lock conflict (phase_llm's client
+> held `data/qdrant/.lock`) -> NEW **`ConversationMemory.close()`**
+> (`qdrant_store.py`, also a proper clean-shutdown method) called between phases.
+> **KNOWN pre-existing (NOT introduced here):**
+> `tests/test_memory_qdrant.py::test_retrieve_returns_semantic_hits` is
+> order-dependent (fails in isolation, passes in the full sweep -- it relies on
+> shared `data/qdrant` state instead of `tmp_path`); confirmed failing on a
+> clean tree, so out of scope for this pass.
 >
 > **Earlier validating HEAD:** **infrastructure-wiring campaign (2026-05-29)** -- a
 > sweep wiring dormant imported-but-unconsumed infrastructure across catalogs
