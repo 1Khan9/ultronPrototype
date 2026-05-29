@@ -27,9 +27,12 @@ from ultron.openclaw_bridge.desktop import (
 
 @dataclass
 class _ToolResult:
+    # Mirrors the real ToolInvocationResult shape: structured data arrives on
+    # ``raw`` (NOT ``payload`` -- an earlier stub used ``payload``, which is why
+    # the .payload->.raw bug in DesktopTool went undetected).
     success: bool
     error: Optional[str] = None
-    payload: Optional[Dict[str, Any]] = None
+    raw: Optional[Dict[str, Any]] = None
 
 
 class _StubClient:
@@ -50,7 +53,7 @@ class _StubClient:
         })
         if tool_name in self._raise_for:
             raise self._raise_for[tool_name]
-        return self._scripted.get(tool_name, _ToolResult(success=True, payload={}))
+        return self._scripted.get(tool_name, _ToolResult(success=True, raw={}))
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +65,7 @@ def test_screenshot_calls_correct_tool():
     client = _StubClient(scripted={
         "desktop_screenshot": _ToolResult(
             success=True,
-            payload={"path": "/tmp/screenshot.png"},
+            raw={"path": "/tmp/screenshot.png"},
         ),
     })
     tool = DesktopTool(client)
@@ -75,7 +78,7 @@ def test_screenshot_calls_correct_tool():
 
 def test_screenshot_with_target_passes_param():
     client = _StubClient(scripted={
-        "desktop_screenshot": _ToolResult(success=True, payload={}),
+        "desktop_screenshot": _ToolResult(success=True, raw={}),
     })
     tool = DesktopTool(client)
     asyncio.run(tool.screenshot(target="active_window"))
@@ -87,7 +90,7 @@ def test_screenshot_decodes_base64_payload():
     client = _StubClient(scripted={
         "desktop_screenshot": _ToolResult(
             success=True,
-            payload={
+            raw={
                 "image_base64": base64.b64encode(raw).decode("ascii"),
             },
         ),
@@ -111,7 +114,7 @@ def test_list_windows_parses_payload():
     client = _StubClient(scripted={
         "desktop_list_windows": _ToolResult(
             success=True,
-            payload={"windows": [
+            raw={"windows": [
                 {"title": "Chrome", "handle": "h1", "app_name": "chrome"},
                 "Slack",  # bare-string entry
             ]},
@@ -141,7 +144,7 @@ def test_find_window_returns_payload():
     client = _StubClient(scripted={
         "desktop_find_window": _ToolResult(
             success=True,
-            payload={
+            raw={
                 "handle": "abc123", "title": "Cursor",
                 "app_name": "cursor.exe",
             },
@@ -160,6 +163,27 @@ def test_find_window_rejects_blank_query():
     result = asyncio.run(tool.find_window(""))
     assert result.success is False
     assert "empty" in (result.error or "").lower()
+
+
+def test_desktop_reads_raw_not_payload():
+    """Regression for the .payload->.raw bug: DesktopTool must read the REAL
+    ToolInvocationResult.raw field. A genuine ToolInvocationResult (which has
+    NO payload attribute) must parse correctly; the old code read .payload and
+    silently returned empty results for every bridge desktop call."""
+    from ultron.openclaw_bridge.client import ToolInvocationResult
+
+    class _RealResultClient:
+        async def invoke_tool(self, tool_name, params, *, agent_id=None, timeout_s=None):
+            return ToolInvocationResult(
+                success=True, tool_name=tool_name,
+                raw={"windows": [
+                    {"title": "Chrome", "handle": "h1", "app_name": "chrome"},
+                ]},
+            )
+
+    result = asyncio.run(DesktopTool(_RealResultClient()).list_windows())
+    assert result.success is True
+    assert len(result.windows) == 1 and result.windows[0].title == "Chrome"
 
 
 # ---------------------------------------------------------------------------

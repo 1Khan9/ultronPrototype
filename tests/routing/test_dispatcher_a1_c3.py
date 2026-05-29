@@ -84,9 +84,11 @@ class _StubGamingModeManager:
 
 @dataclass
 class _ToolResult:
+    # Mirrors the real ToolInvocationResult: structured data is on ``raw``
+    # (the bridge reads result.raw, not the old non-existent ``payload``).
     success: bool
     error: Optional[str] = None
-    payload: Optional[Dict[str, Any]] = None
+    raw: Optional[Dict[str, Any]] = None
 
 
 class _StubClient:
@@ -99,7 +101,7 @@ class _StubClient:
             "tool_name": tool_name, "params": params,
             "agent_id": agent_id, "timeout_s": timeout_s,
         })
-        return self._scripted.get(tool_name, _ToolResult(success=True, payload={}))
+        return self._scripted.get(tool_name, _ToolResult(success=True, raw={}))
 
 
 def _make_dispatcher(*, gaming_mode_manager=None, bridge=None):
@@ -208,7 +210,7 @@ def test_handle_desktop_screenshot_success():
     client = _StubClient(scripted={
         "desktop_screenshot": _ToolResult(
             success=True,
-            payload={"path": r"C:\Users\test\screenshot.png"},
+            raw={"path": r"C:\Users\test\screenshot.png"},
         ),
     })
     bridge = SimpleNamespace(client=client)
@@ -227,7 +229,7 @@ def test_handle_desktop_list_windows_returns_count():
     client = _StubClient(scripted={
         "desktop_list_windows": _ToolResult(
             success=True,
-            payload={"windows": [
+            raw={"windows": [
                 {"title": "Chrome", "handle": "h1", "app_name": "chrome.exe"},
                 {"title": "VS Code", "handle": "h2", "app_name": "code.exe"},
             ]},
@@ -248,7 +250,7 @@ def test_handle_desktop_find_window_with_target():
     client = _StubClient(scripted={
         "desktop_find_window": _ToolResult(
             success=True,
-            payload={
+            raw={
                 "handle": "abc", "title": "Cursor",
                 "app_name": "cursor.exe",
             },

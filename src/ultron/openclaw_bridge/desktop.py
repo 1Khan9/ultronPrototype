@@ -136,7 +136,7 @@ class DesktopTool:
                 error=getattr(result, "error", None) or "screenshot failed",
             )
         # Image data may arrive as a path, base64 in payload, or both.
-        payload = getattr(result, "payload", None) or {}
+        payload = getattr(result, "raw", None) or {}
         image_path = payload.get("path") or payload.get("image_path")
         image_bytes = None
         b64 = payload.get("image_base64") or payload.get("image_b64")
@@ -170,7 +170,7 @@ class DesktopTool:
                 success=False,
                 error=getattr(result, "error", None) or "list_windows failed",
             )
-        payload = getattr(result, "payload", None) or {}
+        payload = getattr(result, "raw", None) or {}
         raw = payload.get("windows") or []
         rows: List[WindowEntry] = []
         if isinstance(raw, list):
@@ -210,7 +210,7 @@ class DesktopTool:
                 success=False,
                 error=getattr(result, "error", None) or "no matching window",
             )
-        payload = getattr(result, "payload", None) or {}
+        payload = getattr(result, "raw", None) or {}
         return FindWindowResult(
             success=True,
             handle=str(payload.get("handle", "")),
