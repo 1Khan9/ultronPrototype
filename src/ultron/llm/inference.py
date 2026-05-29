@@ -1055,9 +1055,11 @@ class LLMEngine:
                 # processors run on top. NoOp for greeting/conversational
                 # short turns (zero-cost passthrough), Recent for
                 # factual, LLMSummarizing for long coding contexts.
-                # Default OFF -- the legacy fixed pipeline runs unchanged
-                # so the voice-path TTFT baseline is preserved.
-                if getattr(compress_cfg, "intent_adaptive", False):
+                # Default ON: LLMHistoryCompressionConfig.intent_adaptive=True
+                # (flipped production-ON in the default-ON sweep). The getattr
+                # fallback matches that default so a stub config missing the
+                # attribute doesn't silently drop the per-intent condenser path.
+                if getattr(compress_cfg, "intent_adaptive", True):
                     try:
                         from ultron.llm.condensers.factory import (
                             select_condenser_for_intent,

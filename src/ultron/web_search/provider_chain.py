@@ -94,7 +94,9 @@ class SearchProviderChain:
     ) -> None:
         if provider_ids is None:
             cfg = get_config().web_search
-            provider_ids = list(getattr(cfg, "providers", ["brave"]))
+            provider_ids = list(
+                getattr(cfg, "providers", ["searxng", "brave", "duckduckgo"])
+            )
         if not provider_ids:
             raise ValueError("provider_ids cannot be empty")
 

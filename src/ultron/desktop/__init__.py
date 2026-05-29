@@ -133,8 +133,12 @@ from ultron.desktop.vlm import (
 from ultron.desktop.voice import (
     AppLaunchVoiceResult,
     ScreenContextVoiceResult,
+    WindowCloseVoiceResult,
+    WindowMoveVoiceResult,
     handle_app_launch,
     handle_screen_context_query,
+    handle_window_close,
+    handle_window_move,
 )
 
 __all__ = [
@@ -239,6 +243,10 @@ __all__ = [
     # voice (Phase 8 intent handlers)
     "AppLaunchVoiceResult",
     "ScreenContextVoiceResult",
+    "WindowCloseVoiceResult",
+    "WindowMoveVoiceResult",
     "handle_app_launch",
     "handle_screen_context_query",
+    "handle_window_close",
+    "handle_window_move",
 ]

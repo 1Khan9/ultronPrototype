@@ -66,7 +66,7 @@ class ReaderChain:
     def __init__(self, reader_ids: Optional[List[str]] = None) -> None:
         if reader_ids is None:
             cfg = get_config().web_search
-            reader_ids = list(getattr(cfg, "readers", ["jina"]))
+            reader_ids = list(getattr(cfg, "readers", ["trafilatura", "jina"]))
         if not reader_ids:
             raise ValueError("reader_ids cannot be empty")
 

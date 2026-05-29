@@ -2099,7 +2099,7 @@ class CodingConfig(_Strict):
     pre_task_confirmation_max_words: int = Field(default=30, ge=4)
     pre_task_barge_in_window_seconds: float = Field(default=0.5, ge=0.0, le=10.0)
     session_audit_dir: str = "logs/sessions"
-    token_budget_per_session: int = Field(default=100_000, ge=1)
+    token_budget_per_session: int = Field(default=400_000, ge=1)
     token_warning_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
     progress_timeout_seconds: int = Field(default=300, ge=0)
     test_sandbox_path: str = "tests/coding/sandbox"
@@ -2996,10 +2996,11 @@ class IntentConfig(_Strict):
     #   "fp32"  -- ~1.2 GB
     #   "q4f16" -- ~350 MB; mixed precision
     model_variant: Literal["q4", "q8", "fp16", "fp32", "q4f16"] = "q4"
-    # Minimum cosine similarity for a match. 0.8 mirrors the
-    # moonshine_voice default; raise to reduce false positives, lower
-    # to catch more variations of the same intent.
-    threshold: float = Field(default=0.8, ge=0.0, le=1.0)
+    # Minimum cosine similarity for a match. 0.65 matches the config.yaml
+    # production value (live testing showed 0.8 rejected valid natural-language
+    # variants -- e.g. "switch to gaming mode" scored ~0.7); raise to reduce
+    # false positives, lower to catch more variations of the same intent.
+    threshold: float = Field(default=0.65, ge=0.0, le=1.0)
     # Pre-load the embedding model at orchestrator startup. False =
     # first matching call pays the ~1-3 s init cost. True trades
     # ~300 MB RAM allocation upfront for snappier first hits.
