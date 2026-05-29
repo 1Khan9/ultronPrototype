@@ -4,9 +4,10 @@ Regression coverage for the production-hardening campaign: voice-dispatched
 coding tasks must write a per-project ``.mcp.json`` pointing at the live
 Ultron MCP server (so the spawned subprocess can call request_clarification /
 report_progress / declare_complete back into the coordinator + verifier loop),
-register a ProjectSession so ``_claude_active_session`` resolves, set a hard
-``timeout_s`` on supervisor-built requests, and clean up the ``.mcp.json`` on
-completion. All paths are fail-open: when no MCP server is wired the task still
+register a ProjectSession so ``_claude_active_session`` resolves, and set a hard
+``timeout_s`` on supervisor-built requests. The ``.mcp.json`` is deliberately
+NOT removed on completion (send_followup reuses it for follow-ups +
+corrections). All paths are fail-open: when no MCP server is wired the task still
 runs bridge-only, exactly as before.
 
 Self-contained (own fake bridge/handle) so it stands alone.
@@ -206,31 +207,63 @@ def test_maybe_write_mcp_config_fail_open_on_error(tmp_path):
 
 
 # --------------------------------------------------------------------------
-# _attach_mcp_cleanup_listener
+# RESUME follow-up listener re-attach + .mcp.json survives COMPLETE
 # --------------------------------------------------------------------------
 
 
-def test_attach_mcp_cleanup_listener_removes_on_complete(tmp_path):
-    controller, *_ = _make_controller(tmp_path)
-    proj = tmp_path / "proj"
-    proj.mkdir()
-    (proj / ".mcp.json").write_text("{}")
-    handle = _FakeHandle(TaskRequest(task_prompt="x", cwd=proj))
-    controller._attach_mcp_cleanup_listener(handle, proj)
-    assert (proj / ".mcp.json").exists()
-    handle.fire(TaskEvent(kind=EventKind.COMPLETE))
-    assert not (proj / ".mcp.json").exists()
+def test_resume_followup_reattaches_listeners(tmp_path, monkeypatch):
+    """RESUME_FORWARD + the verifier's corrective re-prompt spawn a fresh
+    handle, so the digest + voice-lock-review listeners must be re-attached
+    to it (the original handle's listeners do not carry over)."""
+    controller, bridge, runner = _make_controller(tmp_path)
+    proj = tmp_path / "sandbox" / "myproj"
+    proj.mkdir(parents=True)
+    monkeypatch.setattr(runner, "active_state", lambda: SimpleNamespace(cwd=proj))
+    calls = {"digest": [], "review": []}
+    monkeypatch.setattr(controller, "_attach_supervisor_digest_listener",
+                        lambda **kw: calls["digest"].append(kw))
+    monkeypatch.setattr(controller, "_attach_submit_review_listener",
+                        lambda **kw: calls["review"].append(kw))
+    followup = _FakeHandle(TaskRequest(task_prompt="now add X", cwd=proj))
+    controller._attach_resume_followup_listeners(followup, "now add X")
+    assert len(calls["digest"]) == 1 and len(calls["review"]) == 1
+    assert calls["digest"][0]["project_name"] == "myproj"
+    assert calls["digest"][0]["handle"] is followup
+    assert calls["digest"][0]["project_path"] == proj
 
 
-def test_attach_mcp_cleanup_listener_ignores_non_complete(tmp_path):
-    controller, *_ = _make_controller(tmp_path)
-    proj = tmp_path / "proj"
-    proj.mkdir()
-    (proj / ".mcp.json").write_text("{}")
-    handle = _FakeHandle(TaskRequest(task_prompt="x", cwd=proj))
-    controller._attach_mcp_cleanup_listener(handle, proj)
-    handle.fire(TaskEvent(kind=EventKind.STATUS, stage="running"))
-    assert (proj / ".mcp.json").exists()  # only COMPLETE triggers cleanup
+def test_resume_followup_listeners_noop_without_active_state(tmp_path, monkeypatch):
+    controller, bridge, runner = _make_controller(tmp_path)
+    monkeypatch.setattr(runner, "active_state", lambda: None)
+    called = []
+    monkeypatch.setattr(controller, "_attach_supervisor_digest_listener",
+                        lambda **kw: called.append(kw))
+    monkeypatch.setattr(controller, "_attach_submit_review_listener",
+                        lambda **kw: called.append(kw))
+    controller._attach_resume_followup_listeners(
+        _FakeHandle(TaskRequest(task_prompt="x", cwd=tmp_path)), "x",
+    )
+    assert called == []
+
+
+def test_dispatch_keeps_mcp_config_after_complete(tmp_path, monkeypatch):
+    """Regression: the .mcp.json must survive COMPLETE so send_followup()
+    (RESUME + corrections) can reuse the runner's stored mcp_config_path.
+    Earlier code deleted it on COMPLETE, stripping MCP from every follow-up."""
+    controller, bridge, runner = _make_controller(tmp_path, mcp_server=_RunningServer())
+    monkeypatch.setattr(controller, "_attach_supervisor_digest_listener", lambda **kw: None)
+    monkeypatch.setattr(controller, "_attach_submit_review_listener", lambda **kw: None)
+    proj = tmp_path / "sandbox" / "keepproj"
+    req = TaskRequest(task_prompt="build it", cwd=proj, model="haiku", label="new:keepproj")
+    outcome = SimpleNamespace(
+        task_request=req, decision=None, already_narrated=True, voice_message="",
+    )
+    controller._dispatch_supervisor_task(SimpleNamespace(task_text="build it"), outcome)
+    mcp_path = req.mcp_config_path
+    assert mcp_path is not None and mcp_path.exists()
+    # Fire COMPLETE -> the .mcp.json must REMAIN for follow-ups/corrections.
+    bridge.last.fire(TaskEvent(kind=EventKind.COMPLETE))
+    assert mcp_path.exists()
 
 
 # --------------------------------------------------------------------------

@@ -580,8 +580,9 @@ class CapabilityVoiceController:
             # follow-up to the in-flight Claude session via the
             # runner's send_followup machinery (same path the legacy
             # _handle_adjustment uses).
+            followup_handle = None
             try:
-                self.runner.send_followup(
+                followup_handle = self.runner.send_followup(
                     intent.task_text or "",
                     kind="adjustment",
                 )
@@ -589,6 +590,13 @@ class CapabilityVoiceController:
                 logger.warning(
                     "Supervisor RESUME_FORWARD: send_followup failed (%s); "
                     "speaking the decision but not forwarding.", e,
+                )
+            # B3-loop-2: the follow-up spawns a fresh handle, so re-attach the
+            # digest + voice-lock-review listeners (the original handle's
+            # listeners do not carry over to the follow-up subprocess).
+            if followup_handle is not None:
+                self._attach_resume_followup_listeners(
+                    followup_handle, intent.task_text or "",
                 )
             return VoiceResponse(
                 text=outcome.voice_message or "Got it. Telling Claude.",
@@ -653,7 +661,6 @@ class CapabilityVoiceController:
                 pass
         if request.mcp_config_path is None:
             request.mcp_config_path = self._maybe_write_mcp_config(request.cwd)
-        mcp_config_path = request.mcp_config_path
         self._create_and_bind_session(
             request.cwd, intent.task_text or "",
             is_new=(request.label or "").startswith("new:"),
@@ -680,9 +687,12 @@ class CapabilityVoiceController:
             project_name=project_name,
             project_path=request.cwd,
         )
-        # B3: clean up the per-project .mcp.json on COMPLETE.
-        if mcp_config_path is not None:
-            self._attach_mcp_cleanup_listener(handle, request.cwd)
+        # NOTE: the per-project .mcp.json is intentionally NOT removed on
+        # COMPLETE. send_followup() (RESUME_FORWARD + the verifier's
+        # corrective re-prompt) reuses the runner's stored mcp_config_path
+        # AFTER the original task completes, so deleting the file would strip
+        # MCP tools from every follow-up + correction. It is a tiny gitignored
+        # sandbox artifact, overwritten on the next fresh dispatch.
 
         # Voice message: the supervisor already narrated (if narrate_enabled);
         # outcome.voice_message is "" in that case. Otherwise narrate now.
@@ -1041,9 +1051,7 @@ class CapabilityVoiceController:
             label=label,
             mcp_config_path=mcp_config_path,
         )
-        handle = self.runner.start_task(request)
-        if mcp_config_path is not None and handle is not None:
-            self._attach_mcp_cleanup_listener(handle, project_path)
+        self.runner.start_task(request)
         with self._lock:
             self._was_active = True
             self._pending_completion = None
@@ -1187,26 +1195,39 @@ class CapabilityVoiceController:
             )
             return None
 
-    def _attach_mcp_cleanup_listener(self, handle, project_path) -> None:
-        """Remove the per-project ``.mcp.json`` when the task completes.
-        Fail-open + no-op when the handle can't take a listener."""
+    def _attach_resume_followup_listeners(self, handle, user_goal_hint: str) -> None:
+        """Re-attach digest + voice-lock-review listeners to a follow-up handle.
+
+        ``send_followup`` (RESUME_FORWARD + the verifier's corrective re-prompt)
+        spawns a fresh subprocess + handle, so the original dispatch's COMPLETE
+        listeners do not fire for it. We re-derive the project from the runner's
+        active task state and re-attach, so iterative follow-ups ("now add error
+        handling") still refresh the project digest + run the completion review,
+        exactly like the first dispatch. Fail-open: missing state skips silently.
+        """
         try:
-            from ultron.coding.bridge import EventKind
-            from ultron.coding.mcp_server import remove_mcp_config
+            state = self.runner.active_state()
         except Exception:                                            # noqa: BLE001
+            state = None
+        cwd = getattr(state, "cwd", None) if state is not None else None
+        if cwd is None:
             return
-
-        def _cleanup(event) -> None:
-            try:
-                if getattr(event, "kind", None) == EventKind.COMPLETE:
-                    remove_mcp_config(Path(project_path))
-            except Exception:                                        # noqa: BLE001
-                pass
-
+        project_path = Path(cwd)
+        project_name = project_path.name or "the project"
         try:
-            handle.add_listener(_cleanup)
-        except Exception:                                            # noqa: BLE001
-            pass
+            self._attach_supervisor_digest_listener(
+                handle=handle,
+                project_name=project_name,
+                project_path=project_path,
+                user_goal_hint=user_goal_hint,
+            )
+            self._attach_submit_review_listener(
+                handle=handle,
+                project_name=project_name,
+                project_path=project_path,
+            )
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("resume follow-up listener attach skipped: %s", e)
 
     def _create_and_bind_session(self, project_path, user_intent: str, *, is_new: bool):
         """Create a ProjectSession in the coordinator's store + bind it to the
