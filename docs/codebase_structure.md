@@ -15,9 +15,12 @@
 > complete the voice-controlled coding engineer end to end, build a real-usage
 > e2e suite, make the system pervasively self-improving, and cut latency +
 > resources. On worktree branch `claude/vigorous-mclaren-56a5a7`, on top of the
-> infra-wiring tip `9d51cec`, **validating code HEAD `4698ae3`**. **9171 passed /
-> 26 skipped / 0 failed (~118s)** (worktree sweep, no deselect; under agent load
-> use the bridge-e2e deselect recipe -> 9170 + 1 deselected). Voice baseline
+> infra-wiring tip `9d51cec`, **validating code HEAD `1b04a3c`**. **~9173 passed /
+> 26 skipped / 0 failed (~118s)** (worktree sweep, no deselect). Under heavy
+> machine load the WHOLE `tests/integration/test_bridge_e2e.py` real-subprocess
+> file can flake + wedge the watchdog (not just one test) -> ignore it
+> (`--ignore=tests/integration/test_bridge_e2e.py`) for a clean read: **9166
+> passed**. Voice baseline
 > contract intact throughout (no SOUL.md / RVC / Piper / LLM-GGUF / voicepack
 > touch; all changes are on the coding + fail-open seams). **Coding-engineer
 > commits landed so far** (the campaign's first phase -- a fully capable
@@ -122,6 +125,31 @@
 > monkeypatch, the `ee9eca5` pattern):** #52a canonical_monitor/ast_metadata,
 > #53 ambiguity/IRMA, #54 LLM compression/self-consistency; plus #124 clipboard
 > singleton (marginal -- no current in-process consumer).
+>
+> **Breadth phase -- Phase 3 (pervasive self-improvement) STARTED (`1b04a3c`):**
+> two more parallel Sonnet agents verified the evolution-reach cluster
+> (#15/#16/#62-69/#125/#126 -- ALL real-safe: data-only, fail-open, off-hot-path)
+> + the dead-module cluster. **DONE -- #16:** `_record_evolution_turn` now feeds
+> the recent multi-turn transcript (`DualHistoryStore.recent_verbatim`) to
+> `extract_signals` as `recent_session_transcript`, so the history-aware
+> detectors (recurring_error / perf_bottleneck / tool_bypass) can fire instead of
+> only seeing the single current utterance. **Agent corrections to the triage
+> (verify-first earned its keep):** #69 (response_summary) was the agent's
+> "do-first" but is WRONG -- at `_record_evolution_turn` time `_last_response_text`
+> is the PRIOR turn's response (turn N's isn't generated yet), so passing it would
+> MISLABEL the capsule; the `user_text` fallback is correct -> SKIPPED. #67
+> (signals_provider) is NOT the linchpin -- `EvolutionLoop.plan()` ignores the
+> observation arg, so wiring it alone is cosmetic. #126 (routing fallthrough) is
+> semantically murky (fallthrough is NORMAL for conversational turns) -> SKIPPED.
+> **QUEUED (verified real-safe):** #15+#65 (guardrail sampler + latency ring =
+> the TRUE auto-revert safety brake for the currently-brakeless live loop),
+> #62/#125 (web/memory failure reach-signals via
+> `record_command_failure(..., exit_code=1)`), #63/#64/#66/#68. **Dead-module
+> cluster verified:** 5 real quick wins (#4 forfeit escape-hatch, #72 deep loops,
+> #74 latency_hygiene startup priority+warmup, #78 context-window startup guard,
+> #80 dedup file reads) + 9 confirmed architecturally-dormant (#17/#70/#71/#79/
+> #112/#127/#143/#155 -- no consumer window in the single-loop / delegate-to-claude
+> design; force-wiring would add risk for a window that doesn't exist).
 >
 > **Earlier validating HEAD:** **infrastructure-wiring campaign (2026-05-29)** -- a
 > sweep wiring dormant imported-but-unconsumed infrastructure across catalogs
