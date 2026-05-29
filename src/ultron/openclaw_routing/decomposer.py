@@ -93,6 +93,16 @@ class HybridTaskDecomposer:
 
         subtasks = _parse_subtasks(raw)
         if not subtasks:
+            # SWE-Agent T14: re-query the LLM on malformed JSON before
+            # falling back to coding-only. Off the voice hot path; bounded.
+            requeried = self._requery_decomposition(prompt, raw)
+            if requeried:
+                recovered = _parse_subtasks(requeried)
+                if recovered:
+                    return DecompositionResult(
+                        subtasks=recovered, fallback_used=False,
+                        raw_response=requeried,
+                    )
             return _coding_only_fallback(utterance, fallback_used=True, raw=raw)
         return DecompositionResult(
             subtasks=subtasks, fallback_used=False, raw_response=raw,
@@ -140,6 +150,63 @@ class HybridTaskDecomposer:
             aggregator=json_winner_aggregator,
         )
         return result.answer or ""
+
+    def _requery_decomposition(self, prompt: str, broken_output: str) -> str:
+        """Re-query the LLM on a malformed decomposition (SWE-Agent T14).
+
+        Returns corrected raw output that parses into >=1 subtask, or ""
+        when the requery budget is exhausted / the LLM is unavailable.
+        Off the voice hot path (HYBRID_TASK only); bounded; fail-open.
+        """
+        if self._llm is None or not broken_output:
+            return ""
+        try:
+            from ultron.llm.requery import RequeryLoop, RequeryReason
+        except Exception:  # noqa: BLE001
+            return ""
+        try:
+            max_retries = int(getattr(
+                get_config().routing, "decomposition_requery_max_retries", 2,
+            ))
+        except Exception:  # noqa: BLE001
+            max_retries = 2
+        if max_retries <= 0:
+            return ""
+
+        def _validate(out: str):
+            if _parse_subtasks(out):
+                return (True, RequeryReason.FORMAT, "")
+            return (False, RequeryReason.FORMAT, "not a valid subtasks JSON object")
+
+        def _generate(messages) -> str:
+            # ultron's LLMEngine.generate takes a single prompt string, so
+            # render the temp message list (prompt + broken output +
+            # remediation) back into one prompt.
+            parts: list[str] = []
+            for m in messages:
+                content = str(m.get("content", ""))
+                if m.get("role") == "assistant":
+                    parts.append(f"[Your previous output]\n{content}")
+                else:
+                    parts.append(content)
+            try:
+                return self._llm.generate("\n\n".join(parts)) or ""
+            except Exception as e:  # noqa: BLE001
+                logger.warning("decomposition requery generate failed: %s", e)
+                return ""
+
+        loop = RequeryLoop(
+            generate_fn=_generate,
+            validate_fn=_validate,
+            error_template=(
+                "Your previous response was not a valid subtasks JSON object "
+                "({error}). Re-emit ONLY a JSON object with a 'subtasks' array "
+                "as instructed -- no commentary, no markdown."
+            ),
+            max_retries=max_retries,
+        )
+        result = loop.run([{"role": "user", "content": prompt}], broken_output)
+        return (result.final_output or "") if result.succeeded else ""
 
 
 # ---------------------------------------------------------------------------

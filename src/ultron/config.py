@@ -2414,6 +2414,11 @@ class RoutingConfig(_Strict):
     """Phase 5 capability routing knobs."""
     llm_disambiguation_enabled: bool = True
     hybrid_task_decomposition_enabled: bool = True
+    # SWE-Agent T14: when a HYBRID_TASK decomposition returns malformed JSON,
+    # re-query the LLM up to N times with the broken output + a remediation
+    # prompt before falling back to coding-only. Off the voice hot path
+    # (HYBRID_TASK decomposition only); 0 disables. Default 2.
+    decomposition_requery_max_retries: int = Field(default=2, ge=0, le=5)
     disambiguation_question_template: str = (
         "Did you mean to {coding_interpretation}, or to {automation_interpretation}?"
     )

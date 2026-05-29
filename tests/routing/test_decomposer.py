@@ -32,6 +32,48 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+class _SequenceLLM:
+    """generate() returns successive responses (the last one repeats)."""
+
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls = 0
+
+    def generate(self, prompt: str) -> str:
+        out = self._responses[min(self.calls, len(self._responses) - 1)]
+        self.calls += 1
+        return out
+
+
+def test_malformed_decomposition_requery_recovers():
+    """SWE-Agent T14: a malformed first response is re-queried; the
+    corrected JSON is used instead of the coding-only fallback."""
+    valid = json.dumps({"subtasks": [
+        {"order": 1, "type": "coding", "description": "build the thing"},
+    ]})
+    llm = _SequenceLLM(['{"subtasks": [broken', valid])
+    decomposer = HybridTaskDecomposer(llm)
+
+    result = _run(decomposer.decompose("do a hybrid coding + automation thing"))
+
+    assert result.fallback_used is False
+    assert len(result.subtasks) == 1
+    assert result.subtasks[0].description == "build the thing"
+    assert llm.calls >= 2  # initial call + at least one requery
+
+
+def test_decomposition_requery_exhaustion_falls_back():
+    """When every requery is still malformed, we fall back to coding-only."""
+    llm = _SequenceLLM(['{"subtasks": [broken'])  # always malformed
+    decomposer = HybridTaskDecomposer(llm)
+
+    result = _run(decomposer.decompose("do a hybrid thing"))
+
+    assert result.fallback_used is True
+    assert len(result.subtasks) == 1
+    assert result.subtasks[0].type == "coding"
+
+
 def test_well_formed_json_parses_into_subtasks():
     payload = {
         "subtasks": [
