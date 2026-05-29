@@ -36,7 +36,15 @@ class UltronIgnoreRule(Rule):
 
         try:
             from ultron.safety.ignore import get_ignore_controller
-            controller = get_ignore_controller()
+            # Pass the active project root so the project + workspace
+            # .ultronignore layers actually resolve. Without it the controller
+            # keys on "__global__" and ONLY ~/.ultron/.ultronignore is ever
+            # consulted -- the project/workspace layers are silently skipped.
+            workspace_root = (
+                getattr(resolver, "project_root", None)
+                if resolver is not None else None
+            )
+            controller = get_ignore_controller(workspace_root=workspace_root)
         except Exception as e:  # noqa: BLE001
             logger.debug("ignore controller unavailable (%s); allowing", e)
             return RuleResult(

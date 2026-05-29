@@ -375,6 +375,21 @@ class Orchestrator:
                 len(self.safety_validator.rules),
                 self.safety_validator.policy.enabled,
             )
+            # Verify the tamper-evident audit chain at startup. Read-only +
+            # fail-open: a broken chain only WARNs (never blocks boot) so the
+            # operator sees tampering/corruption without losing the session.
+            try:
+                audit_log = getattr(self.safety_validator, "audit_log", None)
+                if audit_log is not None:
+                    ok, detail = audit_log.verify_chain()
+                    if not ok:
+                        logger.warning(
+                            "safety audit chain integrity check FAILED (%s) -- "
+                            "the audit log may have been tampered with or "
+                            "truncated", detail,
+                        )
+            except Exception as e2:                                  # noqa: BLE001
+                logger.debug("audit chain verify skipped (%s)", e2)
         except Exception as e:
             self.safety_validator = None
             logger.warning(
@@ -724,7 +739,26 @@ class Orchestrator:
                         cap = get_screen_capture()
                         if cap is None:
                             return b""
-                        shot = cap.capture_monitor(1)
+                        # Capture the monitor the foreground window is on (the
+                        # one the click targets), not a hardcoded index. On a
+                        # single-monitor machine index 1 doesn't exist, so the
+                        # old capture returned None and the safety gate silently
+                        # degraded to "allow every click". Fall back to 0.
+                        mon_index = 0
+                        try:
+                            from ultron.desktop.windows import (
+                                get_foreground_window,
+                            )
+                            fg = get_foreground_window()
+                            fg_idx = getattr(fg, "monitor_index", None)
+                            if fg is not None and fg_idx is not None:
+                                mon_index = fg_idx
+                        except Exception as exc:                      # noqa: BLE001
+                            logger.debug(
+                                "click_preview foreground-monitor lookup "
+                                "failed (%s); using monitor 0", exc,
+                            )
+                        shot = cap.capture_monitor(mon_index)
                         if shot is None or shot.image_bytes is None:
                             return b""
                         return shot.image_bytes

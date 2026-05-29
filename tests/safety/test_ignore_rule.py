@@ -105,6 +105,36 @@ def test_per_path_check_error_is_skipped(monkeypatch):
     assert res.verdict == Verdict.ALLOW  # error skipped, no spurious block
 
 
+def test_forwards_resolver_project_root_as_workspace_root(monkeypatch):
+    """The rule must forward the active project root so the project + workspace
+    .ultronignore layers resolve -- without it the controller keys on
+    "__global__" and ONLY ~/.ultron/.ultronignore is consulted."""
+    captured = {}
+
+    def _capture(*a, **k):
+        captured["workspace_root"] = k.get("workspace_root")
+        return _FakeController()
+
+    monkeypatch.setattr(ig, "get_ignore_controller", _capture)
+    resolver = SimpleNamespace(project_root="/proj/myapp")
+    UltronIgnoreRule().evaluate(
+        _ctx(paths=["/proj/myapp/src/x.py"]), policy=None, resolver=resolver,
+    )
+    assert captured["workspace_root"] == "/proj/myapp"
+
+
+def test_workspace_root_none_when_no_resolver(monkeypatch):
+    captured = {}
+
+    def _capture(*a, **k):
+        captured["workspace_root"] = k.get("workspace_root")
+        return _FakeController()
+
+    monkeypatch.setattr(ig, "get_ignore_controller", _capture)
+    UltronIgnoreRule().evaluate(_ctx(paths=["/x"]), policy=None, resolver=None)
+    assert captured["workspace_root"] is None
+
+
 def test_build_ignore_rules():
     rules = build_ignore_rules()
     assert len(rules) == 1
