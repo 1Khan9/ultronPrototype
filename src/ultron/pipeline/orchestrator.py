@@ -1877,7 +1877,26 @@ class Orchestrator:
         try:
             from ultron.evolution.signals import extract_signals
 
-            signals = extract_signals(user_snippet=user_text)
+            # Feed the recent multi-turn transcript (not just the current
+            # utterance) so the history-aware detectors -- recurring_error,
+            # perf_bottleneck, tool_bypass -- can actually fire. Without a
+            # corpus they never trip and the loop only ever sees single-turn
+            # signals. Fail-open to the empty transcript.
+            transcript = ""
+            dh = getattr(self, "_dual_history", None)
+            if dh is not None:
+                try:
+                    turns = dh.recent_verbatim(6)
+                    transcript = "\n".join(
+                        f"{t.role}: {t.text}"
+                        for t in turns if getattr(t, "text", "")
+                    )
+                except Exception:                                 # noqa: BLE001
+                    transcript = ""
+            signals = extract_signals(
+                user_snippet=user_text,
+                recent_session_transcript=transcript,
+            )
         except Exception:                                         # noqa: BLE001
             signals = ()
         try:

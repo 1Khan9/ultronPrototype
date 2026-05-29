@@ -238,6 +238,56 @@ class TestRecordEvolutionTurn:
         # Must swallow the error.
         o._record_evolution_turn("hello")
 
+    def test_feeds_recent_transcript_to_extract_signals(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """#16: the recent multi-turn transcript (from _dual_history) is passed
+        to extract_signals as recent_session_transcript so the history-aware
+        detectors can fire -- not just the current single utterance."""
+        import ultron.evolution.signals as sigmod
+
+        captured: dict = {}
+
+        def _fake_extract(**kwargs: Any) -> list:
+            captured.update(kwargs)
+            return ["stable_success_plateau"]
+
+        monkeypatch.setattr(sigmod, "extract_signals", _fake_extract)
+        o = _bare_orchestrator()
+        o.evolution = _FakeEvolution()
+        o._last_response_text = "use sorted()"
+        turns = (
+            SimpleNamespace(role="user", text="how do I sort a list"),
+            SimpleNamespace(role="assistant", text="use sorted()"),
+        )
+        o._dual_history = SimpleNamespace(recent_verbatim=lambda n: turns)
+
+        o._record_evolution_turn("now reverse it")
+
+        assert captured["user_snippet"] == "now reverse it"
+        assert "user: how do I sort a list" in captured["recent_session_transcript"]
+        assert "assistant: use sorted()" in captured["recent_session_transcript"]
+        assert len(o.evolution.recorded) == 1
+
+    def test_corpus_fail_open_without_dual_history(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No _dual_history on the orchestrator -> empty transcript, turn still
+        recorded (fail-open)."""
+        import ultron.evolution.signals as sigmod
+
+        captured: dict = {}
+        monkeypatch.setattr(
+            sigmod, "extract_signals",
+            lambda **k: (captured.update(k), ["x"])[1],
+        )
+        o = _bare_orchestrator()
+        o.evolution = _FakeEvolution()
+        # _dual_history not set on the bare orchestrator -> getattr None.
+        o._record_evolution_turn("hello")
+        assert captured["recent_session_transcript"] == ""
+        assert len(o.evolution.recorded) == 1
+
 
 class TestConsumeLastBargeIn:
     def test_resets_flag(self) -> None:
