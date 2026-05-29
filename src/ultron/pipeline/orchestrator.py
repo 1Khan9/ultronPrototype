@@ -2166,6 +2166,10 @@ class Orchestrator:
                 # to legacy ProjectResolver path).
                 supervisor_dispatch=supervisor_dispatch,
                 project_index=project_index,
+                # B3: hand the live MCP server so voice-dispatched coding
+                # tasks write a per-project .mcp.json + connect back for the
+                # clarification / verification / completion loop.
+                mcp_server=self.mcp_server,
             )
             logger.info(
                 "Coding voice ready (bridge=%s, sandbox=%s, coordinator=%s, supervisor=%s)",

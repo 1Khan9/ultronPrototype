@@ -754,6 +754,18 @@ class UltronMCPServer:
 
     # --- lifecycle: SSE server ---------------------------------------------
 
+    def is_running(self) -> bool:
+        """True once the SSE server thread has started and bound its port.
+
+        Used by the voice controller to decide whether to write a
+        per-project ``.mcp.json`` for a dispatched coding task.
+        """
+        return bool(
+            self._server_thread is not None
+            and self._server_thread.is_alive()
+            and self._started.is_set()
+        )
+
     def start(self, *, ready_timeout_s: float = 5.0) -> None:
         """Spin up the SSE server on a background thread. Returns once
         the server reports it's accepting connections, or raises if the

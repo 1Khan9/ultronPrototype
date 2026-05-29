@@ -101,6 +101,7 @@ class CapabilityVoiceController:
         gaming_mode_manager=None,
         supervisor_dispatch=None,
         project_index=None,
+        mcp_server=None,
     ) -> None:
         self.runner = runner
         self.registry = registry
@@ -129,6 +130,12 @@ class CapabilityVoiceController:
         # is byte-for-byte unchanged).
         self.supervisor_dispatch = supervisor_dispatch
         self.project_index = project_index
+        # B3: in-process Ultron MCP server. When set + running, each voice-
+        # dispatched coding task writes a per-project ``.mcp.json`` so the
+        # spawned coding subprocess connects back (request_clarification /
+        # report_progress / declare_complete -> coordinator + verifier loop).
+        # None = legacy bridge-only path (no MCP tools), byte-for-byte as before.
+        self.mcp_server = mcp_server
         self._lock = threading.Lock()
         # State machine for completion-push: when has_active_task() goes
         # from True to False, we capture the completion narration so the
@@ -630,6 +637,24 @@ class CapabilityVoiceController:
         except Exception:                                           # noqa: BLE001
             pass
 
+        # B3: the supervisor's TaskRequest omits timeout_s + mcp_config_path
+        # (supervisor_dispatch deliberately has no MCP dependency); fill them
+        # in here. A hard timeout bounds the subprocess; the .mcp.json lets it
+        # reach the coordinator/verifier loop. Then register a ProjectSession
+        # so the MCP server resolves an active session on callback.
+        if request.timeout_s is None:
+            try:
+                request.timeout_s = float(settings.CODING_TASK_TIMEOUT_S)
+            except Exception:                                        # noqa: BLE001
+                pass
+        if request.mcp_config_path is None:
+            request.mcp_config_path = self._maybe_write_mcp_config(request.cwd)
+        mcp_config_path = request.mcp_config_path
+        self._create_and_bind_session(
+            request.cwd, intent.task_text or "",
+            is_new=(request.label or "").startswith("new:"),
+        )
+
         # Start the task and attach a digest listener for COMPLETE.
         try:
             handle = self.runner.start_task(request)
@@ -651,6 +676,9 @@ class CapabilityVoiceController:
             project_name=project_name,
             project_path=request.cwd,
         )
+        # B3: clean up the per-project .mcp.json on COMPLETE.
+        if mcp_config_path is not None:
+            self._attach_mcp_cleanup_listener(handle, request.cwd)
 
         # Voice message: the supervisor already narrated (if narrate_enabled);
         # outcome.voice_message is "" in that case. Otherwise narrate now.
@@ -998,6 +1026,7 @@ class CapabilityVoiceController:
             )
         except Exception:
             voice_require_testing = False
+        mcp_config_path = self._maybe_write_mcp_config(project_path)
         request = TaskRequest(
             task_prompt=intent.task_text,
             cwd=project_path,
@@ -1006,11 +1035,91 @@ class CapabilityVoiceController:
             require_testing=voice_require_testing,
             timeout_s=float(settings.CODING_TASK_TIMEOUT_S),
             label=label,
+            mcp_config_path=mcp_config_path,
         )
-        self.runner.start_task(request)
+        handle = self.runner.start_task(request)
+        if mcp_config_path is not None and handle is not None:
+            self._attach_mcp_cleanup_listener(handle, project_path)
         with self._lock:
             self._was_active = True
             self._pending_completion = None
+
+    # --- B3: MCP-config wiring for voice-dispatched coding tasks -----------
+
+    def _maybe_write_mcp_config(self, project_path):
+        """Write a per-project ``.mcp.json`` pointing at the live Ultron MCP
+        server so the dispatched coding subprocess can call back into it
+        (request_clarification / report_progress / report_test_results /
+        declare_complete). Returns the path for ``TaskRequest.mcp_config_path``
+        or ``None`` when the server isn't wired/running. Fail-open: any error
+        degrades to the legacy bridge-only path (task still runs, no MCP tools).
+        """
+        server = getattr(self, "mcp_server", None)
+        if server is None:
+            return None
+        try:
+            if not server.is_running():
+                return None
+            from ultron.coding.mcp_server import write_mcp_config
+            return write_mcp_config(Path(project_path), server.sse_url)
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning(
+                "write_mcp_config failed (%s); coding task runs without "
+                "MCP tools this turn", e,
+            )
+            return None
+
+    def _attach_mcp_cleanup_listener(self, handle, project_path) -> None:
+        """Remove the per-project ``.mcp.json`` when the task completes.
+        Fail-open + no-op when the handle can't take a listener."""
+        try:
+            from ultron.coding.bridge import EventKind
+            from ultron.coding.mcp_server import remove_mcp_config
+        except Exception:                                            # noqa: BLE001
+            return
+
+        def _cleanup(event) -> None:
+            try:
+                if getattr(event, "kind", None) == EventKind.COMPLETE:
+                    remove_mcp_config(Path(project_path))
+            except Exception:                                        # noqa: BLE001
+                pass
+
+        try:
+            handle.add_listener(_cleanup)
+        except Exception:                                            # noqa: BLE001
+            pass
+
+    def _create_and_bind_session(self, project_path, user_intent: str, *, is_new: bool):
+        """Create a ProjectSession in the coordinator's store + bind it to the
+        runner so the MCP server's ``_claude_active_session`` resolves when the
+        spawned subprocess calls back. Returns the session id (or ``None``).
+        Fail-open + no-op when no coordinator/store is wired."""
+        coordinator = getattr(self, "coordinator", None)
+        store = getattr(coordinator, "store", None) if coordinator is not None else None
+        if store is None:
+            return None
+        try:
+            session = store.create(
+                project_root=Path(project_path),
+                user_intent=user_intent,
+                mode="new" if is_new else "edit",
+                model=settings.CODING_CLAUDE_MODEL,
+            )
+            sid = session.session_id
+            try:
+                from ultron.coding.session import SessionStatus
+                store.transition(sid, SessionStatus.EXECUTING)
+            except Exception:                                        # noqa: BLE001
+                pass
+            try:
+                self.runner.bind_session(sid)
+            except Exception:                                        # noqa: BLE001
+                pass
+            return sid
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("session create failed (%s); proceeding without one", e)
+            return None
 
     # --- 4B plan: voice-driven LLM model switch ----------------------------
 
