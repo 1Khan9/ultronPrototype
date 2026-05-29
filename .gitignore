@@ -191,6 +191,9 @@ data/projects/
 data/qdrant/
 data/observations.jsonl
 data/sandbox/
+# 2026-05-29 production-hardening campaign working artefacts (triage,
+# findings JSON, implementation plans). Internal scratch -- never committed.
+data/campaign/
 # 2026-05-22 sweep durability surface (heartbeat + progress JSONL +
 # current-test marker + cross-instance lock) — see scripts/run_tests.py
 # and tests/conftest.py. Per-machine runtime artefacts.
