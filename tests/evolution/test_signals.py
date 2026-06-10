@@ -21,10 +21,13 @@ def _event(*, intent="", sigs=(), status="success", files=1, lines=1, gene=""):
 
 
 def test_opportunity_signals_count_and_membership():
-    assert len(S.OPPORTUNITY_SIGNALS) == 17
+    # Production-hardening #66 extended the taxonomy 17 -> 18 with
+    # coding_task_success (fed by the orchestrator's coding-success drain).
+    assert len(S.OPPORTUNITY_SIGNALS) == 18
     assert "user_feature_request" in S.OPPORTUNITY_SIGNALS
     assert "force_innovation_after_repair_loop" in S.OPPORTUNITY_SIGNALS
     assert "explore_opportunity" in S.OPPORTUNITY_SIGNALS
+    assert "coding_task_success" in S.OPPORTUNITY_SIGNALS
 
 
 def test_signal_profiles_present():

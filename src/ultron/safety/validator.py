@@ -43,7 +43,7 @@ import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from ultron.safety.audit import AuditLog, get_audit_log
 from ultron.safety.path_resolver import PathResolver, get_path_resolver
@@ -415,6 +415,21 @@ class ToolCallValidator:
                     f"{dominant.reason}"
                 )
 
+        # Evolution reach-signal (#63): notify the registered observer of a
+        # hard block so the self-improvement loop can learn from repeated
+        # refusals ("ultron keeps attempting X which is blocked" distils a
+        # DEFENSIVE skill). Pure observation -- runs AFTER the verdict +
+        # audit are final, never alters them, and any observer exception is
+        # swallowed (the validator stays fail-closed on its own logic and
+        # the observer can never weaken or strengthen a verdict).
+        if dominant.verdict == Verdict.BLOCK_HARD:
+            observer = _block_observer
+            if observer is not None:
+                try:
+                    observer(ctx.tool_name, dominant.reason)
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("block observer failed: %s", e)
+
         return ValidatorVerdict(
             verdict=dominant.verdict,
             reason=dominant.reason,
@@ -424,6 +439,28 @@ class ToolCallValidator:
             category=dominant.category,
             metadata=dominant.metadata,
         )
+
+
+# ---------------------------------------------------------------------------
+# Block observer (evolution reach-signal #63)
+# ---------------------------------------------------------------------------
+
+#: Optional ``(tool_name, reason) -> None`` callback fired on every
+#: BLOCK_HARD verdict. Observation only -- it cannot affect verdicts.
+_block_observer: Optional[Callable[[str, str], None]] = None
+
+
+def set_block_observer(observer: Optional[Callable[[str, str], None]]) -> None:
+    """Register (or clear, with ``None``) the BLOCK_HARD observer.
+
+    The orchestrator registers a bounded-queue enqueue here so the
+    evolution service can learn from repeated hard blocks. The observer
+    is called AFTER the verdict + audit entry are final and is wrapped
+    fail-open at the call site -- it can never alter a verdict, block a
+    call, or raise into the validator.
+    """
+    global _block_observer
+    _block_observer = observer
 
 
 class _NoOpValidator:

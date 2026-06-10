@@ -838,6 +838,11 @@ class Orchestrator:
         # singleton getter. Fail-open: returns None on any failure, which
         # makes every per-turn evolution hook a zero-cost no-op.
         self.evolution = self._load_evolution_if_enabled()
+        # Production-hardening reach-signals (#62/#125/#63/#64): register
+        # the two pure-observation seams (recorded errors + hard safety
+        # blocks) feeding a bounded queue the run loop drains into the
+        # EvolutionService. Fail-open; no-op when evolution is disabled.
+        self._install_evolution_reach_observers()
         # 2026-05-23 OpenHands batch 2 (T1) -- trigger-loaded skills.
         # When ``skills.enabled`` is True, walks ``skills/`` (public),
         # ``~/.ultron/skills/`` (user), and ``<project>/.ultron/skills/``
@@ -2025,6 +2030,11 @@ class Orchestrator:
             self.evolution.record_turn(
                 user_text=user_text,
                 signals=signals,
+                # Production-hardening (#68): the user repeating
+                # substantially the same utterance signals the prior
+                # answer missed (a dissatisfied turn for the temperament
+                # tuner + the quality guardrail).
+                re_asked=self._detect_re_ask(user_text),
                 barged_in=self._consume_last_barge_in(),
                 # Catalog 14 (T1): the PRIOR turn's response is the agent claim
                 # a correction would be correcting. At this point in the run
@@ -2035,6 +2045,126 @@ class Orchestrator:
             self.evolution.maybe_run_autonomous_cycle()
         except Exception as e:                                    # noqa: BLE001
             logger.debug("evolution record turn failed: %s", e)
+
+    def _detect_re_ask(self, user_text: str) -> bool:
+        """Production-hardening (#68): cheap re-ask detection.
+
+        The user repeating substantially the same utterance as their
+        previous one means the prior answer missed -- a dissatisfied-turn
+        signal for the evolution temperament tuner and the quality
+        guardrail. Pure in-process comparison (normalised equality, then
+        a difflib ratio with a high 0.82 bar); both utterances must be at
+        least 12 characters so trivial repeats ("yes", "okay") never
+        trip it. Microseconds on voice-length text; fail-open to False.
+        """
+        prev = getattr(self, "_prev_user_text_for_reask", "")
+        self._prev_user_text_for_reask = user_text
+        try:
+            a = " ".join((user_text or "").lower().split())
+            b = " ".join((prev or "").lower().split())
+            if len(a) < 12 or len(b) < 12:
+                return False
+            if a == b:
+                return True
+            import difflib
+
+            return difflib.SequenceMatcher(None, a, b).ratio() >= 0.82
+        except Exception:                                         # noqa: BLE001
+            return False
+
+    def _install_evolution_reach_observers(self) -> None:
+        """Production-hardening reach-signals (#62/#125/#63/#64): register
+        the two pure-observation seams that give the self-improvement loop
+        system-wide failure reach through bounded queues:
+
+        * :func:`ultron.resilience.error_log.set_error_observer` -- every
+          recorded typed error (web search, Qdrant memory, desktop, bridge,
+          TTS, ...) enqueues ``(dependency, message)``;
+        * :func:`ultron.safety.validator.set_block_observer` -- every hard
+          safety block enqueues ``(tool_name, reason)`` so repeated refusals
+          can distil a DEFENSIVE skill.
+
+        Both seams are observation-only (registered AFTER verdict/audit
+        logic, wrapped fail-open at their call sites -- they can never
+        alter a verdict or drop an error record). The bounded deque is
+        drained once per run-loop iteration by
+        :meth:`_drain_evolution_reach_signals`. No-op when evolution is
+        disabled. Fail-open."""
+        if self.evolution is None:
+            return
+        from collections import deque
+
+        self._evolution_reach_queue: Any = deque(maxlen=32)
+        queue = self._evolution_reach_queue
+
+        def _on_error(dependency: str, message: str) -> None:
+            queue.append((f"dependency:{dependency}", message))
+
+        def _on_block(tool_name: str, reason: str) -> None:
+            queue.append((f"safety_block:{tool_name}", reason))
+
+        try:
+            from ultron.resilience.error_log import set_error_observer
+
+            set_error_observer(_on_error)
+        except Exception as e:                                    # noqa: BLE001
+            logger.debug("error observer install failed: %s", e)
+        try:
+            from ultron.safety.validator import set_block_observer
+
+            set_block_observer(_on_block)
+        except Exception as e:                                    # noqa: BLE001
+            logger.debug("block observer install failed: %s", e)
+
+    def _drain_evolution_reach_signals(self) -> None:
+        """Drain the bounded reach-signal queue into the EvolutionService
+        (#62/#125/#63/#64). Each entry becomes a command-failure record
+        (``exit_code=1`` + failure-shaped text so the detector fires);
+        the recurrence gate keeps transient one-offs from ever distilling
+        while RECURRING failures become repair material. Bounded per
+        drain; fail-open; zero-cost no-op when nothing is queued."""
+        if self.evolution is None:
+            return
+        queue = getattr(self, "_evolution_reach_queue", None)
+        if not queue:
+            return
+        try:
+            for _ in range(32):
+                try:
+                    source, detail = queue.popleft()
+                except IndexError:
+                    break
+                self.evolution.record_command_failure(
+                    source,
+                    f"{source} failed: {detail}"[:500],
+                    exit_code=1,
+                )
+        except Exception as e:                                    # noqa: BLE001
+            logger.debug("evolution reach-signal drain failed: %s", e)
+
+    def _drain_evolution_task_successes(self) -> None:
+        """Production-hardening (#66): drain successfully-completed coding
+        tasks the runner queued and feed each to the EvolutionService as a
+        ``coding_task_success`` opportunity capsule -- the loop learns from
+        what WORKS, not only from failures. Fail-open + a zero-cost no-op
+        when evolution or coding is disabled."""
+        if self.evolution is None or self.coding_voice is None:
+            return
+        try:
+            runner = getattr(self.coding_voice, "runner", None)
+            drain = getattr(runner, "drain_task_successes", None)
+            if drain is None:
+                return
+            for label, summary in drain():
+                self.evolution.record_turn(
+                    user_text=label or "coding task",
+                    signals=("coding_task_success",),
+                    response_summary=(
+                        summary or f"coding task completed: {label}"
+                    )[:200],
+                )
+        except Exception as e:                                    # noqa: BLE001
+            logger.debug("evolution task-success drain failed: %s", e)
 
     def _consume_last_barge_in(self) -> bool:
         """Return whether the PRIOR response was interrupted by a barge-in,
@@ -3421,6 +3551,20 @@ class Orchestrator:
                 evolution.shutdown()
             except Exception:
                 pass
+            # Reach-signal hygiene: clear the module-level observers so a
+            # torn-down orchestrator can't keep receiving events (tests
+            # construct + discard orchestrators; the observers must not
+            # leak across instances).
+            try:
+                from ultron.resilience.error_log import set_error_observer
+                set_error_observer(None)
+            except Exception:                                     # noqa: BLE001
+                pass
+            try:
+                from ultron.safety.validator import set_block_observer
+                set_block_observer(None)
+            except Exception:                                     # noqa: BLE001
+                pass
 
     # --- main loop -----------------------------------------------------------
 
@@ -3486,6 +3630,14 @@ class Orchestrator:
                 # narration (e.g. the post-apply auto-revert notice). A
                 # zero-cost no-op when nothing is queued.
                 self._drain_evolution_narrations()
+                # Reach-signals (#62/#125/#63/#64): feed recorded dependency
+                # errors + hard safety blocks to the EvolutionService.
+                # Zero-cost no-op when nothing is queued.
+                self._drain_evolution_reach_signals()
+                # #66: feed successfully-completed coding tasks to the
+                # EvolutionService (learning from what works). Zero-cost
+                # no-op when nothing completed.
+                self._drain_evolution_task_successes()
                 # 2026 catalog 08/09: speak any dialog-appearance narration
                 # the coding runner's dialog auto-handler queued (default ON).
                 # Time-sensitive (a native dialog is blocking the task), so

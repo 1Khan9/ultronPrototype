@@ -26,7 +26,7 @@ import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from ultron.config import resolve_path
 from ultron.errors import UltronError
@@ -161,6 +161,42 @@ class ErrorLog:
             # Never raise from here.
             logger.error("errors.jsonl write failed: %s", e)
 
+        # Evolution reach-signals (#62/#125/#64): notify the registered
+        # observer of every recorded failure so the self-improvement loop
+        # can learn from RECURRING dependency failures (web search, Qdrant,
+        # desktop, bridge, TTS, ...) through ONE seam instead of per-site
+        # plumbing. Pure observation, after the write, fail-open -- an
+        # observer error can never drop a record or raise to the caller.
+        observer = _error_observer
+        if observer is not None:
+            try:
+                observer(dependency, str(record.get("message", "")))
+            except Exception as e:  # noqa: BLE001
+                logger.debug("error observer failed: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# Error observer (evolution reach-signals #62/#125/#64)
+# ---------------------------------------------------------------------------
+
+#: Optional ``(dependency, message) -> None`` callback fired after every
+#: recorded error. Observation only -- it cannot drop or alter records.
+_error_observer: Optional[Callable[[str, str], None]] = None
+
+
+def set_error_observer(observer: Optional[Callable[[str, str], None]]) -> None:
+    """Register (or clear, with ``None``) the recorded-error observer.
+
+    The orchestrator registers a bounded-queue enqueue here so the
+    evolution service can learn from recurring dependency failures
+    anywhere in the system (web search, memory, desktop, bridge, TTS --
+    every subsystem that records typed errors flows through this one
+    seam). The observer runs AFTER the JSONL write and is wrapped
+    fail-open at the call site; it can never raise to the caller.
+    """
+    global _error_observer
+    _error_observer = observer
+
 
 # ---------------------------------------------------------------------------
 # Singleton
@@ -188,4 +224,4 @@ def set_error_log(log: ErrorLog) -> None:
         _INSTANCE = log
 
 
-__all__ = ["ErrorLog", "get_error_log", "set_error_log"]
+__all__ = ["ErrorLog", "get_error_log", "set_error_log", "set_error_observer"]

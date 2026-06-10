@@ -197,6 +197,13 @@ class CodingTaskRunner:
         # ``(command, output, exit_code)``.
         self._pending_command_failures: List[tuple] = []
         self._command_failure_lock = threading.Lock()
+        # Production-hardening (#66): successfully-completed coding tasks.
+        # The success listener queues ``(label, summary)`` pairs here; the
+        # orchestrator drains them into the EvolutionService as
+        # ``coding_task_success`` opportunity capsules. The runner never
+        # imports the evolution package.
+        self._pending_task_successes: List[tuple] = []
+        self._task_success_lock = threading.Lock()
         # 2026 catalog wiring (T1): loop-detection heads-up lines. The
         # per-task LoopDetectionManager listener queues a single line here
         # when a task's tool-call stream trips a hard escalation; the
@@ -341,6 +348,14 @@ class CodingTaskRunner:
         evo_failure_listener = self._make_evolution_failure_listener(handle)
         if evo_failure_listener is not None:
             handle.add_listener(evo_failure_listener)
+        # Production-hardening (#66): mirror listener for SUCCESSFUL task
+        # completion -- queues a coding_task_success observation the
+        # orchestrator drains into the EvolutionService. Gated + fail-open.
+        evo_success_listener = self._make_evolution_success_listener(
+            handle, request.label or ""
+        )
+        if evo_success_listener is not None:
+            handle.add_listener(evo_success_listener)
         # 2026 catalog wiring (T1): per-task 5-detector loop detection over
         # the tool-call stream. Surfaces a single spoken heads-up (never a
         # cancel) when a hard escalation fires. Gated + fail-open + a no-op
@@ -1031,6 +1046,62 @@ class CodingTaskRunner:
                 return []
             out = list(self._pending_command_failures)
             self._pending_command_failures.clear()
+            return out
+
+    # --- production-hardening (#66): coding-success observation -----------
+
+    def _make_evolution_success_listener(self, handle, label: str):
+        """Build a fail-open ``TaskEvent`` listener that captures a
+        SUCCESSFUL task completion into ``self._pending_task_successes``
+        for the orchestrator to feed the EvolutionService as a
+        ``coding_task_success`` opportunity capsule (#66). Returns ``None``
+        (a zero-cost no-op) when evolution is disabled. The runner never
+        imports the evolution package -- it only queues
+        ``(label, summary)`` pairs."""
+        try:
+            from ultron.coding.bridge import EventKind
+            from ultron.config import get_config
+        except Exception as e:  # noqa: BLE001
+            logger.debug("evolution success listener unavailable (%s); skipping", e)
+            return None
+        try:
+            ev = getattr(get_config(), "evolution", None)
+            if ev is None or not getattr(ev, "enabled", False):
+                return None
+        except Exception:  # noqa: BLE001
+            return None
+
+        state = {"queued": False}
+
+        def _listener(event) -> None:
+            if state["queued"]:
+                return
+            try:
+                if getattr(event, "kind", None) != EventKind.COMPLETE:
+                    return
+                code = getattr(event, "exit_status", None)
+                if code is not None and int(code) != 0:
+                    return
+                state["queued"] = True
+                summary = str(getattr(event, "summary", "") or "")
+                with self._task_success_lock:
+                    if len(self._pending_task_successes) < 50:
+                        self._pending_task_successes.append((label, summary))
+            except Exception as e:  # noqa: BLE001 -- never raise into the bridge
+                logger.debug("evolution success listener error: %s", e)
+
+        return _listener
+
+    def drain_task_successes(self) -> List[tuple]:
+        """Pop + clear all queued successful-completion observations (#66).
+        The orchestrator polls this each loop iteration and feeds each
+        ``(label, summary)`` to the EvolutionService as a
+        ``coding_task_success`` opportunity capsule."""
+        with self._task_success_lock:
+            if not self._pending_task_successes:
+                return []
+            out = list(self._pending_task_successes)
+            self._pending_task_successes.clear()
             return out
 
     # --- 2026 catalog wiring (T1): per-task loop detection --------------

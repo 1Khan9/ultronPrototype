@@ -51,9 +51,13 @@ from ultron.evolution.models import (
 
 # --- the canonical taxonomy -------------------------------------------------
 
-#: The 17 named opportunity signals (the stable vocabulary the loop reasons
+#: The 18 named opportunity signals (the stable vocabulary the loop reasons
 #: over). Dynamic detail signals (``errsig:``, ``user_feature_request:``,
 #: ``ban_gene:`` ...) carry a ``:payload`` suffix and are not listed here.
+#: ``coding_task_success`` (production-hardening #66) is emitted by the
+#: orchestrator's coding-success drain, not by text extraction -- a
+#: successfully-completed voice coding task is a positive pattern worth
+#: distilling once it recurs.
 OPPORTUNITY_SIGNALS: tuple[str, ...] = (
     "user_feature_request",
     "user_improvement_suggestion",
@@ -72,6 +76,7 @@ OPPORTUNITY_SIGNALS: tuple[str, ...] = (
     "openclaw_self_healed",
     "empty_cycle_loop_detected",
     "explore_opportunity",
+    "coding_task_success",
 )
 
 #: Signals that describe a missing input rather than an actionable

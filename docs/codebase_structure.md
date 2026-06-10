@@ -32,6 +32,26 @@
 > fail-open brake. +55 hermetic tests (`tests/evolution/test_turn_metrics.py` +
 > `test_guardrail_brake.py` + orchestrator-wiring extensions); targeted
 > evolution subset **400 passed / 0 failed**.
+> **Then: pervasive evolution reach-signals (#62/#125/#63/#64/#66/#68)** --
+> TWO pure-observation seams give the loop system-wide failure reach through
+> bounded queues: `resilience/error_log.set_error_observer` (every recorded
+> typed error -- web search #62, Qdrant memory #125, desktop #64, bridge, TTS
+> -- through ONE seam instead of per-site plumbing) and
+> `safety/validator.set_block_observer` (every BLOCK_HARD verdict #63, fired
+> AFTER verdict + audit are final; an observer can never alter a verdict).
+> The orchestrator installs both at startup
+> (`_install_evolution_reach_observers`, cleared in `shutdown()`), drains the
+> bounded deque per loop iteration into
+> `record_command_failure(..., exit_code=1)` (the recurrence gate keeps
+> transient one-offs from distilling), and TWO more positives: #66
+> `coding_task_success` (NEW 18th OPPORTUNITY_SIGNAL; the runner's
+> `_make_evolution_success_listener` queues `(label, summary)` on a clean
+> COMPLETE, drained by `_drain_evolution_task_successes` into an opportunity
+> capsule -- the loop learns from what WORKS) and #68 re-ask detection
+> (`Orchestrator._detect_re_ask` -- normalised-equality + difflib >=0.82 over
+> >=12-char utterances feeds `record_turn(re_asked=...)`). +43 hermetic tests
+> (`tests/evolution/test_reach_signals.py` + taxonomy pins updated 17->18);
+> evolution/safety/error-log subset **443 passed / 0 failed**.
 > Earlier sweep state: **9156 passed / 35 skipped / 0 failed (~103s)** with the
 > loaded-machine ignore recipe (below); ~9182 no-deselect (now 9199 on an idle
 > machine, no deselect, 2026-06-10 baseline). The +8 skipped vs earlier are
@@ -1318,7 +1338,7 @@ For the current decisions and Foundation phase status see
 
 │       ├── safety/                  ← 2026-05-12 Phase 2-5: runtime tool-call validator
 │       │   ├── __init__.py
-│       │   ├── validator.py        ← ToolCallValidator core dispatcher, Verdict, RuleContext, RuleResult. 2026-05-25 OpenClaw batch 2 (T16): RuleResult + ValidatorVerdict gain optional `user_message` (rule-supplied clean text) + `category` (analytics label) + `metadata` (opaque per-rule blob). Audit log emits category + rule_metadata in the context dict when present; voice-message synthesis prefers user_message over the auto-synthesised "I held off..." prefix.
+│       │   ├── validator.py        ← ToolCallValidator core dispatcher, Verdict, RuleContext, RuleResult. 2026-05-25 OpenClaw batch 2 (T16): RuleResult + ValidatorVerdict gain optional `user_message` (rule-supplied clean text) + `category` (analytics label) + `metadata` (opaque per-rule blob). Audit log emits category + rule_metadata in the context dict when present; voice-message synthesis prefers user_message over the auto-synthesised "I held off..." prefix. 2026 production-hardening (#63): module-level `set_block_observer((tool_name, reason) -> None)` -- a pure-observation callback fired on every BLOCK_HARD verdict AFTER the verdict + audit entry are final (fail-open at the call site; can never alter a verdict). The orchestrator registers a bounded-queue enqueue so the evolution loop learns from repeated refusals.
 │       │   ├── policy_chain.py     ← 2026-05-25 OpenClaw batch 2 (T13): composable trusted-tool-policy chain. TrustedToolPolicyChain runs policies in registration order with block-terminates / params-stacks / approval-first-wins semantics. FunctionPolicy adapter; module-level singleton via get_policy_chain(). ApprovalRequest typed handoff payload consumed by future T2 two-phase approval router. Policies fail-open: exceptions are swallowed as pass-through with WARN.
 │       │   ├── path_resolver.py    ← Windows-aware canonicalization (symlinks, junctions, 8.3, bidi-override rejection)
 │       │   ├── audit.py            ← tamper-evident hash-chain audit log (logs/safety_audit.jsonl)
@@ -1453,7 +1473,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── project_supervisor.py ← 2026-05-22 supervisor Phase C: ProjectSupervisor.decide(SupervisorInputs) -> SupervisorDecision; RESUME/EDIT/CLARIFY/NEW algorithm with cosine thresholds (default 0.75 / 0.55); merges semantic (ProjectIndex) + lexical (ProjectResolver) candidates; logs every decision to logs/supervisor_decisions.jsonl; publishes SupervisorDecidedEvent
 │       │   ├── projections.py      ← Phase C / Foundation Part 2: 5 bounded projections
 │       │   ├── projects.py         ← ProjectRegistry, ProjectResolver, new_sandbox_project
-│       │   ├── runner.py           ← CodingTaskRunner (one in-flight task; bridge owner); listener registration surface used by supervisor digest listener
+│       │   ├── runner.py           ← CodingTaskRunner (one in-flight task; bridge owner); listener registration surface used by supervisor digest listener. 2026 production-hardening (#66): `_make_evolution_success_listener(handle, label)` queues `(label, summary)` on a clean COMPLETE (exit 0; once per task) into `_pending_task_successes`, drained by `drain_task_successes()` -- the orchestrator feeds each to the EvolutionService as a `coding_task_success` opportunity capsule. The runner never imports the evolution package.
 │       │   ├── sandbox_runner.py   ← NEW 2026-05-29 B3-runlaunch: voice "run / launch the program" -- match_run_program + resolve_entry_point + run_program (sandbox-confined + validator-gated + timeout) + launch_program (detached); _is_within confinement guard
 │       │   ├── session.py          ← ProjectSession state model + SessionStore
 │       │   ├── supervisor_dispatch.py ← 2026-05-22 supervisor Phases D + E: SupervisorDispatchController owns narration (Phase D barge-in) + enriched-context TaskRequest builder (Phase E digest + file-tree + file-hints prepended to Claude's prompt); build_digest() wrapper for COMPLETE listener; _speakable() strips backslashes/drive-letters
@@ -1494,7 +1514,7 @@ For the current decisions and Foundation phase status see
 │       │
 │       ├── resilience/             ← Phase 4 resilience primitives
 │       │   ├── circuit_breaker.py  ← CircuitBreaker (3-state: CLOSED/OPEN/HALF_OPEN)
-│       │   ├── error_log.py        ← ErrorLog (logs/errors.jsonl writer + singleton)
+│       │   ├── error_log.py        ← ErrorLog (logs/errors.jsonl writer + singleton). 2026 production-hardening (#62/#125/#64): module-level `set_error_observer((dependency, message) -> None)` -- a pure-observation callback fired after every recorded error (runs AFTER the JSONL write; fail-open; can never drop a record). ONE seam giving the evolution loop failure reach into every subsystem that records typed errors.
 │       │   ├── fail_open_log.py    ← 2026-05-22: per-session fail-open counter (JSONL log to logs/fail_open_counts.jsonl; previous-session summary on startup)
 │       │   └── phrases.py          ← phrase_for() (shuffled phrase pool per failure mode)
 │       │
@@ -1605,7 +1625,7 @@ For the current decisions and Foundation phase status see
 │       ├── evolution/               ← 2026 catalog 13 (clawhub-capability-evolver clean-room): bounded autonomous self-improvement. QUARANTINED source NEVER read; built from catalog + scan reports only. Data-only proposals (skills/*.md), Tier-3-walled, zero network/shell/eval, fully fail-open. Wired default-ON via pipeline/orchestrator.py. 2026 catalog 14 (clawhub-self-improving-agent) EXTENDS it with QUALITATIVE conversation-event capture: correction / knowledge-gap / command-failure / feature-request types + detectors (T1/T2), a pre-turn `[Evolution: ...]` nudge through the temperament seam (T3), and pattern_key recurrence tracking (T4) -- all data-only, same contract; quarantine source NOT read.
 │       │   ├── __init__.py          ← Public API re-exports (78 symbols across the package)
 │       │   ├── models.py            ← GEP data model: frozen dataclasses Gene / Capsule / Mutation / EvolutionEvent / PersonalityState / BlastRadius / Outcome / GeneConstraints / EnvFingerprint (NO device_id -- safety departure) + EvolutionCategory / OutcomeStatus / RiskLevel enums + clamp01 / canonicalize / compute_asset_id (sha256) / verify_asset_id + id generators (new_capsule_id appends a 6-hex suffix to avoid same-ms collisions) + schema constants
-│       │   ├── signals.py           ← Opportunity-signal extraction: 17 OPPORTUNITY_SIGNALS + COSMETIC_SIGNALS + 7 weighted SIGNAL_PROFILES; extract_signals (two LOCAL layers: regex + keyword scoring + multilingual user-request) + analyze_recent_history + apply_post_processing (dedup / repair-loop / saturation / failure-streak / ban) + has_opportunity_signal. The upstream's 3rd LLM/Hub-network layer is NOT ported.
+│       │   ├── signals.py           ← Opportunity-signal extraction: 18 OPPORTUNITY_SIGNALS (production-hardening #66 added `coding_task_success`, emitted by the orchestrator's coding-success drain) + COSMETIC_SIGNALS + 7 weighted SIGNAL_PROFILES; extract_signals (two LOCAL layers: regex + keyword scoring + multilingual user-request) + analyze_recent_history + apply_post_processing (dedup / repair-loop / saturation / failure-streak / ban) + has_opportunity_signal. The upstream's 3rd LLM/Hub-network layer is NOT ported.
 │       │   ├── blast_radius.py      ← Change-scope policy spine: CountedFilePolicy + BLAST_RADIUS_HARD_CAP_FILES/LINES + BlastSeverity (5 tiers) + CRITICAL_PROTECTED_PREFIXES/FILES Tier-3 wall (includes "src/") + ETHICS_BLOCK_PATTERNS + compute_blast_radius / classify_blast_severity / check_constraints / classify_failure_mode / is_critical_protected_path; injectable git_numstat provider
 │       │   ├── skill_distiller.py   ← Capsule->pattern->skill distillation: auto_distill / auto_distill_from_failures + analyze_patterns + synthesize_gene_from_patterns + gene_to_skill_proposal + render_skill_markdown (ultron-compatible frontmatter: name/type/version/description/triggers/min_user_text_chars) + should_distill (>=10 successes, >=7 of last 10, 24h cooldown, data-hash idempotency) + SkillProposal / DistillResult. Output is DATA, never code.
 │       │   ├── guardrails.py        ← Regression guardrails: GuardrailBaseline (TTFA 266 / TTFT 172 / TTS 78 / VRAM 6664 defaults) + 4 detectors (detect_latency_regression / detect_quality_regression / detect_error_regression / detect_resource_ceiling) + evaluate_guardrails + RollbackAudit (note_outcome / rollback_rate / should_demote) + ROLLBACK_DEMOTE_THRESHOLD=0.30 + VRAM_CAP_MB=11500. Replaces the upstream's run-commands-to-verify step.

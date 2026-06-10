@@ -117,8 +117,11 @@ def test_has_opportunity_signal_recognises_qualitative():
     assert S.has_opportunity_signal(["stable_success_plateau"]) is False
 
 
-def test_taxonomy_count_unchanged():
-    # The qualitative signals are kept SEPARATE so the documented 17-signal
-    # taxonomy count is unchanged.
-    assert len(S.OPPORTUNITY_SIGNALS) == 17
+def test_taxonomy_count_pinned():
+    # The qualitative signals are kept SEPARATE from the opportunity
+    # taxonomy. Production-hardening #66 deliberately extended the
+    # taxonomy from 17 to 18 with ``coding_task_success`` (emitted by the
+    # orchestrator's coding-success drain, not by text extraction).
+    assert len(S.OPPORTUNITY_SIGNALS) == 18
+    assert "coding_task_success" in S.OPPORTUNITY_SIGNALS
     assert set(S.QUALITATIVE_CAPTURE_SIGNALS) == {"user_correction", "knowledge_gap", "command_failure"}
