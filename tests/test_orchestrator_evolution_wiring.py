@@ -353,3 +353,142 @@ class TestDrainEvolutionCommandFailures:
         o.coding_voice = SimpleNamespace(runner=SimpleNamespace(drain_command_failures=_boom))
         o._drain_evolution_command_failures()  # swallowed
         assert o.evolution.command_failures == []
+
+
+# ---------------------------------------------------------------------------
+# Guardrail brake (#15+#65): _note_evolution_turn_metrics +
+# _drain_evolution_narrations + LLMEngine.pop_last_ttft_ms
+# ---------------------------------------------------------------------------
+
+
+class _FakeRing:
+    def __init__(self) -> None:
+        self.responses: list[dict] = []
+
+    def note_response(self, ttft_ms=None, *, errored=False) -> None:
+        self.responses.append({"ttft_ms": ttft_ms, "errored": errored})
+
+
+class _FakeLLMWithTtft:
+    def __init__(self, ttft=123.0) -> None:
+        self._ttft = ttft
+        self.pops = 0
+
+    def pop_last_ttft_ms(self):
+        self.pops += 1
+        value, self._ttft = self._ttft, None
+        return value
+
+
+class TestNoteEvolutionTurnMetrics:
+    @staticmethod
+    def _orch_with_ring(ring: Any) -> Any:
+        o = _bare_orchestrator()
+        o.evolution = SimpleNamespace(turn_metrics=ring)
+        o.llm = _FakeLLMWithTtft()
+        o._last_search_payload = None
+        return o
+
+    def test_noop_when_evolution_disabled(self) -> None:
+        o = _bare_orchestrator()
+        o.evolution = None
+        o._note_evolution_turn_metrics(False)  # must not raise
+
+    def test_noop_when_ring_absent(self) -> None:
+        o = _bare_orchestrator()
+        o.evolution = SimpleNamespace(turn_metrics=None)
+        o.llm = _FakeLLMWithTtft()
+        o._last_search_payload = None
+        o._note_evolution_turn_metrics(False)  # must not raise
+
+    def test_records_ttft_on_plain_turn(self) -> None:
+        ring = _FakeRing()
+        o = self._orch_with_ring(ring)
+        o._note_evolution_turn_metrics(False)
+        assert ring.responses == [{"ttft_ms": 123.0, "errored": False}]
+        assert o.llm.pops == 1
+
+    def test_search_turn_drops_ttft_but_counts_turn(self) -> None:
+        ring = _FakeRing()
+        o = self._orch_with_ring(ring)
+        o._last_search_payload = SimpleNamespace(sources=[])
+        o._note_evolution_turn_metrics(False)
+        assert ring.responses == [{"ttft_ms": None, "errored": False}]
+        # TTFT was still popped (read-and-clear) so it can't leak into the
+        # NEXT turn's record.
+        assert o.llm.pops == 1
+
+    def test_errored_turn_recorded(self) -> None:
+        ring = _FakeRing()
+        o = self._orch_with_ring(ring)
+        o._note_evolution_turn_metrics(True)
+        assert ring.responses[0]["errored"] is True
+
+    def test_llm_without_pop_method_records_none(self) -> None:
+        ring = _FakeRing()
+        o = self._orch_with_ring(ring)
+        o.llm = SimpleNamespace()  # no pop_last_ttft_ms
+        o._note_evolution_turn_metrics(False)
+        assert ring.responses == [{"ttft_ms": None, "errored": False}]
+
+    def test_broken_ring_is_fail_open(self) -> None:
+        class _Boom:
+            def note_response(self, **kwargs: Any) -> None:
+                raise RuntimeError("ring boom")
+
+        o = self._orch_with_ring(_Boom())
+        o._note_evolution_turn_metrics(False)  # swallowed
+
+
+class TestDrainEvolutionNarrations:
+    def test_noop_when_evolution_disabled(self) -> None:
+        o = _bare_orchestrator()
+        o.evolution = None
+        o._drain_evolution_narrations()
+        assert o._spoken == []
+
+    def test_speaks_queued_line(self) -> None:
+        o = _bare_orchestrator()
+        lines = ["I rolled back my most recent self-improvement."]
+        o.evolution = SimpleNamespace(
+            pop_pending_narration=lambda: lines.pop() if lines else None
+        )
+        o._drain_evolution_narrations()
+        assert o._spoken == ["I rolled back my most recent self-improvement."]
+
+    def test_noop_when_nothing_queued(self) -> None:
+        o = _bare_orchestrator()
+        o.evolution = SimpleNamespace(pop_pending_narration=lambda: None)
+        o._drain_evolution_narrations()
+        assert o._spoken == []
+
+    def test_fail_open_on_pop_raise(self) -> None:
+        def _boom():
+            raise RuntimeError("pop boom")
+
+        o = _bare_orchestrator()
+        o.evolution = SimpleNamespace(pop_pending_narration=_boom)
+        o._drain_evolution_narrations()  # swallowed
+        assert o._spoken == []
+
+    def test_service_without_pop_is_noop(self) -> None:
+        o = _bare_orchestrator()
+        o.evolution = SimpleNamespace()
+        o._drain_evolution_narrations()
+        assert o._spoken == []
+
+
+class TestPopLastTtft:
+    def test_pop_returns_and_clears(self) -> None:
+        from ultron.llm.inference import LLMEngine
+
+        engine = LLMEngine.__new__(LLMEngine)
+        engine._last_ttft_ms = 172.5
+        assert engine.pop_last_ttft_ms() == 172.5
+        assert engine.pop_last_ttft_ms() is None
+
+    def test_pop_before_any_stream_is_none(self) -> None:
+        from ultron.llm.inference import LLMEngine
+
+        engine = LLMEngine.__new__(LLMEngine)
+        assert engine.pop_last_ttft_ms() is None

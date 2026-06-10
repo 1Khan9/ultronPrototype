@@ -3302,6 +3302,27 @@ class EvolutionConfig(_Strict):
     # A pattern_key must recur at least this many times to count as
     # distill-ready -- the explicit, auditable promote threshold.
     recurrence_threshold: int = Field(default=3, ge=2, le=20)
+    # ---- Guardrail auto-revert brake (#15 + #65) ---------------------------
+    # The instrumentation + post-apply monitoring that gives the four
+    # regression guardrails real per-turn data. When ON (default), the
+    # orchestrator feeds a bounded TurnMetricsRing (LLM TTFT on plain
+    # conversational turns + error flag + the catalog-14 quality flags), the
+    # evolution cycle samples it instead of the all-None default, and a KEPT
+    # skill proposal is re-checked after ``post_apply_monitor_turns`` further
+    # turns against a pre-apply snapshot -- regressing the brake auto-reverts
+    # the skill (data-only file delete + registry reload). Fail-open: missing
+    # metrics skip their guardrail; they never trip a revert.
+    guardrail_monitoring_enabled: bool = True
+    # Bounded per-turn observation window the ring retains.
+    guardrail_window_turns: int = Field(default=40, ge=5, le=500)
+    # Minimum TTFT observations before the latency guardrail sees a value.
+    guardrail_min_latency_samples: int = Field(default=5, ge=1, le=100)
+    # Minimum turns before the correction / error rates are reported.
+    guardrail_min_rate_samples: int = Field(default=10, ge=1, le=200)
+    # How many further turns a KEPT proposal is monitored before the
+    # post-apply re-check compares post-change behaviour to the pre-apply
+    # snapshot (relative comparison -- like-for-like by construction).
+    post_apply_monitor_turns: int = Field(default=8, ge=1, le=100)
 
 
 class HooksConfig(_Strict):

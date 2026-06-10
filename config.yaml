@@ -1582,6 +1582,14 @@ evolution:
   pre_turn_nudge_enabled: true           # bounded "[Evolution: ...]" system-prompt nudge when the queue is non-empty
   pre_turn_nudge_max_chars: 240          # hard char cap on the nudge (~<=50 tokens; 0 disables)
   recurrence_threshold: 3                # a pattern must recur this many times to be distill-ready
+  # Guardrail auto-revert brake (#15+#65) -- real per-turn metrics feed the four
+  # regression guardrails, and a KEPT skill is re-checked after N further turns
+  # against a pre-apply snapshot (regression -> data-only auto-revert):
+  guardrail_monitoring_enabled: true     # per-turn metrics ring + post-apply re-check
+  guardrail_window_turns: 40             # bounded observation window
+  guardrail_min_latency_samples: 5       # TTFT observations before the latency guard sees a value
+  guardrail_min_rate_samples: 10         # turns before correction/error rates are reported
+  post_apply_monitor_turns: 8            # turns a kept skill is watched before the re-check
 
 # ---------------------------------------------------------------------------
 # Error phrases (Phase 4) — user-facing voice messages for dependency failures

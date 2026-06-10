@@ -1675,6 +1675,25 @@ class LLMEngine:
             return
         self._record_turn(user_message, text)
 
+    #: Most recent stream's LLM time-to-first-token in milliseconds (or
+    #: ``None`` before any stream / after a :meth:`pop_last_ttft_ms`).
+    #: Written once per stream inside ``generate_stream``; consumed by the
+    #: orchestrator's evolution turn-metrics ring (#15+#65).
+    _last_ttft_ms: Optional[float] = None
+
+    def pop_last_ttft_ms(self) -> Optional[float]:
+        """Return + clear the most recent stream's TTFT in milliseconds.
+
+        Read-and-clear semantics so each measurement is consumed at most
+        once (the orchestrator reads it at the end of a turn; a stale
+        value from a warmup or speculative stream is popped and the slot
+        re-arms for the next stream). Returns ``None`` when no stream has
+        produced a first token since the last pop. Never raises.
+        """
+        value = getattr(self, "_last_ttft_ms", None)
+        self._last_ttft_ms = None
+        return value
+
     def generate_stream(
         self,
         user_message: str,
@@ -1779,8 +1798,12 @@ class LLMEngine:
                     continue
                 if first_token_time is None:
                     first_token_time = time.monotonic()
-                    logger.info("LLM TTFT: %.0fms",
-                                (first_token_time - t0) * 1000)
+                    # Evolution guardrail instrumentation (#15+#65): stash
+                    # this stream's TTFT so the orchestrator can feed the
+                    # per-turn metrics ring after the turn completes. A
+                    # plain attribute write -- nanoseconds on the hot path.
+                    self._last_ttft_ms = (first_token_time - t0) * 1000.0
+                    logger.info("LLM TTFT: %.0fms", self._last_ttft_ms)
                 yield delta
             completed = True
 

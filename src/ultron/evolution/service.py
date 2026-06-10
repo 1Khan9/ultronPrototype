@@ -36,11 +36,18 @@ from ultron.evolution.evolution_loop import (
     EvolutionLoopConfig,
     EvolutionState,
 )
-from ultron.evolution.guardrails import GuardrailBaseline, GuardrailSample
+from ultron.evolution.guardrails import (
+    GuardrailBaseline,
+    GuardrailSample,
+    RollbackRecord,
+    evaluate_guardrails,
+)
 from ultron.evolution.models import (
+    BlastRadius,
     Capsule,
     CommandFailureSignal,
     CorrectionCapsule,
+    EvolutionEvent,
     FeatureRequestCapsule,
     KnowledgeGapCapsule,
     Outcome,
@@ -49,6 +56,7 @@ from ultron.evolution.models import (
     canonicalize,
     derive_pattern_key,
     new_capsule_id,
+    new_event_id,
 )
 from ultron.evolution.personality import (
     PersonalityFeedback,
@@ -75,6 +83,13 @@ DEFAULT_TURN_CAPSULE_SCORE = 0.8
 PERSONALITY_SAVE_EVERY_TURNS = 10
 DEFAULT_RECURRENCE_THRESHOLD = 3
 DEFAULT_PRE_TURN_NUDGE_MAX_CHARS = 240
+# Guardrail auto-revert brake (#15+#65): how many further turns a KEPT
+# proposal is monitored before the post-apply re-check, and the (smaller)
+# minimum-sample floors used over that short post-apply window. The
+# pre-apply snapshot uses the sampler's own (larger) floors.
+DEFAULT_POST_APPLY_MONITOR_TURNS = 8
+POST_APPLY_MIN_LATENCY_SAMPLES = 3
+POST_APPLY_MIN_RATE_SAMPLES = 5
 
 
 def _now_iso() -> str:
@@ -328,6 +343,8 @@ class EvolutionService:
         state: EvolutionState,
         proposal_dir: Path,
         registry_reloader: Optional[Callable[[], None]] = None,
+        turn_metrics: Any = None,
+        guardrail_sampler: Optional[Callable[[], GuardrailSample]] = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self._config = config
@@ -338,6 +355,15 @@ class EvolutionService:
         self._state = state
         self._proposal_dir = proposal_dir
         self._registry_reloader = registry_reloader
+        # Guardrail brake (#15+#65): the per-turn metrics ring (fed with
+        # quality flags from record_turn) + the sampler the post-apply
+        # watcher uses. Both optional -- None degrades to the brakeless
+        # legacy behaviour (guardrails skipped, never tripped).
+        self._turn_metrics = turn_metrics
+        self._guardrail_sampler = guardrail_sampler
+        self._watch_lock = threading.Lock()
+        self._post_apply_watch: Optional[dict] = None
+        self._pending_narration: Optional[str] = None
         self._clock = clock
         self._cycle_lock = threading.Lock()
         self._turns_since_check = 0
@@ -377,7 +403,39 @@ class EvolutionService:
             )
             personality = PersonalityTuner.from_dict(store.load_personality())
             checkpoint = _build_checkpoint(data_dir, proposal_dir)
-            sampler = guardrail_sampler or (lambda: GuardrailSample())
+            # Guardrail brake (#15+#65): when monitoring is enabled and no
+            # explicit sampler was injected, build the per-turn metrics ring
+            # + sampler here so the loop's guardrails see REAL data. The
+            # orchestrator feeds the ring (TTFT + error flags); record_turn
+            # feeds the quality flags. Fail-open: any construction error
+            # falls back to the brakeless empty sampler.
+            turn_metrics = None
+            sampler = guardrail_sampler
+            if sampler is None and bool(getattr(ev, "guardrail_monitoring_enabled", True)):
+                try:
+                    from ultron.evolution.turn_metrics import (
+                        TurnMetricsRing,
+                        build_guardrail_sampler,
+                    )
+
+                    turn_metrics = TurnMetricsRing(
+                        window=int(getattr(ev, "guardrail_window_turns", 40))
+                    )
+                    sampler = build_guardrail_sampler(
+                        turn_metrics,
+                        min_latency_samples=int(
+                            getattr(ev, "guardrail_min_latency_samples", 5)
+                        ),
+                        min_rate_samples=int(
+                            getattr(ev, "guardrail_min_rate_samples", 10)
+                        ),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("guardrail metrics ring unavailable: %s", exc)
+                    turn_metrics = None
+                    sampler = None
+            if sampler is None:
+                sampler = lambda: GuardrailSample()  # noqa: E731 -- brakeless fallback
             approval_registry = approval if approval is not None else _maybe_get_approval()
             loop = EvolutionLoop(
                 repo_root=Path(project_root),
@@ -410,6 +468,8 @@ class EvolutionService:
                 state=state,
                 proposal_dir=proposal_dir,
                 registry_reloader=registry_reloader,
+                turn_metrics=turn_metrics,
+                guardrail_sampler=sampler,
                 clock=clock,
             )
         except Exception as exc:  # noqa: BLE001
@@ -445,6 +505,19 @@ class EvolutionService:
             self._maybe_capture_knowledge_gap(user_text, prior_response)
             self._maybe_capture_feature_request(user_text)
             corrected = corrected or detected_correction
+
+            # Guardrail brake (#15+#65): feed the quality flags into the
+            # per-turn metrics ring (the correction/re-ask/barge-in rate is
+            # the "quality" guardrail's signal) and advance the post-apply
+            # watch for any recently-kept proposal. Both fail-open.
+            if self._turn_metrics is not None:
+                try:
+                    self._turn_metrics.note_quality(
+                        corrected=corrected, re_asked=re_asked, barged_in=barged_in
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("turn-metrics quality note failed: %s", exc)
+            self._tick_post_apply_watch()
 
             feedback = PersonalityFeedback(corrected=corrected, re_asked=re_asked, barged_in=barged_in)
             self._personality.record_feedback(feedback)
@@ -650,11 +723,229 @@ class EvolutionService:
                 self._registry_reloader()
             except Exception as exc:  # noqa: BLE001
                 logger.debug("evolution registry reload failed: %s", exc)
+        if result.status is ApplyStatus.KEPT:
+            self._arm_post_apply_watch(result)
         return {
             "status": result.status.value,
             "slug": result.proposal.slug,
             "reasons": list(result.reasons),
         }
+
+    # -- guardrail brake: post-apply monitoring (#15+#65) --------------------
+
+    def _arm_post_apply_watch(self, result: Any) -> None:
+        """Snapshot pre-apply metrics + start the post-apply countdown for a
+        KEPT proposal. Single-slot: a newer KEPT proposal replaces an armed
+        watch (the 24h distill cooldown makes overlap practically
+        impossible). Fail-open -- a failure here leaves the proposal kept
+        but unwatched (the legacy behaviour)."""
+        if not bool(getattr(self._config, "guardrail_monitoring_enabled", True)):
+            return
+        if self._guardrail_sampler is None or self._turn_metrics is None:
+            return
+        try:
+            turns = int(
+                getattr(
+                    self._config,
+                    "post_apply_monitor_turns",
+                    DEFAULT_POST_APPLY_MONITOR_TURNS,
+                )
+            )
+            pre_sample = self._guardrail_sampler()
+            with self._watch_lock:
+                if self._post_apply_watch is not None:
+                    logger.debug(
+                        "post-apply watch replaced (%s superseded by %s)",
+                        self._post_apply_watch.get("slug", "?"),
+                        result.proposal.slug,
+                    )
+                self._post_apply_watch = {
+                    "slug": result.proposal.slug,
+                    "filename": result.proposal.filename,
+                    "gene": getattr(result.proposal.gene, "id", ""),
+                    "pre_sample": pre_sample,
+                    "markers": self._turn_metrics.totals(),
+                    "turns_remaining": max(1, turns),
+                }
+            logger.info(
+                "evolution: watching kept skill '%s' for %d turns "
+                "(post-apply guardrail re-check)",
+                result.proposal.slug,
+                max(1, turns),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("post-apply watch arm failed: %s", exc)
+
+    def _tick_post_apply_watch(self) -> None:
+        """Advance the armed watch by one turn; at expiry, evaluate on a
+        daemon thread (the evaluation may probe VRAM via subprocess, so it
+        must stay off the voice hot path). Fail-open."""
+        try:
+            with self._watch_lock:
+                watch = self._post_apply_watch
+                if watch is None:
+                    return
+                watch["turns_remaining"] = int(watch.get("turns_remaining", 1)) - 1
+                if watch["turns_remaining"] > 0:
+                    return
+                self._post_apply_watch = None
+            threading.Thread(
+                target=self._evaluate_post_apply_watch,
+                args=(watch,),
+                name="evolution-postapply",
+                daemon=True,
+            ).start()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("post-apply watch tick failed: %s", exc)
+
+    def _evaluate_post_apply_watch(self, watch: dict) -> None:
+        """Compare post-apply behaviour to the pre-apply snapshot; on a
+        guardrail regression, auto-revert the kept skill (data-only file
+        delete + registry reload) and record the rollback. Runs on a daemon
+        thread. RELATIVE comparison: the baseline is built from the
+        pre-apply snapshot, so the check is like-for-like by construction;
+        any pre-apply field that was unobserved disables its check (a
+        ``0`` baseline skips the latency detector; rate baselines default
+        to ``0.0`` which is the conservative direction). Never raises."""
+        try:
+            pre: GuardrailSample = watch.get("pre_sample") or GuardrailSample()
+            post = self._turn_metrics.sample(
+                min_latency_samples=POST_APPLY_MIN_LATENCY_SAMPLES,
+                min_rate_samples=POST_APPLY_MIN_RATE_SAMPLES,
+                vram_probe=self._post_apply_vram_probe(),
+                since=watch.get("markers"),
+            )
+            rel_baseline = GuardrailBaseline(
+                ttfa_ms=0.0,  # never observed at runtime -> check skipped
+                ttft_ms=pre.ttft_ms if pre.ttft_ms is not None else 0.0,
+                tts_ms=0.0,  # never observed at runtime -> check skipped
+                correction_rate=pre.correction_rate if pre.correction_rate is not None else 0.0,
+                error_rate=pre.error_rate if pre.error_rate is not None else 0.0,
+            )
+            verdict = evaluate_guardrails(rel_baseline, post)
+            slug = str(watch.get("slug", ""))
+            if not verdict.should_revert:
+                logger.info(
+                    "evolution: kept skill '%s' passed the post-apply "
+                    "guardrail re-check (%d post-apply turns observed)",
+                    slug,
+                    post.turns_observed,
+                )
+                return
+            self._revert_kept_proposal(watch, verdict)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("post-apply watch evaluation failed: %s", exc)
+
+    def _post_apply_vram_probe(self):
+        """The VRAM probe for the post-apply sample (safe on this daemon
+        thread), or ``None`` when unavailable. Fail-open."""
+        try:
+            from ultron.evolution.turn_metrics import probe_vram_mb
+
+            return probe_vram_mb
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _revert_kept_proposal(self, watch: dict, verdict: Any) -> None:
+        """Auto-revert a kept-then-regressed skill: delete the proposal file
+        (containment-checked), reload the skill registry, record the
+        rollback in the autonomy ledger + audit chain + failure feed, and
+        queue a one-line voice narration. Data-only; never raises."""
+        import os as _os
+
+        slug = str(watch.get("slug", ""))
+        filename = str(watch.get("filename", ""))
+        reasons = "; ".join(getattr(verdict, "details", ()) or ())
+        target = self._proposal_dir / filename if filename else None
+        removed = False
+        if target is not None:
+            try:
+                common = _os.path.commonpath(
+                    [_os.path.abspath(str(target)), _os.path.abspath(str(self._proposal_dir))]
+                )
+                contained = _os.path.normcase(common) == _os.path.normcase(
+                    _os.path.abspath(str(self._proposal_dir))
+                )
+                if contained and target.exists():
+                    target.unlink()
+                    removed = True
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("post-apply revert unlink failed: %s", exc)
+        if self._registry_reloader is not None:
+            try:
+                self._registry_reloader()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("post-apply revert registry reload failed: %s", exc)
+        guard = (
+            verdict.tripped_guards[0]
+            if getattr(verdict, "tripped_guards", ())
+            else "guardrail"
+        )
+        try:
+            self._autonomy.record_outcome(
+                "skills",
+                reverted=True,
+                record=RollbackRecord(
+                    surface="skills",
+                    change_id=slug,
+                    guardrail=guard,
+                    metric_delta=reasons,
+                    at=self._clock(),
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("post-apply revert autonomy record failed: %s", exc)
+        try:
+            self._store.append_event(
+                EvolutionEvent(
+                    id=new_event_id(),
+                    intent="post_apply_revert",
+                    signals=(guard,),
+                    genes_used=(str(watch.get("gene", "")),),
+                    personality_state=self._personality.state,
+                    blast_radius=BlastRadius(files=1, lines=0),
+                    outcome=Outcome(status=OutcomeStatus.FAILED, score=0.0),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("post-apply revert audit event failed: %s", exc)
+        try:
+            self._store.append_failure(
+                {
+                    "gene": str(watch.get("gene", "")),
+                    "trigger": [slug],
+                    "reason_class": "post_apply_guardrail",
+                    "learning_signals": [f"guardrail:{guard}"],
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("post-apply revert failure record failed: %s", exc)
+        self._pending_narration = (
+            "I rolled back my most recent self-improvement; it regressed "
+            f"my {guard} checks."
+        )
+        logger.warning(
+            "evolution: auto-reverted kept skill '%s' after the post-apply "
+            "re-check tripped the %s guardrail (file removed: %s) -- %s",
+            slug,
+            guard,
+            removed,
+            reasons or "no detail",
+        )
+
+    def pop_pending_narration(self) -> Optional[str]:
+        """Return + clear the queued one-line voice narration (e.g. the
+        post-apply auto-revert notice), or ``None``. Never raises."""
+        line = self._pending_narration
+        self._pending_narration = None
+        return line
+
+    @property
+    def turn_metrics(self) -> Any:
+        """The per-turn metrics ring (or ``None`` when monitoring is off).
+        The orchestrator feeds it response-side observations (TTFT +
+        error flag) at the end of each turn."""
+        return self._turn_metrics
 
     # -- temperament --------------------------------------------------------
 

@@ -547,6 +547,12 @@ class Orchestrator:
                     p, record_history=False, enable_thinking=False,
                 )),
             )
+            # Guardrail brake (#15+#65): discard the warmup stream's TTFT --
+            # it measures the cold prefill, not a representative turn, and
+            # must not seed the evolution metrics ring.
+            pop_ttft = getattr(self.llm, "pop_last_ttft_ms", None)
+            if callable(pop_ttft):
+                pop_ttft()
         except Exception as e:                                          # noqa: BLE001
             logger.debug("LLM warmup skipped (%s)", e)
         # 2026-05-10 voice swap: select TTS engine via ``tts.engine`` config.
@@ -2038,6 +2044,34 @@ class Orchestrator:
         self._last_turn_barged_in = False
         return flag
 
+    def _note_evolution_turn_metrics(self, errored: bool) -> None:
+        """Guardrail brake (#15+#65): feed THIS turn's response-side
+        observation into the evolution per-turn metrics ring.
+
+        TTFT is popped from the LLM engine (read-and-clear, so a stale
+        warmup / speculative value is consumed at most once) and recorded
+        ONLY for plain conversational turns: a search-augmented turn
+        carries a much larger prompt class than the locked baseline was
+        measured on, so its TTFT would mis-trip the latency guardrail --
+        the turn still counts toward the error rate. Fail-open + a
+        zero-cost no-op when evolution (or its monitoring) is disabled.
+        """
+        if self.evolution is None:
+            return
+        try:
+            ring = getattr(self.evolution, "turn_metrics", None)
+            if ring is None:
+                return
+            ttft: Optional[float] = None
+            pop = getattr(self.llm, "pop_last_ttft_ms", None)
+            if callable(pop):
+                ttft = pop()
+            if self._last_search_payload is not None:
+                ttft = None
+            ring.note_response(ttft_ms=ttft, errored=errored)
+        except Exception as e:                                    # noqa: BLE001
+            logger.debug("evolution turn-metrics note failed: %s", e)
+
     def _load_event_store_if_enabled(self) -> None:
         """2026-05-23 OpenHands batch 3 (T2 + T13) -- construct the event store.
 
@@ -3448,6 +3482,10 @@ class Orchestrator:
                 # coding runner observed into the EvolutionService (repair
                 # distillation). Zero-cost no-op when nothing failed.
                 self._drain_evolution_command_failures()
+                # Guardrail brake (#15+#65): speak any queued evolution
+                # narration (e.g. the post-apply auto-revert notice). A
+                # zero-cost no-op when nothing is queued.
+                self._drain_evolution_narrations()
                 # 2026 catalog 08/09: speak any dialog-appearance narration
                 # the coding runner's dialog auto-handler queued (default ON).
                 # Time-sensitive (a native dialog is blocking the task), so
@@ -4655,6 +4693,25 @@ class Orchestrator:
         except Exception as e:  # noqa: BLE001
             logger.debug("evolution command-failure drain failed: %s", e)
 
+    def _drain_evolution_narrations(self) -> None:
+        """Guardrail brake (#15+#65): speak any one-line narration the
+        EvolutionService queued (currently the post-apply auto-revert
+        notice -- "I rolled back my most recent self-improvement..."), so
+        the user hears when a kept skill was withdrawn. Fail-open + a
+        zero-cost no-op when evolution is disabled or nothing is queued."""
+        if self.evolution is None:
+            return
+        try:
+            pop = getattr(self.evolution, "pop_pending_narration", None)
+            if pop is None:
+                return
+            line = pop()
+            if line:
+                self._speak(line)
+                self._last_response_finished_monotonic = time.monotonic()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("evolution narration drain failed: %s", e)
+
     def _drain_coding_dialog_narrations(self) -> None:
         """Speak any dialog-appearance narration the coding runner's dialog
         auto-handler queued (catalog 08/09, default ON). The handler detects a
@@ -5513,6 +5570,10 @@ class Orchestrator:
             self._emit_turn_telemetry(
                 routing_intent_kind, turn_start, errored=turn_errored,
             )
+            # Guardrail brake (#15+#65): feed this turn's response-side
+            # observation (LLM TTFT + error flag) into the evolution
+            # metrics ring. Fail-open + zero-cost when evolution is off.
+            self._note_evolution_turn_metrics(turn_errored)
 
     def _maybe_emit_thinking_drift_sample(
         self, user_text: str, response_text: str,
