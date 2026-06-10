@@ -15,14 +15,23 @@ Usage:
     python scripts/autonomous_e2e_harness.py [--phase=N]
 
 Phases (each is independent; --phase=all runs everything):
-    1  STT (Moonshine accuracy + latency)
-    2  LLM (Qwen 3.5 4B response + TTFT + latency)
-    3  TTS (Kokoro Ultron voice synth + spectral_smooth)
-    4  Web search (SearXNG + readers + ranker)
-    5  Memory (retrieve + rerank + ranking)
-    6  Routing classifier
-    7  Gate (rule path + preflight LLM)
-    8  Full E2E loops
+    1   STT (Moonshine accuracy + latency)
+    2   LLM (Qwen 3.5 4B response + TTFT + latency)
+    3   TTS (Kokoro Ultron voice synth + spectral_smooth)
+    4   Web search (SearXNG + readers + ranker)
+    5   Memory (retrieve + rerank + ranking)
+    6   Routing classifier
+    7   Gate (rule path + preflight LLM)
+    8   Spoken-command matrix -- EVERY RoutingIntentKind through the real
+        Kokoro-synth -> Moonshine-STT acoustic path, with an enum-coverage
+        guard (classification only; nothing is dispatched)
+    9   Spoken short-circuit matchers (deep research / recall / history /
+        code exploration / evolution / report concern / run / scrap /
+        local clock) + a negative control
+    10  Full conversational loops -- audio -> STT -> gate -> LLM (+ history
+        recall) -> Ultron-voice TTS, incl. a LIVE web-search turn
+    11  Voice coding engineer -- REAL coding-CLI create -> sandbox run ->
+        edit follow-up -> re-run (costs real API tokens)
 
 The harness PRINTS to stdout (no stdin reads) so it can run
 autonomously. Bugs surfaced here trigger immediate code edits.
@@ -504,6 +513,568 @@ def phase_gate() -> List[Scenario]:
 
 
 # ---------------------------------------------------------------------------
+# Shared audio helper for the spoken-command phases
+# ---------------------------------------------------------------------------
+
+
+def _spoken_transcript(tts: Any, stt: Any, text: str, sc: "Scenario") -> str:
+    """Synthesize ``text`` (neutral voice) -> transcribe -> return transcript.
+
+    The acoustic round-trip the spoken-command phases share: it is the
+    REAL path a user's utterance takes, so a phrasing that survives it
+    is a phrasing the live system can route. Records synth + stt
+    timings on the scenario. Raises on hard failure (caller records)."""
+    t0 = time.monotonic()
+    pcm, sr = tts._synthesize(text)  # internal API ok for the harness
+    sc.record("synth", time.monotonic() - t0)
+    audio_f32 = pcm.astype(np.float32) / 32768.0
+    if sr != 16000:
+        try:
+            import scipy.signal
+
+            new_len = int(len(audio_f32) * 16000 / sr)
+            audio_f32 = scipy.signal.resample(audio_f32, new_len).astype(np.float32)
+        except Exception:
+            factor = sr / 16000.0
+            indices = (np.arange(int(len(audio_f32) / factor)) * factor).astype(np.int64)
+            audio_f32 = audio_f32[indices]
+    t0 = time.monotonic()
+    transcript = stt.transcribe(audio_f32)
+    sc.record("stt", time.monotonic() - t0)
+    sc.out("transcript", transcript)
+    return transcript or ""
+
+
+def _build_spoken_pipeline() -> Tuple[Any, Any]:
+    """Construct the neutral-voice Kokoro + Moonshine pair the spoken-command
+    phases share. Stock am_michael (not the Ultron fine-tune) so the STT leg
+    isn't biased by a specific timbre."""
+    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from ultron.tts.kokoro_engine import KokoroSpeech
+
+    t0 = time.monotonic()
+    stt = MoonshineEngine()
+    print(f"Moonshine loaded in {time.monotonic()-t0:.2f}s")
+    t0 = time.monotonic()
+    tts = KokoroSpeech(voice="am_michael", apply_spectral_smooth=False)
+    tts.warmup()
+    print(f"Test-input Kokoro ready in {time.monotonic()-t0:.2f}s")
+    return tts, stt
+
+
+# ---------------------------------------------------------------------------
+# Phase 8: the full spoken-command matrix (every RoutingIntentKind)
+# ---------------------------------------------------------------------------
+
+
+def phase_commands() -> List[Scenario]:
+    """Drive a spoken command for EVERY RoutingIntentKind through the real
+    acoustic path (Kokoro synth -> Moonshine STT) and assert the routing
+    classifier still lands on the right intent from the TRANSCRIPT.
+
+    Classification only -- no handler is dispatched, so nothing clicks,
+    types, launches, or closes anything (safe to run unattended). The
+    closing coverage scenario asserts the matrix spans the ENTIRE enum,
+    so adding a RoutingIntentKind without a spoken-command test fails
+    this suite loudly.
+    """
+    print("\n" + "=" * 60)
+    print("PHASE 8: Spoken-command matrix (all routing intents)")
+    print("=" * 60)
+    scenarios: List[Scenario] = []
+    from ultron.openclaw_routing.classifier import classify_routing
+    from ultron.openclaw_routing.intents import RoutingIntentKind
+
+    tts, stt = _build_spoken_pipeline()
+
+    # (name, spoken text, expected kind, classify kwargs)
+    matrix = [
+        ("conversational", "How are you doing today?",
+         RoutingIntentKind.CONVERSATIONAL, {}),
+        ("code_task", "Write me a program that converts celsius to fahrenheit.",
+         RoutingIntentKind.CODE_TASK, {}),
+        ("progress_query", "How is the project going?",
+         RoutingIntentKind.PROGRESS_QUERY, {"has_active_coding_task": True}),
+        ("cancel", "Cancel the task.",
+         RoutingIntentKind.CANCEL, {"has_active_coding_task": True}),
+        ("mid_session_adjustment", "Add a dark mode to it.",
+         RoutingIntentKind.MID_SESSION_ADJUSTMENT,
+         {"has_active_coding_task": True}),
+        ("clarification_response", "Use the default settings for that.",
+         RoutingIntentKind.CLARIFICATION_RESPONSE,
+         {"has_pending_clarification": True}),
+        ("browser_automation", "Open hacker news in the browser.",
+         RoutingIntentKind.BROWSER_AUTOMATION, {}),
+        ("media_generation", "Make an image of a sunset over the ocean.",
+         RoutingIntentKind.MEDIA_GENERATION, {}),
+        ("messaging", "Send a message to my phone saying dinner is ready.",
+         RoutingIntentKind.MESSAGING, {}),
+        ("file_operation", "List the files in my downloads folder.",
+         RoutingIntentKind.FILE_OPERATION, {}),
+        ("shell_operation", "In the terminal run git status.",
+         RoutingIntentKind.SHELL_OPERATION, {}),
+        ("hybrid_task", "Write a script that opens chrome and checks the news.",
+         RoutingIntentKind.HYBRID_TASK, {}),
+        ("model_switch", "Switch to the four B model.",
+         RoutingIntentKind.MODEL_SWITCH, {}),
+        ("system_status", "Give me a system status report.",
+         RoutingIntentKind.SYSTEM_STATUS, {}),
+        ("gaming_mode", "Engage gaming mode.",
+         RoutingIntentKind.GAMING_MODE, {}),
+        ("desktop_automation", "Take a screenshot of the desktop.",
+         RoutingIntentKind.DESKTOP_AUTOMATION, {}),
+        ("window_automation", "Focus the chrome window.",
+         RoutingIntentKind.WINDOW_AUTOMATION, {}),
+        ("app_launch", "Open chrome on monitor two.",
+         RoutingIntentKind.APP_LAUNCH, {}),
+        ("screen_context_query", "Explain what I'm looking at on screen.",
+         RoutingIntentKind.SCREEN_CONTEXT_QUERY, {}),
+        ("window_move", "Put discord on my right monitor.",
+         RoutingIntentKind.WINDOW_MOVE, {}),
+        ("window_close", "Close the notepad window.",
+         RoutingIntentKind.WINDOW_CLOSE, {}),
+        ("open_last_source", "Show me that article.",
+         RoutingIntentKind.OPEN_LAST_SOURCE, {}),
+        ("navigate_to_site", "Take me to the youtube website.",
+         RoutingIntentKind.NAVIGATE_TO_SITE, {}),
+        ("active_window_query", "What window is active right now?",
+         RoutingIntentKind.ACTIVE_WINDOW_QUERY, {}),
+        ("semantic_click", "Click the save button.",
+         RoutingIntentKind.SEMANTIC_CLICK, {}),
+        ("window_close_confirmation", "Yes.",
+         RoutingIntentKind.WINDOW_CLOSE_CONFIRMATION, {}),
+    ]
+
+    tested_kinds = set()
+    for name, spoken, expected_kind, kwargs in matrix:
+        tested_kinds.add(expected_kind)
+        sc = Scenario(
+            name=f"cmd:{name}", input_text=spoken,
+            expected={"kind": expected_kind.name},
+        )
+        try:
+            transcript = _spoken_transcript(tts, stt, spoken, sc)
+            if not transcript.strip():
+                sc.err("empty transcript")
+            else:
+                t0 = time.monotonic()
+                verdict = classify_routing(transcript, **kwargs)
+                sc.record("classify", time.monotonic() - t0)
+                sc.out("actual_kind", verdict.kind.name)
+                sc.out("confidence", verdict.confidence)
+                if verdict.kind is not expected_kind:
+                    sc.err(
+                        f"routing mismatch: spoken={spoken!r} "
+                        f"transcript={transcript!r} "
+                        f"expected={expected_kind.name} actual={verdict.kind.name}"
+                    )
+        except Exception as e:
+            sc.err(f"exception: {e}\n{traceback.format_exc()[:500]}")
+        scenarios.append(sc)
+        print(sc.summary())
+
+    # Completeness guard: the matrix must span the ENTIRE enum.
+    sc = Scenario(name="cmd:enum_coverage", input_text="(coverage check)")
+    untested = sorted(
+        k.name for k in RoutingIntentKind if k not in tested_kinds
+    )
+    sc.out("untested_kinds", untested)
+    if untested:
+        sc.err(
+            "RoutingIntentKind values without a spoken-command scenario: "
+            + ", ".join(untested)
+        )
+    scenarios.append(sc)
+    print(sc.summary())
+    return scenarios
+
+
+# ---------------------------------------------------------------------------
+# Phase 9: spoken short-circuit matchers (the orchestrator's strict matchers)
+# ---------------------------------------------------------------------------
+
+
+def phase_short_circuits() -> List[Scenario]:
+    """Drive a spoken phrase for every orchestrator run-loop short-circuit
+    (deep research / deep recall / history recall / code exploration /
+    evolution / report concern / run + launch / scrap / local clock) through
+    the real acoustic path and assert each STRICT matcher fires on the
+    transcript -- and that ordinary conversation trips NONE of them.
+
+    Matcher-level only: no loop is executed, so this is fast + safe."""
+    print("\n" + "=" * 60)
+    print("PHASE 9: Spoken short-circuit matchers")
+    print("=" * 60)
+    scenarios: List[Scenario] = []
+    from ultron import local_clock_reply
+    from ultron.coding.sandbox_runner import match_run_program
+    from ultron.coding.scrap import match_scrap_command
+    from ultron.evolution.intent import match_evolution_command
+    from ultron.feedback.report_intent import match_report_concern
+    from ultron.memory.deep_recall import match_deep_recall
+    from ultron.memory.history_recall import match_history_recall
+    from ultron.search.code_exploration import match_code_exploration
+    from ultron.web_search.deep_research import match_deep_research
+
+    tts, stt = _build_spoken_pipeline()
+
+    matchers = [
+        ("deep_research", "Research quantum computing in depth.",
+         lambda t: match_deep_research(t) is not None),
+        ("deep_recall", "Search your memory thoroughly for everything about my dog.",
+         lambda t: match_deep_recall(t) is not None),
+        ("history_recall", "What did I say earlier about the budget?",
+         lambda t: match_history_recall(t) is not None),
+        ("code_exploration", "Search the codebase for the wake word handler.",
+         lambda t: match_code_exploration(t) is not None),
+        ("evolution_status", "Evolution status.",
+         lambda t: match_evolution_command(t) is not None),
+        ("report_concern", "Flag that response, it was wrong.",
+         lambda t: match_report_concern(t) is not None),
+        ("run_program", "Run the calculator.",
+         lambda t: match_run_program(t) is not None),
+        ("scrap", "Scrap it.",
+         lambda t: bool(match_scrap_command(t))),
+        ("local_clock", "What time is it?",
+         lambda t: local_clock_reply.maybe_local_clock_reply(t) is not None),
+    ]
+    for name, spoken, fires in matchers:
+        sc = Scenario(name=f"shortcut:{name}", input_text=spoken)
+        try:
+            transcript = _spoken_transcript(tts, stt, spoken, sc)
+            if not transcript.strip():
+                sc.err("empty transcript")
+            elif not fires(transcript):
+                sc.err(
+                    f"matcher did not fire: spoken={spoken!r} "
+                    f"transcript={transcript!r}"
+                )
+        except Exception as e:
+            sc.err(f"exception: {e}\n{traceback.format_exc()[:500]}")
+        scenarios.append(sc)
+        print(sc.summary())
+
+    # Negative control: ordinary conversation must trip NO strict matcher.
+    sc = Scenario(
+        name="shortcut:negative_control",
+        input_text="Tell me a story about a brave little toaster.",
+    )
+    try:
+        transcript = _spoken_transcript(
+            tts, stt, sc.input_text, sc,
+        )
+        tripped = [name for name, _spoken, fires in matchers if fires(transcript)]
+        sc.out("tripped", tripped)
+        if tripped:
+            sc.err(f"ordinary conversation tripped strict matchers: {tripped}")
+    except Exception as e:
+        sc.err(f"exception: {e}")
+    scenarios.append(sc)
+    print(sc.summary())
+    return scenarios
+
+
+# ---------------------------------------------------------------------------
+# Phase 10: full conversational loops (audio -> STT -> gate -> LLM -> TTS)
+# ---------------------------------------------------------------------------
+
+
+def phase_full_loop() -> List[Scenario]:
+    """The complete turn, end to end: synthesize the user's utterance,
+    transcribe it, run the web-search gate, generate the LLM response
+    (with in-context history), and synthesize the reply in the Ultron
+    voice. Covers a NO_SEARCH turn, a remember -> recall pair (the
+    response must contain the remembered fact), and a live SEARCH turn
+    through the real provider/reader chains."""
+    print("\n" + "=" * 60)
+    print("PHASE 10: Full conversational loops")
+    print("=" * 60)
+    scenarios: List[Scenario] = []
+    from ultron.config import get_config
+    from ultron.llm.inference import LLMEngine
+    from ultron.memory.embedder import HybridEmbedder
+    from ultron.memory.qdrant_store import ConversationMemory
+    from ultron.response_style import apply_brevity_hint
+    from ultron.tts.kokoro_engine import KokoroSpeech
+    from ultron.web_search.gating import classify_by_rules
+
+    tts_in, stt = _build_spoken_pipeline()
+    t0 = time.monotonic()
+    embedder = HybridEmbedder()
+    memory = ConversationMemory(embedder=embedder)
+    llm = LLMEngine(memory=memory)
+    print(f"LLM + memory ready in {time.monotonic()-t0:.2f}s")
+    kcfg = get_config().tts.kokoro
+    tts_out = KokoroSpeech(
+        voice=kcfg.voice, device=kcfg.device, speed=kcfg.speed,
+        apply_spectral_smooth=kcfg.apply_spectral_smooth,
+    )
+    tts_out.warmup()
+
+    def _llm_turn(sc: Scenario, transcript: str, *, record: bool) -> str:
+        prompt = apply_brevity_hint(transcript)
+        t0 = time.monotonic()
+        chunks: List[str] = []
+        ttft = None
+        for tok in llm.generate_stream(
+            prompt,
+            record_history=record,
+            history_user_message=transcript if record else None,
+            rag_query=transcript[:80],
+            enable_thinking=False,
+        ):
+            if ttft is None:
+                ttft = time.monotonic() - t0
+            chunks.append(tok)
+            if len(chunks) > 250:
+                break
+        sc.record("ttft", ttft or 0.0)
+        sc.record("llm_total", time.monotonic() - t0)
+        return "".join(chunks).strip()
+
+    def _speak_out(sc: Scenario, response: str) -> None:
+        t0 = time.monotonic()
+        pcm, sr = tts_out._synthesize(response[:400])
+        sc.record("tts_out", time.monotonic() - t0)
+        sc.out("reply_audio_s", len(pcm) / sr if len(pcm) else 0.0)
+        if len(pcm) == 0 or abs(pcm).max() == 0:
+            sc.err("silent reply audio")
+
+    # Turn 1: plain NO_SEARCH conversational turn.
+    sc = Scenario(name="loop:no_search_turn", input_text="What is seven times eight?")
+    try:
+        transcript = _spoken_transcript(tts_in, stt, sc.input_text, sc)
+        verdict = classify_by_rules(transcript)
+        sc.out("gate", verdict.decision.name if verdict else "FELL_THROUGH")
+        response = _llm_turn(sc, transcript, record=False)
+        sc.out("response", response[:160])
+        if not response:
+            sc.err("empty response")
+        elif "56" not in response and "fifty-six" not in response.lower():
+            sc.err(f"expected 56 in the answer, got: {response[:120]!r}")
+        else:
+            _speak_out(sc, response)
+    except Exception as e:
+        sc.err(f"exception: {e}\n{traceback.format_exc()[:500]}")
+    scenarios.append(sc)
+    print(sc.summary())
+
+    # Turns 2+3: remember -> recall through in-context history.
+    sc = Scenario(
+        name="loop:remember_recall",
+        input_text="Remember that my locker code is four two seven.",
+    )
+    try:
+        transcript = _spoken_transcript(tts_in, stt, sc.input_text, sc)
+        first = _llm_turn(sc, transcript, record=True)
+        sc.out("ack_response", first[:120])
+        sc2_text = "What is my locker code?"
+        t0 = time.monotonic()
+        pcm, sr = tts_in._synthesize(sc2_text)
+        audio = pcm.astype(np.float32) / 32768.0
+        if sr != 16000:
+            import scipy.signal
+
+            audio = scipy.signal.resample(
+                audio, int(len(audio) * 16000 / sr)
+            ).astype(np.float32)
+        recall_transcript = stt.transcribe(audio)
+        sc.out("recall_transcript", recall_transcript)
+        response = _llm_turn(sc, recall_transcript or sc2_text, record=True)
+        sc.out("recall_response", response[:160])
+        normalized = response.lower().replace(",", "").replace("-", " ")
+        if not response:
+            sc.err("empty recall response")
+        elif not any(
+            marker in normalized
+            for marker in ("427", "four two seven", "4 2 7", "fourtwoseven")
+        ):
+            sc.err(f"locker code not recalled: {response[:160]!r}")
+        else:
+            _speak_out(sc, response)
+    except Exception as e:
+        sc.err(f"exception: {e}\n{traceback.format_exc()[:500]}")
+    scenarios.append(sc)
+    print(sc.summary())
+
+    # Turn 4: live SEARCH turn through the real ladder.
+    sc = Scenario(
+        name="loop:search_turn",
+        input_text="What is the current weather in San Francisco?",
+    )
+    try:
+        from ultron.web_search.search import format_sources_for_prompt
+
+        transcript = _spoken_transcript(tts_in, stt, sc.input_text, sc)
+        verdict = classify_by_rules(transcript)
+        decision = verdict.decision.name if verdict else "FELL_THROUGH"
+        sc.out("gate", decision)
+        if "SEARCH" not in decision:
+            sc.err(f"expected the gate to say SEARCH, got {decision}")
+        executor = _build_search_executor(llm)
+        t0 = time.monotonic()
+        payload = executor.run(transcript)
+        sc.record("search", time.monotonic() - t0)
+        sc.out("sources", len(payload.sources))
+        if not payload.sources:
+            sc.err("live search returned no sources")
+        else:
+            augmented = (
+                f"User question: {transcript}\n\nFresh information from web "
+                f"search:\n{format_sources_for_prompt(payload.sources)}\n\n"
+                "Answer the question using the sources."
+            )
+            response = _llm_turn(sc, augmented, record=False)
+            sc.out("response", response[:200])
+            if not response:
+                sc.err("empty search-augmented response")
+            else:
+                _speak_out(sc, response)
+    except Exception as e:
+        sc.err(f"exception: {e}\n{traceback.format_exc()[:500]}")
+    scenarios.append(sc)
+    print(sc.summary())
+
+    try:
+        memory.close()
+    except Exception:
+        pass
+    return scenarios
+
+
+def _build_search_executor(llm: Any) -> Any:
+    """The production-shaped WebSearchExecutor (provider chain + reader
+    chain), mirroring the orchestrator's construction exactly -- the
+    ``brave`` / ``jina`` params are duck-typed chain instances."""
+    from ultron.web_search.provider_chain import SearchProviderChain
+    from ultron.web_search.reader_chain import ReaderChain
+    from ultron.web_search.search import WebSearchExecutor
+
+    return WebSearchExecutor(
+        brave=SearchProviderChain(), jina=ReaderChain(), llm=llm, cache=None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 11: the voice coding engineer with the REAL coding CLI
+# ---------------------------------------------------------------------------
+
+
+def phase_coding() -> List[Scenario]:
+    """Drive the voice coding engineer end to end with the REAL coding CLI:
+    create a program in the sandbox, run it via the gated sandbox runner,
+    send an edit follow-up to the SAME session, and run it again. Asserts
+    files exist, the program output is exact, the edit landed, and the
+    completion narration is speakable. Costs real API tokens (small
+    haiku-tier tasks) and several minutes."""
+    print("\n" + "=" * 60)
+    print("PHASE 11: Voice coding engineer (real coding CLI)")
+    print("=" * 60)
+    scenarios: List[Scenario] = []
+    import shutil
+    import uuid
+
+    from ultron.coding.bridge import TaskRequest
+    from ultron.coding.runner import CodingTaskRunner, build_default_bridge
+    from ultron.coding.sandbox_runner import run_program
+
+    sandbox_root = _PROJECT_ROOT / "data" / "sandbox"
+    project = sandbox_root / f"e2e_coding_{uuid.uuid4().hex[:8]}"
+    project.mkdir(parents=True, exist_ok=True)
+
+    sc = Scenario(name="coding:create", input_text="create main.py printing E2E OK")
+    runner = None
+    try:
+        runner = CodingTaskRunner(bridge=build_default_bridge())
+        request = TaskRequest(
+            task_prompt=(
+                "Create a file named main.py in the current directory that "
+                "prints exactly the text E2E OK (followed by a newline) and "
+                "nothing else. Do not create any other files."
+            ),
+            cwd=project,
+            model="haiku",
+            require_testing=False,
+            timeout_s=300.0,
+            label="e2e coding create",
+        )
+        t0 = time.monotonic()
+        handle = runner.start_task(request)
+        result = handle.wait(timeout=320.0)
+        sc.record("create_task", time.monotonic() - t0)
+        sc.out("success", result.success)
+        sc.out("summary", (result.summary or "")[:200])
+        main_py = project / "main.py"
+        if not result.success:
+            sc.err(f"create task failed: {result.summary[:200]}")
+        elif not main_py.is_file():
+            sc.err("main.py was not created")
+        else:
+            narration = runner.completion_narration()
+            sc.out("narration", (narration or "")[:160])
+            if not narration:
+                sc.err("no completion narration produced")
+            run = run_program(
+                project, sandbox_root=sandbox_root,
+                project_name=project.name, timeout_s=60.0,
+                user_text="run the program",
+            )
+            sc.out("run_stdout", run.stdout[:80])
+            if not run.ok:
+                sc.err(f"sandbox run failed: {run.error or run.stderr[:200]}")
+            elif "E2E OK" not in run.stdout:
+                sc.err(f"unexpected program output: {run.stdout[:120]!r}")
+    except Exception as e:
+        sc.err(f"exception: {e}\n{traceback.format_exc()[:500]}")
+    scenarios.append(sc)
+    print(sc.summary())
+
+    # Edit follow-up against the SAME session (the iterate-on-it path).
+    sc = Scenario(name="coding:edit", input_text="change it to print E2E EDITED")
+    try:
+        if runner is None or scenarios[0].errors:
+            sc.err("skipped: create scenario failed")
+        else:
+            t0 = time.monotonic()
+            handle = runner.send_followup(
+                "Change main.py so it prints exactly E2E EDITED instead.",
+                kind="adjustment",
+            )
+            if handle is None:
+                sc.err("send_followup returned no handle")
+            else:
+                result = handle.wait(timeout=320.0)
+                sc.record("edit_task", time.monotonic() - t0)
+                sc.out("success", result.success)
+                if not result.success:
+                    sc.err(f"edit task failed: {result.summary[:200]}")
+                else:
+                    run = run_program(
+                        project, sandbox_root=sandbox_root,
+                        project_name=project.name, timeout_s=60.0,
+                        user_text="run the program",
+                    )
+                    sc.out("run_stdout", run.stdout[:80])
+                    if not run.ok:
+                        sc.err(f"sandbox run failed: {run.error or run.stderr[:200]}")
+                    elif "E2E EDITED" not in run.stdout:
+                        sc.err(
+                            f"edit did not land; output: {run.stdout[:120]!r}"
+                        )
+    except Exception as e:
+        sc.err(f"exception: {e}\n{traceback.format_exc()[:500]}")
+    scenarios.append(sc)
+    print(sc.summary())
+
+    # Best-effort cleanup of the e2e project dir (keep the sandbox tidy).
+    try:
+        shutil.rmtree(project, ignore_errors=True)
+    except Exception:
+        pass
+    return scenarios
+
+
+# ---------------------------------------------------------------------------
 # Final report
 # ---------------------------------------------------------------------------
 
@@ -543,7 +1114,8 @@ def write_report(path: Path) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--phase", default="all",
-                    choices=["1", "2", "3", "4", "5", "6", "7", "all"])
+                    choices=["1", "2", "3", "4", "5", "6", "7", "8", "9",
+                             "10", "11", "all"])
     ap.add_argument(
         "--report",
         default="logs/autonomous_e2e_report.json",
@@ -559,6 +1131,10 @@ def main() -> int:
         "5": ("memory", phase_memory),
         "6": ("routing", phase_routing),
         "7": ("gate", phase_gate),
+        "8": ("commands", phase_commands),
+        "9": ("short_circuits", phase_short_circuits),
+        "10": ("full_loop", phase_full_loop),
+        "11": ("coding", phase_coding),
     }
     to_run = list(phase_map.keys()) if args.phase == "all" else [args.phase]
 

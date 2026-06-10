@@ -57,7 +57,18 @@ _HARNESS_PATH = (
 
 # Every phase exposed by the harness, in run order. Each maps to a
 # ``phase_<name>()`` function returning ``List[Scenario]``.
-_PHASES = ("stt", "llm", "tts", "web_search", "memory", "routing", "gate")
+# Production-hardening expansion: ``commands`` drives a spoken command for
+# EVERY RoutingIntentKind through the real Kokoro->Moonshine acoustic path
+# (with an enum-coverage guard); ``short_circuits`` does the same for every
+# orchestrator strict matcher (+ a negative control); ``full_loop`` runs
+# complete turns (audio -> STT -> gate -> LLM with history -> Ultron-voice
+# TTS, incl. a LIVE search turn); ``coding`` exercises the voice coding
+# engineer with the REAL coding CLI (create -> sandbox run -> edit -> re-run;
+# costs real API tokens).
+_PHASES = (
+    "stt", "llm", "tts", "web_search", "memory", "routing", "gate",
+    "commands", "short_circuits", "full_loop", "coding",
+)
 
 
 def _load_harness() -> Any:

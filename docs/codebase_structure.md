@@ -81,6 +81,31 @@
 > keep-plus-documented -- except the edit-revert machinery now live via
 > scrap-it above. +29 hermetic tests (`tests/coding/test_scrap.py` +
 > `test_deep_click_fallback.py`).
+> **Then: the unified e2e suite expanded to EVERY voice-command surface
+> (the campaign's Phase 4 deepened).** `scripts/autonomous_e2e_harness.py`
+> gains FOUR phases (8-11) + a shared `_spoken_transcript` /
+> `_build_spoken_pipeline` acoustic helper, and
+> `tests/integration/test_voice_e2e.py` `_PHASES` now parametrizes 11 phases:
+> **8 `commands`** -- a spoken command for EVERY `RoutingIntentKind` (all 26)
+> through the REAL Kokoro-synth -> Moonshine-STT path, asserting the routing
+> classifier lands on the right intent from the TRANSCRIPT, with an
+> enum-coverage guard scenario so a future intent without a spoken test
+> fails loudly (classification only -- nothing is dispatched, so the
+> unattended run can't click/type/close anything); **9 `short_circuits`** --
+> every orchestrator strict matcher (deep research / deep recall / history
+> recall / code exploration / evolution / report concern / run / scrap /
+> local clock) fires on its spoken transcript + a negative-control utterance
+> trips NONE; **10 `full_loop`** -- complete turns: audio -> STT -> gate ->
+> LLM (in-context remember->recall pair must surface the remembered fact) ->
+> Ultron-voice TTS, plus a LIVE search turn through the real
+> provider/reader chains; **11 `coding`** -- the voice coding engineer with
+> the REAL coding CLI: create -> completion narration -> gated sandbox run
+> (exact stdout asserted) -> edit follow-up on the SAME session -> re-run
+> (real API tokens; small haiku-tier tasks). The docstring's long-promised
+> "Phase 8 Full E2E loops" placeholder is now real code. Text-level
+> dry-run of the matrix caught + fixed 3 unreachable phrasings before GPU
+> time (messaging/shell/hybrid now use genuinely-supported phrasings).
+> GPU phases still run from the MAIN checkout.
 > Earlier sweep state: **9156 passed / 35 skipped / 0 failed (~103s)** with the
 > loaded-machine ignore recipe (below); ~9182 no-deselect (now 9199 on an idle
 > machine, no deselect, 2026-06-10 baseline). The +8 skipped vs earlier are
