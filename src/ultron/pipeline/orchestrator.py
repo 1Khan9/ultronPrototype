@@ -2090,7 +2090,7 @@ class Orchestrator:
         drained once per run-loop iteration by
         :meth:`_drain_evolution_reach_signals`. No-op when evolution is
         disabled. Fail-open."""
-        if self.evolution is None:
+        if getattr(self, "evolution", None) is None:
             return
         from collections import deque
 
@@ -2123,7 +2123,8 @@ class Orchestrator:
         the recurrence gate keeps transient one-offs from ever distilling
         while RECURRING failures become repair material. Bounded per
         drain; fail-open; zero-cost no-op when nothing is queued."""
-        if self.evolution is None:
+        evolution = getattr(self, "evolution", None)
+        if evolution is None:
             return
         queue = getattr(self, "_evolution_reach_queue", None)
         if not queue:
@@ -2134,7 +2135,7 @@ class Orchestrator:
                     source, detail = queue.popleft()
                 except IndexError:
                     break
-                self.evolution.record_command_failure(
+                evolution.record_command_failure(
                     source,
                     f"{source} failed: {detail}"[:500],
                     exit_code=1,
@@ -2148,15 +2149,17 @@ class Orchestrator:
         ``coding_task_success`` opportunity capsule -- the loop learns from
         what WORKS, not only from failures. Fail-open + a zero-cost no-op
         when evolution or coding is disabled."""
-        if self.evolution is None or self.coding_voice is None:
+        evolution = getattr(self, "evolution", None)
+        coding_voice = getattr(self, "coding_voice", None)
+        if evolution is None or coding_voice is None:
             return
         try:
-            runner = getattr(self.coding_voice, "runner", None)
+            runner = getattr(coding_voice, "runner", None)
             drain = getattr(runner, "drain_task_successes", None)
             if drain is None:
                 return
             for label, summary in drain():
-                self.evolution.record_turn(
+                evolution.record_turn(
                     user_text=label or "coding task",
                     signals=("coding_task_success",),
                     response_summary=(
@@ -2186,17 +2189,18 @@ class Orchestrator:
         the turn still counts toward the error rate. Fail-open + a
         zero-cost no-op when evolution (or its monitoring) is disabled.
         """
-        if self.evolution is None:
+        evolution = getattr(self, "evolution", None)
+        if evolution is None:
             return
         try:
-            ring = getattr(self.evolution, "turn_metrics", None)
+            ring = getattr(evolution, "turn_metrics", None)
             if ring is None:
                 return
             ttft: Optional[float] = None
-            pop = getattr(self.llm, "pop_last_ttft_ms", None)
+            pop = getattr(getattr(self, "llm", None), "pop_last_ttft_ms", None)
             if callable(pop):
                 ttft = pop()
-            if self._last_search_payload is not None:
+            if getattr(self, "_last_search_payload", None) is not None:
                 ttft = None
             ring.note_response(ttft_ms=ttft, errored=errored)
         except Exception as e:                                    # noqa: BLE001
@@ -4851,10 +4855,11 @@ class Orchestrator:
         notice -- "I rolled back my most recent self-improvement..."), so
         the user hears when a kept skill was withdrawn. Fail-open + a
         zero-cost no-op when evolution is disabled or nothing is queued."""
-        if self.evolution is None:
+        evolution = getattr(self, "evolution", None)
+        if evolution is None:
             return
         try:
-            pop = getattr(self.evolution, "pop_pending_narration", None)
+            pop = getattr(evolution, "pop_pending_narration", None)
             if pop is None:
                 return
             line = pop()
