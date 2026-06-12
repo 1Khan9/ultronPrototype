@@ -52,7 +52,19 @@ class AudioCapture:
         self._queue: queue.Queue[np.ndarray] = queue.Queue(maxsize=max_queue_size)
         self._stream: Optional[sd.InputStream] = None
         self._lock = threading.Lock()
-        self._overrun_warned = False
+        # 2026-06-12 observability fix: the old `_overrun_warned` latch
+        # warned ONCE per process forever, so recurrence within a
+        # session was invisible ("sporadic" warnings in the live log
+        # were an artifact of warn-once, not true frequency). Counters
+        # below reset per start() so each capture session accounts for
+        # itself. The audio thread only COUNTS (plus a single first-
+        # occurrence warning); recurrence is reported from drain() on
+        # the consumer thread, so the callback never does repeated
+        # logging I/O.
+        self._status_flag_count = 0     # PortAudio status flags this session
+        self._status_reported = 0       # last count reported via drain()
+        self._dropped_blocks = 0        # queue-full drop-oldest count
+        self._dropped_reported = 0
         # 2026-05-09 audio-quality pass: pre-amp applied in the audio
         # callback. ``input_gain_db=None`` -> read from config (allows
         # tests to construct AudioCapture without a config singleton).
@@ -85,6 +97,13 @@ class AudioCapture:
         with self._lock:
             if self._stream is not None:
                 return
+            # Fresh accounting per stop/start cycle (e.g. gaming-mode
+            # toggles re-open the stream). Reset BEFORE the stream
+            # opens so the first callbacks are never wiped.
+            self._status_flag_count = 0
+            self._status_reported = 0
+            self._dropped_blocks = 0
+            self._dropped_reported = 0
             try:
                 self.device = resolve_device(self.configured_device, "input")
                 self._stream = sd.InputStream(
@@ -134,9 +153,38 @@ class AudioCapture:
         """Discard any pending chunks. Useful right before re-arming wake word."""
         with self._queue.mutex:
             self._queue.queue.clear()
+        # Consumer-thread side: report accounting accumulated since
+        # the last report (the audio thread itself never logs beyond
+        # the single first-occurrence status warning).
+        flags = self._status_flag_count
+        if flags > max(self._status_reported, 1):
+            logger.warning(
+                "Audio status flags recurred: %d occurrences this "
+                "capture session (host input buffer overruns; consumer "
+                "busy)", flags,
+            )
+        self._status_reported = flags
+        dropped = self._dropped_blocks
+        if dropped > self._dropped_reported:
+            logger.debug(
+                "capture queue dropped %d oldest blocks since capture "
+                "start (consumer busy)", dropped,
+            )
+            self._dropped_reported = dropped
 
     def qsize(self) -> int:
         return self._queue.qsize()
+
+    @property
+    def status_flag_count(self) -> int:
+        """Cumulative PortAudio status flags (e.g. input overflow)
+        observed this capture session."""
+        return self._status_flag_count
+
+    @property
+    def dropped_blocks(self) -> int:
+        """Queue-full drop-oldest count this capture session."""
+        return self._dropped_blocks
 
     # --- audio thread callback ----------------------------------------------
 
@@ -149,10 +197,16 @@ class AudioCapture:
     ) -> None:
         """Runs on the audio thread. Must not block."""
         if status:
-            # input_overflow / input_underflow / etc.
-            if not self._overrun_warned:
+            # input_overflow / input_underflow / etc. (PortAudio
+            # host-buffer overrun: the callback wasn't serviced in
+            # time, usually GIL contention during a CPU-heavy turn).
+            # ONLY the first occurrence logs from the audio thread
+            # (logging does handler I/O under the process-wide logging
+            # lock, which must never recur on this thread); recurrence
+            # is counted here and reported from drain() consumer-side.
+            self._status_flag_count += 1
+            if self._status_flag_count == 1:
                 logger.warning("Audio status flag: %s", status)
-                self._overrun_warned = True
 
         # Copy because sounddevice reuses the buffer.
         chunk = indata[:, 0].copy() if self.channels == 1 else indata.copy()
@@ -172,6 +226,9 @@ class AudioCapture:
             self._queue.put_nowait(chunk)
         except queue.Full:
             # Drop oldest to make room — better than blocking the audio thread.
+            # Counted (never logged here -- this runs on the audio
+            # thread); drain() reports the total from the consumer side.
+            self._dropped_blocks += 1
             try:
                 self._queue.get_nowait()
                 self._queue.put_nowait(chunk)
