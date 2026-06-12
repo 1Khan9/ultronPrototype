@@ -236,6 +236,14 @@
 > per call (anti-soundboard), relay matches bypass the follow-up
 > addressing gate (no wake word inside the window; fixes the observed
 > 0.75-conf drop) and hold the window open `follow_up_seconds` (120 s).
+> THEN the voice-launched CONTROL PANEL (NEW `settings_gui/` — see the
+> module section): "pull up your settings" spawns a detached
+> dark-theme tkinter panel (9 cards / ~36 curated knobs + a live
+> log-stream pane); APPLY UPDATE patches config.yaml
+> comment-preservingly + signals the running orchestrator to hot-reload
+> (`_maybe_reload_config`, one os.stat per loop tick); CLOSE exits the
+> process — pipeline untouched throughout. Two drift-guard tests pin
+> the knob catalogue to the real config.yaml.
 > Earlier sweep state: **9156 passed / 35 skipped / 0 failed (~103s)** with the
 > loaded-machine ignore recipe (below); ~9182 no-deselect (now 9199 on an idle
 > machine, no deselect, 2026-06-10 baseline). The +8 skipped vs earlier are
@@ -1557,6 +1565,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── capture.py          ← AudioCapture (sounddevice callback thread)
 │       │   ├── devices.py          ← Device-resolution helpers (resolve_device, describe_device)
 │       │   ├── output_quality.py   ← TTS blip watcher: per-clip artifact analysis (edge bursts, join clicks, dropouts, clipping) on a daemon thread → WARN + logs/audio_quality.jsonl
+│       ├── settings_gui/           ← Voice-launched control panel (DETACHED process): spec.py knob catalogue + comment-preserving YAML patcher; launch.py strict matcher + spawn/close; app.py tkinter dark-theme UI + live log stream
 │       │   ├── relay_speech.py     ← Voice relay: "tell my teammates X" matcher + LLM rephrase + playback on a secondary output device (VoiceMeeter strip → mic bus)
 │       │   ├── ring_buffer.py      ← Pre-speech audio buffer
 │       │   ├── smart_turn.py       ← Smart Turn V3 ONNX wrapper (NEW 2026-05-12; CPU-only end-of-turn confirmation)
@@ -2964,6 +2973,51 @@ config (default ON).
   mirroring the observation-writer guard) so stubbed-synth unit tests
   never spawn analyzer threads or touch the live logs dir; the
   watcher's own tests opt back in.
+
+#### `settings_gui/` (NEW 2026-06-11 — voice-launched control panel)
+
+"Pull up your settings" / "open the control panel" spawns a DETACHED
+`python -m ultron.settings_gui` process; "close the settings" (or the
+panel's Close button / window X) terminates it. Because the panel is a
+separate process the voice pipeline is untouched while it runs and
+byte-for-byte restored when it closes — zero residual resources.
+
+- `spec.py` (logic, fully tested): `SECTIONS` — a curated 9-card /
+  ~36-knob catalogue (Game Chat Relay / Voice / Hearing / Brain /
+  Addressing / Web Search / Evolution / Coding / Desktop & Research),
+  each `Knob` carrying its YAML path, widget kind
+  (bool/int/float/str/choice/csv), bounds, and a `restart` flag for
+  construction-time settings. `patch_config_text` — an indent-aware
+  block scanner that replaces ONE scalar in the raw YAML text while
+  preserving every comment + untouched line byte-for-byte (PyYAML
+  round-tripping would destroy the file's documentation);
+  `apply_updates` patches + re-parses + verifies the parsed data
+  changed ONLY at the requested paths, then writes atomically
+  (tmp + replace). `write_reload_signal` touches
+  `data/config_reload.signal`.
+- `launch.py`: `match_settings_command` (strict open/close phrasings;
+  "what are your settings?" never matches), `launch_gui` (detached
+  spawn, fail-open None), `close_gui` (kill_process_tree, fail-open).
+- `app.py` (UI layer, untested by design — no GUI windows in the
+  sweep): tkinter dark theme (near-black + Ultron crimson), scrollable
+  two-column card grid, a LIVE LOG panel streaming `logs/ultron.log`
+  (level-colored, filter box, pause, bounded to ~2000 lines, daemon
+  tail thread), bottom bar with pending-change count + APPLY UPDATE +
+  CLOSE. Update = comment-preserving patch + reload signal; ↻-marked
+  knobs note "applies on next start".
+- Orchestrator: `_maybe_handle_settings_gui` short-circuit (after the
+  relay branch; `via="settings_gui"`) + `_maybe_reload_config` at the
+  top of every loop iteration (one `os.stat`; a NEWER signal mtime →
+  `reload_config()` swaps the singleton so every call-time
+  `get_config()` read hot-applies, then speaks "Settings updated.";
+  a pre-existing signal at first sight is recorded, never fired).
+- Tests: `tests/settings_gui/test_spec_and_launch.py` (46 — patcher
+  matrix incl. comment/blank-block edges, render/read, TWO drift
+  guards against the REAL config.yaml (every knob path exists; every
+  knob round-trip-patches losslessly), apply_updates atomicity +
+  validation, matcher matrix, spawn/close lifecycle fail-open,
+  orchestrator wiring, reload-signal semantics incl. stale-file
+  immunity).
 
 #### `audio/relay_speech.py` (NEW 2026-06-11 — teammate voice relay)
 

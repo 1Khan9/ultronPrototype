@@ -1677,6 +1677,78 @@ class Orchestrator:
         self._speak(resp.text or "")
         return True
 
+    def _maybe_reload_config(self) -> None:
+        """Hot-apply config.yaml edits made by the settings panel.
+
+        The panel writes the file then touches
+        ``data/config_reload.signal``; when the signal's mtime advances
+        past the last one we saw, swap the config singleton so every
+        call-time ``get_config()`` read picks up the new values.
+        Construction-time settings (engines / devices / models) still
+        need a restart -- the panel marks those. Fail-open; costs one
+        ``os.stat`` per loop iteration."""
+        try:
+            import os
+
+            from ultron.config import PROJECT_ROOT
+
+            signal = os.path.join(
+                str(PROJECT_ROOT), "data", "config_reload.signal",
+            )
+            try:
+                mtime = os.path.getmtime(signal)
+            except OSError:
+                return
+            seen = getattr(self, "_config_reload_seen", None)
+            if seen is None:
+                # First sight of an existing signal file: treat as seen
+                # so a stale file from a previous session never triggers.
+                self._config_reload_seen = mtime
+                return
+            if mtime <= seen:
+                return
+            self._config_reload_seen = mtime
+            from ultron.config import reload_config
+
+            reload_config()
+            logger.info("config hot-reloaded (settings panel update)")
+            self._speak("Settings updated.")
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("config hot-reload failed: %s", e)
+
+    def _maybe_handle_settings_gui(self, user_text: str) -> bool:
+        """Voice-launched control panel: "pull up your settings" spawns
+        the detached settings GUI process; "close the settings" kills
+        it. Strict matcher -> ordinary sentences that mention settings
+        fall through. The panel is a separate process, so the voice
+        pipeline is untouched while it runs and fully restored when it
+        closes. Fail-open."""
+        try:
+            from ultron.settings_gui.launch import (
+                close_gui,
+                launch_gui,
+                match_settings_command,
+            )
+
+            action = match_settings_command(user_text)
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("settings_gui matcher unavailable: %s", e)
+            return False
+        if action is None:
+            return False
+        if action == "open":
+            pid = launch_gui()
+            if pid:
+                self._settings_gui_pid = pid
+                self._speak("Control panel is up.")
+            else:
+                self._speak("I couldn't open the control panel.")
+            return True
+        closed = close_gui(getattr(self, "_settings_gui_pid", None))
+        self._settings_gui_pid = None
+        self._speak("Closed." if closed else "The panel isn't open.")
+        return True
+
     def _is_relay_command(self, user_text: str) -> bool:
         """True iff ``user_text`` is a strict relay command and the relay
         feature is enabled. Used by the follow-up addressing gate: a
@@ -3743,6 +3815,11 @@ class Orchestrator:
                     pending_capture=self._pending_capture.is_set(),
                     follow_up_until=follow_up_until,
                 )
+                # Settings-panel hot reload: the GUI touches a signal
+                # file after writing config.yaml; pick it up here so
+                # every call-time get_config() read sees the new values
+                # (one os.stat per iteration; fail-open).
+                self._maybe_reload_config()
                 # Coding-task completion push: if a background AI coding agent
                 # task just finished, announce it before we go back to
                 # listening. This gives the unsolicited "Done. Created X
@@ -4158,6 +4235,25 @@ class Orchestrator:
                         trace.tlog(
                             logger, "loop:iteration_end",
                             via="relay_speech",
+                            follow_up=bool(follow_up_until),
+                        )
+                        continue
+                    # Settings panel: "pull up your settings" spawns the
+                    # detached control-panel GUI; "close the settings"
+                    # kills it. Strict matcher -> ordinary utterances
+                    # fall through.
+                    if self._maybe_handle_settings_gui(user_text):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        if _addr_cfg.follow_up_enabled:
+                            follow_up_until = (
+                                self._last_response_finished_monotonic
+                                + _addr_cfg.warm_mode_duration_seconds
+                            )
+                        else:
+                            follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="settings_gui",
                             follow_up=bool(follow_up_until),
                         )
                         continue
