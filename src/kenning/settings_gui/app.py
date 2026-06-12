@@ -338,7 +338,9 @@ class ControlPanel:
             var: tk.Variable = tk.BooleanVar(value=bool(current))
             return var, ttk.Checkbutton(parent, variable=var)
         if knob.kind == "choice":
-            var = tk.StringVar(value=str(current))
+            # None current -> blank selection (the "off" entry), not the
+            # literal string "None" (matters for the optional broadcast knob).
+            var = tk.StringVar(value="" if current is None else str(current))
             values = list(resolve_choices(knob, current))
             # Provider-backed lists (device names) run long -- widen.
             width = 14 if knob.choices else 30

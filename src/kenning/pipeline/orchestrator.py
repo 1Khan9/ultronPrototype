@@ -642,6 +642,16 @@ class Orchestrator:
         # speak_stream) doesn't change.
         self.rvc, self.tts = self._load_tts_engine()
         self.tts.warmup()
+        # 2026-06-12: wire the optional broadcast mirror (a second output that
+        # tees EVERY spoken line -- conversation AND relay -- to a separate,
+        # OBS-capturable device for stream viewers). No-op when
+        # ``audio.broadcast_device`` is unset; never blocks the speaker path.
+        try:
+            from kenning.audio.broadcast import configure_from_config
+
+            configure_from_config()
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("broadcast mirror configure skipped (%s)", e)
         # 2026-05-24 OpenHands batch 8 (T6) -- install the default STT +
         # TTS injectors on the module-level registry. The closures hand
         # back the already-built engines so callers that go through the
@@ -1864,6 +1874,28 @@ class Orchestrator:
                     and hasattr(tts, "move_to_device"):
                 tts.move_to_device(device)
                 logger.info("gui action: kokoro_device -> %s", device)
+        elif action == "broadcast_device":
+            # Second output (OBS capture) that mirrors ALL of Kenning's
+            # speech. Apply live; config.yaml is patched separately by the
+            # GUI for persistence across restart.
+            device = str(value or "").strip()
+            try:
+                from kenning.audio.broadcast import get_broadcast_sink
+
+                get_broadcast_sink().configure(device or None)
+                try:
+                    from kenning.config import get_config
+
+                    get_config().audio.broadcast_device = device or None
+                except Exception:                                    # noqa: BLE001
+                    pass
+                logger.info("gui action: broadcast_device -> %r", device or None)
+                self._speak(
+                    "Broadcast output set." if device
+                    else "Broadcast output cleared."
+                )
+            except Exception as e:                                   # noqa: BLE001
+                logger.warning("broadcast_device apply failed: %s", e)
         elif action == "wake_word":
             word = str(value or "").strip().lower()
             wake = getattr(self, "wake", None)
@@ -2202,6 +2234,16 @@ class Orchestrator:
             return True
         try:
             pcm, sr = synthesize(line)
+            # Tee the relay line to the broadcast mirror (OBS capture) too, so
+            # stream viewers hear team callouts as well. This is a SEPARATE
+            # device from the mic B-bus -- teammates still only hear the relay
+            # via the mic, never the viewer feed, and vice versa.
+            try:
+                from kenning.audio.broadcast import submit as _broadcast_submit
+
+                _broadcast_submit(pcm, sr)
+            except Exception:                                        # noqa: BLE001
+                pass
             seconds = play_to_device(pcm, sr, device)
         except Exception as e:                                       # noqa: BLE001
             logger.warning("relay playback failed: %s", e)

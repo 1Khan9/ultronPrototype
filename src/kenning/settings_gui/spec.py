@@ -128,6 +128,16 @@ SECTIONS: tuple[Section, ...] = (
         Knob(("tts", "kokoro", "device"), "Kokoro device", "choice",
              choices=("cuda", "cpu"), action="kokoro_device",
              help="Move the TTS engine between GPU and CPU live"),
+        # Second output that mirrors EVERY spoken line -- normal chat AND
+        # team relay -- to a separate, OBS-capturable device for stream
+        # viewers. Never replaces the speakers; routing-independent of the
+        # relay mic bus, so teammates never hear normal conversation.
+        # Blank = off. Hot-applied via the broadcast_device action.
+        Knob(("audio", "broadcast_device"), "Broadcast output (OBS)",
+             "choice", choices_provider="output_devices_optional",
+             action="broadcast_device",
+             help="Mirror ALL of Kenning's audio to a capture device for "
+                  "your stream; blank = off. Use a free VoiceMeeter input"),
         Knob(("tts", "kokoro", "speed"), "Speech speed", "float",
              minimum=0.8, maximum=1.3),
         Knob(("tts", "pause_ms"), "Sentence pause (ms)", "int",
@@ -253,12 +263,20 @@ def resolve_choices(knob: Knob, current: Any) -> tuple[str, ...]:
     ``choices_provider`` is consulted. The CURRENT config value is
     always included (first) so an apply with no change round-trips even
     when the device list shifted between sessions.
+
+    The ``output_devices_optional`` provider additionally prepends an
+    empty "" entry meaning "off / no device" -- used by the broadcast
+    mirror, which is disabled by default and selectable back to off.
     """
     if knob.choices:
         return knob.choices
     provided: tuple[str, ...] = ()
-    if knob.choices_provider == "output_devices":
+    optional = knob.choices_provider == "output_devices_optional"
+    if knob.choices_provider in ("output_devices", "output_devices_optional"):
         provided = output_device_names()
+    if optional:
+        # "" first = the explicit off option; never duplicate it.
+        provided = ("",) + tuple(d for d in provided if d)
     current_text = "" if current is None else str(current)
     if current_text and current_text not in provided:
         return (current_text,) + provided

@@ -49,6 +49,21 @@ from kenning.utils.logging import get_logger
 logger = get_logger("tts.kokoro")
 
 
+def _broadcast_submit(pcm, sr) -> None:
+    """Tee a spoken clip to the optional broadcast mirror (OBS capture).
+
+    Thin, fail-open wrapper: a no-op when the mirror is off (the common case)
+    and never raises into the playback path. Imported lazily so the engine has
+    no hard dependency on the broadcast module.
+    """
+    try:
+        from kenning.audio.broadcast import submit as _submit
+
+        _submit(pcm, sr)
+    except Exception:  # noqa: BLE001 - a tee must never break playback
+        pass
+
+
 # Mirror of kenning.tts.xtts_v3._QUEUE_GET_TIMEOUT_SECONDS / the legacy
 # speech.py constant. Long enough to absorb a slow first-clip synth
 # (Kokoro lazy-load on first call) without false-killing the playback
@@ -668,6 +683,9 @@ class KokoroSpeech:
                 while True:
                     if self._stop_event.is_set():
                         return
+                    # Tee each sentence clip to the broadcast mirror (OBS) --
+                    # non-blocking, no-op when off, once per item.
+                    _broadcast_submit(item.audio, sr)
                     audio = self._stereo_pcm(item.audio)
                     for start in range(0, audio.shape[0], block_frames):
                         if self._stop_event.is_set():
@@ -897,6 +915,10 @@ class KokoroSpeech:
             return
         if pcm.size == 0:
             return
+        # Tee to the optional broadcast mirror (OBS capture) -- non-blocking,
+        # no-op when off. Submitted before the speaker write so it captures the
+        # line even if the speaker stream hiccups.
+        _broadcast_submit(pcm, sr)
         with self._playback_lock:
             if self._stop_event.is_set():
                 return

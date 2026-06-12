@@ -101,6 +101,17 @@ class AudioConfig(_Strict):
     dtype: str = "float32"
     input_device: Optional[str] = None        # env: KENNING_AUDIO_DEVICE
     output_device: Optional[str] = None       # env: KENNING_AUDIO_OUTPUT_DEVICE
+    # 2026-06-12: optional SECOND output that mirrors EVERY line Kenning
+    # speaks -- normal conversation AND team relay -- to a separate,
+    # capturable device (typically a free VoiceMeeter virtual input) so OBS
+    # can add it as an isolated audio source for stream viewers. This NEVER
+    # replaces ``output_device`` (the user still hears Kenning on their
+    # speakers) and is routing-independent of the relay's mic B-bus, so
+    # teammates never hear anything that was not addressed to them. None /
+    # empty disables the mirror entirely (zero hot-path overhead). Name
+    # substring (case-insensitive) or PortAudio index -- same resolution as
+    # ``output_device`` / ``relay_speech.output_device``.
+    broadcast_device: Optional[str] = None    # env: KENNING_AUDIO_BROADCAST_DEVICE
     barge_in_enabled: bool = True
     barge_in_grace_seconds: float = 0.5
     # Total capacity of the audio ring buffer. The orchestrator slices
@@ -3823,6 +3834,7 @@ _ENV_OVERRIDE_NOTES: dict[str, str] = {
     ),
     "KENNING_AUDIO_DEVICE": "audio.input_device",
     "KENNING_AUDIO_OUTPUT_DEVICE": "audio.output_device",
+    "KENNING_AUDIO_BROADCAST_DEVICE": "audio.broadcast_device",
     "KENNING_LOG_LEVEL": "logging.level",
     "KENNING_CONFIG_PATH": "config file path",
     "KENNING_BRAVE_API_KEY": "web_search.brave API key (value not logged)",

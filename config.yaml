@@ -102,6 +102,14 @@ audio:
   # to override (e.g. "Voicemeeter Out B2" to revert).
   input_device: "Focusrite"
   output_device: null         # null = system default; or set KENNING_AUDIO_OUTPUT_DEVICE env
+  # Second output that mirrors EVERY line Kenning speaks -- normal chat AND
+  # team relay -- to a separate, OBS-capturable device for stream viewers.
+  # "" / null = off. Never replaces output_device (you still hear Kenning on
+  # your speakers) and is routing-independent of the relay mic bus, so
+  # teammates never hear normal conversation. Pick a FREE VoiceMeeter virtual
+  # input here and add it as an audio source in OBS. Hot-swappable from the
+  # settings panel (Voice -> Broadcast output).
+  broadcast_device: ""
   barge_in_enabled: true      # wake-word interrupts Kenning's own TTS
   barge_in_grace_seconds: 0.5
   # 2026-05-09 audio-quality pass: pre-amp applied to the captured
