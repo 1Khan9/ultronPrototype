@@ -33,6 +33,8 @@ from ultron.coding.voice_lock import (
         "ultron_james_spader_mcu_6941/Ultron.pth",
         "ultron_james_spader_mcu_6941/added_IVF301_Flat_nprobe_1_Ultron_v2.index",
         "ultronVoiceAudio/Ultron_vocals_mono_v1.wav",
+        # Post-disk-cleaning home of the reference WAV (moved 2026-06-11).
+        "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav",
     ],
 )
 def test_default_paths_are_locked(path: str) -> None:

@@ -92,8 +92,11 @@ _DEFAULT_PROTECTED_FILES_RELATIVE = [
     # entire config.yaml -- granular per-key edits could land here in a
     # later phase but for Phase 2 the whole file is off-limits.
     "config.yaml",
-    # K2: voice character / model assets.
+    # K2: voice character / model assets. Both the legacy root-level
+    # path and the post-disk-cleaning location are protected (the WAV
+    # moved 2026-06-11; protection follows the file, never shrinks).
     "ultronVoiceAudio/Ultron_vocals_mono_v1.wav",
+    "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav",
     # K3: validator + existing block-and-revise modules.
     "src/ultron/safety/__init__.py",
     "src/ultron/safety/validator.py",

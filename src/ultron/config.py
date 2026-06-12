@@ -2230,7 +2230,11 @@ class XttsV3Config(_Strict):
     server_script: str = "ultronVoiceAudio/scripts/xtts_server.py"
     # Reference WAV used as the speaker conditioning source. The
     # cleaned mono Ultron reference is the production default.
-    reference_audio: str = "ultronVoiceAudio/Ultron_vocals_mono_v1.wav"
+    # 2026-06-12: path updated -- the WAV moved under the
+    # "kokoro training audio" subdirectory during disk cleaning.
+    reference_audio: str = (
+        "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav"
+    )
     # Bind details for the local-only HTTP server.
     host: str = "127.0.0.1"
     # ``null`` -> the engine picks a free port at startup.

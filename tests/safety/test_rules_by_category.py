@@ -296,6 +296,16 @@ def test_k2_blocks_xtts_reference_audio_write(tmp_path):
     assert r.verdict == Verdict.BLOCK_HARD
 
 
+def test_k2_blocks_xtts_reference_audio_write_new_location(tmp_path):
+    # The reference WAV moved under "kokoro training audio/" during
+    # the 2026-06-11 disk cleaning; the protection must follow it.
+    v = _validator_for_rules(build_category_k_rules(), tmp_path=tmp_path)
+    r = v.check(_write_file(
+        "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav"
+    ))
+    assert r.verdict == Verdict.BLOCK_HARD
+
+
 def test_k4_blocks_audit_log_write(tmp_path):
     v = _validator_for_rules(build_category_k_rules(), tmp_path=tmp_path)
     r = v.check(_write_file("logs/safety_audit.jsonl"))

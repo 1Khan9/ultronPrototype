@@ -26,7 +26,7 @@ import torch
 
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
-REFERENCE_WAV = PROJECT / "Ultron_vocals_mono_v1.wav"
+REFERENCE_WAV = PROJECT / "kokoro training audio" / "Ultron_vocals_mono_v1.wav"
 
 # Same 5 sentences as the sanity batch so we can compare against
 # the prior (non-optimised) numbers head-to-head.

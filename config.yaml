@@ -1110,7 +1110,10 @@ tts:
   xtts_v3:
     server_python: "ultronVoiceAudio/.venv-xtts/Scripts/python.exe"
     server_script: "ultronVoiceAudio/scripts/xtts_server.py"
-    reference_audio: "ultronVoiceAudio/Ultron_vocals_mono_v1.wav"
+    # 2026-06-12 stale-path fix: the reference WAV moved under the
+    # "kokoro training audio" subdirectory during the disk-cleaning
+    # pass; the old root-level path would fail a swap-back at startup.
+    reference_audio: "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav"
     host: "127.0.0.1"
     port: null                     # null = engine picks a free port
     filter_preset: "v3_heavy"      # locked production preset

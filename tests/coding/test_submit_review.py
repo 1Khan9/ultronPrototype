@@ -89,6 +89,16 @@ def test_detect_voice_lock_hits_finds_rvc_voice_model():
     assert len(hits) == 1
 
 
+def test_detect_voice_lock_hits_finds_reference_wav_both_locations():
+    # The XTTS reference WAV moved under "kokoro training audio/"
+    # during the 2026-06-11 disk cleaning; both homes must hit.
+    hits = detect_voice_lock_hits([
+        "ultronVoiceAudio/Ultron_vocals_mono_v1.wav",
+        "ultronVoiceAudio\\kokoro training audio\\Ultron_vocals_mono_v1.wav",
+    ])
+    assert len(hits) == 2
+
+
 def test_detect_voice_lock_hits_skips_empty_strings():
     hits = detect_voice_lock_hits(["", "src/x.py", "  "])
     assert hits == []

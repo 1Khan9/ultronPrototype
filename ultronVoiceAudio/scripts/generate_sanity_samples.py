@@ -31,7 +31,7 @@ os.environ["COQUI_TOS_AGREED"] = "1"  # auto-accept Coqui Public Model License
 (PROJECT / ".torch_cache").mkdir(exist_ok=True)
 (PROJECT / ".hf_cache").mkdir(exist_ok=True)
 
-REFERENCE_WAV = PROJECT / "Ultron_vocals_mono_v1.wav"
+REFERENCE_WAV = PROJECT / "kokoro training audio" / "Ultron_vocals_mono_v1.wav"
 OUTPUT_DIR = PROJECT / "sanity_samples"
 OUTPUT_DIR.mkdir(exist_ok=True)
 

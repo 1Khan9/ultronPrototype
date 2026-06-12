@@ -617,7 +617,7 @@ class XttsV3Speech:
             server_script = resolve_path(ss)
         if reference_audio is None:
             ra = (xtts_cfg.reference_audio if xtts_cfg else None) or \
-                "ultronVoiceAudio/Ultron_vocals_mono_v1.wav"
+                "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav"
             reference_audio = resolve_path(ra)
 
         if not Path(server_python).is_file():

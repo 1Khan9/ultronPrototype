@@ -58,7 +58,7 @@ from pydantic import BaseModel
 
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
-DEFAULT_REFERENCE = PROJECT / "Ultron_vocals_mono_v1.wav"
+DEFAULT_REFERENCE = PROJECT / "kokoro training audio" / "Ultron_vocals_mono_v1.wav"
 
 logging.basicConfig(
     level=logging.INFO,

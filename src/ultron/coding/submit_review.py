@@ -171,7 +171,9 @@ DEFAULT_VOICE_LOCKED_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
         r"\bIDENTITY\.md\b",
         r"models[\\/]piper[\\/]",
         r"ultron_james_spader_mcu_6941[\\/]",
-        r"ultronVoiceAudio[\\/]Ultron_vocals_mono_v1\.wav",
+        # Matches the legacy root-level location AND the
+        # post-disk-cleaning "kokoro training audio/" home.
+        r"ultronVoiceAudio[\\/](?:kokoro training audio[\\/])?Ultron_vocals_mono_v1\.wav",
         r"models[\\/]Qwen3\.5-4B-Q4_K_M\.gguf",
         r"models[\\/]Qwen3\.5-0\.8B-Q4_K_M\.gguf",
         r"models[\\/]kokoro[\\/]voices[\\/]ultron\.pt",

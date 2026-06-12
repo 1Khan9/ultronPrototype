@@ -56,8 +56,11 @@ py -3.11 -m venv .venv-xtts
 
 # 2. Provide the speaker reference audio
 # Place the cleaned mono Ultron reference at:
-#   ultronVoiceAudio/Ultron_vocals_mono_v1.wav
-# (Demucs separation + Audacity cleanup; see git history for the
+#   ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav
+# (Moved into the "kokoro training audio" subdirectory during the
+# 2026-06-11 disk cleaning; the legacy root-level location remains
+# protection-listed but is no longer where consumers look.
+# Demucs separation + Audacity cleanup; see git history for the
 # 2026-05-10 voice-swap session for the workflow.)
 
 # 3. Smoke test the XTTS engine end-to-end

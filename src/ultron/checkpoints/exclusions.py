@@ -111,6 +111,9 @@ VOICE_BASELINE_PROTECTED_PATTERNS: tuple[str, ...] = (
     "IDENTITY.md",
     "ultronVoiceAudio/Ultron_vocals_mono_v1.wav",
     "ultronVoiceAudio/Ultron_vocals_mono_v1.*",
+    # Post-disk-cleaning home of the reference WAV (moved 2026-06-11).
+    "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav",
+    "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.*",
     # Piper baseline voice + RVC support files.
     "models/piper/**",
     "models/rvc/**",

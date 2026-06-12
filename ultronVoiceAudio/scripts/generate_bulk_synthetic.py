@@ -40,7 +40,7 @@ os.environ["HF_HOME"] = str(PROJECT / ".hf_cache")
 os.environ["TRANSFORMERS_CACHE"] = str(PROJECT / ".hf_cache")
 os.environ["COQUI_TOS_AGREED"] = "1"
 
-REFERENCE_WAV = PROJECT / "Ultron_vocals_mono_v1.wav"
+REFERENCE_WAV = PROJECT / "kokoro training audio" / "Ultron_vocals_mono_v1.wav"
 CORPUS_JSON = HERE / "corpus.json"
 OUTPUT_DIR = PROJECT / "synth_audio"
 MANIFEST_CSV = PROJECT / "manifest.csv"

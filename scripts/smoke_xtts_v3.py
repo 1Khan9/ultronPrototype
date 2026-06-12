@@ -52,7 +52,7 @@ def main() -> int:
         main_checkout / "ultronVoiceAudio" / "scripts" / "xtts_server.py"
     )
     cfg.tts.xtts_v3.reference_audio = str(
-        main_checkout / "ultronVoiceAudio" / "Ultron_vocals_mono_v1.wav"
+        main_checkout / "ultronVoiceAudio" / "kokoro training audio" / "Ultron_vocals_mono_v1.wav"
     )
     set_config(cfg)
 

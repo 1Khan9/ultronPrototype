@@ -14,6 +14,8 @@ class TestDefaults:
         for pat in (
             "SOUL.md",
             "ultronVoiceAudio/Ultron_vocals_mono_v1.wav",
+            # Post-disk-cleaning home of the reference WAV (2026-06-11).
+            "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav",
             "models/kokoro/**",
             "models/piper/**",
             "models/rvc/**",

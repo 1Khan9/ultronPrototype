@@ -58,6 +58,10 @@ def test_xtts_v3_config_defaults_match_audio_prep_layout():
     assert cfg.server_python.endswith(".venv-xtts/Scripts/python.exe")
     assert cfg.server_script.endswith("xtts_server.py")
     assert cfg.reference_audio.endswith("Ultron_vocals_mono_v1.wav")
+    # 2026-06-12 stale-path fix: the WAV moved under the
+    # "kokoro training audio" subdirectory during disk cleaning; the
+    # default must point at the real on-disk home.
+    assert "kokoro training audio" in cfg.reference_audio
     assert cfg.host == "127.0.0.1"
     assert cfg.port is None  # engine picks free port at startup
     assert cfg.filter_preset == "v3_heavy"

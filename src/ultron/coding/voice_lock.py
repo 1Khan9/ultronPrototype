@@ -43,8 +43,11 @@ DEFAULT_VOICE_LOCKED_PATHS: tuple[str, ...] = (
     # Legacy TTS engine + RVC wrapper.
     "src/ultron/tts/speech.py",
     "src/ultron/tts/rvc.py",
-    # Reference vocal sample for XTTS.
+    # Reference vocal sample for XTTS. Both the legacy root-level
+    # location and the post-disk-cleaning home are locked (additive --
+    # the file moved 2026-06-11; protections follow it, never shrink).
     "ultronVoiceAudio/Ultron_vocals_mono_v1.wav",
+    "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav",
 )
 
 DEFAULT_VOICE_LOCKED_GLOBS: tuple[str, ...] = (
