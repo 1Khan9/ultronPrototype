@@ -10,7 +10,46 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD: `e19094a`** (origin/main = main checkout; pushed).
+> **Validating HEAD: `2d79a8e`** (the 2026-06-12 live-findings fix
+> batch; pushed to origin/main). **Sweep: 9713 passed / 39 skipped /
+> 0 failed, exit 0, ~128 s** (worktree, loaded-machine two-file-ignore
+> recipe) + `scripts/validate_config.py` clean.
+> **2026-06-12 live-findings fix batch** (7 commits
+> `ab08bf4..2d79a8e` on `e19094a`/`9d460da`): every OPEN live finding
+> from the dogfood close-out fixed in one pass — (1) NEW
+> `lifecycle/single_instance.py` + `__main__` wiring: held-OS-lock
+> single-instance guard (duplicate `python -m ultron` exits code 3
+> naming the holder PID before any model load; refuse only on genuine
+> lock contention, fail-open otherwise; the root of the double-respond
+> + stale-instance port-19761 incidents); (2) the supervisor's
+> ProjectIndex now BORROWS ConversationMemory's embedded Qdrant client
+> (`client=` kwarg + `close()`; local-mode Qdrant allows one client
+> per path — the old second open failed every boot and forced
+> registry-only); (3) launcher honesty + bring-to-front
+> (`LaunchResult.window_appeared`, honest spoken line on
+> window-timeout, `focus_window` after placement so relay-pattern
+> Chrome windows stop opening behind the foreground); (4) WARM-path
+> streaming STT (`_follow_up_listen` mirrors the cold path's
+> streaming session; kills the 108-1188 ms synchronous Moonshine
+> re-transcribe on follow-up turns; abort paths discard via NEW
+> `_maybe_discard_stt_stream` + `MoonshineEngine.clear_stream_cache`);
+> (5) MCP server thread cancels + gathers pending asyncio tasks before
+> closing its loop (the startup "Task was destroyed but it is
+> pending!" stderr noise on bind failure); (6) capture status-flag +
+> queue-drop accounting (count on the audio thread, report from
+> `drain()`; replaces the warn-once-forever latch); (7) blip-watcher
+> `internal_dropout` adjudicated against all 174 live records —
+> two-tier rule + edge-burst-run stripping (the remaining findings
+> were misclassified trailing bursts already fixed at the trimmer +
+> natural-prosody false positives); (8) the stale XTTS
+> `reference_audio` path fixed everywhere it was consumed + the
+> protection lists extended ADDITIVELY to the WAV's new home. The
+> per-fix detail lives in the module sections below. Voice baseline
+> contract intact: the cold hot path is byte-untouched
+> (structurally test-pinned); the WARM change strictly removes
+> foreground CPU work.
+>
+> **Earlier validating HEAD: `e19094a`** (origin/main = main checkout; pushed).
 > **Production-hardening campaign (2026-05-29, CLOSED OUT 2026-06-11:
 > consolidated e2e suite 12/12 green from main; unit sweep green)
 > + the 2026-06-11/12 live-dogfood session layer** (13 commits
@@ -1432,6 +1471,7 @@ result of every row. Deep narrative lives in the corresponding
 
 | Date | HEAD | Summary | Tests | Memory file |
 |------|------|---------|-------|-------------|
+| 2026-06-12 | `2d79a8e` | **Live-findings fix batch** (7 commits `ab08bf4..2d79a8e` on `9d460da`). Every OPEN live finding from the dogfood close-out fixed: NEW `lifecycle/single_instance.py` single-instance guard (held msvcrt/fcntl byte lock at offset 4096, metadata at offset 0 read unbuffered past Windows mandatory locks, pidfile fallback, refuse-only-on-contention errno classification, NO unlink on release (POSIX lock-after-unlink race), `ULTRON_ALLOW_MULTIPLE_INSTANCES` escape; wired in `__main__.main()`, duplicate exits code 3); supervisor `ProjectIndex` borrows ConversationMemory's embedded Qdrant client (`client=` kwarg + owned-only `close()`; ends the every-boot "already accessed by another instance" registry-only fallback); launcher `window_appeared` honesty + post-placement `focus_window` bring-to-front (image-search windows no longer open behind the foreground; honest spoken line on window-timeout); WARM-path streaming STT in `_follow_up_listen` (kills the 108-1188 ms synchronous Moonshine re-transcribe; `_maybe_discard_stt_stream` + `MoonshineEngine.clear_stream_cache` on abort paths so dropped captures never leak); MCP server thread cancel+gather before loop close (the startup asyncio "Task was destroyed" stderr noise on bind failure); capture status-flag/drop accounting (count on audio thread, report from `drain()`); blip-watcher `internal_dropout` two-tier rule + edge-burst-run stripping adjudicated against all 174 live records (remaining findings = misclassified trailing bursts already trimmer-fixed + natural-prosody false positives; `trim_and_fade` untouched); stale XTTS `reference_audio` -> `ultronVoiceAudio/kokoro training audio/` everywhere + ADDITIVE protection-list extensions. Adversarially reviewed (4-dimension parallel pass; all should-fixes applied incl. the release-unlink race + audio-thread logging removal + errno classification + tmp_path test hygiene). Voice baseline contract intact (cold path byte-untouched, structurally test-pinned). | 9713 | (this session) |
 | 2026-05-29 | `c17a2c9` (campaign, in progress) | **Production-hardening campaign — coding-engineer phase** (first 5 commits `a8e6ef6`…`c17a2c9`, on the infra-wiring tip `9d51cec`). Wiring the recent catalog ports into one cohesive unit + completing the voice-controlled coding engineer end to end. **B1** (`a8e6ef6`) fixed a real security/cohesion bug — the coding bridge's safety FILE_CHANGE listener read the wrong `TaskEvent` attributes, so file-write validation never ran on coding edits — plus dead-code + regex-docstring cleanup. **B3-loop** (`8651b07`) connected the clarify/verify/complete loop for voice-dispatched tasks: a per-project `.mcp.json` pointing at the live in-process MCP server + a bound `ProjectSession` (was bridge-only before); added `UltronMCPServer.is_running()`. **B3-runlaunch** (`9cf6f45`) added NEW `coding/sandbox_runner.py` + the "run / launch the program" voice commands (sandbox-confined + validator-gated + non-blocking) + a "say run X to try it" completion hint + the `coding.sandbox_run_timeout_seconds` knob. **B3-quality-a** (`c43dfd7`) prepends an always-on code-quality preamble (type hints, docstrings, `pyproject.toml` for new projects) to every coding prompt. **B3-loop-2** (`c17a2c9`) stopped deleting the `.mcp.json` on COMPLETE (`send_followup` reuses it for RESUME + the verifier's corrective re-prompt, so the cleanup had been stripping MCP from every follow-up) + re-attaches the digest + voice-lock-review listeners to the follow-up handle. The architect plan-provider + TTS narration were verified already fully wired. Voice baseline contract intact. Remaining: routing/bridge/safety/infra/desktop reachability, evolution pervasive reach, the synthetic-audio e2e suite, latency/resource optimization. | 9163 | [project_ultron_2026_05_29_production_hardening_campaign.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_29_production_hardening_campaign.md) |
 | 2026-05-29 | `6692866` (code `296e1f6`) | **Infrastructure-wiring campaign** (builds on catalog 14 `c8f4ce3`; 16 commits `b74c8ab`…`6692866`). Wired 14 dormant imported-but-unconsumed subsystems to production + DOCUMENTED 4 as architecturally-inactive. **WIRED** (all fail-open; default-ON unless noted): process discipline (T12 process-registry/zombie-killer at every daemon + coding spawn) + a latent `_maybe_handle_deep_research` `trace` NameError crash fix; deep-memory recall (`memory/deep_recall.py` + `_maybe_handle_deep_recall`); skill trust-gate (`skills/scan.py`, T5/T9, `scan_untrusted_skills` ON); decomposer requery (`HybridTaskDecomposer._requery_decomposition`, T14); generalised two-phase voice approval (`request_voice_confirmation`/`consume_voice_approval` on `CapabilityVoiceController`, T2 -- validator stays fail-closed); coding loop detection (T1 `LoopDetectionManager` over the TOOL_RESULT stream, narrate-only / never-cancel, `coding.loop_detection_enabled` ON); a dialog-narration surfacing FIX (`_drain_coding_dialog_narrations` -- the catalog-08/09 `pop_dialog_narration` had no caller); multi-key Brave rotation (T6 `RotatingBraveClient` + `resolve_brave_api_keys` + `web_search.brave_additional_api_key_envs`); dual-history "what did I say earlier?" recall (`memory/history_recall.py` + `DualHistoryStore` wired into the orchestrator + `_maybe_handle_history_recall`, `memory.history_recall_enabled` ON, Qdrant-independent); hooks lifecycle (coding TaskStart cancel-capable + TaskComplete, `hooks.enabled` ON, zero-cost when no scripts installed); the offline observation outcome-resolver `resolve_observation_outcomes` maintenance task; the gated-OFF MCP server lifecycle client (T22 `mcp/builder.py` + `McpConfig` -- env-filtered spawn + process-registry tracking + `kill_process_tree` reap, `mcp.enabled`/`mcp.autostart` default-OFF); the `.ultronignore` safety rule (Category U `UltronIgnoreRule` -- secrets path/command block, default-safe no-op, `safety.rules.U1`); and the explicit-intent NEEDS_EXPLICIT_INTENT unblock (`safety.intent` wired into the validator -- audited-allow only on the user's own verb+object, NEVER overrides BLOCK_HARD, `safety.explicit_intent_matching_enabled` ON). **DOCUMENTED-INACTIVE** (Ultron's single-threaded run loop + delegate-to-`claude --print` design has no consumer window; force-wiring would add hot-path latency/risk for a window that doesn't exist): `dual_history.truncate_*` "undo that" (needs `DualHistoryStore` promoted to the unified context source), `lifecycle/pending_message_queue` (no cold-start/swap capture window), coding edit auto-revert (breaks claude's black-box state mid-task), `auto_approval` session-warming (left for focused security review). Voice baseline contract intact; every commit independently green. | 9117 | [project_ultron_2026_05_29_infrastructure_wiring_campaign.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_29_infrastructure_wiring_campaign.md) |
 | 2026-06-03 | (catalog 14) | **clawhub-self-improving-agent catalog 14 -- FOUR bounded extensions to the EXISTING `evolution/` package (NOT a new subsystem).** Benign plugin (0 RED / 1 YELLOW); built clean-room from the catalog + the two `_self_improving_scan` reports -- the quarantine source was NOT read. Adds QUALITATIVE conversation-event learning atop catalog 13's quantitative loop. **T1 (GREEN):** `CorrectionCapsule` / `KnowledgeGapCapsule` / `CommandFailureSignal` (`models.py`) + detectors (`signals.py`): `extract_correction` (gated on a non-empty prior response; strong-phrase fires always, weak opener suppressed when the turn reads as positive acknowledgement), `extract_knowledge_gap`, `extract_command_failure` (17-token in-process analogue of the upstream's RED PostToolUse bash hook), `extract_feature_request`. Corrections / gaps / command-failures feed the EXISTING repair-distillation path via `to_failure_record`; `EvolutionLoop._propose` now falls back to `auto_distill_from_failures` over a new `failures_provider` when success distillation is empty. Wired in `_record_evolution_turn` (`prior_response=self._last_response_text`) + a coding-runner command-failure `TaskEvent` listener drained by `Orchestrator._drain_evolution_command_failures`. **T2 (GREEN):** `FeatureRequestCapsule` -> `data/evolution/feature_requests.jsonl`, NEVER distilled, surfaced in `EvolutionService.digest()`. **T3 (YELLOW):** a <=50-token `[Evolution: ...]` pre-turn nudge via `EvolutionService.pre_turn_system_hint()` through the SAME `set_temperament_hint` SYSTEM-prompt seam (never user text); token-capped, default-ON, `""` when idle. **T4 (GREEN):** `pattern_key`/`recurrence_count`/`first_seen`/`last_seen` on `Capsule` + the new types; `derive_pattern_key` + `merge_capsules_by_pattern_key` + `RECURRENCE_PROMOTE_THRESHOLD=3` make the distiller's recurrence gate explicit + auditable (row-count; empty key = byte-identical legacy grouping). New default-ON `EvolutionConfig` knobs (correction_detection / feature_request_capture / command_failure_capture / pre_turn_nudge_enabled / pre_turn_nudge_max_chars / recurrence_threshold). New ledgers `data/evolution/{corrections,knowledge_gaps,command_failures,feature_requests}.jsonl`. Voice baseline contract intact (microsecond regex passes on the hot path). +~53 hermetic tests (`tests/evolution/test_catalog14_*.py` + orchestrator wiring). | 8999 | [project_ultron_2026_06_03_clawhub_self_improving_agent.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_06_03_clawhub_self_improving_agent.md) |
@@ -1619,7 +1659,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── capture.py            ← mss-based multi-monitor capture; taint-tracker integration. 2026 catalog 09 batch 2 (T2): get_pixel_color(x, y) pyautogui.pixel wrapper with fail-open + None / malformed-result rejection (RGB tuples NOT taint-tracked since they're ephemeral). 2026 catalog 09 batch 4 (T6): find_image_on_screen(template_path, *, confidence=0.8, region) + TemplateMatch frozen dataclass -- routes template_path through PathResolver.safe_realpath defending against attacker-controlled paths; pyautogui.locateOnScreen behind broad-except (missing opencv-python returns None / fail-open contract); precomputed centre coords for direct InputController.click routing.
 │       │   ├── windows.py            ← pywin32 + psutil window enum + foreground detection + monitor-index lookup
 │       │   ├── placement.py          ← move/resize/maximize/focus on target monitor
-│       │   ├── launcher.py           ← AppLauncher with registry (Chrome/Cursor/Discord/VSCode/Edge/Firefox/etc.) + Chrome default-profile + Google Images convenience
+│       │   ├── launcher.py           ← AppLauncher with registry (Chrome/Cursor/Discord/VSCode/Edge/Firefox/etc.) + Chrome default-profile + Google Images convenience. 2026-06-12: LaunchResult.window_appeared (None=no wait / True / False=timeout; honest voice line + placement skip on timeout) + post-placement focus_window bring-to-front via _focus_fail_open (MoveWindow/ShowWindow never change Z-order, so relay-pattern Chrome windows opened BEHIND the foreground)
 │       │   ├── uia.py                ← pywinauto UIA text extraction + semantic click/type with Cap-3/Cap-4 safety hooks. 2026 catalog 09 batch 2 (T2): wait_for_pixel_color(x, y, target_color, *, tolerance, timeout_s, interval_s, sleep_fn, clock_fn) synchronous polling barrier built on capture.get_pixel_color -- L-infinity tolerance covers anti-aliased / jpeg-rendered pixels; deadline-clamped final sleep + deterministic-test injection mirroring catalog 08 T4 wait_for_text_in_window pattern.
 │       │   ├── input_control.py      ← pyautogui mouse+keyboard, rate-limited, validator-gated, blocks input on UAC/security windows. 2026 catalog 09 batch 1: scroll(direction=...) -- vertical (default, pyautogui.scroll) + horizontal (pyautogui.hscroll) dispatch with unknown-direction structured rejection (T1, YELLOW); type_text(wpm=...) -- optional WPM-cadence conversion via interval=1/((wpm*5)/60); wpm<=0 returns structured error vs upstream's ZeroDivisionError (T3, GREEN); move_mouse(smooth=...) -- pyautogui.easeInOutQuad tween when smooth=True AND duration_s>0; default smooth=False preserves linear back-compat (T7, GREEN).
 │       │   ├── screen_context.py     ← orchestrator: assemble foreground + windows + UIA text + optional VLM description for LLM injection
@@ -1674,7 +1714,7 @@ For the current decisions and Foundation phase status see
 │       │       └── cap_carveouts.py ← Cap-1..Cap-4 capability bound rules
 │       │
 │       ├── audio/                  ← Audio capture, VAD, wake-word
-│       │   ├── capture.py          ← AudioCapture (sounddevice callback thread)
+│       │   ├── capture.py          ← AudioCapture (sounddevice callback thread). 2026-06-12: per-session PortAudio status-flag counter + throttled warning (1st + every 50th; replaces the warn-once-forever latch that hid recurrence) + queue-full drop-oldest counter reported from drain(); read-only properties status_flag_count / dropped_blocks; counters reset in start()
 │       │   ├── devices.py          ← Device-resolution helpers (resolve_device, describe_device)
 │       │   ├── output_quality.py   ← TTS blip watcher: per-clip artifact analysis (edge bursts, join clicks, dropouts, clipping) on a daemon thread → WARN + logs/audio_quality.jsonl
 │       ├── settings_gui/           ← Voice-launched control panel (DETACHED process): spec.py knob catalogue + comment-preserving YAML patcher; launch.py strict matcher + spawn/close; app.py tkinter dark-theme UI + live log stream
@@ -1692,7 +1732,7 @@ For the current decisions and Foundation phase status see
 │       ├── transcription/          ← STT
 │       │   ├── __init__.py          ← make_stt_engine + make_dual_stt_engines + DualSTTRegistry (2026-05-22) + _build_engine_by_name + _resolved_engine_name
 │       │   ├── whisper_engine.py    ← WhisperEngine (faster-whisper, CUDA fp16)
-│       │   ├── moonshine_engine.py  ← MoonshineEngine (CPU, streaming-native via moonshine-voice C++ lib); 2026-05-22 streaming protocol w/ background worker chunk-feed
+│       │   ├── moonshine_engine.py  ← MoonshineEngine (CPU, streaming-native via moonshine-voice C++ lib); 2026-05-22 streaming protocol w/ background worker chunk-feed; 2026-06-12 clear_stream_cache() drops the stashed final-stream transcript on follow-up abort paths (discarded captures never leak into the next transcribe)
 │       │   └── parakeet_engine.py   ← ParakeetEngine (NeMo TDT via isolated .venv-parakeet HTTP server on CUDA); 2026-05-22 streaming client + lifecycle helpers (stop_parakeet_server, start_parakeet_server, is_parakeet_server_running) + CREATE_NO_WINDOW
 │       │
 
@@ -1775,7 +1815,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── window_expand.py      ← 2026-05-23 SWE-Agent batch 3 (T5): WindowExpander.expand_window scoring (blank=1, double_blank=2, def/class/decorator=3, file_edge=3) verbatim from SWE-Agent's str_replace_editor; direction-aware stop-before-next-def; per-suffix patterns for Python / JS / TS / Go / Rust / Java family
 │       │   ├── window_state.py       ← 2026-05-23 SWE-Agent batch 3 (T4): WindowState persistent windowed-file state machine backed by SessionRegistry; registry keys CURRENT_FILE / FIRST_LINE / WINDOW / OVERLAP match SWE-Agent; goto/scroll_down/scroll_up with overlap; view() renders [File: N lines] header + (X more above/below) annotations; view_with_semantic_expansion integrates WindowExpander
 │       │   ├── stt_bias.py           ← 2026-05-22 batch 14 (T12): STTBiasManager bounded MRU term store; render_prompt() produces engine-ready bias string; apply_bias_prompt() heuristic attribute attach (Whisper initial_prompt etc.); extract_identifiers helper
-│       │   ├── project_index.py    ← 2026-05-22 supervisor Phase B (Qdrant): ProjectIndex(embedder) + ProjectIndexEntry + ProjectMatch; upsert/get/search/search_by_name/delete/count + UUID5-derived stable project_id; publishes ProjectIndexedEvent on bus
+│       │   ├── project_index.py    ← 2026-05-22 supervisor Phase B (Qdrant): ProjectIndex(embedder) + ProjectIndexEntry + ProjectMatch; upsert/get/search/search_by_name/delete/count + UUID5-derived stable project_id; publishes ProjectIndexedEvent on bus. 2026-06-12: optional client= kwarg BORROWS an open embedded client (the orchestrator passes ConversationMemory's -- local-mode Qdrant allows ONE client per path, so the old second open failed every boot and forced the supervisor registry-only; mirrors the WebResultsCache borrow) + close() (no-op on borrowed clients)
 │       │   ├── project_introspect.py ← 2026-05-22 supervisor Phase B (non-LLM): snapshot(project_path) -> ProjectSnapshot; depth-limited walk + language detect + entry-point find + per-file AST via ast_metadata; SKIP_DIRECTORIES skip-list (node_modules / .venv / __pycache__ / etc); render_tree_summary for prompt embedding; per-path TTL cache
 │       │   ├── project_supervisor.py ← 2026-05-22 supervisor Phase C: ProjectSupervisor.decide(SupervisorInputs) -> SupervisorDecision; RESUME/EDIT/CLARIFY/NEW algorithm with cosine thresholds (default 0.75 / 0.55); merges semantic (ProjectIndex) + lexical (ProjectResolver) candidates; logs every decision to logs/supervisor_decisions.jsonl; publishes SupervisorDecidedEvent
 │       │   ├── projections.py      ← Phase C / Foundation Part 2: 5 bounded projections
@@ -1874,10 +1914,13 @@ For the current decisions and Foundation phase status see
 │       │   ├── __init__.py         ← Public API re-exports
 │       │   └── discovery.py        ← discover_project_config(repo_root) -> frozen ProjectConfig; reads .ultron/{skills/, setup.sh, pre_commit.sh, identity_override.md, safety_rules.yaml, test_command.json, voicepack_override.json, intent_triggers.yaml, hooks.json}; mtime-cached; fail-open per-file
 │       │
-│       ├── lifecycle/              ← 2026-05-23 OpenHands batch 6 (T5 + T16): start-task + pending-message
+│       ├── lifecycle/              ← 2026-05-23 OpenHands batch 6 (T5 + T16): start-task + pending-message; later runtime-lifecycle helpers
 │       │   ├── __init__.py         ← Public API re-exports
 │       │   ├── start_task.py       ← StartTaskStatus enum + StartTask dataclass + create_start_task + StartTaskRecorder (event-store persistence) + drive_start_task async driver + StartTaskError
-│       │   └── pending_message_queue.py ← PendingMessage + PendingMessageState + PendingMessageQueue (enqueue / rebind / cancel / drain) + JSONL persistence + rebind_pending_messages alias
+│       │   ├── pending_message_queue.py ← PendingMessage + PendingMessageState + PendingMessageQueue (enqueue / rebind / cancel / drain) + JSONL persistence + rebind_pending_messages alias
+│       │   ├── gaming_engage.py    ← 2026 catalog 09 batch H: drive_start_task-driven gaming engage/disengage substeps with per-stage voice acks
+│       │   ├── docker_startup.py   ← 2026-06-12 (97b9494): SearxNG boot probe + Docker Desktop auto-launch (ensure_docker_running, daemon thread, fail-open)
+│       │   └── single_instance.py  ← NEW 2026-06-12: single-instance guard for `python -m ultron` -- held OS byte-lock (msvcrt LK_NBLCK at offset 4096 / fcntl flock; auto-releases on process death, no stale-lock problem) + holder PID metadata at offset 0 (unbuffered os.read so Windows mandatory locks never block the duplicate's diagnostic read) + pidfile/psutil fallback + ULTRON_ALLOW_MULTIPLE_INSTANCES escape + fail-open-on-error / refuse-only-on-contention. Acquired in __main__.main() BEFORE Orchestrator construction (duplicate exits code 3 naming the holder PID); pytest/e2e construct Orchestrator directly and never contend
 │       │
 │       ├── llm/condensers/         ← 2026-05-23 OpenHands batch 5 (T4): history-compression strategies
 │       │   ├── __init__.py         ← Public API re-exports
@@ -2059,7 +2102,9 @@ For the current decisions and Foundation phase status see
 │
 ├── tests/
 │   ├── conftest.py                 ← Path setup + pytest_sessionfinish hook that reaps test-spawned python children (preserves the live Ultron on port 19761); pytest_configure walks the process tree + refuses to start if another pytest is running on this codebase
-│   ├── test_*.py                   ← ~80 unit/integration test files at the top level (default suite); see scripts/run_tests.py to invoke
+│   ├── test_*.py                   ← ~80 unit/integration test files at the top level (default suite); see scripts/run_tests.py to invoke. 2026-06-12 additions: test_audio_capture_status.py (status-flag/drop accounting), test_follow_up_streaming_stt.py (WARM-path streaming lane: structural pins + behavioral state machine on the real _follow_up_listen), test_main_single_instance.py (entrypoint guard integration, hermetic logging fixture)
+│   ├── lifecycle/                  ← lifecycle package tests: test_start_task.py, test_pending_message_queue.py, test_gaming_engage.py, test_docker_startup.py, test_single_instance.py (NEW 2026-06-12: held-lock acquire/contention/metadata-while-locked/env-escape/pidfile-fallback/errno-classification/no-unlink-on-release; tmp_path locks only)
+│   ├── pipeline/                   ← orchestrator-helper tests: test_idle_vram_reclaim.py, test_coding_runner_drains.py, test_supervisor_stack_shared_client.py (NEW 2026-06-12: _build_supervisor_stack passes ConversationMemory's client / falls back / fail-open)
 │   ├── bus/                        ← 2026-05-22 session E: typed event bus (43 tests)
 │   │   ├── __init__.py
 │   │   ├── test_event.py           ← BusEvent.define / EventPayload.make / schema validation
@@ -2537,8 +2582,13 @@ the loader path so llama-cpp / ctranslate2 find `cudart64_12.dll`,
 **Purpose:** `python -m ultron` entry point.
 
 **Public:**
-- `main() -> int` — sets up logging, builds an `Orchestrator`, calls
-  `.run()` until KeyboardInterrupt. Returns process exit code.
+- `main() -> int` — sets up logging, acquires the single-instance
+  guard (2026-06-12: `lifecycle/single_instance.py`; a duplicate
+  launch prints the holder PID and returns exit code 3 BEFORE any
+  model load; `ULTRON_ALLOW_MULTIPLE_INSTANCES=1` bypasses), builds an
+  `Orchestrator`, calls `.run()` until KeyboardInterrupt, releases the
+  lock in a `finally`. Exit codes: 0 ok / 1 startup-or-run failure /
+  2 missing model / 3 duplicate instance.
 
 **In:** environment + config.yaml (via Orchestrator construction).
 **Out:** stdout console transcript, log files.
@@ -2878,7 +2928,7 @@ via `pywinauto`; same screenshot capability as `desktop-control` via `mss`.
 #### `desktop/launcher.py`
 
 - `class AppEntry` -- frozen: name, candidate_paths, args_prefix, aliases, process_name.
-- `class LaunchResult` -- success/app_name/exe_path/pid/hwnd/monitor_index/placement/error.
+- `class LaunchResult` -- success/app_name/exe_path/pid/hwnd/monitor_index/placement/error/window_appeared (2026-06-12: None=no window wait requested / True=window detected / False=wait timed out -- placement+focus skipped; callers voice it honestly). 2026-06-12 bring-to-front: after placement (and for un-placed detected windows) `_focus_fail_open(hwnd)` calls `placement.focus_window` best-effort (MoveWindow/ShowWindow never change Z-order, so relay-pattern Chrome windows opened BEHIND the foreground); never raises, swallows a mid-launch AnticheatBlockedError from focus_window's own guard.
 - `class AppLauncher` -- registry-driven launcher.
   - `find_app(query) -> Optional[AppEntry]` -- name + alias + substring.
   - `resolve_executable(entry) -> Optional[Path]` -- first existing candidate; Discord/Chrome-specific resolvers handle their Squirrel/auto-update directory layouts.
@@ -3017,8 +3067,8 @@ clawhub-windows-control plugin's ``handle_dialog.py``.
 
 Bridges :class:`RoutingIntent` (kinds APP_LAUNCH + SCREEN_CONTEXT_QUERY) to the native primitives. Imported by :class:`CapabilityVoiceController` in `coding/voice.py`.
 
-- `class AppLaunchVoiceResult` / `class ScreenContextVoiceResult` -- frozen result types.
-- `handle_app_launch(intent) -> AppLaunchVoiceResult` -- dispatches an :class:`AppLaunchIntent` to :class:`AppLauncher`. Resolves the monitor (index OR directional via `find_monitor`); chooses `launch_chrome(url=...)` for Chrome+URL combos and `launch_app(...)` for everything else; threads `user_text` into the safety validator. Returns a short in-character voice line.
+- `class AppLaunchVoiceResult` / `class ScreenContextVoiceResult` -- frozen result types. 2026-06-12: AppLaunchVoiceResult gains `window_appeared` (mirrors LaunchResult).
+- `handle_app_launch(intent) -> AppLaunchVoiceResult` -- dispatches an :class:`AppLaunchIntent` to :class:`AppLauncher`. Resolves the monitor (index OR directional via `find_monitor`); chooses `launch_chrome(url=...)` for Chrome+URL combos and `launch_app(...)` for everything else; threads `user_text` into the safety validator. Returns a short in-character voice line. 2026-06-12 honesty fix: when `result.window_appeared is False` the spoken line says the window didn't appear (naming the requested monitor when one was asked for) instead of the old false "Opening that on monitor N." fallback; the legacy mon_phrase elif remains only for duck-typed results lacking the field.
 - `handle_screen_context_query(intent) -> ScreenContextVoiceResult` -- builds a :class:`ScreenContextSnapshot` via `build_screen_context(include_vlm=intent.include_vlm)` and returns its `render_for_llm()` text for prompt injection.
 - `handle_window_move(intent) -> WindowMoveVoiceResult` (2026-05-14 third pass) -- finds an existing window matching ``intent.window_query`` via :func:`ultron.desktop.windows.find_window` and moves it to ``intent.monitor_index`` (or ``intent.monitor_query`` resolved via :func:`find_monitor`) using :func:`move_window_to_monitor`. Distinct from APP_LAUNCH which would spawn a new process.
 - `handle_window_close(intent) -> WindowCloseVoiceResult` (2026-05-14 third pass) -- finds an existing window matching ``intent.window_query`` (optionally restricted to a monitor via ``intent.monitor_query``) and posts ``WM_CLOSE`` via :func:`win32gui.PostMessage`. Graceful close path -- lets the app prompt to save if it wants. Used for "close my YouTube tab", "close Discord on my right monitor", etc.
@@ -3041,6 +3091,14 @@ User-preference persistence so "open YouTube" picks up "monitor 2 + maximize" th
   - `start()` / `stop()`
   - `read_blocks() -> Iterator[np.ndarray]`
   - `_capture_utterance(...)` (used by Orchestrator)
+  - 2026-06-12 status-flag + drop accounting: per-session counters
+    reset in `start()` (before the stream opens). The audio thread
+    only COUNTS PortAudio status flags (`input overflow` etc.) plus a
+    single first-occurrence warning -- never repeated logging I/O on
+    the callback; recurrence + queue-full drop-oldest totals are
+    reported from `drain()` on the consumer thread. Read-only
+    properties `status_flag_count` / `dropped_blocks` (replaces the
+    `_overrun_warned` warn-once-forever latch that hid recurrence).
 
 #### `audio/devices.py`
 - `class AudioDeviceError(ValueError)`
@@ -3074,9 +3132,21 @@ config (default ON).
   stream open/close), `leading_burst`/`trailing_burst` (isolated noise
   spikes separated from the speech body by silence — the classic
   fine-tune artifact), `discontinuity` (adjacent-sample jump at a bad
-  sentence-concatenation join), `internal_dropout` (≥40 ms hard gap
-  inside the speech body), `clipping`, `dc_offset`. Leading/trailing
-  silence padding is normal and never flagged.
+  sentence-concatenation join), `internal_dropout` (two-tier since
+  2026-06-12: a gap ≥600 ms of dead air inside the speech body always
+  flags; a 100-600 ms gap flags ONLY when BOTH gap edges carry
+  speech-level energy ≥25% of the envelope peak — the signature of a
+  digital hard cut; natural prosody gaps measured live at 60-430 ms
+  always decay gradually into the gap and must not flag), `clipping`,
+  `dc_offset`. Leading/trailing silence padding is normal and never
+  flagged. Short loud runs isolated at the clip edges (≤130 ms runs
+  separated from the body by ≥200 ms — the same run-grouping the
+  `trim_and_fade` fix uses) are stripped from the body and reported as
+  `leading_burst`/`trailing_burst` with NO peak-ratio gate (the
+  measured real artifact bursts sat at only 3-12% of clip peak, which
+  the legacy 25% gate rejected — misclassifying the dead air before
+  the burst as an internal dropout; adjudicated 2026-06-12 from 174
+  live `audio_quality.jsonl` records).
 - `OutputQualityWatcher` — daemon-thread analyzer behind a bounded
   queue: `submit(pcm, sr, label)` is the hot-path entry (non-blocking
   put; overflow drops, never waits); findings log at WARNING + append
@@ -4044,7 +4114,12 @@ implementation).
   `.to_payload()` / `.from_payload(d)`
 - `@dataclass class ProjectMatch` — entry, score, reason
 - `class ProjectIndex(embedder, qdrant_path=None, collection_name=None,
-  recent_cache_size=50)`
+  recent_cache_size=50, client=None)` — 2026-06-12: `client=` BORROWS an
+  already-open embedded Qdrant client (the orchestrator passes
+  ConversationMemory's; local-mode Qdrant allows ONE open client per
+  path, so the old unconditional second open failed every boot and
+  forced the supervisor registry-only; mirrors the WebResultsCache
+  borrow pattern). `_owns_client` tracks ownership.
   - `.upsert(digest, *, project_id=None, tags=None, language="",
     entry_points=None, last_session_id=None) -> Optional[ProjectIndexEntry]` —
     embeds the digest text summary, upserts Qdrant; publishes
@@ -4057,6 +4132,9 @@ implementation).
   - `.search_by_name(name_substring, *, top_k=10) -> List[ProjectIndexEntry]` —
     lexical fallback over recent cache + scroll
   - `.delete(project_id) -> bool`
+  - `.close()` — releases the underlying client IF owned; a no-op on
+    borrowed clients (the owner -- ConversationMemory in production --
+    controls that lifecycle). Never raises.
   - `.count() -> int`
 - Helpers: `_derive_project_id(path)` — UUID5 with fixed namespace for stable id;
   `_build_digest_summary_for_search(sections, max_chars=500)` — Goal + Critical
@@ -4133,7 +4211,7 @@ implementation).
     - `report_progress()`, `request_clarification()`, `report_test_results()`,
       `declare_complete()`, `abandon_task()`, `record_file_change()`
   - `set_clarification_responder(fn)` / `set_declare_complete_handler(fn)` — coordinator hooks
-  - `start()` / `stop()` — manage SSE server
+  - `start()` / `stop()` — manage SSE server. 2026-06-12: the server thread's `finally` cancels + gathers any pending asyncio tasks (the `_wait_for_started` watcher, kept on `self._waiter_task`, plus uvicorn stragglers) BEFORE closing its private loop — a bind failure (port 19761 taken by a stale instance) used to leave the watcher pending and GC emitted the benign-but-noisy asyncio "Task was destroyed but it is pending!" stderr line; happy path unchanged.
   - `is_running() -> bool` — True when the SSE worker thread is alive AND the started event is set (2026-05-29 B3-loop); lets the voice layer decide whether to write a per-project `.mcp.json`.
 - `write_mcp_config(project_root, sse_url)` — writes a `.mcp.json` pointing at the live SSE server so a spawned coding subprocess can reach the in-process MCP tools. `remove_mcp_config(project_root)` — available but **no longer called on task COMPLETE** (B3-loop-2: `send_followup` reuses the file for follow-ups + corrections; it is a tiny gitignored sandbox artefact overwritten on the next dispatch).
 
@@ -4552,7 +4630,7 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
   - `_run_smart_turn(captured) -> Optional[SmartTurnVerdict]` (2026-05-12) — single inference call. Returns None on any failure; caller treats as "undecided" → trust VAD.
   - `run()` — main loop (blocks; KeyboardInterrupt clean shutdown)
   - `_capture_utterance()` — VAD-bounded audio capture. **2026-05-11 follow-up fix:** the hard `elapsed_samples < max_samples` ceiling now reads from `self._max_utterance_seconds` (config-driven). Previously a class-level `MAX_UTTERANCE_SECONDS=15.0` cut a real user off mid-sentence on a complex coding ask — the user wasn't pausing; the wall-clock ceiling fired before Silero VAD reported `SPEECH_END`. Bumping to 30 s comfortably covers detailed one-breath asks while still bounding pathological captures (stuck mic, background noise that never resolves to SPEECH_END, etc.). **2026-05-12 Smart Turn V3:** on first SPEECH_END within a capture (and only when the utterance is within the smart-turn window), the captured audio is fed to `_run_smart_turn`. Verdict `complete` → break immediately. Verdict `incomplete` → keep listening; bump VAD silence to `long_utterance_silence_duration_ms` and start an extension timer (`smart_turn.incomplete_extension_ms`). If silence persists past the extension, accept end-of-turn anyway. If speech resumes, cancel the extension and trust the next SPEECH_END. **2026-05-18 latency pass 3 Phase 1:** `_kick_off_tts_preopen()` is called at the very top so the PortAudio device-open overlaps the entire speech + silence-wait window (was running post-capture, only ~5-10 ms of overlap after the 2026-05-16 speculative-STT collapse).
-  - `_follow_up_listen(deadline)` — WARM-mode VAD loop. Same `self._max_utterance_seconds` ceiling on cumulative speech (not wall-clock, which is bounded by `deadline`). Same Smart Turn V3 confirmation flow as `_capture_utterance` (2026-05-12). Same 2026-05-18 Phase 1 TTS preopen kick-off at the top.
+  - `_follow_up_listen(deadline)` — WARM-mode VAD loop. Same `self._max_utterance_seconds` ceiling on cumulative speech (not wall-clock, which is bounded by `deadline`). Same Smart Turn V3 confirmation flow as `_capture_utterance` (2026-05-12). Same 2026-05-18 Phase 1 TTS preopen kick-off at the top. **2026-06-12 streaming-STT lane:** mirrors the COLD-path streaming session (the speculative-STT lane deliberately no-ops on streaming engines, which left follow-up turns paying a 100-1200 ms synchronous Moonshine re-transcribe in run()'s foreground STT call). The session starts at SPEECH_START (not window-open, so no CPU is burned on room chatter and the streamed audio is exactly pre_roll + speech_chunks = the returned buffer), feeds every chunk, and `_maybe_stop_stt_stream()` finalizes before EVERY audio-returning exit so run()'s `transcribe(buffer)` hits the engine's stash instantly; the wake-word and deadline abort paths instead call `_maybe_discard_stt_stream()` so a dropped capture's partial transcript can't leak into the next turn. Non-streaming engines (Whisper / Moonshine tiny-base) keep the speculative lane unchanged.
   - `_run_speculative_classification(user_text)` (2026-05-18 Phase 2) — chained synchronously from the speculative-STT thread after the transcript is stored. Runs `classify_by_rules` (rule path only -- LLM preflight stays foreground), picks the conversational ack via `_maybe_conversational_ack`, and kicks off `_kick_off_rag_prefetch` so the RAG retrieval overlaps the silence wait. Result stashed in `_speculative_classification` keyed by transcript. Re-checks the invalidated flag before storing so SPEECH_START mid-flight drops the result. Defensive against partial test fixtures.
   - `_invalidate_speculative_classification()` (2026-05-18 Phase 2) — marks the classification slot invalid AND cancels the in-flight RAG future. Chains into `_invalidate_speculative_llm()` so all three lanes invalidate atomically on SPEECH_START.
   - `_collect_speculative_classification(user_text)` (2026-05-18 Phase 2) — returns the cached `{text, gate_verdict, ack_phrase, rag_future}` dict if matched, else None. Atomically clears the slot. On mismatch / invalidated, cancels the rolled-over RAG future.
@@ -4561,6 +4639,7 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
   - `_invalidate_speculative_llm()` (2026-05-18 Phase 3) — sets the invalidated flag and signals `llm.cancel()` so the streaming iterator exits at the next chunk. The producer's `finally` block still emits the sentinel so consumers don't hang.
   - `_collect_speculative_llm(user_text)` (2026-05-18 Phase 3) — returns `(iter, commit_history)` on hit, `(None, None)` on miss / mismatch / invalidated. The iterator yields tokens from the buffer until the sentinel arrives. The committer is a zero-arg function the caller invokes after consuming the iterator -- it records the turn via `llm.record_completed_turn` so unconsumed speculations leave no orphan in history.
   - `_reset_speculative_llm_state()` (2026-05-18 Phase 3) — drops the buffer + thread handle + response, and signals `llm.cancel()` if a speculation is in flight.
+  - `_maybe_discard_stt_stream()` (2026-06-12) — abort-path counterpart of `_maybe_stop_stt_stream`: stops any active streaming-STT session AND clears the engine's stashed transcript (duck-typed `clear_stream_cache`; fail-open) so discarded follow-up captures never surface as a stale transcript.
   - `_respond(user_text)` — LLM stream → TTS pipeline (with optional web search)
   - `_speak(text)` — single-shot synthesize + play
   - `_speak_with_barge_in_check(text, *, post_check_window_s=0.5) -> bool` (V1-gap A4) — speak text and report whether wake fired during/after; used by the pre-task confirmation flow.
@@ -4805,6 +4884,48 @@ Typed start-task state machine + pending-message queue.
 - `@dataclass PendingMessage` — `message_id` / `temp_task_id` / `bound_task_id` / `state` / `payload` / `created_at` / `delivered_at`.
 - `class PendingMessageQueue` — `enqueue(temp_task_id, payload) -> PendingMessage` / `bind(temp_task_id, bound_task_id)` (rebind on real task arrival) / `cancel(message_id_or_temp_id)` / `drain(bound_task_id) -> list[PendingMessage]` / `pending_for(bound_task_id) -> list[PendingMessage]`. Overflow drops oldest beyond `max_size`. Optional JSONL persistence.
 - `rebind_pending_messages(queue, old_temp_id, new_bound_id) -> int` — convenience alias for the rebind pattern.
+
+#### `lifecycle/single_instance.py` (NEW 2026-06-12 — single-instance guard)
+
+Two simultaneous `python -m ultron` processes both grabbed the mic and
+double-responded (and the second collided on the embedded Qdrant lock
+and the MCP port-19761 bind). The guard refuses a duplicate launch at
+the entrypoint, BEFORE any model load.
+
+- `DEFAULT_LOCK_PATH` — `<PROJECT_ROOT>/data/.ultron_instance.lock`
+  (CWD-independent; falls back to CWD-relative `data/` if the config
+  package can't be imported). Gitignored.
+- `ALLOW_MULTIPLE_ENV = "ULTRON_ALLOW_MULTIPLE_INSTANCES"` — `"1"`
+  bypasses the guard (returns a no-op "bypass" lock).
+- `class InstanceLock` — `path` / `mode` (`"msvcrt"` / `"fcntl"` /
+  `"pidfile"` / `"bypass"`) / `pid`; `release()` idempotent, never
+  raises, best-effort unlinks the file.
+- `acquire_single_instance_lock(path=None) -> Optional[InstanceLock]`
+  — held OS byte-range lock (`msvcrt.locking` LK_NBLCK on Windows,
+  `fcntl.flock` elsewhere) on the byte at offset 4096; auto-releases
+  on process death so there is NO stale-lock recovery problem. The
+  metadata JSON (`{"pid", "started_at"}`) lives at offset 0 -- on
+  Windows msvcrt locks are MANDATORY, so the locked byte sits beyond
+  EOF to keep the metadata readable by the refused duplicate.
+  Pidfile + psutil-liveness fallback when neither primitive imports.
+  Returns ``None`` ONLY on genuine contention; any unexpected error
+  fail-opens to a "bypass" lock (a broken lock path never blocks a
+  legitimate start).
+- `read_lock_metadata(path=None) -> Optional[dict]` — UNBUFFERED
+  `os.read` of <=1024 bytes (Python's buffered `open()` requests a
+  full 8 KiB buffer, which spans the mandatory-locked byte and fails
+  with EACCES while the holder is alive).
+- `is_another_instance_running(path=None) -> Optional[int]` — probe
+  helper; returns the holder PID or None; never leaves the lock held.
+- Wired in `src/ultron/__main__.py main()`: acquire before the banner
+  + Orchestrator construction; duplicate prints/logs a one-line
+  message naming the holder PID + returns exit code 3; the lock
+  releases in a `finally` around the whole run. Orchestrator is
+  deliberately untouched so pytest sweeps / the GPU e2e suite /
+  measurement scripts never contend.
+- Tests: `tests/lifecycle/test_single_instance.py` (12) +
+  `tests/test_main_single_instance.py` (4, entrypoint integration
+  with a hermetic logging fixture).
 
 ### `src/ultron/llm/condensers/` (2026-05-23 OpenHands batch 5, T4)
 
@@ -5519,6 +5640,7 @@ Set `$env:PYTEST_RUN_GPU_TESTS = "1"` before pytest. Includes real Claude API ca
 | `projects.json` | `ProjectRegistry` | Coding project registry (legacy lexical resolver source) |
 | `projects/<project_id>/digest.md` | `ProjectIndex.upsert()` (2026-05-22) | Per-project digest markdown mirror (also stored in Qdrant `projects` collection) |
 | `sandbox/` | `new_sandbox_project()` | Auto-created coding projects |
+| `.ultron_instance.lock` | `lifecycle/single_instance.py` (via `__main__.main()`) | 2026-06-12 single-instance guard: held OS byte-lock + holder PID metadata; auto-releases on process death. Gitignored. |
 | `summaries.jsonl` | `scripts/maintenance.py` | Conversation summaries |
 | `maintenance.sqlite` | `scripts/maintenance.py` | Maintenance state (cursors, etc.) |
 | `ollama_compat_test/` | (Foundation Phase 0) | Modelfile from Ollama compat test (not in active use) |
