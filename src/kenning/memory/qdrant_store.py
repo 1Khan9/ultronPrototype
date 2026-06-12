@@ -183,10 +183,19 @@ class ConversationMemory:
 
         # Lazy-imported here so a missing qdrant-client install doesn't crash
         # at module import time -- the orchestrator's _load_memory_if_enabled
-        # catches the resulting ValueError and disables memory gracefully.
+        # catches the resulting exception and disables memory gracefully.
         from qdrant_client import QdrantClient
 
-        self._client = QdrantClient(path=str(self.path))
+        # Local-mode Qdrant allows exactly ONE open client per storage path,
+        # enforced by an OS-level portalocker `.lock`. A *dead* holder's lock
+        # auto-releases, but a sibling process that is mid-shutdown (a prior
+        # run tearing down, or a just-finished test harness) can still hold it
+        # for a few hundred ms -> "Storage folder ... is already accessed by
+        # another instance" on open. Retry a bounded number of times with short
+        # backoff to ride out that release race; only a *persistent* external
+        # holder surfaces, and then we raise a clear QdrantUnavailableError that
+        # _load_memory_if_enabled turns into graceful memory-disabled degrade.
+        self._client = self._open_client_with_retry(QdrantClient)
         self._lock = threading.RLock()
 
         self._ensure_collections()
@@ -209,6 +218,49 @@ class ConversationMemory:
             "ConversationMemory ready: %d recent turns cached, session=%s, path=%s",
             len(self._recent), self.session_id, self.path,
         )
+
+    # --- local-mode lock-race retry -----------------------------------------
+
+    #: Bounded retry budget for the local-mode storage open. Worst case adds
+    #: (_OPEN_RETRIES-1) * _OPEN_BACKOFF_S of startup latency, and ONLY when the
+    #: storage folder is genuinely contended -- the happy path opens first try.
+    _OPEN_RETRIES = 5
+    _OPEN_BACKOFF_S = 0.4
+
+    def _open_client_with_retry(self, client_cls):
+        """Open the embedded Qdrant client, riding out a transient lock race.
+
+        Local-mode Qdrant serialises access to a storage folder with an
+        OS-level lock. A dead process releases it automatically; a process
+        that is *just* shutting down may hold it briefly. We retry the open a
+        bounded number of times with short backoff so a release race no longer
+        degrades memory to disabled. A genuinely persistent holder (another
+        live instance) still raises -- callers degrade gracefully.
+        """
+        last_exc: Optional[BaseException] = None
+        for attempt in range(1, self._OPEN_RETRIES + 1):
+            try:
+                return client_cls(path=str(self.path))
+            except (RuntimeError, OSError) as e:
+                msg = str(e).lower()
+                # Only the lock race is retryable; anything else (corrupt
+                # storage, bad path, dim mismatch) must surface immediately.
+                if "already accessed" not in msg and "lock" not in msg:
+                    raise
+                last_exc = e
+                if attempt < self._OPEN_RETRIES:
+                    logger.warning(
+                        "Qdrant storage %s is locked (attempt %d/%d): %s -- "
+                        "retrying in %.1fs",
+                        self.path, attempt, self._OPEN_RETRIES, e,
+                        self._OPEN_BACKOFF_S,
+                    )
+                    time.sleep(self._OPEN_BACKOFF_S)
+        raise QdrantUnavailableError(
+            f"embedded Qdrant storage {self.path} is locked by another live "
+            f"instance after {self._OPEN_RETRIES} attempts",
+            context={"path": str(self.path)},
+        ) from last_exc
 
     # --- collection bootstrap -----------------------------------------------
 

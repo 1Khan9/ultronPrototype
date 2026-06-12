@@ -287,16 +287,35 @@ def _load_llm(preset: str = GAMING_PRESET):
     Uses an ISOLATED Qdrant path (temp dir) so the harness can NEVER contend
     with a live Kenning instance's data/qdrant lock.
     """
+    import atexit
+    import os
     import pathlib
+    import shutil
     import tempfile
 
     from kenning.llm.inference import LLMEngine
     from kenning.memory.embedder import HybridEmbedder
     from kenning.memory.qdrant_store import ConversationMemory
 
-    qpath = pathlib.Path(tempfile.gettempdir()) / "kenning_relay_test_qdrant"
+    # PID-unique temp path: never touches the production data/qdrant AND never
+    # collides with a second concurrent harness/probe run.
+    qpath = (pathlib.Path(tempfile.gettempdir())
+             / f"kenning_relay_test_qdrant_{os.getpid()}")
     embedder = HybridEmbedder()
     memory = ConversationMemory(embedder=embedder, path=qpath)
+
+    # Release the lock + delete the isolated storage on process exit so back-
+    # to-back harness runs don't strand temp qdrant dirs (the original lingering
+    # 5 GB test holder that started this whole guardrail effort).
+    def _cleanup_relay_qdrant():
+        try:
+            if hasattr(memory, "close"):
+                memory.close()
+        except Exception:                                            # noqa: BLE001
+            pass
+        shutil.rmtree(qpath, ignore_errors=True)
+
+    atexit.register(_cleanup_relay_qdrant)
     eng = LLMEngine(memory=memory)
     if preset and hasattr(eng, "reload_for_preset"):
         try:
