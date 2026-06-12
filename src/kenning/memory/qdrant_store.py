@@ -1,0 +1,1462 @@
+"""Qdrant-backed conversation memory with hybrid search.
+
+Architecture (per spec):
+- Three collections: ``conversations`` (turn-level), ``facts`` (durable
+  extracted statements), ``web_results`` (cached URL fetches, populated by
+  Phase 4).
+- Each conversation point carries a 384-dim dense bge-small vector + a BM25
+  sparse vector. Hybrid retrieval issues a single Qdrant ``query_points``
+  call with prefetch on both vectors and Reciprocal Rank Fusion.
+- Hot-path write path: append to in-process recent-turns cache + push to a
+  background queue. The writer thread embeds + upserts; failures log and
+  drop. Worst-case <1 ms on the hot path.
+- Hot-path read path: ``recent()`` reads the in-process cache; ``retrieve()``
+  hits Qdrant + the embedder (~150 ms cold).
+
+The public surface (``ConversationMemory.add / recent / retrieve / close``)
+matches the legacy JSONL store so callers (LLMEngine, orchestrator) don't
+need to change.
+"""
+
+from __future__ import annotations
+
+import queue
+import threading
+import time
+import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, List, Optional
+
+from ultron.channels import Channel, ChannelMetadata
+from ultron.config import get_config, resolve_path
+from ultron.errors import QdrantUnavailableError
+from ultron.memory.embedder import HybridEmbedder, _SparseVec
+from ultron.resilience import get_error_log
+from ultron.utils.logging import get_logger
+
+logger = get_logger("memory.qdrant_store")
+
+
+# ---------------------------------------------------------------------------
+# Public data class -- a "turn" returned to callers. We keep the legacy field
+# names (id, ts, role, content) so existing call sites don't break, plus the
+# Phase 3 fields populated by the maintenance script (summary, entities,
+# topic_tags, cluster_id).
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class MemoryTurn:
+    id: int
+    ts: float
+    role: str  # "user" | "assistant"
+    content: str
+    session_id: str = ""
+    summary: str = ""
+    entities: List[str] = field(default_factory=list)
+    topic_tags: List[str] = field(default_factory=list)
+    cluster_id: Optional[int] = None
+    # 2026-05-19 Track 6 voice-loop integration. Which audio channel
+    # produced this turn -- defaults to :data:`Channel.USER` so legacy
+    # call sites (which pre-date the abstraction) get the existing
+    # behaviour. Persisted into the Qdrant payload via
+    # :meth:`ChannelMetadata.as_payload_dict` so downstream filters
+    # / observability can route on it.
+    channel: Channel = Channel.USER
+
+
+@dataclass
+class FactRow:
+    """A row from the ``facts`` collection.
+
+    Populated by :meth:`ConversationMemory.search_facts`. The maintenance
+    script (``scripts/maintenance.py:run_extract_facts``) writes the
+    underlying Qdrant points; this dataclass is the read-side projection
+    callers consume (Coordinator's clarification fast-path, in particular).
+    """
+
+    fact: str
+    confidence: float
+    last_confirmed: float
+    category: str
+    score: float                          # RRF score from the hybrid query
+    extracted_at: float = 0.0
+    extracted_from: List[int] = field(default_factory=list)
+    retrieval_weight: float = 1.0
+
+
+# ---------------------------------------------------------------------------
+# ConversationMemory: same surface as the JSONL store, Qdrant under the hood.
+# ---------------------------------------------------------------------------
+
+
+class ConversationMemory:
+    """Qdrant-backed conversation memory.
+
+    Args:
+        path: directory for the embedded Qdrant store. Created if missing.
+        embedder: a :class:`HybridEmbedder`. Required for write + retrieve.
+        recent_cache_size: how many recent turns to keep in process. Default
+            big enough that ``recent(MEMORY_RECENT_TURNS)`` always serves
+            from cache; older turns are still searchable via ``retrieve()``.
+        session_id: tag for the current run. Lets ``retrieve()`` exclude
+            current-session turns from RAG hits if desired.
+    """
+
+    def __init__(
+        self,
+        path: Optional[Path] = None,
+        embedder: Optional[HybridEmbedder] = None,
+        recent_cache_size: int = 100,
+        session_id: Optional[str] = None,
+    ) -> None:
+        if embedder is None:
+            raise ValueError(
+                "ConversationMemory needs a HybridEmbedder. Pass embedder=HybridEmbedder()."
+            )
+        cfg = get_config()
+        self.path = Path(path) if path is not None else resolve_path(cfg.qdrant.data_dir)
+        self.path.mkdir(parents=True, exist_ok=True)
+        self._embedder = embedder
+        self._recent_cache_size = recent_cache_size
+        self.session_id = session_id or _new_session_id()
+
+        # 2026-05-19 Track 1a + 1b: optional write-side metadata
+        # tracking. Both default-OFF; instantiated lazily here only
+        # when the corresponding flag is on so legacy memory writes
+        # are byte-for-byte unchanged.
+        self._topic_tracker = None
+        self._discourse_classifier = None
+        try:
+            topic_cfg = cfg.memory.topical_chunking
+            if topic_cfg.enabled:
+                from ultron.memory.topical_chunking import TopicTracker
+                self._topic_tracker = TopicTracker(
+                    similarity_threshold=topic_cfg.boundary_similarity_threshold,
+                    timeout_seconds=topic_cfg.idle_timeout_seconds,
+                )
+                logger.info(
+                    "Topical chunking enabled (threshold=%.2f, timeout=%.0fs)",
+                    topic_cfg.boundary_similarity_threshold,
+                    topic_cfg.idle_timeout_seconds,
+                )
+        except Exception as e:                               # noqa: BLE001
+            logger.warning(
+                "Failed to initialise topical chunker (%s); continuing "
+                "without topic_id metadata.", e,
+            )
+        try:
+            disc_cfg = cfg.memory.discourse_tagging
+            if disc_cfg.enabled:
+                from ultron.memory.discourse import DiscourseClassifier
+                embedder_fn = None
+                if disc_cfg.use_embedding_fallback:
+                    embedder_fn = self._embedder.encode_query_dense
+                self._discourse_classifier = DiscourseClassifier(
+                    embedder_fn=embedder_fn,
+                    confidence_floor=disc_cfg.centroid_confidence_floor,
+                )
+                logger.info(
+                    "Discourse tagging enabled (centroid_fallback=%s, "
+                    "confidence_floor=%.2f)",
+                    bool(embedder_fn),
+                    disc_cfg.centroid_confidence_floor,
+                )
+        except Exception as e:                               # noqa: BLE001
+            logger.warning(
+                "Failed to initialise discourse classifier (%s); "
+                "continuing without discourse_type metadata.", e,
+            )
+
+        # 2026-05-21 frontier-enhancement Item 2 -- cross-encoder
+        # reranker. Lazy-instantiated on first ``_apply_reranker``
+        # call so the model load only happens if retrieval actually
+        # uses the reranker (and the flag is on).
+        self._reranker = None
+
+        # 2026-05-21 frontier-enhancement Item 4 -- contextual
+        # retrieval. Lazy-instantiated on first ``_generate_context``
+        # call (background writer thread); the small LLM only loads
+        # if a turn actually gets embedded with the flag on.
+        self._context_generator = None
+
+        # Lazy-imported here so a missing qdrant-client install doesn't crash
+        # at module import time -- the orchestrator's _load_memory_if_enabled
+        # catches the resulting ValueError and disables memory gracefully.
+        from qdrant_client import QdrantClient
+
+        self._client = QdrantClient(path=str(self.path))
+        self._lock = threading.RLock()
+
+        self._ensure_collections()
+
+        # Recent-turn cache + next-id tracking are warmed from Qdrant.
+        self._recent: List[MemoryTurn] = []
+        self._next_id: int = 0
+        self._load_recent_cache_from_qdrant()
+
+        # Async writer.
+        self._write_queue: "queue.Queue[Optional[MemoryTurn]]" = queue.Queue(
+            maxsize=cfg.memory.write_queue_maxsize
+        )
+        self._writer_thread = threading.Thread(
+            target=self._writer_loop, daemon=True, name="memory-writer"
+        )
+        self._writer_thread.start()
+
+        logger.info(
+            "ConversationMemory ready: %d recent turns cached, session=%s, path=%s",
+            len(self._recent), self.session_id, self.path,
+        )
+
+    # --- collection bootstrap -----------------------------------------------
+
+    def _ensure_collections(self) -> None:
+        """Create the three collections on first run; no-op afterward."""
+        from qdrant_client.models import (
+            Distance,
+            SparseVectorParams,
+            VectorParams,
+        )
+
+        names = {c.name for c in self._client.get_collections().collections}
+
+        common_dense = {"dense": VectorParams(size=self._embedder.dim, distance=Distance.COSINE)}
+        common_sparse = {"bm25": SparseVectorParams()}
+
+        # 2026-05-21 frontier-enhancement Item 3 -- detect dimension
+        # mismatch between the configured embedder and any existing
+        # Qdrant collection. Existing collections at the wrong dim
+        # would crash on first insert; surfacing it here at startup
+        # is a much better failure mode than a cryptic vector-size
+        # error mid-turn. Tell the operator to run the migration.
+        conv_name = get_config().qdrant.collections.conversations
+        if conv_name in names:
+            existing_dim = None
+            try:
+                info = self._client.get_collection(conv_name)
+                existing_vectors = info.config.params.vectors
+                existing_dim = (
+                    existing_vectors["dense"].size
+                    if isinstance(existing_vectors, dict)
+                    else existing_vectors.size
+                )
+            except Exception as e:                                 # noqa: BLE001
+                logger.warning(
+                    "Could not introspect collection %s for dim check (%s); "
+                    "continuing.", conv_name, e,
+                )
+            if existing_dim is not None and existing_dim != self._embedder.dim:
+                raise RuntimeError(
+                    f"Qdrant collection '{conv_name}' was created at "
+                    f"dim={existing_dim} but the configured embedder "
+                    f"({get_config().embeddings.dense_model}) produces "
+                    f"dim={self._embedder.dim}. Run "
+                    f"`python scripts/migrate_embeddings.py` to "
+                    f"re-embed and rebuild the collection, or revert "
+                    f"`embeddings.dense_model` + `embeddings.dense_dim` "
+                    f"in config.yaml to match the old data.",
+                )
+
+        if get_config().qdrant.collections.conversations not in names:
+            self._client.create_collection(
+                collection_name=get_config().qdrant.collections.conversations,
+                vectors_config=common_dense,
+                sparse_vectors_config=common_sparse,
+            )
+            logger.info("Created Qdrant collection %s", get_config().qdrant.collections.conversations)
+        if get_config().qdrant.collections.facts not in names:
+            self._client.create_collection(
+                collection_name=get_config().qdrant.collections.facts,
+                vectors_config=common_dense,
+                sparse_vectors_config=common_sparse,
+            )
+            logger.info("Created Qdrant collection %s", get_config().qdrant.collections.facts)
+        if get_config().qdrant.collections.web_results not in names:
+            self._client.create_collection(
+                collection_name=get_config().qdrant.collections.web_results,
+                vectors_config=common_dense,
+                sparse_vectors_config=common_sparse,
+            )
+            logger.info("Created Qdrant collection %s", get_config().qdrant.collections.web_results)
+
+    def _load_recent_cache_from_qdrant(self) -> None:
+        """Pull the most-recent N turns into the in-process cache + set next id.
+
+        Avoids loading the entire history. Uses Qdrant's ``scroll`` API with
+        ordering by id descending, then reverses to chronological order.
+        """
+        from qdrant_client.models import OrderBy, Direction
+
+        try:
+            # Newest-first scan, capped at recent_cache_size. The integer
+            # turn-id we store in payload is the source of ordering.
+            points, _ = self._client.scroll(
+                collection_name=get_config().qdrant.collections.conversations,
+                limit=self._recent_cache_size,
+                with_payload=True,
+                with_vectors=False,
+                order_by=OrderBy(key="turn_id", direction=Direction.DESC),
+            )
+        except Exception as e:
+            # An empty / fresh collection can sometimes raise on the
+            # ordered-scroll path; fall back to a plain scroll.
+            logger.debug("Ordered scroll failed (%s); falling back", e)
+            try:
+                points, _ = self._client.scroll(
+                    collection_name=get_config().qdrant.collections.conversations,
+                    limit=self._recent_cache_size,
+                    with_payload=True,
+                    with_vectors=False,
+                )
+            except Exception:
+                points = []
+
+        turns = []
+        max_id = -1
+        for pt in points:
+            payload = pt.payload or {}
+            turn_id = int(payload.get("turn_id", 0))
+            if turn_id > max_id:
+                max_id = turn_id
+            turns.append(_payload_to_turn(payload))
+        # Sort chronologically (ascending id).
+        turns.sort(key=lambda t: t.id)
+        self._recent = turns[-self._recent_cache_size:]
+        self._next_id = max_id + 1 if max_id >= 0 else 0
+
+    # --- write path ---------------------------------------------------------
+
+    def _trace(self, msg: str, **kwargs):
+        """Best-effort trace log helper. Catches import errors so
+        Qdrant operations never depend on the trace module being
+        importable at construction time."""
+        try:
+            from ultron import trace
+            trace.tlog(logger, msg, **kwargs)
+        except Exception:
+            pass
+
+    def add(
+        self,
+        role: str,
+        content: str,
+        *,
+        channel: Optional[Channel] = None,
+    ) -> MemoryTurn:
+        """Append a turn, return immediately. Persistence is async.
+
+        The hot path:
+          * stamps a turn id + timestamp,
+          * appends to the in-process recent cache,
+          * enqueues the turn for the writer thread.
+
+        On queue overflow we log and drop the new turn rather than block --
+        the spec gives us a hard "must not regress latency" budget.
+
+        2026-05-19 Track 6 voice-loop integration: ``channel`` tags the
+        utterance with the audio channel it came from (USER / TEAMMATE /
+        SYSTEM). Defaults to :data:`Channel.USER` so existing call sites
+        (every legacy site predates the abstraction) preserve their
+        behaviour byte-for-byte. The channel is stamped on the
+        :class:`MemoryTurn` AND persisted in the Qdrant payload.
+        """
+        if channel is None:
+            channel = Channel.USER
+        with self._lock:
+            turn = MemoryTurn(
+                id=self._next_id,
+                ts=time.time(),
+                role=role,
+                content=content,
+                session_id=self.session_id,
+                channel=channel,
+            )
+            self._next_id += 1
+            self._recent.append(turn)
+            cache_size = len(self._recent)
+            if cache_size > self._recent_cache_size:
+                # Drop oldest entries -- they remain in Qdrant and are still
+                # retrievable via the RAG path.
+                self._recent = self._recent[-self._recent_cache_size:]
+                cache_size = len(self._recent)
+        try:
+            self._write_queue.put_nowait(turn)
+            queued = True
+        except queue.Full:
+            logger.warning(
+                "Memory writer queue full (%d) -- dropping turn %d. "
+                "Hot path stays responsive but this turn won't be RAG-indexed.",
+                self._write_queue.maxsize, turn.id,
+            )
+            queued = False
+        self._trace(
+            "memory:add",
+            turn_id=turn.id, role=role, channel=channel.value,
+            content_chars=len(content), preview=content[:100],
+            session_id=self.session_id, cache_size=cache_size,
+            queued=queued,
+        )
+        return turn
+
+    def _writer_loop(self) -> None:
+        """Background thread: drain the queue, embed, upsert into Qdrant."""
+        while True:
+            try:
+                turn = self._write_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            if turn is None:  # shutdown sentinel
+                return
+            try:
+                self._upsert_turn(turn)
+            except Exception as e:
+                logger.warning("Async upsert failed for turn %d: %s", turn.id, e)
+            finally:
+                self._write_queue.task_done()
+
+    def _generate_context_for_turn(self, turn: MemoryTurn) -> str:
+        """Generate the contextual-retrieval prefix for ``turn`` if
+        the feature is enabled. Returns empty string when disabled
+        OR on any generation failure (fail-open).
+
+        Lazy-constructs ``self._context_generator`` on first call.
+        Runs in the background writer thread -- adding ~50-200 ms
+        here adds nothing to the voice hot path.
+
+        Fully defensive against test-mocked configs that don't carry
+        a ``memory.contextual_retrieval`` block: any AttributeError
+        on the config-path access returns empty string. This is the
+        same shape as the cross-encoder reranker config-access pattern
+        (which uses ``getattr(mem_cfg, "reranking", None)``).
+        """
+        try:
+            ctx_cfg = get_config().memory.contextual_retrieval
+        except AttributeError:
+            # Test mock config doesn't carry contextual_retrieval.
+            # Treat as disabled.
+            return ""
+        if not getattr(ctx_cfg, "enabled", False):
+            return ""
+        if self._context_generator is None:
+            try:
+                from ultron.memory.contextualizer import ContextGenerator
+                self._context_generator = ContextGenerator()
+            except Exception as e:                                # noqa: BLE001
+                logger.warning(
+                    "Context generator construction failed (%s); "
+                    "contextual retrieval will be a no-op.", e,
+                )
+                return ""
+        try:
+            return self._context_generator.generate_context(
+                turn.content, role=turn.role,
+            )
+        except Exception as e:                                    # noqa: BLE001
+            logger.warning(
+                "Context generation failed for turn %d (%s); "
+                "embedding without context prefix.", turn.id, e,
+            )
+            return ""
+
+    def _upsert_turn(self, turn: MemoryTurn) -> None:
+        from qdrant_client.models import PointStruct, SparseVector
+
+        # 2026-05-21 frontier-enhancement Item 4 -- contextual
+        # retrieval. Generate a 5-15 word topic phrase and prepend
+        # it to the DENSE embedding text only. The literal content
+        # stays unmodified in the payload; the phrase is also stored
+        # separately at ``context_summary`` so it's inspectable.
+        # Sparse BM25 input is NOT contextualized (BM25 + LLM
+        # paraphrases would over-weight synthesized tokens).
+        context_summary = self._generate_context_for_turn(turn)
+
+        # Embed content as both dense + sparse. The role prefix is identical
+        # to the legacy embedder (preserves retrieval behavior) but stripped
+        # for BM25 since it'd act as a noisy stop-token.
+        if context_summary:
+            text_dense = f"[{context_summary}] {turn.role}: {turn.content}"
+        else:
+            text_dense = f"{turn.role}: {turn.content}"
+        dvec = self._embedder.encode_dense(text_dense)
+        svec = self._embedder.encode_sparse(turn.content)[0]
+
+        # 2026-05-19 Track 1a + 1b: write-side metadata enrichment.
+        # Both branches fail-open -- a tracker / classifier exception
+        # leaves the payload without the enrichment field rather than
+        # blocking the write.
+        topic_id: Optional[str] = None
+        if self._topic_tracker is not None:
+            try:
+                obs = self._topic_tracker.observe(dvec.tolist())
+                topic_id = obs.topic_id
+            except Exception as e:                           # noqa: BLE001
+                logger.warning(
+                    "Topic tracker observe failed for turn %d (%s); "
+                    "skipping topic_id metadata.", turn.id, e,
+                )
+
+        discourse_type: Optional[str] = None
+        if self._discourse_classifier is not None:
+            try:
+                verdict = self._discourse_classifier.classify(turn.content)
+                if verdict is not None:
+                    discourse_type = verdict.value
+            except Exception as e:                           # noqa: BLE001
+                logger.warning(
+                    "Discourse classifier failed for turn %d (%s); "
+                    "skipping discourse_type metadata.", turn.id, e,
+                )
+
+        payload = {
+            "turn_id": turn.id,
+            "ts": turn.ts,
+            "role": turn.role,
+            "content": turn.content,
+            "session_id": turn.session_id,
+            "summary": turn.summary,
+            "entities": turn.entities,
+            "topic_tags": turn.topic_tags,
+            "cluster_id": turn.cluster_id,
+        }
+        if topic_id is not None:
+            payload["topic_id"] = topic_id
+        if discourse_type is not None:
+            payload["discourse_type"] = discourse_type
+        # 2026-05-21 frontier-enhancement Item 4 -- persist the
+        # context summary so it's inspectable + so the migration
+        # script can re-use it on subsequent re-embeds without
+        # regenerating.
+        if context_summary:
+            payload["context_summary"] = context_summary
+        # 2026-05-19 Track 6 voice-loop integration: persist the channel
+        # so a future filter / retrieval branch can scope to USER vs
+        # TEAMMATE vs SYSTEM. ChannelMetadata.as_payload_dict() returns
+        # the canonical shape (``channel`` + ``channel_confidence``).
+        try:
+            payload.update(
+                ChannelMetadata(channel=turn.channel).as_payload_dict()
+            )
+        except Exception as e:                                # noqa: BLE001
+            logger.warning(
+                "Channel payload stamp failed for turn %d (%s); "
+                "writing without channel metadata.", turn.id, e,
+            )
+
+        point = PointStruct(
+            id=str(uuid.uuid4()),
+            vector={
+                "dense": dvec.tolist(),
+                "bm25": SparseVector(indices=svec.indices, values=svec.values),
+            },
+            payload=payload,
+        )
+        self._client.upsert(
+            collection_name=get_config().qdrant.collections.conversations,
+            points=[point],
+        )
+
+    # --- read path ----------------------------------------------------------
+
+    def recent(self, n: int) -> List[MemoryTurn]:
+        """Return the last ``n`` turns of the CURRENT session, chronologically.
+
+        2026-05-19 cross-session contamination fix: the in-process cache
+        loads up to ``recent_cache_size`` turns from Qdrant on startup,
+        which historically included turns from prior Ultron sessions.
+        :meth:`_build_messages` fed those prior-session turns into the
+        LLM as 'conversation history', producing replays of wildly off-
+        topic content from old conversations (Salesforce pricing /
+        FBI watch list / etc. in 2026-05-19 live session). Recent-turn
+        history is supposed to mean "what we're talking about RIGHT
+        NOW"; cross-session content is what RAG (``retrieve``) is for.
+
+        This method now filters to the current session_id so the LLM's
+        conversation-history slice contains only this run's turns. RAG
+        retrieval (``retrieve`` / ``retrieve_for_query``) remains
+        cross-session by design.
+
+        For callers that specifically want the cross-session cache
+        view (e.g. the long-term-memory maintenance script), use
+        :meth:`recent_all_sessions`.
+        """
+        if n <= 0:
+            return []
+        with self._lock:
+            total = len(self._recent)
+            scoped = [t for t in self._recent if t.session_id == self.session_id]
+            scoped_total = len(scoped)
+            out = list(scoped[-n:])
+        # 2026-05-20 round 6 trace: surface the filter ratio so we can
+        # confirm cross-session contamination is actually being filtered
+        # out (and isn't leaking through some other path).
+        try:
+            from ultron import trace
+            trace.tlog(
+                logger, "memory:recent",
+                requested=n, returned=len(out),
+                session_id=self.session_id,
+                cache_total=total, cache_current_session=scoped_total,
+                cache_other_sessions=total - scoped_total,
+            )
+        except Exception:
+            pass
+        return out
+
+    def recent_all_sessions(self, n: int) -> List[MemoryTurn]:
+        """Return the last ``n`` turns across ALL sessions (legacy behaviour).
+
+        Use when you specifically need the cross-session cache view --
+        e.g. background maintenance, observability scans, or warm-start
+        analytics. The voice-loop hot path uses :meth:`recent` instead,
+        which scopes to the current session.
+        """
+        if n <= 0:
+            return []
+        with self._lock:
+            return list(self._recent[-n:])
+
+    def retrieve(
+        self,
+        query: str,
+        k: Optional[int] = None,
+        exclude_recent: Optional[int] = None,
+    ) -> List[MemoryTurn]:
+        """Public entry: time the retrieval + emit one observation.
+
+        Delegates to :meth:`_retrieve_impl`; observation emit is
+        fail-open so retrieval never blocks on observation IO.
+        """
+        import time as _time
+
+        self._trace(
+            "memory:retrieve:start",
+            query=(query or "")[:100], k=k, exclude_recent=exclude_recent,
+        )
+        start = _time.perf_counter()
+        result = self._retrieve_impl(query, k=k, exclude_recent=exclude_recent)
+        latency_ms = (_time.perf_counter() - start) * 1000.0
+        # 2026-05-20 round 6: structured trace with returned-snippet
+        # ids + content previews so we can see exactly what's getting
+        # injected as RAG.
+        self._trace(
+            "memory:retrieve:end",
+            query=(query or "")[:100], k=k,
+            returned=len(result),
+            elapsed_ms=int(latency_ms),
+            ids=[t.id for t in result] if result else [],
+            previews=[t.content[:80] for t in result] if result else [],
+            session_ids=sorted({t.session_id for t in result}) if result else [],
+        )
+        try:
+            from ultron.observations import observe_retrieval
+
+            lineage_ids = tuple(str(t.id) for t in result if t is not None)
+            mem_cfg = get_config().memory
+            effective_k = k if k is not None else int(mem_cfg.rag_top_k)
+            observe_retrieval(
+                query=query or "",
+                lineage_ids=lineage_ids,
+                k=int(effective_k),
+                latency_ms=latency_ms,
+                collection="conversations",
+                extra={"returned_count": len(result)},
+            )
+        except Exception:
+            # Observation IO must never break retrieval.
+            pass
+        return result
+
+    def _apply_reranker(
+        self,
+        query: str,
+        candidates: List[MemoryTurn],
+        k: int,
+    ) -> List[MemoryTurn]:
+        """Apply the cross-encoder reranker to ``candidates`` and
+        return the top ``k`` reordered turns.
+
+        Lazy-instantiates ``self._reranker`` on first call.
+        Fail-open at every layer: model load failure OR predict
+        failure returns ``candidates[:k]`` (pre-rerank order).
+        Caller is responsible for the ``reranking_enabled`` check
+        before invoking this -- the helper assumes the flag is on.
+        """
+        if not candidates or k <= 0:
+            return list(candidates)[: max(0, k)]
+        # ``getattr`` defends against test fixtures that bypass __init__
+        # via ``object.__new__(ConversationMemory)`` -- the attribute
+        # would otherwise raise AttributeError on first access.
+        if getattr(self, "_reranker", None) is None:
+            try:
+                # 2026-05-22: use the process-wide singleton so we
+                # share the model with the web-search snippet ranker
+                # and avoid the ~2 s duplicate cold load.
+                from ultron.memory.reranker import get_shared_reranker
+                self._reranker = get_shared_reranker()
+            except Exception as e:                                 # noqa: BLE001
+                logger.warning(
+                    "Reranker construction failed (%s); using pre-rerank "
+                    "order.", e,
+                )
+                return list(candidates)[:k]
+        return self._reranker.rerank(query, candidates, k)
+
+    def _retrieve_impl(
+        self,
+        query: str,
+        k: Optional[int] = None,
+        exclude_recent: Optional[int] = None,
+    ) -> List[MemoryTurn]:
+        """Top-``k`` turns by hybrid (dense + BM25, RRF-fused), excluding the
+        last ``exclude_recent`` turn ids (the recent window the LLM already sees).
+
+        2026-05-09 nuanced-retrieval pass: candidates are scored by a
+        composite blend (cosine-similarity to query + RRF + recency
+        boost) and FILTERED by ``memory.rag_min_relevance``. Candidates
+        whose cosine similarity to the query is below the threshold
+        are dropped entirely, not just downranked. This is what stops
+        a "what's the weather in Paris?" query from pulling in
+        apex-predator chatter from prior conversation -- low-relevance
+        memory is treated as noise rather than always-included
+        context. Recent-and-relevant items rank ahead of
+        old-and-relevant via the recency boost.
+
+        Returns ``[]`` for empty query, empty store, or when no
+        candidate survives the relevance threshold. Setting
+        ``rag_min_relevance`` to 0.0 disables the filter (legacy
+        behaviour).
+        """
+        if not query.strip():
+            return []
+        mem_cfg = get_config().memory
+        if k is None:
+            k = mem_cfg.rag_top_k
+        if exclude_recent is None:
+            exclude_recent = mem_cfg.rag_exclude_recent
+        min_relevance = float(getattr(mem_cfg, "rag_min_relevance", 0.0))
+        # 2026-05-21 frontier-enhancement Item 2 -- cross-encoder
+        # reranker. When enabled, we pull a wider candidate set from
+        # the hybrid layer (``candidate_count``, typically 20) and let
+        # the cross-encoder re-order to the final top-``k``. The
+        # reranker is constructed lazily on first use and cached on
+        # ``self._reranker``; fail-open at every layer.
+        rerank_cfg = getattr(mem_cfg, "reranking", None)
+        reranking_enabled = bool(
+            rerank_cfg is not None and getattr(rerank_cfg, "enabled", False)
+        )
+        effective_pull_k = (
+            int(rerank_cfg.candidate_count) if reranking_enabled else k
+        )
+        with self._lock:
+            cutoff_id = max(0, self._next_id - exclude_recent)
+        if cutoff_id <= 0:
+            # Nothing older than the recent window yet.
+            return []
+
+        from qdrant_client.models import (
+            FieldCondition,
+            Filter,
+            Fusion,
+            FusionQuery,
+            Prefetch,
+            Range,
+            SparseVector,
+        )
+
+        try:
+            qdv = self._embedder.encode_query_dense(query)
+            qsv: _SparseVec = self._embedder.encode_query_sparse(query)
+        except Exception as e:
+            logger.warning("Query embedding failed: %s", e)
+            get_error_log().record(
+                QdrantUnavailableError(
+                    f"query embedding failed: {e}",
+                    context={"query_len": len(query)},
+                    recovery="returned empty retrieval; LLM responds from base knowledge",
+                ),
+                dependency="qdrant_embedder",
+            )
+            return []
+
+        # Filter to turn_id < cutoff (the older-than-recent window).
+        recency_filter = Filter(
+            must=[FieldCondition(key="turn_id", range=Range(lt=cutoff_id))]
+        )
+
+        try:
+            response = self._client.query_points(
+                collection_name=get_config().qdrant.collections.conversations,
+                prefetch=[
+                    Prefetch(
+                        query=qdv.tolist(),
+                        using="dense",
+                        filter=recency_filter,
+                        limit=max(k * 4, 20),
+                    ),
+                    Prefetch(
+                        query=SparseVector(
+                            indices=qsv.indices, values=qsv.values
+                        ),
+                        using="bm25",
+                        filter=recency_filter,
+                        limit=(
+                            max(effective_pull_k, k * 4, 20)
+                            if reranking_enabled
+                            else max(k * 4, 20)
+                        ),
+                    ),
+                ],
+                query=FusionQuery(fusion=Fusion.RRF),
+                # Pull more than k so the post-filter has candidates to
+                # work with; the relevance threshold + reranker prune
+                # back down to <= k before we return. When reranking is
+                # enabled, we pull at least ``effective_pull_k``
+                # (the configured ``candidate_count``, typically 20)
+                # so the reranker has a meaningful candidate set.
+                # When reranking is OFF the legacy ``k * 4`` behaviour
+                # is preserved BYTE-IDENTICALLY for backwards compat.
+                limit=(
+                    max(effective_pull_k, k * 4, 20)
+                    if reranking_enabled
+                    else (max(k * 4, 20) if min_relevance > 0.0 else max(1, k))
+                ),
+                with_payload=True,
+                # Pull dense vectors so we can compute cosine similarity
+                # against the query embedding for the relevance filter
+                # + composite scoring. Only when we'll actually use it.
+                with_vectors=(min_relevance > 0.0),
+            )
+        except Exception as e:
+            logger.warning("Qdrant hybrid search failed: %s", e)
+            get_error_log().record(
+                QdrantUnavailableError(
+                    f"hybrid search failed: {e}",
+                    context={
+                        "query_len": len(query),
+                        "k": k,
+                        "cutoff_id": cutoff_id,
+                    },
+                    recovery="returned empty retrieval; LLM responds from base knowledge",
+                ),
+                dependency="qdrant",
+            )
+            return []
+
+        # Legacy fast path -- threshold disabled.
+        if min_relevance <= 0.0:
+            rrf_turns = [_payload_to_turn(pt.payload or {}) for pt in response.points]
+            if reranking_enabled and rrf_turns:
+                return self._apply_reranker(query, rrf_turns, k)
+            return rrf_turns[: max(1, k)]
+
+        # Score each candidate with the composite (cosine + RRF +
+        # recency) and apply the relevance gate.
+        from ultron.memory.ranking import (
+            cosine_similarity,
+            compute_recency_boost,
+        )
+
+        ranking_cfg = mem_cfg.ranking
+        primary_dense = qdv.tolist()
+        scored: List[tuple] = []  # (composite, cosine_sim, MemoryTurn)
+        diag_all: List[tuple] = []  # (cosine_sim, content) for debug logging
+        for pt in response.points:
+            payload = pt.payload or {}
+            # Match the existing helper pattern (line 625): pass the
+            # ``.vector`` attribute, not the whole point.
+            cand_dense = _extract_dense_vector(getattr(pt, "vector", None))
+            cosine_sim = (
+                cosine_similarity(cand_dense, primary_dense)
+                if cand_dense is not None else 0.0
+            )
+            diag_all.append((cosine_sim, str(payload.get("content", ""))[:60]))
+            if cosine_sim < min_relevance:
+                continue
+            ts = float(payload.get("ts", 0.0))
+            recency = compute_recency_boost(
+                ts, half_life_days=float(ranking_cfg.recency_half_life_days),
+            )
+            # Cosine drives the relevance signal; RRF score is a
+            # secondary tiebreaker; recency boosts recent-and-relevant
+            # ahead of old-and-relevant when both clear the threshold.
+            composite = (
+                cosine_sim
+                + float(pt.score or 0.0) * float(ranking_cfg.rrf_weight)
+                + recency * float(ranking_cfg.recency_weight)
+            )
+            scored.append((composite, cosine_sim, _payload_to_turn(payload)))
+
+        # Debug logging when explicitly enabled. Off by default so the
+        # voice hot path stays clean.
+        if logger.isEnabledFor(10):  # DEBUG
+            top = sorted(diag_all, key=lambda r: r[0], reverse=True)[:8]
+            logger.debug(
+                "retrieve('%s', threshold=%.2f) candidates: %s",
+                query[:40], min_relevance,
+                ["%.3f|%s" % (s, c) for s, c in top],
+            )
+
+        scored.sort(key=lambda row: row[0], reverse=True)
+        composite_turns = [row[2] for row in scored]
+        if reranking_enabled and composite_turns:
+            # Reranker sees survivors of the relevance threshold; it
+            # re-orders them and slices to top-k. The composite ranking
+            # is preserved for fail-open (if reranker errors, the
+            # pre-rerank order is returned).
+            return self._apply_reranker(query, composite_turns, k)
+        return composite_turns[: max(1, k)]
+
+    # --- V1-gap A2: multi-pass per-category retrieval ---------------------
+
+    def retrieve_multi(
+        self,
+        primary_query: str,
+        category_queries: List[str],
+        *,
+        k: Optional[int] = None,
+        exclude_recent: Optional[int] = None,
+    ) -> List[MemoryTurn]:
+        """Multi-pass retrieval (V1-gap A2).
+
+        Issues one hybrid Qdrant query per category sub-query (plus the
+        primary if it isn't already in the list), unions the results,
+        and ranks them via the composite scorer in
+        :mod:`ultron.memory.ranking`.
+
+        Args:
+            primary_query: literal user utterance.
+            category_queries: 2-4 category sub-queries from the gate's
+                pre-flight pass. May be empty -- in that case we behave
+                identically to :meth:`retrieve` so the orchestrator can
+                call this unconditionally.
+            k: max final hits.
+            exclude_recent: exclude the latest N turns from results
+                (anti-echo of the in-process recent cache).
+
+        Returns:
+            Up to ``k`` :class:`MemoryTurn` ranked by composite score.
+            Empty on any failure (Qdrant down, embedder failure) -- same
+            posture as :meth:`retrieve`.
+        """
+        if not (primary_query or "").strip():
+            return []
+        cfg = get_config()
+        mem_cfg = cfg.memory
+        if k is None:
+            k = mem_cfg.rag_top_k
+        if exclude_recent is None:
+            exclude_recent = mem_cfg.rag_exclude_recent
+        with self._lock:
+            cutoff_id = max(0, self._next_id - exclude_recent)
+        if cutoff_id <= 0:
+            return []
+
+        retrieval_cfg = mem_cfg.retrieval
+        ranking_cfg = mem_cfg.ranking
+        # Cap the category fan-out so a runaway pre-flight can't
+        # multiply load.
+        max_categories = max(0, retrieval_cfg.max_categories_per_query)
+        categories = [
+            q for q in (category_queries or [])
+            if isinstance(q, str) and q.strip()
+        ][:max_categories]
+        # The primary query always gets a pass so we never miss
+        # literal hits.
+        all_queries = [primary_query] + [
+            q for q in categories if q.strip() != primary_query.strip()
+        ]
+        if len(all_queries) == 1:
+            # No category fan-out -- fall through to single-pass.
+            return self.retrieve(primary_query, k=k, exclude_recent=exclude_recent)
+
+        try:
+            dense_batch = self._embedder.encode_query_dense_batch(all_queries)
+            sparse_batch = self._embedder.encode_query_sparse_batch(all_queries)
+        except Exception as e:
+            logger.warning("retrieve_multi: query embedding failed: %s", e)
+            get_error_log().record(
+                QdrantUnavailableError(
+                    f"multi-pass query embedding failed: {e}",
+                    context={"queries": len(all_queries)},
+                    recovery=(
+                        "fell through to single-pass retrieve; "
+                        "results may be narrower"
+                    ),
+                ),
+                dependency="qdrant_embedder",
+            )
+            return self.retrieve(primary_query, k=k, exclude_recent=exclude_recent)
+
+        primary_dense = dense_batch[0].tolist()
+
+        from concurrent.futures import ThreadPoolExecutor
+        from qdrant_client.models import (
+            FieldCondition, Filter, Fusion, FusionQuery, Prefetch, Range,
+            SparseVector,
+        )
+
+        recency_filter = Filter(
+            must=[FieldCondition(key="turn_id", range=Range(lt=cutoff_id))],
+        )
+
+        per_query_limit = max(
+            k * retrieval_cfg.candidates_per_category_multiplier, 20,
+        )
+        collection = cfg.qdrant.collections.conversations
+
+        def _query(idx: int):
+            try:
+                response = self._client.query_points(
+                    collection_name=collection,
+                    prefetch=[
+                        Prefetch(
+                            query=dense_batch[idx].tolist(),
+                            using="dense",
+                            filter=recency_filter,
+                            limit=per_query_limit,
+                        ),
+                        Prefetch(
+                            query=SparseVector(
+                                indices=sparse_batch[idx].indices,
+                                values=sparse_batch[idx].values,
+                            ),
+                            using="bm25",
+                            filter=recency_filter,
+                            limit=per_query_limit,
+                        ),
+                    ],
+                    query=FusionQuery(fusion=Fusion.RRF),
+                    limit=per_query_limit,
+                    with_payload=True,
+                    with_vectors=True,
+                )
+                return idx, list(response.points)
+            except Exception as e:
+                logger.warning(
+                    "retrieve_multi sub-query %d failed: %s", idx, e,
+                )
+                return idx, []
+
+        # Parallel fan-out. ThreadPoolExecutor caps concurrency at the
+        # number of queries; the embedded Qdrant client is thread-safe
+        # enough for this read-only fan-out.
+        merged: dict[str, "_MergedCandidate"] = {}
+        try:
+            with ThreadPoolExecutor(max_workers=max(1, len(all_queries))) as pool:
+                results = list(pool.map(_query, range(len(all_queries))))
+        except Exception as e:
+            logger.warning("retrieve_multi fan-out failed: %s", e)
+            return self.retrieve(primary_query, k=k, exclude_recent=exclude_recent)
+
+        for idx, points in results:
+            for pt in points:
+                pid = str(pt.id)
+                payload = pt.payload or {}
+                rrf_score = float(getattr(pt, "score", 0.0) or 0.0)
+                dense = _extract_dense_vector(pt.vector)
+                if pid not in merged:
+                    merged[pid] = _MergedCandidate(
+                        candidate_id=pid,
+                        payload=payload,
+                        dense=dense,
+                        primary_rrf=rrf_score if idx == 0 else 0.0,
+                        category_rrf=0.0 if idx == 0 else rrf_score,
+                    )
+                    continue
+                existing = merged[pid]
+                if idx == 0:
+                    existing.primary_rrf = max(existing.primary_rrf, rrf_score)
+                else:
+                    existing.category_rrf = max(existing.category_rrf, rrf_score)
+
+        if not merged:
+            return []
+
+        from ultron.memory.ranking import (
+            CandidateScore,
+            RankingWeights,
+            select_top_k,
+        )
+
+        weights = RankingWeights(
+            rrf_weight=ranking_cfg.rrf_weight,
+            recency_weight=ranking_cfg.recency_weight,
+            recency_half_life_days=ranking_cfg.recency_half_life_days,
+            surprise_weight=ranking_cfg.surprise_weight,
+            redundancy_weight=ranking_cfg.redundancy_weight,
+        )
+        candidates: List[CandidateScore] = []
+        for m in merged.values():
+            # Use the larger of primary / category as the base RRF.
+            base = max(m.primary_rrf, m.category_rrf)
+            candidates.append(CandidateScore(
+                candidate_id=m.candidate_id,
+                payload=m.payload,
+                rrf_score=base,
+                dense=m.dense,
+                primary_similarity=m.primary_rrf,
+                category_similarity=m.category_rrf,
+            ))
+        # 2026-05-21 frontier search pass: optionally rerank a wider
+        # candidate window via the cross-encoder. Same dispatch as
+        # single-pass retrieve_impl. When reranking is enabled we
+        # pull a wider initial set from select_top_k so the cross-
+        # encoder has meaningful candidates to choose from.
+        rerank_cfg = getattr(mem_cfg, "reranking", None)
+        reranking_enabled = bool(
+            rerank_cfg is not None and getattr(rerank_cfg, "enabled", False)
+        )
+        if reranking_enabled:
+            wide_k = int(getattr(rerank_cfg, "candidate_count", 20))
+            picked = select_top_k(
+                candidates, k=max(1, wide_k), weights=weights,
+                primary_dense=primary_dense,
+            )
+            wide_turns = [_payload_to_turn(p.payload) for p in picked]
+            return self._apply_reranker(primary_query, wide_turns, k)
+
+        picked = select_top_k(
+            candidates, k=max(1, k), weights=weights,
+            primary_dense=primary_dense,
+        )
+        return [_payload_to_turn(p.payload) for p in picked]
+
+    def retrieve_for_query(
+        self,
+        primary_query: str,
+        gate_verdict=None,
+        *,
+        k: Optional[int] = None,
+        exclude_recent: Optional[int] = None,
+    ) -> List[MemoryTurn]:
+        """Single entry point that routes between single- and multi-pass.
+
+        When ``memory.retrieval.multi_pass_enabled`` is ON AND the gate
+        verdict carries category sub-queries, fan out via
+        :meth:`retrieve_multi`. Otherwise call :meth:`retrieve`. Calling
+        this with ``gate_verdict=None`` is equivalent to calling
+        ``retrieve(...)`` directly -- callers that don't have a verdict
+        (e.g., the existing RAG path before A2 lands fully) keep working.
+        """
+        cfg = get_config().memory
+        if cfg.retrieval.multi_pass_enabled and gate_verdict is not None:
+            categories = list(getattr(gate_verdict, "context_categories", []) or [])
+            extra = list(getattr(gate_verdict, "memory_search_queries", []) or [])
+            combined = [c for c in categories + extra if c]
+            if combined:
+                return self.retrieve_multi(
+                    primary_query, combined, k=k, exclude_recent=exclude_recent,
+                )
+        return self.retrieve(
+            primary_query, k=k, exclude_recent=exclude_recent,
+        )
+
+    # --- facts collection ---------------------------------------------------
+
+    def search_facts(
+        self,
+        query: str,
+        *,
+        k: int = 5,
+        min_confidence: float = 0.0,
+        max_age_days: Optional[float] = None,
+    ) -> List[FactRow]:
+        """Hybrid (dense + BM25, RRF-fused) search of the ``facts`` collection.
+
+        Args:
+            query: free-text question to match against stored facts.
+            k: max rows to return.
+            min_confidence: drop facts with ``confidence`` below this.
+            max_age_days: drop facts whose ``last_confirmed`` is older than
+                this many days. ``None`` disables the age cap.
+
+        Returns:
+            Newest-first list of :class:`FactRow`. Empty on any failure
+            (Qdrant down, embedder down, malformed payload). Failures are
+            logged via :class:`ErrorLog`; no exception is propagated to the
+            caller — the coordinator must keep working when memory is sick.
+        """
+        if not (query or "").strip() or k <= 0:
+            return []
+
+        from qdrant_client.models import (
+            FieldCondition,
+            Filter,
+            Fusion,
+            FusionQuery,
+            Prefetch,
+            Range,
+            SparseVector,
+        )
+
+        try:
+            qdv = self._embedder.encode_query_dense(query)
+            qsv: _SparseVec = self._embedder.encode_query_sparse(query)
+        except Exception as e:
+            logger.warning("search_facts: query embedding failed: %s", e)
+            get_error_log().record(
+                QdrantUnavailableError(
+                    f"facts query embedding failed: {e}",
+                    context={"query_len": len(query)},
+                    recovery=(
+                        "returned empty facts list; coordinator falls "
+                        "through to LLM/escalation"
+                    ),
+                ),
+                dependency="qdrant_embedder",
+            )
+            return []
+
+        must: List[Any] = []
+        if min_confidence > 0:
+            must.append(
+                FieldCondition(
+                    key="confidence",
+                    range=Range(gte=float(min_confidence)),
+                ),
+            )
+        if max_age_days is not None and max_age_days > 0:
+            cutoff_ts = time.time() - (max_age_days * 86400.0)
+            must.append(
+                FieldCondition(
+                    key="last_confirmed",
+                    range=Range(gte=float(cutoff_ts)),
+                ),
+            )
+        flt: Optional[Filter] = Filter(must=must) if must else None
+
+        # 2026-05-21 frontier search pass: pull a wider candidate set
+        # when cross-encoder reranking is enabled so the reranker has
+        # something meaningful to choose from. Otherwise stick with
+        # the legacy max(1, k) limit (no behaviour change).
+        mem_cfg = get_config().memory
+        rerank_cfg = getattr(mem_cfg, "reranking", None)
+        reranking_enabled = bool(
+            rerank_cfg is not None and getattr(rerank_cfg, "enabled", False)
+        )
+        pull_limit = (
+            int(getattr(rerank_cfg, "candidate_count", 20))
+            if reranking_enabled else max(1, k)
+        )
+        try:
+            response = self._client.query_points(
+                collection_name=get_config().qdrant.collections.facts,
+                prefetch=[
+                    Prefetch(
+                        query=qdv.tolist(),
+                        using="dense",
+                        filter=flt,
+                        limit=max(k * 4, 20),
+                    ),
+                    Prefetch(
+                        query=SparseVector(
+                            indices=qsv.indices, values=qsv.values
+                        ),
+                        using="bm25",
+                        filter=flt,
+                        limit=max(k * 4, 20),
+                    ),
+                ],
+                query=FusionQuery(fusion=Fusion.RRF),
+                limit=pull_limit,
+                with_payload=True,
+                with_vectors=False,
+            )
+        except Exception as e:
+            logger.warning("search_facts: Qdrant query failed: %s", e)
+            get_error_log().record(
+                QdrantUnavailableError(
+                    f"facts hybrid search failed: {e}",
+                    context={"query_len": len(query), "k": k},
+                    recovery=(
+                        "returned empty facts list; coordinator falls "
+                        "through to LLM/escalation"
+                    ),
+                ),
+                dependency="qdrant",
+            )
+            return []
+
+        rows: List[FactRow] = []
+        for pt in response.points:
+            payload = pt.payload or {}
+            try:
+                rows.append(
+                    FactRow(
+                        fact=str(payload.get("fact", "")),
+                        confidence=float(payload.get("confidence", 0.0)),
+                        last_confirmed=float(
+                            payload.get("last_confirmed", 0.0)
+                        ),
+                        category=str(payload.get("category", "")),
+                        score=float(getattr(pt, "score", 0.0) or 0.0),
+                        extracted_at=float(payload.get("extracted_at", 0.0)),
+                        extracted_from=list(payload.get("extracted_from") or []),
+                        retrieval_weight=float(
+                            payload.get("retrieval_weight", 1.0)
+                        ),
+                    )
+                )
+            except (TypeError, ValueError) as e:
+                logger.debug("search_facts: skipping malformed row: %s", e)
+                continue
+        if reranking_enabled and len(rows) > k:
+            rows = self._rerank_facts(query, rows, k)
+        return rows
+
+    def _rerank_facts(
+        self,
+        query: str,
+        rows: "List[FactRow]",
+        k: int,
+    ) -> "List[FactRow]":
+        """Apply the cross-encoder reranker to ``rows`` against the
+        ``query`` and return the top ``k`` re-ordered.
+
+        Same lazy-load + fail-open pattern as ``_apply_reranker``
+        for memory turns. The cross-encoder model is shared via
+        ``ultron.web_search.search._get_cross_encoder`` so we don't
+        load the ~1.1 GB model twice (memory + facts + web search
+        all use the same instance).
+        """
+        if not rows or k <= 0:
+            return list(rows)[: max(0, k)]
+        try:
+            # Reuse the shared cross-encoder instance from the
+            # web-search ranker module. Falls back to None when load
+            # fails -- we degrade to RRF order.
+            from ultron.web_search.search import _get_cross_encoder
+            reranker = _get_cross_encoder()
+            if reranker is None or not reranker._ensure_model():       # noqa: SLF001
+                return list(rows)[:k]
+            pairs = [(query, str(r.fact)) for r in rows]
+            scores = reranker._model.predict(                          # noqa: SLF001
+                pairs, show_progress_bar=False, convert_to_numpy=True,
+            )
+            ranked = sorted(
+                range(len(rows)),
+                key=lambda i: float(scores[i]),
+                reverse=True,
+            )[:k]
+            return [rows[i] for i in ranked]
+        except Exception as e:                                         # noqa: BLE001
+            logger.warning(
+                "Facts reranker failed (%s); using RRF order.", e,
+            )
+            return list(rows)[:k]
+
+    # --- introspection ------------------------------------------------------
+
+    def __len__(self) -> int:
+        try:
+            return self._client.count(
+                collection_name=get_config().qdrant.collections.conversations,
+                exact=False,
+            ).count
+        except Exception:
+            return len(self._recent)
+
+    def close(self) -> None:
+        """Drain the writer queue and release the Qdrant client.
+
+        In local (file-backed) mode Qdrant holds an EXCLUSIVE OS lock
+        on ``<path>/.lock`` for the lifetime of the client, so only one
+        client can be open against a given path at once (the supervisor
+        ProjectIndex and the web cache BORROW this instance's client
+        for exactly that reason). Closing frees that lock and the file
+        handles -- used for clean shutdown and by harness/tooling (the
+        voice e2e suite closes between phases) that opens a fresh
+        instance against the same path. Best-effort + fail-open at
+        every step; the writer is a daemon thread, so even a failed
+        join exits with the process.
+
+        Note (2026-06-12): this was previously shadowed by a dead
+        duplicate ``close`` earlier in the class; this queue-draining
+        implementation has always been the one Python actually used.
+        """
+        try:
+            # Wait for in-flight writes to complete (~ms each, capped).
+            self._write_queue.join()
+        except Exception:
+            pass
+        try:
+            self._write_queue.put_nowait(None)
+        except queue.Full:
+            pass
+        self._writer_thread.join(timeout=2.0)
+        try:
+            self._client.close()
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _new_session_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+@dataclass
+class _MergedCandidate:
+    """Internal: per-point aggregator for the multi-pass fan-out.
+
+    Tracks the best RRF score the candidate received against the
+    primary query and the best score it received against any of the
+    category sub-queries. The composite-score helper later prefers
+    candidates with strong category match + weak primary match
+    (the surprise score).
+    """
+
+    candidate_id: str
+    payload: dict
+    dense: Optional[List[float]]
+    primary_rrf: float = 0.0
+    category_rrf: float = 0.0
+
+
+def _extract_dense_vector(vec) -> Optional[List[float]]:
+    """Pull the dense vector out of a Qdrant point's ``vector`` field.
+
+    Qdrant returns ``vector`` as a dict keyed by vector name when
+    multiple vectors were configured (our ``dense`` + ``bm25`` setup);
+    we fish out the dense one. Returns ``None`` when the point came
+    back without vectors (``with_vectors=False``).
+    """
+    if vec is None:
+        return None
+    if isinstance(vec, dict):
+        dense = vec.get("dense")
+        if dense is None:
+            return None
+        return list(dense)
+    # Plain list / array form (single-vector collection).
+    try:
+        return list(vec)
+    except TypeError:
+        return None
+
+
+def _payload_to_turn(payload: dict) -> MemoryTurn:
+    # 2026-05-19 Track 6 voice-loop integration: legacy payloads (written
+    # before the channel field landed) don't carry ``channel``. The
+    # :meth:`Channel.from_str` helper coerces missing / unknown values to
+    # :data:`Channel.USER` so the round-trip is backwards-compatible.
+    channel_raw = payload.get("channel")
+    channel = Channel.from_str(channel_raw) if channel_raw else Channel.USER
+    return MemoryTurn(
+        id=int(payload.get("turn_id", 0)),
+        ts=float(payload.get("ts", 0.0)),
+        role=str(payload.get("role", "")),
+        content=str(payload.get("content", "")),
+        session_id=str(payload.get("session_id", "")),
+        summary=str(payload.get("summary", "")),
+        entities=list(payload.get("entities") or []),
+        topic_tags=list(payload.get("topic_tags") or []),
+        cluster_id=payload.get("cluster_id"),
+        channel=channel,
+    )

@@ -14,12 +14,12 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from ultron.settings_gui.launch import (
+from kenning.settings_gui.launch import (
     close_gui,
     launch_gui,
     match_settings_command,
 )
-from ultron.settings_gui.spec import (
+from kenning.settings_gui.spec import (
     SECTIONS,
     apply_updates,
     patch_config_text,
@@ -28,7 +28,7 @@ from ultron.settings_gui.spec import (
     write_reload_signal,
 )
 
-from ultron.pipeline.orchestrator import Orchestrator
+from kenning.pipeline.orchestrator import Orchestrator
 
 REPO_CONFIG = Path(__file__).resolve().parents[2] / "config.yaml"
 
@@ -246,7 +246,7 @@ def test_launch_gui_spawns_without_console(
     pid = launch_gui(spawn_fn=fake_popen)
     assert pid == 4321
     (call,) = calls
-    assert call["argv"][-2:] == ["-m", "ultron.settings_gui"]
+    assert call["argv"][-2:] == ["-m", "kenning.settings_gui"]
     # No console window may EVER appear: either the GUI-subsystem
     # pythonw.exe interpreter, or CREATE_NO_WINDOW on python.exe.
     no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -295,7 +295,7 @@ def _bare_orchestrator():
 
 
 def test_orchestrator_settings_open(monkeypatch: pytest.MonkeyPatch) -> None:
-    import ultron.settings_gui.launch as launch_mod
+    import kenning.settings_gui.launch as launch_mod
 
     o = _bare_orchestrator()
     monkeypatch.setattr(launch_mod, "launch_gui", lambda **kw: 777)
@@ -307,7 +307,7 @@ def test_orchestrator_settings_open(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_orchestrator_settings_open_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import ultron.settings_gui.launch as launch_mod
+    import kenning.settings_gui.launch as launch_mod
 
     o = _bare_orchestrator()
     monkeypatch.setattr(launch_mod, "launch_gui", lambda **kw: None)
@@ -316,7 +316,7 @@ def test_orchestrator_settings_open_failure(
 
 
 def test_orchestrator_settings_close(monkeypatch: pytest.MonkeyPatch) -> None:
-    import ultron.settings_gui.launch as launch_mod
+    import kenning.settings_gui.launch as launch_mod
 
     closed: list = []
     o = _bare_orchestrator()
@@ -345,7 +345,7 @@ def test_orchestrator_settings_no_match_falls_through() -> None:
 def test_maybe_reload_config_triggers_on_new_signal(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    import ultron.config as config_mod
+    import kenning.config as config_mod
 
     reloads: list[int] = []
     monkeypatch.setattr(config_mod, "PROJECT_ROOT", tmp_path)
@@ -385,7 +385,7 @@ def test_maybe_reload_config_triggers_on_new_signal(
 def test_write_action_appends_jsonl(tmp_path: Path) -> None:
     import json as _json
 
-    from ultron.settings_gui.spec import ACTION_RELPATH, write_action
+    from kenning.settings_gui.spec import ACTION_RELPATH, write_action
 
     write_action(tmp_path, "gaming_mode", True)
     write_action(tmp_path, "llm_preset", "qwen3.5-4b")
@@ -426,8 +426,8 @@ def _orch():
 
 
 def test_drain_gui_actions_dispatches(monkeypatch, tmp_path) -> None:
-    import ultron.config as config_mod
-    from ultron.settings_gui.spec import write_action
+    import kenning.config as config_mod
+    from kenning.settings_gui.spec import write_action
 
     monkeypatch.setattr(config_mod, "PROJECT_ROOT", tmp_path)
     data = tmp_path / "data"
@@ -486,3 +486,102 @@ def test_apply_gui_action_kokoro_device() -> None:
     o.tts = SimpleNamespace(move_to_device=moves.append)
     o._apply_gui_action("kokoro_device", "cpu")
     assert moves == ["cpu"]
+
+
+# ---------------------------------------------------------------------------
+# Dynamic choices provider (relay output-device dropdown, 2026-06-12)
+# ---------------------------------------------------------------------------
+
+
+def test_relay_output_device_knob_is_provider_dropdown() -> None:
+    knob = next(
+        k for s in SECTIONS for k in s.knobs
+        if k.path == ("relay_speech", "output_device")
+    )
+    assert knob.kind == "choice"
+    assert knob.choices == ()  # dynamic, not static
+    assert knob.choices_provider == "output_devices"
+    # Hot via call-time config read -- no runtime action, no restart.
+    assert knob.action is None
+    assert knob.restart is False
+
+
+def test_output_device_names_enumerates_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import kenning.settings_gui.spec as spec_mod
+
+    fake_devices = [
+        {"name": "Speakers (Realtek)", "max_output_channels": 2},
+        {"name": "Microphone (USB)", "max_output_channels": 0},  # input only
+        {"name": "Voicemeeter Input", "max_output_channels": 8},
+        {"name": "Voicemeeter Aux Input", "max_output_channels": 8},
+        {"name": "Speakers (Realtek)", "max_output_channels": 2},  # dup
+        {"name": "", "max_output_channels": 2},  # nameless -> skipped
+    ]
+    import sys
+
+    monkeypatch.setitem(
+        sys.modules, "sounddevice",
+        SimpleNamespace(query_devices=lambda: fake_devices),
+    )
+    names = spec_mod.output_device_names()
+    assert names == (
+        "Speakers (Realtek)", "Voicemeeter Input", "Voicemeeter Aux Input",
+    )
+
+
+def test_output_device_names_fail_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    import kenning.settings_gui.spec as spec_mod
+
+    def boom() -> list:
+        raise RuntimeError("PortAudio exploded")
+
+    monkeypatch.setitem(
+        sys.modules, "sounddevice", SimpleNamespace(query_devices=boom),
+    )
+    assert spec_mod.output_device_names() == ()
+
+
+def test_resolve_choices_static_wins() -> None:
+    from kenning.settings_gui.spec import Knob, resolve_choices
+
+    knob = Knob(("tts", "kokoro", "device"), "Device", "choice",
+                choices=("cuda", "cpu"))
+    assert resolve_choices(knob, "cuda") == ("cuda", "cpu")
+
+
+def test_resolve_choices_provider_includes_current_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import kenning.settings_gui.spec as spec_mod
+    from kenning.settings_gui.spec import Knob
+
+    monkeypatch.setattr(
+        spec_mod, "output_device_names",
+        lambda: ("Speakers (Realtek)", "Voicemeeter Input"),
+    )
+    knob = Knob(("relay_speech", "output_device"), "Output device", "choice",
+                choices_provider="output_devices")
+    # Configured device currently unplugged -> still selectable.
+    got = spec_mod.resolve_choices(knob, "Voicemeeter Aux Input")
+    assert got[0] == "Voicemeeter Aux Input"
+    assert "Voicemeeter Input" in got
+
+
+def test_resolve_choices_provider_failure_keeps_current(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import kenning.settings_gui.spec as spec_mod
+    from kenning.settings_gui.spec import Knob
+
+    monkeypatch.setattr(spec_mod, "output_device_names", lambda: ())
+    knob = Knob(("relay_speech", "output_device"), "Output device", "choice",
+                choices_provider="output_devices")
+    assert spec_mod.resolve_choices(knob, "Voicemeeter Aux Input") == (
+        "Voicemeeter Aux Input",
+    )

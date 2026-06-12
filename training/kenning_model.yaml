@@ -1,0 +1,64 @@
+# Training config for the Kenning wake word.
+#
+# All paths below are relative to the directory the train.py command is run from
+# (we always run it from C:\STC\ultronPrototype\training\).
+
+model_name: "kenning"
+
+target_phrase:
+  - "kenning"
+
+custom_negative_phrases: ["ken", "kennel", "canning", "cunning", "kenneth", "kenny", "keening", "can it", "ken in", "killing"]
+
+# Synthetic clips: 8000 train / 1000 val. Bigger is better; 8k is a reasonable
+# baseline that finishes in a few minutes on a 4070 Ti.
+n_samples: 24000
+n_samples_val: 2000
+
+# Piper TTS batch size at clip-generation time. The 4070 Ti has 12 GB; 50 fits.
+tts_batch_size: 50
+
+# Augmentation pipeline batch size (smaller = more diversity per round).
+augmentation_batch_size: 16
+augmentation_rounds: 1
+
+# Path to the cloned piper-sample-generator (where generate_samples.py lives).
+piper_sample_generator_path: "./piper-sample-generator"
+
+# Outputs land here; the trained kenning.onnx will be written to
+# my_custom_model/kenning.onnx.
+output_dir: "./my_custom_model"
+
+# Augmentation sources we downloaded.
+rir_paths:
+  - "./data/mit_rirs"
+
+background_paths:
+  - "./data/urbansound"
+background_paths_duplication_rate:
+  - 1
+
+# Pre-computed openwakeword features (generic negatives + validation set).
+false_positive_validation_data_path: "./data/validation_set_features.npy"
+
+feature_data_files:
+  ACAV100M_sample: "./data/openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
+
+batch_n_per_class:
+  ACAV100M_sample: 1024
+  adversarial_negative: 50
+  positive: 50
+
+# Architecture: small DNN works well for short wake words.
+model_type: "dnn"
+layer_size: 32
+
+# Training. 30k steps strikes a balance between time (~15 min on 4070 Ti) and
+# convergence; bump to 50k+ if recall stays low.
+steps: 30000
+
+# Auto-train tuning: reasonable defaults from the openWakeWord README.
+max_negative_weight: 1500
+target_false_positives_per_hour: 0.2
+target_accuracy: 0.7
+target_recall: 0.5

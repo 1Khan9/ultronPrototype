@@ -1,4 +1,4 @@
-"""Tests for the teammate voice relay (``ultron.audio.relay_speech``).
+"""Tests for the teammate voice relay (``kenning.audio.relay_speech``).
 
 Hermetic per the binding rules: no real audio device is ever opened
 (playback uses an injected stream factory; device resolution is
@@ -14,7 +14,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from ultron.audio.relay_speech import (
+from kenning.audio.relay_speech import (
     RelayCommand,
     build_relay_line,
     match_relay_command,
@@ -25,7 +25,7 @@ from ultron.audio.relay_speech import (
 
 # Import at module load (before any monkeypatch of get_config) so the
 # transitive ``config.settings`` module loads against the REAL config.
-from ultron.pipeline.orchestrator import Orchestrator
+from kenning.pipeline.orchestrator import Orchestrator
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +67,7 @@ def test_match_relay_positive(text: str, expected_payload: str) -> None:
 @pytest.mark.parametrize(
     "text",
     [
-        # Addressed to Ultron, not the team.
+        # Addressed to Kenning, not the team.
         "Tell me how shit my teammates are in Valorant",
         "tell me a story about my team",
         # Ordinary utterances.
@@ -129,8 +129,8 @@ def test_match_named_addressee(
         ("Tell my team to play retake.", "play retake."),
         ("Tell my team I am lurking.", "I am lurking."),
         (
-            "Tell my team that I am ultron the next step in human evolution.",
-            "I am ultron the next step in human evolution.",
+            "Tell my team that I am kenning the next step in human evolution.",
+            "I am kenning the next step in human evolution.",
         ),
     ],
 )
@@ -389,14 +389,14 @@ def test_play_to_device_closes_stream_on_write_error() -> None:
 
 
 def test_resolve_relay_device_delegates(monkeypatch: pytest.MonkeyPatch) -> None:
-    import ultron.audio.devices as devices
+    import kenning.audio.devices as devices
 
     monkeypatch.setattr(devices, "resolve_device", lambda c, k: 42)
     assert resolve_relay_device("Voicemeeter Aux Input") == 42
 
 
 def test_resolve_relay_device_fail_open(monkeypatch: pytest.MonkeyPatch) -> None:
-    import ultron.audio.devices as devices
+    import kenning.audio.devices as devices
 
     def boom(configured: Any, kind: str) -> int:
         raise RuntimeError("no such device")
@@ -432,7 +432,7 @@ def _bare_orchestrator() -> Any:
 
 
 def _patch_config(monkeypatch: pytest.MonkeyPatch, cfg: SimpleNamespace) -> None:
-    import ultron.config as config_mod
+    import kenning.config as config_mod
 
     monkeypatch.setattr(
         config_mod, "get_config",
@@ -470,7 +470,7 @@ def test_orchestrator_relay_no_tts_consumes_turn_with_error(
 def test_orchestrator_relay_missing_device_consumes_turn_with_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import ultron.audio.relay_speech as relay_mod
+    import kenning.audio.relay_speech as relay_mod
 
     o = _bare_orchestrator()
     o.tts = SimpleNamespace(
@@ -484,7 +484,7 @@ def test_orchestrator_relay_missing_device_consumes_turn_with_error(
 
 
 def test_orchestrator_relay_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    import ultron.audio.relay_speech as relay_mod
+    import kenning.audio.relay_speech as relay_mod
 
     synthesized: list[str] = []
     played: list[tuple] = []
@@ -515,7 +515,7 @@ def test_orchestrator_relay_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_orchestrator_relay_echo_to_user(monkeypatch: pytest.MonkeyPatch) -> None:
-    import ultron.audio.relay_speech as relay_mod
+    import kenning.audio.relay_speech as relay_mod
 
     o = _bare_orchestrator()
     o.tts = SimpleNamespace(
@@ -534,7 +534,7 @@ def test_orchestrator_relay_echo_to_user(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_orchestrator_relay_playback_failure_speaks_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import ultron.audio.relay_speech as relay_mod
+    import kenning.audio.relay_speech as relay_mod
 
     o = _bare_orchestrator()
     o.tts = SimpleNamespace(
@@ -554,7 +554,7 @@ def test_orchestrator_relay_playback_failure_speaks_error(
 
 def test_relay_config_defaults() -> None:
     """The shipped config section exists with the documented defaults."""
-    from ultron.config import RelaySpeechConfig
+    from kenning.config import RelaySpeechConfig
 
     cfg = RelaySpeechConfig()
     assert cfg.enabled is True
@@ -604,7 +604,7 @@ def test_prompt_recent_lines_capped_at_six() -> None:
 def test_orchestrator_relay_records_recent_lines_ring(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import ultron.audio.relay_speech as relay_mod
+    import kenning.audio.relay_speech as relay_mod
 
     o = _bare_orchestrator()
     o.tts = SimpleNamespace(
@@ -734,7 +734,7 @@ def test_orchestrator_toggle_requires_feature_enabled(
 def test_muted_relay_command_acknowledged_not_transmitted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import ultron.audio.relay_speech as relay_mod
+    import kenning.audio.relay_speech as relay_mod
 
     o = _bare_orchestrator()
     o.tts = SimpleNamespace(

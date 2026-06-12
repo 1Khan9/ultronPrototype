@@ -1,0 +1,5 @@
+# Kenning relay roast lines -- one per line, spoken VERBATIM when you
+# say "Kenning, roast my team" (never LLM-rephrased). Add your own
+# below; lines starting with # are ignored. Kenning picks one at random
+# and avoids repeating the last few.
+I may be an AI, but you are a bot.

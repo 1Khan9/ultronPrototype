@@ -1,0 +1,1018 @@
+# Kenning fun-fact corpus -- one true fact per line, spoken VERBATIM when
+# you say "Kenning, tell my team a fun fact". Lines starting with # are
+# ignored. Kenning picks one at random and avoids repeating the last few.
+# Add or edit freely; the file is re-read on every request.
+A day on Venus is longer than a year on Venus.
+Honey found in ancient Egyptian tombs was still edible after three thousand years.
+Octopuses have three hearts and blue blood.
+A group of flamingos is called a flamboyance.
+The Eiffel Tower can grow more than six inches taller in summer as its iron expands.
+Bananas are berries, but strawberries are not.
+A bolt of lightning is roughly five times hotter than the surface of the Sun.
+Sharks existed before trees did.
+The shortest war in history lasted about thirty-eight minutes.
+A teaspoon of neutron star material would weigh about six billion tons.
+Wombats produce cube-shaped droppings.
+The human nose can distinguish more than a trillion different scents.
+Antarctica is the largest desert on Earth.
+Cleopatra lived closer in time to the Moon landing than to the building of the Great Pyramid.
+There are more possible games of chess than atoms in the observable universe.
+A hummingbird's heart can beat over a thousand times per minute.
+The Great Wall of China is not visible from space with the naked eye.
+Polar bears have black skin under their white fur.
+Hot water can freeze faster than cold water under some conditions, an effect called the Mpemba effect.
+The longest recorded flight of a chicken is thirteen seconds.
+Saturn would float in water because it is less dense than water.
+A single strand of spider silk is thinner than a human hair but stronger than steel of the same width.
+Sloths can hold their breath longer than dolphins can.
+The dot over a lowercase i or j is called a tittle.
+An octopus can squeeze through any gap larger than its beak.
+The Hawaiian alphabet has only thirteen letters.
+A cloud can weigh more than a million pounds.
+Cows have best friends and get stressed when they are separated.
+The unicorn is the national animal of Scotland.
+Venus is the only planet that spins clockwise.
+The inventor of the Frisbee was turned into a Frisbee after he died.
+Butterflies taste with their feet.
+The world's largest snowflake on record was fifteen inches wide.
+A jiffy is an actual unit of time, equal to one hundredth of a second.
+Some turtles can breathe through their rear ends.
+The Statue of Liberty's full name is Liberty Enlightening the World.
+A snail can sleep for up to three years.
+The blob of toothpaste on a toothbrush is called a nurdle.
+There are more stars in the universe than grains of sand on all of Earth's beaches.
+Goats have rectangular pupils.
+The fingerprints of a koala are almost indistinguishable from those of a human.
+Bubble wrap was originally invented as wallpaper.
+A group of crows is called a murder.
+The Moon has moonquakes.
+Hot dogs and hamburgers are named after places, not their ingredients.
+Most of the dust in your home is made of dead skin cells and fibers.
+The heart of a blue whale is so large a human could swim through its arteries.
+A flea can jump up to two hundred times its own body length.
+The first oranges were not orange but green.
+Scotland has 421 words for snow.
+An ostrich's eye is bigger than its brain.
+Tigers have striped skin, not just striped fur.
+The Pacific Ocean is wider than the Moon's diameter many times over.
+A bolt of lightning contains enough energy to toast around one hundred thousand slices of bread.
+Penguins propose to their mates with a pebble.
+The smell of freshly cut grass is a plant distress call.
+Sea otters hold hands while sleeping so they do not drift apart.
+The world's oldest known living tree is over four thousand eight hundred years old.
+Honeybees can recognize human faces.
+The total weight of all ants on Earth once rivaled the total weight of all humans.
+A rhinoceros's horn is made of keratin, the same material as human hair and nails.
+Lobsters taste with their legs.
+The Sahara Desert was once a green, lake-filled landscape.
+A shrimp's heart is in its head.
+There is enough gold in Earth's core to coat the planet's surface in a layer half a meter deep.
+The longest place name in the world has eighty-five letters and is in New Zealand.
+Elephants are the only animals that cannot jump.
+Your stomach gets a new lining every few days so it does not digest itself.
+The Eiffel Tower was meant to be a temporary installation.
+A day on Mars is about forty minutes longer than a day on Earth.
+The hashtag symbol is technically called an octothorpe.
+Owls do not have eyeballs; they have eye tubes.
+Bananas are slightly radioactive because they contain potassium.
+The longest hiccupping spell lasted sixty-eight years.
+A bird called the bar-tailed godwit can fly more than seven thousand miles without stopping.
+The average cumulus cloud weighs about the same as eighty elephants.
+Humans share about sixty percent of their DNA with bananas.
+Crocodiles cannot stick out their tongues.
+A group of pugs is called a grumble.
+The metal gallium melts in your hand because its melting point is just below body temperature.
+The longest English word without a vowel is rhythms.
+A sneeze can travel out of your body at around one hundred miles per hour.
+The Earth is not a perfect sphere; it bulges at the equator.
+Pineapples take about two years to grow.
+A group of jellyfish is called a smack.
+The colour orange was named after the fruit, not the other way around.
+Mantis shrimp can see a wider range of colours than humans can.
+There are more trees on Earth than stars in the Milky Way.
+A bolt of lightning is only about as wide as a thumb.
+The longest recorded life of a goldfish was over forty years.
+Astronauts grow taller in space because there is less gravity compressing their spines.
+The hottest chili peppers can register over two million Scoville units.
+Cats cannot taste sweetness.
+The Earth's inner core is roughly as hot as the surface of the Sun.
+A blue whale's tongue can weigh as much as an elephant.
+Sound cannot travel through the vacuum of space.
+A group of owls is called a parliament.
+The Wright brothers' first flight was shorter than the wingspan of a Boeing 747.
+Some species of bamboo can grow nearly three feet in a single day.
+The deepest part of the ocean is deeper than Mount Everest is tall.
+Frogs can freeze solid in winter and thaw back to life in spring.
+The word robot comes from a Czech word meaning forced labour.
+A snail's slime lets it crawl across the edge of a razor blade unharmed.
+There is a planet made largely of diamond, called 55 Cancri e.
+Camels have three eyelids to protect their eyes from sand.
+The first computer programmer was a woman, Ada Lovelace, in the 1840s.
+A teaspoon of soil contains more microorganisms than there are people on Earth.
+The shortest complete sentence in English is I am.
+Hummingbirds are the only birds that can fly backwards.
+The average person walks the equivalent of five times around the world in a lifetime.
+A lightning strike can fuse sand into glass tubes called fulgurites.
+Starfish do not have brains or blood.
+Mount Everest grows about a quarter of an inch taller every year.
+A group of porcupines is called a prickle.
+The Mona Lisa has no eyebrows.
+A day on the dwarf planet Pluto lasts about six and a half Earth days.
+Sharks can sense a single drop of blood in an Olympic-sized swimming pool.
+The human body contains enough carbon to fill about nine thousand pencils.
+Kangaroos cannot walk backwards.
+The largest living organism on Earth is a fungus in Oregon covering thousands of acres.
+A bolt of silk can be unwound from a single cocoon for nearly a mile.
+The coldest temperature ever recorded on Earth was below minus one hundred twenty-eight degrees Fahrenheit in Antarctica.
+Bees communicate the location of food by dancing.
+Venus is the hottest planet in the solar system, even though Mercury is closer to the Sun.
+The average human heart beats about one hundred thousand times a day.
+A chameleon's tongue can be longer than its body.
+The first webcam was created to monitor a coffee pot at Cambridge University.
+Some jellyfish are effectively immortal and can revert to an earlier stage of life.
+The total length of blood vessels in a human body is about sixty thousand miles.
+Rats laugh when they are tickled.
+The Sun makes up about ninety-nine point eight percent of the mass of the solar system.
+Giraffes only need about thirty minutes of sleep a day.
+A pineapple is a cluster of dozens of individual berries fused together.
+The Leaning Tower of Pisa leans because it was built on soft ground.
+Sea cucumbers can eject their internal organs to deter predators and regrow them later.
+The human eye can distinguish about ten million different colours.
+Wood frogs can survive having two thirds of their body freeze.
+Lake Baikal in Russia holds about one fifth of the world's unfrozen fresh water.
+A snail has thousands of microscopic teeth on its tongue.
+The dot of confetti punched from paper is called a chad.
+Dolphins have names for each other in the form of signature whistles.
+The Eiffel Tower has its own secret apartment built by Gustave Eiffel.
+A group of rhinoceroses is called a crash.
+Light from the Sun takes about eight minutes to reach Earth.
+The fear of long words is humorously named hippopotomonstrosesquippedaliophobia.
+Octopuses can change both the colour and texture of their skin in an instant.
+The total number of possible iterations of a Rubik's Cube is over forty-three quintillion.
+A newborn kangaroo is about the size of a jellybean.
+Cashews grow on the bottom of a fruit called a cashew apple.
+The human brain uses about twenty percent of the body's total energy.
+The Atlantic Ocean is widening by about an inch each year.
+A group of ferrets is called a business.
+Bats are the only mammals capable of true sustained flight.
+The world's smallest reptile, a chameleon, can sit on the tip of a human finger.
+Sloths can rotate their heads almost three hundred degrees.
+Coffee was first discovered when a goat herder noticed his goats becoming energetic after eating certain berries.
+A galaxy called Andromeda is on a collision course with the Milky Way, billions of years from now.
+The average lifespan of a taste bud is about ten days.
+The platypus is one of the few mammals that lays eggs.
+A single bolt of lightning is hot enough to vaporize the moisture inside a tree and make it explode.
+Earthworms have five hearts.
+The smell of rain has a name: petrichor.
+Roughly seventy percent of the oxygen we breathe is produced by the ocean.
+The largest snowflakes can fall slower than the smallest because of their shape.
+A baby octopus is about the size of a flea when it hatches.
+The Voyager 1 spacecraft is the most distant human-made object from Earth.
+Cats spend about seventy percent of their lives sleeping.
+The average person produces enough saliva in a lifetime to fill two swimming pools.
+A group of hedgehogs is called an array.
+The tallest waterfall, Angel Falls in Venezuela, is so high the water often turns to mist before reaching the ground.
+Penguins can leap up to nine feet out of the water.
+The word alphabet comes from the first two Greek letters, alpha and beta.
+A scallop can have up to two hundred eyes around the edge of its shell.
+Bamboo is technically a grass, not a tree.
+The Moon is slowly drifting away from Earth at about an inch and a half per year.
+A flamingo can only eat with its head upside down.
+There are more public libraries in the United States than there are McDonald's restaurants.
+The skin is the largest organ of the human body.
+Sea horses are the only species in which the male becomes pregnant.
+The Grand Canyon can hold around nine hundred trillion footballs.
+A group of giraffes is called a tower.
+Honey is the only food that includes all the substances necessary to sustain life, including water.
+The average cloud floats because the water droplets in it are tiny and spread out.
+The fastest land animal, the cheetah, can accelerate faster than most sports cars.
+Some metals are so reactive they catch fire in water.
+The human body has enough iron in it to make a small nail.
+A day on Jupiter lasts only about ten hours.
+Squids can have eyes as large as dinner plates.
+The longest mountain range on Earth is mostly underwater.
+A group of frogs is called an army.
+Apple seeds contain a compound that releases cyanide when digested, but in tiny harmless amounts.
+The Sun is about four and a half billion years old.
+A snowflake usually has six sides because of the way water molecules bond.
+The average human will spend about twenty-six years of their life asleep.
+Glass is sometimes considered a slow-moving liquid, though it behaves like a solid.
+A group of zebras is called a dazzle.
+The deepest cave on Earth descends more than a mile and a half underground.
+Otters have a favourite rock they keep in a pouch of skin to crack open shellfish.
+The pupil of an eye is actually a hole that lets light into the retina.
+The Eiffel Tower is repainted roughly every seven years using tons of paint.
+A blue whale is louder than a jet engine.
+Spiders use their silk to fly through the air, a behaviour called ballooning.
+The human body sheds about a million skin cells every day.
+A bolt of lightning can strike the same place many times; the Empire State Building is hit dozens of times a year.
+Reindeer eyes change colour from gold in summer to blue in winter.
+The world's largest living structure, the Great Barrier Reef, can be seen from space.
+A group of kangaroos is called a mob.
+Bananas float in water, as do apples and watermelons.
+The pistol shrimp can snap its claw fast enough to create a bubble hotter than the surface of the Sun for an instant.
+The first email was sent in 1971.
+A hippopotamus can hold its breath underwater for about five minutes.
+The Earth travels around the Sun at about sixty-seven thousand miles per hour.
+Sea turtles return to the same beach where they hatched to lay their own eggs.
+A group of lemurs is called a conspiracy.
+The longest river in the world, by most measures, is the Nile.
+Some species of ant can lift objects fifty times their own body weight.
+The space between your eyebrows is called the glabella.
+A jellyfish is about ninety-five percent water.
+The average person blinks around fifteen to twenty times a minute.
+The largest volcano in the solar system, Olympus Mons, is on Mars and is about three times the height of Everest.
+A group of butterflies is called a kaleidoscope.
+Penguins have a gland that filters salt out of the seawater they drink.
+The first photograph ever taken required about eight hours of exposure.
+Polar bears can smell a seal from nearly a mile away.
+The total surface area of a pair of human lungs is about the size of a tennis court.
+A group of toads is called a knot.
+Mercury and Venus are the only two planets in our solar system without moons.
+The harder you concentrate on falling asleep, the harder it usually becomes.
+A baby spider is called a spiderling.
+The Dead Sea is so salty that people float on its surface effortlessly.
+The wood frog's heart can stop beating entirely while it is frozen and restart in spring.
+A group of otters resting together on water is called a raft.
+The human skeleton renews itself completely about every ten years.
+Lightning strikes Earth about eight million times a day.
+The peregrine falcon is the fastest animal alive, diving at over two hundred miles per hour.
+A teaspoon of honey represents the life work of about a dozen bees.
+The Sun loses about four million tons of mass every second by converting it to energy.
+A group of cats is called a clowder.
+The deepest known point in the ocean is the Challenger Deep in the Mariana Trench.
+Cucumbers are about ninety-six percent water.
+The average human heart will pump enough blood in a lifetime to fill a supertanker.
+Some bamboo species flower only once every one hundred and twenty years.
+A group of eagles is called a convocation.
+The aurora borealis is caused by charged particles from the Sun hitting Earth's atmosphere.
+A koala sleeps up to twenty-two hours a day.
+The smallest bone in the human body, the stapes in the ear, is about the size of a grain of rice.
+Watermelons are both a fruit and a vegetable, related to cucumbers and squash.
+A group of squid is called a squad.
+The Burj Khalifa is so tall that people on the top floors can watch the sunset twice in one evening.
+Sharks have existed for more than four hundred million years.
+The average raindrop falls at about seven to eighteen miles per hour.
+A snail can regrow its eyes if they are lost.
+The human body glows faintly with light too dim for the eye to see.
+A group of hippos is called a bloat.
+The largest pumpkin ever grown weighed over twenty-seven hundred pounds.
+Bees have five eyes.
+The Pacific is the largest and deepest of Earth's oceans.
+A single mushroom can release billions of spores.
+Hummingbirds are the only birds that can hover in still air for long periods.
+The blue whale is the largest animal known to have ever lived, larger than any dinosaur.
+A group of ravens is called an unkindness.
+The Earth's magnetic poles have flipped many times over its history.
+The fastest gust of wind ever recorded reached over two hundred fifty miles per hour.
+Octopuses have been observed using coconut shells as portable shelters.
+The average adult human is made up of about thirty-seven trillion cells.
+A group of bats is called a cauldron.
+Saturn's rings are made mostly of ice and rock and are incredibly thin relative to their width.
+The world's quietest room absorbs so much sound that people can hear their own heartbeat.
+A starfish can regrow a lost arm, and some can grow a whole new body from one arm.
+The dot you see in the center of an old television after switching it off is the last of the picture fading.
+A group of finches is called a charm.
+The human tongue is covered in thousands of taste buds, each lasting only about ten days.
+Some clouds can hold the water weight of several jumbo jets.
+The Eiffel Tower sways slightly in strong wind, by up to a few inches.
+A leech has thirty-two brains arranged in segments.
+The shortest war in recorded history was between Britain and Zanzibar in 1896.
+The Great Fire of London in 1666 destroyed most of the medieval city but killed very few people.
+Oxford University is older than the Aztec Empire.
+The Roman numeral system has no symbol for zero.
+Napoleon was once attacked by a horde of rabbits released for a hunt.
+The first ancient Olympic Games had only one event, a short footrace.
+Ancient Egyptians shaved their eyebrows to mourn the death of a family cat.
+The guillotine remained a legal method of execution in France until 1977.
+The Hundred Years War actually lasted one hundred and sixteen years.
+Tutankhamun was buried with a dagger made from meteorite iron.
+The Berlin Wall stood for twenty-eight years before it fell in 1989.
+Albert Einstein was offered the presidency of Israel but declined.
+George Washington grew hemp on his farm.
+The first message sent over the early internet was meant to be login but the system crashed after two letters.
+The Eiffel Tower was nearly torn down in 1909 before it became a radio antenna.
+Ancient Roman concrete has lasted two thousand years and can heal its own cracks.
+The Mongol Empire was the largest contiguous land empire in history.
+The first known author whose name survives was a Mesopotamian priestess named Enheduanna.
+Vending machines date back to ancient Greece, where they dispensed holy water for a coin.
+The Pony Express only operated for about eighteen months.
+Cleopatra was of Greek Macedonian descent.
+The first vaccine was developed against smallpox in the late 1700s.
+The Great Pyramid was the tallest human-made structure for nearly four thousand years.
+The original Olympic athletes competed without clothing.
+Medieval alchemists believed a philosopher's stone could turn lead into gold.
+The earliest known board game, Senet, was played in ancient Egypt.
+The bubonic plague reduced Europe's population by an estimated one third in the 1300s.
+The Rosetta Stone was the key to deciphering Egyptian hieroglyphs.
+The first traffic signal was installed to manage horse-drawn carriages before cars were common.
+Pompeii was buried and preserved by ash from Mount Vesuvius in the year 79.
+The first modern Olympic Games were held in Athens in 1896.
+The world's oldest known written recipe is for beer.
+The earliest known trousers are about three thousand years old, found in western China.
+Paper money was first used in China over a thousand years ago.
+Saint Patrick, the patron saint of Ireland, was born in Roman Britain.
+The first crossword puzzle was published in 1913.
+The Titanic's distress rockets were white, which caused nearby ships to misread them.
+The first widely cited spam email was sent in 1978.
+The oldest known musical instrument is a flute carved from bird bone over forty thousand years ago.
+The word salary comes from the Latin for salt, which Roman soldiers were sometimes paid in.
+The oldest known wheel used for transport is over five thousand years old.
+The Leaning Tower of Pisa took almost two hundred years to build.
+Honeybees were introduced to the Americas by European settlers.
+Tomatoes were once feared in Europe as poisonous.
+The world's oldest still-operating hotel in Japan has run for over thirteen hundred years.
+Vikings reached North America about five hundred years before Columbus.
+The dollar sign likely evolved from the abbreviation for the Spanish peso.
+One of the world's first novels, The Tale of Genji, was written in Japan around the year 1000.
+Coffee houses in 1600s England were nicknamed penny universities.
+The first underground passenger railway opened in London in 1863.
+Russia spans eleven time zones.
+The lowest exposed land on Earth is the shore of the Dead Sea.
+Canada has more lakes than the rest of the world combined.
+The Atacama Desert in Chile is the driest non-polar place on Earth.
+Mount Chimborazo in Ecuador is the point on Earth's surface farthest from its center.
+The Mariana Trench is deep enough to swallow Mount Everest with more than a mile to spare.
+Iceland grows a few centimeters each year as tectonic plates pull apart.
+There are towns in Norway where the sun does not set for weeks in summer.
+The Caspian Sea is the largest enclosed body of water on Earth.
+Greenland is the world's largest island that is not a continent.
+The Nile flows from south to north.
+Australia is wider than the diameter of the Moon.
+Lake Baikal is the deepest freshwater lake in the world.
+Vatican City is the smallest sovereign country in the world.
+Point Nemo in the Pacific is the spot in the ocean farthest from any land.
+Mount Thor in Canada has the longest purely vertical drop on Earth.
+The Danakil Depression in Ethiopia is one of the hottest inhabited places on Earth.
+Bhutan measures national progress partly through Gross National Happiness.
+Some glaciers look blue because dense ice absorbs every colour of light except blue.
+Mongolia is the most sparsely populated sovereign country on Earth.
+The Tibetan Plateau is often called the roof of the world.
+The Mississippi River briefly flowed backward during an earthquake in 1812.
+Istanbul is a major city that sits on two continents at once.
+The English word set has one of the largest numbers of distinct dictionary meanings.
+The most common letter in English is e.
+No common English word rhymes perfectly with orange, silver, or month.
+A pangram is a sentence that uses every letter of the alphabet at least once.
+The word goodbye is a shortening of the phrase God be with ye.
+Many languages historically used a single word for both blue and green.
+The longest word in major dictionaries names a lung disease and has forty-five letters.
+Esperanto is a constructed language created to ease communication between nations.
+The word nerd first appeared in a Dr. Seuss book.
+Sign languages are full natural languages with their own grammar and regional dialects.
+There are languages whose speakers describe space only with compass directions, never left or right.
+A word that reads the same forward and backward is a palindrome.
+The ampersand was once recited as the final letter of the alphabet.
+The word muscle comes from a Latin word meaning little mouse.
+Some words, called contronyms, are their own opposites, such as cleave and sanction.
+The word checkmate comes from a Persian phrase meaning the king is helpless.
+Pineapples were once so rare in Europe that people rented them as party centerpieces.
+Carrots were originally purple and white before orange varieties were cultivated.
+Cacao beans were used as currency by the Aztecs.
+Peanuts are legumes, more closely related to beans than to tree nuts.
+Ripe cranberries bounce when they are fresh.
+Apples are members of the rose family.
+Saffron is among the most expensive spices because each flower yields only three threads.
+White chocolate contains no cocoa solids, only cocoa butter.
+Rhubarb leaves are toxic, although the stalks are a common dessert ingredient.
+The holes in Swiss cheese are bubbles left by carbon-dioxide-producing bacteria.
+Caesar salad was invented in Tijuana, Mexico.
+Fortune cookies were popularized in the United States, not China.
+A single vanilla orchid flower must be hand-pollinated on the one day it opens.
+The red food colouring carmine is made from crushed cochineal insects.
+Worcestershire sauce is fermented with anchovies.
+Watermelons were first domesticated in Africa thousands of years ago.
+The first computer mouse was carved from a block of wood.
+The word bug for a glitch spread after a real moth was found jamming an early computer.
+The very first webpage is still online today.
+Wi-Fi is a brand name and does not stand for any specific phrase.
+A modern smartphone has far more computing power than all of NASA had during the Apollo missions.
+The first text message ever sent read Merry Christmas.
+The at symbol was chosen for email addresses because it was otherwise rarely used.
+The first item ever scanned with a barcode was a pack of chewing gum.
+The first banner advertisement appeared on the web in 1994.
+Bluetooth is named after a medieval Scandinavian king who united warring tribes.
+The first widely used emoji set was created in Japan in the late 1990s.
+The first video uploaded to YouTube was filmed at a zoo.
+Floppy disks are the reason the save icon looks the way it does.
+Email predates the World Wide Web by more than a decade.
+The first iPhone was released in 2007.
+The first digital camera, built in 1975, needed twenty-three seconds to record one image.
+The QR code was invented to track car parts on an assembly line.
+A rainbow is actually a full circle, but the ground usually hides its lower half.
+No two snowflakes are believed to be exactly alike at the molecular level.
+Raindrops are not tear-shaped; they are rounded, flattening as they fall.
+Lightning can heat the air around it to roughly thirty thousand kelvin.
+The fastest surface wind ever measured on Earth came from a tornado.
+Snow is technically clear, but it scatters light so it appears white.
+A single bolt of lightning carries enough energy to power a home for weeks if captured.
+Some deserts have gone decades without measurable rainfall.
+Hail can grow to the size of grapefruits in powerful storms.
+Fog is simply a cloud that forms at ground level.
+The eye of a hurricane is calm and often clear.
+Thunder is the sound of air rapidly expanding after being heated by lightning.
+A blizzard is defined by wind and visibility, not by how much snow falls.
+The wettest place on Earth receives more than four hundred inches of rain a year.
+Most of the rain that falls began as snow or ice high in the clouds.
+Sunflowers turn to track the Sun when they are young, a behaviour called heliotropism.
+The largest flower in the world, the corpse flower, smells like rotting meat.
+Bamboo can grow fast enough that you could almost watch it rise on a warm day.
+A single tree can drink hundreds of liters of water on a hot day.
+Trees can communicate and share nutrients through underground fungal networks.
+The oldest individual trees on Earth are bristlecone pines nearly five thousand years old.
+Some seeds can remain viable for thousands of years before sprouting.
+Venus flytraps count the number of times prey touches them before closing.
+The leaves of the sensitive plant fold up within seconds of being touched.
+A coconut is technically a seed, a fruit, and a nut all at once by different definitions.
+Mushrooms are more closely related to animals than to plants.
+The tallest tree on Earth is a coast redwood over three hundred and seventy feet tall.
+Moss has no roots and absorbs water directly through its surface.
+The dandelion's seeds can travel for miles on the wind.
+A pineapple plant produces only one pineapple at a time.
+The water lily can support significant weight on its broad floating leaves.
+Some plants release chemicals to warn their neighbours of insect attacks.
+Bananas grow pointing upward, not hanging down.
+The smell of fresh-cut grass is a chemical signal released when the plant is wounded.
+A grain of rice plant can produce thousands of grains from a single seed over a season.
+Aspirin was originally derived from the bark of the willow tree.
+Pine cones open and close depending on humidity.
+The human body contains about the same percentage of water as a cucumber early in life.
+You are about a centimeter taller in the morning than at night.
+The human eye can perceive a single photon under ideal conditions.
+Fingernails grow faster on your dominant hand.
+The strongest muscle in the body for its size is the masseter, used for chewing.
+Your brain generates enough electricity to power a small light bulb.
+Humans are the only animals known to blush.
+The surface area of the human lungs is roughly the size of a tennis court.
+Babies are born with around three hundred bones, which fuse to two hundred and six in adulthood.
+The acid in your stomach is strong enough to dissolve some metals.
+A human can survive longer without food than without sleep in extreme cases.
+The cornea is one of the few parts of the body with no blood supply.
+Your heart beats about a hundred thousand times every day.
+The smallest muscles in the body are in the middle ear.
+Goosebumps are a leftover reflex from when human ancestors had more body hair.
+The human body produces about twenty-five million new cells every second.
+Taste is heavily influenced by smell, which is why food seems bland with a cold.
+Your sense of smell can recall memories more strongly than any other sense.
+The average person spends about six months of their life waiting at traffic lights.
+Humans glow with a tiny amount of visible light too faint to see.
+The fastest message your nervous system sends travels well over two hundred miles per hour.
+Adults have fewer bones than newborns because many fuse during growth.
+The little finger contributes a large share of the hand's overall grip strength.
+Your body has more bacterial cells than human cells by count.
+The middle of a long bone contains marrow that makes blood cells.
+Yawning may help cool the brain.
+The pinky toe helps with balance more than its size suggests.
+A sneeze briefly shuts down many of the body's systems at once.
+Mathematics has a number called googol, which is a one followed by a hundred zeros.
+Zero was treated as a full number relatively late in mathematical history.
+A circle has an infinite number of lines of symmetry.
+The number pi has been calculated to trillions of digits but never ends or repeats.
+There are exactly as many even numbers as whole numbers, even though it seems impossible.
+A prime number has exactly two factors, itself and one.
+The Fibonacci sequence appears in sunflowers, pinecones, and seashells.
+A googolplex is so large it cannot be written out in the observable universe.
+Any number plus its reverse, repeated, often leads to a palindrome.
+The equals sign was invented to avoid repeating the words is equal to.
+There are infinitely many prime numbers.
+A number is divisible by three if the sum of its digits is divisible by three.
+The word hundred originally meant a much larger quantity in old counting systems.
+The shape with the most sides still has a name no matter how many sides it has.
+Multiplying a number by nine and adding the digits of the result always returns to nine.
+The golden ratio appears throughout art, architecture, and nature.
+Negative numbers were once dismissed as absurd by many mathematicians.
+A magic square has rows, columns, and diagonals that all add to the same total.
+The probability that two people in a room of twenty-three share a birthday is over fifty percent.
+There is no largest number, since you can always add one.
+The ancient Greeks proved many geometric truths still taught today.
+A line has length but no width in pure mathematics.
+The number four is the only number with the same number of letters as its value in English.
+Roman numerals have no straightforward way to write very large numbers compactly.
+The plus sign likely comes from a shorthand for the Latin word for and.
+A group of pandas is called an embarrassment.
+Dolphins sleep with one half of their brain awake at a time.
+A snail's mouth is no larger than the head of a pin yet holds thousands of teeth.
+Elephants can recognize themselves in a mirror.
+A woodpecker can peck about twenty times per second.
+Cats have a special collarbone that lets them always land on their feet.
+The mantis shrimp can throw a punch as fast as a bullet from a small gun.
+A group of foxes is called a skulk.
+Honeybees beat their wings more than two hundred times a second.
+The axolotl can regrow entire limbs, parts of its heart, and even its brain.
+A tarantula can survive for over two years without eating.
+Crows can remember individual human faces for years.
+An adult flamingo is pink because of pigments in the algae and shrimp it eats.
+Cheetahs cannot roar, but they can purr.
+The tongue of a blue whale can weigh as much as a small car.
+A pig cannot look up into the sky without great difficulty.
+Reindeer can see ultraviolet light.
+A snail can produce a slime that is both glue and lubricant at once.
+Hippos secrete a red oily substance that acts as natural sunscreen.
+A group of jellyfish drifting together is called a bloom.
+Male seahorses carry and give birth to their young.
+The pistol shrimp stuns prey with a snapping claw, not its pincers.
+A flea can accelerate faster than a space shuttle at launch.
+Giant Pacific octopuses can have an arm span of over fourteen feet.
+A group of larks is called an exaltation.
+Dogs can smell some diseases on a person's breath.
+The bombardier beetle sprays a boiling chemical mixture at attackers.
+Sea otters have the densest fur of any animal, with up to a million hairs per square inch.
+A group of geese on the ground is called a gaggle, but in flight it is a skein.
+Ants do not have lungs; they breathe through tiny holes in their bodies.
+A horse's teeth take up more space in its skull than its brain.
+The immortal jellyfish can revert to its juvenile form to escape death.
+Some frogs can be frozen and revived because they produce a natural antifreeze.
+A group of rhinos charging together is called a crash.
+Hummingbird nests are often no bigger than a walnut shell.
+The aardvark's name means earth pig in Afrikaans.
+A snake can sense heat through special pit organs to hunt in the dark.
+Elephants greet each other with elaborate displays of trunk-touching.
+The smallest mammal by mass is the bumblebee bat, lighter than a coin.
+A group of hyenas is called a cackle.
+Pigeons can be trained to recognize different human faces and even artworks.
+The tongue of a chameleon can unroll faster than the human eye can follow.
+A snail's shell grows with it throughout its life.
+The mimic octopus can imitate the look and movement of other sea creatures.
+Beethoven composed some of his greatest works after he had gone deaf.
+The longest officially recorded piece of music is designed to play for over six hundred years.
+A standard piano has eighty-eight keys.
+The world's largest playable instrument is a cave organ in Virginia.
+Mozart wrote his first symphony at the age of eight.
+The theremin is played without being touched.
+A violin contains around seventy separate pieces of wood.
+The harmonica is the best-selling musical instrument in the world.
+The longest concert by a single artist lasted more than a day.
+Vinyl records store sound as physical grooves read by a needle.
+The lowest note a standard piano can play vibrates around twenty-seven times a second.
+A song stuck in your head is sometimes called an earworm.
+The world's oldest known song is over three thousand years old.
+A grand piano's strings are under tons of combined tension.
+The didgeridoo is one of the oldest wind instruments still played today.
+The first known music notation was written on clay tablets.
+The most recorded song in history is widely considered to be a popular standard ballad.
+Humans can recognize a familiar song from less than a second of audio.
+The drum is one of the oldest musical instruments known to humanity.
+The Mona Lisa is painted on a wood panel, not canvas.
+Vincent van Gogh sold very few paintings during his lifetime.
+The color blue was one of the last colors to appear in human language.
+The most expensive painting ever sold went for hundreds of millions of dollars.
+Ancient Roman statues were originally painted in bright colors.
+The world's largest painting on canvas covers thousands of square feet.
+Michelangelo painted the Sistine Chapel ceiling while standing, not lying down.
+Some Renaissance painters ground real gemstones to make their pigments.
+The color of the human-made pigment mummy brown was once made from actual mummies.
+A single tube of certain historical blue paint once cost more than gold.
+The oldest known cave paintings are more than forty thousand years old.
+Picasso could draw before he could walk, according to his mother.
+The smiley face symbol was designed in the 1960s.
+The first photograph took about eight hours of exposure to capture.
+Olympic gold medals are mostly made of silver.
+A marathon is just over twenty-six miles because of a route adjustment at a single Olympic Games.
+A baseball has exactly one hundred and eight stitches.
+Golf was once banned in Scotland because it distracted soldiers from archery.
+The fastest recorded tennis serve traveled over one hundred and sixty miles per hour.
+Basketball was invented using a peach basket as the first hoop.
+A regulation soccer ball has thirty-two panels in its classic design.
+The Olympic flame is lit using the Sun's rays in Greece before each Games.
+Boxing rings are square despite their name.
+The first modern Olympics featured fewer than three hundred athletes.
+A cricket match can last up to five days and still end in a draw.
+The longest tennis match lasted over eleven hours across three days.
+Table tennis was once banned in the Soviet Union for being harmful to the eyes.
+Formula One cars can drive upside down in a tunnel at high speed because of downforce.
+The Stanley Cup has a long list of names engraved on it.
+Surfers can ride waves taller than a multi-story building.
+A bowling pin only needs to tilt about seven degrees to fall.
+The high jump technique called the Fosbury Flop changed the sport forever.
+Chess is considered a sport in many countries.
+A dollar bill can be folded thousands of times before it tears.
+The world's largest gold bar weighs hundreds of kilograms.
+The first ATM was installed in London in 1967.
+Most of the world's money exists only as digital records, not physical cash.
+The penny costs more than one cent to produce in some years.
+Paper money is not made from paper but from a cotton and linen blend.
+The largest banknote ever printed was worth a staggering, almost unspendable amount during hyperinflation.
+The word bank comes from the Italian word for bench, where money changers sat.
+A pile of one trillion dollar bills would stretch far beyond the Moon.
+The first credit card was introduced in the 1950s.
+Some countries have used giant stone discs as currency.
+The Federal Reserve shreds tons of worn-out currency every year.
+The grooves on the edge of coins were originally added to stop people shaving off metal.
+Salt was so valuable in some eras that it was traded ounce for ounce with gold.
+The brain has no pain receptors of its own.
+Your brain is more active during sleep than during many waking tasks.
+The human brain can hold an estimated petabyte of information.
+You cannot tickle yourself because your brain predicts the sensation.
+The brain finishes developing well into a person's mid-twenties.
+Memories are reconstructed each time you recall them, not replayed.
+The smell of a place can trigger memories faster than a photo of it.
+Your brain uses about as much power as a dim light bulb.
+Laughter activates multiple regions of the brain at once.
+The brain processes images it has seen for only a fraction of a second.
+Counting sheep is actually a poor method for falling asleep, studies suggest.
+Dreams can feel long but often last only minutes.
+The average person has several dreams each night but forgets most of them.
+A phenomenon called déjà vu may be a brief glitch in memory processing.
+The brain cannot truly multitask; it switches rapidly between tasks.
+People can recognize a familiar face in a fraction of a second.
+The placebo effect can produce real physical changes in the body.
+Your brain generates new connections every time you learn something.
+Yawning appears to be contagious even between humans and dogs.
+The fear of the number thirteen is called triskaidekaphobia.
+The oldest known dice are over five thousand years old.
+The board game Monopoly was used to help prisoners of war escape in real maps hidden inside.
+A standard deck of cards can be arranged in more ways than there are atoms on Earth.
+The Rubik's Cube took its inventor a month to solve the first time.
+The first video game was a simple tennis simulation.
+Chess originated in India over fifteen hundred years ago.
+The yo-yo is one of the oldest toys, dating back thousands of years.
+Crossword puzzles were once considered a dangerous waste of time by critics.
+A jigsaw puzzle was originally a teaching tool for geography.
+The first teddy bear was named after a U.S. president.
+Playing cards were once used as money in parts of colonial Canada.
+The longest game of Monopoly on record lasted over seventy days.
+Dominoes can be set up to fall in patterns spanning entire rooms.
+The game of checkers has been completely solved by computers.
+The world's largest crossword has tens of thousands of clues.
+Diamonds are not actually that rare; their price reflects careful market control.
+Glass is made mostly from sand melted at very high temperatures.
+Rubber was once erased pencil marks by rolling, which is how it got its name.
+Stainless steel resists rust because of a thin invisible layer of chromium oxide.
+Aluminum was once more precious than gold before an easy way to refine it was found.
+A diamond and a pencil's graphite are both made of pure carbon.
+Helium is the only element that was discovered in space before it was found on Earth.
+The element with the highest melting point is tungsten.
+Mercury is the only metal that is liquid at room temperature.
+Gold is so soft that a single ounce can be hammered into a sheet covering many square feet.
+Neon signs glow because electricity excites the gas inside them.
+Water is one of the few substances that expands when it freezes.
+Oxygen makes up about one fifth of the air we breathe.
+The human body contains traces of nearly every naturally occurring element.
+Salt is made of two elements that are each dangerous alone, sodium and chlorine.
+Carbon forms more compounds than all other elements combined.
+Most of the helium used on Earth comes from underground natural gas deposits.
+Titanium is as strong as steel but much lighter.
+The smell after rain comes partly from bacteria in the soil.
+Lightning produces ozone, which gives the air a sharp clean scent.
+Most of the visible universe is made of hydrogen and helium.
+The Sun converts millions of tons of matter into energy every second.
+A spoonful of a black hole's material would be unimaginably heavy.
+Light from distant stars can take millions of years to reach us.
+The footprints left on the Moon could last millions of years without wind to erase them.
+Space is completely silent because there is no air to carry sound.
+A year on Mercury lasts only about eighty-eight Earth days.
+There are likely more planets than stars in our galaxy.
+The largest known star could swallow billions of Suns by volume.
+Neutron stars can spin hundreds of times per second.
+The observable universe is about ninety-three billion light-years across.
+Jupiter's Great Red Spot is a storm larger than Earth that has raged for centuries.
+A comet's tail always points away from the Sun.
+The International Space Station orbits Earth roughly every ninety minutes.
+There is a giant cloud of alcohol floating in space near the center of our galaxy.
+The Sun is so large that about one million Earths could fit inside it.
+A teaspoon of the Sun's core would be hot beyond anything on Earth.
+Galaxies are not scattered randomly but arranged in vast cosmic webs.
+The coldest known place in the universe is a nebula colder than deep space itself.
+Some stars are so old they formed not long after the universe began.
+The light you see from the Sun left it about eight minutes ago.
+Saturn is not the only planet with rings; Jupiter, Uranus, and Neptune have them too.
+A single solar flare can release more energy than millions of atomic bombs.
+The Hubble telescope has captured light from galaxies billions of years old.
+The first artificial satellite, Sputnik, was about the size of a beach ball.
+Astronauts' height can increase by a couple of inches in microgravity.
+The Moon is moving away from Earth slowly enough that ancient days were shorter.
+A day on Earth is gradually getting longer over millions of years.
+There may be more than a hundred billion galaxies in the observable universe.
+The Eiffel Tower uses an interlaced iron design to handle wind.
+The Empire State Building has its own ZIP code.
+The Sydney Opera House roof is covered in over a million tiles.
+The Burj Khalifa is more than half a mile tall.
+The Colosseum could be flooded to stage mock naval battles.
+Some ancient Roman roads are still in use today.
+The Hoover Dam's concrete is still slowly curing decades after it was poured.
+The Golden Gate Bridge is painted a color officially called international orange.
+The Great Wall of China is not a single wall but many sections built over centuries.
+The Leaning Tower of Pisa has eight stories and nearly three hundred steps.
+The Petronas Towers were once the tallest buildings in the world.
+Skyscrapers sway slightly in the wind by design to avoid breaking.
+The Channel Tunnel runs deep beneath the seabed between England and France.
+Venice is built on millions of wooden piles driven into the mud.
+The Pantheon in Rome still has the world's largest unreinforced concrete dome.
+Some medieval cathedrals took hundreds of years to complete.
+The first skyscraper, built in Chicago, was only ten stories tall.
+The Brooklyn Bridge was the longest suspension bridge in the world when it opened.
+A building in Japan was designed to fold up in sections during earthquakes.
+The CN Tower in Toronto held the title of tallest free-standing structure for decades.
+The deepest mine on Earth descends several miles below the surface.
+The first ferris wheel was built to rival the Eiffel Tower.
+A single brick from the Great Wall could weigh dozens of pounds.
+The world's longest sea bridge stretches for dozens of miles.
+The first traffic tunnel under a river opened in the 1800s.
+The tallest statue in the world is taller than the Statue of Liberty several times over.
+Some lighthouses were powered by whale oil before electricity.
+The fastest passenger trains can exceed two hundred miles per hour.
+The first powered flight covered a distance shorter than a modern airliner's wingspan.
+A jumbo jet has millions of individual parts.
+The black box flight recorder is actually bright orange.
+Hot air balloons were the first human flight technology, predating airplanes.
+The fastest manned aircraft has flown more than six times the speed of sound.
+A commercial airplane's tires are inflated to several times car tire pressure.
+The world's largest passenger plane can carry more than eight hundred people.
+Submarines can stay underwater for months at a time.
+The first cars had no steering wheels; they used levers.
+The longest straight railway track in the world runs for almost three hundred miles.
+A Formula One pit stop can change all four tires in about two seconds.
+The first speeding ticket was issued in the 1890s.
+Cruise ships can be longer than the height of many skyscrapers laid down.
+The bicycle was invented before the modern rubber tire.
+Some electric cars can accelerate faster than many sports cars.
+The world's busiest airport handles tens of millions of passengers a year.
+The first roller coaster was built on a former mining track.
+A space shuttle reached orbit in under nine minutes after launch.
+Trains were once thought too fast for the human body to survive.
+The longest cycle race in the world covers thousands of miles over weeks.
+A modern container ship can carry tens of thousands of containers.
+The first underwater tunnel was dug by hand over many years.
+The fastest production motorcycle can exceed three hundred kilometers per hour.
+A group of butterflies feeding together is sometimes called a roost.
+The wings of a butterfly are actually transparent, covered by tiny coloured scales.
+A single honeybee produces about a twelfth of a teaspoon of honey in its lifetime.
+Dragonflies have nearly three-hundred-sixty-degree vision.
+A snail can have over ten thousand teeth arranged on its tongue.
+The heart of a shrimp is located in its head.
+Ladybugs can release a foul-smelling fluid from their joints to deter predators.
+A cockroach can live for weeks without its head.
+Ants stretch when they wake up, much like humans do.
+A queen bee can lay up to two thousand eggs in a single day.
+Termites build mounds with natural ventilation systems that regulate temperature.
+A grasshopper can leap many times its body length in a single jump.
+Some moths drink the tears of sleeping animals.
+The praying mantis is the only insect that can turn its head a full one hundred eighty degrees.
+Fireflies produce light through a chemical reaction that gives off almost no heat.
+A spider's web silk is produced as a liquid and hardens into thread as it is pulled.
+Beetles make up roughly a quarter of all known animal species.
+A single colony of ants can contain millions of individuals.
+Caterpillars completely dissolve inside the chrysalis before becoming butterflies.
+Bees can fly higher than Mount Everest in laboratory tests.
+A snail breathes through a single lung-like organ.
+Earthworms can eat their weight in soil every day.
+A housefly hums in the key of F in many recordings.
+Some species of cicada stay underground for seventeen years before emerging.
+The bald eagle is not actually bald; its name comes from an old word for white.
+An owl can rotate its head about two hundred seventy degrees.
+Penguins cannot fly, but they are excellent swimmers.
+A flamingo standing on one leg is actually conserving body heat.
+Some birds sleep while flying, resting half their brain at a time.
+The ostrich is the fastest two-legged land animal.
+A parrot can learn to use words in context, not just mimic them.
+The wandering albatross has the largest wingspan of any living bird.
+Hummingbirds are the only birds that can fly straight up and down.
+A pigeon can find its way home from hundreds of miles away.
+The kiwi bird lays an egg that is huge relative to its body size.
+Crows have been observed using tools and even bending wire into hooks.
+A swan can have over twenty thousand feathers.
+Penguins propose with a carefully chosen pebble.
+The peacock's tail can be longer than the rest of its body.
+Some woodpeckers store thousands of acorns in holes they drill in trees.
+A duck's quack does echo, despite a popular myth that it does not.
+The arctic tern migrates from pole to pole, the longest migration of any animal.
+A chicken can remember over a hundred different faces.
+Flamingo chicks are born grey and turn pink as they grow.
+The hoatzin chick has claws on its wings to climb branches.
+A blue whale can eat several tons of krill in a single day.
+The narwhal's tusk is actually an enlarged tooth.
+A jellyfish has no brain, heart, or bones.
+Sea stars can turn their stomachs inside out to digest food.
+The blue-ringed octopus carries enough venom to threaten many humans.
+A clownfish can change sex during its lifetime.
+Seahorses mate for life in many species and travel holding tails.
+The anglerfish lures prey with a glowing growth on its head.
+Coral reefs support about a quarter of all marine life.
+A pufferfish inflates by gulping water to deter predators.
+The electric eel can generate a strong shock to stun prey.
+A starfish can have far more than five arms in some species.
+Whale songs can travel for hundreds of miles underwater.
+Some deep-sea fish produce their own light through bioluminescence.
+A sea cucumber breathes through its rear end.
+The giant squid has the largest eyes of any animal.
+Manatees are distant relatives of elephants.
+A barnacle attaches itself headfirst and feeds with its feet.
+The leafy sea dragon is a fish that looks like floating seaweed.
+A shark must keep moving to keep water flowing over its gills, in many species.
+The mantis shrimp sees colours humans cannot even imagine.
+The world's largest pearl weighs many pounds and is irregularly shaped.
+Rubber bands last longer when kept in a cool place.
+Ketchup was once sold as a medicine in the 1830s.
+A standard pencil can draw a line dozens of miles long.
+The eraser was invented decades after the pencil.
+The plastic tips on shoelaces are called aglets.
+A rubber duck released into the ocean has been tracked across the world by researchers.
+Velcro was inspired by burrs sticking to a dog's fur.
+The microwave oven was discovered by accident when a chocolate bar melted near radar equipment.
+Super glue was originally rejected as too sticky for its intended use.
+The first vending machine in modern times sold postcards.
+The zipper was originally called the clasp locker.
+A common drinking straw was patented in the 1880s to replace soggy reeds.
+Bubble wrap began as a failed attempt to make textured wallpaper.
+The Slinky was invented when an engineer knocked a spring off a shelf.
+Play-Doh was first sold as a wallpaper cleaner.
+The first toothbrush with bristles was invented in China.
+Matches were invented after the lighter, not before.
+Post-it Notes came from a glue that was considered a failure.
+The safety pin was invented and patented in a single afternoon.
+A paperclip can be unfolded into a wire about ten centimeters long.
+The first roller skates were demonstrated by their inventor crashing into a mirror.
+Chewing gum has been found that is thousands of years old.
+The teabag was invented by accident when samples were sent in small silk pouches.
+Corn flakes were invented as a health food.
+The first umbrella designs date back thousands of years.
+Sticky notes are sold in enough quantity each year to circle the Earth many times.
+The dishwasher was invented by a woman frustrated with servants chipping her china.
+A wine cork can be compressed and will spring back to its original shape.
+The bar code was first sketched in sand on a beach.
+Your hair can reveal what you have eaten and where you have been.
+Humans are the only primates without pigment in the palms of their hands.
+The average person laughs many more times per day as a child than as an adult.
+Tooth enamel is the hardest substance the human body produces.
+You blink less when staring at screens, which can dry out your eyes.
+Fingernails grow about four times faster than toenails.
+The human ear can detect sounds as faint as a whisper across a quiet room.
+Your body produces about a liter and a half of saliva each day.
+A person's height shrinks slightly throughout the day due to spinal compression.
+The skin on your lips is much thinner than on the rest of your body.
+Humans shed and regrow the outer layer of skin about every month.
+Your liver can regenerate itself even after losing a large portion.
+The human eye blinks about ten thousand times a day.
+Earwax is a natural cleaner and protector for the ear canal.
+The colour of your eyes is determined by tiny amounts of pigment.
+A full head of human hair could support the weight of two elephants in theory.
+The fastest muscles in the body are the ones that move the eyes.
+Tears come in different chemical types depending on why you cry.
+The human body is home to trillions of microorganisms.
+Your sense of taste weakens at high altitude, which is why airplane food can seem bland.
+Babies do not produce tears for the first few weeks of life.
+The average person spends years of their life eating.
+A human can distinguish between thousands of distinct facial expressions.
+The Sahara Desert is roughly the size of the United States.
+The Amazon rainforest produces a large share of the world's oxygen.
+Mount Everest's summit was once on the ocean floor.
+The Pacific Ocean contains more than half of the world's free water.
+There are more than seven thousand islands in the Caribbean.
+Lake Superior holds enough water to cover both North and South America.
+The Grand Canyon is over a mile deep in places.
+Niagara Falls moves slowly upstream as it erodes the rock beneath it.
+The Sahara is expanding southward over time.
+Norway's coastline, including fjords, stretches longer than the Earth's circumference.
+The Mariana Trench could hide the world's tallest mountain entirely.
+There is a waterfall in Antarctica that runs red from iron-rich water.
+The Amazon River once flowed in the opposite direction, toward the Pacific.
+Death Valley holds the record for the hottest air temperature ever reliably measured.
+Some sand dunes can sing or boom as the sand slides.
+The Great Rift Valley is slowly splitting Africa into two landmasses.
+Mount Kilimanjaro has glaciers despite sitting near the equator.
+Iceland runs almost entirely on renewable geothermal and hydro power.
+The world's largest hot desert and the world's largest cold desert are on different continents.
+There are lakes beneath the ice of Antarctica that have been sealed for millions of years.
+The deepest lake holds nearly a fifth of the planet's unfrozen fresh water.
+Some rivers flow only during certain seasons and vanish the rest of the year.
+A rainbow at night, lit by the Moon, is called a moonbow.
+The colour purple does not exist as a single wavelength of light; the brain creates it.
+White light contains all the colours of the rainbow combined.
+Red light has the longest wavelength humans can see.
+A prism splits white light into its component colours.
+Some animals can see ultraviolet light that is invisible to humans.
+The sky is blue because air scatters blue light more than other colours.
+Sunsets appear red because light travels through more atmosphere at a low angle.
+Black is the absence of visible light, while white is all of it together.
+The human eye is most sensitive to green light.
+Bioluminescent waves glow blue when tiny organisms are disturbed.
+A mirror reflects nearly all the light that hits it.
+The colour of a flame can reveal the chemical burning in it.
+Mixing all colours of paint gives a dark muddy brown, but mixing light gives white.
+Some deep-sea creatures are red because red light cannot reach their depths, making them invisible.
+The fastest thing in the universe is light in a vacuum.
+A laser is light so focused it can travel vast distances without spreading much.
+The Northern Lights can appear in green, red, purple, and blue.
+Light can be bent by gravity, an effect predicted by Einstein.
+Color blindness is far more common in men than in women.
+Sound travels faster through water than through air.
+A whip cracks because its tip breaks the sound barrier.
+The loudest sound ever recorded came from a volcanic eruption heard thousands of miles away.
+Sound cannot travel in the vacuum of space.
+Whales communicate using some of the lowest-frequency sounds in nature.
+A person's voice sounds different to them than to others because of bone conduction.
+Echoes are simply sound waves bouncing back from a surface.
+Bats navigate in the dark using echolocation.
+The human ear can hear a remarkably wide range of frequencies.
+Some elephants communicate using rumbles too low for humans to hear.
+A sound wave is a vibration traveling through a medium.
+The quietest place on Earth is a sound-absorbing chamber where people can hear their own organs.
+Dogs can hear frequencies far beyond the human range.
+Thunder can be heard from many miles away depending on conditions.
+Ultrasound, too high for human ears, is used to see inside the body.
+A tuning fork vibrates at a precise, steady frequency.
+Wind instruments make sound by vibrating a column of air.
+The speed of sound changes with temperature and altitude.
+Crickets chirp faster in warmer weather, and you can estimate temperature by counting.
+A single clap can produce a surprisingly complex pattern of echoes.
+Time passes very slightly faster at the top of a mountain than at sea level.
+A leap second is occasionally added to clocks to keep them aligned with Earth's rotation.
+The concept of the seven-day week predates written history in some cultures.
+There are about thirty-one million seconds in a year.
+A single Earth day has not always been twenty-four hours long.
+Atomic clocks are so precise they would lose less than a second over millions of years.
+The international date line causes neighbouring islands to be a full day apart.
+A nanosecond is one billionth of a second.
+Some calendars have leap months instead of leap days.
+The longest day of the year is the summer solstice.
+Time zones were standardized largely to coordinate train schedules.
+A light-year measures distance, not time.
+The oldest known calendar is carved into stone thousands of years old.
+A century has either twenty-four or twenty-five leap years depending on the rule.
+The metric system defines the second using the vibrations of an atom.
+A year on Neptune lasts about one hundred sixty-five Earth years.
+Many cultures historically tracked time using the phases of the Moon.
+The word month comes from the Moon's roughly monthly cycle.
+There are exactly one thousand milliseconds in a second.
+The earliest mechanical clocks had no minute hand.
+Daylight saving time was popularized to make better use of summer evenings.
+A blink lasts roughly a third of a second.
+Glass marbles were once made by hand, one at a time.
+The world's largest snow maze covers thousands of square feet.
+A standard sheet of paper cannot be folded in half more than about seven or eight times by hand.
+The longest recorded sneezing fit lasted more than two and a half years.
+The tallest sandcastle ever built stood several stories high.
+A single cloud-to-ground lightning bolt can branch into dozens of channels.
+The world's largest cup of coffee held thousands of gallons.
+The tallest documented person in history stood nearly nine feet tall.
+The longest fingernails ever grown stretched many feet in total.
+A group of people solving a Rubik's Cube blindfolded compete in real championships.
+The world record for the most jumps on a pogo stick numbers in the hundreds of thousands.
+The fastest recorded human sprint reached nearly twenty-eight miles per hour.
+The longest wedding veil ever made stretched for miles.
+The largest pizza ever made covered an area larger than a basketball court.
+A single sequoia tree can weigh more than a fully loaded jumbo jet.
+The smallest book ever printed is smaller than a grain of salt.
+The longest hot dog ever made measured many meters in length.
+A person once balanced a car on their head as a feat of strength.
+The world's largest ball of twine weighs many tons.
+The deepest a human has freedived on a single breath exceeds the height of many buildings.
+The longest domino chain ever toppled involved millions of tiles.
+A library book was once returned more than a century overdue.
+The largest gathering of people dressed as the same character numbered in the thousands.
+The fastest time to solve a Rubik's Cube is under four seconds.
+The world's longest usable pencil stretched over the length of a swimming pool.
+The most expensive spice in the world by weight is saffron.
+A vanilla pod can take months to cure after harvest.
+The world's hottest pepper can cause a real burning sensation that lasts for hours.
+Cheese is the most stolen food product in the world.
+The first ice cream cones were rolled by hand at a fair.
+A single bee visits hundreds of flowers in one foraging trip.
+Most of the spice we call cinnamon comes from tree bark.
+Wasabi served in many restaurants is often dyed horseradish.
+The flavour of bananas comes mostly from a single chemical compound.
+Chocolate was once consumed only as a bitter drink, never as a solid bar.
+A pineapple does not continue to ripen after it is picked.
+Coffee is the second most traded commodity in the world after oil by some measures.
+The world's largest omelette used tens of thousands of eggs.
+A lemon contains more sugar than a strawberry by weight.
+Popcorn pops because water trapped inside the kernel turns to steam.
+The bubbles in carbonated drinks are carbon dioxide gas.
+Olive trees can live and produce fruit for hundreds of years.
+A pomegranate can contain hundreds of individual seeds.
+Some of the oldest known beer recipes were written in ancient Mesopotamia.
+The peanut is not a true nut but a member of the bean family.
+Maple syrup takes dozens of liters of sap to make a single liter of syrup.
+The word ketchup may come from a Chinese sauce called ke-tsiap.
+The world's smallest country, Vatican City, has fewer than a thousand residents.
+A bolt of lightning travels at roughly one third the speed of light on its return stroke.
+The first alarm clock could only ring at one fixed time.
+A group of kittens is called a kindle.
+The human heart creates enough pressure to squirt blood several feet.
+Octopus arms can act semi-independently, with neurons spread throughout them.
+The Great Barrier Reef is the largest structure built by living organisms.
+A single teaspoon of honey is the lifework of dozens of bees.
+The first known use of soap dates back thousands of years to ancient Babylon.
+A snowy owl's feathers cover even its feet for warmth.
+Some species of fish can climb waterfalls using their mouths.
+The world's largest flower can grow more than three feet across.
+A typical lightning bolt is about as wide as your thumb but miles long.
+Mount Everest is home to a layer of marine fossils near its peak.
+The smallest ocean is the Arctic Ocean.
+A camel can drink dozens of gallons of water in just a few minutes.
+The blue whale's call can be louder than a jet at takeoff.
+A spider's silk is, by weight, stronger than steel.
+The Sun accounts for almost all the mass of the entire solar system.
+A hummingbird must eat roughly its body weight in nectar every day.
+The deepest point in the ocean is named after a ship, the Challenger.
+A single oak tree can produce thousands of acorns in a good year.
+The aurora can sometimes be heard as faint crackling sounds.
+A koala's diet of eucalyptus leaves is toxic to most other animals.
+The longest living animals on Earth include certain deep-sea clams over five hundred years old.
+Frost flowers form on thin ice when conditions are just right.
+The human body contains enough phosphorus to make the heads of thousands of matches.
+A waterfall can create its own rainbow in the right light.
+The fingerprints of identical twins are different from each other.
+A single bolt of lightning can contain a billion volts.
+The Eiffel Tower has thousands of metal parts held together by millions of rivets.
+Some bamboo can grow so fast it audibly creaks as it rises.
