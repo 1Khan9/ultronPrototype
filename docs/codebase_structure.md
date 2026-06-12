@@ -10,10 +10,18 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD: `2d79a8e`** (the 2026-06-12 live-findings fix
-> batch; pushed to origin/main). **Sweep: 9713 passed / 39 skipped /
-> 0 failed, exit 0, ~128 s** (worktree, loaded-machine two-file-ignore
-> recipe) + `scripts/validate_config.py` clean.
+> **Validating HEAD: `4a08a62`** (the 2026-06-12 live-findings fix
+> batch + two follow-ups; pushed to origin/main). **Sweep: 9717 passed
+> / 39 skipped / 0 failed, exit 0, ~127 s** (worktree, loaded-machine
+> two-file-ignore recipe) + `scripts/validate_config.py` clean.
+> **Follow-ups on the batch:** `db77165` removed the dead shadowed
+> `ConversationMemory.close()` (the queue-draining definition Python
+> actually used survives, with the .lock docstring folded in);
+> `4a08a62` made the blip-watcher `discontinuity` detector
+> outlier-relative (jump must be >=8x the local median adjacent-sample
+> diff as well as >=0.5 absolute -- kills the 112/174-record
+> false-positive class measured at 0.82-1.33x local envelope while
+> keeping production joins/clicks, measured 9-170x, detectable).
 > **2026-06-12 live-findings fix batch** (7 commits
 > `ab08bf4..2d79a8e` on `e19094a`/`9d460da`): every OPEN live finding
 > from the dogfood close-out fixed in one pass — (1) NEW
