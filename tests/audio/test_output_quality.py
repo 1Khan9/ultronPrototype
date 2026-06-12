@@ -131,12 +131,21 @@ def test_discontinuity_click_detected() -> None:
 
 
 def test_internal_dropout_detected() -> None:
-    gap = np.zeros(int(SR * 0.08), dtype=np.float32)  # 80ms hard gap
-    clip = _pad(np.concatenate([_speech_like(0.5), gap, _speech_like(0.5)]))
+    # 2026-06-12 two-tier rule: a genuine digital HARD CUT -- the gap
+    # edges sit at full speech level (no decay). 150 ms is above the
+    # 100 ms floor and below the 600 ms dead-air tier, so the
+    # adjacent-energy rule is what fires here.
+    s = _speech_like(1.0)
+    cut = len(s) // 2
+    clip = _pad(np.concatenate([
+        s[:cut],
+        np.zeros(int(SR * 0.15), dtype=np.float32),
+        s[cut:],
+    ]))
     report = analyze_clip(clip, SR)
     kinds = {f.kind: f for f in report.findings}
     assert "internal_dropout" in kinds
-    assert kinds["internal_dropout"].magnitude >= 40.0
+    assert kinds["internal_dropout"].magnitude >= 100.0
 
 
 def test_clipping_detected() -> None:
@@ -162,6 +171,135 @@ def test_pause_between_sentences_is_not_a_dropout() -> None:
     clip = _pad(_speech_like(), lead_ms=400.0, tail_ms=400.0)
     report = analyze_clip(clip, SR)
     assert report.clean, [f.detail for f in report.findings]
+
+
+# ---------------------------------------------------------------------------
+# 2026-06-12 detector adjudication pins (geometry from live
+# logs/audio_quality.jsonl records)
+# ---------------------------------------------------------------------------
+
+
+def test_loud_runs_helper() -> None:
+    from ultron.audio.output_quality import _loud_runs
+
+    assert _loud_runs(np.array([], dtype=bool)) == []
+    assert _loud_runs(np.array([True, True, True])) == [(0, 2)]
+    assert _loud_runs(np.array([False, True, False, True])) == [
+        (1, 1), (3, 3),
+    ]
+    assert _loud_runs(np.array([True, False, False, True, True])) == [
+        (0, 0), (3, 4),
+    ]
+
+
+def test_natural_sentence_pause_not_flagged() -> None:
+    # 'This is response number N. The system is operating normally.'
+    # geometry: two sentences with gradual decay into a 350 ms pause
+    # (live records: 290-380 ms gaps at the period boundary, x41).
+    s1 = _fade(_speech_like(1.5), ms=80.0)
+    s2 = _fade(_speech_like(1.5), ms=80.0)
+    clip = _pad(np.concatenate([
+        s1, np.zeros(int(SR * 0.35), dtype=np.float32), s2,
+    ]))
+    report = analyze_clip(clip, SR)
+    kinds = {f.kind for f in report.findings}
+    assert "internal_dropout" not in kinds, [
+        f.detail for f in report.findings
+    ]
+
+
+def test_multiple_sentence_pauses_not_flagged() -> None:
+    # 'Let me walk you through this in full detail.' repeated geometry:
+    # 11 gaps of 330-400 ms every ~2.16 s in the live record.
+    sentences = [_fade(_speech_like(1.0), ms=80.0) for _ in range(3)]
+    gap1 = np.zeros(int(SR * 0.33), dtype=np.float32)
+    gap2 = np.zeros(int(SR * 0.40), dtype=np.float32)
+    clip = _pad(np.concatenate(
+        [sentences[0], gap1, sentences[1], gap2, sentences[2]]
+    ))
+    report = analyze_clip(clip, SR)
+    kinds = {f.kind for f in report.findings}
+    assert "internal_dropout" not in kinds
+
+
+def test_stop_consonant_closure_not_flagged() -> None:
+    # 'forty-eight degrees' geometry: 60-70 ms closures with ABRUPT
+    # edges (live records x7). Below the 100 ms floor, so even
+    # loud-edged gaps stay unflagged.
+    s = _speech_like(1.0)
+    cut = len(s) // 2
+    clip = _pad(np.concatenate([
+        s[:cut],
+        np.zeros(int(SR * 0.06), dtype=np.float32),
+        s[cut:],
+    ]))
+    report = analyze_clip(clip, SR)
+    kinds = {f.kind for f in report.findings}
+    assert "internal_dropout" not in kinds
+
+
+def test_long_dead_air_flagged_despite_soft_edges() -> None:
+    # Tier 1: >= 600 ms of dead air inside the body flags regardless
+    # of edge decay -- no natural pause is that long.
+    s1 = _fade(_speech_like(1.0), ms=80.0)
+    s2 = _fade(_speech_like(1.0), ms=80.0)
+    clip = _pad(np.concatenate([
+        s1, np.zeros(int(SR * 0.70), dtype=np.float32), s2,
+    ]))
+    report = analyze_clip(clip, SR)
+    kinds = {f.kind: f for f in report.findings}
+    assert "internal_dropout" in kinds
+    assert kinds["internal_dropout"].magnitude >= 600.0
+
+
+def test_quiet_trailing_burst_reclassified_not_dropout() -> None:
+    # THE regression pin for the pre-trimmer-fix class ('Online.'
+    # geometry): a quiet (~7% of peak) 60 ms terminal burst isolated
+    # by 320 ms of dead air. The legacy 25%-of-peak burst gate
+    # rejected it, so the dead air before it was misreported as an
+    # internal dropout. It must now report as trailing_burst.
+    lead = np.zeros(int(SR * 0.1), dtype=np.float32)
+    speech = _fade(_speech_like(0.7), ms=40.0)
+    gap = np.zeros(int(SR * 0.32), dtype=np.float32)
+    t = np.arange(int(SR * 0.06), dtype=np.float32) / SR
+    burst = (0.05 * np.sin(2 * np.pi * 880 * t)).astype(np.float32)
+    tail = np.zeros(int(SR * 0.03), dtype=np.float32)
+    clip = np.concatenate([lead, speech, gap, burst, tail])
+    report = analyze_clip(clip, SR)
+    kinds = {f.kind: f for f in report.findings}
+    assert "trailing_burst" in kinds, [f.detail for f in report.findings]
+    assert "internal_dropout" not in kinds
+    burst_start_ms = (lead.size + speech.size + gap.size) / SR * 1000.0
+    assert abs(kinds["trailing_burst"].position_ms - burst_start_ms) <= 20.0
+
+
+def test_quiet_leading_burst_reclassified_not_dropout() -> None:
+    lead = np.zeros(int(SR * 0.03), dtype=np.float32)
+    t = np.arange(int(SR * 0.06), dtype=np.float32) / SR
+    burst = (0.05 * np.sin(2 * np.pi * 880 * t)).astype(np.float32)
+    gap = np.zeros(int(SR * 0.32), dtype=np.float32)
+    speech = _fade(_speech_like(0.7), ms=40.0)
+    tail = np.zeros(int(SR * 0.1), dtype=np.float32)
+    clip = np.concatenate([lead, burst, gap, speech, tail])
+    report = analyze_clip(clip, SR)
+    kinds = {f.kind: f for f in report.findings}
+    assert "leading_burst" in kinds, [f.detail for f in report.findings]
+    assert "internal_dropout" not in kinds
+
+
+def test_hard_cut_with_one_decayed_side_not_flagged() -> None:
+    # Documents the both-sides rule for the 100-600 ms tier: a gap
+    # whose pre side decays naturally does not flag even when the
+    # post side is abrupt.
+    s1 = _fade(_speech_like(1.0), ms=80.0)  # decays into the gap
+    s2 = _speech_like(1.0).copy()
+    s2[: int(SR * 0.01)] = 0.3  # abrupt re-entry
+    clip = _pad(np.concatenate([
+        s1, np.zeros(int(SR * 0.20), dtype=np.float32), s2,
+    ]))
+    report = analyze_clip(clip, SR)
+    kinds = {f.kind for f in report.findings}
+    assert "internal_dropout" not in kinds
 
 
 # ---------------------------------------------------------------------------

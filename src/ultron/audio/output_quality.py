@@ -8,6 +8,17 @@ them at synth time; this module DETECTS whatever still slips through,
 live, so regressions in the voice output are observable instead of
 anecdotal.
 
+2026-06-12 detector adjudication (174 live records analysed): natural
+prosody routinely produces 60-430 ms near-silent gaps -- stop-consonant
+closures, clause pauses, inter-sentence pauses -- always entered via a
+gradual energy decay, so they must NOT flag. The internal-dropout check
+is two-tier (>= 600 ms dead air always flags; 100-600 ms gaps flag only
+with speech-level energy on BOTH edges = a digital hard cut), and short
+quiet loud-runs isolated at the clip edges are stripped into the
+leading/trailing burst classes (the measured real-artifact shape, which
+the legacy 25%-of-peak burst gate used to reject -- misclassifying the
+dead air before the burst as an internal dropout).
+
 Design constraints (voice-baseline contract):
 
 * The synth hot path only pays a try/except + a non-blocking queue put
@@ -106,6 +117,21 @@ def _to_float(pcm: np.ndarray) -> np.ndarray:
     return np.clip(arr.astype(np.float32), -1.0, 1.0)
 
 
+def _loud_runs(loud: np.ndarray) -> list:
+    """Consecutive True spans of ``loud`` as inclusive (start, end) runs."""
+    runs: list = []
+    start = None
+    for i, flag in enumerate(loud):
+        if flag and start is None:
+            start = i
+        elif not flag and start is not None:
+            runs.append((start, i - 1))
+            start = None
+    if start is not None:
+        runs.append((start, len(loud) - 1))
+    return runs
+
+
 def analyze_clip(
     pcm: np.ndarray,
     sample_rate: int,
@@ -115,11 +141,26 @@ def analyze_clip(
     burst_silence_rms: float = 0.004,
     burst_min_ratio: float = 0.25,
     discontinuity_jump: float = 0.5,
-    dropout_ms: float = 40.0,
+    dropout_ms: float = 100.0,
+    dead_air_ms: float = 600.0,
+    dropout_adjacent_ratio: float = 0.25,
+    edge_burst_max_ms: float = 130.0,
+    edge_burst_gap_ms: float = 200.0,
     clipping_fraction: float = 0.001,
     dc_offset_threshold: float = 0.02,
 ) -> ClipQualityReport:
     """Inspect one synthesized clip for audible artifacts.
+
+    2026-06-12 adjudication (from 174 live audio_quality.jsonl
+    records): natural prosody renders 60-430 ms near-silent gaps --
+    stop-consonant closures (60-70 ms), clause pauses (100-260 ms),
+    inter-sentence pauses (290-400 ms) -- always entered via a GRADUAL
+    energy decay. A genuine digital dropout is either a hard cut
+    (speech-level energy on BOTH gap edges) or grossly long dead air.
+    The detector therefore uses a two-tier internal-dropout rule and
+    strips short isolated edge runs into the burst classes (the same
+    run-grouping the trim_and_fade fix uses), so quiet terminal bursts
+    report under their TRUE kind instead of polluting the dropout body.
 
     Args:
         pcm: mono int16 or float PCM.
@@ -130,12 +171,28 @@ def analyze_clip(
             stream open/close.
         burst_silence_rms: frame RMS at/below this is "silence" for the
             isolated-burst and dropout checks.
-        burst_min_ratio: an edge burst must reach this fraction of the
-            clip's peak frame RMS to be reported.
+        burst_min_ratio: an edge burst inside the legacy edge-window
+            check must reach this fraction of the clip's peak frame RMS
+            to be reported (the run-strip path has NO such gate -- the
+            measured real bursts sat at only 3-12% of peak).
         discontinuity_jump: adjacent-sample jump (in [-1,1] units) that
             counts as a concatenation click.
-        dropout_ms: minimum hard-silence span INSIDE speech reported as
-            an internal dropout.
+        dropout_ms: minimum hard-cut gap INSIDE speech reported as an
+            internal dropout when BOTH gap edges carry speech-level
+            energy (>= ``dropout_adjacent_ratio`` of the envelope
+            peak). Below this, gaps are natural closures/pauses.
+        dead_air_ms: gap length that is reported as an internal dropout
+            REGARDLESS of edge energy (max observed natural pause was
+            430 ms; 600 gives ~40% margin).
+        dropout_adjacent_ratio: fraction of the envelope peak both gap
+            edges must reach for the hard-cut tier (natural pauses
+            decay to ~3-9% of peak at the gap edge).
+        edge_burst_max_ms: loud runs at the clip edges no longer than
+            this are stripped from the speech body (mirrors the
+            trim_and_fade discard cap; measured artifact tails span
+            46-126 ms).
+        edge_burst_gap_ms: minimum silence between an edge run and the
+            speech body for the strip (measured isolation 210-490 ms).
         clipping_fraction: fraction of samples at full scale that counts
             as clipping.
         dc_offset_threshold: |mean| that counts as DC offset.
@@ -181,14 +238,57 @@ def analyze_clip(
     edge_frames = max(1, int(_EDGE_WINDOW_MS / _FRAME_MS))
 
     if env_peak > 0.0 and loud.any():
-        first_loud = int(np.argmax(loud))
-        last_loud = int(len(loud) - 1 - np.argmax(loud[::-1]))
+        # --- Run-aware body endpoints (2026-06-12). Short loud runs
+        # at the clip edges isolated from the body by real silence are
+        # the measured artifact class -- strip them from the body and
+        # report them under their TRUE kind, with no peak-ratio gate
+        # (the real bursts measured only 3-12% of clip peak, which the
+        # legacy 25% gate rejected, misclassifying them as the gap
+        # BEFORE the burst = "internal_dropout"). Mirrors the
+        # trim_and_fade run-grouping so detector and trimmer agree.
+        runs = _loud_runs(loud)
+        bm = max(1, int(np.ceil(edge_burst_max_ms / _FRAME_MS)))
+        bg = max(1, int(np.ceil(edge_burst_gap_ms / _FRAME_MS)))
+        trailing_stripped: list = []
+        leading_stripped: list = []
+        while len(runs) > 1:
+            s, e = runs[-1]
+            gap = s - runs[-2][1] - 1
+            if (e - s + 1) <= bm and gap >= bg:
+                trailing_stripped.append(runs.pop())
+            else:
+                break
+        while len(runs) > 1:
+            s, e = runs[0]
+            gap = runs[1][0] - e - 1
+            if (e - s + 1) <= bm and gap >= bg:
+                leading_stripped.append(runs.pop(0))
+            else:
+                break
+        for s, e in trailing_stripped:
+            findings.append(BlipFinding(
+                "trailing_burst", s * _FRAME_MS,
+                float(env[s:e + 1].max()),
+                f"isolated {((e - s + 1) * _FRAME_MS):.0f}ms burst at "
+                f"{s * _FRAME_MS:.0f}ms after speech ends",
+            ))
+        for s, e in leading_stripped:
+            findings.append(BlipFinding(
+                "leading_burst", s * _FRAME_MS,
+                float(env[s:e + 1].max()),
+                f"isolated {((e - s + 1) * _FRAME_MS):.0f}ms burst at "
+                f"{s * _FRAME_MS:.0f}ms before speech onset",
+            ))
+        first_loud = runs[0][0]
+        last_loud = runs[-1][1]
 
         # --- Isolated leading burst: noise spike near the clip start
-        # separated from the speech body by silence.
+        # separated from the speech body by silence. (Legacy
+        # edge-window check; covers sub-200ms-gap cases the run strip
+        # above doesn't. Skipped when the strip already reported.)
         head = env[:min(edge_frames, len(env))]
         head_loud = np.flatnonzero(head > burst_silence_rms)
-        if head_loud.size:
+        if not leading_stripped and head_loud.size:
             burst_start = int(head_loud[0])
             burst_end = burst_start
             while burst_end + 1 < len(head) and head[burst_end + 1] > burst_silence_rms:
@@ -216,7 +316,7 @@ def analyze_clip(
         # --- Isolated trailing burst (mirror).
         tail_env = env[::-1][:min(edge_frames, len(env))]
         tail_loud = np.flatnonzero(tail_env > burst_silence_rms)
-        if tail_loud.size:
+        if not trailing_stripped and tail_loud.size:
             burst_start = int(tail_loud[0])
             burst_end = burst_start
             while burst_end + 1 < len(tail_env) and tail_env[burst_end + 1] > burst_silence_rms:
@@ -241,23 +341,47 @@ def analyze_clip(
                     f"burst at {pos:.0f}ms after speech ends",
                 ))
 
-        # --- Internal dropout: hard silence INSIDE the speech body
-        # (a stutter/gap at a bad sentence join).
+        # --- Internal dropout: two-tier rule (2026-06-12).
+        # Tier 1 (dead air): a gap >= dead_air_ms is reported
+        # regardless of edge energy -- no natural pause is that long.
+        # Tier 2 (hard cut): a gap in [dropout_ms, dead_air_ms) is
+        # reported ONLY when BOTH gap edges carry speech-level energy
+        # (>= dropout_adjacent_ratio of the envelope peak) -- the
+        # signature of a digital cut. Natural pauses (stop closures,
+        # clause/sentence pauses) decay gradually into the gap, so
+        # their edges sit at a few percent of peak and never trip it.
         dropout_frames = max(1, int(dropout_ms / _FRAME_MS))
+        dead_air_frames = max(1, int(dead_air_ms / _FRAME_MS))
         body = loud[first_loud:last_loud + 1]
         run = 0
         for i, is_loud in enumerate(body):
             if not is_loud:
                 run += 1
-            else:
-                if run >= dropout_frames:
+                continue
+            if run >= dead_air_frames:
+                pos = (first_loud + i - run) * _FRAME_MS
+                findings.append(BlipFinding(
+                    "internal_dropout", pos, run * _FRAME_MS,
+                    f"{run * _FRAME_MS:.0f}ms dead air inside speech "
+                    f"at {pos:.0f}ms",
+                ))
+            elif run >= dropout_frames:
+                # body starts on a loud frame, so the first quiet run
+                # begins at env index >= first_loud + 1 -- the pre
+                # index below is always valid.
+                pre = float(env[first_loud + i - run - 1])
+                post = float(env[first_loud + i])
+                if (
+                    pre >= dropout_adjacent_ratio * env_peak
+                    and post >= dropout_adjacent_ratio * env_peak
+                ):
                     pos = (first_loud + i - run) * _FRAME_MS
                     findings.append(BlipFinding(
                         "internal_dropout", pos, run * _FRAME_MS,
-                        f"{run * _FRAME_MS:.0f}ms hard gap inside speech "
-                        f"at {pos:.0f}ms",
+                        f"{run * _FRAME_MS:.0f}ms hard cut inside "
+                        f"speech at {pos:.0f}ms",
                     ))
-                run = 0
+            run = 0
 
     # --- Discontinuity click: instantaneous sample jump (bad join).
     if n > 1:
