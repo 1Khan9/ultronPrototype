@@ -419,6 +419,17 @@ class MoonshineEngine:
         the stream. Safe to call any time after ``start_stream``."""
         return self._collector.get_text(completed_only=completed_only)
 
+    def clear_stream_cache(self) -> None:
+        """Drop any stashed final-stream transcript without consuming it.
+
+        Used by the orchestrator's follow-up abort paths (wake-word
+        fired during the follow-up window, window deadline elapsed
+        mid-utterance) where the partial transcript of a DISCARDED
+        capture must not leak into the next ``transcribe`` call's
+        cache-hit path. Idempotent; never raises.
+        """
+        self._last_streaming_text = None
+
     def stop_stream(self) -> str:
         """Finalize streaming and return the full transcript. Idempotent.
 

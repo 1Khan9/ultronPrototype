@@ -5280,6 +5280,17 @@ class Orchestrator:
         consecutive_silence_chunks = 0
         speculative_kicked = False
         speculative_silence_kickoff_chunks = 2
+        # 2026-06-12: streaming-STT lane on the WARM path. On streaming
+        # engines (Moonshine medium-streaming-en) the speculative lane
+        # above is a deliberate no-op (_kick_off_speculative_stt's
+        # streaming race guard), which left follow-up turns paying a
+        # full synchronous Moonshine re-transcribe (~700 ms live) in
+        # run()'s foreground STT call. Mirror the COLD-path streaming
+        # session here -- but start it at SPEECH_START (not
+        # window-open) so the streamed audio is exactly pre_roll +
+        # speech_chunks, matching the returned buffer, and no CPU is
+        # burned transcribing room chatter for the whole warm window.
+        streaming_active = False
 
         while not self._shutdown.is_set() and time.monotonic() < deadline:
             chunk = self.audio.get_chunk(timeout=0.1)
@@ -5289,6 +5300,11 @@ class Orchestrator:
 
             # Wake word always wins — even if we're mid-utterance.
             if self.wake.process(chunk):
+                if streaming_active:
+                    # The captured audio is being dropped -- discard
+                    # the partial transcript so it can't leak into the
+                    # next capture's cache-hit path.
+                    self._maybe_discard_stt_stream()
                 return _FU_WAKE
 
             result = self.vad.process(chunk)
@@ -5308,11 +5324,21 @@ class Orchestrator:
                     speech_chunks.append(chunk)
                     speech_started = True
                     speech_samples = chunk.shape[0]
+                    # 2026-06-12: start the streaming-STT session at
+                    # SPEECH_START and feed exactly what the returned
+                    # buffer will contain (pre-roll + chunks).
+                    streaming_active = self._maybe_start_stt_stream()
+                    if streaming_active:
+                        if pre_roll is not None and pre_roll.size:
+                            self._maybe_feed_stt_chunk(pre_roll)
+                        self._maybe_feed_stt_chunk(chunk)
                 # else: still waiting for speech — keep ticking.
                 continue
 
             speech_chunks.append(chunk)
             speech_samples += chunk.shape[0]
+            if streaming_active:
+                self._maybe_feed_stt_chunk(chunk)
 
             if result.event == SpeechEvent.SPEECH_START and smart_turn_used:
                 # User resumed speaking after smart-turn said
@@ -5348,6 +5374,8 @@ class Orchestrator:
                     # 2026-05-16 latency pass 2: gradient-fire bands.
                     band = self._classify_smart_turn_verdict(verdict)
                     if band == "undecided":
+                        if streaming_active:
+                            self._maybe_stop_stt_stream()
                         return captured
                     if band == "early_complete":
                         logger.info(
@@ -5355,6 +5383,8 @@ class Orchestrator:
                             "(prob=%.3f, %.1f ms)",
                             verdict.probability, verdict.latency_ms,
                         )
+                        if streaming_active:
+                            self._maybe_stop_stt_stream()
                         return captured
                     if band == "medium_complete":
                         # Wait the medium-grace window; if user
@@ -5385,6 +5415,8 @@ class Orchestrator:
                     pieces = (
                         [pre_roll] if pre_roll is not None else []
                     ) + speech_chunks
+                    if streaming_active:
+                        self._maybe_stop_stt_stream()
                     return np.concatenate(pieces).astype(
                         np.float32, copy=False,
                     )
@@ -5430,6 +5462,8 @@ class Orchestrator:
                 pieces = (
                     [pre_roll] if pre_roll is not None else []
                 ) + speech_chunks
+                if streaming_active:
+                    self._maybe_stop_stt_stream()
                 return np.concatenate(pieces).astype(
                     np.float32, copy=False,
                 )
@@ -5450,6 +5484,8 @@ class Orchestrator:
                 pieces = (
                     [pre_roll] if pre_roll is not None else []
                 ) + speech_chunks
+                if streaming_active:
+                    self._maybe_stop_stt_stream()
                 return np.concatenate(pieces).astype(
                     np.float32, copy=False,
                 )
@@ -5457,8 +5493,14 @@ class Orchestrator:
             if speech_samples >= max_samples:
                 # Hard cap — return what we have, classifier can still gate it.
                 pieces = ([pre_roll] if pre_roll is not None else []) + speech_chunks
+                if streaming_active:
+                    self._maybe_stop_stt_stream()
                 return np.concatenate(pieces).astype(np.float32, copy=False)
 
+        if streaming_active:
+            # Deadline elapsed (or shutdown) mid-utterance: the audio
+            # is being dropped, so discard the partial transcript too.
+            self._maybe_discard_stt_stream()
         return _FU_TIMEOUT
 
     # --- coding pipeline glue -----------------------------------------------
@@ -6721,6 +6763,26 @@ class Orchestrator:
                 "transcribe(buffer) call below will run fresh.", e,
             )
             return None
+
+    def _maybe_discard_stt_stream(self) -> None:
+        """Stop any active streaming-STT session and DISCARD its text.
+
+        Abort-path counterpart of :meth:`_maybe_stop_stt_stream`: used
+        when the captured audio itself is being dropped (wake-word
+        fired during the follow-up window, or the window deadline
+        elapsed mid-utterance), so the engine's stashed final text
+        must not leak into the NEXT capture's ``transcribe(buffer)``
+        cache-hit path. Fail-open at every layer.
+        """
+        self._maybe_stop_stt_stream()
+        try:
+            clear = getattr(
+                getattr(self, "stt", None), "clear_stream_cache", None,
+            )
+            if callable(clear):
+                clear()
+        except Exception as e:                                         # noqa: BLE001
+            logger.debug("STT stream-cache clear failed: %s", e)
 
     def _reset_speculative_stt_state(self) -> None:
         """Clear any leftover speculative STT state from a prior capture.

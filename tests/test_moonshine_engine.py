@@ -292,6 +292,32 @@ def test_get_partial_text_returns_current_lines(fake_moonshine_voice):
     assert engine.get_partial_text() == "hello"
 
 
+def test_clear_stream_cache_drops_stash(fake_moonshine_voice):
+    """2026-06-12 follow-up abort path: a discarded capture's partial
+    transcript must not leak into the next transcribe call."""
+    from ultron.transcription.moonshine_engine import MoonshineEngine
+    engine = MoonshineEngine()
+    engine.start_stream()
+    line = fake_moonshine_voice["fake_line"]
+    line.text = "discarded partial"
+    engine._collector._update_line(line)
+    engine.stop_stream()
+    assert engine._last_streaming_text == "discarded partial"
+    engine.clear_stream_cache()
+    assert engine._last_streaming_text is None
+    # A subsequent transcribe must NOT return the cleared text.
+    result = engine.transcribe(np.zeros(16000 * 2, dtype=np.float32))
+    assert result != "discarded partial"
+
+
+def test_clear_stream_cache_idempotent_when_empty(fake_moonshine_voice):
+    from ultron.transcription.moonshine_engine import MoonshineEngine
+    engine = MoonshineEngine()
+    engine.clear_stream_cache()
+    engine.clear_stream_cache()  # second call must not raise
+    assert engine._last_streaming_text is None
+
+
 # ---------------------------------------------------------------------------
 # transcribe (one-shot + interaction with streaming state)
 # ---------------------------------------------------------------------------
