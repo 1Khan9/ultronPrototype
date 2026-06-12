@@ -201,6 +201,9 @@ data/.run_tests_heartbeat
 data/.run_tests_current
 data/.run_tests_progress.jsonl
 data/.run_tests.lock
+# 2026-06-12 single-instance guard (held OS file lock + holder PID
+# metadata) -- see src/ultron/lifecycle/single_instance.py.
+data/.ultron_instance.lock
 # 2026-05-22 catalog batch 2 repo-map cache (mtime-keyed SQLite).
 data/.ultron_repomap_cache*/
 # 2026-05-23 SWE-Agent batch 1 SessionRegistry (T15) per-session JSON state

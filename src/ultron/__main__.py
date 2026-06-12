@@ -45,39 +45,70 @@ def main() -> int:
     configure_logging()
     logger = get_logger("main")
 
-    print("\n" + "=" * 60)
-    print("  ULTRON")
-    print("  Local voice-first AI assistant — prototype")
-    print("=" * 60)
-    print("  Loading models — this can take 1–3 minutes on first run.")
+    # 2026-06-12 single-instance guard: two simultaneous `python -m
+    # ultron` processes both grab the mic and double-respond (and the
+    # second collides on the embedded Qdrant lock + MCP port 19761).
+    # Acquired BEFORE any model load; releases automatically on
+    # process death (held OS file lock), so a crash never blocks the
+    # next launch. The guard lives HERE (not in Orchestrator) so
+    # pytest / the GPU e2e suite / measurement scripts that construct
+    # the Orchestrator directly never contend.
+    from ultron.lifecycle.single_instance import (
+        ALLOW_MULTIPLE_ENV,
+        DEFAULT_LOCK_PATH,
+        acquire_single_instance_lock,
+        read_lock_metadata,
+    )
+
+    instance_lock = acquire_single_instance_lock()
+    if instance_lock is None:
+        meta = read_lock_metadata(DEFAULT_LOCK_PATH) or {}
+        other_pid = meta.get("pid", "unknown")
+        msg = (
+            f"Another Ultron instance is already running (PID {other_pid}); "
+            f"refusing to start a duplicate. Set {ALLOW_MULTIPLE_ENV}=1 "
+            "to override."
+        )
+        logger.error(msg)
+        print(f"\n[!] {msg}\n")
+        return 3
 
     try:
-        orchestrator = Orchestrator()
-    except FileNotFoundError as e:
-        logger.error("Missing model: %s", e)
-        print(f"\n[!] {e}")
-        print("    Run: python scripts/download_models.py\n")
-        return 2
-    except Exception as e:
-        logger.exception("Startup failed: %s", e)
-        print(f"\n[!] Startup failed: {e}")
-        return 1
+        print("\n" + "=" * 60)
+        print("  ULTRON")
+        print("  Local voice-first AI assistant — prototype")
+        print("=" * 60)
+        print("  Loading models — this can take 1–3 minutes on first run.")
 
-    def _sigint(_sig, _frm):
-        print("\n  shutting down…")
-        orchestrator.shutdown()
+        try:
+            orchestrator = Orchestrator()
+        except FileNotFoundError as e:
+            logger.error("Missing model: %s", e)
+            print(f"\n[!] {e}")
+            print("    Run: python scripts/download_models.py\n")
+            return 2
+        except Exception as e:
+            logger.exception("Startup failed: %s", e)
+            print(f"\n[!] Startup failed: {e}")
+            return 1
 
-    signal.signal(signal.SIGINT, _sigint)
+        def _sigint(_sig, _frm):
+            print("\n  shutting down…")
+            orchestrator.shutdown()
 
-    try:
-        with orchestrator:
-            orchestrator.run()
-    except Exception as e:
-        logger.exception("Run loop failed: %s", e)
-        return 1
+        signal.signal(signal.SIGINT, _sigint)
 
-    print("  goodbye.\n")
-    return 0
+        try:
+            with orchestrator:
+                orchestrator.run()
+        except Exception as e:
+            logger.exception("Run loop failed: %s", e)
+            return 1
+
+        print("  goodbye.\n")
+        return 0
+    finally:
+        instance_lock.release()
 
 
 if __name__ == "__main__":
