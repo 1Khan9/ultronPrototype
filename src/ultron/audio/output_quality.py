@@ -1,0 +1,481 @@
+"""TTS output-quality watcher: catch audible blips in synthesized clips.
+
+The Kokoro fine-tune occasionally produces boundary artifacts -- brief
+noise bursts before/after speech, hard un-faded onsets that pop on
+stream start, discontinuity clicks at sentence-concatenation joins, and
+(more rarely) internal dropouts. ``trim_and_fade`` mitigates most of
+them at synth time; this module DETECTS whatever still slips through,
+live, so regressions in the voice output are observable instead of
+anecdotal.
+
+Design constraints (voice-baseline contract):
+
+* The synth hot path only pays a try/except + a non-blocking queue put
+  (microseconds). All waveform analysis runs on a single daemon thread.
+* Fully fail-open: a watcher bug can never break synthesis or playback.
+* Findings are logged at WARNING and appended as JSONL records to
+  ``logs/audio_quality.jsonl`` for offline review; per-session counters
+  are available via :meth:`OutputQualityWatcher.stats`.
+
+Analysis is per synthesized CLIP (the pre-playback PCM). A clip that
+starts at high amplitude WILL pop when the output stream opens, so the
+hard-onset/tail checks act as the proxy for playback-side pops; device
+or driver artifacts that never appear in the PCM are out of scope.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import queue
+import threading
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
+
+import numpy as np
+
+logger = logging.getLogger("ultron.audio.output_quality")
+
+__all__ = [
+    "BlipFinding",
+    "ClipQualityReport",
+    "analyze_clip",
+    "OutputQualityWatcher",
+    "get_output_watcher",
+    "reset_output_watcher",
+]
+
+# Analysis frame size for the RMS envelope (10 ms).
+_FRAME_MS = 10.0
+# How far into each clip edge we look for isolated noise bursts.
+_EDGE_WINDOW_MS = 250.0
+# Minimum clip duration worth analyzing.
+_MIN_CLIP_S = 0.05
+
+
+@dataclass(frozen=True)
+class BlipFinding:
+    """One detected audio artifact.
+
+    Attributes:
+        kind: one of ``hard_onset`` / ``hard_tail`` / ``leading_burst`` /
+            ``trailing_burst`` / ``discontinuity`` / ``internal_dropout`` /
+            ``clipping`` / ``dc_offset``.
+        position_ms: approximate artifact position from clip start.
+        magnitude: kind-specific severity (amplitude, fraction, or dB).
+        detail: short human-readable description.
+    """
+
+    kind: str
+    position_ms: float
+    magnitude: float
+    detail: str
+
+
+@dataclass(frozen=True)
+class ClipQualityReport:
+    """Analysis result for one synthesized clip.
+
+    Attributes:
+        duration_s: clip duration in seconds.
+        peak: peak |amplitude| in [0, 1].
+        rms: full-clip RMS in [0, 1].
+        findings: detected artifacts (empty -> clean clip).
+        label: caller-provided context (e.g. leading words of the text).
+    """
+
+    duration_s: float
+    peak: float
+    rms: float
+    findings: tuple[BlipFinding, ...] = ()
+    label: str = ""
+
+    @property
+    def clean(self) -> bool:
+        """True iff no artifact was detected."""
+        return not self.findings
+
+
+def _to_float(pcm: np.ndarray) -> np.ndarray:
+    """Normalise int16/float input to float32 in [-1, 1]."""
+    arr = np.asarray(pcm)
+    if arr.dtype == np.int16:
+        return arr.astype(np.float32) / 32768.0
+    return np.clip(arr.astype(np.float32), -1.0, 1.0)
+
+
+def analyze_clip(
+    pcm: np.ndarray,
+    sample_rate: int,
+    *,
+    label: str = "",
+    edge_abs_threshold: float = 0.05,
+    burst_silence_rms: float = 0.004,
+    burst_min_ratio: float = 0.25,
+    discontinuity_jump: float = 0.5,
+    dropout_ms: float = 40.0,
+    clipping_fraction: float = 0.001,
+    dc_offset_threshold: float = 0.02,
+) -> ClipQualityReport:
+    """Inspect one synthesized clip for audible artifacts.
+
+    Args:
+        pcm: mono int16 or float PCM.
+        sample_rate: sample rate of ``pcm``.
+        label: context recorded on the report (e.g. text prefix).
+        edge_abs_threshold: |amplitude| within the first/last ~5 ms that
+            counts as a hard (un-faded) onset/tail -- these pop on
+            stream open/close.
+        burst_silence_rms: frame RMS at/below this is "silence" for the
+            isolated-burst and dropout checks.
+        burst_min_ratio: an edge burst must reach this fraction of the
+            clip's peak frame RMS to be reported.
+        discontinuity_jump: adjacent-sample jump (in [-1,1] units) that
+            counts as a concatenation click.
+        dropout_ms: minimum hard-silence span INSIDE speech reported as
+            an internal dropout.
+        clipping_fraction: fraction of samples at full scale that counts
+            as clipping.
+        dc_offset_threshold: |mean| that counts as DC offset.
+
+    Returns:
+        A :class:`ClipQualityReport`; ``report.clean`` iff no artifact.
+    """
+    x = _to_float(pcm)
+    n = int(x.size)
+    if n == 0 or sample_rate <= 0:
+        return ClipQualityReport(0.0, 0.0, 0.0, (), label)
+    duration_s = n / float(sample_rate)
+    peak = float(np.abs(x).max())
+    rms = float(np.sqrt(np.mean(np.square(x))))
+    if duration_s < _MIN_CLIP_S:
+        return ClipQualityReport(duration_s, peak, rms, (), label)
+
+    findings: list[BlipFinding] = []
+
+    # --- Hard onset / tail (un-faded edges pop on stream start/stop).
+    edge = max(1, int(sample_rate * 0.005))
+    onset_peak = float(np.abs(x[:edge]).max())
+    if onset_peak > edge_abs_threshold:
+        findings.append(BlipFinding(
+            "hard_onset", 0.0, onset_peak,
+            f"clip starts at |amp|={onset_peak:.3f} with no fade-in",
+        ))
+    tail_peak = float(np.abs(x[-edge:]).max())
+    if tail_peak > edge_abs_threshold:
+        findings.append(BlipFinding(
+            "hard_tail", duration_s * 1000.0, tail_peak,
+            f"clip ends at |amp|={tail_peak:.3f} with no fade-out",
+        ))
+
+    # --- Frame RMS envelope.
+    frame = max(1, int(sample_rate * _FRAME_MS / 1000.0))
+    usable = (n // frame) * frame
+    env = np.sqrt(np.mean(
+        np.square(x[:usable].reshape(-1, frame)), axis=1,
+    )) if usable >= frame else np.array([rms], dtype=np.float32)
+    env_peak = float(env.max()) if env.size else 0.0
+    loud = env > burst_silence_rms
+    edge_frames = max(1, int(_EDGE_WINDOW_MS / _FRAME_MS))
+
+    if env_peak > 0.0 and loud.any():
+        first_loud = int(np.argmax(loud))
+        last_loud = int(len(loud) - 1 - np.argmax(loud[::-1]))
+
+        # --- Isolated leading burst: noise spike near the clip start
+        # separated from the speech body by silence.
+        head = env[:min(edge_frames, len(env))]
+        head_loud = np.flatnonzero(head > burst_silence_rms)
+        if head_loud.size:
+            burst_start = int(head_loud[0])
+            burst_end = burst_start
+            while burst_end + 1 < len(head) and head[burst_end + 1] > burst_silence_rms:
+                burst_end += 1
+            after = env[burst_end + 1:]
+            gap = 0
+            for v in after:
+                if v <= burst_silence_rms:
+                    gap += 1
+                else:
+                    break
+            burst_peak = float(head[burst_start:burst_end + 1].max())
+            if (
+                gap >= 3
+                and (burst_end + 1 + gap) <= last_loud
+                and burst_peak >= burst_min_ratio * env_peak
+            ):
+                pos = burst_start * _FRAME_MS
+                findings.append(BlipFinding(
+                    "leading_burst", pos, burst_peak,
+                    f"isolated {((burst_end - burst_start + 1) * _FRAME_MS):.0f}ms "
+                    f"burst at {pos:.0f}ms before speech onset",
+                ))
+
+        # --- Isolated trailing burst (mirror).
+        tail_env = env[::-1][:min(edge_frames, len(env))]
+        tail_loud = np.flatnonzero(tail_env > burst_silence_rms)
+        if tail_loud.size:
+            burst_start = int(tail_loud[0])
+            burst_end = burst_start
+            while burst_end + 1 < len(tail_env) and tail_env[burst_end + 1] > burst_silence_rms:
+                burst_end += 1
+            after = env[::-1][burst_end + 1:]
+            gap = 0
+            for v in after:
+                if v <= burst_silence_rms:
+                    gap += 1
+                else:
+                    break
+            burst_peak = float(tail_env[burst_start:burst_end + 1].max())
+            if (
+                gap >= 3
+                and (len(env) - 1 - (burst_end + gap + 1)) >= first_loud
+                and burst_peak >= burst_min_ratio * env_peak
+            ):
+                pos = (len(env) - 1 - burst_end) * _FRAME_MS
+                findings.append(BlipFinding(
+                    "trailing_burst", pos, burst_peak,
+                    f"isolated {((burst_end - burst_start + 1) * _FRAME_MS):.0f}ms "
+                    f"burst at {pos:.0f}ms after speech ends",
+                ))
+
+        # --- Internal dropout: hard silence INSIDE the speech body
+        # (a stutter/gap at a bad sentence join).
+        dropout_frames = max(1, int(dropout_ms / _FRAME_MS))
+        body = loud[first_loud:last_loud + 1]
+        run = 0
+        for i, is_loud in enumerate(body):
+            if not is_loud:
+                run += 1
+            else:
+                if run >= dropout_frames:
+                    pos = (first_loud + i - run) * _FRAME_MS
+                    findings.append(BlipFinding(
+                        "internal_dropout", pos, run * _FRAME_MS,
+                        f"{run * _FRAME_MS:.0f}ms hard gap inside speech "
+                        f"at {pos:.0f}ms",
+                    ))
+                run = 0
+
+    # --- Discontinuity click: instantaneous sample jump (bad join).
+    if n > 1:
+        diffs = np.abs(np.diff(x))
+        max_jump = float(diffs.max())
+        if max_jump > discontinuity_jump:
+            pos = int(np.argmax(diffs)) / sample_rate * 1000.0
+            findings.append(BlipFinding(
+                "discontinuity", pos, max_jump,
+                f"adjacent-sample jump {max_jump:.2f} at {pos:.0f}ms",
+            ))
+
+    # --- Clipping.
+    clipped = float(np.mean(np.abs(x) >= 0.999))
+    if clipped > clipping_fraction:
+        findings.append(BlipFinding(
+            "clipping", 0.0, clipped,
+            f"{clipped * 100.0:.2f}% of samples at full scale",
+        ))
+
+    # --- DC offset.
+    dc = float(np.mean(x))
+    if abs(dc) > dc_offset_threshold:
+        findings.append(BlipFinding(
+            "dc_offset", 0.0, dc, f"mean amplitude {dc:+.3f}",
+        ))
+
+    return ClipQualityReport(duration_s, peak, rms, tuple(findings), label)
+
+
+class OutputQualityWatcher:
+    """Background analyzer for synthesized clips.
+
+    ``submit`` is the hot-path entry: a non-blocking queue put (clips
+    are DROPPED, never waited on, when the analyzer is behind). The
+    daemon thread runs :func:`analyze_clip` and, for any finding, logs a
+    WARNING and appends a JSONL record to ``jsonl_path``.
+    """
+
+    def __init__(
+        self,
+        *,
+        jsonl_path: Optional[Path] = None,
+        max_queue: int = 16,
+        analyze_kwargs: Optional[dict] = None,
+    ) -> None:
+        """Create the watcher and start its daemon thread.
+
+        Args:
+            jsonl_path: findings log; None disables the JSONL sink.
+            max_queue: bounded queue size (overflow drops clips).
+            analyze_kwargs: threshold overrides for :func:`analyze_clip`.
+        """
+        self._jsonl_path = jsonl_path
+        self._analyze_kwargs = dict(analyze_kwargs or {})
+        self._queue: "queue.Queue[Optional[tuple]]" = queue.Queue(maxsize=max_queue)
+        self._lock = threading.Lock()
+        self._clips_seen = 0
+        self._clips_flagged = 0
+        self._dropped = 0
+        self._findings_by_kind: dict[str, int] = {}
+        self._closed = False
+        self._thread = threading.Thread(
+            target=self._run, name="tts-output-quality", daemon=True,
+        )
+        self._thread.start()
+
+    def submit(self, pcm: np.ndarray, sample_rate: int, label: str = "") -> None:
+        """Enqueue a clip for analysis (hot path; never blocks/raises)."""
+        try:
+            self._queue.put_nowait((pcm, int(sample_rate), str(label)[:60]))
+        except queue.Full:
+            with self._lock:
+                self._dropped += 1
+        except Exception:  # noqa: BLE001 - hot path must never raise
+            pass
+
+    def stats(self) -> dict:
+        """Session counters: clips seen/flagged/dropped + findings by kind."""
+        with self._lock:
+            return {
+                "clips_seen": self._clips_seen,
+                "clips_flagged": self._clips_flagged,
+                "clips_dropped": self._dropped,
+                "findings_by_kind": dict(self._findings_by_kind),
+            }
+
+    def close(self, timeout_s: float = 2.0) -> None:
+        """Stop the analyzer thread (best-effort, used by tests/shutdown)."""
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._queue.put_nowait(None)
+        except Exception:  # noqa: BLE001
+            pass
+        self._thread.join(timeout=timeout_s)
+
+    # ------------------------------------------------------------------
+
+    def _run(self) -> None:
+        while True:
+            item = self._queue.get()
+            if item is None:
+                return
+            try:
+                pcm, sr, label = item
+                report = analyze_clip(pcm, sr, label=label, **self._analyze_kwargs)
+                with self._lock:
+                    self._clips_seen += 1
+                    if report.findings:
+                        self._clips_flagged += 1
+                        for f in report.findings:
+                            self._findings_by_kind[f.kind] = (
+                                self._findings_by_kind.get(f.kind, 0) + 1
+                            )
+                if report.findings:
+                    kinds = ", ".join(
+                        f"{f.kind}@{f.position_ms:.0f}ms" for f in report.findings
+                    )
+                    logger.warning(
+                        "audio blip detected (%s) in clip %r (%.2fs, peak=%.2f): %s",
+                        kinds, label, report.duration_s, report.peak,
+                        "; ".join(f.detail for f in report.findings),
+                    )
+                    self._append_jsonl(report)
+            except Exception as e:  # noqa: BLE001 - analyzer must survive
+                logger.debug("output-quality analysis failed: %s", e)
+
+    def _append_jsonl(self, report: ClipQualityReport) -> None:
+        if self._jsonl_path is None:
+            return
+        try:
+            record = {
+                "timestamp": time.time(),
+                "label": report.label,
+                "duration_s": round(report.duration_s, 3),
+                "peak": round(report.peak, 4),
+                "rms": round(report.rms, 4),
+                "findings": [
+                    {
+                        "kind": f.kind,
+                        "position_ms": round(f.position_ms, 1),
+                        "magnitude": round(f.magnitude, 4),
+                        "detail": f.detail,
+                    }
+                    for f in report.findings
+                ],
+            }
+            self._jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+            with self._jsonl_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record) + "\n")
+        except Exception as e:  # noqa: BLE001 - sink failures are non-fatal
+            logger.debug("output-quality jsonl append failed: %s", e)
+
+
+_watcher: Optional[OutputQualityWatcher] = None
+_watcher_lock = threading.Lock()
+# Process-wide kill switch (the test sweep disables the singleton so
+# stubbed-synth unit tests never spawn analyzer threads or write to the
+# live logs dir -- mirrors the observation-writer conftest pattern).
+_enabled_override = True
+
+
+def set_output_watcher_enabled(enabled: bool) -> None:
+    """Process-wide override: ``False`` makes :func:`get_output_watcher`
+    return None (closing any existing watcher). Used by the test
+    sweep's session fixture; tests of the watcher itself opt back in.
+    """
+    global _enabled_override
+    _enabled_override = bool(enabled)
+    if not _enabled_override:
+        reset_output_watcher()
+
+
+def get_output_watcher() -> Optional[OutputQualityWatcher]:
+    """Return the process-wide watcher, building it from config on first use.
+
+    Returns None (and never raises) when the feature is disabled or
+    construction fails -- callers treat None as "no watcher".
+    """
+    global _watcher
+    if not _enabled_override:
+        return None
+    if _watcher is not None:
+        return _watcher
+    with _watcher_lock:
+        if _watcher is not None:
+            return _watcher
+        try:
+            from ultron.config import LOGS_DIR, get_config
+
+            cfg = getattr(getattr(get_config(), "tts", None), "output_watch", None)
+            if cfg is None or not getattr(cfg, "enabled", False):
+                return None
+            _watcher = OutputQualityWatcher(
+                jsonl_path=Path(LOGS_DIR) / getattr(
+                    cfg, "jsonl_filename", "audio_quality.jsonl",
+                ),
+                max_queue=int(getattr(cfg, "max_queue", 16)),
+            )
+            logger.info(
+                "TTS output-quality watcher active (findings -> %s)",
+                _watcher._jsonl_path,
+            )
+            return _watcher
+        except Exception as e:  # noqa: BLE001 - fail-open
+            logger.debug("output-quality watcher unavailable: %s", e)
+            return None
+
+
+def reset_output_watcher() -> None:
+    """Tear down the singleton (tests + clean shutdown)."""
+    global _watcher
+    with _watcher_lock:
+        if _watcher is not None:
+            try:
+                _watcher.close()
+            except Exception:  # noqa: BLE001
+                pass
+            _watcher = None

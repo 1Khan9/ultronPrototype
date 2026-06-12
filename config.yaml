@@ -1068,6 +1068,19 @@ tts:
     apply_trim_fade: true          # trim boundary noise + fade-in/out; ON for partial fine-tune; disable post full training
     trim_fade_threshold_db: -40.0  # RMS frames below this are treated as silence/noise at boundaries
 
+  # Output-quality watcher (2026-06-11): every synthesized clip is
+  # analyzed on a DAEMON thread for audible blips -- hard un-faded
+  # onsets/tails (pop on stream open/close), isolated noise bursts at
+  # the start/end of sentences (the fine-tune artifact trim_fade
+  # mitigates), discontinuity clicks at sentence joins, internal
+  # dropouts, clipping, DC offset. Findings -> WARNING log +
+  # logs/audio_quality.jsonl. Hot path pays only a non-blocking
+  # queue put; fully fail-open.
+  output_watch:
+    enabled: true
+    jsonl_filename: "audio_quality.jsonl"
+    max_queue: 16                  # overflow drops clips, never blocks synth
+
   # ACTIVE WHEN tts.engine == "xtts_v3"  (swap-back).
   # XTTS v2 streaming + v3 Ultron pedalboard filter. Engine spawns
   # an HTTP subprocess in .venv-xtts on startup. Adds ~60 ms TTFT

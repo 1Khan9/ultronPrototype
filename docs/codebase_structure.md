@@ -220,7 +220,14 @@
 > person line and speaks it on a configurable secondary output device
 > (VoiceMeeter strip -> mic B-bus) so the game voice chat hears Ultron;
 > `relay_speech` config (default ON) + `_maybe_handle_relay_speech`
-> orchestrator short-circuit + 39 hermetic tests.
+> orchestrator short-circuit + 39 hermetic tests. ALSO SHIPPED: NEW
+> `audio/output_quality.py` TTS blip watcher (see the module section) --
+> every synthesized clip analyzed on a daemon thread for edge bursts /
+> join clicks / dropouts / clipping; findings -> WARNING +
+> `logs/audio_quality.jsonl`; `tts.output_watch` config (default ON);
+> hook at the `_synthesize` tail costs the hot path only a non-blocking
+> queue put; +21 hermetic tests + a session-scoped conftest guard so
+> stubbed-synth unit tests never build the watcher singleton.
 > Earlier sweep state: **9156 passed / 35 skipped / 0 failed (~103s)** with the
 > loaded-machine ignore recipe (below); ~9182 no-deselect (now 9199 on an idle
 > machine, no deselect, 2026-06-10 baseline). The +8 skipped vs earlier are
@@ -1541,6 +1548,7 @@ For the current decisions and Foundation phase status see
 │       ├── audio/                  ← Audio capture, VAD, wake-word
 │       │   ├── capture.py          ← AudioCapture (sounddevice callback thread)
 │       │   ├── devices.py          ← Device-resolution helpers (resolve_device, describe_device)
+│       │   ├── output_quality.py   ← TTS blip watcher: per-clip artifact analysis (edge bursts, join clicks, dropouts, clipping) on a daemon thread → WARN + logs/audio_quality.jsonl
 │       │   ├── relay_speech.py     ← Voice relay: "tell my teammates X" matcher + LLM rephrase + playback on a secondary output device (VoiceMeeter strip → mic bus)
 │       │   ├── ring_buffer.py      ← Pre-speech audio buffer
 │       │   ├── smart_turn.py       ← Smart Turn V3 ONNX wrapper (NEW 2026-05-12; CPU-only end-of-turn confirmation)
@@ -2909,6 +2917,45 @@ User-preference persistence so "open YouTube" picks up "monitor 2 + maximize" th
 - `class AudioDeviceError(ValueError)`
 - `resolve_device(configured, kind) -> Optional[int]` — substring match on device name
 - `describe_device(device, kind) -> str`
+
+#### `audio/output_quality.py` (NEW 2026-06-11 — TTS blip watcher)
+
+Catches audible artifacts in synthesized clips, live. The Kokoro
+fine-tune's known boundary blips are mitigated at synth time by
+`trim_and_fade`; this watcher DETECTS whatever still slips through so
+voice-output regressions are observable. Driven by `tts.output_watch`
+config (default ON).
+
+- `analyze_clip(pcm, sr, *, thresholds...) -> ClipQualityReport` — pure
+  per-clip analysis: `hard_onset`/`hard_tail` (un-faded edges that pop on
+  stream open/close), `leading_burst`/`trailing_burst` (isolated noise
+  spikes separated from the speech body by silence — the classic
+  fine-tune artifact), `discontinuity` (adjacent-sample jump at a bad
+  sentence-concatenation join), `internal_dropout` (≥40 ms hard gap
+  inside the speech body), `clipping`, `dc_offset`. Leading/trailing
+  silence padding is normal and never flagged.
+- `OutputQualityWatcher` — daemon-thread analyzer behind a bounded
+  queue: `submit(pcm, sr, label)` is the hot-path entry (non-blocking
+  put; overflow drops, never waits); findings log at WARNING + append
+  JSONL to `logs/audio_quality.jsonl`; `stats()` returns session
+  counters; `close()` joins the thread.
+- `get_output_watcher()` / `reset_output_watcher()` — config-gated,
+  fail-open process singleton.
+- Hook: tail of `KokoroSpeech._synthesize` — a try/except enqueue after
+  the int16 conversion (covers speak / speak_stream / the voice relay;
+  ack-cache hits skip analysis since those clips are static +
+  pre-rendered). The locked synth hot path pays microseconds; analysis
+  itself never runs on it. Device/driver artifacts that never appear in
+  the PCM are out of scope (the hard-onset/tail checks are the proxy
+  for stream-open pops).
+- Tests: `tests/audio/test_output_quality.py` (21 — every detector with
+  synthetic waveforms, watcher JSONL + counters + queue-overflow +
+  error-survival + close idempotency, config gate + singleton cache +
+  the kill switch). A session-scoped conftest fixture disables the
+  singleton for the whole sweep (`set_output_watcher_enabled(False)`,
+  mirroring the observation-writer guard) so stubbed-synth unit tests
+  never spawn analyzer threads or touch the live logs dir; the
+  watcher's own tests opt back in.
 
 #### `audio/relay_speech.py` (NEW 2026-06-11 — teammate voice relay)
 

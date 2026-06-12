@@ -2353,6 +2353,27 @@ class KokoroConfig(_Strict):
     trim_fade_threshold_db: float = Field(default=-40.0, ge=-80.0, le=-10.0)
 
 
+class OutputWatchConfig(_Strict):
+    """TTS output-quality watcher -- catch audible blips in synthesized clips.
+
+    Every clip the Kokoro engine synthesizes is enqueued (non-blocking,
+    microseconds -- the analysis itself runs on a daemon thread, so the
+    voice hot path is untouched) to
+    :class:`ultron.audio.output_quality.OutputQualityWatcher`, which
+    checks for boundary artifacts: hard un-faded onsets/tails (pop on
+    stream open/close), isolated noise bursts before/after speech (the
+    known fine-tune blip ``trim_and_fade`` mitigates), discontinuity
+    clicks at sentence-concatenation joins, internal dropouts, clipping,
+    and DC offset. Findings log at WARNING and append to
+    ``logs/<jsonl_filename>`` for offline review. Fully fail-open.
+    """
+
+    enabled: bool = True
+    jsonl_filename: str = "audio_quality.jsonl"
+    # Bounded analysis queue; overflow DROPS clips (never blocks synth).
+    max_queue: int = Field(default=16, ge=1, le=256)
+
+
 class TTSConfig(_Strict):
     # 2026-05-10 voice swap: ``"piper_rvc"`` is the legacy stack
     # (Piper voice + RVC timbre transfer); ``"xtts_v3"`` is the new
@@ -2377,6 +2398,8 @@ class TTSConfig(_Strict):
     # 2026-05-19 Track 5 -- Kokoro engine config (used when
     # tts.engine == "kokoro").
     kokoro: KokoroConfig = Field(default_factory=KokoroConfig)
+    # 2026-06-11 -- per-clip blip detection on a daemon thread.
+    output_watch: OutputWatchConfig = Field(default_factory=OutputWatchConfig)
     # 2026-05-09 latency hot-fix: split Piper and RVC into two separate
     # worker stages connected by a bounded queue. With the legacy
     # single-worker shape, sentence N+1's Piper synthesis only began

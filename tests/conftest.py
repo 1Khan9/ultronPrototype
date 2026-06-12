@@ -69,6 +69,34 @@ def _disable_observation_io_for_tests():
 
 
 # ---------------------------------------------------------------------------
+# Suppress the TTS output-quality watcher during test runs.
+#
+# Stubbed-synth unit tests (test_kokoro_engine.py etc.) drive
+# KokoroSpeech._synthesize, whose tail enqueues every clip to the
+# process-wide OutputQualityWatcher singleton. Without this guard each
+# such test process would spawn an analyzer daemon thread and could
+# append findings from synthetic stub audio to the LIVE
+# logs/audio_quality.jsonl (same pollution class as observation IO
+# above). Tests of the watcher itself opt back in via
+# ``set_output_watcher_enabled(True)``.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _disable_tts_output_watcher_for_tests():
+    try:
+        from ultron.audio.output_quality import set_output_watcher_enabled
+    except Exception:
+        yield
+        return
+    set_output_watcher_enabled(False)
+    try:
+        yield
+    finally:
+        set_output_watcher_enabled(True)
+
+
+# ---------------------------------------------------------------------------
 # Session-end subprocess cleanup
 # ---------------------------------------------------------------------------
 

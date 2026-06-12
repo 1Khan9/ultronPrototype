@@ -841,6 +841,22 @@ class KokoroSpeech:
         # Clip + convert to int16 (mirrors the XTTS engine's tail).
         np.clip(pcm_f32, -1.0, 1.0, out=pcm_f32)
         out_pcm = (pcm_f32 * 32767.0).astype(np.int16)
+
+        # Output-quality watcher: non-blocking enqueue for blip analysis
+        # on a daemon thread (hard onsets/tails, boundary noise bursts,
+        # join discontinuities, dropouts, clipping). Cost here is a
+        # try/except + queue put -- the locked synth hot path is
+        # otherwise untouched, and ack-cache hits above (static,
+        # pre-rendered clips) deliberately skip analysis.
+        try:
+            from ultron.audio.output_quality import get_output_watcher
+
+            watcher = get_output_watcher()
+            if watcher is not None:
+                watcher.submit(out_pcm, self._sample_rate, label=text[:60])
+        except Exception:                                     # noqa: BLE001
+            pass
+
         return out_pcm, self._sample_rate
 
     def _play(self, clip: Clip) -> None:
