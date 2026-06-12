@@ -10,17 +10,13 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD: the 2026-06-12 Kenning rename commit** (on
-> `def92b5`; SHA pinned in the trailing doc-bump). **The product is
-> now named Kenning** -- wake word, package import root
-> (`src/kenning/`), env-var prefix (`KENNING_*`), runtime dirs
-> (`~/.kenning`), persona, and a freshly trained
-> `models/openwakeword/kenning.onnx` wake-word model. The GitHub repo
-> slug / local checkout dir `ultronPrototype` is unchanged (real
-> paths). Detail in the Recent-sessions rename row. **Sweep on the
-> renamed tree: 9719 passed / 39 skipped / 0 failed, exit 0, ~144 s**
-> (worktree, loaded-machine two-file-ignore recipe) +
-> `scripts/validate_config.py` clean.
+> **Validating HEAD: `55ac95e`** (2026-06-12 evening — relay batch +
+> rename pushed to origin/main). **The product is now named Kenning**
+> -- package `src/kenning/`, env-var prefix `KENNING_*`, runtime dirs
+> `~/.kenning`, boot `python -m kenning`. GitHub repo slug / local dir
+> `ultronPrototype` unchanged (real paths). **Sweep from main: 9807
+> passed / 39 skipped / 0 failed, exit 0, ~189 s** (loaded-machine
+> two-file-ignore recipe) + `scripts/validate_config.py` clean.
 >
 > **Earlier validating HEAD: `4a08a62`** (the 2026-06-12 live-findings
 > fix batch + two follow-ups; pushed to origin/main). **Sweep: 9717
