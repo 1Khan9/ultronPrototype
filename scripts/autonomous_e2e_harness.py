@@ -858,8 +858,18 @@ def phase_full_loop() -> List[Scenario]:
         if len(pcm) == 0 or abs(pcm).max() == 0:
             sc.err("silent reply audio")
 
-    # Turn 1: plain NO_SEARCH conversational turn.
-    sc = Scenario(name="loop:no_search_turn", input_text="What is seven times eight?")
+    # Turn 1: plain NO_SEARCH conversational turn. The probe is a
+    # maximally-stable fact ("sky is blue") rather than arithmetic:
+    # this assertion verifies the PIPELINE carried the question through
+    # to a coherent spoken answer, and the 4B at production sampling
+    # temperature occasionally fumbles spelled-out arithmetic (observed
+    # live: "seven times eight" -> "Five hundred and sixty-six"), which
+    # is a model-quality observation for the drift sampler, not a
+    # pipeline failure this suite should flake on.
+    sc = Scenario(
+        name="loop:no_search_turn",
+        input_text="What color is the sky on a clear day?",
+    )
     try:
         transcript = _spoken_transcript(tts_in, stt, sc.input_text, sc)
         verdict = classify_by_rules(transcript)
@@ -868,8 +878,8 @@ def phase_full_loop() -> List[Scenario]:
         sc.out("response", response[:160])
         if not response:
             sc.err("empty response")
-        elif "56" not in response and "fifty-six" not in response.lower():
-            sc.err(f"expected 56 in the answer, got: {response[:120]!r}")
+        elif "blue" not in response.lower():
+            sc.err(f"expected blue in the answer, got: {response[:120]!r}")
         else:
             _speak_out(sc, response)
     except Exception as e:

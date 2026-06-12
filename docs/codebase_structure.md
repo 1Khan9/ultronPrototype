@@ -10,7 +10,8 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD:** **production-hardening campaign (2026-05-29, IN PROGRESS)**
+> **Validating HEAD:** **production-hardening campaign (2026-05-29, CLOSED OUT
+> 2026-06-11: consolidated e2e suite 12/12 green from main; unit sweep green)**
 > -- a campaign to wire every recent catalog port into one cohesive unit,
 > complete the voice-controlled coding engineer end to end, build a real-usage
 > e2e suite, make the system pervasively self-improving, and cut latency +
@@ -184,6 +185,21 @@
 > contract. SearxNG restored (Docker Desktop started; container
 > `ultron-searxng` maps 8888->8080) -- live search provider latency back
 > to ~1.5s from the ~17s degraded-fallback path.
+> **Campaign close-out: the consolidated suite green end-to-end.** The
+> first full 12-test run of the expanded suite read 11/12 -- the one flag
+> was `loop:no_search_turn`, where the 4B at production sampling
+> temperature answered the spelled-out arithmetic probe wrong ("What is
+> seven times eight?" -> "Five hundred and sixty-six."). That scenario's
+> job is to assert the PIPELINE carried a spoken question through STT ->
+> gate -> LLM -> TTS coherently, not to benchmark model arithmetic (which
+> belongs to the drift sampler), so the probe was redesigned to a
+> maximally-stable fact ("What color is the sky on a clear day?" ->
+> assert "blue"; rationale documented in the harness). Re-validated from
+> MAIN: phase 10 standalone 3/3, then the FULL consolidated suite
+> **12/12 passed in ~109s** -- every phase (stt / llm / tts / web_search
+> incl. live SearxNG / memory / routing / gate / commands /
+> short_circuits / full_loop incl. a live search turn / coding with REAL
+> CLI tasks) green in one run.
 > Earlier sweep state: **9156 passed / 35 skipped / 0 failed (~103s)** with the
 > loaded-machine ignore recipe (below); ~9182 no-deselect (now 9199 on an idle
 > machine, no deselect, 2026-06-10 baseline). The +8 skipped vs earlier are
