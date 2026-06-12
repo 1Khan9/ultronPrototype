@@ -2197,6 +2197,12 @@ def _classify_app_launch(text: str) -> Optional[AppLaunchIntent]:
                         for q in question_starts)
             and not any(lowered.startswith(app + " ") or lowered == app
                         for app in _IMAGE_SEARCH_IMPLICIT_DENY)
+            # Production-hardening (spoken-command e2e): a file-shaped
+            # utterance ("show me the files in my downloads folder",
+            # "show me the contents of file config.yaml") must never be
+            # eaten by this bare image-search catch-all -- defer to the
+            # FILE_OPERATION rules downstream.
+            and not _FILE_PATTERNS.search(text)
         ):
             url = (
                 "https://www.google.com/search?tbm=isch&q="

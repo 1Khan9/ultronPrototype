@@ -618,7 +618,12 @@ def phase_commands() -> List[Scenario]:
          RoutingIntentKind.MEDIA_GENERATION, {}),
         ("messaging", "Send a message to my phone saying dinner is ready.",
          RoutingIntentKind.MESSAGING, {}),
-        ("file_operation", "Show me the files in my downloads folder.",
+        # "What is in the folder downloads?" -- unambiguous file-tool
+        # route. "Show me the files in X" deliberately routes APP_LAUNCH
+        # (the native Explorer launcher beats the gateway file stub for
+        # UX), and "List the files..." mishears acoustically ("List" ->
+        # "Notice" on this voice).
+        ("file_operation", "What is in the folder downloads?",
          RoutingIntentKind.FILE_OPERATION, {}),
         ("shell_operation", "In the terminal run git status.",
          RoutingIntentKind.SHELL_OPERATION, {}),

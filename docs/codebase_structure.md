@@ -139,7 +139,15 @@
 > classifier coverage gap -- "show me the files in my downloads folder"
 > fell to CONVERSATIONAL (``_FILE_PATTERNS`` supported "list the files
 > in" but required the literal word directory/folder immediately after
-> "in" for the show-me form); fixed with a mirror pattern. The harness's
+> "in" for the show-me form). Iteration follow-up: the mirror pattern
+> alone was ORDER-SHADOWED -- "show me the files..." is captured by the
+> higher-priority APP_LAUNCH explorer branch (a deliberate, better-UX
+> outcome: the native Explorer launch beats the gateway file stub), and
+> the bare "show me X" image-search catch-all was eating OTHER
+> file-shaped phrasings -- so the real fix is a `_FILE_PATTERNS` guard on
+> the bare image-search branch ("show me the contents of file X" now
+> routes FILE_OPERATION) and the matrix uses the unambiguous
+> "What is in the folder downloads?" phrasing. The harness's
 > ``_spoken_transcript`` also gained production-realistic padding (0.5s
 > lead pre-roll + 0.8s trailing silence, matching the VAD-bounded
 > capture) after the bare synthetic clips truncated final words
