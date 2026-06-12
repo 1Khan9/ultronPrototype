@@ -433,3 +433,67 @@ def test_real_final_word_after_pause_is_preserved():
     out = trim_and_fade(clip, sr)
     # The trimmed clip still contains the full final word's duration.
     assert len(out) >= int(sr * (1.0 + 0.25 + 0.3) * 0.95)
+
+
+def _decay(seconds: float, sr: int = 24000, start_amp: float = 0.4):
+    """A CONTINUOUS exponential decay -- the natural reverb tail. No near-
+    silence-then-energy pattern, so the post-gap blip strip must never cut it."""
+    n = int(sr * seconds)
+    t = np.arange(n, dtype=np.float32) / sr
+    env = start_amp * np.exp(-t * 8.0)
+    return (env * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+
+
+def test_loud_fragmented_post_gap_burst_removed():
+    """The waveform-measured 'cringe, Sage' artifact: a LOUD (~-15 dB) burst
+    ~600 ms past speech across deep silence, SPLIT into two adjacent runs. It
+    defeats the run-discard (fragmented -> the last run's neighbour is the other
+    fragment, not the body) AND the old faint-only blip strip (too loud to read
+    as 'faint'). Must be removed; the speech body must remain."""
+    sr = 24000
+    loud = _burst(0.04, sr, amp=0.6)              # ~-4 dB, ABOVE the -33 gate
+    clip = np.concatenate([
+        _speech(1.2, sr), _silence(0.6, sr),
+        loud, _silence(0.01, sr), loud,           # fragmented loud burst
+        _silence(0.05, sr),
+    ])
+    out = trim_and_fade(clip, sr)
+    assert len(out) < int(sr * 1.45)              # dead air + burst gone
+    from kenning.audio.output_quality import analyze_clip
+
+    kinds = {f.kind for f in analyze_clip(out, sr).findings}
+    assert "trailing_burst" not in kinds
+    assert "hard_tail" not in kinds
+
+
+def test_strip_post_gap_blip_cuts_loud_burst_keeps_speech():
+    from kenning.tts.spectral_smooth import _strip_post_gap_blip
+
+    sr = 24000
+    loud = _burst(0.04, sr, amp=0.6)              # loud enough to look like content
+    clip = np.concatenate([_speech(1.0, sr), _silence(0.5, sr), loud])
+    out = _strip_post_gap_blip(clip, sr)
+    assert len(out) < int(sr * 1.2)               # burst + gap removed
+    assert len(out) >= int(sr * 0.95)             # full speech body preserved
+
+
+def test_strip_post_gap_blip_preserves_continuous_reverb_decay():
+    """'do not clip the reverb': a continuous decay (no gap-then-energy) is
+    returned byte-for-byte unchanged."""
+    from kenning.tts.spectral_smooth import _strip_post_gap_blip
+
+    sr = 24000
+    clip = np.concatenate([_speech(1.0, sr), _decay(0.5, sr)])
+    out = _strip_post_gap_blip(clip, sr)
+    assert len(out) == len(clip)
+
+
+def test_strip_post_gap_blip_keeps_real_short_word_after_pause():
+    """A genuine short final word (>= 60 ms) after a pause is sustained content,
+    so it is NOT mistaken for a blip and the clip is not cut before it."""
+    from kenning.tts.spectral_smooth import _strip_post_gap_blip
+
+    sr = 24000
+    clip = np.concatenate([_speech(1.0, sr), _silence(0.2, sr), _speech(0.2, sr)])
+    out = _strip_post_gap_blip(clip, sr)
+    assert len(out) == len(clip)                  # final word preserved

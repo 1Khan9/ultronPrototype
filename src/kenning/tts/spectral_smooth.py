@@ -144,17 +144,32 @@ def _strip_post_gap_blip(
     energy_after_db: float = -56.0,
     min_gap_ms: float = 90.0,
     frame_ms: float = 10.0,
+    min_content_ms: float = 60.0,
 ) -> "np.ndarray":
-    """Chop an isolated faint blip the fine-tune emits AFTER a long
-    near-silence gap.
+    """Chop an isolated blip the fine-tune emits AFTER a long near-silence gap.
 
-    Waveform-measured (2026-06-12): a ~-41 dB, ~40 ms bump 200-700 ms past the
-    last speech, with a long stretch of near-total silence between. It sits
-    BELOW the -40 dB trim threshold, so the run-discard in ``trim_and_fade``
-    never sees it. It is told apart from the natural REVERB tail by the gap:
-    reverb decays continuously (no >= ``min_gap_ms`` near-silence stretch with
-    energy after it), so a reverb-only tail is never touched -- only a
-    silence-then-energy pattern is cut, at the start of that silence.
+    Waveform-measured (2026-06-12): an isolated bump 200-700 ms past the last
+    real speech, with a long stretch of near-total silence between. It comes in
+    two flavours, both handled here:
+
+    * a FAINT bump (~-41 dB) that sits below the -40 dB trim threshold, so the
+      run-discard in ``trim_and_fade`` never sees it; and
+    * a LOUD, FRAGMENTED bump (measured at ~-20 dB on "...cringe, Sage.") that
+      the run-discard misses because it splits into two adjacent loud runs --
+      the trailing-burst tiers only compare the last run to its IMMEDIATE
+      predecessor (the other fragment, a 10 ms gap away), so the large gap to
+      the speech body is hidden.
+
+    The loud case is why ``last_content`` is the end of the last SUSTAINED
+    content run (>= ``min_content_ms``), NOT merely the last frame above
+    ``content_db``: a <= ~50 ms blip at -20 dB must not be mistaken for the
+    speech body, or we would refuse to cut after it. A real final syllable is
+    longer than that, so it is never reclassified as a blip.
+
+    Told apart from the natural REVERB tail by the gap: reverb decays
+    continuously (no >= ``min_gap_ms`` near-silence stretch with energy after
+    it), so a reverb-only tail is never touched -- only a silence-then-energy
+    pattern is cut, at the start of that silence.
 
     Cheap: one framed-RMS pass + a slice. No FFT, no per-sample work.
     """
@@ -168,17 +183,33 @@ def _strip_post_gap_blip(
     rms = np.sqrt(np.maximum(np.mean(block * block, axis=1), 1e-12))
     content = 10.0 ** (content_db / 20.0)
     energy_after = 10.0 ** (energy_after_db / 20.0)
-    above = np.where(rms > content)[0]
-    if len(above) == 0:
+    above = rms > content
+    if not above.any():
         return audio_f32
-    # Speech (incl. strong reverb) ends at the last frame above ``content``.
-    # AFTER it, a single ``energy_after`` threshold splits the tail into
-    # quiet (gap, incl. the decaying reverb's faint floor) and energy. A
-    # frame above the threshold following a >= min_gap_ms quiet run is the
-    # post-gap blip -> chop at the gap start. A reverb-only tail decays into
-    # the quiet floor with NO energy after it, so it is never cut. Working
-    # only past last_content keeps internal between-word pauses untouched.
-    last_content = int(above[-1])
+    # Speech (incl. strong reverb onset) ends at the last SUSTAINED content
+    # run -- a run of >= min_content_ms frames above ``content``. A short,
+    # isolated loud blip (the very thing we strip) is NOT sustained, so it is
+    # not mistaken for the speech body. AFTER that point, a single
+    # ``energy_after`` threshold splits the tail into quiet (gap, incl. the
+    # decaying reverb's faint floor) and energy. A frame above the threshold
+    # following a >= min_gap_ms quiet run is the post-gap blip -> chop at the
+    # gap start. A reverb-only tail decays into the quiet floor with NO energy
+    # after it, so it is never cut.
+    min_content_frames = max(1, int(np.ceil(min_content_ms / frame_ms)))
+    last_content = -1
+    k = 0
+    while k < n:
+        if above[k]:
+            j = k
+            while j + 1 < n and above[j + 1]:
+                j += 1
+            if (j - k + 1) >= min_content_frames:
+                last_content = j
+            k = j + 1
+        else:
+            k += 1
+    if last_content < 0:
+        return audio_f32
     gap_frames = max(1, int(np.ceil(min_gap_ms / frame_ms)))
     gap_run = 0
     gap_start = None
