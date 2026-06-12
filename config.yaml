@@ -1473,12 +1473,19 @@ gaming_mode:
   # never touch another process. nvidia-smi VRAM probes and Ultron's
   # self-scoped process management (own children only) are analyzed-safe
   # and unaffected. Voice toggle: "enable/disable anticheat mode".
-  anticheat_safe_mode: false           # true = pinned permanently on
+  # 2026-06-11: PINNED ON at the user's request (Valorant sessions).
+  # Survives restarts. Unpin any time: say "disable anticheat mode"
+  # (runtime, until next restart) or flip this knob in the control
+  # panel ("pull up your settings" -> Gaming / Anticheat) and APPLY.
+  anticheat_safe_mode: true            # true = pinned permanently on
   anticheat_with_gaming_mode: true     # auto-engage with "gaming mode"
   plugins_to_disable:
     - desktop-control
     - windows-control
-  toggle_docker: false
+  # 2026-06-11: ON -- Docker Desktop (WSL2 vmmem, typically 2-4 GB RAM +
+  # background CPU) is stopped on engage and restarted on disengage.
+  # SearxNG goes down with it; web search fails open to Brave/DDG.
+  toggle_docker: true
   docker_executable_path: null              # null = use default Windows path
   docker_process_name: "Docker Desktop"
   log_path: "logs/gaming_mode.jsonl"

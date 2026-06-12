@@ -37,6 +37,24 @@ The mode activates three ways: the voice toggle ("enable anticheat
 mode"), automatically with gaming mode
 (``gaming_mode.anticheat_with_gaming_mode``, default ON), or pinned
 always-on via ``gaming_mode.anticheat_safe_mode``.
+
+Vanguard (kernel-level) analysis, 2026-06-11: the classes a boot-time
+kernel anticheat actually bans for are foreign-process handle opens,
+game-memory read/write, remote-thread/DLL injection, global input
+hooks (``SetWindowsHookEx``), raw-input device registration, and
+driver-level input emulation. Ultron's source contains ZERO uses of
+any of these (pinned by ``test_no_ban_class_apis_anywhere_in_source``;
+the only textual matches in the repo are the ``safety/rules/``
+DEFENSE regexes that block those patterns in model-proposed commands).
+What Ultron CAN do -- ``SendInput`` via pyautogui, GDI screen capture
+via mss, UIA COM reads (which message target windows), clipboard,
+window management -- is exactly the surface this mode hard-blocks,
+out of maximum caution, even though none of it opens the game process.
+The remaining active surface while blocked (shared-mode audio,
+``nvidia-smi`` global driver queries, self-scoped ``psutil``,
+shell-level window-metadata reads) is the same surface Discord, OBS,
+MSI Afterburner, and the Windows taskbar exercise continuously on
+every gamer's machine.
 """
 
 from __future__ import annotations
@@ -57,6 +75,8 @@ __all__ = [
     "guard",
     "is_blocked_tool",
     "match_anticheat_toggle",
+    "register_surface_hook",
+    "clear_surface_hooks",
 ]
 
 BLOCKED_NOTICE = (
@@ -68,6 +88,17 @@ _lock = threading.Lock()
 _runtime_active = False
 _activated_at: Optional[float] = None
 _reason = ""
+# Test-sweep guard: the unit sweep must stay hermetic even when the
+# user's config.yaml pins ``gaming_mode.anticheat_safe_mode: true``
+# (otherwise every desktop test would raise). conftest disables the
+# CONFIG pin for the session; the runtime flag stays fully testable.
+_config_pin_enabled = True
+
+
+def set_config_pin_enabled(enabled: bool) -> None:
+    """Enable/ignore the ``anticheat_safe_mode`` config pin (tests)."""
+    global _config_pin_enabled
+    _config_pin_enabled = bool(enabled)
 
 
 class AnticheatBlockedError(RuntimeError):
@@ -90,6 +121,8 @@ def anticheat_active() -> bool:
     """
     if _runtime_active:
         return True
+    if not _config_pin_enabled:
+        return False
     try:
         from ultron.config import get_config
 
@@ -101,8 +134,36 @@ def anticheat_active() -> bool:
         return False
 
 
+# Surface hooks: callables invoked on every mode flip so RUNNING
+# subsystems are physically STOPPED, not merely call-gated. A kernel
+# anticheat observes what a process is DOING -- a UIA poller thread
+# still polling, or a cached mss capture object holding GDI handles,
+# is activity; the hooks shut those down on activate and restore them
+# on deactivate. Each hook receives the new ``active`` state and is
+# fail-open (one broken hook never blocks the mode flip or the others).
+_surface_hooks: list[tuple[str, "object"]] = []
+
+
+def register_surface_hook(name: str, hook) -> None:
+    """Register a ``hook(active: bool)`` called on every mode flip.
+
+    Args:
+        name: short label for logs ("dialog_poller", ...).
+        hook: callable taking the new active state. On ``True`` it
+            should STOP/unload its subsystem; on ``False`` restore it.
+    """
+    _surface_hooks.append((name, hook))
+
+
+def clear_surface_hooks() -> None:
+    """Drop all registered hooks (tests + orchestrator shutdown)."""
+    _surface_hooks.clear()
+
+
 def set_anticheat_active(active: bool, reason: str = "") -> None:
-    """Flip the runtime flag (voice toggle / gaming-mode engage)."""
+    """Flip the runtime flag (voice toggle / gaming-mode engage) and
+    run every registered surface hook so gated subsystems are fully
+    stopped (or restored), not just call-blocked."""
     global _runtime_active, _activated_at, _reason
     with _lock:
         _runtime_active = bool(active)
@@ -113,6 +174,15 @@ def set_anticheat_active(active: bool, reason: str = "") -> None:
         "ACTIVE" if active else "off",
         f" ({reason})" if reason else "",
     )
+    for name, hook in list(_surface_hooks):
+        try:
+            hook(bool(active))
+            logger.info(
+                "anticheat surface %r %s", name,
+                "stopped" if active else "restored",
+            )
+        except Exception as e:  # noqa: BLE001 - hooks are fail-open
+            logger.warning("anticheat surface hook %r failed: %s", name, e)
 
 
 def guard(action: str) -> None:

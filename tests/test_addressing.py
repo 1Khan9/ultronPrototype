@@ -363,3 +363,42 @@ def test_full_classifier_average_latency_under_50ms():
     p95 = sorted(latencies)[int(0.95 * len(latencies))]
     print(f"\n  latency avg={avg:.1f} ms  p95={p95:.0f} ms  max={max(latencies):.0f} ms")
     assert avg < 50.0, f"avg latency {avg:.1f} ms exceeds 50 ms budget"
+
+
+# ---------------------------------------------------------------------------
+# 2026-06-11 live-dogfood fix: question-stem FRAGMENTS must not be
+# accepted as ADDRESSED. A mid-sentence STT fragment of the user
+# narrating to someone else ("How he was initially,") previously hit
+# the factual-question-stem rule at 0.85 and sent a contextless
+# fragment into the LLM.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("fragment", [
+    "How he was initially,",          # the live incident, verbatim
+    "What he",
+    "Why she did that and",
+    "How he was doing",               # third-person narration
+    "What they were thinking",        # third-person narration
+    "Where he went so",
+])
+def test_question_stem_fragments_demoted_to_uncertain(fragment: str) -> None:
+    hit = classify_rules(fragment, seconds_since_response=10.0)
+    assert hit is not None
+    assert hit.decision != AddressingDecision.ADDRESSED, (
+        f"{fragment!r} accepted as ADDRESSED ({hit.reason})"
+    )
+    assert hit.confidence < 0.8  # never short-circuits past zero-shot
+
+
+@pytest.mark.parametrize("question", [
+    "What time is it in Tokyo?",
+    "How does a jet engine work?",
+    "Who wrote The Master and Margarita?",
+    "What is the boiling point of water?",
+])
+def test_real_factual_questions_still_addressed(question: str) -> None:
+    hit = classify_rules(question, seconds_since_response=10.0)
+    assert hit is not None
+    assert hit.decision == AddressingDecision.ADDRESSED
+    assert hit.confidence >= 0.8

@@ -28,11 +28,16 @@ from ultron.safety.anticheat import (
 SRC = Path(__file__).resolve().parents[2] / "src" / "ultron"
 
 
+from ultron.safety.anticheat import clear_surface_hooks, register_surface_hook
+
+
 @pytest.fixture(autouse=True)
 def _reset_anticheat():
-    """Every test starts and ends with the mode OFF."""
+    """Every test starts and ends with the mode OFF and no hooks."""
+    clear_surface_hooks()
     set_anticheat_active(False)
     yield
+    clear_surface_hooks()
     set_anticheat_active(False)
 
 
@@ -58,6 +63,8 @@ def test_runtime_toggle_activates_guard() -> None:
 
 
 def test_config_pin_activates_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ultron.safety.anticheat import set_config_pin_enabled
+
     import ultron.config as config_mod
 
     monkeypatch.setattr(
@@ -66,6 +73,31 @@ def test_config_pin_activates_guard(monkeypatch: pytest.MonkeyPatch) -> None:
             gaming_mode=SimpleNamespace(anticheat_safe_mode=True),
         ),
     )
+    # Opt back in past the session conftest guard for this test.
+    set_config_pin_enabled(True)
+    try:
+        assert anticheat_active() is True
+    finally:
+        set_config_pin_enabled(False)
+
+
+def test_config_pin_ignored_when_disabled_for_tests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The session conftest guard: a pinned config must not leak into
+    hermetic tests (set_config_pin_enabled(False) ignores it); the
+    runtime flag still works."""
+    import ultron.config as config_mod
+
+    monkeypatch.setattr(
+        config_mod, "get_config",
+        lambda: SimpleNamespace(
+            gaming_mode=SimpleNamespace(anticheat_safe_mode=True),
+        ),
+    )
+    # conftest already disabled the pin for the session.
+    assert anticheat_active() is False
+    set_anticheat_active(True)
     assert anticheat_active() is True
 
 
@@ -151,7 +183,8 @@ GUARDED = [
       "type_text_into_element", "dpi_aware_click_at_element_center",
       "get_ui_element_inventory", "wait_for_text_in_window",
       "wait_for_pixel_color", "find_browser_window",
-      "extract_browser_content"]),
+      "extract_browser_content", "physical_center_of_element",
+      "physical_rect_of_element"]),
     ("ultron.desktop.clipboard", "ClipboardManager",
      ["read_text", "write_text"]),
     ("ultron.desktop.dialog_control", None,
@@ -195,6 +228,67 @@ def test_every_guarded_function_contains_guard_call() -> None:
             if not found:
                 missing.append(f"{module}.{cls or ''}.{want}")
     assert not missing, f"guards missing from: {missing}"
+
+
+def test_surface_hooks_stop_and_restore_subsystems() -> None:
+    """Activating the mode must physically STOP running subsystems (a
+    kernel anticheat sees activity, not just call gates); deactivating
+    restores them. Hooks receive the new state; a broken hook never
+    blocks the flip or the other hooks."""
+    calls: list[tuple[str, bool]] = []
+    register_surface_hook("poller", lambda a: calls.append(("poller", a)))
+
+    def broken(active: bool) -> None:
+        raise RuntimeError("hook boom")
+
+    register_surface_hook("broken", broken)
+    register_surface_hook("capture", lambda a: calls.append(("capture", a)))
+
+    set_anticheat_active(True, "test")
+    assert ("poller", True) in calls and ("capture", True) in calls
+    assert anticheat_active() is True  # broken hook didn't block the flip
+
+    calls.clear()
+    set_anticheat_active(False)
+    assert ("poller", False) in calls and ("capture", False) in calls
+
+
+def test_clear_surface_hooks() -> None:
+    calls: list[bool] = []
+    register_surface_hook("x", calls.append)
+    clear_surface_hooks()
+    set_anticheat_active(True, "test")
+    assert calls == []
+
+
+def test_no_ban_class_apis_anywhere_in_source() -> None:
+    """Vanguard paranoia pin: the API classes kernel anticheats ban for
+    (foreign process handles, memory read/write, remote threads, global
+    input hooks, raw-input registration, input-hook libraries) must
+    NEVER appear in Ultron's source. The only permitted location is
+    ``safety/rules/`` -- the DEFENSE regexes that exist to block these
+    exact patterns in model-proposed commands."""
+    import re
+
+    forbidden = re.compile(
+        r"OpenProcess|ReadProcessMemory|WriteProcessMemory"
+        r"|CreateRemoteThread|VirtualAllocEx|SetWindowsHookEx"
+        r"|RegisterRawInputDevices|NtOpenProcess|NtReadVirtualMemory"
+        r"|from pynput|import pynput|import interception|import dxcam"
+        r"|ImageGrab"
+    )
+    offenders: list[str] = []
+    for py in SRC.rglob("*.py"):
+        rel = py.relative_to(SRC).as_posix()
+        if rel.startswith("safety/rules/") or rel == "safety/anticheat.py":
+            continue  # defense regexes / threat-model docs, not API usage
+        if forbidden.search(py.read_text(encoding="utf-8", errors="replace")):
+            offenders.append(rel)
+    assert not offenders, (
+        f"ban-class API reference introduced in: {offenders} -- "
+        "this could cost the user their game account; remove it or "
+        "gate it behind an explicit design review"
+    )
 
 
 def test_module_guard_blocks_before_os_touch() -> None:

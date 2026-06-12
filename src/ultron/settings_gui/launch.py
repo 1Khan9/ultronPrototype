@@ -71,16 +71,25 @@ def launch_gui(
         caller speaks a clear error -- fail-open).
     """
     try:
+        from pathlib import Path
+
         from ultron.config import PROJECT_ROOT
 
+        # No console window: prefer pythonw.exe (GUI-subsystem python,
+        # never allocates a console); fall back to python.exe with
+        # CREATE_NO_WINDOW (suppresses the console DETACHED_PROCESS
+        # would otherwise pop). The panel itself is a tkinter window.
+        exe = Path(sys.executable)
+        pythonw = exe.with_name("pythonw.exe")
+        interpreter = str(pythonw) if pythonw.is_file() else str(exe)
         creationflags = 0
-        if hasattr(subprocess, "DETACHED_PROCESS"):
-            creationflags |= subprocess.DETACHED_PROCESS
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            creationflags |= subprocess.CREATE_NO_WINDOW
         if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
             creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
         spawn = spawn_fn or subprocess.Popen
         proc = spawn(
-            [sys.executable, "-m", "ultron.settings_gui"],
+            [interpreter, "-m", "ultron.settings_gui"],
             cwd=str(PROJECT_ROOT),
             creationflags=creationflags,
             close_fds=True,

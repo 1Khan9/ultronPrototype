@@ -97,6 +97,32 @@ def _disable_tts_output_watcher_for_tests():
 
 
 # ---------------------------------------------------------------------------
+# Ignore the anticheat CONFIG pin during test runs.
+#
+# The user's live config.yaml may pin gaming_mode.anticheat_safe_mode
+# to true (desktop interaction hard-blocked for Valorant sessions).
+# Tests must stay hermetic regardless: with the pin honored, every
+# desktop-module test would raise AnticheatBlockedError. The RUNTIME
+# flag (set_anticheat_active) remains fully testable -- the anticheat
+# suite exercises it explicitly.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _ignore_anticheat_config_pin_for_tests():
+    try:
+        from ultron.safety.anticheat import set_config_pin_enabled
+    except Exception:
+        yield
+        return
+    set_config_pin_enabled(False)
+    try:
+        yield
+    finally:
+        set_config_pin_enabled(True)
+
+
+# ---------------------------------------------------------------------------
 # Session-end subprocess cleanup
 # ---------------------------------------------------------------------------
 

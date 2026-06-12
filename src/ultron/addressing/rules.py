@@ -263,6 +263,29 @@ def classify(
     if _FACTUAL_QUESTION_STEMS.match(text):
         # Factual question stems are a strong YES signal: "what time is it",
         # "who wrote X", "how does Y work" -- almost always directed at us.
+        # 2026-06-11 live-dogfood fix: a mid-sentence STT FRAGMENT of the
+        # user narrating to someone else ("How he was initially,") also
+        # starts with a stem and was accepted at 0.85, sending a
+        # contextless fragment into the LLM (which then recited stale
+        # RAG memories as current facts). Guards: a real question has at
+        # least four words, doesn't trail off with a comma/conjunction,
+        # and isn't third-person narration about "him/her/them". Demote
+        # fragments to UNCERTAIN so the zero-shot layer (and its
+        # default-to-not-addressed posture) decides instead.
+        stripped = text.strip()
+        words = stripped.split()
+        trails_off = stripped.rstrip(".!?").rstrip().endswith((
+            ",", " and", " but", " so", " or", " because",
+        ))
+        third_person_subject = bool(re.match(
+            r"^(?:how|what|why|when|where|who)\s+(?:he|she|they|him|her|them)\b",
+            stripped, re.IGNORECASE,
+        ))
+        if len(words) < 4 or trails_off or third_person_subject:
+            return RuleHit(
+                AddressingDecision.UNCERTAIN, 0.55,
+                "question-stem fragment (incomplete or third-person)",
+            )
         return RuleHit(
             AddressingDecision.ADDRESSED, 0.85, "factual question stem"
         )

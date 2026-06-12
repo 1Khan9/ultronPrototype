@@ -94,20 +94,20 @@ def test_recency_position_prepends_rag_to_user_message() -> None:
     eng = _make_engine(snippets, "recency")
 
     with _patched_config_context(_CfgWithMemory("recency")):
-        msgs = eng._build_messages("when's the deadline?")
+        msgs = eng._build_messages("when is the project deadline due?")
 
     # System message: persona only, NO RAG content
     assert msgs[0]["role"] == "system"
     assert msgs[0]["content"] == "PERSONA"
-    assert "Relevant earlier context" not in msgs[0]["content"]
+    assert "Memories from PAST conversations" not in msgs[0]["content"]
 
     # Last message is user, with RAG prepended
     last = msgs[-1]
     assert last["role"] == "user"
-    assert last["content"].startswith("Relevant earlier context from prior conversations:")
+    assert last["content"].startswith("Memories from PAST conversations")
     assert "Bob asked about the project deadline" in last["content"]
     assert "I told him May 30" in last["content"]
-    assert last["content"].endswith("when's the deadline?")
+    assert last["content"].endswith("when is the project deadline due?")
 
 
 def test_system_position_folds_rag_into_system_message() -> None:
@@ -123,7 +123,7 @@ def test_system_position_folds_rag_into_system_message() -> None:
     # System message contains both persona and RAG content
     assert msgs[0]["role"] == "system"
     assert "PERSONA" in msgs[0]["content"]
-    assert "Relevant earlier context" in msgs[0]["content"]
+    assert "Memories from PAST conversations" in msgs[0]["content"]
     assert "Old context entry" in msgs[0]["content"]
 
     # User message has the raw query, no RAG prefix
@@ -178,7 +178,8 @@ def test_format_rag_block_renders_role_and_content() -> None:
     # unchanged.
     with _patched_config_context(_CfgWithMemory("recency")):
         block = LLMEngine._format_rag_block(snippets)
-    assert "Relevant earlier context from prior conversations:" in block
+    assert "Memories from PAST conversations" in block
+    assert "never present time-sensitive facts" in block
     assert "- user: alpha" in block
     assert "- assistant: beta" in block
 

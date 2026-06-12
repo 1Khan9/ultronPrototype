@@ -260,6 +260,30 @@
 > `I:\Ultron Archive\2026-06-11\`, ~40 GB reclaimed; the live
 > `kokoro_finetune` compat path + all preset GGUFs + locked voice
 > assets verified-referenced and untouched).
+> THEN (same evening, four fixes): **gaming mode frees everything** —
+> `toggle_docker: true` (Docker Desktop/vmmem stopped on engage,
+> restarted on disengage; SearxNG fails open to Brave/DDG) + the
+> settings panel process is closed on engage (the state machine already
+> swapped the LLM, killed Parakeet, moved Kokoro to CPU, unloaded the
+> VLM). **Panel spawns with NO console** (pythonw.exe preferred, else
+> CREATE_NO_WINDOW; never DETACHED_PROCESS, which popped a visible
+> console). **Vanguard paranoia pass**: +2 UIA coordinate-reader guards
+> (51 total), a forbidden-API scanner test
+> (`test_no_ban_class_apis_anywhere_in_source`: OpenProcess /
+> R/W-ProcessMemory / CreateRemoteThread / SetWindowsHookEx /
+> RegisterRawInputDevices / pynput / dxcam / ImageGrab must NEVER
+> appear outside the safety/rules defense regexes — grep-proved clean),
+> kernel-anticheat threat-model analysis documented in
+> `safety/anticheat.py`. **Live-incident fixes (addressing + context
+> corruption)**: the factual-question-stem addressing rule demotes
+> FRAGMENTS (<4 words / trailing comma-conjunction / third-person
+> "how he was…") to UNCERTAIN — the verbatim live incident ("How he
+> was initially," accepted at 0.85 → LLM recited a month-old Moscow
+> weather memory as current) is now a regression test; cross-session
+> RAG is skipped below a 5-word query floor
+> (`_rag_query_has_min_content`) and the injected block header now
+> labels snippets as possibly-stale PAST-conversation memories with an
+> explicit never-recite-time-sensitive-facts instruction.
 > Earlier sweep state: **9156 passed / 35 skipped / 0 failed (~103s)** with the
 > loaded-machine ignore recipe (below); ~9182 no-deselect (now 9199 on an idle
 > machine, no deselect, 2026-06-10 baseline). The +8 skipped vs earlier are
@@ -3036,6 +3060,20 @@ process).
   pinned via `gaming_mode.anticheat_safe_mode`. Config errors fail
   OPEN for the probe but the runtime flag always wins, so a broken
   config can never silently disable an explicit toggle.
+- **Surface hooks (full unload, not just call gates):** a kernel
+  anticheat observes what a process is DOING, so
+  `set_anticheat_active` also runs registered
+  `register_surface_hook(name, hook(active))` callbacks: on activate
+  the orchestrator's hooks STOP the UIA dialog-poller thread and drop
+  the cached mss `ScreenCapture` + `DesktopSequenceRunner` singletons
+  (releasing their GDI/COM handles); on deactivate the poller restarts
+  and singletons rebuild lazily. Hooks are fail-open (a broken hook
+  never blocks the flip or the others) and cleared in
+  `Orchestrator.shutdown()`. Combined with gaming mode's existing
+  unloads (Parakeet server killed, VLM unloaded, Kokoro→CPU, Docker
+  Desktop stopped via `toggle_docker`), nothing anticheat-adjacent is
+  RUNNING while the mode is active — the only live surfaces are
+  shared-mode audio, the LLM, and file/network IO.
 - Tests: `tests/safety/test_anticheat.py` (55) — incl. an **AST audit
   test** that re-parses every guarded source file and fails if ANY of
   the 49 guards is ever refactored away, representative

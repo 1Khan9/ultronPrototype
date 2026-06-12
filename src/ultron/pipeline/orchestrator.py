@@ -417,6 +417,50 @@ class Orchestrator:
                 "DialogPoller startup skipped (%s); "
                 "dialog auto-handler will not receive events", e,
             )
+        # Anticheat-safe mode surface hooks (2026-06-11): activating the
+        # mode must physically STOP running desktop subsystems, not just
+        # gate their calls -- the UIA dialog-poller thread keeps polling
+        # otherwise, and the cached mss capture singleton keeps holding
+        # GDI handles. On deactivate the poller restarts and singletons
+        # rebuild lazily on next use. Fail-open.
+        try:
+            from ultron.safety.anticheat import register_surface_hook
+
+            def _anticheat_dialog_poller(active: bool) -> None:
+                poller = getattr(self, "_dialog_poller", None)
+                if poller is None:
+                    return
+                if active:
+                    poller.stop()
+                elif not poller.running:
+                    poller.start()
+
+            def _anticheat_capture_singletons(active: bool) -> None:
+                if not active:
+                    return  # rebuilt lazily on next (post-mode) use
+                from ultron.desktop.capture import set_screen_capture
+                from ultron.desktop.sequence import set_sequence_runner
+
+                set_screen_capture(None)
+                set_sequence_runner(None)
+
+            register_surface_hook("dialog_poller", _anticheat_dialog_poller)
+            register_surface_hook(
+                "capture_singletons", _anticheat_capture_singletons,
+            )
+            # Config-pinned anticheat (gaming_mode.anticheat_safe_mode):
+            # apply at startup so the hooks fire and running surfaces
+            # (the poller just started above) are stopped immediately --
+            # the guard flag alone wouldn't stop already-running threads.
+            from ultron.safety.anticheat import (
+                anticheat_active,
+                set_anticheat_active,
+            )
+
+            if anticheat_active():
+                set_anticheat_active(True, "pinned by config at startup")
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("anticheat surface hooks not registered: %s", e)
         # T23 (cline) / T12 (OpenClaw): start the subprocess reaper so every
         # Ultron-spawned subprocess (Parakeet / XTTS daemons, the coding-bridge
         # claude subprocess) is tracked in one registry, heavy long-runners are
@@ -2644,6 +2688,19 @@ class Orchestrator:
             if manager is None:
                 logger.debug("intent: gaming engage fired but no manager")
                 return False
+            # 2026-06-11: free EVERY non-gaming resource. The settings
+            # panel (a tkinter python process) is closed if open;
+            # Docker Desktop is stopped by the manager when
+            # gaming_mode.toggle_docker is set (restored on disengage);
+            # the engage state machine then swaps the LLM, kills the
+            # Parakeet server, moves Kokoro to CPU, and unloads the VLM.
+            try:
+                from ultron.settings_gui.launch import close_gui
+
+                if close_gui(getattr(self, "_settings_gui_pid", None)):
+                    self._settings_gui_pid = None
+            except Exception as e:                                # noqa: BLE001
+                logger.debug("engage: settings panel close skipped (%s)", e)
             try:
                 asyncio.run(manager.engage())
             except Exception as e:                                # noqa: BLE001
@@ -3846,6 +3903,13 @@ class Orchestrator:
             try:
                 from ultron.safety.validator import set_block_observer
                 set_block_observer(None)
+            except Exception:                                     # noqa: BLE001
+                pass
+            # Anticheat surface hooks close over self -- drop them so a
+            # torn-down orchestrator can't be poked by a later mode flip.
+            try:
+                from ultron.safety.anticheat import clear_surface_hooks
+                clear_surface_hooks()
             except Exception:                                     # noqa: BLE001
                 pass
 

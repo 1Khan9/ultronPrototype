@@ -232,7 +232,11 @@ def test_match_settings_command(text: str, expected) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_launch_gui_spawns_detached(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_launch_gui_spawns_without_console(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import subprocess
+
     calls: list[dict] = []
 
     def fake_popen(argv, **kwargs):
@@ -243,7 +247,17 @@ def test_launch_gui_spawns_detached(monkeypatch: pytest.MonkeyPatch) -> None:
     assert pid == 4321
     (call,) = calls
     assert call["argv"][-2:] == ["-m", "ultron.settings_gui"]
-    assert call["creationflags"] != 0  # detached on Windows
+    # No console window may EVER appear: either the GUI-subsystem
+    # pythonw.exe interpreter, or CREATE_NO_WINDOW on python.exe.
+    no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    assert (
+        call["argv"][0].lower().endswith("pythonw.exe")
+        or (call["creationflags"] & no_window)
+    )
+    # Never DETACHED_PROCESS (it allocates a fresh visible console
+    # for console-subsystem interpreters).
+    detached = getattr(subprocess, "DETACHED_PROCESS", 0)
+    assert not (call["creationflags"] & detached)
 
 
 def test_launch_gui_fail_open() -> None:

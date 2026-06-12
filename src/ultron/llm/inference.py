@@ -175,6 +175,20 @@ _BREVITY_HINT_PREFIX_RE = _re.compile(
 )
 
 
+def _rag_query_has_min_content(query: str) -> bool:
+    """True iff ``query`` is substantial enough for cross-session RAG.
+
+    2026-06-11 live-dogfood fix (context corruption): a short or
+    fragmentary utterance ("How he was initially,") cannot meaningfully
+    select past-conversation memories -- vector similarity on a
+    contextless fragment surfaces arbitrary old exchanges (observed
+    live: a month-old Moscow weather answer recited as current). Below
+    a five-word floor, cross-session retrieval is skipped entirely;
+    recent in-session history still provides continuity.
+    """
+    return len((query or "").split()) >= 5
+
+
 def _strip_brevity_hint(text: str) -> str:
     """Remove the ``[Style: ...]`` prefix that ``apply_brevity_hint``
     prepends, if present. Idempotent on un-hinted text."""
@@ -992,11 +1006,22 @@ class LLMEngine:
             # anyway -- it's what we actually want to match against
             # past conversations.
             retrieve_query = rag_query if rag_query is not None else user_message
-            rag_block = self._format_rag_block(
-                self._retrieve_rag_snippets(
-                    retrieve_query, gate_verdict=gate_verdict,
-                ),
-            )
+            # 2026-06-11 live-dogfood fix (context corruption): a SHORT
+            # or fragmentary utterance ("How he was initially,") cannot
+            # meaningfully select past-conversation memories -- vector
+            # similarity on a contextless fragment surfaces arbitrary
+            # old exchanges (observed live: a month-old Moscow weather
+            # answer recited as current). Skip cross-session RAG
+            # entirely below a minimal-content floor; recent in-session
+            # history (appended below) still provides continuity.
+            if not _rag_query_has_min_content(retrieve_query):
+                rag_block = ""
+            else:
+                rag_block = self._format_rag_block(
+                    self._retrieve_rag_snippets(
+                        retrieve_query, gate_verdict=gate_verdict,
+                    ),
+                )
         rag_position = get_config().llm.rag.position
 
         if rag_block and rag_position == "system":
@@ -1207,7 +1232,17 @@ class LLMEngine:
         """
         if not snippets:
             return ""
-        lines = ["", "Relevant earlier context from prior conversations:"]
+        # 2026-06-11 live-dogfood fix (context corruption): label these
+        # as POSSIBLY-STALE memories and forbid reciting time-sensitive
+        # ones as current. Observed live: a month-old "Moscow is 48°F"
+        # answer retrieved here was spoken as today's weather.
+        lines = [
+            "",
+            "Memories from PAST conversations (possibly days or weeks "
+            "old -- never present time-sensitive facts from these, such "
+            "as weather, time, or prices, as if they were current; only "
+            "use them when they directly bear on the user's question):",
+        ]
         for s in snippets:
             lines.append(f"- {s.role}: {s.content}")
         block = "\n".join(lines)

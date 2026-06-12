@@ -628,6 +628,9 @@ def physical_center_of_element(
     should validate :attr:`UIAElement.is_visible` and the rect
     dimensions before clicking.
     """
+    # Anticheat-safe mode: hard-blocked while the user is in game.
+    from ultron.safety.anticheat import guard as _anticheat_guard
+    _anticheat_guard("uia_read")
 
     left, top, right, bottom = element.rect
     cx = (left + right) // 2
@@ -664,6 +667,9 @@ def physical_rect_of_element(
     corners map to the same monitor's scale factor on mixed-DPI
     multi-monitor setups.
     """
+    # Anticheat-safe mode: hard-blocked while the user is in game.
+    from ultron.safety.anticheat import guard as _anticheat_guard
+    _anticheat_guard("uia_read")
 
     left, top, right, bottom = element.rect
     if not assume_logical:
