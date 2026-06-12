@@ -1689,7 +1689,7 @@ relay_speech:
   enabled: true
   output_device: "Voicemeeter Aux Input"  # name substring or PortAudio index
   rephrase: true              # LLM converts reported speech -> direct address
-  max_line_chars: 280         # one breath of voice chat
+  max_line_chars: 360         # ceiling for a full two-sentence reply; trims only at a sentence boundary
   echo_to_user: false         # also play the line on the normal output
   # Named callouts ("ask Clove to smoke window", "tell Sova to drone
   # sewers", "ask Sage if I can get a heal"). Empty list = the built-in

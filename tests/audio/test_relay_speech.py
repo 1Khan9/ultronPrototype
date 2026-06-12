@@ -575,7 +575,7 @@ def test_relay_config_defaults() -> None:
     assert cfg.enabled is True
     assert "voicemeeter" in cfg.output_device.lower()
     assert cfg.rephrase is True
-    assert cfg.max_line_chars == 280
+    assert cfg.max_line_chars == 360
     assert cfg.echo_to_user is False
     assert cfg.addressee_names == []
     assert cfg.follow_up_seconds == 120.0

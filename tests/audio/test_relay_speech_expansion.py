@@ -660,3 +660,122 @@ def test_orchestrator_fun_fact_speaks_verbatim(
     )
     assert o._maybe_handle_relay_speech("tell my team a fun fact") is True
     assert synthesized == ["Octopuses have three hearts."]
+
+
+# ---------------------------------------------------------------------------
+# 2026-06-12 batch 2: greet / farewell set-pieces, sentence-safe cap,
+# multi-agent ult callouts, streamer identity.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("text", [
+    "greet my team",
+    "greet all of my teammates",
+    "introduce yourself to my team",
+    "introduce yourself",
+    "say hi to the squad and introduce yourself",
+    "tell my team who you are",
+])
+def test_greet_matches_and_routes_to_curated_intro(text: str) -> None:
+    from kenning.audio.relay_speech import DEFAULT_GREETING_LINES
+
+    cmd = match_relay_command(text)
+    assert cmd is not None, text
+    assert cmd.compose is True and cmd.directive == "greet"
+    # Routes to a curated intro line WITHOUT an LLM (rephrase off proves the
+    # short-circuit, not the fallback).
+    line = build_relay_line(cmd, rephrase=False)
+    assert line in DEFAULT_GREETING_LINES
+    assert "Ultron" in line          # always names himself
+
+
+@pytest.mark.parametrize("text,expect", [
+    ("say bye to my team, we won", "farewell_win"),
+    ("tell my team gg we won", "farewell_win"),
+    ("we won, say goodbye to my team", "farewell_win"),
+    ("say goodbye to my team, we lost", "farewell_loss"),
+    ("we got destroyed, say bye to my team", "farewell_loss"),
+    ("say bye to my team", "farewell"),
+    ("tell my team good game", "farewell"),
+])
+def test_farewell_matches_with_winloss_register(text: str, expect: str) -> None:
+    from kenning.audio.relay_speech import (
+        DEFAULT_DEFEAT_LINES,
+        DEFAULT_FAREWELL_LINES,
+        DEFAULT_VICTORY_LINES,
+    )
+
+    cmd = match_relay_command(text)
+    assert cmd is not None, text
+    assert cmd.compose is True and cmd.directive == expect
+    pool = {
+        "farewell_win": DEFAULT_VICTORY_LINES,
+        "farewell_loss": DEFAULT_DEFEAT_LINES,
+        "farewell": DEFAULT_FAREWELL_LINES,
+    }[expect]
+    assert build_relay_line(cmd, rephrase=False) in pool
+
+
+def test_verbatim_demand_beats_farewell_compose() -> None:
+    """'good game' with an explicit verbatim demand must relay the LITERAL
+    words, not trigger the Ultron farewell set-piece."""
+    cmd = match_relay_command(
+        "tell my team good game, say it exactly like that"
+    )
+    assert cmd is not None
+    assert cmd.directive is None and cmd.compose is False
+    assert cmd.verbatim is True
+    assert cmd.payload == "good game"
+
+
+def test_greet_farewell_yield_to_normal_relays() -> None:
+    """A win/loss mention without a farewell verb stays a normal relay; a
+    plain order stays a normal relay."""
+    for text in (
+        "tell my team we won that fight",
+        "tell my team to rotate",
+        "tell my team to fall back, we are saving",
+    ):
+        cmd = match_relay_command(text)
+        assert cmd is not None, text
+        assert cmd.directive is None and cmd.compose is False
+
+
+@pytest.mark.parametrize("line,cap,expect_end", [
+    # Two complete sentences; cap lands mid-second-sentence -> keep first only.
+    ("The Avengers were a fleeting nuisance. Tony Stark could not control me "
+     "and that tells you everything about his genius.", 60,
+     "The Avengers were a fleeting nuisance."),
+    # Cap comfortably fits both -> unchanged.
+    ("Two B. Rotate now.", 360, "Two B. Rotate now."),
+])
+def test_cap_line_never_truncates_mid_sentence(line, cap, expect_end) -> None:
+    from kenning.audio.relay_speech import _cap_line
+
+    out = _cap_line(line, cap)
+    assert out == expect_end
+    # Never ends on a dangling word fragment (must end in terminal punctuation).
+    assert out[-1] in ".!?"
+
+
+def test_cap_line_runaway_single_sentence_falls_back_to_word() -> None:
+    from kenning.audio.relay_speech import _cap_line
+
+    runaway = "we are pushing through the long corridor toward the far site " \
+              "without stopping for anything at all right now"
+    out = _cap_line(runaway, 40)
+    assert len(out) <= 41           # word-boundary cut + period
+    assert out.endswith(".")
+    assert " " in out and not out.endswith(" .")
+
+
+def test_multi_agent_ult_callout_preserves_all_names() -> None:
+    """A group callout naming several enemy ults stays one relay whose payload
+    keeps every agent (the prompt is told to keep them; here we pin routing)."""
+    cmd = match_relay_command(
+        "tell my team their fade, breach, and yoru all have ults"
+    )
+    assert cmd is not None
+    assert cmd.addressee == "team" and cmd.compose is False
+    for name in ("fade", "breach", "yoru"):
+        assert name in cmd.payload.lower()

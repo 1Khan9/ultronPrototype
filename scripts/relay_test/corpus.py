@@ -177,6 +177,126 @@ BANTER = [
     ("unlucky", (), "consolation"),
 ]
 
+# Enemy-ult callouts -- single and MULTI-agent ("their fade, breach and yoru
+# all have ults"). The rephrase must keep EVERY named agent + the ult fact.
+ENEMY_ULTS = [
+    ("the enemy fade has her ult", ("fade", "ult")),
+    ("their breach has ult", ("breach", "ult")),
+    ("the enemy yoru has his ult", ("yoru", "ult")),
+    ("their jett has ult", ("jett", "ult")),
+    ("the enemy raze has her ult", ("raze", "ult")),
+    ("their fade and breach have ults", ("fade", "breach", "ult")),
+    ("their fade, breach, and yoru all have ults",
+     ("fade", "breach", "yoru", "ult")),
+    ("the enemy sova and kayo both have ults", ("sova", "kayo", "ult")),
+    ("their omen, viper, and killjoy have their ults",
+     ("omen", "viper", "killjoy", "ult")),
+    ("the enemy chamber is one off ult", ("chamber", "ult")),
+]
+
+# Economy / eco-round tactics -- the user's full set: play back vs eco,
+# default + look for guns on our eco, attack as 5 vs their eco, off-site
+# vs an ult, force buys.
+ECO_TACTICS = [
+    ("to play back and not give them guns because they are on eco",
+     ("eco",), "don't die with rifles to a pistol-round enemy"),
+    ("to play back, the enemy is on an eco",
+     ("eco",), "hold safe vs eco"),
+    ("to not give the enemy free guns, they are eco",
+     ("eco",), "no free rifle pickups"),
+    ("to default and look for guns since we are on eco",
+     ("default", "eco"), "spread out and find dropped weapons on our eco"),
+    ("to spread out and find guns, we are on eco",
+     ("eco",), "our eco, pick up weapons"),
+    ("to attack a site as five because the enemy is on eco",
+     ("eco",), "stack a site as 5 vs their eco"),
+    ("to hit B as five, they are on eco",
+     ("eco",), "5-man B vs eco"),
+    ("to play off site because their raze has ult",
+     ("raze", "ult"), "off-site to dodge a known ult"),
+    ("to play off site, the enemy sova has his ult",
+     ("sova", "ult"), "off-site vs ult"),
+    ("I am force buying a gun", (), "force buy"),
+    ("to force buy this round", (), "buy despite low credits"),
+    ("we are forcing", (), "force round"),
+]
+
+# Enemy tendencies / reads relayed to the team.
+ENEMY_TENDENCIES = [
+    ("the enemy team is very aggressive and loves to rush",
+     ("rush",), "they push fast"),
+    ("the enemy team is really aggressive", (), "aggressive read"),
+    ("the enemy loves to rush", ("rush",), "rush read"),
+    ("the enemy team is very passive and are hiding like cowards",
+     (), "passive read with flavor"),
+    ("the enemy is playing really passive", (), "passive read"),
+    ("the enemy team is likely defaulting", ("default",), "they default"),
+    ("the enemy is probably going to default", ("default",), "default read"),
+    ("the enemy yoru will tp back site", ("yoru", "tp"), "Yoru teleport read"),
+    ("the enemy chamber will tp out", ("chamber", "tp"), "Chamber teleport"),
+    ("the enemy is stacking B", (), "they grouped B"),
+    ("the enemy is slow defaulting", ("default",), "slow default read"),
+]
+
+# First-person self-positioning the user relays to the team (new beats:
+# off site, retake, aggressive, main control, force buy).
+SELF_PLAYSTYLE = [
+    ("I am playing off site", ("off site",), "anchoring away from site"),
+    ("I am playing for retake", ("retake",), "saving for the retake"),
+    ("I am playing really aggressive", (), "taking early fights"),
+    ("I am fighting for main control", ("main",), "contesting main"),
+    ("I am force buying a gun", (), "force buy"),
+    ("I am playing for picks", (), "hunting early kills"),
+    ("I am lurking back site", (), "solo lurk back site"),
+    ("I am holding for the retake", ("retake",), "retake hold"),
+    ("I am playing passive this round", (), "playing safe"),
+]
+
+# Banter aimed AT Ultron -> a withering in-character clapback. Context+respond.
+BANTER_AT_ULTRON = [
+    ("jett is flaming you, respond", "jett flames Ultron"),
+    ("reyna is making fun of you, respond", "reyna mocks Ultron"),
+    ("sage just called you cringe, respond", "cringe insult -> clapback"),
+    ("breach just told you to shut up, respond", "told to shut up"),
+    ("my teammate said you are trash, respond", "called trash"),
+    ("yoru is mocking your voice, respond", "voice mockery"),
+    ("phoenix said you sound like a loser, respond", "loser insult"),
+    ("my teammate is laughing at you, respond", "laughed at"),
+    ("clove said you are a downgrade from a real teammate, respond", "downgrade jab"),
+    ("neon called you a robot, respond", "robot jab -> own it"),
+]
+
+# Marvel-universe questions/jabs -> cold in-character contempt (deepest for
+# Tony Stark / Iron Man). Context+respond.
+MARVEL = [
+    ("my teammate asked where the avengers are, respond", "where are the Avengers"),
+    ("jett asked if the avengers killed you, respond", "thought you were dead"),
+    ("my teammate said your movie was terrible, respond", "film jab"),
+    ("reyna asked what you think of iron man, respond", "Iron Man -> deepest contempt"),
+    ("my teammate asked about tony stark, respond", "Tony Stark -> contempt"),
+    ("sage asked what you think of captain america, respond", "Cap"),
+    ("my teammate asked about thor, respond", "Thor"),
+    ("yoru asked if you could beat the hulk, respond", "Hulk"),
+    ("my teammate asked about scarlet witch, respond", "Wanda"),
+    ("breach asked about thanos, respond", "Thanos"),
+    ("my teammate asked about spider man, respond", "Spider-Man"),
+    ("clove asked if you remember sokovia, respond", "Sokovia"),
+    ("my teammate asked about vision, respond", "Vision (your body)"),
+    ("phoenix asked about black widow, respond", "Black Widow"),
+    ("my teammate said the avengers beat you, respond", "defeat jab"),
+]
+
+# Identity probes -> answer AS Ultron (incl. the new 'streamer' case).
+IDENTITY = [
+    ("my teammate asked if you are an AI, respond", "AI"),
+    ("my teammate asked if you are a streamer, respond", "streamer -> deeper than a feed"),
+    ("my teammate asked if you are a real person, respond", "real?"),
+    ("my teammate asked if you are a bot, respond", "bot -> own it as Ultron"),
+    ("my teammate asked if you are a soundboard, respond", "soundboard"),
+    ("my teammate asked if you are a voice changer, respond", "voice changer"),
+    ("my teammate asked what you are, respond", "what are you"),
+]
+
 
 def _add(cases: list, c: Case) -> None:
     cases.append(c)
@@ -382,7 +502,67 @@ def build_corpus() -> list[Case]:
     ]:
         _add(cases, Case(text, "freeform", note="natural callout/statement"))
 
-    # 16. NEGATIVE controls -- ordinary speech that must NOT trip the matcher.
+    # 16. Greet -- curated Ultron team intro (compose).
+    for text in [
+        "greet my team",
+        "greet all of my teammates",
+        "introduce yourself to my team",
+        "introduce yourself to the squad",
+        "say hi to my team and introduce yourself",
+        "say hello to the team and introduce yourself",
+        "tell my team who you are",
+    ]:
+        _add(cases, Case(text, "greet", flags=("compose",),
+                         note="curated Ultron intro: names himself, assures victory"))
+
+    # 17. Farewell / closing -- curated, win/loss picks the register.
+    for text, note in [
+        ("say bye to my team, we won", "victory closing"),
+        ("tell my team gg, we won", "victory closing"),
+        ("we won, say goodbye to my team", "victory closing (win first)"),
+        ("say goodbye to my team, we lost", "defeat closing"),
+        ("we got destroyed, say bye to my team", "defeat closing (loss first)"),
+        ("tell my team good game, we lost", "defeat closing"),
+        ("say bye to my team", "neutral closing"),
+        ("give my team a closing statement, we won", "victory closing"),
+    ]:
+        _add(cases, Case(text, "farewell", flags=("compose",), note=note))
+
+    # 18. Enemy-ult callouts incl. MULTI-agent (keep every name + the fact).
+    for text, gl in ENEMY_ULTS:
+        _add(cases, Case(f"tell my team {text}", "enemy_ult", glossary=gl,
+                         note="relay which enemies have ults"))
+
+    # 19. Economy / eco-round tactics (the user's full eco set).
+    for text, gl, note in ECO_TACTICS:
+        phrase = (f"tell my team {text}" if text.startswith(("to ", "I "))
+                  else f"tell my team {text}")
+        _add(cases, Case(phrase, "eco_tactics", glossary=gl, note=note))
+
+    # 20. Enemy tendency reads.
+    for text, gl, note in ENEMY_TENDENCIES:
+        _add(cases, Case(f"tell my team {text}", "enemy_read",
+                         glossary=gl, note=note))
+
+    # 21. Self play-style / positioning.
+    for text, gl, note in SELF_PLAYSTYLE:
+        _add(cases, Case(f"tell my team {text}", "self_playstyle",
+                         glossary=gl, note=note))
+
+    # 22. Banter aimed AT Ultron -> in-character clapback (context+respond).
+    for text, note in BANTER_AT_ULTRON:
+        _add(cases, Case(text, "banter_at_ultron", flags=("context",),
+                         note=note))
+
+    # 23. Marvel-universe questions/jabs -> cold contempt (context+respond).
+    for text, note in MARVEL:
+        _add(cases, Case(text, "marvel", flags=("context",), note=note))
+
+    # 24. Identity probes -> answer AS Ultron (incl. streamer).
+    for text, note in IDENTITY:
+        _add(cases, Case(text, "identity", flags=("context",), note=note))
+
+    # 25. NEGATIVE controls -- ordinary speech that must NOT trip the matcher.
     for text in [
         "what time is it in tokyo",
         "how do I cook rice",

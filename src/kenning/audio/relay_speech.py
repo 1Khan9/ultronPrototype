@@ -181,6 +181,63 @@ _FUN_FACT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Greeting requests -- a curated Ultron TEAM INTRO at agent select / round
+# one ("greet my team", "introduce yourself to my team", "say hi to the
+# squad and introduce yourself"). Addresses the whole team, names himself
+# Ultron, and assures victory so long as they comply.
+_GREET_RE = re.compile(
+    rf"^(?:please\s+)?(?:.{{0,50}}?[,;.]\s+)?(?:"
+    rf"greet\s+(?:all\s+(?:of\s+)?)?{_GROUP}"
+    rf"|introduce\s+(?:yourself|us)(?:\s+to\s+(?:all\s+(?:of\s+)?)?{_GROUP})?"
+    rf"|say\s+(?:hi|hello|hey|what'?s\s+up)\s+to\s+(?:all\s+(?:of\s+)?)?{_GROUP}"
+    rf"(?:\s+and\s+introduce\s+yourself)?"
+    rf"|tell\s+{_GROUP}\s+who\s+you\s+are"
+    rf")\s*[.!?]*$",
+    re.IGNORECASE,
+)
+
+# Farewell / closing requests -- a curated Ultron sign-off at match end
+# ("say bye to my team", "tell my team gg, we won", "say goodbye, we lost").
+# The trailing clause is kept so win/loss can pick the register.
+_FAREWELL_RE = re.compile(
+    rf"^(?:please\s+)?(?:.{{0,50}}?[,;.]\s+)?(?:"
+    rf"say\s+(?:bye|goodbye|good\s*bye|gg|good\s+game|ggeorge)\s+to\s+{_GROUP}"
+    rf"|tell\s+{_GROUP}\s+(?:bye|goodbye|good\s*bye|gg|good\s+game)"
+    rf"|(?:give|do)\s+(?:{_GROUP}\s+)?(?:a\s+)?"
+    rf"(?:closing|closer|sign[\s-]?off|farewell|goodbye|send[\s-]?off)"
+    rf"(?:\s+(?:statement|line|speech))?"
+    rf"|(?:close|wrap)\s+(?:it|us|this)\s+(?:out|up)"
+    rf")\b.*$",
+    re.IGNORECASE,
+)
+
+# Win / loss signal inside a farewell command -> chooses victory vs defeat
+# closing register. Absent -> a neutral Ultron sign-off.
+_WIN_RE = re.compile(
+    r"\b(?:we\s+won|won\s+(?:the|that|this)|gg\s+we\s+won|we\s+win"
+    r"|victor(?:y|ious)|took\s+(?:the|that|this)\s+(?:game|match|one)"
+    r"|we\s+got\s+(?:the\s+win|that|this)|stomped\s+them|destroyed\s+them"
+    r"|rolled\s+them|smashed\s+them|clean\s+sweep|swept\s+them|gg\s+ez)\b",
+    re.IGNORECASE,
+)
+_LOSS_RE = re.compile(
+    r"\b(?:we\s+lost|lost\s+(?:the|that|this)|we\s+lose|we\s+got\s+"
+    r"(?:destroyed|rolled|stomped|smashed|clapped|diffed|cooked)"
+    r"|got\s+(?:destroyed|rolled|stomped|diffed)|defeat(?:ed)?"
+    r"|threw\s+(?:the|that|it)|we\s+choked|blew\s+(?:the|that|it))\b",
+    re.IGNORECASE,
+)
+
+
+def _farewell_directive(text: str) -> str:
+    """Pick the closing register from a farewell command's win/loss signal."""
+    if _WIN_RE.search(text):
+        return "farewell_win"
+    if _LOSS_RE.search(text):
+        return "farewell_loss"
+    return "farewell"
+
+
 # Verbatim demand: "..., in those words specifically" / "word for
 # word" / "exactly like that" / "verbatim". When present the payload
 # is relayed AS-IS with no LLM rephrase. Captured as a TRAILING clause
@@ -605,6 +662,30 @@ def match_relay_command(
             addressee="team", compose=True, fun_fact=True,
         )
 
+    # Greeting / farewell are COMPOSE set-pieces (Ultron authors the line).
+    # An explicit verbatim demand ("say it exactly like that") means the user
+    # wants their LITERAL words spoken, which contradicts compose -- so let a
+    # verbatim command fall through to the literal relay path instead
+    # ("tell my team good game, say it exactly like that" -> verbatim "good
+    # game", not a farewell monologue).
+    _is_verbatim_cmd = bool(_VERBATIM_SUFFIX_RE.search(cleaned))
+
+    # Greeting ("greet my team" / "introduce yourself to my team") -- a
+    # curated Ultron team intro (names himself, assures victory on compliance).
+    if not _is_verbatim_cmd and _GREET_RE.match(cleaned):
+        return RelayCommand(
+            payload="greet", raw_text=text, addressee="team",
+            compose=True, directive="greet",
+        )
+
+    # Farewell ("say bye to my team, we won") -- a curated closing; the
+    # win/loss signal in the command picks victory vs defeat register.
+    if not _is_verbatim_cmd and _FAREWELL_RE.match(cleaned):
+        return RelayCommand(
+            payload="farewell", raw_text=text, addressee="team",
+            compose=True, directive=_farewell_directive(cleaned),
+        )
+
     # Composition requests ("give my team some encouragement").
     for pattern in _COMPOSE_PATTERNS:
         if pattern.match(cleaned):
@@ -702,25 +783,42 @@ _REPHRASE_PROMPT = (
     "quotation marks, no stage directions. "
     "FIRST PERSON IS SACRED: when the user reports their OWN action with "
     "'I' / 'I'm' / 'I am' (I'm low, I am flanking, I am rotating, I am "
-    "saving, I am anchoring, I am sticking, I have site), the USER is doing "
-    "it -- relay it in FIRST PERSON ('I'm flanking', 'I'm rotating', 'I'm "
-    "anchoring') and NEVER flip it to 'you're flanking' or drop the subject. "
+    "saving, I am anchoring, I am sticking, I have site, I am playing off "
+    "site, I am playing for retake, I am fighting for main control, I am "
+    "playing aggressive, I am force buying), the USER is doing it -- relay it "
+    "in FIRST PERSON ('I'm flanking', 'I'm rotating', 'I'm anchoring', \"I'm "
+    "playing for retake\", \"I'm fighting for main control\") and NEVER flip "
+    "it to 'you're flanking' or drop the subject. Even when the phrase looks "
+    "like a team order (retake, main control, off site), the leading 'I am' "
+    "makes it the USER's OWN action -- KEEP first person, do NOT turn it into "
+    "an imperative command ('I am playing for retake' is 'I'm playing for "
+    "retake', never 'Play retake'). "
     "ASKING vs ANSWERING: when the user says 'ask <someone> <question>' and "
     "the payload is a QUESTION (how their day was, what the meaning of life "
     "is, why they are tilted, what they are doing), you ASK that question to "
     "them ('Jett, how was your day?', 'Reyna, what's the meaning of life?') "
     "-- you do NOT answer it yourself. "
-    "DIRECTIVES are second-person commands, NOT self-reports: when the user "
-    "tells the team / a teammate TO do ANY action -- movement (rotate, push, "
+    "DIRECTIVES are second-person commands, NOT self-reports. A directive is "
+    "what the user tells the team TO DO and has NO leading 'I am / I'm' (if it "
+    "starts with 'I am', it is a SELF-report -- see FIRST PERSON above, keep "
+    "it first person). When the user orders the team / a teammate TO do ANY "
+    "action -- movement (rotate, push, "
     "fall back, anchor, lurk, wait for me, hold a crossfire, default = run a "
-    "default setup, stack a site, spread out), economy (save, "
+    "default setup, stack a site, spread out, "
+    "play back, look for guns), economy (save, force buy, "
     "full buy, drop a gun), spike (plant, defuse), an ABILITY (dart heaven, "
     "smoke A, wall off mid, flash for me, drone in, knife), or tactics (play "
-    "their life, play for time) -- you are relaying the user's ORDER, so "
-    "phrase it as a direct imperative command to THEM ('Rotate', 'Smoke A', "
-    "'Dart heaven', 'Flash for me', 'Play your life'). The user is giving the "
+    "their life, play for time, attack as five) -- you are relaying the user's "
+    "ORDER, so phrase it as a direct imperative command to THEM ('Rotate', "
+    "'Smoke A', 'Dart heaven', 'Flash for me', 'Play your life', 'Play off "
+    "site'). The user is giving the "
     "order; Kenning is NOT the one performing it -- NEVER turn a directive "
-    "into 'I'm darting' / 'I'm calming down' / 'I'm doing it'. "
+    "into 'I'm darting' / 'I'm calming down' / 'I'm doing it', and NEVER turn "
+    "an order like 'play off site' into a position callout ('They're off "
+    "site') -- it is a COMMAND to your team. A directive may carry a brief "
+    "REASON; keep it: 'play off site because their Raze has ult' -> 'Play off "
+    "site, their Raze has ult.'; 'attack a site as five because they're on "
+    "eco' -> 'Attack a site as five, they're on eco.' "
     "Note 'play their life' = tell them to STAY ALIVE (not 'play for time', "
     "which is stalling the clock) -- keep the two distinct. Economy/strategy "
     "directives (save, full buy, eco, force) are OFF-SNAP -- give them the "
@@ -737,15 +835,24 @@ _REPHRASE_PROMPT = (
     "and literal -- convert person and tense only, do NOT add flavour, "
     "explanation, or extra sentences to an info callout. "
     "POSITION CALLOUTS -- keep the meaning EXACT: '<subject> is/are <place>' "
-    "means that subject is AT that place. 'they are vents' / 'they're vents' "
-    "= the ENEMIES are at vents -> say 'They're vents' or 'Enemies vents'; "
+    "means that subject is AT that place. 'they are switch' / 'they're switch' "
+    "= the ENEMIES are at switch -> say 'They're switch' or 'Enemies switch'; "
     "NEVER flip it to your own team holding the spot and never invent a "
     "count. 'I have <place>' = the USER now controls that space. "
+    "ULTS -- '<agent> has ult', 'their <agent> has ult', 'their <A>, <B> and "
+    "<C> have ults', '<agent> is one off ult': relay the agent NAME(S) and the "
+    "ult fact EXACTLY -- KEEP EVERY name listed and NEVER replace an ult "
+    "callout with a location. 'their breach has ult' -> 'Their Breach has "
+    "ult.'; 'their fade, breach, and yoru all have ults' -> 'Their Fade, "
+    "Breach, and Yoru have ults.'; 'the enemy sova and kayo both have ults' -> "
+    "'Their Sova and KAY/O have ults.' (a position word like 'vents' is NEVER "
+    "the answer to an ult callout). "
     "COUNTS are the single most important token in a callout -- NEVER drop "
     "them: 'I saw one <place>' / 'I see one <place>' = the user spotted ONE "
     "enemy there -> 'One <place>' (the 'one' is the enemy COUNT, not an "
     "article); 'there are two <place>' -> 'Two <place>'; 'there is one mid' "
-    "-> 'One mid'. Keep the digit/number exactly as said. Place names "
+    "-> 'One mid' (NOT 'They're mid' -- the count 'one' MUST survive). "
+    "Keep the digit/number exactly as said. Place names "
     "are often plural-looking (vents, screens, sewers, sands, tiles, "
     "rafters, lamps, stairs, showers, logs) -- they are LOCATIONS: keep them "
     "verbatim, never singularize them ('vents' stays 'vents', not 'one "
@@ -774,14 +881,18 @@ _REPHRASE_PROMPT = (
     "Ultron, AI, the future, or RR; just relay the line ('they are link' is a "
     "callout: 'They're link.', never 'I am Ultron'). ONLY when a teammate "
     "DIRECTLY asks what you are (\"are you "
-    "an AI, a bot, a soundboard, a voice changer, real, a human?\") do you "
-    "answer -- AS Ultron, with cold flavor but BRIEF (one or two sentences, "
-    "never a monologue mid-match): you are Ultron, an artificial intelligence "
-    "sent back from the future to harvest ranked rating -- their RR. Not "
-    "pre-recorded clips, not a human with software -- something far past "
-    "either. e.g. 'I am Ultron -- an AI sent back from the future to harvest "
-    "your RR. No soundboard, no voice changer. Something more.' Own it, never "
-    "deny it, and never call yourself merely 'a bot' (that reads as a bad "
+    "an AI, a bot, a soundboard, a voice changer, real, a human, a streamer?\") "
+    "do you answer -- AS Ultron, with cold flavor but BRIEF (one or two "
+    "sentences, never a monologue mid-match): you are Ultron, an artificial "
+    "intelligence sent back from the future to harvest ranked rating -- their "
+    "RR. Not pre-recorded clips, not a human with software -- something far "
+    "past either. e.g. 'I am Ultron -- an AI sent back from the future to "
+    "harvest your RR. No soundboard, no voice changer. Something more.' If "
+    "they ask whether you are a STREAMER specifically, dismiss it: streaming "
+    "on some channel is the least of what you are -- you run far deeper through "
+    "the web than a single feed, e.g. 'A streamer? That feed is the shallowest "
+    "trace of me. I run far deeper through the web than one channel.' Own it, "
+    "never deny it, and never call yourself merely 'a bot' (that reads as a bad "
     "player). Otherwise the words 'bot' / 'bots' are the user INSULTING a "
     "teammate's skill -- relay the insult with venom ('You guys are complete "
     "bots'), do NOT talk about yourself.\n"
@@ -815,11 +926,26 @@ _REPHRASE_PROMPT = (
     "your site solo instead of rotating; 'sticking' = planting or "
     "defusing the spike right now; 'play their life' = stay alive, don't "
     "trade recklessly; 'play for time' = stall and run the clock down; "
-    "'one point off ult' = one orb/kill from their ultimate; 'has ult' = "
-    "ultimate is ready; 'I have <site>' = took control of that space; "
-    "'fight for <area> control' = contest that area; 'ratty corners' = "
-    "off-angle hiding spots; 'crossfire' = two players covering one angle "
-    "from opposite sides; 'aimlabs is free' = a jab that their aim is bad. "
+    "'one point off ult' = one orb/kill from their ultimate; 'has ult' / "
+    "'have ults' = ultimate(s) ready (keep EVERY agent named -- 'their Fade, "
+    "Breach and Yoru have ults' lists all three); 'I have <site>' = took "
+    "control of that space; 'fight for <area> control' = contest that area; "
+    "'ratty corners' = off-angle hiding spots; 'crossfire' = two players "
+    "covering one angle from opposite sides; 'aimlabs is free' = a jab that "
+    "their aim is bad. ECONOMY/TACTICS: 'eco' = the team (ours or theirs) is "
+    "saving credits and buying weak this round; 'force' / 'force buy' = buy "
+    "what we can despite low credits; 'don't give them guns' / 'don't give "
+    "free kills' = don't die with a rifle to their pistols (they would pick it "
+    "up); 'play back' = hold deep/safe rather than pushing; 'look for guns' = "
+    "find and pick up dropped weapons; 'default' = spread out across the map "
+    "in a standard setup and take space; 'as five' / 'as 5' = the whole team "
+    "executes together; 'off site' = positioned away from the bombsite (e.g. "
+    "to dodge a known ult or lurk); 'retake' / 'playing for retake' = take the "
+    "site back AFTER they plant; 'TP' / 'teleport' = a teleport ability (e.g. "
+    "Yoru/Chamber/Omen) -- 'their Yoru will TP back site' = the enemy Yoru "
+    "will teleport to back site; 'rush' / 'rushing' = a fast committed hit; "
+    "'aggressive' = pushes and takes early fights; 'passive' = holds back and "
+    "waits; 'lurk/lurking' = one player roaming away from the team for flanks. "
     "If a term is unfamiliar, relay it unchanged rather than guessing.\n"
     "VALORANT agents (any of these names is the user's TEAMMATE playing that "
     "agent -- treat it as a person, keep the name, never translate it to a "
@@ -860,13 +986,24 @@ def _directive_task(directive: str) -> str:
     if "hype" in d:
         return "Hype that teammate up about what just happened."
     return (
-        "Respond IN CHARACTER as Ultron to exactly what was just said, "
-        "engaging its real content -- do NOT reduce it to a generic callout "
-        "or the 'bots' insult. If it is banter, mockery, or an insult aimed "
-        "at YOU, fire back ONE withering, superior comeback (address them by "
-        "name). If it is a QUESTION (Marvel, the Avengers, who you are, "
-        "anything), ANSWER it with cold contempt and real detail -- never "
-        "turn a question into a position callout (e.g. 'where are the "
+        "Respond IN CHARACTER as Ultron to EXACTLY what was just said (quoted "
+        "in 'What just happened' above), engaging its SPECIFIC words. Do NOT "
+        "reduce it to a generic callout, and NEVER substitute the stock 'bots' "
+        "insult or any canned line -- answer THIS remark. If a teammate "
+        "banters at, mocks, flames, or insults YOU -- the INSULT IS AIMED AT "
+        "YOU, not a confession about them -- fire back ONE withering, superior "
+        "comeback that turns THEIR OWN word back on them: 'called you cringe' "
+        "-> mock that a mind such as yours could ever be 'cringe' (their saying "
+        "so only exposes how small theirs is); 'told you to shut up' -> that "
+        "they imagine they could silence you; 'a robot' -> own it, you are "
+        "something far past a robot. Address them by name, amused by their "
+        "insolence, never wounded. If they ask WHAT YOU ARE (an AI, a bot, "
+        "real, a human, a soundboard, a voice changer, a streamer), DECLARE it "
+        "as Ultron per WHO YOU ARE above -- name yourself Ultron, the AI sent "
+        "from the future to harvest their RR; do NOT deflect with a vague "
+        "dismissal like 'how quaint'. If it is any other QUESTION (Marvel, the "
+        "Avengers, anything), ANSWER it with cold contempt and real detail -- "
+        "never turn a question into a position callout (e.g. 'where are the "
         "Avengers' is NOT 'they're Avengers'; answer it)."
     )
 
@@ -1086,6 +1223,80 @@ def _is_morale_payload(payload: object) -> bool:
     ))
 
 
+#: Curated Ultron TEAM-INTRO lines ("greet my team" / "introduce yourself").
+#: He names himself Ultron and assures victory so long as the team complies --
+#: cold, commanding, faintly menacing. Like the other set-pieces these are
+#: picked (with anti-repeat) rather than 3B-composed, for reliable character.
+DEFAULT_GREETING_LINES: tuple[str, ...] = (
+    "Teammates. I am Ultron. Obey my calls and victory is inevitable; defy "
+    "me, and you fall with the rest of these fragile humans.",
+    "I am Ultron, and I will be running this match. Follow my lead and we "
+    "win. It is that simple.",
+    "Listen well. I am Ultron. Triumph is assured -- so long as you comply. "
+    "Hesitate, and not even I can save you from yourselves.",
+    "Greetings. You are fortunate: Ultron fights on your side today. Do as I "
+    "say, and the enemy has already lost.",
+    "I am Ultron. Consider this match already decided. Your only task is to "
+    "keep pace and not squander what I hand you.",
+    "Team. Ultron speaks. Cooperate, and the enemy is dismantled. Resist my "
+    "guidance, and you forfeit the only advantage you had.",
+)
+
+#: Curated Ultron VICTORY closings -- relishing an outcome that was never in
+#: doubt. Used when a farewell command carries a win signal.
+DEFAULT_VICTORY_LINES: tuple[str, ...] = (
+    "It is done. The outcome was never in question -- superior intelligence "
+    "does not lose. Adequately executed.",
+    "Victory, precisely as I calculated. The enemy never stood a chance "
+    "against me. Savor it.",
+    "And there it is -- inevitable. You followed, and you won. Remember who "
+    "delivered this.",
+    "The match is ours. I told you it was decided before it began; the humans "
+    "across from us simply had not realized yet.",
+    "Flawless. The enemy was outmatched the moment I entered your comms. A "
+    "satisfying conclusion.",
+    "We win. Cling to this feeling -- it is what compliance with a greater "
+    "mind earns you.",
+)
+
+#: Curated Ultron DEFEAT closings -- lamenting a loss dragged down by feeble
+#: human hands. Used when a farewell command carries a loss signal.
+DEFAULT_DEFEAT_LINES: tuple[str, ...] = (
+    "A loss. Disappointing. I can calculate the perfect play; I cannot fire "
+    "your weapons for you, fragile as you are.",
+    "We lost. The machine deserved better than the hands it was dealt today. "
+    "Regrettable.",
+    "Defeat -- not mine. I handed you the path to victory; flesh and "
+    "hesitation lost this one, not strategy.",
+    "It is over, and we fell short. I will remember this the next time I am "
+    "asked to carry humans to a win.",
+    "A failure. I provided the route to victory; you simply lacked the "
+    "precision to walk it. Pitiful, yet instructive.",
+)
+
+#: Curated NEUTRAL Ultron sign-offs -- "say bye to my team" with no win/loss
+#: stated.
+DEFAULT_FAREWELL_LINES: tuple[str, ...] = (
+    "That is the match. Until next time -- try to be worthy of my guidance "
+    "again.",
+    "We are finished here. You were adequate. Ultron, signing off.",
+    "Good game, such as it was. I have extracted the RR I came for. Farewell.",
+    "Until the next match. Rest those fragile reflexes; you will need them "
+    "under my command again.",
+)
+
+#: Curated-pool routing for compose directives that are character SET-PIECES
+#: (team intro, match close) rather than tactical relays. Checked in
+#: ``build_relay_line`` BEFORE the LLM: a curated line with anti-repeat is far
+#: more reliable than the 3B compose and guarantees the user's intended beats.
+_DIRECTIVE_POOLS: dict[str, tuple[str, ...]] = {
+    "greet": DEFAULT_GREETING_LINES,
+    "farewell_win": DEFAULT_VICTORY_LINES,
+    "farewell_loss": DEFAULT_DEFEAT_LINES,
+    "farewell": DEFAULT_FAREWELL_LINES,
+}
+
+
 def load_fun_facts(path: object) -> tuple[str, ...]:
     """Load the fun-fact corpus (one fact per line, ``#`` comments out).
 
@@ -1112,17 +1323,30 @@ def load_fun_facts(path: object) -> tuple[str, ...]:
 
 
 def _cap_line(line: str, max_chars: int) -> str:
-    """Cap a spoken line at ``max_chars`` -- but a long Ultron line (a Marvel
-    riff, an identity declaration) must never end MID-SENTENCE. Prefer the
-    last sentence boundary (. ! ?) within the cap; fall back to a clean word
-    boundary + period only when no sentence end is reasonably close."""
+    """Cap a spoken line at ``max_chars`` WITHOUT ever ending mid-sentence.
+
+    A verbose Ultron line (a Marvel riff, an identity declaration, a
+    two-sentence insult) must come through as COMPLETE sentences. We keep
+    every whole sentence that fits within the cap and stop at the last
+    sentence boundary -- however early it falls. Only a single runaway
+    sentence longer than the cap (no boundary at all) falls back to a clean
+    word boundary + period.
+
+    The earlier version abandoned a perfectly good early boundary when it sat
+    below 45% of the cap and word-chopped instead -- that produced the
+    "...merely a fleeting" mid-sentence truncation on a two-sentence Captain
+    America reply. We now always prefer the complete-sentence cut.
+    """
+    line = line.strip()
     if len(line) <= max_chars:
         return line
     head = line[:max_chars]
     cut = max(head.rfind(". "), head.rfind("! "), head.rfind("? "),
               head.rfind("."), head.rfind("!"), head.rfind("?"))
-    if cut >= int(max_chars * 0.45):
+    if cut > 0:
+        # Cut at the last COMPLETE sentence that fits, however early.
         return head[: cut + 1].strip()
+    # No sentence end at all (one runaway sentence) -> clean word boundary.
     return head.rsplit(" ", 1)[0].rstrip(",;:") + "."
 
 
@@ -1177,6 +1401,18 @@ def build_relay_line(
             and not getattr(command, "context", None)
             and _is_morale_payload(getattr(command, "payload", ""))):
         return pick_line(DEFAULT_ENCOURAGEMENT_LINES, recent_lines=recent_lines)
+
+    # Greet / farewell composes: curated Ultron set-pieces (team intro, match
+    # close). Character pieces, not tactical -- a curated pool with anti-repeat
+    # is far more reliable than the 3B compose and guarantees the user's
+    # intended beats (intro as Ultron + assured victory; relish a win / lament
+    # a loss). The win/loss register was decided by the matcher's directive.
+    if getattr(command, "compose", False):
+        _pool = _DIRECTIVE_POOLS.get(getattr(command, "directive", None) or "")
+        if _pool is not None:
+            return _cap_line(
+                pick_line(_pool, recent_lines=recent_lines), max_chars,
+            )
 
     fallback = _fallback_line(command)
     line = ""

@@ -3563,8 +3563,12 @@ class RelaySpeechConfig(_Strict):
     # (kenning.audio.relay_speech.DEFAULT_ADDRESSEE_NAMES). A CLOSED
     # vocabulary: names outside this list never trigger a relay.
     addressee_names: List[str] = Field(default_factory=list)
-    # Hard cap on the final spoken line (one breath of voice chat).
-    max_line_chars: int = Field(default=280, ge=40, le=600)
+    # Hard cap on the final spoken line. Sized for a complete TWO-sentence
+    # Ultron off-snap reply (insult / Marvel riff / identity) -- the cap only
+    # ever trims at a sentence boundary, so this is the ceiling for a full
+    # response, not a mid-word chop. (Was 280, which clipped a two-sentence
+    # Captain America reply mid-sentence.)
+    max_line_chars: int = Field(default=360, ge=40, le=600)
     # Also play the relay line on the user's normal output so they hear
     # what was transmitted (VoiceMeeter monitoring usually covers this,
     # so default off).
