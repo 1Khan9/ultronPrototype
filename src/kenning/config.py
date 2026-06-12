@@ -333,7 +333,12 @@ class STTConfig(_Strict):
     # is True (default), the engine spawns parakeet_server.py from
     # this venv on first use and talks to it via HTTP.
     parakeet_use_isolated_venv: bool = True
-    parakeet_server_python: str = "kenningVoiceAudio/.venv-parakeet/Scripts/python.exe"
+    # The gitignored ~5.4 GB venv (with baked-in absolute paths) was NOT
+    # migrated during the 2026-06-12 Kenning rename -- it physically stays
+    # at ultronVoiceAudio/, a real local runtime-asset path (like the
+    # C:\STC\ultronPrototype checkout dir). The tracked server script moved
+    # to kenningVoiceAudio/. config.yaml mirrors this split.
+    parakeet_server_python: str = "ultronVoiceAudio/.venv-parakeet/Scripts/python.exe"
     parakeet_server_script: str = "kenningVoiceAudio/scripts/parakeet_server.py"
     parakeet_server_url: str = "http://127.0.0.1:8771"
     # How long to wait for the server's /healthz to return on startup.
@@ -2221,19 +2226,21 @@ class XttsV3Config(_Strict):
     with what fairseq / RVC needs in the main venv).
     """
     # Path to the Python interpreter inside the isolated XTTS venv.
-    # Defaults to the layout established during the 2026-05-10 voice
-    # swap: a ``.venv-xtts`` next to the audio prep work.
-    server_python: str = "kenningVoiceAudio/.venv-xtts/Scripts/python.exe"
+    # The gitignored ~5.3 GB venv (with baked-in absolute paths) was NOT
+    # migrated during the 2026-06-12 Kenning rename -- it physically stays
+    # at ultronVoiceAudio/, a real local runtime-asset path (like the
+    # C:\STC\ultronPrototype checkout dir).
+    server_python: str = "ultronVoiceAudio/.venv-xtts/Scripts/python.exe"
     # The XTTS HTTP server entry script. Lives outside ``src/kenning/``
     # because it has to import Coqui's TTS package which only exists
-    # in the isolated venv.
+    # in the isolated venv. Tracked file -- moved to kenningVoiceAudio/.
     server_script: str = "kenningVoiceAudio/scripts/xtts_server.py"
-    # Reference WAV used as the speaker conditioning source. The
-    # cleaned mono Kenning reference is the production default.
-    # 2026-06-12: path updated -- the WAV moved under the
-    # "kokoro training audio" subdirectory during disk cleaning.
+    # Reference WAV used as the speaker conditioning source. The cleaned
+    # mono reference is the production default. It is gitignored runtime
+    # audio under "kokoro training audio" (moved there during disk
+    # cleaning) and keeps its original on-disk name in ultronVoiceAudio/.
     reference_audio: str = (
-        "kenningVoiceAudio/kokoro training audio/Kenning_vocals_mono_v1.wav"
+        "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav"
     )
     # Bind details for the local-only HTTP server.
     host: str = "127.0.0.1"

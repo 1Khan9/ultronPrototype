@@ -98,6 +98,7 @@ DEFAULT_COUNTED_FILE_POLICY = CountedFilePolicy(
         ".venv/",
         "node_modules/",
         "__pycache__/",
+        "ultronVoiceAudio/",
         "kenningVoiceAudio/",
         "htmlcov/",
         ".pytest_cache/",

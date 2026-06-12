@@ -608,16 +608,20 @@ class XttsV3Speech:
         xtts_cfg = getattr(cfg.tts, "xtts_v3", None)
 
         if server_python is None:
+            # Gitignored venv not migrated by the 2026-06-12 rename --
+            # physically stays at ultronVoiceAudio/ (baked-in paths).
             sp = (xtts_cfg.server_python if xtts_cfg else None) or \
-                "kenningVoiceAudio/.venv-xtts/Scripts/python.exe"
+                "ultronVoiceAudio/.venv-xtts/Scripts/python.exe"
             server_python = resolve_path(sp)
         if server_script is None:
             ss = (xtts_cfg.server_script if xtts_cfg else None) or \
                 "kenningVoiceAudio/scripts/xtts_server.py"
             server_script = resolve_path(ss)
         if reference_audio is None:
+            # Gitignored reference WAV not migrated by the rename --
+            # physically stays at ultronVoiceAudio/ under its old name.
             ra = (xtts_cfg.reference_audio if xtts_cfg else None) or \
-                "kenningVoiceAudio/kokoro training audio/Kenning_vocals_mono_v1.wav"
+                "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav"
             reference_audio = resolve_path(ra)
 
         if not Path(server_python).is_file():

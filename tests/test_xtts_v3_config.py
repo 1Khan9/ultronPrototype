@@ -57,10 +57,15 @@ def test_xtts_v3_config_defaults_match_audio_prep_layout():
     cfg = XttsV3Config()
     assert cfg.server_python.endswith(".venv-xtts/Scripts/python.exe")
     assert cfg.server_script.endswith("xtts_server.py")
-    assert cfg.reference_audio.endswith("Kenning_vocals_mono_v1.wav")
-    # 2026-06-12 stale-path fix: the WAV moved under the
-    # "kokoro training audio" subdirectory during disk cleaning; the
-    # default must point at the real on-disk home.
+    # 2026-06-12 Kenning rename: the gitignored venv + reference WAV were
+    # NOT migrated (baked-in venv paths) -- they stay at ultronVoiceAudio/
+    # under their original on-disk names so the engine works without
+    # config overrides. The tracked server script moved to kenningVoiceAudio/.
+    assert cfg.reference_audio.endswith("Ultron_vocals_mono_v1.wav")
+    assert cfg.server_python.startswith("ultronVoiceAudio/")
+    # The WAV lives under the "kokoro training audio" subdirectory
+    # (moved there during disk cleaning); the default points at its real
+    # on-disk home.
     assert "kokoro training audio" in cfg.reference_audio
     assert cfg.host == "127.0.0.1"
     assert cfg.port is None  # engine picks free port at startup

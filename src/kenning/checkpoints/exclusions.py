@@ -109,6 +109,15 @@ VOICE_BASELINE_PROTECTED_PATTERNS: tuple[str, ...] = (
     # The persona + voice quality files.
     "SOUL.md",
     "IDENTITY.md",
+    # The reference WAV is gitignored runtime audio that the 2026-06-12
+    # Kenning rename did NOT migrate (baked-in venv paths) -- it stays at
+    # ultronVoiceAudio/ under its original name. Both the real location
+    # and the post-rename kenningVoiceAudio/ tree are protected (never
+    # shrink the voice-baseline lock).
+    "ultronVoiceAudio/Ultron_vocals_mono_v1.wav",
+    "ultronVoiceAudio/Ultron_vocals_mono_v1.*",
+    "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav",
+    "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.*",
     "kenningVoiceAudio/Kenning_vocals_mono_v1.wav",
     "kenningVoiceAudio/Kenning_vocals_mono_v1.*",
     # Post-disk-cleaning home of the reference WAV (moved 2026-06-11).

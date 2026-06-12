@@ -344,7 +344,12 @@ stt:
   parakeet_model: "nvidia/parakeet-tdt-0.6b-v3"
   parakeet_device: "cuda"        # set "cpu" to test without VRAM cost (~10x slower)
   parakeet_use_isolated_venv: true
-  parakeet_server_python: "kenningVoiceAudio/.venv-parakeet/Scripts/python.exe"
+  # The isolated venv (gitignored, ~5.4 GB, baked-in absolute paths) was
+  # NOT migrated during the 2026-06-12 Kenning rename -- it physically
+  # stays at ultronVoiceAudio/ (a real local runtime-asset path, like the
+  # C:\STC\ultronPrototype checkout dir). The server script is tracked and
+  # moved to kenningVoiceAudio/.
+  parakeet_server_python: "ultronVoiceAudio/.venv-parakeet/Scripts/python.exe"
   parakeet_server_script: "kenningVoiceAudio/scripts/parakeet_server.py"
   parakeet_server_url: "http://127.0.0.1:8771"
   parakeet_server_startup_timeout_seconds: 60.0
@@ -1108,12 +1113,17 @@ tts:
   # and ~2 GB VRAM vs Kokoro, but preserves the Kenning mechanical
   # voice character.
   xtts_v3:
-    server_python: "kenningVoiceAudio/.venv-xtts/Scripts/python.exe"
+    # The isolated venv (gitignored, ~5.3 GB, baked-in absolute paths) and
+    # the reference WAV were NOT migrated during the 2026-06-12 Kenning
+    # rename -- they physically stay at ultronVoiceAudio/ (a real local
+    # runtime-asset path, like the C:\STC\ultronPrototype checkout dir).
+    # The server script is tracked and moved to kenningVoiceAudio/.
+    server_python: "ultronVoiceAudio/.venv-xtts/Scripts/python.exe"
     server_script: "kenningVoiceAudio/scripts/xtts_server.py"
-    # 2026-06-12 stale-path fix: the reference WAV moved under the
-    # "kokoro training audio" subdirectory during the disk-cleaning
-    # pass; the old root-level path would fail a swap-back at startup.
-    reference_audio: "kenningVoiceAudio/kokoro training audio/Kenning_vocals_mono_v1.wav"
+    # The reference WAV lives under the "kokoro training audio"
+    # subdirectory (moved there during the disk-cleaning pass); the file
+    # keeps its original name in the gitignored asset dir.
+    reference_audio: "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav"
     host: "127.0.0.1"
     port: null                     # null = engine picks a free port
     filter_preset: "v3_heavy"      # locked production preset

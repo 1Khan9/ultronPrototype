@@ -94,7 +94,12 @@ _DEFAULT_PROTECTED_FILES_RELATIVE = [
     "config.yaml",
     # K2: voice character / model assets. Both the legacy root-level
     # path and the post-disk-cleaning location are protected (the WAV
-    # moved 2026-06-11; protection follows the file, never shrinks).
+    # moved 2026-06-11; protection follows the file, never shrinks). The
+    # 2026-06-12 Kenning rename did NOT migrate this gitignored WAV
+    # (baked-in venv paths) -- it stays at ultronVoiceAudio/ under its
+    # original name, so BOTH trees are protected.
+    "ultronVoiceAudio/Ultron_vocals_mono_v1.wav",
+    "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav",
     "kenningVoiceAudio/Kenning_vocals_mono_v1.wav",
     "kenningVoiceAudio/kokoro training audio/Kenning_vocals_mono_v1.wav",
     # K3: validator + existing block-and-revise modules.
@@ -146,6 +151,11 @@ _DEFAULT_PROTECTED_FILES_RELATIVE = [
 _DEFAULT_PROTECTED_DIRS_RELATIVE = [
     "models",
     "kenning_rvc_voice",
+    # The voice workshop. The real 18 GB tree (reference WAV, RVC
+    # training, kokoro_finetune, isolated venvs) physically stays at
+    # ultronVoiceAudio/ -- the 2026-06-12 rename only moved the tracked
+    # scripts to kenningVoiceAudio/. Both trees are protected.
+    "ultronVoiceAudio",
     "kenningVoiceAudio",
     # K9 covers PowerShell profile / shell rc files which live in the
     # user's home, not the project. Those rules check absolute paths

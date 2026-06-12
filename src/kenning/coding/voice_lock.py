@@ -46,6 +46,11 @@ DEFAULT_VOICE_LOCKED_PATHS: tuple[str, ...] = (
     # Reference vocal sample for XTTS. Both the legacy root-level
     # location and the post-disk-cleaning home are locked (additive --
     # the file moved 2026-06-11; protections follow it, never shrink).
+    # The 2026-06-12 Kenning rename did NOT migrate this gitignored WAV
+    # (baked-in venv paths) -- it physically stays at ultronVoiceAudio/
+    # under its original name, so BOTH trees are locked (never shrink).
+    "ultronVoiceAudio/Ultron_vocals_mono_v1.wav",
+    "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav",
     "kenningVoiceAudio/Kenning_vocals_mono_v1.wav",
     "kenningVoiceAudio/kokoro training audio/Kenning_vocals_mono_v1.wav",
 )
@@ -60,7 +65,11 @@ DEFAULT_VOICE_LOCKED_GLOBS: tuple[str, ...] = (
     # RVC voice model directory (specific to Kenning's character).
     "kenning_rvc_voice/**",
     "kenning_rvc_voice/*",
-    # Coqui XTTS speaker embeddings (any future reference files).
+    # Coqui XTTS speaker embeddings (any future reference files). Both
+    # the real (ultronVoiceAudio, gitignored) and post-rename
+    # (kenningVoiceAudio, tracked scripts) workshop trees are locked.
+    "ultronVoiceAudio/*.wav",
+    "ultronVoiceAudio/*.npy",
     "kenningVoiceAudio/*.wav",
     "kenningVoiceAudio/*.npy",
 )

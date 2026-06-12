@@ -172,8 +172,10 @@ DEFAULT_VOICE_LOCKED_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
         r"models[\\/]piper[\\/]",
         r"kenning_rvc_voice[\\/]",
         # Matches the legacy root-level location AND the
-        # post-disk-cleaning "kokoro training audio/" home.
-        r"kenningVoiceAudio[\\/](?:kokoro training audio[\\/])?Kenning_vocals_mono_v1\.wav",
+        # post-disk-cleaning "kokoro training audio/" home, in BOTH the
+        # real ultronVoiceAudio/ tree (gitignored; the 2026-06-12 rename
+        # did not migrate it) and the post-rename kenningVoiceAudio/ tree.
+        r"(?:ultron|kenning)VoiceAudio[\\/](?:kokoro training audio[\\/])?(?:Ultron|Kenning)_vocals_mono_v1\.wav",
         r"models[\\/]Qwen3\.5-4B-Q4_K_M\.gguf",
         r"models[\\/]Qwen3\.5-0\.8B-Q4_K_M\.gguf",
         r"models[\\/]kokoro[\\/]voices[\\/]kenning\.pt",
