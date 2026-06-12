@@ -754,6 +754,20 @@ class KokoroSpeech:
         clip in ~5 ms. Cache miss falls through to the live path
         unchanged.
         """
+        # Pre-synthesis hygiene (2026-06-11): stage directions, control
+        # tokens, and punctuation-only fragments never reach the voice
+        # (observed live: "*repositions window...*" spoken aloud by the
+        # 3B preset). Pure regex on a short string -- microseconds; an
+        # empty result returns a zero clip the playback paths skip.
+        try:
+            from ultron.tts.text_hygiene import sanitize_spoken_text
+
+            text = sanitize_spoken_text(text)
+        except Exception:                                     # noqa: BLE001
+            pass
+        if not text:
+            return np.zeros(0, dtype=np.int16), self._sample_rate
+
         # Cache-hit fast path. ``getattr`` keeps the engine
         # instantiable in unit-test fixtures that bypass __init__.
         ack_cache = getattr(self, "_ack_cache", None)

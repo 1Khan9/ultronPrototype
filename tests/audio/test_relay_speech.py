@@ -753,6 +753,54 @@ def test_muted_relay_command_acknowledged_not_transmitted(
     assert "muted" in o._spoken[0]
 
 
+def test_relay_generation_is_fully_isolated() -> None:
+    """2026-06-11 live game-chat incident: without
+    suppress_memory_context the engine prepends conversation history
+    and the model answers the CONVERSATION ('Clove, the program is
+    still in development...') instead of rephrasing the callout."""
+    captured: dict = {}
+
+    class _FakeLLM:
+        def generate_stream(self, prompt, **kwargs):
+            captured.update(kwargs, prompt=prompt)
+            return iter(["Clove, smoke window."])
+
+    cmd = match_relay_command("tell clove to smoke window every round")
+    assert cmd is not None
+    line = build_relay_line(cmd, _FakeLLM())
+    assert line == "Clove, smoke window."
+    assert captured["suppress_memory_context"] is True
+    assert captured["record_history"] is False
+    assert captured["enable_thinking"] is False
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # The live leak, verbatim shape.
+        ("Clove, smoke window. / no_think", "Clove, smoke window."),
+        ("Rotate B now. /no_think", "Rotate B now."),
+        ("Push A together./think", "Push A together."),
+        ("Team: save round <|im_end|>", "Team: save round"),
+    ],
+)
+def test_control_tokens_never_reach_the_spoken_line(
+    raw: str, expected: str,
+) -> None:
+    cmd = match_relay_command("tell my team to rotate B now")
+    assert cmd is not None
+    line = build_relay_line(cmd, generate_fn=lambda p: iter([raw]))
+    assert line == expected
+
+
+def test_plural_teams_stt_artifact_matches() -> None:
+    """Observed live: STT rendered 'teammates' as 'teams'."""
+    cmd = match_relay_command("tell my teams to rotate B now")
+    assert cmd is not None
+    assert cmd.payload == "rotate B now"
+    assert cmd.addressee == "team"
+
+
 def test_is_relay_command_true_for_toggle_and_while_muted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -1956,6 +1956,22 @@ class LLMEngine:
             return messages
         if not messages:
             return messages
+        # 2026-06-11 live fix: the marker is QWEN-template-specific.
+        # Other presets (the llama-3.2 gaming preset) don't consume it
+        # -- the model PARROTS it and TTS speaks "No think" out loud
+        # (observed live). Only append for Qwen-family models.
+        try:
+            from ultron.config import get_config
+
+            llm_cfg = get_config().llm
+            ident = (
+                f"{getattr(llm_cfg, 'preset', '')} "
+                f"{getattr(llm_cfg, 'model_path', '')}"
+            ).lower()
+            if "qwen" not in ident:
+                return messages
+        except Exception:  # noqa: BLE001 - fail-open to legacy behavior
+            pass
         out = [dict(m) for m in messages]
         for entry in reversed(out):
             if entry.get("role") == "user":

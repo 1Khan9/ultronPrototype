@@ -49,3 +49,38 @@ def test_rag_block_header_marks_memories_as_possibly_stale(
 
 def test_rag_block_empty_snippets_stay_empty() -> None:
     assert LLMEngine._format_rag_block([]) == ""
+
+
+# ---------------------------------------------------------------------------
+# 2026-06-11 live fix: /no_think is Qwen-template-specific -- other
+# presets parrot it and TTS speaks "No think" aloud.
+# ---------------------------------------------------------------------------
+
+
+def test_no_think_marker_only_for_qwen_presets(monkeypatch) -> None:
+    import ultron.config as config_mod
+
+    msgs = [{"role": "user", "content": "hello there"}]
+
+    monkeypatch.setattr(
+        config_mod, "get_config",
+        lambda: SimpleNamespace(llm=SimpleNamespace(
+            preset="qwen3.5-4b", model_path="models/Qwen3.5-4B-Q4_K_M.gguf",
+        )),
+    )
+    out = LLMEngine._apply_no_think_marker(msgs, False)
+    assert out[-1]["content"].endswith("/no_think")
+
+    monkeypatch.setattr(
+        config_mod, "get_config",
+        lambda: SimpleNamespace(llm=SimpleNamespace(
+            preset="llama-3.2-3b-abliterated",
+            model_path="models/Llama-3.2-3B-Instruct-abliterated.Q4_K_M.gguf",
+        )),
+    )
+    out = LLMEngine._apply_no_think_marker(msgs, False)
+    assert "/no_think" not in out[-1]["content"]
+
+    # enable_thinking None/True: never appended regardless of preset.
+    out = LLMEngine._apply_no_think_marker(msgs, None)
+    assert "/no_think" not in out[-1]["content"]

@@ -57,8 +57,9 @@ __all__ = [
 MAX_RELAY_LINE_CHARS = 280
 
 # Words that may address a group of teammates. Deliberately NARROW:
-# "tell me ..." and "tell her ..." must never match.
-_GROUP_WORDS = r"(?:team\s?mates?|team|squad|lobby|party|group|boys|the\s+boys)"
+# "tell me ..." and "tell her ..." must never match. "teams" tolerated
+# (observed live: STT rendered "teammates" as "teams").
+_GROUP_WORDS = r"(?:team\s?mates?|teams?|squad|lobby|party|group|boys|the\s+boys)"
 
 # STT artifact normalisation: the wake word occasionally leaves a
 # leading "One," / "1." fragment on the transcript ("One, tell my
@@ -432,9 +433,16 @@ def build_relay_line(
             if generate_fn is not None:
                 tokens: Iterable[str] = generate_fn(prompt)
             elif llm is not None and hasattr(llm, "generate_stream"):
+                # FULLY ISOLATED generation (2026-06-11 live fix):
+                # without suppress_memory_context the engine prepends
+                # the running conversation history, and the model
+                # answers the CONVERSATION instead of rephrasing the
+                # callout (observed live in game chat: "Clove, the
+                # program is still in development...").
                 tokens = llm.generate_stream(
                     prompt,
                     record_history=False,
+                    suppress_memory_context=True,
                     enable_thinking=False,
                 )
             else:
@@ -446,7 +454,12 @@ def build_relay_line(
     if not line:
         line = fallback
     # One breath: strip newlines/quotes the model may add, cap length.
-    line = " ".join(line.replace('"', "").split())
+    # Also strip control-token leakage -- a non-Qwen preset can parrot
+    # the engine's "/no_think" suffix into the SPOKEN line (observed
+    # live in game chat).
+    line = re.sub(r"/\s*no_?think\b|/\s*think\b|<\|[a-z_]+\|>", "", line,
+                  flags=re.IGNORECASE)
+    line = " ".join(line.replace('"', "").split()).strip(" /")
     if len(line) > max_chars:
         line = line[:max_chars].rsplit(" ", 1)[0].rstrip(",;:") + "."
     return line

@@ -260,6 +260,20 @@
 > `I:\Ultron Archive\2026-06-11\`, ~40 GB reclaimed; the live
 > `kokoro_finetune` compat path + all preset GGUFs + locked voice
 > assets verified-referenced and untouched).
+> THEN (post-unload log review — the user flagged bad live responses):
+> **the relay spoke conversation history into game chat** ("Clove, the
+> program is still in development… / no_think") — root causes fixed:
+> relay rephrase now generates FULLY ISOLATED
+> (`suppress_memory_context=True`; history no longer prepended) and
+> strips control-token leakage; `/no_think` is now appended ONLY for
+> Qwen-family presets (`_apply_no_think_marker` checks
+> preset+model_path — the llama-3.2 gaming preset parroted it and TTS
+> said "No think" aloud); NEW `tts/text_hygiene.py`
+> `sanitize_spoken_text` at the `_synthesize` choke point — asterisk/
+> bracket stage directions ("*repositions window…*" was SPOKEN live),
+> `<think>` spans, control tokens, and punctuation-only fragments
+> never reach the voice, for any model; `_GROUP_WORDS` tolerates the
+> "teams" STT artifact. All four live artifacts are verbatim tests.
 > THEN (same evening, four fixes): **gaming mode frees everything** —
 > `toggle_docker: true` (Docker Desktop/vmmem stopped on engage,
 > restarted on disengage; SearxNG fails open to Brave/DDG) + the
@@ -2975,6 +2989,20 @@ User-preference persistence so "open YouTube" picks up "monitor 2 + maximize" th
 - `resolve_device(configured, kind) -> Optional[int]` — substring match on device name
 - `describe_device(device, kind) -> str`
 
+#### `tts/text_hygiene.py` (NEW 2026-06-11 — pre-synthesis hygiene)
+
+`sanitize_spoken_text(text) -> str`: strips asterisk/bracket stage
+directions (`*nods*`, `[sighs]` — bounded spans), `<think>…</think>`
+spans, control tokens (`/no_think`, `/think`, `<|…|>`), orphaned
+quotes; returns `""` for punctuation-only remainders. Applied at the
+TOP of `KokoroSpeech._synthesize` (microseconds; an empty result
+returns a zero clip the playback paths skip), so every spoken surface
+— responses, acks, the team relay — is covered for ANY active model.
+Born from live incidents on the 3B gaming preset: a stage direction
+and a parroted "/no_think" were spoken out loud. Tests:
+`tests/tts/test_text_hygiene.py` (verbatim incident shapes + a
+no-model-load short-circuit check).
+
 #### `audio/output_quality.py` (NEW 2026-06-11 — TTS blip watcher)
 
 Catches audible artifacts in synthesized clips, live. The Kokoro
@@ -3188,6 +3216,14 @@ role-played). Driven by `relay_speech` config (default ON).
   `relay_speech.follow_up_seconds` (default 120 s vs the ~30 s warm
   window), so after one "Ultron, …" the whole in-game conversation flows
   bare: "ask sage for a heal", "tell them nice try", …
+- **Isolated generation + token hygiene (2026-06-11 live game-chat
+  incident):** the rephrase call passes `suppress_memory_context=True`
+  — without it the engine prepends conversation history and the model
+  answers the CONVERSATION ("Clove, the program is still in
+  development…") instead of rephrasing the callout; the spoken-line
+  cleanup also strips control-token leakage (`/no_think`, `/think`,
+  `<|…|>` — a non-Qwen gaming preset parroted "/ no_think" into game
+  chat). `_GROUP_WORDS` tolerates the "teams" STT artifact.
 - **Streaming safety (2026-06-11):** every pattern is anchored to an
   imperative relay verb, so narration ("I want my team to smoke
   window", "why is my team not smoking window") can NEVER relay — only
