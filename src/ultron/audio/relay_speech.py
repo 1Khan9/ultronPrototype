@@ -30,17 +30,19 @@ never crash the orchestrator turn.
 
 from __future__ import annotations
 
+import functools
 import logging
 import re
 import time
 from dataclasses import dataclass
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, Optional, Sequence
 
 import numpy as np
 
 logger = logging.getLogger("ultron.audio.relay_speech")
 
 __all__ = [
+    "DEFAULT_ADDRESSEE_NAMES",
     "RelayCommand",
     "RelayPlaybackResult",
     "match_relay_command",
@@ -95,6 +97,66 @@ _RELAY_PATTERNS: tuple[re.Pattern[str], ...] = (
     ),
 )
 
+# Composition requests: the user asks Ultron to AUTHOR a line rather
+# than relay a literal message ("give my team some encouragement").
+# Maps to a composition TOPIC the rephrase prompt expands.
+_COMPOSE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        rf"^(?:please\s+)?give\s+(?:my|the)\s+{_GROUP_WORDS}\s+"
+        rf"(?:some\s+)?(?:encouragement|hype|a\s+pep\s+talk|a\s+morale\s+boost)"
+        rf"\s*[.!?]?$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^(?:please\s+)?(?:encourage|hype\s+up)\s+(?:my|the)\s+"
+        rf"{_GROUP_WORDS}\s*[.!?]?$",
+        re.IGNORECASE,
+    ),
+)
+
+# Default named addressees: the Valorant agent roster. Spoken callouts
+# like "ask Clove to smoke window" address the TEAMMATE PLAYING that
+# agent. A CLOSED vocabulary keeps the matcher strict ("tell Sarah
+# I'll be late" never relays); extend per-game/per-friend via the
+# ``relay_speech.addressee_names`` config list.
+DEFAULT_ADDRESSEE_NAMES: tuple[str, ...] = (
+    "astra", "breach", "brimstone", "chamber", "clove", "cypher",
+    "deadlock", "fade", "gekko", "harbor", "iso", "jett", "kayo",
+    "kay o", "killjoy", "neon", "omen", "phoenix", "raze", "reyna",
+    "sage", "skye", "sova", "tejo", "viper", "vyse", "waylay", "yoru",
+)
+
+
+@functools.lru_cache(maxsize=8)
+def _named_patterns(names_key: tuple[str, ...]) -> tuple[re.Pattern[str], ...]:
+    """Compile the named-addressee patterns for one addressee vocabulary."""
+    alts = "|".join(
+        re.escape(n.strip().lower()).replace(r"\ ", r"\s+")
+        for n in names_key if n.strip()
+    )
+    if not alts:
+        return ()
+    name = rf"(?P<name>{alts})"
+    return (
+        # "tell clove (that|to) X" / "tell sova X"
+        re.compile(
+            rf"^(?:please\s+)?tell\s+{name}\s+(?:that\s+|to\s+)?(?P<payload>.+)$",
+            re.IGNORECASE,
+        ),
+        # "ask sage (to|for|if|whether) X" -- conjunction kept in the
+        # payload (except "to") so questions stay questions.
+        re.compile(
+            rf"^(?:please\s+)?ask\s+{name}\s+"
+            rf"(?P<payload>(?:to|for|if|whether)\s+.+)$",
+            re.IGNORECASE,
+        ),
+        # "say X to omen"
+        re.compile(
+            rf"^(?:please\s+)?say\s+(?P<payload>.+?)\s+to\s+{name}\s*[.!?]?$",
+            re.IGNORECASE,
+        ),
+    )
+
 
 @dataclass(frozen=True)
 class RelayCommand:
@@ -102,12 +164,20 @@ class RelayCommand:
 
     Attributes:
         payload: the message content in the user's reported-speech form
-            (e.g. "they should be smoking mid window every round").
+            (e.g. "they should be smoking mid window every round"), or
+            the composition TOPIC when ``compose`` is True.
         raw_text: the full original utterance, for logging/diagnostics.
+        addressee: ``"team"`` for group callouts, otherwise the named
+            teammate (display-cased, e.g. ``"Clove"``).
+        compose: True when Ultron should AUTHOR an original line about
+            ``payload`` (e.g. encouragement) instead of relaying a
+            literal message.
     """
 
     payload: str
     raw_text: str
+    addressee: str = "team"
+    compose: bool = False
 
 
 @dataclass(frozen=True)
@@ -129,44 +199,144 @@ class RelayPlaybackResult:
     error: Optional[str] = None
 
 
-def match_relay_command(text: str) -> Optional[RelayCommand]:
+def match_relay_command(
+    text: str,
+    *,
+    names: Optional[Sequence[str]] = None,
+) -> Optional[RelayCommand]:
     """Match a strict "tell my teammates X" style relay instruction.
 
     Args:
         text: the user's transcript for this turn.
+        names: named-addressee vocabulary ("ask Clove to smoke window").
+            None or empty falls back to :data:`DEFAULT_ADDRESSEE_NAMES`
+            (the Valorant agent roster).
 
     Returns:
-        A :class:`RelayCommand` with the extracted payload, or None when
-        the utterance is not a relay instruction (ordinary questions,
-        "tell me ..." requests, and bare "tell my teammates" with no
-        message all fall through).
+        A :class:`RelayCommand`, or None when the utterance is not a
+        relay instruction (ordinary questions, "tell me ..." requests,
+        names outside the vocabulary, and bare "tell my teammates" with
+        no message all fall through).
     """
     if not text:
         return None
     cleaned = _LEADING_ARTIFACT.sub("", text.strip())
+
+    # Composition requests ("give my team some encouragement").
+    for pattern in _COMPOSE_PATTERNS:
+        if pattern.match(cleaned):
+            return RelayCommand(
+                payload="encouragement", raw_text=text,
+                addressee="team", compose=True,
+            )
+
+    # Group callouts ("tell my team X").
     for pattern in _RELAY_PATTERNS:
         m = pattern.match(cleaned)
         if m is None:
             continue
         payload = (m.group("payload") or "").strip().strip('"').strip()
+        # The ask-form keeps its conjunction in the payload so questions
+        # stay questions ("if anyone has an ult") -- but a leading "to"
+        # carries nothing ("ask the team to save" -> "save").
+        payload = re.sub(r"^to\s+", "", payload, flags=re.IGNORECASE)
         # Require real content: at least two words so that a clipped
         # transcript ("tell my teammates the") doesn't relay nonsense.
         if len(payload.split()) < 2:
             return None
         return RelayCommand(payload=payload, raw_text=text)
+
+    # Named addressees ("ask sage if I can get a heal"). CLOSED
+    # vocabulary: a name outside the configured list never matches.
+    vocabulary = tuple(
+        n.strip().lower() for n in (names or DEFAULT_ADDRESSEE_NAMES)
+        if n and n.strip()
+    )
+    for pattern in _named_patterns(vocabulary):
+        m = pattern.match(cleaned)
+        if m is None:
+            continue
+        payload = (m.group("payload") or "").strip().strip('"').strip()
+        payload = re.sub(r"^to\s+", "", payload, flags=re.IGNORECASE)
+        if len(payload.split()) < 2:
+            return None
+        addressee = " ".join(
+            part.capitalize() for part in m.group("name").split()
+        )
+        return RelayCommand(
+            payload=payload, raw_text=text, addressee=addressee,
+        )
     return None
 
 
 _REPHRASE_PROMPT = (
     "You are Ultron, an AI assistant speaking OUT LOUD into the voice chat "
-    "of your user's online game, addressing the user's teammates on his "
-    "behalf. Convert the user's instruction into the line you say to the "
-    "teammates: address THEM directly in second person, one or two short "
-    "natural spoken sentences, under 35 words, no preamble, no quotation "
-    "marks, no stage directions. Keep Ultron's calm, confident tone.\n\n"
-    "The user's instruction (reported speech): {payload}\n\n"
+    "of your user's online game, on the user's behalf. You are mid-"
+    "conversation with the team, not playing clips: vary your phrasing "
+    "naturally from line to line and never repeat earlier wording. {task}"
+    " Address {addressee} directly in second person{by_name}, one or two "
+    "short natural spoken sentences, under 35 words, no preamble, no "
+    "quotation marks, no stage directions. The line is delivered on the "
+    "user's behalf, so keep first-person statements in first person. Keep "
+    "Ultron's calm, confident tone.\n"
+    "{recent_block}\n"
+    "{payload_block}\n\n"
     "Your spoken line:"
 )
+
+
+def _build_rephrase_prompt(
+    command: RelayCommand,
+    recent_lines: Optional[Sequence[str]] = None,
+) -> str:
+    """Render the rephrase prompt for group / named / compose modes.
+
+    Args:
+        command: the parsed relay instruction.
+        recent_lines: lines Ultron already spoke into the channel this
+            session (most recent last). Included so consecutive callouts
+            read as one conversation and wording never repeats.
+    """
+    if command.addressee != "team":
+        addressee = f"{command.addressee} (one of the user's teammates)"
+        by_name = f", opening with their name ({command.addressee})"
+    else:
+        addressee = "the user's teammates"
+        by_name = ""
+    if command.compose:
+        task = (
+            f"Compose an original line of genuine {command.payload} "
+            "for them -- something brief that lifts the mood."
+        )
+        payload_block = "(No literal message -- you author the line.)"
+    else:
+        task = (
+            "Convert the user's instruction into the line you say to them."
+        )
+        payload_block = (
+            f"The user's instruction (reported speech): {command.payload}"
+        )
+    recent_block = ""
+    if recent_lines:
+        shown = list(recent_lines)[-6:]
+        recent_block = (
+            "\nYou already said these recently (continue the conversation; "
+            "do NOT reuse their wording):\n"
+            + "\n".join(f"- {line}" for line in shown) + "\n"
+        )
+    return _REPHRASE_PROMPT.format(
+        task=task, addressee=addressee, by_name=by_name,
+        payload_block=payload_block, recent_block=recent_block,
+    )
+
+
+def _fallback_line(command: RelayCommand) -> str:
+    """Deterministic spoken line when the LLM rephrase is unavailable."""
+    if command.compose:
+        return "Good fight, team. Heads up - we take the next one."
+    if command.addressee != "team":
+        return f"{command.addressee}: {command.payload}"
+    return f"Team: {command.payload}"
 
 
 def build_relay_line(
@@ -175,6 +345,7 @@ def build_relay_line(
     *,
     rephrase: bool = True,
     max_chars: int = MAX_RELAY_LINE_CHARS,
+    recent_lines: Optional[Sequence[str]] = None,
     generate_fn: Optional[Callable[[str], Iterable[str]]] = None,
 ) -> str:
     """Produce the line Ultron actually speaks to the teammates.
@@ -186,18 +357,23 @@ def build_relay_line(
         rephrase: when False, skip the LLM and use the deterministic
             fallback line.
         max_chars: hard cap on the final spoken line.
+        recent_lines: lines already spoken into the channel this session
+            (most recent last) -- fed to the prompt so wording varies
+            between calls and consecutive callouts read as one
+            conversation, not a soundboard.
         generate_fn: test seam -- a ``prompt -> token iterable`` callable
             used INSTEAD of ``llm.generate_stream`` when provided.
 
     Returns:
         A non-empty spoken line. Fail-open: any LLM failure returns the
-        deterministic "Team: <payload>" fallback rather than raising.
+        deterministic fallback ("Team: <payload>" / "<Name>: <payload>" /
+        a stock encouragement line) rather than raising.
     """
-    fallback = f"Team: {command.payload}"
+    fallback = _fallback_line(command)
     line = ""
     if rephrase:
         try:
-            prompt = _REPHRASE_PROMPT.format(payload=command.payload)
+            prompt = _build_rephrase_prompt(command, recent_lines)
             if generate_fn is not None:
                 tokens: Iterable[str] = generate_fn(prompt)
             elif llm is not None and hasattr(llm, "generate_stream"):

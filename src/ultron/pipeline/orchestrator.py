@@ -1677,6 +1677,27 @@ class Orchestrator:
         self._speak(resp.text or "")
         return True
 
+    def _is_relay_command(self, user_text: str) -> bool:
+        """True iff ``user_text`` is a strict relay command and the relay
+        feature is enabled. Used by the follow-up addressing gate: a
+        relay match is definitionally addressed to Ultron, so it
+        bypasses the zero-shot classifier (no wake word needed inside
+        the window). Fail-open to False."""
+        try:
+            from ultron.audio.relay_speech import match_relay_command
+            from ultron.config import get_config
+
+            cfg = get_config().relay_speech
+            if not getattr(cfg, "enabled", False):
+                return False
+            return match_relay_command(
+                user_text,
+                names=getattr(cfg, "addressee_names", None) or None,
+            ) is not None
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("relay command probe failed: %s", e)
+            return False
+
     def _maybe_handle_relay_speech(self, user_text: str) -> bool:
         """Voice relay -- "tell my teammates X" speaks a rephrased line on
         the configured secondary output device (a VoiceMeeter virtual
@@ -1702,14 +1723,27 @@ class Orchestrator:
             return False
         if not getattr(cfg, "enabled", False):
             return False
-        command = match_relay_command(user_text)
+        command = match_relay_command(
+            user_text, names=getattr(cfg, "addressee_names", None) or None,
+        )
         if command is None:
             return False
+        # Session ring of lines already spoken into the channel: fed to
+        # the rephrase prompt so wording varies between calls (no
+        # soundboard feel) and consecutive callouts read as one
+        # conversation. Created lazily (bare-__new__ test fixtures).
+        ring = getattr(self, "_relay_recent_lines", None)
+        if ring is None:
+            from collections import deque
+
+            ring = deque(maxlen=6)
+            self._relay_recent_lines = ring
         line = build_relay_line(
             command,
             getattr(self, "llm", None),
             rephrase=bool(getattr(cfg, "rephrase", True)),
             max_chars=int(getattr(cfg, "max_line_chars", 280)),
+            recent_lines=list(ring),
         )
         synthesize = getattr(getattr(self, "tts", None), "_synthesize", None)
         if synthesize is None:
@@ -1732,6 +1766,13 @@ class Orchestrator:
         logger.info(
             "relay:spoken | device=%d | seconds=%.2f | chars=%d | line=%r",
             device, seconds, len(line), line[:120],
+        )
+        ring.append(line)
+        # Keep the conversation open: the run-loop relay branch extends
+        # the follow-up window by this much, so consecutive callouts
+        # need no wake word.
+        self._relay_follow_up_seconds = float(
+            getattr(cfg, "follow_up_seconds", 120.0) or 0.0
         )
         if getattr(cfg, "echo_to_user", False):
             self._speak(line)
@@ -3891,32 +3932,47 @@ class Orchestrator:
                 # the *last response*, not from the last sound in the room.
                 if came_from_follow_up:
                     trace.set_phase("addressing")
-                    seconds_since = (
-                        time.monotonic() - self._last_response_finished_monotonic
-                    )
-                    verdict = self.addressing.classify(
-                        user_text, seconds_since_response=seconds_since
-                    )
-                    trace.tlog(
-                        logger, "addressing:verdict",
-                        decision=verdict.decision.value,
-                        source=verdict.source,
-                        conf=float(verdict.confidence or 0.0),
-                        reason=verdict.reason,
-                        seconds_since_response=seconds_since,
-                        text=user_text[:160],
-                    )
-                    if verdict.decision != AddressingDecision.ADDRESSED:
-                        print(
-                            f"  (heard: {user_text!r} -- not for me "
-                            f"[{verdict.source}: {verdict.reason}])"
+                    # Relay commands are DEFINITIONALLY addressed to
+                    # Ultron -- the strict matcher ("tell my team X",
+                    # "ask Clove to Y") cannot fire on room chatter, so
+                    # in the follow-up window they need no wake word and
+                    # must not be lost to a borderline zero-shot verdict
+                    # (observed live: a direct command dropped at
+                    # conf 0.75 vs the 0.80 threshold). Also skips the
+                    # ~190 ms classifier on every relay turn.
+                    if self._is_relay_command(user_text):
+                        print(f"  (follow-up, relay) you: {user_text}")
+                        trace.tlog(
+                            logger, "addressing:relay_override",
+                            text=user_text[:160],
+                        )
+                    else:
+                        seconds_since = (
+                            time.monotonic() - self._last_response_finished_monotonic
+                        )
+                        verdict = self.addressing.classify(
+                            user_text, seconds_since_response=seconds_since
                         )
                         trace.tlog(
-                            logger, "addressing:rejected_follow_up",
+                            logger, "addressing:verdict",
                             decision=verdict.decision.value,
+                            source=verdict.source,
+                            conf=float(verdict.confidence or 0.0),
+                            reason=verdict.reason,
+                            seconds_since_response=seconds_since,
+                            text=user_text[:160],
                         )
-                        continue
-                    print(f"  (follow-up) you: {user_text}")
+                        if verdict.decision != AddressingDecision.ADDRESSED:
+                            print(
+                                f"  (heard: {user_text!r} -- not for me "
+                                f"[{verdict.source}: {verdict.reason}])"
+                            )
+                            trace.tlog(
+                                logger, "addressing:rejected_follow_up",
+                                decision=verdict.decision.value,
+                            )
+                            continue
+                        print(f"  (follow-up) you: {user_text}")
                 else:
                     print(f"  you: {user_text}")
                     trace.tlog(
@@ -4082,9 +4138,20 @@ class Orchestrator:
                     if self._maybe_handle_relay_speech(user_text):
                         self._last_response_finished_monotonic = time.monotonic()
                         if _addr_cfg.follow_up_enabled:
+                            # Relay turns hold the window open LONGER
+                            # (relay_speech.follow_up_seconds) so a whole
+                            # in-game conversation flows without
+                            # re-waking; relay matches inside the window
+                            # bypass the addressing gate entirely.
+                            _relay_ext = float(getattr(
+                                self, "_relay_follow_up_seconds", 0.0,
+                            ) or 0.0)
                             follow_up_until = (
                                 self._last_response_finished_monotonic
-                                + _addr_cfg.warm_mode_duration_seconds
+                                + max(
+                                    _addr_cfg.warm_mode_duration_seconds,
+                                    _relay_ext,
+                                )
                             )
                         else:
                             follow_up_until = None

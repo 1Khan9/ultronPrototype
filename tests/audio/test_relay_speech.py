@@ -76,14 +76,160 @@ def test_match_relay_positive(text: str, expected_payload: str) -> None:
         # Relay verbs without a group addressee.
         "tell her I said hi",
         "say hello",
+        # Names OUTSIDE the closed vocabulary never relay.
+        "tell sarah I'll be late",
+        "ask bob to bring snacks",
         # Matched group but no real payload (clipped transcript).
         "tell my teammates the",
         "tell my teammates",
+        "tell sage the",
         "",
     ],
 )
 def test_match_relay_negative(text: str) -> None:
     assert match_relay_command(text) is None
+
+
+# ---------------------------------------------------------------------------
+# Named addressees + compose mode (the user's callout matrix)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,expected_name,expected_payload",
+    [
+        ("Ask Clove to smoke window every round.", "Clove",
+         "smoke window every round."),
+        ("Tell Sova to drone sewers.", "Sova", "drone sewers."),
+        ("Ask Sage if I can get a heal.", "Sage", "if I can get a heal."),
+        ("tell omen he should smoke A main", "Omen", "he should smoke A main"),
+        ("say nice flash to breach", "Breach", "nice flash"),
+        ("ask viper for a wall on mid", "Viper", "for a wall on mid"),
+    ],
+)
+def test_match_named_addressee(
+    text: str, expected_name: str, expected_payload: str,
+) -> None:
+    cmd = match_relay_command(text)
+    assert cmd is not None, text
+    assert cmd.addressee == expected_name
+    assert cmd.payload == expected_payload
+    assert cmd.compose is False
+
+
+@pytest.mark.parametrize(
+    "text,expected_payload",
+    [
+        ("Tell my team to full buy this round.", "full buy this round."),
+        ("Tell my team to save this round.", "save this round."),
+        ("Tell my team nice try.", "nice try."),
+        ("Tell my team the enemy is coming B.", "the enemy is coming B."),
+        ("Tell my team to go A this round.", "go A this round."),
+        ("Tell my team to play retake.", "play retake."),
+        ("Tell my team I am lurking.", "I am lurking."),
+        (
+            "Tell my team that I am ultron the next step in human evolution.",
+            "I am ultron the next step in human evolution.",
+        ),
+    ],
+)
+def test_match_team_callout_matrix(text: str, expected_payload: str) -> None:
+    cmd = match_relay_command(text)
+    assert cmd is not None, text
+    assert cmd.addressee == "team"
+    assert cmd.payload == expected_payload
+
+
+def test_match_team_rotate_short_payload_needs_two_words() -> None:
+    # "tell my team to rotate" -> payload "rotate" is ONE word; the
+    # two-word floor exists for clipped transcripts, so the canonical
+    # phrasing keeps a qualifier ("rotate now" / "rotate B").
+    assert match_relay_command("tell my team to rotate now") is not None
+    assert match_relay_command("tell my team to rotate B") is not None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Give my team encouragement.",
+        "give my team some encouragement",
+        "Give the team a pep talk.",
+        "encourage my team",
+        "hype up my squad",
+    ],
+)
+def test_match_compose_encouragement(text: str) -> None:
+    cmd = match_relay_command(text)
+    assert cmd is not None, text
+    assert cmd.compose is True
+    assert cmd.addressee == "team"
+    assert cmd.payload == "encouragement"
+
+
+def test_custom_addressee_vocabulary() -> None:
+    cmd = match_relay_command(
+        "tell maverick to watch the door", names=["maverick"],
+    )
+    assert cmd is not None and cmd.addressee == "Maverick"
+    # The custom vocabulary REPLACES the default roster.
+    assert match_relay_command(
+        "tell sova to drone sewers", names=["maverick"],
+    ) is None
+
+
+def test_named_rephrase_prompt_mentions_name() -> None:
+    captured: list[str] = []
+
+    def fake_generate(prompt: str):
+        captured.append(prompt)
+        return iter(["Clove, smoke window every round."])
+
+    cmd = match_relay_command("ask clove to smoke window every round")
+    assert cmd is not None
+    line = build_relay_line(cmd, generate_fn=fake_generate)
+    assert line == "Clove, smoke window every round."
+    assert "Clove" in captured[0]
+    assert "smoke window every round" in captured[0]
+
+
+def test_compose_prompt_has_no_reported_speech() -> None:
+    captured: list[str] = []
+
+    def fake_generate(prompt: str):
+        captured.append(prompt)
+        return iter(["Heads up team, we've got this."])
+
+    cmd = match_relay_command("give my team some encouragement")
+    assert cmd is not None
+    line = build_relay_line(cmd, generate_fn=fake_generate)
+    assert line == "Heads up team, we've got this."
+    assert "encouragement" in captured[0]
+    assert "reported speech" not in captured[0]
+
+
+def test_first_person_instruction_present_in_prompt() -> None:
+    captured: list[str] = []
+    cmd = match_relay_command("tell my team I am lurking this round")
+    assert cmd is not None
+    build_relay_line(
+        cmd, generate_fn=lambda p: captured.append(p) or iter(["x y"]),
+    )
+    assert "first person" in captured[0]
+
+
+def test_named_fallback_line() -> None:
+    cmd = match_relay_command("ask sage if I can get a heal")
+    assert cmd is not None
+    line = build_relay_line(cmd, rephrase=False)
+    assert line == "Sage: if I can get a heal"
+
+
+def test_compose_fallback_line_is_stock_encouragement() -> None:
+    cmd = match_relay_command("encourage my team")
+    assert cmd is not None
+    line = build_relay_line(cmd, rephrase=False)
+    assert line  # stock line, non-empty
+    assert "Team:" not in line
 
 
 # ---------------------------------------------------------------------------
@@ -415,3 +561,80 @@ def test_relay_config_defaults() -> None:
     assert cfg.rephrase is True
     assert cfg.max_line_chars == 280
     assert cfg.echo_to_user is False
+    assert cfg.addressee_names == []
+    assert cfg.follow_up_seconds == 120.0
+
+
+# ---------------------------------------------------------------------------
+# Conversational layer: wording variety + no-wake-word follow-ups
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_includes_recent_lines_and_variety_instruction() -> None:
+    captured: list[str] = []
+    cmd = match_relay_command("tell my team to push A together")
+    assert cmd is not None
+    build_relay_line(
+        cmd,
+        recent_lines=["Rotate B now, team.", "Sage, can I get a heal?"],
+        generate_fn=lambda p: captured.append(p) or iter(["Push A together."]),
+    )
+    prompt = captured[0]
+    assert "Rotate B now, team." in prompt
+    assert "Sage, can I get a heal?" in prompt
+    assert "do NOT reuse their wording" in prompt
+    assert "vary your phrasing" in prompt
+
+
+def test_prompt_recent_lines_capped_at_six() -> None:
+    captured: list[str] = []
+    cmd = match_relay_command("tell my team nice try everyone")
+    assert cmd is not None
+    build_relay_line(
+        cmd,
+        recent_lines=[f"line {i}" for i in range(10)],
+        generate_fn=lambda p: captured.append(p) or iter(["Nice try."]),
+    )
+    prompt = captured[0]
+    assert "line 9" in prompt and "line 4" in prompt
+    assert "line 3" not in prompt
+
+
+def test_orchestrator_relay_records_recent_lines_ring(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import ultron.audio.relay_speech as relay_mod
+
+    o = _bare_orchestrator()
+    o.tts = SimpleNamespace(
+        _synthesize=lambda text: (np.ones(10, dtype=np.int16), 24000),
+    )
+    _patch_config(monkeypatch, _relay_cfg(follow_up_seconds=120.0))
+    monkeypatch.setattr(relay_mod, "resolve_relay_device", lambda c: 25)
+    monkeypatch.setattr(
+        relay_mod, "play_to_device", lambda pcm, sr, device, **kw: 0.1,
+    )
+
+    assert o._maybe_handle_relay_speech("tell them to watch flank") is True
+    assert o._maybe_handle_relay_speech("tell them to push B now") is True
+    assert list(o._relay_recent_lines) == [
+        "Team: watch flank", "Team: push B now",
+    ]
+    assert o._relay_recent_lines.maxlen == 6
+    # The follow-up extension is armed for the run-loop branch.
+    assert o._relay_follow_up_seconds == 120.0
+
+
+def test_is_relay_command_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    o = _bare_orchestrator()
+    _patch_config(monkeypatch, _relay_cfg())
+    assert o._is_relay_command("tell my team to save this round") is True
+    assert o._is_relay_command("ask sage if I can get a heal") is True
+    assert o._is_relay_command("what time is it") is False
+    assert o._is_relay_command("tell me a joke") is False
+
+
+def test_is_relay_command_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    o = _bare_orchestrator()
+    _patch_config(monkeypatch, _relay_cfg(enabled=False))
+    assert o._is_relay_command("tell my team to save this round") is False

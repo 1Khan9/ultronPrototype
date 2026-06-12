@@ -3460,12 +3460,24 @@ class RelaySpeechConfig(_Strict):
     # direct second-person line via the LLM. When False, the relay
     # speaks a deterministic "Team: <payload>" line instead.
     rephrase: bool = True
+    # Named addressees for per-person callouts ("ask Clove to smoke
+    # window", "tell Sova to drone sewers"). Empty -> the built-in
+    # Valorant agent roster
+    # (ultron.audio.relay_speech.DEFAULT_ADDRESSEE_NAMES). A CLOSED
+    # vocabulary: names outside this list never trigger a relay.
+    addressee_names: List[str] = Field(default_factory=list)
     # Hard cap on the final spoken line (one breath of voice chat).
     max_line_chars: int = Field(default=280, ge=40, le=600)
     # Also play the relay line on the user's normal output so they hear
     # what was transmitted (VoiceMeeter monitoring usually covers this,
     # so default off).
     echo_to_user: bool = False
+    # After a relay turn, hold the follow-up listening window open this
+    # long (vs the standard ~30 s warm window) so a whole in-game
+    # conversation flows without re-waking; relay-matched utterances
+    # inside the window bypass the addressing classifier entirely (a
+    # strict relay match is definitionally addressed to Ultron).
+    follow_up_seconds: float = Field(default=120.0, ge=0.0, le=600.0)
 
 
 class UltronConfig(_Strict):

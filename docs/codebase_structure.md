@@ -228,6 +228,14 @@
 > hook at the `_synthesize` tail costs the hot path only a non-blocking
 > queue put; +21 hermetic tests + a session-scoped conftest guard so
 > stubbed-synth unit tests never build the watcher singleton.
+> THEN the relay grew into a CONVERSATIONAL game-chat agent: named
+> agent callouts ("ask Clove to smoke window" — closed Valorant-roster
+> vocabulary, `relay_speech.addressee_names` extendable), compose mode
+> ("give my team encouragement" — Ultron authors the line),
+> first-person-preserving rephrase, recent-lines ring -> wording varies
+> per call (anti-soundboard), relay matches bypass the follow-up
+> addressing gate (no wake word inside the window; fixes the observed
+> 0.75-conf drop) and hold the window open `follow_up_seconds` (120 s).
 > Earlier sweep state: **9156 passed / 35 skipped / 0 failed (~103s)** with the
 > loaded-machine ignore recipe (below); ~9182 no-deselect (now 9199 on an idle
 > machine, no deselect, 2026-06-10 baseline). The +8 skipped vs earlier are
@@ -2965,12 +2973,26 @@ instruction to DELIVER a spoken line into the game voice chat, not a
 conversational prompt (previously it fell through to the LLM and got
 role-played). Driven by `relay_speech` config (default ON).
 
-- `match_relay_command(text) -> Optional[RelayCommand]` — STRICT matcher
-  (run/scrap philosophy): "tell my/the teammate(s)/team/squad/lobby/party
-  X", "say X to my team", "ask the team to/for/if X", "tell them X".
-  "tell me ..." can never match; payloads under two words are rejected
-  (clipped transcripts); a leading "One," STT artifact is stripped only
-  when followed by a relay verb.
+- `match_relay_command(text, *, names) -> Optional[RelayCommand]` —
+  STRICT matcher (run/scrap philosophy): "tell my/the
+  teammate(s)/team/squad/lobby/party X", "say X to my team", "ask the
+  team to/for/if X", "tell them X". "tell me ..." can never match;
+  payloads under two words are rejected (clipped transcripts); a
+  leading "One," STT artifact is stripped only when followed by a relay
+  verb; a leading "to" is dropped from ask-payloads (questions keep
+  if/whether/for). **Named addressees:** "ask Clove to smoke window" /
+  "tell Sova to drone sewers" / "say nice flash to Breach" address ONE
+  teammate by the agent they're playing — a CLOSED vocabulary
+  (`DEFAULT_ADDRESSEE_NAMES` = the Valorant roster, overridable via
+  `relay_speech.addressee_names`), so "tell Sarah I'll be late" never
+  relays; `RelayCommand.addressee` carries the display-cased name and
+  the rephrase prompt opens with it. **Compose mode:** "give my team
+  (some) encouragement / a pep talk" / "encourage my team" / "hype up
+  my squad" sets `RelayCommand.compose=True` — Ultron AUTHORS an
+  original line instead of relaying a literal message. The rephrase
+  prompt also instructs first-person preservation, so "tell my team I
+  am lurking" relays as "I'm lurking" and "tell my team that I am
+  Ultron..." delivers the self-introduction verbatim in spirit.
 - `build_relay_line(command, llm, *, rephrase, max_chars, generate_fn)` —
   converts reported speech into the line Ultron speaks DIRECTLY to the
   teammates (second person, ≤2 short sentences) via a small
@@ -2993,9 +3015,25 @@ role-played). Driven by `relay_speech` config (default ON).
   route that strip to the same B-bus as the microphone (e.g. B2) and set
   the game's input to that bus — teammates hear Ultron through the mic
   channel.
-- Tests: `tests/audio/test_relay_speech.py` (39 — matcher matrix, rephrase
-  fallbacks, fake-stream playback incl. float32 conversion + teardown-on-
-  error, device fail-open, orchestrator wiring via `Orchestrator.__new__`).
+- **Conversational layer:** `build_relay_line(..., recent_lines=...)`
+  feeds the session's last ≤6 spoken relay lines into the prompt with an
+  explicit vary-your-wording instruction (no soundboard feel; consecutive
+  callouts read as one conversation). The orchestrator keeps the ring
+  (`_relay_recent_lines`, deque maxlen 6, lazily created). **No wake word
+  inside the window:** the follow-up addressing gate short-circuits via
+  `Orchestrator._is_relay_command` — a strict relay match is
+  definitionally addressed to Ultron, so it bypasses the zero-shot
+  classifier (fixes the observed 0.75-conf drop; saves ~190 ms) — and
+  relay turns hold the follow-up window open for
+  `relay_speech.follow_up_seconds` (default 120 s vs the ~30 s warm
+  window), so after one "Ultron, …" the whole in-game conversation flows
+  bare: "ask sage for a heal", "tell them nice try", …
+- Tests: `tests/audio/test_relay_speech.py` (73 — matcher matrix incl.
+  the named-agent + compose callout matrix, rephrase fallbacks per mode,
+  recent-lines prompt + cap, the addressing-gate probe, the ring +
+  follow-up arming, fake-stream playback incl. float32 conversion +
+  teardown-on-error, device fail-open, orchestrator wiring via
+  `Orchestrator.__new__`).
 
 #### `audio/ring_buffer.py`
 - `class RingBuffer` — fixed-duration audio backlog (pre-speech window)

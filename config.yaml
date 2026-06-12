@@ -1602,6 +1602,16 @@ relay_speech:
   rephrase: true              # LLM converts reported speech -> direct address
   max_line_chars: 280         # one breath of voice chat
   echo_to_user: false         # also play the line on the normal output
+  # Named callouts ("ask Clove to smoke window", "tell Sova to drone
+  # sewers", "ask Sage if I can get a heal"). Empty list = the built-in
+  # Valorant agent roster; add friend names / other-game callsigns here.
+  # CLOSED vocabulary -- names not listed never trigger a relay.
+  addressee_names: []
+  # After a relay turn the follow-up window stays open this long, and
+  # relay-shaped utterances inside it skip the wake word AND the
+  # addressing classifier -- say "Ultron, tell my team..." once, then
+  # just keep talking: "ask sage for a heal", "tell them nice try", ...
+  follow_up_seconds: 120.0
 
 # ---------------------------------------------------------------------------
 # Evolution (catalog 13) — bounded autonomous self-improvement.
