@@ -14,9 +14,9 @@ from unittest.mock import patch, MagicMock
 import pytest
 import requests
 
-from ultron.resilience import CircuitOpenError, CircuitState
-from ultron.web_search.brave import BraveSearchClient
-from ultron.web_search import brave as brave_mod
+from kenning.resilience import CircuitOpenError, CircuitState
+from kenning.web_search.brave import BraveSearchClient
+from kenning.web_search import brave as brave_mod
 
 
 def _make_client():
@@ -198,7 +198,7 @@ def test_brave_circuit_half_open_failure_reopens(errors_log):
     breaker._opened_at = time.monotonic() - breaker.cooldown_seconds - 1
     assert breaker.state == CircuitState.HALF_OPEN
 
-    from ultron.errors import BraveAPIError
+    from kenning.errors import BraveAPIError
 
     def _failing():
         raise BraveAPIError("probe failure")

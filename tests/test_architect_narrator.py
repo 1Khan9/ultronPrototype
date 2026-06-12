@@ -11,7 +11,7 @@ from typing import List
 
 import pytest
 
-from ultron.coding.architect_narrator import (
+from kenning.coding.architect_narrator import (
     ArchitectNarrator,
     NarrationResult,
     narrate_plan,

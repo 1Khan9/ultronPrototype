@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.addressing.classifier import (
+from kenning.addressing.classifier import (
     AddressingClassifier, AddressingDecision,
 )
 

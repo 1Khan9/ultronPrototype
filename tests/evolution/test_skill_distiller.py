@@ -1,10 +1,10 @@
-"""Tests for ultron.evolution.skill_distiller -- the local autoDistill
+"""Tests for kenning.evolution.skill_distiller -- the local autoDistill
 pipeline. Hermetic: pure data; the one filesystem test uses tmp_path."""
 
 from __future__ import annotations
 
-from ultron.evolution import skill_distiller as D
-from ultron.evolution.models import (
+from kenning.evolution import skill_distiller as D
+from kenning.evolution.models import (
     DISTILLED_ID_PREFIX,
     REPAIR_DISTILLED_ID_PREFIX,
     Capsule,
@@ -284,10 +284,10 @@ def test_auto_distill_from_failures_end_to_end():
     assert result.proposal is not None
 
 
-def test_generated_skill_loads_via_ultron_loader(tmp_path):
+def test_generated_skill_loads_via_kenning_loader(tmp_path):
     """The headline integration test: a distilled proposal's markdown must
-    be loadable by ultron's real skill loader."""
-    from ultron.skills.loader import load_skill_from_path
+    be loadable by kenning's real skill loader."""
+    from kenning.skills.loader import load_skill_from_path
 
     result = D.auto_distill(_successes(10))
     assert result.ok and result.proposal is not None

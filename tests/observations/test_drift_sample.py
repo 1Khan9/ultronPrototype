@@ -18,7 +18,7 @@ from typing import Iterator
 
 import pytest
 
-from ultron.observations import (
+from kenning.observations import (
     ObservationWriter,
     get_observation_writer,
     observe_llm_thinking_drift_sample,

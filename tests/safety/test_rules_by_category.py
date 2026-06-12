@@ -15,34 +15,34 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.safety import (
+from kenning.safety import (
     Policy,
     RuleContext,
     ToolCallValidator,
     Verdict,
 )
-from ultron.safety.audit import AuditLog
-from ultron.safety.policy import load_policy
-from ultron.safety.rules.cap_carveouts import build_capability_rules
-from ultron.safety.rules.category_a import build_category_a_rules
-from ultron.safety.rules.category_b import build_category_b_rules
-from ultron.safety.rules.category_c import build_category_c_rules
-from ultron.safety.rules.category_d import build_category_d_rules
-from ultron.safety.rules.category_e import build_category_e_rules
-from ultron.safety.rules.category_f import build_category_f_rules
-from ultron.safety.rules.category_g import build_category_g_rules
-from ultron.safety.rules.category_h import build_category_h_rules
-from ultron.safety.rules.category_i import build_category_i_rules
-from ultron.safety.rules.category_j import build_category_j_rules
-from ultron.safety.rules.category_k import build_category_k_rules
-from ultron.safety.rules.category_m import build_category_m_rules
-from ultron.safety.rules.category_n import build_category_n_rules
-from ultron.safety.rules.category_o import build_category_o_rules
-from ultron.safety.rules.category_p import build_category_p_rules
-from ultron.safety.rules.category_q import build_category_q_rules
-from ultron.safety.rules.category_r import build_category_r_rules
-from ultron.safety.rules.category_s import build_category_s_rules
-from ultron.safety.validator import build_validator_from_config
+from kenning.safety.audit import AuditLog
+from kenning.safety.policy import load_policy
+from kenning.safety.rules.cap_carveouts import build_capability_rules
+from kenning.safety.rules.category_a import build_category_a_rules
+from kenning.safety.rules.category_b import build_category_b_rules
+from kenning.safety.rules.category_c import build_category_c_rules
+from kenning.safety.rules.category_d import build_category_d_rules
+from kenning.safety.rules.category_e import build_category_e_rules
+from kenning.safety.rules.category_f import build_category_f_rules
+from kenning.safety.rules.category_g import build_category_g_rules
+from kenning.safety.rules.category_h import build_category_h_rules
+from kenning.safety.rules.category_i import build_category_i_rules
+from kenning.safety.rules.category_j import build_category_j_rules
+from kenning.safety.rules.category_k import build_category_k_rules
+from kenning.safety.rules.category_m import build_category_m_rules
+from kenning.safety.rules.category_n import build_category_n_rules
+from kenning.safety.rules.category_o import build_category_o_rules
+from kenning.safety.rules.category_p import build_category_p_rules
+from kenning.safety.rules.category_q import build_category_q_rules
+from kenning.safety.rules.category_r import build_category_r_rules
+from kenning.safety.rules.category_s import build_category_s_rules
+from kenning.safety.validator import build_validator_from_config
 
 
 def _validator_for_rules(rules, *, tmp_path):
@@ -62,7 +62,7 @@ def _shell(command):
 
 def _write_file(path):
     """Build a RuleContext for a synthetic file-write tool call."""
-    from ultron.safety.path_resolver import get_path_resolver
+    from kenning.safety.path_resolver import get_path_resolver
     resolver = get_path_resolver()
     try:
         canonical = resolver.resolve(path)
@@ -185,7 +185,7 @@ def test_d1_blocks_ssh_private_key_read(tmp_path):
         paths=(),
     )
     # Add path manually since path_resolver may fail on the literal.
-    from ultron.safety.path_resolver import get_path_resolver
+    from kenning.safety.path_resolver import get_path_resolver
     resolver = get_path_resolver()
     try:
         p = resolver.resolve("/Users/alice/.ssh/id_rsa")
@@ -292,7 +292,7 @@ def test_k1_blocks_config_yaml_write(tmp_path):
 
 def test_k2_blocks_xtts_reference_audio_write(tmp_path):
     v = _validator_for_rules(build_category_k_rules(), tmp_path=tmp_path)
-    r = v.check(_write_file("ultronVoiceAudio/Ultron_vocals_mono_v1.wav"))
+    r = v.check(_write_file("kenningVoiceAudio/Kenning_vocals_mono_v1.wav"))
     assert r.verdict == Verdict.BLOCK_HARD
 
 
@@ -301,7 +301,7 @@ def test_k2_blocks_xtts_reference_audio_write_new_location(tmp_path):
     # the 2026-06-11 disk cleaning; the protection must follow it.
     v = _validator_for_rules(build_category_k_rules(), tmp_path=tmp_path)
     r = v.check(_write_file(
-        "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav"
+        "kenningVoiceAudio/kokoro training audio/Kenning_vocals_mono_v1.wav"
     ))
     assert r.verdict == Verdict.BLOCK_HARD
 
@@ -328,7 +328,7 @@ def test_k9_blocks_powershell_profile_write(tmp_path):
         capability="openclaw_dispatcher",
         paths=(),
     )
-    from ultron.safety.path_resolver import get_path_resolver
+    from kenning.safety.path_resolver import get_path_resolver
     resolver = get_path_resolver()
     p = resolver.resolve("C:/Users/alice/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1")
     ctx = RuleContext(

@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from ultron.tts.text_hygiene import sanitize_spoken_text
+from kenning.tts.text_hygiene import sanitize_spoken_text
 
 
 @pytest.mark.parametrize(
@@ -39,7 +39,7 @@ def test_sanitize_spoken_text(raw: str, expected: str) -> None:
 def test_kokoro_synthesize_skips_unspeakable_text() -> None:
     """The engine returns a zero clip (no model call) for inputs that
     are entirely stage direction / control tokens."""
-    from ultron.tts.kokoro_engine import KokoroSpeech
+    from kenning.tts.kokoro_engine import KokoroSpeech
 
     engine = KokoroSpeech.__new__(KokoroSpeech)
     engine._sample_rate = 24000

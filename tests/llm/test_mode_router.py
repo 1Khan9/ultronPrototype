@@ -1,11 +1,11 @@
-"""Tests for ultron.llm.mode_router."""
+"""Tests for kenning.llm.mode_router."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.agent_loop.mode import Mode
-from ultron.llm import mode_router as mr
+from kenning.agent_loop.mode import Mode
+from kenning.llm import mode_router as mr
 
 
 class FakeEngine:

@@ -51,7 +51,7 @@ This module has zero hard dependencies on an LLM SDK — it's a
 prompt-shape utility. Callers (a future Anthropic / litellm /
 DeepSeek HTTP client) pick which serializer they want.
 
-When no HTTP LLM with prompt caching is wired into ultron yet
+When no HTTP LLM with prompt caching is wired into kenning yet
 (2026-05-22 state: only the CLI bridge), the local-LLM path can
 still use :func:`to_plain_messages` to flatten the chunks for
 ``llama-cpp-python`` — the KV cache there benefits from stable
@@ -273,7 +273,7 @@ def count_cacheable_chars(
     """Character count of the cacheable prefix.
 
     For visibility: callers can log "warming N chars" before firing a
-    keepalive ping (see :mod:`ultron.llm.cache_warmer`). Tokens are
+    keepalive ping (see :mod:`kenning.llm.cache_warmer`). Tokens are
     a more accurate metric but require a tokenizer; characters are a
     cheap proxy at ~4 chars/token for English.
     """

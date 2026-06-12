@@ -1,4 +1,4 @@
-"""Tests for ultron.rules.conditionals."""
+"""Tests for kenning.rules.conditionals."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.rules import conditionals as cc
+from kenning.rules import conditionals as cc
 
 
 def _write_rule(path: Path, frontmatter: str, body: str = "rule body text") -> Path:

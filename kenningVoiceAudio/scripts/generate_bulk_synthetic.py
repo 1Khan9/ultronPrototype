@@ -1,7 +1,7 @@
 """XTTS v2 bulk synthetic-data generation.
 
 Phase B of the Kokoro fine-tune pipeline. Reads ``corpus.json``,
-synthesises every entry through XTTS v2 using the cleaned Ultron
+synthesises every entry through XTTS v2 using the cleaned Kenning
 reference audio, and emits:
 
     - One audio WAV per entry under ``synth_audio/<id>.wav``
@@ -20,7 +20,7 @@ write error) are logged to ``generation_log.jsonl`` with status
 failed entries so downstream Kokoro training never sees broken audio.
 
 Run:
-    python C:/STC/ultronPrototype/ultronVoiceAudio/scripts/generate_bulk_synthetic.py
+    python C:/STC/ultronPrototype/kenningVoiceAudio/scripts/generate_bulk_synthetic.py
 """
 
 from __future__ import annotations
@@ -34,13 +34,13 @@ from typing import Any, Optional
 
 # Workaround for Windows env vars pointing at non-existent D:\
 HERE = Path(__file__).resolve().parent
-PROJECT = HERE.parent  # C:/STC/ultronPrototype/ultronVoiceAudio
+PROJECT = HERE.parent  # C:/STC/ultronPrototype/kenningVoiceAudio
 os.environ["TORCH_HOME"] = str(PROJECT / ".torch_cache")
 os.environ["HF_HOME"] = str(PROJECT / ".hf_cache")
 os.environ["TRANSFORMERS_CACHE"] = str(PROJECT / ".hf_cache")
 os.environ["COQUI_TOS_AGREED"] = "1"
 
-REFERENCE_WAV = PROJECT / "kokoro training audio" / "Ultron_vocals_mono_v1.wav"
+REFERENCE_WAV = PROJECT / "kokoro training audio" / "Kenning_vocals_mono_v1.wav"
 CORPUS_JSON = HERE / "corpus.json"
 OUTPUT_DIR = PROJECT / "synth_audio"
 MANIFEST_CSV = PROJECT / "manifest.csv"

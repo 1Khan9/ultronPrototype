@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.openclaw_routing.classifier import classify_routing
-from ultron.openclaw_routing.intents import RoutingIntentKind
+from kenning.openclaw_routing.classifier import classify_routing
+from kenning.openclaw_routing.intents import RoutingIntentKind
 
 
 # ---------------------------------------------------------------------------
@@ -166,13 +166,13 @@ def test_active_coding_task_does_not_block_model_switch() -> None:
 
 
 def test_resolve_model_switch_target_canonical() -> None:
-    from ultron.openclaw_routing.classifier import _resolve_model_switch_target
+    from kenning.openclaw_routing.classifier import _resolve_model_switch_target
     assert _resolve_model_switch_target("4B") == "josiefied-qwen3-4b"
     assert _resolve_model_switch_target("9B") == "qwen3.5-9b"
 
 
 def test_resolve_model_switch_target_variants() -> None:
-    from ultron.openclaw_routing.classifier import _resolve_model_switch_target
+    from kenning.openclaw_routing.classifier import _resolve_model_switch_target
     assert _resolve_model_switch_target("four B") == "josiefied-qwen3-4b"
     assert _resolve_model_switch_target("for B") == "josiefied-qwen3-4b"
     assert _resolve_model_switch_target("nine B") == "qwen3.5-9b"
@@ -181,7 +181,7 @@ def test_resolve_model_switch_target_variants() -> None:
 
 
 def test_resolve_model_switch_target_unknown_raises() -> None:
-    from ultron.openclaw_routing.classifier import _resolve_model_switch_target
+    from kenning.openclaw_routing.classifier import _resolve_model_switch_target
     with pytest.raises(ValueError):
         _resolve_model_switch_target("XYZ")
 
@@ -240,7 +240,7 @@ def test_classifier_routes_llama_utterance_to_model_switch(
 
 
 def test_resolve_model_switch_target_gemma_and_llama() -> None:
-    from ultron.openclaw_routing.classifier import _resolve_model_switch_target
+    from kenning.openclaw_routing.classifier import _resolve_model_switch_target
     assert _resolve_model_switch_target("gemma") == "gemma-3-4b-abliterated"
     assert _resolve_model_switch_target("Gemma 3") == "gemma-3-4b-abliterated"
     assert _resolve_model_switch_target("llama") == "llama-3.2-3b-abliterated"

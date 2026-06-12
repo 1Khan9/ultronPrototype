@@ -13,8 +13,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.openclaw_routing.dispatcher import OpenClawDispatcher
-from ultron.openclaw_routing.intents import (
+from kenning.openclaw_routing.dispatcher import OpenClawDispatcher
+from kenning.openclaw_routing.intents import (
     BrowserIntent,
     FileOpIntent,
     MediaGenIntent,
@@ -173,8 +173,8 @@ def test_validator_exception_falls_open() -> None:
 def test_voice_controller_threads_llm_to_dispatcher(tmp_path) -> None:
     """``CapabilityVoiceController.handle_capability_intent`` must build
     the dispatcher with its ``llm_engine`` so the validator can run."""
-    from ultron.coding.voice import CapabilityVoiceController
-    from ultron.openclaw_routing.intents import (
+    from kenning.coding.voice import CapabilityVoiceController
+    from kenning.openclaw_routing.intents import (
         BrowserIntent, RoutingIntent, RoutingIntentKind,
     )
 

@@ -1,10 +1,10 @@
-"""Tests for ultron.evolution.personality -- adaptive response temperament.
+"""Tests for kenning.evolution.personality -- adaptive response temperament.
 All hermetic."""
 
 from __future__ import annotations
 
-from ultron.evolution.models import PersonalityState
-from ultron.evolution.personality import (
+from kenning.evolution.models import PersonalityState
+from kenning.evolution.personality import (
     PersonalityFeedback,
     PersonalityTuner,
     apply_temperament,

@@ -4,7 +4,7 @@ Catalog 10 batch 5 (T8 YELLOW). Mirrors the catalog's named-session
 model: each session gets its own daemon, socket, PID, and browser
 instance, isolated from every other session. The upstream ships
 this as a ``--session NAME`` argument on every CLI call; this
-module is the ultron-side orchestration layer that:
+module is the kenning-side orchestration layer that:
 
 * validates session names against an allowlist (alphanumeric +
   underscore + hyphen, 1-32 chars) so a name can never become a
@@ -13,7 +13,7 @@ module is the ultron-side orchestration layer that:
   (``browser.use.max_sessions``, default 3) so unbounded session
   creation cannot exhaust system memory;
 * registers each session's lifecycle in
-  :class:`ultron.subprocess.process_registry.ProcessRegistry` so
+  :class:`kenning.subprocess.process_registry.ProcessRegistry` so
   ZombieKiller + orchestrator shutdown reap stale daemons cleanly;
 * gates ``close_all`` behind two-phase approval (closing every
   session at once is destructive across whatever auth state the
@@ -32,7 +32,7 @@ Per the catalog 10 + security review skip list:
 
 * ``--cdp-url`` external URL argument is BLOCKED -- this manager
   never emits it. Connecting to an attacker-supplied CDP URL is an
-  exfiltration vector with no legitimate ultron use case.
+  exfiltration vector with no legitimate kenning use case.
 * ``BROWSER_USE_SESSION`` env var is scrubbed by the underlying
   :class:`BrowserUseTool` so session selection is always explicit.
 """
@@ -44,27 +44,27 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from ultron.desktop.browser_use import (
+from kenning.desktop.browser_use import (
     BrowserUseResult,
     BrowserUseTool,
     _is_valid_session_name,
 )
-from ultron.safety.two_phase_approval import (
+from kenning.safety.two_phase_approval import (
     ApprovalRegistry,
     ApprovalRequest,
     get_approval_registry,
 )
-from ultron.safety.validator import (
+from kenning.safety.validator import (
     RuleContext,
     Verdict,
     get_validator,
 )
-from ultron.subprocess.kill_tree import kill_process_tree
-from ultron.subprocess.process_registry import (
+from kenning.subprocess.kill_tree import kill_process_tree
+from kenning.subprocess.process_registry import (
     ProcessRegistry,
     get_process_registry,
 )
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.browser_sessions")
 
@@ -88,7 +88,7 @@ _TOOL_NAME_PREFIX: str = "desktop.browser_use.session"
 # operation that requires two-phase approval at this layer).
 BROWSER_SESSION_APPROVAL_KIND: str = "browser_use_close_all_sessions"
 BROWSER_SESSION_REASON_CODE: str = (
-    "ultron.suspicious.browser_close_all_sessions"
+    "kenning.suspicious.browser_close_all_sessions"
 )
 
 

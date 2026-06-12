@@ -45,7 +45,7 @@ CapabilityVoiceController.handle_capability_intent(intent)
 
 ## Key types
 
-[src/ultron/openclaw_routing/intents.py](../src/ultron/openclaw_routing/intents.py):
+[src/kenning/openclaw_routing/intents.py](../src/kenning/openclaw_routing/intents.py):
 
 | Type | Purpose |
 |---|---|
@@ -58,10 +58,10 @@ CapabilityVoiceController.handle_capability_intent(intent)
 
 ## Public API
 
-[src/ultron/openclaw_routing/](../src/ultron/openclaw_routing/):
+[src/kenning/openclaw_routing/](../src/kenning/openclaw_routing/):
 
 ```python
-from ultron.openclaw_routing import (
+from kenning.openclaw_routing import (
     classify_routing,        # main classifier
     OpenClawDispatcher,      # stubbed dispatch surface
     AutomationTaskRunner,    # stubbed-but-functional task runner mirror
@@ -76,7 +76,7 @@ from ultron.openclaw_routing import (
 
 ## Classifier
 
-[src/ultron/openclaw_routing/classifier.py](../src/ultron/openclaw_routing/classifier.py)
+[src/kenning/openclaw_routing/classifier.py](../src/kenning/openclaw_routing/classifier.py)
 
 Rule-based with explicit signal patterns per category. Order:
 
@@ -104,19 +104,19 @@ Signal examples (full lists in classifier.py):
 
 ## OpenClawDispatcher
 
-[src/ultron/openclaw_routing/dispatcher.py](../src/ultron/openclaw_routing/dispatcher.py)
+[src/kenning/openclaw_routing/dispatcher.py](../src/kenning/openclaw_routing/dispatcher.py)
 
 Five handler methods (`handle_browser`, `handle_media_generation`,
 `handle_messaging`, `handle_file_operation`, `handle_shell_operation`).
 Phase 5 returns stubs; the OpenClaw integration prompt replaces each
 stub body with real Gateway calls.
 
-Stub voice messages stay in Ultron's voice — verified by
-[tests/routing/test_dispatcher.py::test_voice_messages_in_ultron_voice](../tests/routing/test_dispatcher.py).
+Stub voice messages stay in Kenning's voice — verified by
+[tests/routing/test_dispatcher.py::test_voice_messages_in_kenning_voice](../tests/routing/test_dispatcher.py).
 
 ## AutomationTaskRunner
 
-[src/ultron/openclaw_routing/runner.py](../src/ultron/openclaw_routing/runner.py)
+[src/kenning/openclaw_routing/runner.py](../src/kenning/openclaw_routing/runner.py)
 
 Mirror of `CodingTaskRunner`: `submit_task` / `progress_narration` /
 `completion_narration` / `cancel` / `list_active`. In Phase 5 every task
@@ -130,7 +130,7 @@ Audit log: [logs/automation_tasks.jsonl](../logs/automation_tasks.jsonl)
 
 ## HybridTaskDecomposer
 
-[src/ultron/openclaw_routing/decomposer.py](../src/ultron/openclaw_routing/decomposer.py)
+[src/kenning/openclaw_routing/decomposer.py](../src/kenning/openclaw_routing/decomposer.py)
 
 Calls the local LLM with a JSON-output prompt; expects:
 
@@ -155,7 +155,7 @@ Disabled by `config.routing.hybrid_task_decomposition_enabled = false`
 
 ## IntentDisambiguator
 
-[src/ultron/openclaw_routing/disambiguator.py](../src/ultron/openclaw_routing/disambiguator.py)
+[src/kenning/openclaw_routing/disambiguator.py](../src/kenning/openclaw_routing/disambiguator.py)
 
 Two-shot LLM call: "Is this CODING / AUTOMATION / HYBRID / UNCLEAR?".
 Token budget: ~50 tokens output. On UNCLEAR the disambiguator returns
@@ -167,7 +167,7 @@ clarifying question.
 
 ## RoutingDecisionLog
 
-[src/ultron/openclaw_routing/decision_log.py](../src/ultron/openclaw_routing/decision_log.py)
+[src/kenning/openclaw_routing/decision_log.py](../src/kenning/openclaw_routing/decision_log.py)
 
 Append-only JSONL writer to
 `config.routing.routing_log_path` (default `logs/routing_decisions.jsonl`).
@@ -194,7 +194,7 @@ Best-effort writes — never raises. Singleton via `get_routing_log()`.
 
 ## CapabilityVoiceController (renamed from CodingVoiceController)
 
-[src/ultron/coding/voice.py](../src/ultron/coding/voice.py)
+[src/kenning/coding/voice.py](../src/kenning/coding/voice.py)
 
 The coding voice controller was renamed to `CapabilityVoiceController`
 in Phase 5 because it now dispatches across capabilities, not just
@@ -236,7 +236,7 @@ openclaw:
   health_check_timeout_seconds: 30.0
   health_check_interval_seconds: 60.0
   fail_open: true                     # unreachable → in-character stub, not hard error
-  required_agent_id: "ultron"
+  required_agent_id: "kenning"
 ```
 
 ## Tests
@@ -246,7 +246,7 @@ openclaw:
 | File | Coverage |
 |---|---|
 | [test_classifier.py](../tests/routing/test_classifier.py) | 90 tests: 20 BROWSER, 10 each of MEDIA / MESSAGING / FILE / SHELL / HYBRID / CONVERSATIONAL / CODE_TASK + edge cases |
-| [test_dispatcher.py](../tests/routing/test_dispatcher.py) | per-stub correctness, Ultron-voice consistency, classify→dispatch round trip |
+| [test_dispatcher.py](../tests/routing/test_dispatcher.py) | per-stub correctness, Kenning-voice consistency, classify→dispatch round trip |
 | [test_decomposer.py](../tests/routing/test_decomposer.py) | well-formed JSON, fenced JSON, thinking blocks, malformed fallback, exception fallback, sort order, disabled-via-config |
 | [test_disambiguator.py](../tests/routing/test_disambiguator.py) | clean verdicts, UNCLEAR with/without question, garbage fallback, exception fallback, disabled-via-config, 15 ambiguous round-trip cases |
 | [test_decision_log.py](../tests/routing/test_decision_log.py) | append, subtasks, truncation, extra-merge, error-swallowing, singleton |
@@ -256,11 +256,11 @@ openclaw:
 
 The Phase A foundation reserved an `"openclaw"` branch in
 `build_default_bridge` that pointed at a never-built
-`ultron.coding.openclaw_bridge` module. Phase 5 removed the reservation
+`kenning.coding.openclaw_bridge` module. Phase 5 removed the reservation
 because OpenClaw is a peer dispatcher under the new architecture, not a
 coding-bridge alternative. References in
-[bridge.py](../src/ultron/coding/bridge.py) and
-[direct_bridge.py](../src/ultron/coding/direct_bridge.py) docstrings
+[bridge.py](../src/kenning/coding/bridge.py) and
+[direct_bridge.py](../src/kenning/coding/direct_bridge.py) docstrings
 were updated to reflect the new shape.
 
 ## Out of scope for Phase 5

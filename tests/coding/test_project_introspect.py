@@ -1,4 +1,4 @@
-"""Tests for ultron.coding.project_introspect."""
+"""Tests for kenning.coding.project_introspect."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.project_introspect import (
+from kenning.coding.project_introspect import (
     ENTRY_POINT_FILENAMES,
     LANGUAGE_BY_EXT,
     MARKER_FILES,
@@ -273,7 +273,7 @@ def test_skip_directories_includes_common_caches() -> None:
 
 def test_invalidate_for_file_drops_matching_project(python_project: Path) -> None:
     """A file path inside a cached project invalidates that project."""
-    from ultron.coding.project_introspect import invalidate_snapshot_cache_for_file
+    from kenning.coding.project_introspect import invalidate_snapshot_cache_for_file
 
     # Populate the cache.
     snap_a = snapshot(python_project)
@@ -298,7 +298,7 @@ def test_invalidate_for_file_does_nothing_when_no_match(
     distinct ``tmp_path_factory`` directory for the unrelated file
     to ensure the path is not a descendant of the cached project.
     """
-    from ultron.coding.project_introspect import (
+    from kenning.coding.project_introspect import (
         invalidate_snapshot_cache,
         invalidate_snapshot_cache_for_file,
     )
@@ -320,14 +320,14 @@ def test_invalidate_for_file_does_nothing_when_no_match(
 
 
 def test_invalidate_for_file_empty_string_returns_zero() -> None:
-    from ultron.coding.project_introspect import invalidate_snapshot_cache_for_file
+    from kenning.coding.project_introspect import invalidate_snapshot_cache_for_file
 
     assert invalidate_snapshot_cache_for_file("") == 0
 
 
 def test_invalidate_for_file_handles_resolution_failure(python_project: Path) -> None:
     """Path.resolve() can fail on Windows for missing files; fall back to normpath."""
-    from ultron.coding.project_introspect import invalidate_snapshot_cache_for_file
+    from kenning.coding.project_introspect import invalidate_snapshot_cache_for_file
 
     snapshot(python_project)
     # A "deleted file" path that doesn't exist on disk -- caller comes
@@ -341,8 +341,8 @@ def test_invalidate_for_file_handles_resolution_failure(python_project: Path) ->
 
 def test_install_bus_invalidator_idempotent(python_project: Path) -> None:
     """Multiple installs return the same unsubscribe handle."""
-    from ultron.bus import reset_bus_for_testing
-    from ultron.coding.project_introspect import (
+    from kenning.bus import reset_bus_for_testing
+    from kenning.coding.project_introspect import (
         install_bus_invalidator,
         reset_bus_invalidator_for_testing,
     )
@@ -359,12 +359,12 @@ def test_install_bus_invalidator_idempotent(python_project: Path) -> None:
 
 def test_install_bus_invalidator_invalidates_on_event(python_project: Path) -> None:
     """A CodingFileChangedEvent triggers cache invalidation."""
-    from ultron.bus import (
+    from kenning.bus import (
         CodingFileChangedEvent,
         publish,
         reset_bus_for_testing,
     )
-    from ultron.coding.project_introspect import (
+    from kenning.coding.project_introspect import (
         install_bus_invalidator,
         reset_bus_invalidator_for_testing,
     )
@@ -398,12 +398,12 @@ def test_install_bus_invalidator_swallows_payload_errors(
     python_project: Path, caplog,
 ) -> None:
     """A malformed payload (no file_path key) doesn't crash the subscriber."""
-    from ultron.bus import (
+    from kenning.bus import (
         CodingFileChangedEvent,
         publish,
         reset_bus_for_testing,
     )
-    from ultron.coding.project_introspect import (
+    from kenning.coding.project_introspect import (
         install_bus_invalidator,
         reset_bus_invalidator_for_testing,
     )
@@ -431,8 +431,8 @@ def test_invalidate_snapshot_cache_then_install_still_works(
     python_project: Path,
 ) -> None:
     """Calling reset_bus_invalidator_for_testing then re-installing works."""
-    from ultron.bus import reset_bus_for_testing
-    from ultron.coding.project_introspect import (
+    from kenning.bus import reset_bus_for_testing
+    from kenning.coding.project_introspect import (
         install_bus_invalidator,
         reset_bus_invalidator_for_testing,
     )

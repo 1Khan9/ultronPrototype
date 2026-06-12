@@ -17,10 +17,10 @@ import time
 from dataclasses import dataclass
 from typing import Callable, List, Mapping, Optional
 
-from ultron.config import get_config
-from ultron.errors import BraveAPIError
-from ultron.resilience import CircuitBreaker, CircuitOpenError, get_error_log
-from ultron.utils.logging import get_logger
+from kenning.config import get_config
+from kenning.errors import BraveAPIError
+from kenning.resilience import CircuitBreaker, CircuitOpenError, get_error_log
+from kenning.utils.logging import get_logger
 
 
 #: Callback shape passed by the chain so each request's response
@@ -95,7 +95,7 @@ class BraveSearchClient:
         self.api_key = api_key or os.getenv(cfg.brave_api_key_env, "")
         if not self.api_key:
             raise ValueError(
-                "Brave API key missing. Set ULTRON_BRAVE_API_KEY in your env "
+                "Brave API key missing. Set KENNING_BRAVE_API_KEY in your env "
                 "or pass api_key=... to BraveSearchClient."
             )
         self.endpoint = endpoint if endpoint is not None else cfg.brave.endpoint
@@ -287,7 +287,7 @@ def resolve_brave_api_keys(cfg=None) -> List[str]:
     """
     if cfg is None:
         cfg = get_config().web_search
-    env_names: List[str] = [getattr(cfg, "brave_api_key_env", "ULTRON_BRAVE_API_KEY")]
+    env_names: List[str] = [getattr(cfg, "brave_api_key_env", "KENNING_BRAVE_API_KEY")]
     env_names.extend(getattr(cfg, "brave_additional_api_key_envs", []) or [])
     keys: List[str] = []
     seen = set()
@@ -305,9 +305,9 @@ class RotatingBraveClient:
     """Multi-key Brave client that rotates across API keys (T6).
 
     Built by the search chain only when two or more Brave keys are
-    configured. Each key becomes an :class:`~ultron.providers.AuthProfile`
+    configured. Each key becomes an :class:`~kenning.providers.AuthProfile`
     under provider ``"brave_search"``; :meth:`search` runs the request through
-    :func:`~ultron.providers.execute_with_rotation`, so a rate-limited (429)
+    :func:`~kenning.providers.execute_with_rotation`, so a rate-limited (429)
     key is cooled down and the next key is tried before the request gives up.
     A key returning auth errors (401/403) is disabled for the session.
 
@@ -331,7 +331,7 @@ class RotatingBraveClient:
     ) -> None:
         if not keys:
             raise ValueError("RotatingBraveClient requires at least one API key")
-        from ultron.providers.auth_profiles import AuthProfile, get_profile_store
+        from kenning.providers.auth_profiles import AuthProfile, get_profile_store
 
         self._provider = provider
         self._store = store or get_profile_store()
@@ -367,7 +367,7 @@ class RotatingBraveClient:
             count = get_config().web_search.brave.count
 
         try:
-            from ultron.providers.rotation import (
+            from kenning.providers.rotation import (
                 RotationOutcome,
                 execute_with_rotation,
             )

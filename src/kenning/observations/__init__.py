@@ -1,6 +1,6 @@
 """Canonical observation framework.
 
-Every meaningful action in Ultron emits one row to ``data/observations.jsonl``
+Every meaningful action in Kenning emits one row to ``data/observations.jsonl``
 via :class:`ObservationWriter`. The row format is intentionally narrow and
 shared across subsystems so cross-cutting analysis (eval harness, latency
 audits, learning loops) reads a single file instead of joining N specialised

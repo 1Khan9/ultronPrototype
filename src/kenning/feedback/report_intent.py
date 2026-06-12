@@ -1,14 +1,14 @@
 """Voice-intent matcher for "log a concern" / "report that response".
 
 Catalog openclaw-clawhub T12 wiring (deferred-primitive pass). The
-:class:`ultron.feedback.report_queue.ReportQueue` primitive shipped
+:class:`kenning.feedback.report_queue.ReportQueue` primitive shipped
 unwired; this module is the orchestrator-side trigger that turns a
-spoken meta-command ("ultron, flag that last answer", "log a concern
+spoken meta-command ("kenning, flag that last answer", "log a concern
 that the response was wrong") into a filed :class:`Report`.
 
 It is a strict regex matcher, NOT an LLM classifier -- it short-
 circuits in the orchestrator run loop the same way
-:func:`ultron.local_clock_reply.maybe_local_clock_reply` does, so a
+:func:`kenning.local_clock_reply.maybe_local_clock_reply` does, so a
 report command never burns an LLM round-trip. Strictness matters: a
 normal request that merely contains the word "report" ("give me a
 report on the weather") must NOT trip the gate, so every pattern
@@ -28,7 +28,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from ultron.feedback.report_queue import ReportTargetKind
+from kenning.feedback.report_queue import ReportTargetKind
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +37,7 @@ from ultron.feedback.report_queue import ReportTargetKind
 
 
 # A reference to the assistant's own recent output. Used as a shared
-# fragment so every trigger pattern is anchored to "the thing ultron
+# fragment so every trigger pattern is anchored to "the thing kenning
 # just said" rather than an arbitrary noun.
 _OUTPUT_NOUN = r"(?:response|answer|reply|that|it)"
 

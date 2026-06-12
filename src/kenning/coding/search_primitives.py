@@ -21,7 +21,7 @@ Three search primitives:
 
 Backend: prefers ``ripgrep`` when on PATH (5-10x faster than grep,
 respects ``.gitignore`` by default); falls back to a pure-Python
-walk that's still acceptable for ultron's typical ~600-file tree
+walk that's still acceptable for kenning's typical ~600-file tree
 (<100 ms uncached).
 
 Tiered cap escalation hint (creative extension from the catalog):
@@ -60,7 +60,7 @@ DEFAULT_FILE_SEARCH_CAP: int = 100
 DEFAULT_TIERED_CAPS: tuple[int, ...] = (5, 25, 100)
 
 #: Directories the search NEVER recurses into. Mirrors SWE-Agent's
-#: ``find ... ! -path '*/.*'`` plus ultron-specific build/cache
+#: ``find ... ! -path '*/.*'`` plus kenning-specific build/cache
 #: noise.
 DEFAULT_SKIP_DIRECTORIES: frozenset[str] = frozenset(
     {

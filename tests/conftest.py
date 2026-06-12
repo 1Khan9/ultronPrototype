@@ -21,7 +21,7 @@ Two safeguards live here:
 
 We never kill processes outside our own descendant tree, never kill
 non-python processes, and never kill a process that has an open TCP
-listener on the Ultron MCP port (19761) -- that's the live orchestrator.
+listener on the Kenning MCP port (19761) -- that's the live orchestrator.
 """
 
 from __future__ import annotations
@@ -45,14 +45,14 @@ sys.path.insert(0, str(ROOT / "src"))
 # runs and adding spurious IO to the test sweep.
 #
 # Tests that specifically want to observe an emit can override the
-# singleton via :func:`ultron.observations.set_observation_writer`.
+# singleton via :func:`kenning.observations.set_observation_writer`.
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture(autouse=True, scope="session")
 def _disable_observation_io_for_tests():
     try:
-        from ultron.observations import (
+        from kenning.observations import (
             ObservationWriter,
             set_observation_writer,
         )
@@ -85,7 +85,7 @@ def _disable_observation_io_for_tests():
 @pytest.fixture(autouse=True, scope="session")
 def _disable_tts_output_watcher_for_tests():
     try:
-        from ultron.audio.output_quality import set_output_watcher_enabled
+        from kenning.audio.output_quality import set_output_watcher_enabled
     except Exception:
         yield
         return
@@ -111,7 +111,7 @@ def _disable_tts_output_watcher_for_tests():
 @pytest.fixture(autouse=True, scope="session")
 def _ignore_anticheat_config_pin_for_tests():
     try:
-        from ultron.safety.anticheat import set_config_pin_enabled
+        from kenning.safety.anticheat import set_config_pin_enabled
     except Exception:
         yield
         return
@@ -127,7 +127,7 @@ def _ignore_anticheat_config_pin_for_tests():
 # ---------------------------------------------------------------------------
 
 
-_ULTRON_MCP_PORT = 19761
+_KENNING_MCP_PORT = 19761
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +199,7 @@ def pytest_configure(config):  # noqa: ARG001
 def _kill_test_descendants() -> None:
     """Terminate any python subprocesses descended from this pytest run.
 
-    Skips the live Ultron orchestrator (the process listening on the
+    Skips the live Kenning orchestrator (the process listening on the
     MCP port) and its ancestors / descendants. Best-effort: anything
     we can't enumerate, terminate, or kill is silently ignored.
     """
@@ -212,13 +212,13 @@ def _kill_test_descendants() -> None:
     except Exception:
         return
 
-    # Build the protected set: any process tied to the running Ultron.
+    # Build the protected set: any process tied to the running Kenning.
     preserved: set[int] = set()
     try:
         for conn in psutil.net_connections(kind="tcp"):
             if (
                 conn.laddr
-                and conn.laddr.port == _ULTRON_MCP_PORT
+                and conn.laddr.port == _KENNING_MCP_PORT
                 and conn.status == "LISTEN"
                 and conn.pid
             ):

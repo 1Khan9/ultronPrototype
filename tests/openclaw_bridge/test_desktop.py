@@ -14,8 +14,8 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 
-from ultron.errors import OpenClawToolError
-from ultron.openclaw_bridge.desktop import (
+from kenning.errors import OpenClawToolError
+from kenning.openclaw_bridge.desktop import (
     DesktopScreenshotResult,
     DesktopTool,
     FindWindowResult,
@@ -170,7 +170,7 @@ def test_desktop_reads_raw_not_payload():
     ToolInvocationResult.raw field. A genuine ToolInvocationResult (which has
     NO payload attribute) must parse correctly; the old code read .payload and
     silently returned empty results for every bridge desktop call."""
-    from ultron.openclaw_bridge.client import ToolInvocationResult
+    from kenning.openclaw_bridge.client import ToolInvocationResult
 
     class _RealResultClient:
         async def invoke_tool(self, tool_name, params, *, agent_id=None, timeout_s=None):

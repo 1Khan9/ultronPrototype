@@ -1,4 +1,4 @@
-"""Tests for ultron.observations.safe_capture."""
+"""Tests for kenning.observations.safe_capture."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from ultron.observations import safe_capture as sc
+from kenning.observations import safe_capture as sc
 
 
 @pytest.fixture(autouse=True)
@@ -69,7 +69,7 @@ class TestSafeCapture:
     def test_log_traceback_flag(self, caplog: pytest.LogCaptureFixture) -> None:
         def boom() -> None:
             raise ValueError("fail-with-traceback")
-        with caplog.at_level("WARNING", logger="ultron.observations.safe_capture"):
+        with caplog.at_level("WARNING", logger="kenning.observations.safe_capture"):
             sc.safe_capture(boom, error_context="test", log_traceback=True)
         # The log line should mention ValueError.
         assert any("ValueError" in rec.getMessage() for rec in caplog.records)

@@ -1,7 +1,7 @@
 """Phase 5 — capability routing layer.
 
 Sits between the orchestrator's voice path and the existing
-:mod:`ultron.coding` runner. Classifies user utterances into:
+:mod:`kenning.coding` runner. Classifies user utterances into:
 
   * coding intents (delegated to the existing coding intent classifier)
   * conversational (default voice path)
@@ -23,7 +23,7 @@ Public API:
   * :class:`RoutingDecisionLog` — JSONL writer for audit
 """
 
-from ultron.openclaw_routing.intents import (
+from kenning.openclaw_routing.intents import (
     AutomationIntent,
     BrowserIntent,
     DispatchResult,
@@ -36,19 +36,19 @@ from ultron.openclaw_routing.intents import (
     ShellOpIntent,
     TaskInfo,
 )
-from ultron.openclaw_routing.classifier import classify_routing
-from ultron.openclaw_routing.decision_log import (
+from kenning.openclaw_routing.classifier import classify_routing
+from kenning.openclaw_routing.decision_log import (
     RoutingDecisionLog,
     get_routing_log,
     set_routing_log,
 )
-from ultron.openclaw_routing.decomposer import HybridTaskDecomposer
-from ultron.openclaw_routing.disambiguator import (
+from kenning.openclaw_routing.decomposer import HybridTaskDecomposer
+from kenning.openclaw_routing.disambiguator import (
     DisambiguationResult,
     IntentDisambiguator,
 )
-from ultron.openclaw_routing.dispatcher import OpenClawDispatcher
-from ultron.openclaw_routing.runner import AutomationTaskRunner
+from kenning.openclaw_routing.dispatcher import OpenClawDispatcher
+from kenning.openclaw_routing.runner import AutomationTaskRunner
 
 __all__ = [
     "AutomationIntent",

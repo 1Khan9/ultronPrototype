@@ -1,12 +1,12 @@
 """Trust scan for skills loaded from UNTRUSTED sources.
 
 A skill's markdown body is injected verbatim into the LLM system prompt,
-so a hostile ``.md`` dropped into ``~/.ultron/skills``, a project's
-``.ultron/skills``, or the autonomous ``data/evolution/skills`` directory
+so a hostile ``.md`` dropped into ``~/.kenning/skills``, a project's
+``.kenning/skills``, or the autonomous ``data/evolution/skills`` directory
 is a prompt-injection / instruction-override vector. This module flags such
-skills so :func:`ultron.skills.loader.load_skills_from_directory` can
+skills so :func:`kenning.skills.loader.load_skills_from_directory` can
 QUARANTINE them (skip + log) before they ever become active. PUBLIC
-(ultron-shipped) skills are trusted and never scanned.
+(kenning-shipped) skills are trusted and never scanned.
 
 Two checks:
 
@@ -16,7 +16,7 @@ Two checks:
   description. These are the bytes that would manipulate the model.
 * **companion-code scan** -- if the skill's directory carries ``.py``
   files (a code-bundled skill), the install-time
-  :func:`ultron.install.static_scanner.scan_install_directory` runs and any
+  :func:`kenning.install.static_scanner.scan_install_directory` runs and any
   CRITICAL finding is folded in.
 
 Fail-open at the edges: an unexpected scanner error is treated as a WARN
@@ -41,7 +41,7 @@ CRITICAL = "critical"
 
 # Chat-template / control markers that have no business in a knowledge
 # skill body. Mirrors the marker set neutralised by
-# ``ultron.llm.inference._sanitize_user_input`` for user utterances.
+# ``kenning.llm.inference._sanitize_user_input`` for user utterances.
 _TAG_MARKERS: tuple[str, ...] = (
     "[inst]",
     "[/inst]",
@@ -146,7 +146,7 @@ def _scan_companion_code(directory: Path) -> list[str]:
     if not has_python:
         return []
     try:
-        from ultron.install.static_scanner import scan_install_directory
+        from kenning.install.static_scanner import scan_install_directory
 
         report = scan_install_directory(directory)
     except Exception as exc:  # noqa: BLE001 -- fail-open
@@ -162,7 +162,7 @@ def _scan_companion_code(directory: Path) -> list[str]:
 
 
 def scan_skill(skill: object) -> SkillScanResult:
-    """Scan a built :class:`ultron.skills.models.Skill` (content + any
+    """Scan a built :class:`kenning.skills.models.Skill` (content + any
     companion code in its directory).
 
     Returns a CRITICAL result (``ok=False``) on detection. A scanner error

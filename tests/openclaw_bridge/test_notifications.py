@@ -1,4 +1,4 @@
-"""Tests for ``ultron.openclaw_bridge.notifications.NotificationDispatcher``."""
+"""Tests for ``kenning.openclaw_bridge.notifications.NotificationDispatcher``."""
 
 from __future__ import annotations
 
@@ -7,13 +7,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from ultron.config import (
+from kenning.config import (
     NotificationsConfig,
     TelegramNotificationsConfig,
     TelegramNotifyOnConfig,
 )
-from ultron.openclaw_bridge.client import SendMessageResult
-from ultron.openclaw_bridge.notifications import (
+from kenning.openclaw_bridge.client import SendMessageResult
+from kenning.openclaw_bridge.notifications import (
     NotificationDispatcher,
     NotificationResult,
 )

@@ -14,7 +14,7 @@ from typing import Iterator
 
 import pytest
 
-from ultron.observations import (
+from kenning.observations import (
     Observation,
     ObservationWriter,
     get_observation_writer,
@@ -78,7 +78,7 @@ def test_observe_routing_verdict_emits_one_row(capturing_writer: ObservationWrit
 
 def test_observe_addressing_verdict_emits_one_row(capturing_writer: ObservationWriter) -> None:
     event_id = observe_addressing_verdict(
-        utterance="ultron, open chrome",
+        utterance="kenning, open chrome",
         decision="ADDRESSED",
         confidence=0.95,
         reason="direct address by name",
@@ -175,7 +175,7 @@ def test_helpers_return_none_when_writer_disabled(tmp_path: Path) -> None:
 
 
 def test_classify_routing_emits_observation(capturing_writer: ObservationWriter) -> None:
-    from ultron.openclaw_routing.classifier import classify_routing
+    from kenning.openclaw_routing.classifier import classify_routing
 
     intent = classify_routing("tell me a joke")
     assert intent.kind.value == "conversational"
@@ -192,9 +192,9 @@ def test_classify_routing_emits_observation(capturing_writer: ObservationWriter)
 def test_classify_routing_emits_intent_kind_for_different_inputs(
     capturing_writer: ObservationWriter,
 ) -> None:
-    from ultron.openclaw_routing.classifier import classify_routing
+    from kenning.openclaw_routing.classifier import classify_routing
 
-    classify_routing("ultron, write me a python script")
+    classify_routing("kenning, write me a python script")
     classify_routing("how is the project going", has_active_coding_task=True)
     classify_routing("open youtube on my second monitor")
 
@@ -210,15 +210,15 @@ def test_addressing_classifier_emits_observation(
 ) -> None:
     """Even with the rule-classifier path (no zero-shot load), the emit
     should fire via ``AddressingClassifier._log``."""
-    from ultron.addressing.classifier import AddressingClassifier
-    from ultron.addressing.zero_shot import ZeroShotAddresseeModel
+    from kenning.addressing.classifier import AddressingClassifier
+    from kenning.addressing.zero_shot import ZeroShotAddresseeModel
 
     # Don't load the zero-shot model -- not needed for a rule hit.
     monkeypatch.setattr(
         ZeroShotAddresseeModel, "_ensure_loaded", lambda self: None
     )
     clf = AddressingClassifier(load_zero_shot_eagerly=False, log_path=None)
-    verdict = clf.classify("ultron, what time is it")
+    verdict = clf.classify("kenning, what time is it")
     assert verdict.decision.value == "ADDRESSED"
 
     rows = _read_rows(capturing_writer)
@@ -237,7 +237,7 @@ def test_conversation_memory_retrieve_emits_empty_query_observation(
     # Use a minimal stub of ConversationMemory: we only exercise the
     # public retrieve() wrapper, which short-circuits on empty input
     # before any Qdrant code runs.
-    from ultron.memory.qdrant_store import ConversationMemory
+    from kenning.memory.qdrant_store import ConversationMemory
 
     # Construct without going through __init__ to avoid needing Qdrant.
     mem = ConversationMemory.__new__(ConversationMemory)

@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.llm.self_consistency import (
+from kenning.llm.self_consistency import (
     ConsistencyResult,
     majority_vote_json,
     majority_vote_label,
@@ -275,14 +275,14 @@ def cfg_mock():
 def test_decomposer_default_off_uses_single_llm_call(cfg_mock) -> None:
     """Self-consistency OFF (default) ⇒ one llm.generate call per
     decompose. Back-compat guarantee."""
-    from ultron.openclaw_routing.decomposer import HybridTaskDecomposer
+    from kenning.openclaw_routing.decomposer import HybridTaskDecomposer
 
     llm = MagicMock()
     llm.generate.return_value = (
         '{"subtasks": [{"order": 1, "type": "coding", "description": "x"}]}'
     )
     d = HybridTaskDecomposer(llm)
-    with patch("ultron.openclaw_routing.decomposer.get_config", return_value=cfg_mock):
+    with patch("kenning.openclaw_routing.decomposer.get_config", return_value=cfg_mock):
         result = asyncio.new_event_loop().run_until_complete(d.decompose("u"))
 
     assert llm.generate.call_count == 1
@@ -294,14 +294,14 @@ def test_decomposer_self_consistency_on_calls_n_times(cfg_mock) -> None:
     cfg_mock.llm.self_consistency.enabled = True
     cfg_mock.llm.self_consistency.n = 3
 
-    from ultron.openclaw_routing.decomposer import HybridTaskDecomposer
+    from kenning.openclaw_routing.decomposer import HybridTaskDecomposer
 
     llm = MagicMock()
     # All three samples agree
     payload = '{"subtasks": [{"order": 1, "type": "coding", "description": "x"}]}'
     llm.generate.return_value = payload
     d = HybridTaskDecomposer(llm)
-    with patch("ultron.openclaw_routing.decomposer.get_config", return_value=cfg_mock):
+    with patch("kenning.openclaw_routing.decomposer.get_config", return_value=cfg_mock):
         result = asyncio.new_event_loop().run_until_complete(d.decompose("u"))
 
     assert llm.generate.call_count == 3
@@ -314,14 +314,14 @@ def test_decomposer_self_consistency_majority_wins(cfg_mock) -> None:
     cfg_mock.llm.self_consistency.enabled = True
     cfg_mock.llm.self_consistency.n = 3
 
-    from ultron.openclaw_routing.decomposer import HybridTaskDecomposer
+    from kenning.openclaw_routing.decomposer import HybridTaskDecomposer
 
     llm = MagicMock()
     plan_a = '{"subtasks": [{"order": 1, "type": "coding", "description": "alpha"}]}'
     plan_b = '{"subtasks": [{"order": 1, "type": "automation", "description": "beta"}]}'
     llm.generate.side_effect = [plan_a, plan_a, plan_b]
     d = HybridTaskDecomposer(llm)
-    with patch("ultron.openclaw_routing.decomposer.get_config", return_value=cfg_mock):
+    with patch("kenning.openclaw_routing.decomposer.get_config", return_value=cfg_mock):
         result = asyncio.new_event_loop().run_until_complete(d.decompose("u"))
 
     assert llm.generate.call_count == 3
@@ -336,14 +336,14 @@ def test_decomposer_self_consistency_per_site_disabled(cfg_mock) -> None:
     cfg_mock.llm.self_consistency.enabled = True
     cfg_mock.llm.self_consistency.disabled_sites = ["decomposer"]
 
-    from ultron.openclaw_routing.decomposer import HybridTaskDecomposer
+    from kenning.openclaw_routing.decomposer import HybridTaskDecomposer
 
     llm = MagicMock()
     llm.generate.return_value = (
         '{"subtasks": [{"order": 1, "type": "coding", "description": "x"}]}'
     )
     d = HybridTaskDecomposer(llm)
-    with patch("ultron.openclaw_routing.decomposer.get_config", return_value=cfg_mock):
+    with patch("kenning.openclaw_routing.decomposer.get_config", return_value=cfg_mock):
         asyncio.new_event_loop().run_until_complete(d.decompose("u"))
 
     assert llm.generate.call_count == 1  # back to single call
@@ -352,12 +352,12 @@ def test_decomposer_self_consistency_per_site_disabled(cfg_mock) -> None:
 def test_decomposer_self_consistency_all_unparseable_falls_back(cfg_mock) -> None:
     cfg_mock.llm.self_consistency.enabled = True
 
-    from ultron.openclaw_routing.decomposer import HybridTaskDecomposer
+    from kenning.openclaw_routing.decomposer import HybridTaskDecomposer
 
     llm = MagicMock()
     llm.generate.return_value = "not JSON at all"
     d = HybridTaskDecomposer(llm)
-    with patch("ultron.openclaw_routing.decomposer.get_config", return_value=cfg_mock):
+    with patch("kenning.openclaw_routing.decomposer.get_config", return_value=cfg_mock):
         result = asyncio.new_event_loop().run_until_complete(d.decompose("the original utterance"))
 
     # Falls back to coding-only with the original utterance

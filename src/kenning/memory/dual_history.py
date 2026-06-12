@@ -1,7 +1,7 @@
 """Dual-array history primitive: verbatim record + LLM-compactable history.
 
 Adapted from cline's ``MessageStateHandler`` pattern (Apache 2.0; see
-``THIRD_PARTY_NOTICES.md``). Ultron's variant promotes the cline
+``THIRD_PARTY_NOTICES.md``). Kenning's variant promotes the cline
 shape from a per-task store to a per-session primitive that any
 caller — voice, coding, supervisor — can use:
 

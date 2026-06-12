@@ -48,9 +48,9 @@ WRITE_RETRY_TIER_2: int = 2
 WRITE_RETRY_TIER_3: int = 3
 
 #: Default reusable boilerplate hint appended to several errors so the
-#: LLM is reminded how Ultron's tool-call protocol expects parameters.
+#: LLM is reminded how Kenning's tool-call protocol expects parameters.
 TOOL_USE_REMINDER: str = (
-    "Reminder: ultron expects each tool call to carry every required "
+    "Reminder: kenning expects each tool call to carry every required "
     "parameter named in its schema. Re-issue the call with the missing "
     "field included."
 )
@@ -244,7 +244,7 @@ def permission_denied_error(reason: str) -> str:
 # ---------------------------------------------------------------------------
 
 def ignore_path_error(path: str) -> str:
-    """The path is blocked by ``.ultronignore`` policy.
+    """The path is blocked by ``.kenningignore`` policy.
 
     Args:
         path: workspace-relative or absolute path that was blocked.
@@ -254,7 +254,7 @@ def ignore_path_error(path: str) -> str:
         alternative or user confirmation.
     """
     return (
-        "Access denied: that path is blocked by the user's .ultronignore "
+        "Access denied: that path is blocked by the user's .kenningignore "
         "rules.\n"
         f"<path>{path}</path>\n"
         "Pick a different file or ask the user to update their ignore list."
@@ -563,7 +563,7 @@ def file_context_warning(edited_files: Sequence[str]) -> str:
 
     Args:
         edited_files: list of relative paths that were modified outside
-            Ultron since the last read.
+            Kenning since the last read.
 
     Returns:
         LLM-facing ``<explicit_instructions>`` block forcing a re-read.
@@ -574,7 +574,7 @@ def file_context_warning(edited_files: Sequence[str]) -> str:
     return (
         "<explicit_instructions>\n"
         f"CRITICAL: {len(edited_files)} file(s) were modified outside of "
-        "Ultron since you last read them. Re-read each before any further "
+        "Kenning since you last read them. Re-read each before any further "
         "edit; cached content is stale.\n"
         f"{lines}\n"
         "After you read a file once, you do not need to re-read it again "
@@ -611,7 +611,7 @@ def loop_hard_escalation(signature: str, count: int) -> str:
         stuck.
     """
     return (
-        f"Ultron has repeated '{signature}' {count} times without making "
+        f"Kenning has repeated '{signature}' {count} times without making "
         "progress and stopped automatically. Tell me what you want to do "
         "differently."
     )
@@ -802,7 +802,7 @@ def voice_gaming_mode_locked_voice(action: str) -> str:
 
 
 def voice_clarify_voice(question: str) -> str:
-    """Wrap a clarifying question in the canonical Ultron cadence."""
+    """Wrap a clarifying question in the canonical Kenning cadence."""
     return question.strip().rstrip("?") + "?"
 
 

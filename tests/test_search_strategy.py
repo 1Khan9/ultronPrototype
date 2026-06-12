@@ -7,7 +7,7 @@ Pure-function coverage of the strategy-line helper, the optional
 
 from __future__ import annotations
 
-from ultron.web_search.search import (
+from kenning.web_search.search import (
     SearchPayload,
     SearchSource,
     _format_strategy_line,

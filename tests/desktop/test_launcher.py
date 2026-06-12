@@ -1,4 +1,4 @@
-"""Tests for ultron.desktop.launcher.
+"""Tests for kenning.desktop.launcher.
 
 These avoid actually spawning processes -- subprocess.Popen is patched
 out and the safety validator is mocked. The real-Chrome integration
@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.desktop.launcher import (
+from kenning.desktop.launcher import (
     AppEntry,
     AppLauncher,
     LaunchResult,
@@ -23,7 +23,7 @@ from ultron.desktop.launcher import (
     get_app_launcher,
     set_app_launcher,
 )
-from ultron.desktop.monitors import Monitor
+from kenning.desktop.monitors import Monitor
 
 
 def _mon(idx=0) -> Monitor:
@@ -123,12 +123,12 @@ def test_resolve_chrome_picks_first_existing(tmp_path):
 
 
 def _allow_all_validator():
-    from ultron.safety.validator import ValidatorVerdict, Verdict
+    from kenning.safety.validator import ValidatorVerdict, Verdict
     return ValidatorVerdict(verdict=Verdict.ALLOW, reason="test allow-all")
 
 
 def _block_validator(reason="test block"):
-    from ultron.safety.validator import ValidatorVerdict, Verdict
+    from kenning.safety.validator import ValidatorVerdict, Verdict
     return ValidatorVerdict(
         verdict=Verdict.BLOCK_HARD, reason=reason,
         triggered_rule_id="test", user_message=f"refused: {reason}",
@@ -158,7 +158,7 @@ def test_launch_app_validator_block_short_circuits(tmp_path, monkeypatch):
         AppEntry(name="fake", candidate_paths=[real]),
     ])
     monkeypatch.setattr(
-        "ultron.desktop.launcher._validate_launch",
+        "kenning.desktop.launcher._validate_launch",
         lambda *a, **kw: _block_validator("blocked by test rule"),
     )
     spawned = []
@@ -179,7 +179,7 @@ def test_launch_app_spawn_failure_returns_failure(tmp_path, monkeypatch):
         AppEntry(name="fake", candidate_paths=[real]),
     ])
     monkeypatch.setattr(
-        "ultron.desktop.launcher._validate_launch",
+        "kenning.desktop.launcher._validate_launch",
         lambda *a, **kw: _allow_all_validator(),
     )
     def boom(*a, **kw):
@@ -197,7 +197,7 @@ def test_launch_app_success_no_window_wait(tmp_path, monkeypatch):
         AppEntry(name="fake", candidate_paths=[real], process_name="harmless.exe"),
     ])
     monkeypatch.setattr(
-        "ultron.desktop.launcher._validate_launch",
+        "kenning.desktop.launcher._validate_launch",
         lambda *a, **kw: _allow_all_validator(),
     )
     fake_proc = MagicMock(pid=12345)
@@ -223,13 +223,13 @@ def test_launch_app_window_appears_and_moves_to_monitor(tmp_path, monkeypatch):
         poll_interval_seconds=0.01,
     )
     monkeypatch.setattr(
-        "ultron.desktop.launcher._validate_launch",
+        "kenning.desktop.launcher._validate_launch",
         lambda *a, **kw: _allow_all_validator(),
     )
     monkeypatch.setattr("subprocess.Popen", lambda *a, **kw: MagicMock(pid=12345))
 
     # Initially no harmless.exe windows; after one poll, one appears.
-    from ultron.desktop.windows import WindowInfo
+    from kenning.desktop.windows import WindowInfo
     call_counter = {"n": 0}
 
     def fake_enum_windows(**kwargs):
@@ -244,18 +244,18 @@ def test_launch_app_window_appears_and_moves_to_monitor(tmp_path, monkeypatch):
         )]
 
     monkeypatch.setattr(
-        "ultron.desktop.launcher.enumerate_windows", fake_enum_windows,
+        "kenning.desktop.launcher.enumerate_windows", fake_enum_windows,
     )
     placement_called = []
     monkeypatch.setattr(
-        "ultron.desktop.launcher.move_window_to_monitor",
+        "kenning.desktop.launcher.move_window_to_monitor",
         lambda hwnd, monitor, **kw: placement_called.append((hwnd, monitor, kw))
-        or __import__("ultron.desktop.placement", fromlist=["PlacementResult"])
+        or __import__("kenning.desktop.placement", fromlist=["PlacementResult"])
             .PlacementResult(success=True, hwnd=hwnd, monitor_index=monitor.index),
     )
     focused = []
     monkeypatch.setattr(
-        "ultron.desktop.launcher.focus_window",
+        "kenning.desktop.launcher.focus_window",
         lambda hwnd: focused.append(hwnd),
     )
 
@@ -283,15 +283,15 @@ def test_launch_app_window_doesnt_appear_within_timeout(tmp_path, monkeypatch):
         window_wait_seconds=0.1, poll_interval_seconds=0.02,
     )
     monkeypatch.setattr(
-        "ultron.desktop.launcher._validate_launch",
+        "kenning.desktop.launcher._validate_launch",
         lambda *a, **kw: _allow_all_validator(),
     )
     monkeypatch.setattr("subprocess.Popen", lambda *a, **kw: MagicMock(pid=1))
     monkeypatch.setattr(
-        "ultron.desktop.launcher.enumerate_windows", lambda **kw: [],
+        "kenning.desktop.launcher.enumerate_windows", lambda **kw: [],
     )
     monkeypatch.setattr(
-        "ultron.desktop.launcher.focus_window",
+        "kenning.desktop.launcher.focus_window",
         lambda hwnd: pytest.fail("focus must not run on window timeout"),
     )
     r = launcher.launch_app("fake", monitor=_mon(), wait_for_window=True)
@@ -311,12 +311,12 @@ def test_launch_app_focuses_unplaced_window(tmp_path, monkeypatch):
         window_wait_seconds=1.0, poll_interval_seconds=0.01,
     )
     monkeypatch.setattr(
-        "ultron.desktop.launcher._validate_launch",
+        "kenning.desktop.launcher._validate_launch",
         lambda *a, **kw: _allow_all_validator(),
     )
     monkeypatch.setattr("subprocess.Popen", lambda *a, **kw: MagicMock(pid=7))
 
-    from ultron.desktop.windows import WindowInfo
+    from kenning.desktop.windows import WindowInfo
     calls = {"n": 0}
 
     def fake_enum_windows(**kwargs):
@@ -330,11 +330,11 @@ def test_launch_app_focuses_unplaced_window(tmp_path, monkeypatch):
         )]
 
     monkeypatch.setattr(
-        "ultron.desktop.launcher.enumerate_windows", fake_enum_windows,
+        "kenning.desktop.launcher.enumerate_windows", fake_enum_windows,
     )
     focused = []
     monkeypatch.setattr(
-        "ultron.desktop.launcher.focus_window",
+        "kenning.desktop.launcher.focus_window",
         lambda hwnd: focused.append(hwnd),
     )
     r = launcher.launch_app("fake", monitor=None, wait_for_window=True)
@@ -354,12 +354,12 @@ def test_launch_app_focus_failure_is_fail_open(tmp_path, monkeypatch):
         window_wait_seconds=1.0, poll_interval_seconds=0.01,
     )
     monkeypatch.setattr(
-        "ultron.desktop.launcher._validate_launch",
+        "kenning.desktop.launcher._validate_launch",
         lambda *a, **kw: _allow_all_validator(),
     )
     monkeypatch.setattr("subprocess.Popen", lambda *a, **kw: MagicMock(pid=7))
 
-    from ultron.desktop.windows import WindowInfo
+    from kenning.desktop.windows import WindowInfo
     calls = {"n": 0}
 
     def fake_enum_windows(**kwargs):
@@ -373,18 +373,18 @@ def test_launch_app_focus_failure_is_fail_open(tmp_path, monkeypatch):
         )]
 
     monkeypatch.setattr(
-        "ultron.desktop.launcher.enumerate_windows", fake_enum_windows,
+        "kenning.desktop.launcher.enumerate_windows", fake_enum_windows,
     )
 
     def boom_focus(hwnd):
         raise RuntimeError("anticheat engaged mid-launch")
 
-    monkeypatch.setattr("ultron.desktop.launcher.focus_window", boom_focus)
+    monkeypatch.setattr("kenning.desktop.launcher.focus_window", boom_focus)
     placement_mod = __import__(
-        "ultron.desktop.placement", fromlist=["PlacementResult"]
+        "kenning.desktop.placement", fromlist=["PlacementResult"]
     )
     monkeypatch.setattr(
-        "ultron.desktop.launcher.move_window_to_monitor",
+        "kenning.desktop.launcher.move_window_to_monitor",
         lambda hwnd, monitor, **kw: placement_mod.PlacementResult(
             success=True, hwnd=hwnd, monitor_index=monitor.index,
         ),
@@ -408,12 +408,12 @@ def test_launch_app_focus_called_even_when_placement_fails(
         window_wait_seconds=1.0, poll_interval_seconds=0.01,
     )
     monkeypatch.setattr(
-        "ultron.desktop.launcher._validate_launch",
+        "kenning.desktop.launcher._validate_launch",
         lambda *a, **kw: _allow_all_validator(),
     )
     monkeypatch.setattr("subprocess.Popen", lambda *a, **kw: MagicMock(pid=7))
 
-    from ultron.desktop.windows import WindowInfo
+    from kenning.desktop.windows import WindowInfo
     calls = {"n": 0}
 
     def fake_enum_windows(**kwargs):
@@ -427,20 +427,20 @@ def test_launch_app_focus_called_even_when_placement_fails(
         )]
 
     monkeypatch.setattr(
-        "ultron.desktop.launcher.enumerate_windows", fake_enum_windows,
+        "kenning.desktop.launcher.enumerate_windows", fake_enum_windows,
     )
     placement_mod = __import__(
-        "ultron.desktop.placement", fromlist=["PlacementResult"]
+        "kenning.desktop.placement", fromlist=["PlacementResult"]
     )
     monkeypatch.setattr(
-        "ultron.desktop.launcher.move_window_to_monitor",
+        "kenning.desktop.launcher.move_window_to_monitor",
         lambda hwnd, monitor, **kw: placement_mod.PlacementResult(
             success=False, hwnd=hwnd, error="move failed",
         ),
     )
     focused = []
     monkeypatch.setattr(
-        "ultron.desktop.launcher.focus_window",
+        "kenning.desktop.launcher.focus_window",
         lambda hwnd: focused.append(hwnd),
     )
     r = launcher.launch_app("fake", monitor=_mon(), wait_for_window=True)
@@ -478,11 +478,11 @@ def test_launch_chrome_passes_new_window_and_url(monkeypatch, tmp_path):
         window_wait_seconds=0.1, poll_interval_seconds=0.02,
     )
     monkeypatch.setattr(
-        "ultron.desktop.launcher._validate_launch",
+        "kenning.desktop.launcher._validate_launch",
         lambda *a, **kw: _allow_all_validator(),
     )
     monkeypatch.setattr(
-        "ultron.desktop.launcher.enumerate_windows", lambda **kw: [],
+        "kenning.desktop.launcher.enumerate_windows", lambda **kw: [],
     )
     spawned: list = []
     monkeypatch.setattr(
@@ -512,11 +512,11 @@ def test_launch_chrome_no_user_data_dir_or_debug_flags(monkeypatch, tmp_path):
         window_wait_seconds=0.05, poll_interval_seconds=0.02,
     )
     monkeypatch.setattr(
-        "ultron.desktop.launcher._validate_launch",
+        "kenning.desktop.launcher._validate_launch",
         lambda *a, **kw: _allow_all_validator(),
     )
     monkeypatch.setattr(
-        "ultron.desktop.launcher.enumerate_windows", lambda **kw: [],
+        "kenning.desktop.launcher.enumerate_windows", lambda **kw: [],
     )
     spawned = []
     monkeypatch.setattr(
@@ -544,11 +544,11 @@ def test_open_image_search_builds_google_images_url(monkeypatch, tmp_path):
         window_wait_seconds=0.05, poll_interval_seconds=0.02,
     )
     monkeypatch.setattr(
-        "ultron.desktop.launcher._validate_launch",
+        "kenning.desktop.launcher._validate_launch",
         lambda *a, **kw: _allow_all_validator(),
     )
     monkeypatch.setattr(
-        "ultron.desktop.launcher.enumerate_windows", lambda **kw: [],
+        "kenning.desktop.launcher.enumerate_windows", lambda **kw: [],
     )
     spawned = []
     monkeypatch.setattr(

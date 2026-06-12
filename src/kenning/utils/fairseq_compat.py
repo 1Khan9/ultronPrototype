@@ -17,7 +17,7 @@ def patch_fairseq_dataclasses() -> None:
     loading, so a narrow runtime patch is less invasive than editing installed
     site-packages.
     """
-    if getattr(dataclasses, "_ultron_fairseq_patch", False):
+    if getattr(dataclasses, "_kenning_fairseq_patch", False):
         return
 
     original_get_field = dataclasses._get_field  # type: ignore[attr-defined]
@@ -45,7 +45,7 @@ def patch_fairseq_dataclasses() -> None:
             raise e
 
     dataclasses._get_field = patched_get_field  # type: ignore[attr-defined]
-    dataclasses._ultron_fairseq_patch = True  # type: ignore[attr-defined]
+    dataclasses._kenning_fairseq_patch = True  # type: ignore[attr-defined]
 
 
 def patch_torch_load_for_fairseq() -> None:
@@ -58,7 +58,7 @@ def patch_torch_load_for_fairseq() -> None:
     """
     import torch
 
-    if getattr(torch.load, "_ultron_fairseq_patch", False):
+    if getattr(torch.load, "_kenning_fairseq_patch", False):
         return
 
     original_load = torch.load
@@ -68,8 +68,8 @@ def patch_torch_load_for_fairseq() -> None:
             kwargs["weights_only"] = False
         return original_load(*args, **kwargs)
 
-    patched_load._ultron_fairseq_patch = True  # type: ignore[attr-defined]
-    patched_load._ultron_original_load = original_load  # type: ignore[attr-defined]
+    patched_load._kenning_fairseq_patch = True  # type: ignore[attr-defined]
+    patched_load._kenning_original_load = original_load  # type: ignore[attr-defined]
     torch.load = patched_load
 
 

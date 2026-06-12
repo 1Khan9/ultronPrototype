@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.web_search import (
+from kenning.web_search import (
     AcknowledgmentSource,
     BraveResult,
     BraveSearchClient,
@@ -30,7 +30,7 @@ from ultron.web_search import (
     WebSearchExecutor,
     WebSearchGate,
 )
-from ultron.web_search.gating import GateDecision
+from kenning.web_search.gating import GateDecision
 
 
 # ---------------------------------------------------------------------------

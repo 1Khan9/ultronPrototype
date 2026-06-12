@@ -40,7 +40,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("tts.precomputed_ack")
 
@@ -173,7 +173,7 @@ def collect_default_ack_phrases() -> List[str]:
     """
     phrases: List[str] = []
     try:
-        from ultron.conversational_ack import _CONVERSATIONAL_PHRASES
+        from kenning.conversational_ack import _CONVERSATIONAL_PHRASES
         phrases.extend(_CONVERSATIONAL_PHRASES)
     except Exception as e:                                       # noqa: BLE001
         logger.warning(
@@ -181,7 +181,7 @@ def collect_default_ack_phrases() -> List[str]:
             "cache will only cover web-search acks", e,
         )
     try:
-        from ultron.web_search.acknowledgments import _PHRASES as _WEB_ACK_PHRASES
+        from kenning.web_search.acknowledgments import _PHRASES as _WEB_ACK_PHRASES
         phrases.extend(_WEB_ACK_PHRASES)
     except Exception as e:                                       # noqa: BLE001
         logger.warning(

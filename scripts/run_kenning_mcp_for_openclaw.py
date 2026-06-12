@@ -2,23 +2,23 @@
 
 OpenClaw 2026.5.7 expects ``mcp set`` to register a stdio command.
 This script is what gets registered. It boots a FastMCP instance
-exposing Ultron's read-mostly tools (heartbeat alerts, maintenance,
+exposing Kenning's read-mostly tools (heartbeat alerts, maintenance,
 coding session listing) and serves them on stdio until OpenClaw
 closes the channel.
 
 This process is ephemeral — OpenClaw spawns a fresh instance per
-agent run that needs an Ultron tool. State lives entirely on disk
+agent run that needs an Kenning tool. State lives entirely on disk
 (JSONL alert log, per-session audit files), so cross-process
 coordination is unnecessary.
 
-Imports stay light: the heavy ultron components (torch, LLM,
+Imports stay light: the heavy kenning components (torch, LLM,
 embedder) are NOT loaded here. The maintenance tool subprocesses
 out to ``run_maintenance_for_cron.py`` so its own process owns the
 heavy load.
 
 Register with OpenClaw:
 
-    openclaw mcp set ultron-mcp '{
+    openclaw mcp set kenning-mcp '{
       "command": "C:\\\\STC\\\\ultronPrototype\\\\.venv\\\\Scripts\\\\python.exe",
       "args": ["<this script's absolute path>", "--stdio"],
       "env": {}
@@ -26,7 +26,7 @@ Register with OpenClaw:
 
 The ``OpenClawBridgeConfig.mcp_server_command`` field auto-resolves
 to this script when the bridge starts up — see
-:meth:`UltronMcpRegistrar.register`.
+:meth:`KenningMcpRegistrar.register`.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ import sys
 from pathlib import Path
 
 # Make the project's ``src/`` importable so we can pull in
-# ``ultron.openclaw_bridge.mcp_tools``. Done before any ``ultron.*``
+# ``kenning.openclaw_bridge.mcp_tools``. Done before any ``kenning.*``
 # import.
 _HERE = Path(__file__).resolve()
 _REPO = _HERE.parent.parent
@@ -59,7 +59,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    from ultron.openclaw_bridge.mcp_tools import build_server, run_stdio
+    from kenning.openclaw_bridge.mcp_tools import build_server, run_stdio
 
     if args.list_tools:
         server = build_server()

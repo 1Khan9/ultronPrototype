@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.conversational_ack import (
+from kenning.conversational_ack import (
     ConversationalAckSource,
     _CONVERSATIONAL_PHRASES,
     is_conversational_ack_eligible,
@@ -139,7 +139,7 @@ def test_conversational_phrases_pool_is_in_character():
     descriptions (those live in the web-search ack pool). The web-
     search pool's phrases should NOT appear here -- the two pools
     are intentionally distinct in tone."""
-    from ultron.web_search.acknowledgments import _PHRASES as web_phrases
+    from kenning.web_search.acknowledgments import _PHRASES as web_phrases
     for p in _CONVERSATIONAL_PHRASES:
         assert p not in web_phrases
         # Short: a thinking noise, not a sentence.
@@ -176,7 +176,7 @@ class _StubCodingVoice:
 def _make_orch_for_ack(*, coding_voice=None, source=None):
     """Build a partially-initialised Orchestrator that exposes only
     what ``_maybe_conversational_ack`` touches."""
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
     o = Orchestrator.__new__(Orchestrator)
     o.coding_voice = coding_voice
     o.conv_ack_source = source or ConversationalAckSource()
@@ -242,7 +242,7 @@ def test_orchestrator_build_response_stream_prepends_ack_on_no_gate(monkeypatch)
     an ack token before the LLM stream tokens. End-to-end token-order
     contract: the TTS pipeline must see the ack first so it can start
     speaking before the LLM finishes its first chunk."""
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
 
     o = Orchestrator.__new__(Orchestrator)
     o.coding_voice = None
@@ -270,7 +270,7 @@ def test_orchestrator_build_response_stream_prepends_ack_on_no_gate(monkeypatch)
 
 def test_orchestrator_build_response_stream_no_ack_on_short_utterance(monkeypatch):
     """Short utterances skip the ack -- the LLM tokens come first."""
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
 
     o = Orchestrator.__new__(Orchestrator)
     o.coding_voice = None
@@ -291,7 +291,7 @@ def test_orchestrator_build_response_stream_no_ack_on_short_utterance(monkeypatc
 def test_orchestrator_build_response_stream_no_ack_during_clarification():
     """Pending coding-clarification suppresses the ack across all
     three no-search branches."""
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
 
     o = Orchestrator.__new__(Orchestrator)
     o.coding_voice = _StubCodingVoice(pending=True)

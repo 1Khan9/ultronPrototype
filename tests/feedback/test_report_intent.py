@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.feedback.report_intent import (
+from kenning.feedback.report_intent import (
     ReportConcernMatch,
     match_report_concern,
 )
-from ultron.feedback.report_queue import ReportTargetKind
+from kenning.feedback.report_queue import ReportTargetKind
 
 
 class TestMatches:

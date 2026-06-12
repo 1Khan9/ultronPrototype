@@ -1,1 +1,1 @@
-"""Tests for ultron.identity.* primitives."""
+"""Tests for kenning.identity.* primitives."""

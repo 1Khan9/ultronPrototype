@@ -76,9 +76,9 @@ def main() -> None:
             "provider_api": "openai-completions",
             "model_id": "litellm/qwen3.5-9b-local",
             "model_reasoning": True,
-            "test_agent_id": "ultron-test",
+            "test_agent_id": "kenning-test",
             "test_agent_tools_profile": "messaging",
-            "default_agent_id": "ultron-test",
+            "default_agent_id": "kenning-test",
             "plugins_enabled": ["litellm"],
             "config_backups": [
                 "openclaw.json.pre-llamacpp-bak",
@@ -90,7 +90,7 @@ def main() -> None:
             "host": "127.0.0.1",
             "port": 8765,
             "api_path_prefix": "/v1",
-            "api_key": "local-ultron",
+            "api_key": "local-kenning",
             "launcher": "scripts/start_llamacpp_server.py",
             "model": "models/Qwen3.5-9B-Q4_K_M.gguf",
             "n_ctx": 8192,
@@ -139,7 +139,7 @@ def main() -> None:
             "works. Migration has its own latency-regression-test gate.",
         ],
         "test_results": {
-            "ultron_test_suite": {
+            "kenning_test_suite": {
                 "passed": 699,
                 "skipped": 15,
                 "failed": 0,

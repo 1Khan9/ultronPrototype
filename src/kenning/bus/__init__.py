@@ -38,8 +38,8 @@ Public API mirrors opencode's surface as closely as Python allows.
 shortcuts.
 """
 
-from ultron.bus.event import BusEvent, EventPayload
-from ultron.bus.service import (
+from kenning.bus.event import BusEvent, EventPayload
+from kenning.bus.service import (
     DEFAULT_SLOW_SUBSCRIBER_WARN_MS,
     Bus,
     get_bus,
@@ -49,7 +49,7 @@ from ultron.bus.service import (
     subscribe,
     subscribe_all,
 )
-from ultron.bus.events import (
+from kenning.bus.events import (
     BUS_EVENT_CATALOG,
     CodingFileChangedEvent,
     DialogAppearedEvent,

@@ -3,16 +3,16 @@
 T22 (OpenClaw catalog port; see ``THIRD_PARTY_NOTICES.md``). Closes
 the T9 MCP-hub gap deferred from the cline catalog. Provides:
 
-* :mod:`ultron.mcp.transport` — stdio + HTTP transport configuration
+* :mod:`kenning.mcp.transport` — stdio + HTTP transport configuration
   dataclasses + env filtering + header filtering helpers.
-* :mod:`ultron.mcp.registry` — :class:`McpServerRegistry` with
+* :mod:`kenning.mcp.registry` — :class:`McpServerRegistry` with
   start / stop / kill-on-disconnect, scope-keyed listing, per-server
   connection-timeout enforcement; composes with the T12 process
   registry + T8 kill_tree for cross-cutting subprocess discipline.
 
 The transport layer is the data-shape only — the actual JSON-RPC
 protocol logic lives in :mod:`mcp` (Python SDK) when callers install
-it. Ultron's :class:`McpServerRegistry` calls into the SDK behind a
+it. Kenning's :class:`McpServerRegistry` calls into the SDK behind a
 thin adapter so the SDK dep stays optional.
 
 YELLOW gating: the MCP server INSTALL is gated by T5 (static

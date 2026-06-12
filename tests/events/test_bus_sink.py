@@ -7,14 +7,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from ultron.events.bus_sink import (
+from kenning.events.bus_sink import (
     BusEventSink,
     get_bus_event_sink,
     install_bus_event_sink,
     uninstall_bus_event_sink,
 )
-from ultron.events.models import StoredEvent
-from ultron.events.store import MemoryEventStore
+from kenning.events.models import StoredEvent
+from kenning.events.store import MemoryEventStore
 
 
 @pytest.fixture(autouse=True)

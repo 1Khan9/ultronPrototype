@@ -4,7 +4,7 @@ context into the system prompt only when the user message matches a trigger.
 Pattern lineage attributed in ``THIRD_PARTY_NOTICES.md``.
 
 The OpenHands V1 server walks four sources (public / user / org / project)
-and exposes a REST endpoint that the sandbox agent calls. Ultron is a
+and exposes a REST endpoint that the sandbox agent calls. Kenning is a
 single-process voice-first assistant; we keep the multi-source merge
 but skip the HTTP indirection -- a :class:`SkillRegistry` loads from
 local directories directly and the orchestrator queries it in-process.
@@ -14,7 +14,7 @@ ones so the voice baseline can keep IDENTITY.md / SOUL.md anchored
 without ceremony.
 """
 
-from ultron.skills.models import (
+from kenning.skills.models import (
     KeywordTrigger,
     Skill,
     SkillMatch,
@@ -24,12 +24,12 @@ from ultron.skills.models import (
     Trigger,
     matches_text,
 )
-from ultron.skills.loader import (
+from kenning.skills.loader import (
     SkillLoadStats,
     load_skill_from_path,
     load_skills_from_directory,
 )
-from ultron.skills.registry import (
+from kenning.skills.registry import (
     DEFAULT_KEYWORD_MIN_USER_TEXT_CHARS,
     DEFAULT_PUBLIC_SKILLS_DIRNAME,
     DEFAULT_PROJECT_SKILLS_DIRNAME,

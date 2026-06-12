@@ -1,4 +1,4 @@
-"""Tests for ultron.desktop.vlm."""
+"""Tests for kenning.desktop.vlm."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.desktop.vlm import (
+from kenning.desktop.vlm import (
     DEFAULT_DESCRIBE_PROMPT,
     DEFAULT_MOONDREAM_REPO,
     Moondream2VLM,
@@ -55,7 +55,7 @@ def test_construction_rejects_bad_max_tokens():
 
 def test_construction_when_backend_missing(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.vlm._import_backend", lambda: None,
+        "kenning.desktop.vlm._import_backend", lambda: None,
     )
     with pytest.raises(VLMLoadError):
         Moondream2VLM()
@@ -267,7 +267,7 @@ def test_get_vlm_starts_none():
 
 
 def test_set_vlm_wires_screen_context_hook(monkeypatch):
-    from ultron.desktop import screen_context
+    from kenning.desktop import screen_context
 
     set_vlm(None)
     try:
@@ -292,7 +292,7 @@ def test_set_vlm_wires_screen_context_hook(monkeypatch):
 
 
 def test_set_vlm_none_clears_hook():
-    from ultron.desktop import screen_context
+    from kenning.desktop import screen_context
 
     custom = Moondream2VLM.__new__(Moondream2VLM)
     set_vlm(custom)
@@ -302,7 +302,7 @@ def test_set_vlm_none_clears_hook():
 
 
 def test_describe_via_singleton_returns_none_when_unset():
-    from ultron.desktop.vlm import _describe_via_singleton
+    from kenning.desktop.vlm import _describe_via_singleton
 
     set_vlm(None)
     assert _describe_via_singleton(b"\x89PNG") is None

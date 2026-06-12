@@ -15,13 +15,13 @@ from typing import Any
 
 import pytest
 
-from ultron.coding.bridge import EventKind
-from ultron.coding.runner import CodingTaskRunner
-from ultron.pipeline.orchestrator import Orchestrator
-from ultron.resilience.error_log import ErrorLog, set_error_observer
-from ultron.safety import Policy, RuleContext, ToolCallValidator, Verdict
-from ultron.safety.rules.base import CommandPatternRule
-from ultron.safety.validator import set_block_observer
+from kenning.coding.bridge import EventKind
+from kenning.coding.runner import CodingTaskRunner
+from kenning.pipeline.orchestrator import Orchestrator
+from kenning.resilience.error_log import ErrorLog, set_error_observer
+from kenning.safety import Policy, RuleContext, ToolCallValidator, Verdict
+from kenning.safety.rules.base import CommandPatternRule
+from kenning.safety.validator import set_block_observer
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +148,7 @@ class TestRunnerSuccessQueue:
     def test_listener_none_when_evolution_disabled(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import ultron.config as cfgmod
+        import kenning.config as cfgmod
 
         monkeypatch.setattr(cfgmod, "get_config", lambda: _evolution_cfg(False))
         r = _bare_runner()
@@ -157,7 +157,7 @@ class TestRunnerSuccessQueue:
     def test_complete_success_queues_once(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import ultron.config as cfgmod
+        import kenning.config as cfgmod
 
         monkeypatch.setattr(cfgmod, "get_config", lambda: _evolution_cfg(True))
         r = _bare_runner()
@@ -174,7 +174,7 @@ class TestRunnerSuccessQueue:
     def test_nonzero_exit_does_not_queue(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import ultron.config as cfgmod
+        import kenning.config as cfgmod
 
         monkeypatch.setattr(cfgmod, "get_config", lambda: _evolution_cfg(True))
         r = _bare_runner()
@@ -185,7 +185,7 @@ class TestRunnerSuccessQueue:
     def test_non_complete_events_ignored(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import ultron.config as cfgmod
+        import kenning.config as cfgmod
 
         monkeypatch.setattr(cfgmod, "get_config", lambda: _evolution_cfg(True))
         r = _bare_runner()

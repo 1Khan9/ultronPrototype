@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.audit import SessionAuditWriter
-from ultron.coding.projects import ProjectRegistry, Project
+from kenning.coding.audit import SessionAuditWriter
+from kenning.coding.projects import ProjectRegistry, Project
 
 
 # ---------------------------------------------------------------------------
@@ -135,11 +135,11 @@ def test_coding_task_audit_write_oserror_logs_once(
     """
     # Reset the per-process dedup flag so this test sees the first-failure log.
     monkeypatch.setattr(
-        "ultron.coding.runner._AUDIT_WRITE_FAILURE_LOGGED", False,
+        "kenning.coding.runner._AUDIT_WRITE_FAILURE_LOGGED", False,
     )
 
-    from ultron.coding.runner import CodingTaskRunner
-    from ultron.coding.bridge import CodingBridge
+    from kenning.coding.runner import CodingTaskRunner
+    from kenning.coding.bridge import CodingBridge
 
     class _StubBridge(CodingBridge):
         def name(self) -> str:

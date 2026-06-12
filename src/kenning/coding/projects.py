@@ -36,9 +36,9 @@ from typing import List, Optional
 import numpy as np
 
 from config import settings
-from ultron.errors import FilesystemError
-from ultron.resilience import get_error_log
-from ultron.utils.logging import get_logger
+from kenning.errors import FilesystemError
+from kenning.resilience import get_error_log
+from kenning.utils.logging import get_logger
 
 logger = get_logger("coding.projects")
 
@@ -391,9 +391,9 @@ def ensure_sandbox_isolation(
     treats IT as the project boundary.
 
     Production-hardening finding (the phase-11 voice-coding e2e): the
-    sandbox lives at ``data/sandbox/<project>`` INSIDE the ultron repo,
+    sandbox lives at ``data/sandbox/<project>`` INSIDE the kenning repo,
     so the spawned coding CLI walked UP from the task cwd, discovered
-    the ultron repo root, and loaded the repo's (very large) local
+    the kenning repo root, and loaded the repo's (very large) local
     orientation context into every voice coding task -- a hidden
     multi-thousand-token tax per task, and occasionally an outright
     hijack (the model responded to the orientation file instead of the

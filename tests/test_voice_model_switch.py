@@ -12,9 +12,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.coding.voice import CapabilityVoiceController, VoiceResponse
-from ultron.openclaw_routing.classifier import classify_routing
-from ultron.openclaw_routing.intents import (
+from kenning.coding.voice import CapabilityVoiceController, VoiceResponse
+from kenning.openclaw_routing.classifier import classify_routing
+from kenning.openclaw_routing.intents import (
     ModelSwitchIntent,
     RoutingIntent,
     RoutingIntentKind,

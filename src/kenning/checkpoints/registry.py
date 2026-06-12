@@ -33,7 +33,7 @@ from .shadow_repo import CheckpointCommit, ShadowRepoTracker, hash_working_dir
 LOGGER = logging.getLogger(__name__)
 
 #: Canonical event-kind names whose firing triggers a commit when
-#: registered. Mirrors the bus event vocabulary the rest of ultron
+#: registered. Mirrors the bus event vocabulary the rest of kenning
 #: publishes.
 DEFAULT_EVENT_KINDS: frozenset[str] = frozenset({
     "CodingFileChangedEvent",

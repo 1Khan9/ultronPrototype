@@ -1,4 +1,4 @@
-"""Tests for ultron.coding.project_digest."""
+"""Tests for kenning.coding.project_digest."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.project_digest import (
+from kenning.coding.project_digest import (
     DIGEST_SECTIONS,
     SUMMARY_TEMPLATE,
     DigestRequest,

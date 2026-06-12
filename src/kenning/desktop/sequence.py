@@ -10,7 +10,7 @@ the right primitive.
 Adapted from the upstream :class:`AIDesktopAgent.execute_task` step
 loop -- the screenshot-bracketing pattern is the highest-leverage
 piece even though the upstream's natural-language planner is
-deliberately not ported (ultron's LLM intent router is more
+deliberately not ported (kenning's LLM intent router is more
 sophisticated; see "Things deliberately NOT done" in the catalog
 entry).
 
@@ -20,11 +20,11 @@ Architecture
 * Each step is a :class:`SequenceStep` -- a callable + description +
   optional verification mode.
 * The runner calls :meth:`step.action` between two captures via
-  :class:`ultron.desktop.capture.ScreenCapture` (the same primitive
+  :class:`kenning.desktop.capture.ScreenCapture` (the same primitive
   the click-preview gate uses, so mss thread-locality holds).
 * When ``verify_with_vlm=True`` AND the click-preview gate is enabled,
   the after-screenshot is routed through the VLM via the existing
-  :mod:`ultron.desktop.click_preview` infrastructure. The VLM is
+  :mod:`kenning.desktop.click_preview` infrastructure. The VLM is
   asked "did the step succeed at: <description>?" and the response
   is recorded in the step result. The bytes are discarded post-VLM
   per the analyze-and-discard pattern (catalog 08 T12).
@@ -38,7 +38,7 @@ Architecture
 
 The result schema mirrors the upstream :class:`AIDesktopAgent` shape
 (``task / status / success / steps / screenshots / failed_at_step /
-error``) while adapting the screenshots to ultron's
+error``) while adapting the screenshots to kenning's
 :class:`Screenshot` dataclass (with ``image_bytes`` cleared post-
 analysis instead of holding raw PIL Image objects in memory).
 
@@ -47,7 +47,7 @@ Safety
 
 The runner does NOT itself simulate input; each step's action is the
 caller's responsibility. Pass actions that go through the gated
-:class:`ultron.desktop.input_control.InputController` and the runner
+:class:`kenning.desktop.input_control.InputController` and the runner
 adds an observation envelope (Cap-2) around them. Failure modes:
 
 * Capture error before the step -> step records ``capture_before_failed``;
@@ -69,7 +69,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Optional, Sequence
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.sequence")
 
@@ -277,7 +277,7 @@ class DesktopSequenceRunner:
         if self._capture is not None:
             return self._capture
         try:
-            from ultron.desktop.capture import get_screen_capture
+            from kenning.desktop.capture import get_screen_capture
             return get_screen_capture()
         except Exception as exc:  # noqa: BLE001
             logger.debug("DesktopSequenceRunner: no capture available: %s", exc)
@@ -431,7 +431,7 @@ class DesktopSequenceRunner:
         executed steps plus their screenshot pairs.
         """
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('desktop_sequence')
         start = self._clock()
         executed: list[StepResult] = []

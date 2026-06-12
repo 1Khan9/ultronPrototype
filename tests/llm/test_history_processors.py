@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.llm.history_processors import (
+from kenning.llm.history_processors import (
     DEFAULT_CLOSED_WINDOW_TEMPLATE,
     DEFAULT_OBSERVATION_ELISION_TEMPLATE,
     ClosedWindowHistoryProcessor,

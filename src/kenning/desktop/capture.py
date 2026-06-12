@@ -29,8 +29,8 @@ from typing import Optional, Union
 import mss
 from PIL import Image
 
-from ultron.desktop.monitors import Monitor, enumerate_monitors
-from ultron.utils.logging import get_logger
+from kenning.desktop.monitors import Monitor, enumerate_monitors
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.capture")
 
@@ -47,7 +47,7 @@ class Screenshot:
         image_bytes: PNG-encoded image data. ``None`` once the bytes
             have been discarded (post-VLM analysis under the
             analyze-and-discard pattern -- see :meth:`without_bytes` and
-            :func:`ultron.desktop.screen_context.build_screen_context`'s
+            :func:`kenning.desktop.screen_context.build_screen_context`'s
             ``discard_image_after_analysis`` flag).
         monitor_index: source monitor index, or None for arbitrary regions.
         width: pixel width.
@@ -107,7 +107,7 @@ def _record_taint_safe(image_bytes: bytes) -> None:
     if not image_bytes:
         return
     try:
-        from ultron.safety.taint import get_taint_tracker
+        from kenning.safety.taint import get_taint_tracker
 
         get_taint_tracker().record(data=image_bytes, capability="screen_context")
     except Exception as e:  # noqa: BLE001 -- safety side must never break capture
@@ -148,7 +148,7 @@ class ScreenCapture:
         treats None as "couldn't see the screen right now".
         """
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('screenshot')
         if isinstance(monitor, int):
             mons = enumerate_monitors()
@@ -170,7 +170,7 @@ class ScreenCapture:
     def capture_all_monitors(self) -> list[Screenshot]:
         """Capture every connected monitor in index order."""
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('screenshot')
         results: list[Screenshot] = []
         for mon in enumerate_monitors():
@@ -189,7 +189,7 @@ class ScreenCapture:
     ) -> Optional[Screenshot]:
         """Capture an arbitrary rectangle in virtual-screen coordinates."""
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('screenshot')
         if width <= 0 or height <= 0:
             return None
@@ -347,7 +347,7 @@ def find_image_on_screen(
     Args:
         template_path: filesystem path to the template image (PNG /
             JPEG). The path is canonicalised via
-            :class:`ultron.safety.path_resolver.PathResolver` -- raw
+            :class:`kenning.safety.path_resolver.PathResolver` -- raw
             paths with bidi-override / percent-escape evasion patterns
             are rejected. This protects against attacker-controlled
             template paths that could match a spoofed UI element.
@@ -378,7 +378,7 @@ def find_image_on_screen(
     on ``None`` instead of catching exceptions.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('find_image_on_screen')
     if not isinstance(template_path, str) or not template_path:
         return None
@@ -402,7 +402,7 @@ def find_image_on_screen(
         region_tuple = None
 
     try:
-        from ultron.safety.path_resolver import get_path_resolver
+        from kenning.safety.path_resolver import get_path_resolver
 
         resolved = get_path_resolver().safe_realpath(template_path)
     except Exception as exc:  # noqa: BLE001
@@ -496,7 +496,7 @@ def get_pixel_color(x: int, y: int) -> Optional[tuple[int, int, int]]:
     Fail-open: any exception (out-of-bounds coordinate, mss / pyautogui
     error, missing display) returns ``None`` rather than raising so the
     polling-loop caller can simply continue. The upstream plugin lets
-    the underlying pyautogui exception propagate; ultron's contract is
+    the underlying pyautogui exception propagate; kenning's contract is
     "observation primitives never crash the orchestrator".
 
     Returns:
@@ -504,7 +504,7 @@ def get_pixel_color(x: int, y: int) -> Optional[tuple[int, int, int]]:
         ``None`` on failure.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('get_pixel_color')
     try:
         # Local import to avoid pulling pyautogui at module load (mss

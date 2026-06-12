@@ -53,7 +53,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 
 _SUMMARY_SYSTEM_PROMPT = (
-    "You are an internal worker for the Ultron memory system. You "
+    "You are an internal worker for the Kenning memory system. You "
     "are NOT the voice-facing assistant. Your job is to read a "
     "stretch of recent conversation and emit a compact, structured "
     "summary plus a list of facts the user established. You output "
@@ -120,7 +120,7 @@ def render_summary_prompt(
 class TurnSnapshot:
     """Minimal turn shape the summarizer needs.
 
-    Decoupled from :class:`ultron.memory.qdrant_store.MemoryTurn` so
+    Decoupled from :class:`kenning.memory.qdrant_store.MemoryTurn` so
     tests can construct snapshots without instantiating the full
     memory store. The orchestrator constructs these from
     ``ConversationMemory.recent`` output.
@@ -445,7 +445,7 @@ class BackgroundSummarizer:
         self._compress_summarize_fn = compress_summarize_fn or generate_fn
         # SnapshotGuard reused across compression jobs so callers can
         # opt-in to cross-job race tracking.
-        from ultron.utils.snapshot_guard import SnapshotGuard
+        from kenning.utils.snapshot_guard import SnapshotGuard
         self._compression_guard = SnapshotGuard()
 
     # ------------------------------------------------------------------
@@ -573,7 +573,7 @@ class BackgroundSummarizer:
         except Exception as e:                                # noqa: BLE001
             # Fail-open. The summarizer's value is cumulative; a
             # missed pass costs only what the next pass will pick up.
-            from ultron.utils.logging import get_logger
+            from kenning.utils.logging import get_logger
             get_logger("memory.background_summarizer").warning(
                 "Summarizer LLM call failed (%s); discarding pass.", e,
             )
@@ -604,7 +604,7 @@ class BackgroundSummarizer:
             try:
                 self._store_fn(result)
             except Exception as e:                            # noqa: BLE001
-                from ultron.utils.logging import get_logger
+                from kenning.utils.logging import get_logger
                 get_logger("memory.background_summarizer").warning(
                     "Summarizer store hook failed (%s); result lost.", e,
                 )
@@ -634,7 +634,7 @@ class BackgroundSummarizer:
         """Run a tail-preserve compression pass on ``messages``.
 
         Returns a
-        :class:`ultron.memory.history_compression.CompressionResult`.
+        :class:`kenning.memory.history_compression.CompressionResult`.
         The compressed list (if any) is the new history the caller
         should feed into the next LLM prompt. When
         ``result.compressed is None``, leave the live history as-is.
@@ -651,7 +651,7 @@ class BackgroundSummarizer:
                 history.
             token_counter: Callable mapping text -> token count. When
                 omitted, uses
-                :func:`ultron.utils.token_budget.char_count_tokens`
+                :func:`kenning.utils.token_budget.char_count_tokens`
                 (length / 4 heuristic).
             max_depth: Forwarded to ``compress_history_recursive``.
             snapshot_key: Used by the internal ``SnapshotGuard`` so
@@ -663,13 +663,13 @@ class BackgroundSummarizer:
           * LLM returns empty -> ``error="empty summary"``.
           * Race detected -> ``race_detected=True``.
         """
-        from ultron.memory.history_compression import (
+        from kenning.memory.history_compression import (
             compress_history_with_guard,
             messages_to_dicts,
         )
 
         if token_counter is None:
-            from ultron.utils.token_budget import char_count_tokens
+            from kenning.utils.token_budget import char_count_tokens
             token_counter = char_count_tokens
 
         normalised = messages_to_dicts(messages)

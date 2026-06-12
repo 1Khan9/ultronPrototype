@@ -2,7 +2,7 @@
 
 Adapted from cline's ``StateManager.getGlobalSettingsKey("mode")`` +
 ``PlanModeRespondHandler`` pattern (Apache 2.0; see
-``THIRD_PARTY_NOTICES.md``). Ultron's variant generalises beyond the
+``THIRD_PARTY_NOTICES.md``). Kenning's variant generalises beyond the
 binary plan/act cline shape so the same primitive can gate gaming-mode
 side-effects, coding-architect-vs-editor splits, and per-skill
 ``default_mode`` overrides.

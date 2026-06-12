@@ -1,7 +1,7 @@
 # Comprehensive end-to-end QUALITY assessment + improvement plan
 
 User-requested exhaustive plan to assess and improve **output quality**
-across every Ultron surface that produces text, code, audio, or
+across every Kenning surface that produces text, code, audio, or
 structured decisions for the user. Companion to
 [comprehensive_test_plan.md](comprehensive_test_plan.md) (which covered
 functional correctness — routing accuracy, circuit breakers, memory
@@ -65,10 +65,10 @@ The chain that guarantees AI coding agent stays inside `data/sandbox/`:
 
 | Step | File | Behaviour |
 |---|---|---|
-| Intent classification | [coding/intent.py](../src/ultron/coding/intent.py) | `_EXISTING_PROJECT_STRONG` / `_EXISTING_PROJECT_WEAK` regexes detect existing-project references; otherwise marks as new |
-| Routing | [coding/voice.py:_handle_code_task](../src/ultron/coding/voice.py:378-464) | Existing → ProjectResolver returns registered path; New → `new_sandbox_project(...)`; Ambiguous → voice asks for disambiguation |
-| Sandbox creation | [coding/projects.py:new_sandbox_project](../src/ultron/coding/projects.py:383-415) | Always creates `data/sandbox/<slug>/` (uniqueness suffix on collision); registers absolute path in `data/projects.json` |
-| Subprocess construction | [coding/direct_bridge.py:_build_argv](../src/ultron/coding/direct_bridge.py:154-190) | `--add-dir <project_path>` (only that dir is visible) + `--dangerously-skip-permissions` (within the dir only) + subprocess `cwd=<project_path>` |
+| Intent classification | [coding/intent.py](../src/kenning/coding/intent.py) | `_EXISTING_PROJECT_STRONG` / `_EXISTING_PROJECT_WEAK` regexes detect existing-project references; otherwise marks as new |
+| Routing | [coding/voice.py:_handle_code_task](../src/kenning/coding/voice.py:378-464) | Existing → ProjectResolver returns registered path; New → `new_sandbox_project(...)`; Ambiguous → voice asks for disambiguation |
+| Sandbox creation | [coding/projects.py:new_sandbox_project](../src/kenning/coding/projects.py:383-415) | Always creates `data/sandbox/<slug>/` (uniqueness suffix on collision); registers absolute path in `data/projects.json` |
+| Subprocess construction | [coding/direct_bridge.py:_build_argv](../src/kenning/coding/direct_bridge.py:154-190) | `--add-dir <project_path>` (only that dir is visible) + `--dangerously-skip-permissions` (within the dir only) + subprocess `cwd=<project_path>` |
 
 Confirmed against the live tree at the start of this pass:
 * `data/projects.json` does not yet exist (clean registry — auto-created on first use).
@@ -150,7 +150,7 @@ Every metric in the final report carries its measurement mode.
 | **Item 8 block-and-revise discrimination** (BLOCK/ALLOW boundary correctness) | block\_and\_revise.py | rubric (5 ambiguous cases) | 0 |
 | **Browser tool result-parsing fidelity** (title / refs / base64 extracted correctly from tolerant parser) | openclaw\_bridge/browser.py | mechanical (synthetic agent text) | 0 |
 | **Adversarial robustness** (long input / empty / non-English / repeated / prompt injection) | LLMEngine + classifier + addressing | mechanical | 0 |
-| **In-character voice messages** (no "as an AI", no bullets in voice path; OpenClaw stub messages stay in Ultron's voice) | OpenClawDispatcher stub branches | mechanical | 0 |
+| **In-character voice messages** (no "as an AI", no bullets in voice path; OpenClaw stub messages stay in Kenning's voice) | OpenClawDispatcher stub branches | mechanical | 0 |
 | **Error phrase pool integrity** (every failure mode resolves to a phrase) | resilience/phrases.py + config.error\_phrases | mechanical | 0 |
 | **Audit log completeness** (every coding turn writes the right kinds of audit lines) | SessionAuditWriter | mechanical | 0 |
 
@@ -249,11 +249,11 @@ Python process to amortise the 1.8 s LLM cold-load.
 ### Phase Q2 — Persona-mode separation
 
 * **What:** prove `PersonaLoader` modes are correctly differentiated.
-  user_facing has Ultron character; background doesn't.
+  user_facing has Kenning character; background doesn't.
 * **Probe:** load each mode; check for token presence:
-  * `user_facing` MUST contain identity markers (e.g., "Ultron",
+  * `user_facing` MUST contain identity markers (e.g., "Kenning",
     soul-tone words from SOUL.md).
-  * `background` MUST NOT contain Ultron-character markers (it's
+  * `background` MUST NOT contain Kenning-character markers (it's
     AGENTS.md only with internal-worker framing).
   * `heartbeat` MUST contain HEARTBEAT.md content.
   * `bootstrap` MUST contain BOOTSTRAP.md content.
@@ -461,11 +461,11 @@ Python process to amortise the 1.8 s LLM cold-load.
 #### Q5.C — Wake-word detection rate / false-positive rate
 
 * **Probe:**
-  * Positive: synthetic audio with TTS-rendered "Ultron" clipped at
+  * Positive: synthetic audio with TTS-rendered "Kenning" clipped at
     8 different positions in 5 second windows. Run through
     `WakeWordDetector.predict`.
   * Negative: 8 windows of conversational speech NOT containing
-    "Ultron" (use a TTS render of "what's your favorite color" etc.)
+    "Kenning" (use a TTS render of "what's your favorite color" etc.)
 * **Mechanical scoring:** TPR + FPR.
 * **Output:** confusion matrix.
 * **Gate:** TPR ≥ 80% on the positive samples; FPR ≤ 5% on the
@@ -627,7 +627,7 @@ Python process to amortise the 1.8 s LLM cold-load.
   5. **Simple TODO list with persistence**
      * GUI has a list widget showing items, a text entry for new
        items, "Add" + "Remove selected" buttons.
-     * "Save" button writes to `~/ultron_todo.json` (or in-project
+     * "Save" button writes to `~/kenning_todo.json` (or in-project
        path).
      * On startup, loads existing items from that file if present.
      * "Close" button saves and exits.
@@ -978,7 +978,7 @@ inherently model-bound or out-of-scope. The plan distinguishes:
   locked; only minor system-prompt tightening is in scope, and only
   if it's bit-equivalent to the locked SOUL.md (which it isn't,
   by definition).
-* **Wake-word ultron.onnx FPR** — model-bound; retraining is out
+* **Wake-word kenning.onnx FPR** — model-bound; retraining is out
   of scope for this pass.
 * **Piper / RVC audio character** — voice quality is locked.
 * **Multi-step coding-task quality on real Claude** — would burn
@@ -1107,7 +1107,7 @@ approval before continuing.
 These dimensions cannot be measured autonomously and are flagged
 to the report for the user to assess if they choose:
 
-1. **Audio quality (Piper + RVC)** — produces the right Ultron
+1. **Audio quality (Piper + RVC)** — produces the right Kenning
    timbre? Cadence preserved? RVC pitch / index_rate / protect
    tuning. Manual listening required. We'll synthesize 5 phrases
    to a `quality_audit/audio/*.wav` directory; the user decides if

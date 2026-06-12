@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.session_registry import (
+from kenning.coding.session_registry import (
     SessionRegistry,
     reset_session_registries_for_testing,
 )
-from ultron.coding.window_state import (
+from kenning.coding.window_state import (
     DEFAULT_OVERLAP_LINES,
     DEFAULT_WINDOW_LINES,
     GOTO_OFFSET_MULTIPLIER,

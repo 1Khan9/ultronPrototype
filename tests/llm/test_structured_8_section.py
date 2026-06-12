@@ -1,10 +1,10 @@
-"""Tests for ultron.llm.condensers.structured_8_section."""
+"""Tests for kenning.llm.condensers.structured_8_section."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.llm.condensers import structured_8_section as s8
+from kenning.llm.condensers import structured_8_section as s8
 
 
 SAMPLE_SUMMARY = """\

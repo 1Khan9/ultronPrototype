@@ -17,16 +17,16 @@ from typing import Any, Optional
 
 import pytest
 
-from ultron.evolution.autonomy import TieredAutonomyController
-from ultron.evolution.evolution_loop import ApplyStatus, EvolutionState
-from ultron.evolution.guardrails import GuardrailSample
-from ultron.evolution.personality import PersonalityTuner
-from ultron.evolution.service import (
+from kenning.evolution.autonomy import TieredAutonomyController
+from kenning.evolution.evolution_loop import ApplyStatus, EvolutionState
+from kenning.evolution.guardrails import GuardrailSample
+from kenning.evolution.personality import PersonalityTuner
+from kenning.evolution.service import (
     POST_APPLY_MIN_LATENCY_SAMPLES,
     EvolutionService,
     EvolutionStore,
 )
-from ultron.evolution.turn_metrics import TurnMetricsRing
+from kenning.evolution.turn_metrics import TurnMetricsRing
 
 
 def _ev_config(**overrides: Any) -> SimpleNamespace:

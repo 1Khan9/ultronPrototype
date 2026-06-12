@@ -1,9 +1,9 @@
-"""Tests for ultron.evolution.guardrails -- regression detectors +
+"""Tests for kenning.evolution.guardrails -- regression detectors +
 auto-revert + rollback-frequency audit. All hermetic."""
 
 from __future__ import annotations
 
-from ultron.evolution import guardrails as G
+from kenning.evolution import guardrails as G
 
 
 def _baseline(**kw):

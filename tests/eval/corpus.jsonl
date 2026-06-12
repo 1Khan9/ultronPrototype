@@ -1,7 +1,7 @@
 {"id": "conv_001", "utterance": "tell me a joke", "expected_routing_kind": "conversational", "tags": ["conversational"], "notes": "Plain chitchat"}
 {"id": "conv_002", "utterance": "what's your favorite color", "expected_routing_kind": "conversational", "tags": ["conversational"], "notes": "Persona question"}
 {"id": "conv_003", "utterance": "how are you doing today", "expected_routing_kind": "conversational", "tags": ["conversational"], "notes": "Small talk"}
-{"id": "conv_004", "utterance": "good morning ultron", "expected_routing_kind": "conversational", "expected_addressing": "NONE", "tags": ["conversational", "rule_layer_silent"], "notes": "Greeting with trailing name. _DIRECT_ADDRESS requires 'ultron' at start; the rule layer punts to zero-shot. NONE here documents that."}
+{"id": "conv_004", "utterance": "good morning kenning", "expected_routing_kind": "conversational", "expected_addressing": "NONE", "tags": ["conversational", "rule_layer_silent"], "notes": "Greeting with trailing name. _DIRECT_ADDRESS requires 'kenning' at start; the rule layer punts to zero-shot. NONE here documents that."}
 {"id": "conv_005", "utterance": "explain how transformers work in detail", "expected_routing_kind": "conversational", "tags": ["conversational", "depth"], "notes": "Long technical conversational - depth marker present"}
 {"id": "conv_006", "utterance": "what are the orcs in 40k", "expected_routing_kind": "conversational", "tags": ["conversational", "brief"], "notes": "Short factual - brevity hint should fire"}
 {"id": "conv_007", "utterance": "thanks", "expected_routing_kind": "conversational", "tags": ["conversational", "short"], "notes": "Acknowledgement"}
@@ -29,7 +29,7 @@
 {"id": "model_switch_001", "utterance": "switch to the 4b model", "expected_routing_kind": "model_switch", "tags": ["model_switch"], "notes": "MODEL_SWITCH direct"}
 {"id": "model_switch_002", "utterance": "switch to model 8b", "expected_routing_kind": "model_switch", "tags": ["model_switch"], "notes": "MODEL_SWITCH noun-first variant (2026-05-14 fix)"}
 {"id": "model_switch_003", "utterance": "use the 9b", "expected_routing_kind": "model_switch", "tags": ["model_switch"], "notes": "Use-the variant"}
-{"id": "system_status_001", "utterance": "what is ultron working on", "expected_routing_kind": "system_status", "tags": ["system_status"], "notes": "SYSTEM_STATUS projects focus"}
+{"id": "system_status_001", "utterance": "what is kenning working on", "expected_routing_kind": "system_status", "tags": ["system_status"], "notes": "SYSTEM_STATUS projects focus"}
 {"id": "system_status_002", "utterance": "any pending alerts", "expected_routing_kind": "system_status", "tags": ["system_status"], "notes": "SYSTEM_STATUS alerts focus"}
 {"id": "system_status_003", "utterance": "status report", "expected_routing_kind": "system_status", "tags": ["system_status"], "notes": "SYSTEM_STATUS all focus"}
 {"id": "app_launch_001", "utterance": "open youtube on my second monitor", "expected_routing_kind": "app_launch", "tags": ["desktop", "app_launch"], "notes": "Sites + explicit monitor -> APP_LAUNCH"}
@@ -45,11 +45,11 @@
 {"id": "window_move_002", "utterance": "move youtube to monitor 2", "expected_routing_kind": "window_move", "tags": ["desktop", "window_move"], "notes": "Move-to-monitor variant"}
 {"id": "window_close_001", "utterance": "close my youtube tab", "expected_routing_kind": "window_close", "tags": ["desktop", "window_close"], "notes": "WINDOW_CLOSE - 2026-05-14 third pass"}
 {"id": "window_close_002", "utterance": "close discord on my right monitor", "expected_routing_kind": "window_close", "tags": ["desktop", "window_close"], "notes": "WINDOW_CLOSE with monitor"}
-{"id": "addr_001", "utterance": "ultron, open chrome", "expected_addressing": "ADDRESSED", "tags": ["addressing", "direct"], "notes": "Direct address by name"}
+{"id": "addr_001", "utterance": "kenning, open chrome", "expected_addressing": "ADDRESSED", "tags": ["addressing", "direct"], "notes": "Direct address by name"}
 {"id": "addr_002", "utterance": "what time is it", "expected_addressing": "ADDRESSED", "tags": ["addressing", "factual"], "notes": "Factual question stem"}
 {"id": "addr_003", "utterance": "open chrome", "expected_addressing": "ADDRESSED", "tags": ["addressing", "imperative"], "notes": "Imperative command stem"}
 {"id": "addr_004", "utterance": "hey mom", "expected_addressing": "NOT_ADDRESSED", "tags": ["addressing", "phone_opener"], "notes": "Phone-call opener"}
-{"id": "addr_005", "utterance": "ultron said something weird earlier", "expected_addressing": "NOT_ADDRESSED", "tags": ["addressing", "third_person"], "notes": "Third-person mention of Ultron (said/earlier in _THIRD_PERSON_MENTION verb list)"}
+{"id": "addr_005", "utterance": "kenning said something weird earlier", "expected_addressing": "NOT_ADDRESSED", "tags": ["addressing", "third_person"], "notes": "Third-person mention of Kenning (said/earlier in _THIRD_PERSON_MENTION verb list)"}
 {"id": "addr_006", "utterance": "i'm talking to him", "expected_addressing": "NOT_ADDRESSED", "tags": ["addressing", "third_party_narrative"], "notes": "Third-party narrative - 2026-05-11"}
 {"id": "addr_007", "utterance": "got him to the point where he's workable", "expected_addressing": "NOT_ADDRESSED", "tags": ["addressing", "third_party_narrative"], "notes": "Causative third-party narrative"}
 {"id": "addr_008", "utterance": "hmm", "expected_addressing": "NOT_ADDRESSED", "tags": ["addressing", "interjection"], "notes": "Standalone interjection"}

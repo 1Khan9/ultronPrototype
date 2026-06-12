@@ -13,7 +13,7 @@ Adapted from cline's reasoning-block handling in
   emitted block, and prevents reasoning text from leaking into TTS
   via the text channel.
 
-For ultron specifically, reasoning chunks fire ONLY to a separate
+For kenning specifically, reasoning chunks fire ONLY to a separate
 sink — never to the TTS pipeline. The orchestrator can subscribe to
 :class:`ReasoningChunkEvent` to log to an audit file without piping
 it through the speech path.

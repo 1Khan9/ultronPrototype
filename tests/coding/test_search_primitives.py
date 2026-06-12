@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.search_primitives import (
+from kenning.coding.search_primitives import (
     DEFAULT_DIR_SEARCH_CAP,
     DEFAULT_FILE_SEARCH_CAP,
     DEFAULT_SKIP_DIRECTORIES,

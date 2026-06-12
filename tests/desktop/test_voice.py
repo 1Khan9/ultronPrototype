@@ -1,4 +1,4 @@
-"""Tests for ultron.desktop.voice handlers."""
+"""Tests for kenning.desktop.voice handlers."""
 
 from __future__ import annotations
 
@@ -7,16 +7,16 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.desktop.launcher import LaunchResult
-from ultron.desktop.monitors import Monitor
-from ultron.desktop.screen_context import ScreenContextSnapshot
-from ultron.desktop.voice import (
+from kenning.desktop.launcher import LaunchResult
+from kenning.desktop.monitors import Monitor
+from kenning.desktop.screen_context import ScreenContextSnapshot
+from kenning.desktop.voice import (
     AppLaunchVoiceResult,
     ScreenContextVoiceResult,
     handle_app_launch,
     handle_screen_context_query,
 )
-from ultron.openclaw_routing.intents import (
+from kenning.openclaw_routing.intents import (
     AppLaunchIntent,
     ScreenContextIntent,
 )
@@ -39,7 +39,7 @@ def _mon(idx=0) -> Monitor:
 
 def _patch_monitors(monkeypatch, mons):
     monkeypatch.setattr(
-        "ultron.desktop.monitors.enumerate_monitors", lambda: mons,
+        "kenning.desktop.monitors.enumerate_monitors", lambda: mons,
     )
 
 
@@ -48,7 +48,7 @@ def _patch_launcher(monkeypatch, *, result):
     fake.launch_app.return_value = result
     fake.launch_chrome.return_value = result
     monkeypatch.setattr(
-        "ultron.desktop.launcher.get_app_launcher", lambda: fake,
+        "kenning.desktop.launcher.get_app_launcher", lambda: fake,
     )
     return fake
 
@@ -254,7 +254,7 @@ def test_handle_screen_context_query_returns_injection(monkeypatch):
         elapsed_ms=10.0,
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.build_screen_context",
+        "kenning.desktop.screen_context.build_screen_context",
         lambda **kw: snap,
     )
     intent = ScreenContextIntent(question="what's this", include_vlm=False)
@@ -283,7 +283,7 @@ def test_handle_screen_context_query_with_vlm(monkeypatch):
         return snap
 
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.build_screen_context", _build,
+        "kenning.desktop.screen_context.build_screen_context", _build,
     )
     intent = ScreenContextIntent(include_vlm=True)
     result = handle_screen_context_query(intent)
@@ -298,7 +298,7 @@ def test_handle_screen_context_query_snapshot_failure(monkeypatch):
         raise RuntimeError("simulated snapshot failure")
 
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.build_screen_context", boom,
+        "kenning.desktop.screen_context.build_screen_context", boom,
     )
     intent = ScreenContextIntent()
     result = handle_screen_context_query(intent)

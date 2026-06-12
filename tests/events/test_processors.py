@@ -7,15 +7,15 @@ from dataclasses import dataclass
 
 import pytest
 
-from ultron.events.callbacks import (
+from kenning.events.callbacks import (
     CallbackRegistry,
     CallbackResult,
     CallbackResultStatus,
     CallbackStatus,
     RegisteredCallback,
 )
-from ultron.events.models import StoredEvent
-from ultron.events.processors import (
+from kenning.events.models import StoredEvent
+from kenning.events.processors import (
     ChannelGuardProcessor,
     CountingCallbackProcessor,
     LoggingCallbackProcessor,

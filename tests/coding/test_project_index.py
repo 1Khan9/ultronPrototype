@@ -1,4 +1,4 @@
-"""Tests for ultron.coding.project_index.
+"""Tests for kenning.coding.project_index.
 
 These tests construct a real (local-file) Qdrant instance + a real
 bge-small HybridEmbedder. They're moderately slow (~5-10 s for the
@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.project_digest import DigestRequest, render_template, ProjectDigest, parse_digest_sections
-from ultron.coding.project_index import (
+from kenning.coding.project_digest import DigestRequest, render_template, ProjectDigest, parse_digest_sections
+from kenning.coding.project_index import (
     ProjectIndex,
     ProjectIndexEntry,
     ProjectMatch,
@@ -33,7 +33,7 @@ from ultron.coding.project_index import (
 @pytest.fixture
 def embedder():
     """Real HybridEmbedder shared across tests. Loaded once per process."""
-    from ultron.memory.embedder import HybridEmbedder
+    from kenning.memory.embedder import HybridEmbedder
     return HybridEmbedder()
 
 

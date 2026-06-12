@@ -47,7 +47,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 
-logger = logging.getLogger("ultron.utils.mtime_cache")
+logger = logging.getLogger("kenning.utils.mtime_cache")
 
 
 SQLITE_ERRORS: Tuple[type, ...] = (

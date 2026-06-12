@@ -5,9 +5,9 @@ a local subprocess wrapper. The abstraction is preserved for future
 backend variants (test mocks, alternate subprocess wrappers) but
 **OpenClaw is NOT a bridge alternative** — under the new architecture
 (Foundation Part 5) OpenClaw is a peer dispatcher reachable via
-``ultron.openclaw_routing``, NOT a swap-in for the coding bridge.
+``kenning.openclaw_routing``, NOT a swap-in for the coding bridge.
 
-Anything in :mod:`ultron.coding.runner` and the orchestrator's voice
+Anything in :mod:`kenning.coding.runner` and the orchestrator's voice
 glue depends on the abstract :class:`CodingBridge` and the standardized
 :class:`TaskEvent` vocabulary, NOT on subprocess, NOT on
 ``stream-json``, NOT on any wire format. The bridge implementation
@@ -254,7 +254,7 @@ class CodingBridge(ABC):
     """Abstract bridge: 'submit a task, get back a handle'.
 
     Concrete bridges:
-      * :class:`ultron.coding.direct_bridge.DirectClaudeCodeBridge`
+      * :class:`kenning.coding.direct_bridge.DirectClaudeCodeBridge`
       * Test mocks (e.g. ``ScriptedClaudeBridge`` in tests/coding/mock_bridge.py)
     """
 

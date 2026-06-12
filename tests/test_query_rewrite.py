@@ -12,7 +12,7 @@ import types
 
 import pytest
 
-from ultron.web_search.query_rewrite import (
+from kenning.web_search.query_rewrite import (
     DEFAULT_MAX_VARIANTS,
     MAX_TOTAL_QUERIES,
     QueryReformulation,
@@ -244,14 +244,14 @@ def test_reformulate_empty_query():
 
 
 def test_maybe_reformulate_disabled_passthrough(monkeypatch):
-    monkeypatch.setattr("ultron.config.get_config", lambda: _fake_cfg(enabled=False))
+    monkeypatch.setattr("kenning.config.get_config", lambda: _fake_cfg(enabled=False))
     base = ["how to install Docker"]
     assert maybe_reformulate_queries("how to install Docker", base) == base
 
 
 def test_maybe_reformulate_merges_variants(monkeypatch, tmp_path):
-    monkeypatch.setattr("ultron.config.get_config", lambda: _fake_cfg(enabled=True))
-    monkeypatch.setattr("ultron.config.LOGS_DIR", tmp_path)
+    monkeypatch.setattr("kenning.config.get_config", lambda: _fake_cfg(enabled=True))
+    monkeypatch.setattr("kenning.config.LOGS_DIR", tmp_path)
     out = maybe_reformulate_queries(
         "how to install Docker", ["how to install Docker"],
     )
@@ -269,8 +269,8 @@ def test_maybe_reformulate_merges_variants(monkeypatch, tmp_path):
 
 
 def test_maybe_reformulate_caps_total(monkeypatch, tmp_path):
-    monkeypatch.setattr("ultron.config.get_config", lambda: _fake_cfg(enabled=True))
-    monkeypatch.setattr("ultron.config.LOGS_DIR", tmp_path)
+    monkeypatch.setattr("kenning.config.get_config", lambda: _fake_cfg(enabled=True))
+    monkeypatch.setattr("kenning.config.LOGS_DIR", tmp_path)
     # 4 base queries already; reformulation must not exceed MAX_TOTAL_QUERIES.
     base = ["how to install Docker", "q2", "q3", "q4"]
     out = maybe_reformulate_queries("how to install Docker", base)
@@ -279,7 +279,7 @@ def test_maybe_reformulate_caps_total(monkeypatch, tmp_path):
 
 
 def test_maybe_reformulate_no_variants_returns_base(monkeypatch):
-    monkeypatch.setattr("ultron.config.get_config", lambda: _fake_cfg(enabled=True))
+    monkeypatch.setattr("kenning.config.get_config", lambda: _fake_cfg(enabled=True))
     base = ["explain photosynthesis"]
     # No rule matches -> no variants -> base returned unchanged.
     assert maybe_reformulate_queries("explain photosynthesis", base) == base
@@ -289,14 +289,14 @@ def test_maybe_reformulate_fail_open_on_config_error(monkeypatch):
     def _boom():
         raise RuntimeError("config blew up")
 
-    monkeypatch.setattr("ultron.config.get_config", _boom)
+    monkeypatch.setattr("kenning.config.get_config", _boom)
     base = ["how to install Docker"]
     # Config failure must not break the search path.
     assert maybe_reformulate_queries("how to install Docker", base) == base
 
 
 def test_maybe_reformulate_empty_base_falls_back_to_user_query(monkeypatch):
-    monkeypatch.setattr("ultron.config.get_config", lambda: _fake_cfg(enabled=True))
+    monkeypatch.setattr("kenning.config.get_config", lambda: _fake_cfg(enabled=True))
     # Empty base + a query with no rule match -> [user_query].
     assert maybe_reformulate_queries("explain photosynthesis", []) == ["explain photosynthesis"]
 

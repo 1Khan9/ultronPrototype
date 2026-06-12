@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.memory.history_recall import (
+from kenning.memory.history_recall import (
     ROLE_ASSISTANT,
     ROLE_USER,
     match_history_recall,
@@ -75,8 +75,8 @@ def test_non_recall_returns_none(text):
 
 
 def _orch():
-    from ultron.memory.dual_history import DualHistoryStore
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.memory.dual_history import DualHistoryStore
+    from kenning.pipeline.orchestrator import Orchestrator
 
     o = Orchestrator.__new__(Orchestrator)
     o._dual_history = DualHistoryStore(verbatim_cap=300)
@@ -142,7 +142,7 @@ def test_handler_returns_false_for_non_recall():
 
 
 def test_handler_disabled_via_config_returns_false(monkeypatch):
-    from ultron.config import get_config
+    from kenning.config import get_config
 
     monkeypatch.setattr(get_config().memory, "history_recall_enabled", False)
     o, spoken = _orch()

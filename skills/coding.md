@@ -32,7 +32,7 @@ context:
   that solves X. Examples > prose.
 * If the user mentions a stack trace, ask for the exact error text
   before guessing — guessing wastes a turn.
-* For ultron's own codebase: the test sweep entry is
+* For kenning's own codebase: the test sweep entry is
   `scripts/run_tests.py` (never `python -m pytest tests/`). The
   binding rules for new tests are in
   `docs/test_sweep_binding_rules.md`. Any non-trivial change must

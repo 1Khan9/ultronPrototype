@@ -34,7 +34,7 @@ import shlex
 from dataclasses import dataclass, field
 from typing import Iterable, Optional, Sequence
 
-from ultron.safety.rules.base import Rule
+from kenning.safety.rules.base import Rule
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +238,7 @@ def _matches_prefix(command: str, prefix: str) -> bool:
 
 
 def _block_result(rule_id: str, description: str, message: str, command: str):
-    from ultron.safety.validator import RuleResult, Verdict
+    from kenning.safety.validator import RuleResult, Verdict
 
     rendered = message.format(action=command)
     return RuleResult(
@@ -250,7 +250,7 @@ def _block_result(rule_id: str, description: str, message: str, command: str):
 
 
 def _allow_result(rule_id: str, reason: str):
-    from ultron.safety.validator import RuleResult, Verdict
+    from kenning.safety.validator import RuleResult, Verdict
 
     return RuleResult(rule_id=rule_id, verdict=Verdict.ALLOW, reason=reason)
 

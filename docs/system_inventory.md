@@ -1,4 +1,4 @@
-# Ultron prototype — system inventory
+# Kenning prototype — system inventory
 
 Snapshot of every component currently in the system, with file paths, key
 classes/functions, and brief responsibility. Generated as Part 1 of the
@@ -26,16 +26,16 @@ discussion before any modification.
 
 | Component | Location | Symbols | Status |
 |---|---|---|---|
-| LLM (Qwen3.5-9B Q4_K_M GGUF, llama-cpp-python) | [src/ultron/llm/inference.py](src/ultron/llm/inference.py) | `LLMEngine`, `_strip_thinking_blocks` | **PRESENT** |
+| LLM (Qwen3.5-9B Q4_K_M GGUF, llama-cpp-python) | [src/kenning/llm/inference.py](src/kenning/llm/inference.py) | `LLMEngine`, `_strip_thinking_blocks` | **PRESENT** |
 | LLM model file | `C:\STC\ultronPrototype\models\Qwen3.5-9B-Q4_K_M.gguf` | n/a | **PRESENT** (5.29 GB; metadata: `qwen35` hybrid attn+SSM, EOS=`<\|im_end\|>`, Unsloth-quantized) |
-| Whisper STT | [src/ultron/transcription/whisper_engine.py](src/ultron/transcription/whisper_engine.py) | `WhisperEngine` | **PRESENT** |
-| Piper TTS | [src/ultron/tts/speech.py](src/ultron/tts/speech.py) | `TextToSpeech` | **PRESENT** (sentence flush on `.!?\n`, `TTS_LENGTH_SCALE` configurable) |
-| RVC voice conversion | [src/ultron/tts/rvc.py](src/ultron/tts/rvc.py) | `RvcConverter` | **PRESENT** (cuda:0, RMVPE pitch, ~900MB VRAM) |
-| Embeddings (bge-small-en-v1.5 INT8 ONNX, CPU) | [src/ultron/memory/embedder.py](src/ultron/memory/embedder.py) | `TextEmbedder` (in qdrant_store), embedder helpers | **PRESENT** |
-| openWakeWord (CPU) | [src/ultron/audio/wake_word.py](src/ultron/audio/wake_word.py) | `WakeWordDetector` | **PRESENT** (custom `ultron.onnx` at `models/openwakeword/ultron.onnx`) |
-| VAD (silero-vad) | [src/ultron/audio/vad.py](src/ultron/audio/vad.py) | `VoiceActivityDetector`, `SpeechEvent` | **PRESENT** |
-| Audio capture / ring buffer | [src/ultron/audio/capture.py](src/ultron/audio/capture.py), [src/ultron/audio/ring_buffer.py](src/ultron/audio/ring_buffer.py) | `AudioCapture`, `RingBuffer` | **PRESENT** |
-| Orchestrator (event loop, state machine) | [src/ultron/pipeline/orchestrator.py](src/ultron/pipeline/orchestrator.py) | `Orchestrator` | **PRESENT** (~700 lines; integrates everything) |
+| Whisper STT | [src/kenning/transcription/whisper_engine.py](src/kenning/transcription/whisper_engine.py) | `WhisperEngine` | **PRESENT** |
+| Piper TTS | [src/kenning/tts/speech.py](src/kenning/tts/speech.py) | `TextToSpeech` | **PRESENT** (sentence flush on `.!?\n`, `TTS_LENGTH_SCALE` configurable) |
+| RVC voice conversion | [src/kenning/tts/rvc.py](src/kenning/tts/rvc.py) | `RvcConverter` | **PRESENT** (cuda:0, RMVPE pitch, ~900MB VRAM) |
+| Embeddings (bge-small-en-v1.5 INT8 ONNX, CPU) | [src/kenning/memory/embedder.py](src/kenning/memory/embedder.py) | `TextEmbedder` (in qdrant_store), embedder helpers | **PRESENT** |
+| openWakeWord (CPU) | [src/kenning/audio/wake_word.py](src/kenning/audio/wake_word.py) | `WakeWordDetector` | **PRESENT** (custom `kenning.onnx` at `models/openwakeword/kenning.onnx`) |
+| VAD (silero-vad) | [src/kenning/audio/vad.py](src/kenning/audio/vad.py) | `VoiceActivityDetector`, `SpeechEvent` | **PRESENT** |
+| Audio capture / ring buffer | [src/kenning/audio/capture.py](src/kenning/audio/capture.py), [src/kenning/audio/ring_buffer.py](src/kenning/audio/ring_buffer.py) | `AudioCapture`, `RingBuffer` | **PRESENT** |
+| Orchestrator (event loop, state machine) | [src/kenning/pipeline/orchestrator.py](src/kenning/pipeline/orchestrator.py) | `Orchestrator` | **PRESENT** (~700 lines; integrates everything) |
 
 **NOTE on Ollama:** The user has Ollama installed and `qwen3:8b` registered, but
 the voice pipeline does NOT use it. Loader is llama-cpp-python directly. See
@@ -48,24 +48,24 @@ for the runtime decision.
 
 | Component | Location | Symbols | Status |
 |---|---|---|---|
-| Abstract bridge interface + standardized `TaskEvent` vocabulary | [src/ultron/coding/bridge.py](src/ultron/coding/bridge.py:254) | `CodingBridge`, `EventKind` (STATUS, TEXT, TOOL_USE, TOOL_RESULT, FILE_CHANGE, ERROR, COMPLETE, USAGE), `TaskHandle`, `TaskEvent`, `TaskRequest`, `TaskResult`, `TaskState` | **PRESENT** |
-| Direct AI coding agent subprocess bridge | [src/ultron/coding/direct_bridge.py:52](src/ultron/coding/direct_bridge.py:52) | `DirectClaudeCodeBridge` | **PRESENT** (spawns `claude --print --output-format stream-json --include-partial-messages --include-hook-events --model haiku --add-dir <cwd> --dangerously-skip-permissions`) |
-| Project registry (atomic JSON CRUD) | [src/ultron/coding/projects.py:86](src/ultron/coding/projects.py:86) | `ProjectRegistry`, `Project` | **PRESENT** (registry path: [data/projects.json](data/projects.json)) |
-| Project resolver (exact / alias / substring / semantic) | [src/ultron/coding/projects.py:197](src/ultron/coding/projects.py:197) | `ProjectResolver`, `ProjectResolution`, `ResolutionKind` | **PRESENT** |
-| Sandbox project creation | [src/ultron/coding/projects.py:357](src/ultron/coding/projects.py:357) | `new_sandbox_project`, `slugify_for_path` | **PRESENT** (creates under `data/sandbox/`, slug collision-safe) |
-| Coding task runner | [src/ultron/coding/runner.py:94](src/ultron/coding/runner.py:94) | `CodingTaskRunner`, `build_default_bridge` | **PRESENT** (one in-flight task; `progress_narration`, `completion_narration`, audit log) |
-| Coding intent classifier | [src/ultron/coding/intent.py:202](src/ultron/coding/intent.py:202) | `classify`, `CodingIntent`, `CodingIntentKind` (CODE_TASK, PROGRESS_QUERY, CANCEL, NONE, MID_SESSION_ADJUSTMENT, CLARIFICATION_RESPONSE), `derive_project_name` | **PRESENT** |
-| Voice-side facade | [src/ultron/coding/voice.py:53](src/ultron/coding/voice.py:53) | `CodingVoiceController`, `VoiceResponse`; methods `handle_utterance`, `pending_completion`, `pending_clarifications` | **PRESENT** |
-| Orchestrator polling integration | [src/ultron/pipeline/orchestrator.py:639](src/ultron/pipeline/orchestrator.py:639) | `_announce_coding_completion_if_pending`, `_announce_pending_clarifications`, `_announce_pending_budget_warning` | **PRESENT** |
-| Discipline preamble for Claude prompts | [src/ultron/coding/templates.py](src/ultron/coding/templates.py), [prompts/coding/](prompts/coding/) | `TemplateRenderer`, jinja2 prompts | **PRESENT** |
+| Abstract bridge interface + standardized `TaskEvent` vocabulary | [src/kenning/coding/bridge.py](src/kenning/coding/bridge.py:254) | `CodingBridge`, `EventKind` (STATUS, TEXT, TOOL_USE, TOOL_RESULT, FILE_CHANGE, ERROR, COMPLETE, USAGE), `TaskHandle`, `TaskEvent`, `TaskRequest`, `TaskResult`, `TaskState` | **PRESENT** |
+| Direct AI coding agent subprocess bridge | [src/kenning/coding/direct_bridge.py:52](src/kenning/coding/direct_bridge.py:52) | `DirectClaudeCodeBridge` | **PRESENT** (spawns `claude --print --output-format stream-json --include-partial-messages --include-hook-events --model haiku --add-dir <cwd> --dangerously-skip-permissions`) |
+| Project registry (atomic JSON CRUD) | [src/kenning/coding/projects.py:86](src/kenning/coding/projects.py:86) | `ProjectRegistry`, `Project` | **PRESENT** (registry path: [data/projects.json](data/projects.json)) |
+| Project resolver (exact / alias / substring / semantic) | [src/kenning/coding/projects.py:197](src/kenning/coding/projects.py:197) | `ProjectResolver`, `ProjectResolution`, `ResolutionKind` | **PRESENT** |
+| Sandbox project creation | [src/kenning/coding/projects.py:357](src/kenning/coding/projects.py:357) | `new_sandbox_project`, `slugify_for_path` | **PRESENT** (creates under `data/sandbox/`, slug collision-safe) |
+| Coding task runner | [src/kenning/coding/runner.py:94](src/kenning/coding/runner.py:94) | `CodingTaskRunner`, `build_default_bridge` | **PRESENT** (one in-flight task; `progress_narration`, `completion_narration`, audit log) |
+| Coding intent classifier | [src/kenning/coding/intent.py:202](src/kenning/coding/intent.py:202) | `classify`, `CodingIntent`, `CodingIntentKind` (CODE_TASK, PROGRESS_QUERY, CANCEL, NONE, MID_SESSION_ADJUSTMENT, CLARIFICATION_RESPONSE), `derive_project_name` | **PRESENT** |
+| Voice-side facade | [src/kenning/coding/voice.py:53](src/kenning/coding/voice.py:53) | `CodingVoiceController`, `VoiceResponse`; methods `handle_utterance`, `pending_completion`, `pending_clarifications` | **PRESENT** |
+| Orchestrator polling integration | [src/kenning/pipeline/orchestrator.py:639](src/kenning/pipeline/orchestrator.py:639) | `_announce_coding_completion_if_pending`, `_announce_pending_clarifications`, `_announce_pending_budget_warning` | **PRESENT** |
+| Discipline preamble for Claude prompts | [src/kenning/coding/templates.py](src/kenning/coding/templates.py), [prompts/coding/](prompts/coding/) | `TemplateRenderer`, jinja2 prompts | **PRESENT** |
 
 **OpenClawBridge slot-in:** referenced as a factory branch in
-[src/ultron/coding/runner.py:58-68](src/ultron/coding/runner.py:58) that
-raises `NotImplementedError` if `ULTRON_CODING_BRIDGE=openclaw` is set.
-**No actual class file exists** (`src/ultron/coding/openclaw_bridge.py`
+[src/kenning/coding/runner.py:58-68](src/kenning/coding/runner.py:58) that
+raises `NotImplementedError` if `KENNING_CODING_BRIDGE=openclaw` is set.
+**No actual class file exists** (`src/kenning/coding/openclaw_bridge.py`
 does not exist). Comments referencing the future bridge are scattered
-through [bridge.py](src/ultron/coding/bridge.py) and
-[direct_bridge.py](src/ultron/coding/direct_bridge.py). **Part 5 of the
+through [bridge.py](src/kenning/coding/bridge.py) and
+[direct_bridge.py](src/kenning/coding/direct_bridge.py). **Part 5 of the
 Foundation phase removes this reservation cleanly.**
 
 ---
@@ -92,10 +92,10 @@ Foundation phase removes this reservation cleanly.**
 
 | Item | Location | Symbols | Status |
 |---|---|---|---|
-| Wake word "Ultron" via openWakeWord | [src/ultron/audio/wake_word.py](src/ultron/audio/wake_word.py) | `WakeWordDetector` | **PRESENT** |
-| COLD/WARM mode state machine | [src/ultron/pipeline/orchestrator.py](src/ultron/pipeline/orchestrator.py) follow-up listening logic | n/a (in orchestrator) | **PRESENT** |
-| Follow-up window | [config/settings.py:383](config/settings.py:383) `FOLLOW_UP_TIMEOUT_SECONDS=30.0` | **PRESENT — DEVIATES from spec's 10s, intentional per [memory/feedback_ultron_extension.md](<ai-memory-dir>\feedback_ultron_extension.md)** |
-| Hybrid rule-based + zero-shot addressing classifier | [src/ultron/addressing/](src/ultron/addressing/) — [classifier.py:48](src/ultron/addressing/classifier.py:48), [rules.py:156](src/ultron/addressing/rules.py:156), [zero_shot.py](src/ultron/addressing/zero_shot.py) | `AddressingClassifier`, `AddressingDecision`, `classify` | **PRESENT** (CPU-only; flan-t5-small for ambiguous cases) |
+| Wake word "Kenning" via openWakeWord | [src/kenning/audio/wake_word.py](src/kenning/audio/wake_word.py) | `WakeWordDetector` | **PRESENT** |
+| COLD/WARM mode state machine | [src/kenning/pipeline/orchestrator.py](src/kenning/pipeline/orchestrator.py) follow-up listening logic | n/a (in orchestrator) | **PRESENT** |
+| Follow-up window | [config/settings.py:383](config/settings.py:383) `FOLLOW_UP_TIMEOUT_SECONDS=30.0` | **PRESENT — DEVIATES from spec's 10s, intentional per [memory/feedback_kenning_extension.md](<ai-memory-dir>\feedback_kenning_extension.md)** |
+| Hybrid rule-based + zero-shot addressing classifier | [src/kenning/addressing/](src/kenning/addressing/) — [classifier.py:48](src/kenning/addressing/classifier.py:48), [rules.py:156](src/kenning/addressing/rules.py:156), [zero_shot.py](src/kenning/addressing/zero_shot.py) | `AddressingClassifier`, `AddressingDecision`, `classify` | **PRESENT** (CPU-only; flan-t5-small for ambiguous cases) |
 | Addressing audit log | `logs/addressing.jsonl` (created at runtime by orchestrator) | n/a | **PRESENT** |
 | Review script | [scripts/review_addressing.py](scripts/review_addressing.py) | n/a | **PRESENT** |
 
@@ -105,30 +105,30 @@ Foundation phase removes this reservation cleanly.**
 |---|---|---|---|
 | Qdrant embedded mode | data dir at `./qdrant_data/` (configured in [config/settings.py:204](config/settings.py:204) as `data/qdrant`) | n/a | **PRESENT — DIFFERENT path from prompt's `./qdrant_data/`; current is `data/qdrant`. Same effect, different filename. Flag for Phase 3 unified-config alignment.** |
 | Three collections (conversations, facts, web_results) | [config/settings.py:205-207](config/settings.py:205) | `MEMORY_QDRANT_CONVERSATIONS`, `MEMORY_QDRANT_FACTS`, `MEMORY_QDRANT_WEB_RESULTS` | **PRESENT** |
-| Hybrid search (BM25 + dense bge-small) with RRF | [src/ultron/memory/qdrant_store.py:64](src/ultron/memory/qdrant_store.py:64) | `ConversationMemory` | **PRESENT** |
+| Hybrid search (BM25 + dense bge-small) with RRF | [src/kenning/memory/qdrant_store.py:64](src/kenning/memory/qdrant_store.py:64) | `ConversationMemory` | **PRESENT** |
 | Async write path | inside `ConversationMemory` (background writer thread) | n/a | **PRESENT** |
 | Maintenance script | [scripts/maintenance.py](scripts/maintenance.py) | n/a | **PRESENT** |
 | Maintenance state | `data/maintenance.sqlite` | n/a | **PRESENT** |
-| JSONL migration source | `data/memory.jsonl` | n/a | **PRESENT** (Phase 3 ingest source per [memory/feedback_ultron_extension.md](<ai-memory-dir>\feedback_ultron_extension.md)) |
+| JSONL migration source | `data/memory.jsonl` | n/a | **PRESENT** (Phase 3 ingest source per [memory/feedback_kenning_extension.md](<ai-memory-dir>\feedback_kenning_extension.md)) |
 | Migration script | [scripts/migrate_memory_to_qdrant.py](scripts/migrate_memory_to_qdrant.py) | n/a | **PRESENT** |
 
 ### Phase 4 — Web search
 
 | Item | Location | Symbols | Status |
 |---|---|---|---|
-| Brave API client (rate-limited) | [src/ultron/web_search/brave.py](src/ultron/web_search/brave.py) | `BraveSearchClient`, `BraveResult` | **PRESENT** (key from `ULTRON_BRAVE_API_KEY` env) |
-| Two-stage gating (rules + pre-flight) | [src/ultron/web_search/gating.py:403](src/ultron/web_search/gating.py:403) | `WebSearchGate`, `GateVerdict`, `GateDecision`, `classify_by_rules`, `classify_by_preflight` | **PRESENT** |
-| Jina Reader full-text | [src/ultron/web_search/jina.py](src/ultron/web_search/jina.py) | `JinaReaderClient` | **PRESENT** |
-| Acknowledgment phrase pool | [src/ultron/web_search/acknowledgments.py:31](src/ultron/web_search/acknowledgments.py:31) | `AcknowledgmentSource` | **PRESENT** (8-phrase shuffled pool) |
-| Citation formatting / source rendering | [src/ultron/web_search/search.py](src/ultron/web_search/search.py) | `WebSearchExecutor`, `format_sources_for_prompt`, `format_sources_for_transcript` | **PRESENT** |
-| `web_results` cache | [src/ultron/web_search/cache.py:58](src/ultron/web_search/cache.py:58) | `WebResultsCache` | **PRESENT** (writes through Qdrant collection) |
+| Brave API client (rate-limited) | [src/kenning/web_search/brave.py](src/kenning/web_search/brave.py) | `BraveSearchClient`, `BraveResult` | **PRESENT** (key from `KENNING_BRAVE_API_KEY` env) |
+| Two-stage gating (rules + pre-flight) | [src/kenning/web_search/gating.py:403](src/kenning/web_search/gating.py:403) | `WebSearchGate`, `GateVerdict`, `GateDecision`, `classify_by_rules`, `classify_by_preflight` | **PRESENT** |
+| Jina Reader full-text | [src/kenning/web_search/jina.py](src/kenning/web_search/jina.py) | `JinaReaderClient` | **PRESENT** |
+| Acknowledgment phrase pool | [src/kenning/web_search/acknowledgments.py:31](src/kenning/web_search/acknowledgments.py:31) | `AcknowledgmentSource` | **PRESENT** (8-phrase shuffled pool) |
+| Citation formatting / source rendering | [src/kenning/web_search/search.py](src/kenning/web_search/search.py) | `WebSearchExecutor`, `format_sources_for_prompt`, `format_sources_for_transcript` | **PRESENT** |
+| `web_results` cache | [src/kenning/web_search/cache.py:58](src/kenning/web_search/cache.py:58) | `WebResultsCache` | **PRESENT** (writes through Qdrant collection) |
 
 ### Phase 5 — Uncertainty signals
 
 | Item | Location | Symbols | Status |
 |---|---|---|---|
-| Uncertainty detection in pre-flight pass | [src/ultron/web_search/gating.py:278](src/ultron/web_search/gating.py:278) | `classify_by_preflight` returns `knowledge_confidence` / `knowledge_source` / `has_temporal_dependency` on `GateVerdict` | **PRESENT** |
-| Response style adaptation by confidence | [src/ultron/uncertainty.py:54](src/ultron/uncertainty.py:54) | `apply(verdict, user_text)` | **PRESENT** (single function, not a class — adapts user prompt with hedging/citation hints) |
+| Uncertainty detection in pre-flight pass | [src/kenning/web_search/gating.py:278](src/kenning/web_search/gating.py:278) | `classify_by_preflight` returns `knowledge_confidence` / `knowledge_source` / `has_temporal_dependency` on `GateVerdict` | **PRESENT** |
+| Response style adaptation by confidence | [src/kenning/uncertainty.py:54](src/kenning/uncertainty.py:54) | `apply(verdict, user_text)` | **PRESENT** (single function, not a class — adapts user prompt with hedging/citation hints) |
 
 ---
 
@@ -136,13 +136,13 @@ Foundation phase removes this reservation cleanly.**
 
 | Component | Location | Symbols | Status |
 |---|---|---|---|
-| MCP server (bidirectional tool surface) | [src/ultron/coding/mcp_server.py:137](src/ultron/coding/mcp_server.py:137) | `UltronMCPServer`, `write_mcp_config`, `remove_mcp_config` | **PRESENT** (~800 lines; in-process Python tools + SSE worker tools) |
-| Conversation coordinator (clarification decision logic) | [src/ultron/coding/coordinator.py:280](src/ultron/coding/coordinator.py:280) | `ConversationCoordinator`; `decide_clarification`, `handle_declare_complete` | **PRESENT** (~1000 lines) |
-| ProjectSession state model | [src/ultron/coding/session.py:164](src/ultron/coding/session.py:164) | `ProjectSession`, `SessionStatus`, `SessionStore`, `StateTransitionError`, `is_valid_transition`, `StageRecord`, `FileRecord`, `ClarificationRequest`, `AdjustmentRecord`, `CompletionClaim`, `TestStatus` | **PRESENT** |
+| MCP server (bidirectional tool surface) | [src/kenning/coding/mcp_server.py:137](src/kenning/coding/mcp_server.py:137) | `KenningMCPServer`, `write_mcp_config`, `remove_mcp_config` | **PRESENT** (~800 lines; in-process Python tools + SSE worker tools) |
+| Conversation coordinator (clarification decision logic) | [src/kenning/coding/coordinator.py:280](src/kenning/coding/coordinator.py:280) | `ConversationCoordinator`; `decide_clarification`, `handle_declare_complete` | **PRESENT** (~1000 lines) |
+| ProjectSession state model | [src/kenning/coding/session.py:164](src/kenning/coding/session.py:164) | `ProjectSession`, `SessionStatus`, `SessionStore`, `StateTransitionError`, `is_valid_transition`, `StageRecord`, `FileRecord`, `ClarificationRequest`, `AdjustmentRecord`, `CompletionClaim`, `TestStatus` | **PRESENT** |
 | Five prompt templates | [prompts/coding/](prompts/coding/) — `claude_code_initial_new.j2`, `_initial_edit.j2`, `_correction.j2`, `_adjustment.j2`, `_clarification_response.j2` | rendered via `TemplateRenderer` | **PRESENT** (5 jinja files) |
-| Verification layer (six checks) | [src/ultron/coding/verification.py:128](src/ultron/coding/verification.py:128) | `Verifier` | **PRESENT** (~790 lines; checks for syntax, smoke run, file claims, etc.) |
+| Verification layer (six checks) | [src/kenning/coding/verification.py:128](src/kenning/coding/verification.py:128) | `Verifier` | **PRESENT** (~790 lines; checks for syntax, smoke run, file claims, etc.) |
 | Corrective loop with default → escalation-model escalation | inside `ConversationCoordinator.handle_declare_complete` + `Verifier` results path; thresholds at [config/settings.py:311-318](config/settings.py:311) (`CODING_ESCALATION_THRESHOLD_DEFAULT=3`, `_ESCALATION=2`) | n/a | **PRESENT** |
-| Delta-aware status narration | [src/ultron/coding/narration.py:107](src/ultron/coding/narration.py:107) | `StatusNarrator`, `NarrationDelta` | **PRESENT** |
+| Delta-aware status narration | [src/kenning/coding/narration.py:107](src/kenning/coding/narration.py:107) | `StatusNarrator`, `NarrationDelta` | **PRESENT** |
 | Integration test harness (10 scenarios + runner) | [tests/coding/test_orchestration.py](tests/coding/test_orchestration.py), [scripts/run_orchestration_tests.py](scripts/run_orchestration_tests.py) | `_StubLLM`, `OrchStack`, scenarios 1-10 + 7b | **PRESENT** (11 scenarios in 10.7 s wall — see `phase_foundation_start.measurements_extended.coding_orchestration_scenarios`) |
 | Live e2e variant | [tests/coding/test_orchestration_real.py](tests/coding/test_orchestration_real.py) | n/a | **PRESENT** (gated on `PYTEST_RUN_GPU_TESTS=1` — metered against Claude API) |
 | Mock bridge | [tests/coding/mock_bridge.py](tests/coding/mock_bridge.py) | `ScriptedClaudeBridge`, `ClaudeScript` | **PRESENT** |
@@ -154,9 +154,9 @@ Foundation phase removes this reservation cleanly.**
 
 | Component | Location | Symbols | Status |
 |---|---|---|---|
-| Five projection functions | [src/ultron/coding/projections.py](src/ultron/coding/projections.py) | `project_clarification_context:158`, `project_status_delta:324`, `project_adjustment_context:483`, `project_correction_context:629`, `project_completion_context:765` | **PRESENT** (904 lines; `tiktoken` cl100k_base for token counting) |
+| Five projection functions | [src/kenning/coding/projections.py](src/kenning/coding/projections.py) | `project_clarification_context:158`, `project_status_delta:324`, `project_adjustment_context:483`, `project_correction_context:629`, `project_completion_context:765` | **PRESENT** (904 lines; `tiktoken` cl100k_base for token counting) |
 | Projection schemas | same file | `ClarificationContextProjection`, `StatusDeltaProjection`, `AdjustmentContextProjection`, `CorrectionContextProjection`, `CompletionContextProjection`, `ProjectionResult` | **PRESENT** |
-| Five new MCP tools | [src/ultron/coding/mcp_server.py](src/ultron/coding/mcp_server.py) | `get_status_delta`, `get_clarification_context`, `get_adjustment_context`, `get_correction_context`, `get_completion_context` (plus deprecated `get_session_state` and internal `get_full_state`) | **PRESENT** |
+| Five new MCP tools | [src/kenning/coding/mcp_server.py](src/kenning/coding/mcp_server.py) | `get_status_delta`, `get_clarification_context`, `get_adjustment_context`, `get_correction_context`, `get_completion_context` (plus deprecated `get_session_state` and internal `get_full_state`) | **PRESENT** |
 | Projection tests | [tests/test_projections.py](tests/test_projections.py) | 24 tests | **PRESENT, all passing** |
 
 **This is the "Part 2" target of the Foundation prompt — verification only,
@@ -207,7 +207,7 @@ no new implementation needed.**
 | Path | Purpose |
 |---|---|
 | `models/` (main checkout only) | LLM, Whisper, Piper, openWakeWord, RVC support files |
-| `ultron_james_spader_mcu_6941/` | RVC voice model (`Ultron.pth`, `added_IVF301_…_Ultron_v2.index`) |
+| `kenning_rvc_voice/` | RVC voice model (`Kenning.pth`, `added_IVF301_…_Kenning_v2.index`) |
 | `data/qdrant/` | Embedded Qdrant data |
 | `data/memory.jsonl` | Legacy turn log; migration source |
 | `data/projects.json` | Project registry |
@@ -241,7 +241,7 @@ data dir, but the data is large and stable — the docs change is cheaper).
 Foundation prompt's example config has
 `addressing.warm_mode_duration_seconds: 10`. Current
 `FOLLOW_UP_TIMEOUT_SECONDS=30.0`. **Intentional 30 s deviation per
-[memory/feedback_ultron_extension.md](<ai-memory-dir>\feedback_ultron_extension.md)**;
+[memory/feedback_kenning_extension.md](<ai-memory-dir>\feedback_kenning_extension.md)**;
 do NOT re-tighten without asking. Phase 3 unified-config should record 30 s
 as the canonical value, not 10.
 
@@ -256,9 +256,9 @@ keeps llama-cpp-python in-process.** Phase 3 should use
 ### D. `OpenClawBridge` slot-in
 
 Not a class file. Just the factory branch in
-[src/ultron/coding/runner.py:58-68](src/ultron/coding/runner.py:58)
+[src/kenning/coding/runner.py:58-68](src/kenning/coding/runner.py:58)
 plus comment references. **Part 5 of Foundation removes this branch
-cleanly** — the import the branch attempts (`ultron.coding.openclaw_bridge`)
+cleanly** — the import the branch attempts (`kenning.coding.openclaw_bridge`)
 already raises `NotImplementedError` because the module doesn't exist, so
 removal is purely cosmetic.
 
@@ -288,7 +288,7 @@ shift for future phases to choose explicitly.
 Not present. Phase 4 of Foundation creates this. Mentioned here so the
 inventory is honest.
 
-### H. `_strip_thinking_blocks` in [src/ultron/llm/inference.py:34](src/ultron/llm/inference.py:34)
+### H. `_strip_thinking_blocks` in [src/kenning/llm/inference.py:34](src/kenning/llm/inference.py:34)
 
 Filters `<think>...</think>` reasoning blocks from streamed tokens before
 they hit TTS. Not a Foundation-prompt-specified component but **load-bearing**
@@ -304,7 +304,7 @@ For completeness — these were generated during the LLM-runtime decision:
 | Path | Purpose |
 |---|---|
 | [data/ollama_compat_test/Modelfile](data/ollama_compat_test/Modelfile) | Modelfile that mirrored every llama-cpp param from settings.py |
-| `~/.ollama/models/blobs/...` (~5.7 GB on disk) | `ultron-cpp-mirror:latest` registered model, can be removed via `ollama rm ultron-cpp-mirror` if not wanted |
+| `~/.ollama/models/blobs/...` (~5.7 GB on disk) | `kenning-cpp-mirror:latest` registered model, can be removed via `ollama rm kenning-cpp-mirror` if not wanted |
 | Test results | `phase_foundation_start.scope.ollama_compat_test` block in [baselines.json](baselines.json) |
 | Decision recorded | [memory/feedback_llm_runtime_decision.md](<ai-memory-dir>\feedback_llm_runtime_decision.md) |
 

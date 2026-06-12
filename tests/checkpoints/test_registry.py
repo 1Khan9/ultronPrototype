@@ -1,4 +1,4 @@
-"""Tests for ultron.checkpoints.registry (uses test-doubles for the tracker)."""
+"""Tests for kenning.checkpoints.registry (uses test-doubles for the tracker)."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from typing import Optional
 
 import pytest
 
-from ultron.checkpoints import registry as reg
-from ultron.checkpoints.restore import RestoreAxis
-from ultron.checkpoints.shadow_repo import CheckpointCommit, ShadowRepoTracker
+from kenning.checkpoints import registry as reg
+from kenning.checkpoints.restore import RestoreAxis
+from kenning.checkpoints.shadow_repo import CheckpointCommit, ShadowRepoTracker
 
 
 class _StubTracker:

@@ -16,7 +16,7 @@ fine-tune tooling (Kokoro is StyleTTS2 + ISTFTNet):
       stats.json            (summary: count, duration, per-category)
 
 Source: a completed
-``ultronVoiceAudio/bulk_eval/bulk_eval_<ts>/`` run directory with its
+``kenningVoiceAudio/bulk_eval/bulk_eval_<ts>/`` run directory with its
 manifest.json carrying ``id``, ``category``, ``text``, ``wav``,
 ``duration_s``, and the four trim-flag fields.
 
@@ -33,9 +33,9 @@ Pipeline:
 
 Usage::
 
-    python ultronVoiceAudio/scripts/package_kokoro_corpus.py \\
-        --source ultronVoiceAudio/bulk_eval/bulk_eval_20260521_123515 \\
-        [--output ultronVoiceAudio/kokoro_training_corpus_<ts>] \\
+    python kenningVoiceAudio/scripts/package_kokoro_corpus.py \\
+        --source kenningVoiceAudio/bulk_eval/bulk_eval_20260521_123515 \\
+        [--output kenningVoiceAudio/kokoro_training_corpus_<ts>] \\
         [--min-duration 1.0] [--max-duration 12.0] \\
         [--val-fraction 0.05] [--seed 42] \\
         [--dry-run]
@@ -60,7 +60,7 @@ from typing import Optional
 
 
 HERE = Path(__file__).resolve().parent
-PROJECT_ROOT = HERE.parent.parent  # ultronVoiceAudio/ -> project root
+PROJECT_ROOT = HERE.parent.parent  # kenningVoiceAudio/ -> project root
 
 
 def _resolve(p: str) -> Path:
@@ -137,7 +137,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     parser.add_argument(
         "--output", default=None,
-        help="Output dir. Default: ultronVoiceAudio/kokoro_training_corpus_<ts>/",
+        help="Output dir. Default: kenningVoiceAudio/kokoro_training_corpus_<ts>/",
     )
     parser.add_argument(
         "--min-duration", type=float, default=1.0,
@@ -178,7 +178,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         output = _resolve(args.output)
     else:
         ts = time.strftime("%Y%m%d_%H%M%S")
-        output = PROJECT_ROOT / "ultronVoiceAudio" / f"kokoro_training_corpus_{ts}"
+        output = PROJECT_ROOT / "kenningVoiceAudio" / f"kokoro_training_corpus_{ts}"
 
     print("Kokoro corpus packaging")
     print("-" * 60)
@@ -356,13 +356,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     source_args_block = "\n".join(
         f"    --source {s} {backslash}" for s in sources
     )
-    readme = f"""# Ultron Kokoro fine-tune training corpus
+    readme = f"""# Kenning Kokoro fine-tune training corpus
 
 Generated: {time.strftime("%Y-%m-%d %H:%M:%S")}
 
 ## Lineage
 
-This corpus was synthesised by XTTS-v2 fine-tuned on the Ultron voice
+This corpus was synthesised by XTTS-v2 fine-tuned on the Kenning voice
 reference at `best_model_102.pth` (epoch 17 of the
 2026-05-21 retrain). Each clip went through the production
 post-processing pipeline:
@@ -409,7 +409,7 @@ is StyleTTS2 + ISTFTNet).
 ## Reproducibility
 
 ```
-python ultronVoiceAudio/scripts/package_kokoro_corpus.py \\
+python kenningVoiceAudio/scripts/package_kokoro_corpus.py \\
 {source_args_block}
     --output {output} \\
     --min-duration {args.min_duration} \\

@@ -1,4 +1,4 @@
-"""Ultron — a local voice-first AI assistant."""
+"""Kenning — a local voice-first AI assistant."""
 
 import os
 import sys

@@ -20,9 +20,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from ultron.config import get_config, resolve_path
-from ultron.openclaw_routing.intents import RoutingIntent
-from ultron.utils.logging import get_logger
+from kenning.config import get_config, resolve_path
+from kenning.openclaw_routing.intents import RoutingIntent
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_routing.decision_log")
 

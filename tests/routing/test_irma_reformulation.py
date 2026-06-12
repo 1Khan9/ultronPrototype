@@ -11,9 +11,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.openclaw_routing.disambiguator import IntentDisambiguator
-from ultron.openclaw_routing.intents import RoutingIntentKind
-from ultron.openclaw_routing.irma import (
+from kenning.openclaw_routing.disambiguator import IntentDisambiguator
+from kenning.openclaw_routing.intents import RoutingIntentKind
+from kenning.openclaw_routing.irma import (
     InputReformulator,
     RecentDecision,
     ReformulationContext,
@@ -154,7 +154,7 @@ async def test_disambiguator_default_off_uses_raw_utterance(llm_mock) -> None:
     """No reformulator + irma.enabled=False ⇒ raw utterance flows through
     unchanged. Back-compat guarantee."""
     d = IntentDisambiguator(llm_mock)
-    with patch("ultron.openclaw_routing.disambiguator.get_config") as gc:
+    with patch("kenning.openclaw_routing.disambiguator.get_config") as gc:
         cfg = MagicMock()
         cfg.routing.llm_disambiguation_enabled = True
         cfg.routing.irma.enabled = False
@@ -172,7 +172,7 @@ async def test_disambiguator_with_reformulator_but_flag_off_uses_raw(llm_mock) -
     """Reformulator wired but flag off ⇒ behaviour identical to no-reformulator."""
     r = InputReformulator()
     d = IntentDisambiguator(llm_mock, reformulator=r)
-    with patch("ultron.openclaw_routing.disambiguator.get_config") as gc:
+    with patch("kenning.openclaw_routing.disambiguator.get_config") as gc:
         cfg = MagicMock()
         cfg.routing.llm_disambiguation_enabled = True
         cfg.routing.irma.enabled = False
@@ -191,7 +191,7 @@ async def test_disambiguator_with_irma_enabled_uses_enriched_prompt(llm_mock) ->
         recent=[RecentDecision(kind="browser_automation", handler="d", outcome="stub")],
         active_session_summary="no active task",
     )
-    with patch("ultron.openclaw_routing.disambiguator.get_config") as gc:
+    with patch("kenning.openclaw_routing.disambiguator.get_config") as gc:
         cfg = MagicMock()
         cfg.routing.llm_disambiguation_enabled = True
         cfg.routing.irma.enabled = True
@@ -213,7 +213,7 @@ async def test_disambiguator_irma_failure_falls_back_to_raw(llm_mock) -> None:
     r = MagicMock()
     r.reformulate.side_effect = RuntimeError("boom")
     d = IntentDisambiguator(llm_mock, reformulator=r)
-    with patch("ultron.openclaw_routing.disambiguator.get_config") as gc:
+    with patch("kenning.openclaw_routing.disambiguator.get_config") as gc:
         cfg = MagicMock()
         cfg.routing.llm_disambiguation_enabled = True
         cfg.routing.irma.enabled = True
@@ -233,7 +233,7 @@ async def test_disambiguator_irma_with_no_context_still_emits_utterance(llm_mock
     section)."""
     r = InputReformulator()
     d = IntentDisambiguator(llm_mock, reformulator=r)
-    with patch("ultron.openclaw_routing.disambiguator.get_config") as gc:
+    with patch("kenning.openclaw_routing.disambiguator.get_config") as gc:
         cfg = MagicMock()
         cfg.routing.llm_disambiguation_enabled = True
         cfg.routing.irma.enabled = True

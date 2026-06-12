@@ -1,4 +1,4 @@
-"""Tests for anticheat-safe mode (``ultron.safety.anticheat``).
+"""Tests for anticheat-safe mode (``kenning.safety.anticheat``).
 
 The user's account is on the line here, so coverage is exhaustive:
 the guard semantics, the toggle matcher, the blocked-tool taxonomy,
@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ultron.safety.anticheat import (
+from kenning.safety.anticheat import (
     AnticheatBlockedError,
     BLOCKED_NOTICE,
     anticheat_active,
@@ -25,10 +25,10 @@ from ultron.safety.anticheat import (
     set_anticheat_active,
 )
 
-SRC = Path(__file__).resolve().parents[2] / "src" / "ultron"
+SRC = Path(__file__).resolve().parents[2] / "src" / "kenning"
 
 
-from ultron.safety.anticheat import clear_surface_hooks, register_surface_hook
+from kenning.safety.anticheat import clear_surface_hooks, register_surface_hook
 
 
 @pytest.fixture(autouse=True)
@@ -63,9 +63,9 @@ def test_runtime_toggle_activates_guard() -> None:
 
 
 def test_config_pin_activates_guard(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ultron.safety.anticheat import set_config_pin_enabled
+    from kenning.safety.anticheat import set_config_pin_enabled
 
-    import ultron.config as config_mod
+    import kenning.config as config_mod
 
     monkeypatch.setattr(
         config_mod, "get_config",
@@ -87,7 +87,7 @@ def test_config_pin_ignored_when_disabled_for_tests(
     """The session conftest guard: a pinned config must not leak into
     hermetic tests (set_config_pin_enabled(False) ignores it); the
     runtime flag still works."""
-    import ultron.config as config_mod
+    import kenning.config as config_mod
 
     monkeypatch.setattr(
         config_mod, "get_config",
@@ -104,7 +104,7 @@ def test_config_pin_ignored_when_disabled_for_tests(
 def test_config_errors_fail_open_but_runtime_flag_wins(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import ultron.config as config_mod
+    import kenning.config as config_mod
 
     def boom():
         raise RuntimeError("config broken")
@@ -172,38 +172,38 @@ def test_match_anticheat_toggle(text: str, expected) -> None:
 # guards inserted across the desktop surface. The AST audit test below
 # proves each listed function still contains its guard call.
 GUARDED = [
-    ("ultron.desktop.input_control", "InputController",
+    ("kenning.desktop.input_control", "InputController",
      ["move_mouse", "click", "type_text", "drag_to", "scroll"]),
-    ("ultron.desktop.capture", "ScreenCapture",
+    ("kenning.desktop.capture", "ScreenCapture",
      ["capture_monitor", "capture_all_monitors", "capture_region"]),
-    ("ultron.desktop.capture", None,
+    ("kenning.desktop.capture", None,
      ["find_image_on_screen", "get_pixel_color"]),
-    ("ultron.desktop.uia", None,
+    ("kenning.desktop.uia", None,
      ["collect_window_text", "find_element", "click_element",
       "type_text_into_element", "dpi_aware_click_at_element_center",
       "get_ui_element_inventory", "wait_for_text_in_window",
       "wait_for_pixel_color", "find_browser_window",
       "extract_browser_content", "physical_center_of_element",
       "physical_rect_of_element"]),
-    ("ultron.desktop.clipboard", "ClipboardManager",
+    ("kenning.desktop.clipboard", "ClipboardManager",
      ["read_text", "write_text"]),
-    ("ultron.desktop.dialog_control", None,
+    ("kenning.desktop.dialog_control", None,
      ["find_dialogs", "read_dialog", "click_dialog_button",
       "type_into_dialog_field", "dismiss_dialog", "wait_for_dialog"]),
-    ("ultron.desktop.element_click", None,
+    ("kenning.desktop.element_click", None,
      ["find_elements_by_name", "click_element_by_name",
       "find_text_in_window"]),
-    ("ultron.desktop.windows", None, ["focus_by_title", "close_window"]),
-    ("ultron.desktop.placement", None,
+    ("kenning.desktop.windows", None, ["focus_by_title", "close_window"]),
+    ("kenning.desktop.placement", None,
      ["move_window_to_monitor", "maximize_window", "minimize_window",
       "restore_window", "focus_window"]),
-    ("ultron.desktop.launcher", "AppLauncher",
+    ("kenning.desktop.launcher", "AppLauncher",
      ["launch_app", "launch_chrome", "open_image_search"]),
-    ("ultron.desktop.ocr", None, ["ocr_screen_region", "ocr_screen_monitor"]),
-    ("ultron.desktop.sequence", "DesktopSequenceRunner", ["run"]),
-    ("ultron.desktop.browser_use", "BrowserUseTool", ["_invoke"]),
-    ("ultron.desktop.screen_context", None, ["build_screen_context"]),
-    ("ultron.openclaw_bridge.desktop", "DesktopTool",
+    ("kenning.desktop.ocr", None, ["ocr_screen_region", "ocr_screen_monitor"]),
+    ("kenning.desktop.sequence", "DesktopSequenceRunner", ["run"]),
+    ("kenning.desktop.browser_use", "BrowserUseTool", ["_invoke"]),
+    ("kenning.desktop.screen_context", None, ["build_screen_context"]),
+    ("kenning.openclaw_bridge.desktop", "DesktopTool",
      ["screenshot", "list_windows", "find_window"]),
 ]
 
@@ -214,7 +214,7 @@ def test_every_guarded_function_contains_guard_call() -> None:
     before it can cost an account."""
     missing: list[str] = []
     for module, cls, fns in GUARDED:
-        rel = module.replace("ultron.", "").replace(".", "/") + ".py"
+        rel = module.replace("kenning.", "").replace(".", "/") + ".py"
         tree = ast.parse((SRC / rel).read_text(encoding="utf-8"))
         for want in fns:
             found = False
@@ -265,7 +265,7 @@ def test_no_ban_class_apis_anywhere_in_source() -> None:
     """Vanguard paranoia pin: the API classes kernel anticheats ban for
     (foreign process handles, memory read/write, remote threads, global
     input hooks, raw-input registration, input-hook libraries) must
-    NEVER appear in Ultron's source. The only permitted location is
+    NEVER appear in Kenning's source. The only permitted location is
     ``safety/rules/`` -- the DEFENSE regexes that exist to block these
     exact patterns in model-proposed commands."""
     import re
@@ -297,11 +297,11 @@ def test_module_guard_blocks_before_os_touch() -> None:
     the mode is active."""
     set_anticheat_active(True, "test")
 
-    from ultron.desktop.capture import find_image_on_screen, get_pixel_color
-    from ultron.desktop.dialog_control import find_dialogs
-    from ultron.desktop.element_click import find_elements_by_name
-    from ultron.desktop.placement import minimize_window
-    from ultron.desktop.windows import close_window
+    from kenning.desktop.capture import find_image_on_screen, get_pixel_color
+    from kenning.desktop.dialog_control import find_dialogs
+    from kenning.desktop.element_click import find_elements_by_name
+    from kenning.desktop.placement import minimize_window
+    from kenning.desktop.windows import close_window
 
     with pytest.raises(AnticheatBlockedError):
         get_pixel_color(10, 10)
@@ -323,9 +323,9 @@ def test_module_guard_blocks_before_os_touch() -> None:
 
 
 def test_validator_blocks_desktop_tool_when_active(tmp_path: Path) -> None:
-    from ultron.safety.audit import AuditLog
-    from ultron.safety.policy import Policy
-    from ultron.safety.validator import (
+    from kenning.safety.audit import AuditLog
+    from kenning.safety.policy import Policy
+    from kenning.safety.validator import (
         RuleContext,
         ToolCallValidator,
         Verdict,
@@ -356,9 +356,9 @@ def test_validator_blocks_desktop_tool_when_active(tmp_path: Path) -> None:
 def test_validator_allows_non_desktop_tool_when_active(
     tmp_path: Path,
 ) -> None:
-    from ultron.safety.audit import AuditLog
-    from ultron.safety.policy import Policy
-    from ultron.safety.validator import (
+    from kenning.safety.audit import AuditLog
+    from kenning.safety.policy import Policy
+    from kenning.safety.validator import (
         RuleContext,
         ToolCallValidator,
         Verdict,
@@ -382,7 +382,7 @@ def test_validator_allows_non_desktop_tool_when_active(
 
 
 def _bare_orchestrator():
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
 
     o = Orchestrator.__new__(Orchestrator)
     o._spoken = []
@@ -402,8 +402,8 @@ def test_orchestrator_anticheat_toggle() -> None:
 
 
 def test_gaming_mode_tie_in(monkeypatch: pytest.MonkeyPatch) -> None:
-    import ultron.config as config_mod
-    from ultron.openclaw_routing.gaming_mode import GamingModeManager
+    import kenning.config as config_mod
+    from kenning.openclaw_routing.gaming_mode import GamingModeManager
 
     monkeypatch.setattr(
         config_mod, "get_config",
@@ -426,7 +426,7 @@ def test_gaming_mode_drives_anticheat_both_directions(
 ) -> None:
     """Anticheat is 100% tied: engage -> ON, disengage -> OFF,
     unconditionally. It is purely a function of gaming-mode state."""
-    from ultron.openclaw_routing.gaming_mode import GamingModeManager
+    from kenning.openclaw_routing.gaming_mode import GamingModeManager
 
     mgr = GamingModeManager.__new__(GamingModeManager)
     assert anticheat_active() is False          # off by default
@@ -440,8 +440,8 @@ def test_gaming_mode_engage_enables_even_when_config_unreadable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Fail-safe: a broken config can never leave a game unprotected."""
-    import ultron.config as config_mod
-    from ultron.openclaw_routing.gaming_mode import GamingModeManager
+    import kenning.config as config_mod
+    from kenning.openclaw_routing.gaming_mode import GamingModeManager
 
     def boom():
         raise RuntimeError("config broken")
@@ -453,7 +453,7 @@ def test_gaming_mode_engage_enables_even_when_config_unreadable(
 
 
 def test_gaming_mode_config_defaults() -> None:
-    from ultron.config import GamingModeConfig
+    from kenning.config import GamingModeConfig
 
     cfg = GamingModeConfig()
     assert cfg.anticheat_safe_mode is False

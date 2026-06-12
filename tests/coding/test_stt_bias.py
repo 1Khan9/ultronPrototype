@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.coding.stt_bias import (
+from kenning.coding.stt_bias import (
     STTBiasManager,
     apply_bias_prompt,
     extract_identifiers,

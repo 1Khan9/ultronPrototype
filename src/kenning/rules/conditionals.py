@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
-from ultron.parsing.frontmatter import parse_frontmatter
+from kenning.parsing.frontmatter import parse_frontmatter
 
 LOGGER = logging.getLogger(__name__)
 
@@ -123,7 +123,7 @@ class RuleEvaluationContext:
         intent_label: optional broader intent label (used as a topic match).
         topics: optional iterable of detected topic strings (RAG topic ids,
             ConversationMemory `Channel`-tagged topics).
-        system_state: mapping of state keys ultron exposes per-turn:
+        system_state: mapping of state keys kenning exposes per-turn:
             ``gaming_mode``, ``n_active_skills``, ``coding_in_progress``,
             ``hour``, ``minute``, ``rss_mb``, ``vram_used_mb``, etc.
         extra_paths: optional extra path tokens to add to the candidate

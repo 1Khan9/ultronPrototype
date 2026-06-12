@@ -3,7 +3,7 @@
 Phase 9 of the OpenClaw integration. Hooks are small lifecycle
 handlers that fire on agent events (session start, command issued,
 compaction begin/end, etc.). OpenClaw 2026.5.7 ships five bundled
-hooks; Phase 9 enables the two relevant to Ultron's workflow and
+hooks; Phase 9 enables the two relevant to Kenning's workflow and
 documents the pattern for adding custom hooks later.
 
 ## Bundled hooks (as of OpenClaw 2026.5.7)
@@ -16,7 +16,7 @@ documents the pattern for adding custom hooks later.
 | `command-logger` | Logs every command event to `~/.openclaw/logs/commands.log` (JSONL). | **Yes** — useful audit trail. |
 | `boot-md` | Runs `BOOT.md` on gateway startup if it exists in the workspace. | Skip — `BOOTSTRAP.md` (Phase 1) is the existing workspace bootstrap; adding a parallel `BOOT.md` is duplicative. |
 | `bootstrap-extra-files` | Injects extra workspace files via glob/path patterns at session start. | Skip — the persona files we have (SOUL/IDENTITY/USER/AGENTS/HEARTBEAT/BOOTSTRAP) are already injected via `agents[].systemPromptOverride`. |
-| `compaction-notifier` | Sends a visible chat notice when session compaction starts/ends. | Skip — Ultron's voice path does its own compaction (the projection layer); the OpenClaw side rarely needs compaction since `isolatedSession: true` keeps each tick fresh. |
+| `compaction-notifier` | Sends a visible chat notice when session compaction starts/ends. | Skip — Kenning's voice path does its own compaction (the projection layer); the OpenClaw side rarely needs compaction since `isolatedSession: true` keeps each tick fresh. |
 
 ## Enabling the recommended pair
 
@@ -60,17 +60,17 @@ with:
   on, required permissions).
 - `handler.ts` (or `handler.js`) — the handler implementation.
 
-Useful Ultron-specific hooks for future implementation:
+Useful Kenning-specific hooks for future implementation:
 
 - **`coding-completion-bridge`** — listen for the OpenClaw agent's
-  `tool:complete` event and forward the result to Ultron's
+  `tool:complete` event and forward the result to Kenning's
   `NotificationDispatcher.notify_coding_task_completion` if it
   came from a coding-related tool. Currently this routing happens
-  Ultron-side via the orchestrator's `_announce_coding_completion_if_pending`
+  Kenning-side via the orchestrator's `_announce_coding_completion_if_pending`
   hook, but a Gateway-side hook would catch completions that
   arrive via Telegram too.
 
-- **`voice-pipeline-reset`** — clear Ultron's audio buffers when
+- **`voice-pipeline-reset`** — clear Kenning's audio buffers when
   the user issues `/reset`. Useful for catching state drift.
 
 - **`qdrant-snapshot`** — snapshot the Qdrant data on the
@@ -87,13 +87,13 @@ Why not put coding-completion notification in a hook instead of
 in `NotificationDispatcher`?
 
 - **Hooks fire Gateway-side**, with access to the agent run's
-  shape but not Ultron's in-process state (Qdrant sessions,
+  shape but not Kenning's in-process state (Qdrant sessions,
   active coding tasks, etc.).
-- **NotificationDispatcher fires Ultron-side**, after the
+- **NotificationDispatcher fires Kenning-side**, after the
   orchestrator already knows the task completed via the in-process
   `CodingTaskRunner`.
 
-For events that originate Ultron-side (a coding session the user
+For events that originate Kenning-side (a coding session the user
 started by voice), `NotificationDispatcher` is the right home.
 For events that originate OpenClaw-side (the agent decides on its
 own to send something), a hook is the right home. Phase 9

@@ -33,11 +33,11 @@ The parser is deliberately tolerant: a malformed hunk produces a
 nothing per file: if any hunk in a file's chain fails to locate,
 the file is left untouched.
 
-The catalog rated this ★ (defer) because ultron doesn't currently
+The catalog rated this ★ (defer) because kenning doesn't currently
 have a Qwen-as-editor path that produces V4A. This module ships it
 ready for that path — when batch 6's architect+editor split graduates
 to local-editor mode, V4A is a one-line config flip via
-:mod:`ultron.coding.coder_modes`.
+:mod:`kenning.coding.coder_modes`.
 
 Public surface:
 
@@ -63,7 +63,7 @@ from enum import Enum
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 
-logger = logging.getLogger("ultron.coding.patch_v4a")
+logger = logging.getLogger("kenning.coding.patch_v4a")
 
 
 # Marker tokens for the V4A format. Constants so callers + tests

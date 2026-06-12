@@ -14,20 +14,20 @@ from __future__ import annotations
 import time
 from typing import List, Optional, Tuple
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("addressing.zero_shot")
 
 # The model accepts up to 512 tokens. We keep the prompt compact so a few
 # turns of context fit comfortably with room to spare.
-_PROMPT_TEMPLATE = """You decide whether a user's spoken utterance is meant for Ultron, the AI assistant they're talking to, or for someone or something else (another person, themselves, ambient speech).
+_PROMPT_TEMPLATE = """You decide whether a user's spoken utterance is meant for Kenning, the AI assistant they're talking to, or for someone or something else (another person, themselves, ambient speech).
 
 Answer with one word only: YES, NO, or UNCLEAR.
-- YES if the utterance is clearly directed at Ultron (a question, command, or follow-up to his last response).
-- NO if the utterance is clearly NOT directed at Ultron (talking to another person, muttering, side comments).
+- YES if the utterance is clearly directed at Kenning (a question, command, or follow-up to his last response).
+- NO if the utterance is clearly NOT directed at Kenning (talking to another person, muttering, side comments).
 - UNCLEAR if the signal is weak.
 
-{context_block}Time since Ultron last spoke: {seconds_since:.0f} seconds.
+{context_block}Time since Kenning last spoke: {seconds_since:.0f} seconds.
 Utterance: "{utterance}"
 
 Answer:"""
@@ -39,7 +39,7 @@ def _format_context(context: Optional[List[Tuple[str, str]]]) -> str:
     lines = ["Recent conversation:"]
     # Take last few turns, capped to keep prompt short.
     for role, content in context[-4:]:
-        speaker = "Ultron" if role.lower().startswith("a") else "User"
+        speaker = "Kenning" if role.lower().startswith("a") else "User"
         text = content.strip().replace("\n", " ")
         if len(text) > 200:
             text = text[:200] + "..."

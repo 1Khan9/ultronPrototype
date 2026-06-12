@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.session_registry import (
+from kenning.coding.session_registry import (
     SessionRegistry,
     reset_session_registries_for_testing,
 )
-from ultron.coding.submit_review import (
+from kenning.coding.submit_review import (
     DEFAULT_DOC_DRIFT_STAGE,
     DEFAULT_STAGES,
     DEFAULT_TESTS_STAGE,
@@ -75,7 +75,7 @@ def test_review_stage_frozen():
 
 
 def test_detect_voice_lock_hits_finds_soul_md():
-    hits = detect_voice_lock_hits(["src/ultron/x.py", "SOUL.md", "tests/x.py"])
+    hits = detect_voice_lock_hits(["src/kenning/x.py", "SOUL.md", "tests/x.py"])
     assert hits == ["SOUL.md"]
 
 
@@ -85,7 +85,7 @@ def test_detect_voice_lock_hits_finds_piper_models():
 
 
 def test_detect_voice_lock_hits_finds_rvc_voice_model():
-    hits = detect_voice_lock_hits(["ultron_james_spader_mcu_6941/Ultron.pth"])
+    hits = detect_voice_lock_hits(["kenning_rvc_voice/Kenning.pth"])
     assert len(hits) == 1
 
 
@@ -93,8 +93,8 @@ def test_detect_voice_lock_hits_finds_reference_wav_both_locations():
     # The XTTS reference WAV moved under "kokoro training audio/"
     # during the 2026-06-11 disk cleaning; both homes must hit.
     hits = detect_voice_lock_hits([
-        "ultronVoiceAudio/Ultron_vocals_mono_v1.wav",
-        "ultronVoiceAudio\\kokoro training audio\\Ultron_vocals_mono_v1.wav",
+        "kenningVoiceAudio/Kenning_vocals_mono_v1.wav",
+        "kenningVoiceAudio\\kokoro training audio\\Kenning_vocals_mono_v1.wav",
     ])
     assert len(hits) == 2
 
@@ -111,7 +111,7 @@ def test_detect_voice_lock_hits_case_insensitive():
 
 def test_detect_voice_lock_hits_no_false_positives():
     hits = detect_voice_lock_hits(
-        ["src/ultron/coding/runner.py", "tests/test_x.py", "docs/architecture.md"]
+        ["src/kenning/coding/runner.py", "tests/test_x.py", "docs/architecture.md"]
     )
     assert hits == []
 

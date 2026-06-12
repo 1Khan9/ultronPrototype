@@ -6,11 +6,11 @@ import asyncio
 
 import pytest
 
-from ultron.openclaw_routing import (
+from kenning.openclaw_routing import (
     OpenClawDispatcher,
     classify_routing,
 )
-from ultron.openclaw_routing.intents import (
+from kenning.openclaw_routing.intents import (
     BrowserIntent,
     DispatchResult,
     FileOpIntent,
@@ -77,9 +77,9 @@ def test_handle_shell_operation_returns_stub(dispatcher):
     assert result.metadata["capability"] == "shell_operations"
 
 
-def test_voice_messages_in_ultron_voice(dispatcher):
+def test_voice_messages_in_kenning_voice(dispatcher):
     """Spot-check that the stub messages avoid filler and apologetic
-    phrasing per Ultron's system prompt rules."""
+    phrasing per Kenning's system prompt rules."""
     bad_phrases = [
         "certainly", "of course", "happy to", "i'm so sorry",
         "i would be happy", "i'd love to",
@@ -116,7 +116,7 @@ def test_dispatcher_reads_config_at_construction(monkeypatch):
     legacy False path (matches test_sweep_workflow binding rule R1:
     no raw class/module mutation; always monkeypatch).
     """
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config()
     monkeypatch.setattr(cfg.openclaw, "enabled", False)
     d1 = OpenClawDispatcher()
@@ -168,7 +168,7 @@ def test_classify_then_dispatch_round_trip(dispatcher, utt, expected_capability)
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from ultron.openclaw_bridge.client import SendMessageResult
+from kenning.openclaw_bridge.client import SendMessageResult
 
 
 def _bridge_with_send(send_result: SendMessageResult) -> SimpleNamespace:
@@ -292,7 +292,7 @@ def test_messaging_rejects_empty_body(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-from ultron.openclaw_bridge.client import ToolInvocationResult
+from kenning.openclaw_bridge.client import ToolInvocationResult
 
 
 def _bridge_with_invoke(tool_result: ToolInvocationResult) -> SimpleNamespace:
@@ -330,7 +330,7 @@ def test_browser_falls_back_when_no_bridge():
 
 def test_browser_falls_back_when_disabled():
     """Master `browser.enabled: false` → stub even with bridge."""
-    from ultron.config import get_config
+    from kenning.config import get_config
 
     bridge = _bridge_with_invoke(ToolInvocationResult(
         success=True, tool_name="browser", text="anything",
@@ -442,7 +442,7 @@ def test_media_falls_back_to_stub_without_bridge():
 
 
 def test_media_falls_back_when_disabled():
-    from ultron.config import get_config
+    from kenning.config import get_config
 
     bridge = _bridge_with_invoke(ToolInvocationResult(
         success=True, tool_name="image_generate", text="ok",
@@ -511,14 +511,14 @@ def test_media_music_alias():
 
 
 def test_media_provider_override_in_config():
-    from ultron.config import get_config
+    from kenning.config import get_config
 
     bridge = _bridge_with_invoke(ToolInvocationResult(
         success=True, tool_name="image_generate", text="ok",
     ))
     cfg = get_config()
     # ComfyUI is the canonical local-only provider for media generation
-    # in Ultron's stack — the AI coding agent is the only paid service.
+    # in Kenning's stack — the AI coding agent is the only paid service.
     cfg.media_generation.default_image_provider = "comfyui"
     try:
         d = OpenClawDispatcher(config=cfg, bridge=bridge)

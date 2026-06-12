@@ -18,7 +18,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
-from ultron.llm.condensers.base import (
+from kenning.llm.condensers.base import (
     CondenseResult,
     Condenser,
     CondenserError,

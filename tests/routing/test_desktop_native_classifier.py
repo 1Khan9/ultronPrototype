@@ -14,13 +14,13 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.openclaw_routing.classifier import (
+from kenning.openclaw_routing.classifier import (
     _classify_app_launch,
     _classify_screen_context,
     _extract_monitor_target,
     classify_routing,
 )
-from ultron.openclaw_routing.intents import (
+from kenning.openclaw_routing.intents import (
     AppLaunchIntent,
     RoutingIntentKind,
     ScreenContextIntent,
@@ -452,8 +452,8 @@ def test_classify_app_launch_bare_image_search_negative(text):
 # ---------------------------------------------------------------------------
 
 
-from ultron.openclaw_routing.classifier import classify_routing
-from ultron.openclaw_routing.intents import RoutingIntentKind
+from kenning.openclaw_routing.classifier import classify_routing
+from kenning.openclaw_routing.intents import RoutingIntentKind
 
 
 @pytest.mark.parametrize("text,window_fragment", [

@@ -1,4 +1,4 @@
-# Ultron error handling
+# Kenning error handling
 
 
 > **Currency note (2026-05-22):** this document is a historical snapshot.
@@ -15,10 +15,10 @@ we detect it, how we degrade, and how the user finds out.
 
 ## Principles
 
-1. **No silent failures.** If Ultron can't do what was asked, the user
+1. **No silent failures.** If Kenning can't do what was asked, the user
    knows. The system never returns plausible-looking-but-wrong output.
 2. **Typed errors.** Every external dependency raises a typed
-   `UltronError` subclass. Callers branch on type, not message text.
+   `KenningError` subclass. Callers branch on type, not message text.
 3. **Structured error log.** `logs/errors.jsonl` records every
    dependency failure as one JSON object per line: timestamp,
    dependency, error type, context, recovery taken, optional traceback.
@@ -30,10 +30,10 @@ we detect it, how we degrade, and how the user finds out.
    defines pools of one-line user-facing messages. Empty pool silences
    narration for that failure mode (the error still logs).
 
-## Type hierarchy ([src/ultron/errors.py](../src/ultron/errors.py))
+## Type hierarchy ([src/kenning/errors.py](../src/kenning/errors.py))
 
 ```
-UltronError
+KenningError
 ├── DependencyUnavailableError
 │   ├── BraveAPIError
 │   ├── JinaReaderError
@@ -61,7 +61,7 @@ Each error carries:
 
 ## Per-dependency catalog
 
-### Brave Search API ([src/ultron/web_search/brave.py](../src/ultron/web_search/brave.py))
+### Brave Search API ([src/kenning/web_search/brave.py](../src/kenning/web_search/brave.py))
 
 | Failure mode | Detection | Recovery | Log dependency |
 |---|---|---|---|
@@ -79,7 +79,7 @@ money per call.
 User-facing voice (config.error_phrases.brave_unavailable): "Search isn't
 working right now." / "I can't reach the web search service."
 
-### Jina Reader ([src/ultron/web_search/jina.py](../src/ultron/web_search/jina.py))
+### Jina Reader ([src/kenning/web_search/jina.py](../src/kenning/web_search/jina.py))
 
 | Failure mode | Detection | Recovery | Log dependency |
 |---|---|---|---|
@@ -95,7 +95,7 @@ snippets, the answer is just less detailed.
 
 User-facing voice: "I got search results but couldn't read the full pages."
 
-### Qdrant ([src/ultron/memory/qdrant_store.py](../src/ultron/memory/qdrant_store.py))
+### Qdrant ([src/kenning/memory/qdrant_store.py](../src/kenning/memory/qdrant_store.py))
 
 | Failure mode | Detection | Recovery | Log dependency |
 |---|---|---|---|
@@ -110,7 +110,7 @@ breaker doesn't add value for an in-process dependency.
 User-facing voice: "Memory's not responding right now." / "I can't reach
 my long-term memory at the moment."
 
-### Whisper ([src/ultron/transcription/whisper_engine.py](../src/ultron/transcription/whisper_engine.py))
+### Whisper ([src/kenning/transcription/whisper_engine.py](../src/kenning/transcription/whisper_engine.py))
 
 | Failure mode | Detection | Recovery | Log dependency |
 |---|---|---|---|
@@ -123,7 +123,7 @@ trouble." after 3+ consecutive failures (currently TODO; the phrase
 exists in config but the counter wiring lives in the orchestrator and
 is part of the unfinished migration).
 
-### Piper TTS ([src/ultron/tts/speech.py](../src/ultron/tts/speech.py))
+### Piper TTS ([src/kenning/tts/speech.py](../src/kenning/tts/speech.py))
 
 | Failure mode | Detection | Recovery | Log dependency |
 |---|---|---|---|
@@ -135,16 +135,16 @@ nothing audible. Recovery suggested: caller falls back to `print()` to
 the terminal so the user sees the response. (Wiring lives in the
 orchestrator; documented as the contract.)
 
-### RVC ([src/ultron/tts/speech.py](../src/ultron/tts/speech.py))
+### RVC ([src/kenning/tts/speech.py](../src/kenning/tts/speech.py))
 
 | Failure mode | Detection | Recovery | Log dependency |
 |---|---|---|---|
-| `rvc.convert(...)` raises | catch-all in `_synthesize` | raw Piper PCM returned (no Ultron filter) | `rvc` |
+| `rvc.convert(...)` raises | catch-all in `_synthesize` | raw Piper PCM returned (no Kenning filter) | `rvc` |
 
 User-facing voice: "Voice conversion is offline. You'll hear me without
-the Ultron filter for now."
+the Kenning filter for now."
 
-### Addressing classifier ([src/ultron/addressing/classifier.py](../src/ultron/addressing/classifier.py))
+### Addressing classifier ([src/kenning/addressing/classifier.py](../src/kenning/addressing/classifier.py))
 
 | Failure mode | Detection | Recovery | Log dependency |
 |---|---|---|---|
@@ -156,7 +156,7 @@ context"; that's not an error, just degraded input.
 User-facing voice (in pool but not auto-spoken): "Addressing detection
 is degraded; I'll respond to everything for now."
 
-### Configuration ([src/ultron/config.py](../src/ultron/config.py))
+### Configuration ([src/kenning/config.py](../src/kenning/config.py))
 
 | Failure mode | Detection | Recovery | Log dependency |
 |---|---|---|---|
@@ -194,19 +194,19 @@ wiring lands when the coding cluster migrates.
 | Malformed stream-json | parse error | capture last-good event; narrate | `claude_code` |
 | Anthropic API 4xx/5xx (visible to subprocess) | subprocess error | wrapped as `AnthropicAPIError`; narrate "Anthropic's API isn't responding." | `anthropic_api` |
 
-Wired in [direct_bridge.py](../src/ultron/coding/direct_bridge.py) (still
+Wired in [direct_bridge.py](../src/kenning/coding/direct_bridge.py) (still
 going through Phase 3 shim).
 
 ## Resilience primitives
 
-### Circuit breaker ([src/ultron/resilience/circuit_breaker.py](../src/ultron/resilience/circuit_breaker.py))
+### Circuit breaker ([src/kenning/resilience/circuit_breaker.py](../src/kenning/resilience/circuit_breaker.py))
 
 Standard three-state breaker with rolling failure window. Per-dependency
 configuration via the `expected_exceptions` tuple — only those types
 count as failures, so a programming bug doesn't trip the breaker.
 
 ```python
-from ultron.resilience import CircuitBreaker
+from kenning.resilience import CircuitBreaker
 
 breaker = CircuitBreaker(
     name="my_service",
@@ -222,11 +222,11 @@ result = breaker.call(my_func, args, kwargs)
 States: CLOSED → (threshold failures) → OPEN → (cooldown) → HALF_OPEN →
 (probe success → CLOSED; probe failure → OPEN).
 
-### Error log ([src/ultron/resilience/error_log.py](../src/ultron/resilience/error_log.py))
+### Error log ([src/kenning/resilience/error_log.py](../src/kenning/resilience/error_log.py))
 
 ```python
-from ultron.errors import BraveAPIError
-from ultron.resilience import get_error_log
+from kenning.errors import BraveAPIError
+from kenning.resilience import get_error_log
 
 err = BraveAPIError("rate limited", context={"query": q})
 err.with_recovery("fell back to base knowledge with caveat")
@@ -253,10 +253,10 @@ Sample log entry:
 }
 ```
 
-### Phrase library ([src/ultron/resilience/phrases.py](../src/ultron/resilience/phrases.py))
+### Phrase library ([src/kenning/resilience/phrases.py](../src/kenning/resilience/phrases.py))
 
 ```python
-from ultron.resilience import phrase_for
+from kenning.resilience import phrase_for
 
 msg = phrase_for("brave_unavailable")
 if msg:
@@ -291,7 +291,7 @@ continue normally.
 - **MCP server failure narration** — wiring lives in the coding cluster
   which is still going through the Phase 3 shim. Phase 3.5 followup.
 - **AI coding agent subprocess error narration** — same; the bridge in
-  [direct_bridge.py](../src/ultron/coding/direct_bridge.py) catches
+  [direct_bridge.py](../src/kenning/coding/direct_bridge.py) catches
   failures but the user-facing phrase wiring is part of the coding
   cluster migration.
 - **Whisper repeated-failure counter** — phrase exists; wiring lives in

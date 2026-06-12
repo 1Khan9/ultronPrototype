@@ -11,19 +11,19 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.addressing.rules import (
+from kenning.addressing.rules import (
     AddressingDecision,
     classify as classify_by_rules,
 )
 
 
 @pytest.mark.parametrize("utt", [
-    "ultron, what's the time",
-    "hey ultron, can you help",
-    "ultron play the next track",
+    "kenning, what's the time",
+    "hey kenning, can you help",
+    "kenning play the next track",
 ])
-def test_explicit_ultron_address_is_addressed(utt):
-    """Calling Ultron by name is a strong rule signal."""
+def test_explicit_kenning_address_is_addressed(utt):
+    """Calling Kenning by name is a strong rule signal."""
     verdict = classify_by_rules(utt, seconds_since_response=2.0)
     if verdict is None:
         return
@@ -38,7 +38,7 @@ def test_explicit_ultron_address_is_addressed(utt):
     "do it",
 ])
 def test_short_continuation_within_warm_window(utt):
-    """Short replies right after Ultron speaks are continuation utterances."""
+    """Short replies right after Kenning speaks are continuation utterances."""
     verdict = classify_by_rules(utt, seconds_since_response=1.5)
     # Either the rule layer hits ADDRESSED with high confidence, or it
     # passes through to zero-shot (returns None) — both are valid; the
@@ -54,7 +54,7 @@ def test_short_continuation_within_warm_window(utt):
     "they don't have the file yet",
 ])
 def test_third_person_reference_not_addressed(utt):
-    """Talking ABOUT someone else, not TO Ultron."""
+    """Talking ABOUT someone else, not TO Kenning."""
     verdict = classify_by_rules(utt, seconds_since_response=2.0)
     if verdict is None:
         return
@@ -65,6 +65,6 @@ def test_third_person_reference_not_addressed(utt):
 
 def test_warm_mode_duration_30_not_10(cap_stack):
     """Confirms the 30-second WARM window is the canonical value (per
-    feedback_ultron_extension.md), NOT the Foundation prompt's 10s."""
-    from ultron.config import get_config
+    feedback_kenning_extension.md), NOT the Foundation prompt's 10s."""
+    from kenning.config import get_config
     assert get_config().addressing.warm_mode_duration_seconds == 30.0

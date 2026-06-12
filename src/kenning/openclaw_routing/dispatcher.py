@@ -14,7 +14,7 @@ Gateway call:
 
 Stubs remain in place for capabilities that haven't yet shipped and
 for the case where ``openclaw.enabled=False`` (current default). The
-voice phrase stays in Ultron's voice so the user gets a coherent
+voice phrase stays in Kenning's voice so the user gets a coherent
 response, not a stack trace.
 
 4B plan Item 8: each handle_* method runs a pre-flight block-and-revise
@@ -30,8 +30,8 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, Optional
 
-from ultron.config import UltronConfig, get_config
-from ultron.openclaw_routing.intents import (
+from kenning.config import KenningConfig, get_config
+from kenning.openclaw_routing.intents import (
     BrowserIntent,
     DesktopIntent,
     DispatchResult,
@@ -42,7 +42,7 @@ from ultron.openclaw_routing.intents import (
     ShellOpIntent,
     WindowIntent,
 )
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_routing.dispatcher")
 
@@ -51,7 +51,7 @@ class OpenClawDispatcher:
     """Dispatcher for OpenClaw-dependent intents.
 
     Args:
-        config: The full :class:`UltronConfig`. Read at construction so
+        config: The full :class:`KenningConfig`. Read at construction so
             tests can inject a config without re-reading the YAML.
         llm: an optional LLMEngine-like object used by the block-and-
             revise validator (4B plan Item 8). When ``None``, the
@@ -63,7 +63,7 @@ class OpenClawDispatcher:
 
     def __init__(
         self,
-        config: UltronConfig | None = None,
+        config: KenningConfig | None = None,
         *,
         llm: Optional[Any] = None,
         bridge: Optional[Any] = None,
@@ -132,11 +132,11 @@ class OpenClawDispatcher:
         """Phase 6 live path. Maps the BrowserIntent's action to a
         BrowserTool primitive, executes it, and packages the result
         as a DispatchResult. Fail-open at every step."""
-        from ultron.openclaw_bridge.browser import BrowserTool
+        from kenning.openclaw_bridge.browser import BrowserTool
 
         client = self._bridge.client                              # checked by caller
         cfg = self._cfg.browser
-        agent_id = self._cfg.openclaw.required_agent_id or "ultron-main"
+        agent_id = self._cfg.openclaw.required_agent_id or "kenning-main"
         tool = BrowserTool(client, agent_id=agent_id)
         action = (intent.action or "navigate").lower()
 
@@ -343,7 +343,7 @@ class OpenClawDispatcher:
         if provider:
             params["provider"] = provider
 
-        agent_id = self._cfg.openclaw.required_agent_id or "ultron-main"
+        agent_id = self._cfg.openclaw.required_agent_id or "kenning-main"
         try:
             result = await client.invoke_tool(
                 tool_name, params,
@@ -612,7 +612,7 @@ class OpenClawDispatcher:
                         "didn't come back cleanly. Check logs/gaming_mode.jsonl."
                     )
             elif action == "status":
-                from ultron.openclaw_routing.gaming_mode import GamingModeStatus
+                from kenning.openclaw_routing.gaming_mode import GamingModeStatus
                 status = self._gaming_mode_manager.status()
                 if status == GamingModeStatus.ENGAGED:
                     voice = "Gaming mode is on."
@@ -695,10 +695,10 @@ class OpenClawDispatcher:
     async def _desktop_via_bridge(
         self, intent: DesktopIntent, cfg,
     ) -> DispatchResult:
-        from ultron.openclaw_bridge.desktop import DesktopTool
+        from kenning.openclaw_bridge.desktop import DesktopTool
 
         client = self._bridge.client                                   # checked
-        agent_id = self._cfg.openclaw.required_agent_id or "ultron-main"
+        agent_id = self._cfg.openclaw.required_agent_id or "kenning-main"
         tool = DesktopTool(
             client,
             agent_id=agent_id,
@@ -844,10 +844,10 @@ class OpenClawDispatcher:
     async def _window_via_bridge(
         self, intent: WindowIntent, cfg,
     ) -> DispatchResult:
-        from ultron.openclaw_bridge.desktop import WindowControlTool
+        from kenning.openclaw_bridge.desktop import WindowControlTool
 
         client = self._bridge.client                                   # checked
-        agent_id = self._cfg.openclaw.required_agent_id or "ultron-main"
+        agent_id = self._cfg.openclaw.required_agent_id or "kenning-main"
         tool = WindowControlTool(
             client,
             agent_id=agent_id,
@@ -943,12 +943,12 @@ class OpenClawDispatcher:
         Without this, the user would get a confusing "tool unavailable"
         error for plugins that ARE installed but were intentionally
         disabled by the gaming-mode manager. The voice message is in
-        Ultron's voice and includes the recovery action.
+        Kenning's voice and includes the recovery action.
         """
         if self._gaming_mode_manager is None:
             return None
         try:
-            from ultron.openclaw_routing.gaming_mode import GamingModeStatus
+            from kenning.openclaw_routing.gaming_mode import GamingModeStatus
             status = self._gaming_mode_manager.status()
         except Exception:
             return None
@@ -1000,7 +1000,7 @@ class OpenClawDispatcher:
 
         # ----- Layer 2: LLM-based block-and-revise -----
         try:
-            from ultron.openclaw_routing.block_and_revise import (
+            from kenning.openclaw_routing.block_and_revise import (
                 ToolCallValidator, is_enabled,
             )
             if not is_enabled(self._cfg):
@@ -1061,10 +1061,10 @@ class OpenClawDispatcher:
         intent shapes are added.
         """
         try:
-            from ultron.safety import (
+            from kenning.safety import (
                 RuleContext, Verdict, get_validator,
             )
-            from ultron.safety.path_resolver import (
+            from kenning.safety.path_resolver import (
                 PathResolveError, get_path_resolver,
             )
         except Exception as e:

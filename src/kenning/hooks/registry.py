@@ -268,7 +268,7 @@ def get_hook_registry(
 
     Args:
         workspace_root: project root used to derive the project layer
-            (``<workspace_root>/.ultron/hooks/``). None uses cwd.
+            (``<workspace_root>/.kenning/hooks/``). None uses cwd.
         extra_directories: optional extra ``(dir, layer)`` tuples
             appended after the project layer.
         rebuild: when True, drop any existing registry and reconstruct
@@ -279,10 +279,10 @@ def get_hook_registry(
         if _DEFAULT_REGISTRY is not None and not rebuild:
             return _DEFAULT_REGISTRY
         directories: list[tuple[Path, str]] = []
-        global_dir = Path.home() / ".ultron" / DEFAULT_HOOKS_SUBDIR
+        global_dir = Path.home() / ".kenning" / DEFAULT_HOOKS_SUBDIR
         directories.append((global_dir, "global"))
         if workspace_root is not None:
-            project_dir = Path(workspace_root) / ".ultron" / DEFAULT_HOOKS_SUBDIR
+            project_dir = Path(workspace_root) / ".kenning" / DEFAULT_HOOKS_SUBDIR
             directories.append((project_dir, "project"))
         if extra_directories:
             directories.extend(

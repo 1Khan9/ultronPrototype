@@ -3,7 +3,7 @@
 The runner owns at most one in-flight task at a time. The orchestrator
 calls :meth:`start_task` to submit work, then -- whenever the user asks
 "how's it going?" -- the orchestrator calls :meth:`progress_narration`
-to get back a one-or-two-sentence Ultron-character status update.
+to get back a one-or-two-sentence Kenning-character status update.
 
 Internally the runner listens for :class:`TaskEvent` instances from the
 bridge and folds them into a small running summary so progress queries
@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from config import settings
-from ultron.coding.anchors import (
+from kenning.coding.anchors import (
     AnchorBudget,
     AnchorPlan,
     GoalAnchor,
@@ -33,7 +33,7 @@ from ultron.coding.anchors import (
     narration_for_anchor,
     narration_for_completion,
 )
-from ultron.coding.bridge import (
+from kenning.coding.bridge import (
     CodingBridge,
     EventKind,
     TaskEvent,
@@ -42,11 +42,11 @@ from ultron.coding.bridge import (
     TaskResult,
     TaskState,
 )
-from ultron.coding.narration import StatusNarrator
-from ultron.coding.session import ProjectSession, SessionStore
-from ultron.errors import FilesystemError
-from ultron.resilience import get_error_log
-from ultron.utils.logging import get_logger
+from kenning.coding.narration import StatusNarrator
+from kenning.coding.session import ProjectSession, SessionStore
+from kenning.errors import FilesystemError
+from kenning.resilience import get_error_log
+from kenning.utils.logging import get_logger
 
 logger = get_logger("coding.runner")
 
@@ -67,21 +67,21 @@ def build_default_bridge() -> CodingBridge:
 
     Only ``"direct"`` is supported. The previous Phase A foundation
     reserved an ``"openclaw"`` slot here that pointed at a never-built
-    ``ultron.coding.openclaw_bridge`` module — the new architecture
+    ``kenning.coding.openclaw_bridge`` module — the new architecture
     treats OpenClaw as a peer Gateway via the routing layer
-    (``ultron.openclaw_routing``), NOT as a Claude-Code bridge
+    (``kenning.openclaw_routing``), NOT as a Claude-Code bridge
     alternative. The reservation was removed in Foundation Part 5.
     """
     name = (settings.CODING_BRIDGE or "direct").strip().lower()
     if name == "direct":
-        from ultron.coding.direct_bridge import DirectClaudeCodeBridge
+        from kenning.coding.direct_bridge import DirectClaudeCodeBridge
         return DirectClaudeCodeBridge(
             claude_cli=settings.CODING_CLAUDE_CLI,
             log_path=settings.CODING_TASK_LOG_PATH,
         )
     raise ValueError(
         f"Unknown coding bridge: {name!r}. Only 'direct' is supported. "
-        f"OpenClaw is a peer dispatcher (see ultron.openclaw_routing), "
+        f"OpenClaw is a peer dispatcher (see kenning.openclaw_routing), "
         f"not a coding bridge alternative."
     )
 
@@ -253,12 +253,12 @@ class CodingTaskRunner:
     def start_task(self, request: TaskRequest) -> TaskHandle:
         # Production-hardening: a sandbox project must be its own git
         # root so the spawned coding CLI treats IT as the project
-        # boundary instead of walking up into the ultron repo and
+        # boundary instead of walking up into the kenning repo and
         # loading the (very large) repo orientation context into every
         # task. Idempotent + sandbox-scoped + fail-open; a user's own
         # project directory outside the sandbox is never touched.
         try:
-            from ultron.coding.projects import ensure_sandbox_isolation
+            from kenning.coding.projects import ensure_sandbox_isolation
 
             ensure_sandbox_isolation(request.cwd)
         except Exception as e:  # noqa: BLE001
@@ -506,7 +506,7 @@ class CodingTaskRunner:
     def progress_narration(
         self, session: Optional[ProjectSession] = None,
     ) -> str:
-        """One-or-two sentence Ultron-character status string.
+        """One-or-two sentence Kenning-character status string.
 
         Phase 5: when a :class:`ProjectSession` is passed in, the
         narration is delta-aware (it reports only what's changed since
@@ -669,7 +669,7 @@ class CodingTaskRunner:
         # by voice (ties the completion report to the run/launch feature).
         if state.success and not no_file_activity and project_name:
             try:
-                from ultron.coding.sandbox_runner import resolve_entry_point
+                from kenning.coding.sandbox_runner import resolve_entry_point
                 if resolve_entry_point(path) is not None:
                     parts.append(f"Say run {project_name} to try it.")
             except Exception:                                        # noqa: BLE001
@@ -847,7 +847,7 @@ class CodingTaskRunner:
         - Aborts latch — subsequent events on the same handle are
           ignored, so the listener doesn't re-cancel.
         """
-        from ultron.coding.canonical_monitor import build_default_monitor
+        from kenning.coding.canonical_monitor import build_default_monitor
 
         monitor = build_default_monitor("CODE_TASK")
         if monitor is None:
@@ -900,13 +900,13 @@ class CodingTaskRunner:
         never raises -- exceptions are logged at DEBUG.
         """
         try:
-            from ultron.safety import (
+            from kenning.safety import (
                 RuleContext, get_validator,
             )
-            from ultron.safety.path_resolver import (
+            from kenning.safety.path_resolver import (
                 PathResolveError, get_path_resolver,
             )
-            from ultron.coding.bridge import EventKind
+            from kenning.coding.bridge import EventKind
         except Exception as e:
             logger.debug(
                 "safety validator listener unavailable (%s); skipping", e,
@@ -1008,8 +1008,8 @@ class CodingTaskRunner:
         disabled. The runner never imports the evolution package -- it only
         queues ``(command, output, exit_code)`` tuples."""
         try:
-            from ultron.coding.bridge import EventKind
-            from ultron.config import get_config
+            from kenning.coding.bridge import EventKind
+            from kenning.config import get_config
         except Exception as e:  # noqa: BLE001
             logger.debug("evolution failure listener unavailable (%s); skipping", e)
             return None
@@ -1071,8 +1071,8 @@ class CodingTaskRunner:
         imports the evolution package -- it only queues
         ``(label, summary)`` pairs."""
         try:
-            from ultron.coding.bridge import EventKind
-            from ultron.config import get_config
+            from kenning.coding.bridge import EventKind
+            from kenning.config import get_config
         except Exception as e:  # noqa: BLE001
             logger.debug("evolution success listener unavailable (%s); skipping", e)
             return None
@@ -1137,13 +1137,13 @@ class CodingTaskRunner:
         task.
         """
         try:
-            from ultron.agent_loop.loop_detection_extended import (
+            from kenning.agent_loop.loop_detection_extended import (
                 LoopDetectionManager,
                 OutcomeKind,
                 ToolCallRecord,
             )
-            from ultron.coding.bridge import EventKind
-            from ultron.config import get_config
+            from kenning.coding.bridge import EventKind
+            from kenning.config import get_config
         except Exception as e:  # noqa: BLE001
             logger.debug("loop-detection listener unavailable (%s); skipping", e)
             return None
@@ -1225,10 +1225,10 @@ class CodingTaskRunner:
         explicit cancel does. A zero-cost no-op when hooks are disabled or no
         scripts are installed (cached discovery returns an empty fan-out)."""
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
             if not getattr(get_config().hooks, "enabled", True):
                 return
-            from ultron.hooks import HookKind, HookPayload, get_hook_registry
+            from kenning.hooks import HookKind, HookPayload, get_hook_registry
         except Exception as e:  # noqa: BLE001
             logger.debug("hooks unavailable (%s); skipping TaskStart", e)
             return
@@ -1260,11 +1260,11 @@ class CodingTaskRunner:
         finished task can't be cancelled). Returns ``None`` (a zero-cost no-op)
         when hooks are disabled or the hooks package can't be imported."""
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
             if not getattr(get_config().hooks, "enabled", True):
                 return None
-            from ultron.coding.bridge import EventKind
-            from ultron.hooks import HookKind, HookPayload, get_hook_registry
+            from kenning.coding.bridge import EventKind
+            from kenning.hooks import HookKind, HookPayload, get_hook_registry
         except Exception as e:  # noqa: BLE001
             logger.debug("hooks unavailable (%s); skipping TaskComplete listener", e)
             return None
@@ -1324,7 +1324,7 @@ class CodingTaskRunner:
         # Config gate. Default ON because the safety + UX value is
         # high; operators can opt out via config.yaml.
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
             cfg = get_config().coding
             dialog_cfg = getattr(cfg, "dialog_auto_handler", None)
             if dialog_cfg is not None and not getattr(dialog_cfg, "enabled", True):
@@ -1335,8 +1335,8 @@ class CodingTaskRunner:
             pass
 
         try:
-            from ultron.bus import subscribe
-            from ultron.bus.events import DialogAppearedEvent
+            from kenning.bus import subscribe
+            from kenning.bus.events import DialogAppearedEvent
         except Exception as exc:  # noqa: BLE001
             logger.debug("dialog auto-handler bus unavailable: %s", exc)
             return None
@@ -1388,7 +1388,7 @@ class CodingTaskRunner:
 
         # Return a TaskEvent listener that fires on the bridge's
         # COMPLETE event and tears down the subscription.
-        from ultron.coding.bridge import EventKind
+        from kenning.coding.bridge import EventKind
 
         def _teardown_listener(event):
             try:
@@ -1429,7 +1429,7 @@ class CodingTaskRunner:
         Returns ``None`` when:
         * ``coding.ast_metadata.enabled`` is False (the default), OR
         * ``syntax_check_on_file_change`` is False, OR
-        * The :mod:`ultron.coding.ast_metadata` module is unavailable.
+        * The :mod:`kenning.coding.ast_metadata` module is unavailable.
 
         The listener never cancels the task -- it only emits audit
         rows. Completion narration can later check the rolling syntax-
@@ -1441,7 +1441,7 @@ class CodingTaskRunner:
         through without parsing -- the gate is name-based.
         """
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
             ast_cfg = get_config().coding.ast_metadata
         except Exception as e:                                # noqa: BLE001
             logger.debug("ast_metadata config read failed: %s", e)
@@ -1451,11 +1451,11 @@ class CodingTaskRunner:
             return None
 
         try:
-            from ultron.coding.ast_metadata import (
+            from kenning.coding.ast_metadata import (
                 extract_metadata_from_path,
                 is_python_file,
             )
-            from ultron.coding.bridge import EventKind
+            from kenning.coding.bridge import EventKind
         except Exception as e:                                # noqa: BLE001
             logger.debug(
                 "ast_metadata listener unavailable (%s); skipping", e,
@@ -1552,7 +1552,7 @@ class CodingTaskRunner:
         completion narration honesty checks.
         """
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
             cfg = get_config().coding.pre_write_lint
         except Exception as e:                                # noqa: BLE001
             logger.debug("pre_write_lint config read failed: %s", e)
@@ -1562,9 +1562,9 @@ class CodingTaskRunner:
             return None
 
         try:
-            from ultron.coding.bridge import EventKind
-            from ultron.coding.python_lint import lint_python
-            from ultron.coding.tree_sitter_lint import tree_sitter_lint
+            from kenning.coding.bridge import EventKind
+            from kenning.coding.python_lint import lint_python
+            from kenning.coding.tree_sitter_lint import tree_sitter_lint
         except Exception as e:                                # noqa: BLE001
             logger.debug(
                 "pre_write_lint listener unavailable (%s); skipping", e,
@@ -1682,7 +1682,7 @@ class CodingTaskRunner:
         the feature for the rest of the call.
         """
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
             return get_config().coding.goal_anchors
         except Exception as e:
             logger.debug("goal_anchors config read failed: %s", e)

@@ -1,10 +1,10 @@
-"""Tests for :mod:`ultron.llm.cache_aware_chunks`."""
+"""Tests for :mod:`kenning.llm.cache_aware_chunks`."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.llm.cache_aware_chunks import (
+from kenning.llm.cache_aware_chunks import (
     CacheableChunk,
     ChunkedPrompt,
     DEFAULT_CHUNK_ORDER,

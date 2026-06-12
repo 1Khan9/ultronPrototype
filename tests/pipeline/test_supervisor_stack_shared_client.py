@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from ultron.pipeline.orchestrator import Orchestrator
+from kenning.pipeline.orchestrator import Orchestrator
 
 
 def _cfg() -> SimpleNamespace:
@@ -32,7 +32,7 @@ def _capture_index(monkeypatch) -> dict:
             captured.update(kw)
 
     monkeypatch.setattr(
-        "ultron.coding.project_index.ProjectIndex", _FakeIndex
+        "kenning.coding.project_index.ProjectIndex", _FakeIndex
     )
     return captured
 
@@ -85,7 +85,7 @@ def test_index_construction_failure_stays_fail_open(monkeypatch) -> None:
         def __init__(self, **kw) -> None:
             raise RuntimeError("qdrant exploded")
 
-    monkeypatch.setattr("ultron.coding.project_index.ProjectIndex", _Boom)
+    monkeypatch.setattr("kenning.coding.project_index.ProjectIndex", _Boom)
     o = Orchestrator.__new__(Orchestrator)
     o.memory = None
     idx, sup, dispatch = o._build_supervisor_stack(

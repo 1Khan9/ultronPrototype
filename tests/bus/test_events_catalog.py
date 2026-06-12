@@ -1,9 +1,9 @@
-"""Tests for the canonical event catalog (ultron.bus.events)."""
+"""Tests for the canonical event catalog (kenning.bus.events)."""
 
 from __future__ import annotations
 
-from ultron.bus import BUS_EVENT_CATALOG
-from ultron.bus.event import BusEvent
+from kenning.bus import BUS_EVENT_CATALOG
+from kenning.bus.event import BusEvent
 
 
 def test_catalog_is_non_empty() -> None:
@@ -44,7 +44,7 @@ def test_catalog_descriptions_non_empty() -> None:
 def test_catalog_imports_named() -> None:
     """The catalog entries listed in __init__.py must all be importable
     by their canonical names."""
-    from ultron.bus import (
+    from kenning.bus import (
         CodingFileChangedEvent,
         GamingDisengagedEvent,
         GamingEngagedEvent,

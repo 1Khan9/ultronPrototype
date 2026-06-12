@@ -1,4 +1,4 @@
-"""Tests for ultron.desktop.clipboard (catalog 09 T4)."""
+"""Tests for kenning.desktop.clipboard (catalog 09 T4)."""
 
 from __future__ import annotations
 
@@ -8,13 +8,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.desktop.clipboard import (
+from kenning.desktop.clipboard import (
     ClipboardManager,
     ClipboardResult,
     get_clipboard_manager,
     set_clipboard_manager,
 )
-from ultron.safety.taint import TaintTracker, set_taint_tracker
+from kenning.safety.taint import TaintTracker, set_taint_tracker
 
 
 # ---------------------------------------------------------------------------
@@ -55,18 +55,18 @@ def test_set_clipboard_manager_swaps():
 
 def _allow_validator(monkeypatch):
     """Force the validator to ALLOW so we exercise the pyperclip path."""
-    from ultron.safety.validator import ValidatorVerdict, Verdict
+    from kenning.safety.validator import ValidatorVerdict, Verdict
     monkeypatch.setattr(
-        "ultron.desktop.clipboard._validate_clipboard_action",
+        "kenning.desktop.clipboard._validate_clipboard_action",
         lambda **kw: ValidatorVerdict(verdict=Verdict.ALLOW, reason="ok"),
     )
 
 
 def _deny_validator(monkeypatch, reason: str = "Cap-3 denied"):
     """Force the validator to BLOCK_HARD so we exercise the early-exit path."""
-    from ultron.safety.validator import ValidatorVerdict, Verdict
+    from kenning.safety.validator import ValidatorVerdict, Verdict
     monkeypatch.setattr(
-        "ultron.desktop.clipboard._validate_clipboard_action",
+        "kenning.desktop.clipboard._validate_clipboard_action",
         lambda **kw: ValidatorVerdict(verdict=Verdict.BLOCK_HARD, reason=reason),
     )
 
@@ -151,7 +151,7 @@ def test_read_text_pyperclip_missing(monkeypatch):
     _allow_validator(monkeypatch)
     # Force the lazy import to fail.
     monkeypatch.setattr(
-        "ultron.desktop.clipboard._import_pyperclip", lambda: None,
+        "kenning.desktop.clipboard._import_pyperclip", lambda: None,
     )
     mgr = ClipboardManager(record_taint=False)
     r = mgr.read_text()
@@ -242,7 +242,7 @@ def test_write_text_validator_deny_short_circuits(monkeypatch):
 def test_write_text_pyperclip_missing(monkeypatch):
     _allow_validator(monkeypatch)
     monkeypatch.setattr(
-        "ultron.desktop.clipboard._import_pyperclip", lambda: None,
+        "kenning.desktop.clipboard._import_pyperclip", lambda: None,
     )
     mgr = ClipboardManager(record_taint=False)
     r = mgr.write_text("anything")
@@ -279,11 +279,11 @@ def test_write_text_validator_payload_preview_under_cap(monkeypatch):
     seen: dict = {}
     def _spy(**kw):
         seen.update(kw)
-        from ultron.safety.validator import ValidatorVerdict, Verdict
+        from kenning.safety.validator import ValidatorVerdict, Verdict
         return ValidatorVerdict(verdict=Verdict.ALLOW, reason="ok")
 
     monkeypatch.setattr(
-        "ultron.desktop.clipboard._validate_clipboard_action", _spy,
+        "kenning.desktop.clipboard._validate_clipboard_action", _spy,
     )
     _install_fake_pyperclip(
         monkeypatch, copy=MagicMock(return_value=None),
@@ -378,7 +378,7 @@ def test_taint_record_failure_falls_open(monkeypatch):
     )
     def _boom():
         raise RuntimeError("taint module broken")
-    monkeypatch.setattr("ultron.safety.taint.get_taint_tracker", _boom)
+    monkeypatch.setattr("kenning.safety.taint.get_taint_tracker", _boom)
     mgr = ClipboardManager(record_taint=True)
     r = mgr.write_text("anything")
     assert r.success is True  # write still succeeds

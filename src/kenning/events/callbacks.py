@@ -5,7 +5,7 @@ Pattern lineage attributed in ``THIRD_PARTY_NOTICES.md``.
 The OpenHands ``EventCallbackService`` is a SQL-backed CRUD over polymorphic
 ``EventCallbackProcessor`` rows; every event arrival fires
 ``execute_callbacks(conversation_id, event)`` which fans out to every
-matching processor via ``asyncio.gather`` and persists each result. Ultron's
+matching processor via ``asyncio.gather`` and persists each result. Kenning's
 voice path is single-process + synchronous, so the port:
 
 * Keeps the polymorphic processor ABC (``CallbackProcessor.__call__`` ->
@@ -36,7 +36,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from ultron.events.models import StoredEvent
+from kenning.events.models import StoredEvent
 
 logger = logging.getLogger(__name__)
 

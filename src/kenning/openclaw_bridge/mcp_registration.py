@@ -1,9 +1,9 @@
-"""Ultron MCP registration with the OpenClaw Gateway (Phase 3.2).
+"""Kenning MCP registration with the OpenClaw Gateway (Phase 3.2).
 
-The integration spec assumed Ultron's MCP server runs as a stdio
+The integration spec assumed Kenning's MCP server runs as a stdio
 subprocess that OpenClaw spawns on demand. Reality (as of OpenClaw
-2026.5.7 and the existing Ultron build): :class:`UltronMCPServer` runs
-**in-process** inside Ultron's orchestrator over Server-Sent Events
+2026.5.7 and the existing Kenning build): :class:`KenningMCPServer` runs
+**in-process** inside Kenning's orchestrator over Server-Sent Events
 (SSE), and ``openclaw mcp set`` only accepts stdio command/args.
 
 The reconciliation: the registrar is **config-driven** rather than
@@ -32,20 +32,20 @@ import json
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Dict, List, Optional
 
-from ultron.errors import (
+from kenning.errors import (
     OpenClawAuthError,
     OpenClawGatewayError,
     OpenClawToolError,
 )
-from ultron.openclaw_bridge.client import OpenClawClient
-from ultron.utils.logging import get_logger
+from kenning.openclaw_bridge.client import OpenClawClient
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_bridge.mcp_registration")
 
 
 @dataclass(frozen=True)
 class RegistrationResult:
-    """Outcome of one :meth:`UltronMcpRegistrar.register` attempt."""
+    """Outcome of one :meth:`KenningMcpRegistrar.register` attempt."""
 
     registered: bool
     name: str
@@ -54,15 +54,15 @@ class RegistrationResult:
     error: Optional[str] = None                      # set on transport/config failure
 
 
-class UltronMcpRegistrar:
-    """Registers Ultron's MCP server with OpenClaw at startup.
+class KenningMcpRegistrar:
+    """Registers Kenning's MCP server with OpenClaw at startup.
 
     Args:
         client: shared :class:`OpenClawClient` for CLI invocation.
         name: logical MCP entry name in OpenClaw's config.
         command: stdio entrypoint OpenClaw will spawn. ``None``
             disables registration (the registrar logs and skips —
-            useful when Ultron's MCP is SSE-only and no proxy exists
+            useful when Kenning's MCP is SSE-only and no proxy exists
             yet).
         args: extra args appended to ``command`` at spawn time.
         env: extra environment variables passed to the spawned MCP
@@ -74,7 +74,7 @@ class UltronMcpRegistrar:
         self,
         client: OpenClawClient,
         *,
-        name: str = "ultron-mcp",
+        name: str = "kenning-mcp",
         command: Optional[str] = None,
         args: Optional[List[str]] = None,
         env: Optional[Dict[str, str]] = None,
@@ -106,7 +106,7 @@ class UltronMcpRegistrar:
     # -------------------------------------------------------------------
 
     async def register(self) -> RegistrationResult:
-        """Register Ultron's MCP server with OpenClaw.
+        """Register Kenning's MCP server with OpenClaw.
 
         Idempotent: when the entry already matches the configured
         command/args/env, the call is a no-op
@@ -286,5 +286,5 @@ class UltronMcpRegistrar:
 
 __all__ = [
     "RegistrationResult",
-    "UltronMcpRegistrar",
+    "KenningMcpRegistrar",
 ]

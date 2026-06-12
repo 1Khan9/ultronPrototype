@@ -7,7 +7,7 @@ standardized :class:`TaskEvent` vocabulary, and exposes a thread-safe
 
 OpenClaw is NOT a coding-bridge alternative under the new architecture
 (Foundation Part 5) — it's a peer dispatcher reachable via
-``ultron.openclaw_routing``.
+``kenning.openclaw_routing``.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from config import settings
-from ultron.coding.bridge import (
+from kenning.coding.bridge import (
     CodingBridge,
     EventKind,
     EventListener,
@@ -39,9 +39,9 @@ from ultron.coding.bridge import (
     directory_snapshot,
     render_prompt,
 )
-from ultron.errors import AnthropicAPIError, ClaudeCodeError
-from ultron.resilience import get_error_log
-from ultron.utils.logging import get_logger
+from kenning.errors import AnthropicAPIError, ClaudeCodeError
+from kenning.resilience import get_error_log
+from kenning.utils.logging import get_logger
 
 logger = get_logger("coding.direct_bridge")
 
@@ -120,7 +120,7 @@ class DirectClaudeCodeBridge(CodingBridge):
                 return found
         raise FileNotFoundError(
             f"Could not locate the claude CLI. Tried: {candidates}. "
-            f"Set ULTRON_CLAUDE_CLI to the absolute path of claude.cmd / claude."
+            f"Set KENNING_CLAUDE_CLI to the absolute path of claude.cmd / claude."
         )
 
     def submit(self, request: TaskRequest) -> TaskHandle:
@@ -390,7 +390,7 @@ class DirectTaskHandle(TaskHandle):
         # turn finishes + unregisters well before. Both fail-open -- tracking
         # must never break a launch.
         try:
-            from ultron.subprocess.process_registry import get_process_registry
+            from kenning.subprocess.process_registry import get_process_registry
             get_process_registry().register(
                 f"claude-{self._task_id}",
                 scope_key=self._task_id,
@@ -401,7 +401,7 @@ class DirectTaskHandle(TaskHandle):
         except Exception:  # noqa: BLE001
             pass
         try:
-            from ultron.subprocess.zombie_killer import get_zombie_killer
+            from kenning.subprocess.zombie_killer import get_zombie_killer
             _backstop = max(2.0 * float(getattr(self._request, "timeout_s", 0.0) or 0.0), 1800.0)
             get_zombie_killer().register(
                 self._proc.pid, f"claude-cli:{self._task_id}",
@@ -617,12 +617,12 @@ class DirectTaskHandle(TaskHandle):
         ))
         # T12/T23: release the coding-subprocess tracking entries.
         try:
-            from ultron.subprocess.process_registry import get_process_registry
+            from kenning.subprocess.process_registry import get_process_registry
             get_process_registry().mark_exited(f"claude-{self._task_id}", int(exit_status))
         except Exception:  # noqa: BLE001
             pass
         try:
-            from ultron.subprocess.zombie_killer import get_zombie_killer
+            from kenning.subprocess.zombie_killer import get_zombie_killer
             if self._proc is not None:
                 get_zombie_killer().unregister(self._proc.pid)
         except Exception:  # noqa: BLE001
@@ -913,7 +913,7 @@ class DirectTaskHandle(TaskHandle):
         # whole branch (useful for tests, debugging, or when the
         # runner-side undo path isn't wired yet).
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
             cfg = get_config().coding
             snap_cfg = getattr(cfg, "pre_edit_snapshot", None)
             if snap_cfg is not None and not getattr(snap_cfg, "enabled", True):
@@ -930,7 +930,7 @@ class DirectTaskHandle(TaskHandle):
         session_id = self.claude_session_id or f"cwd-{abs(hash(str(self._cwd))):x}"
 
         try:
-            from ultron.coding.file_history import get_file_history
+            from kenning.coding.file_history import get_file_history
         except Exception as exc:  # noqa: BLE001
             logger.debug(
                 "FileHistory import failed for pre-edit snapshot: %s", exc,

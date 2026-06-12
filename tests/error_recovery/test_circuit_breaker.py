@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-from ultron.resilience import CircuitBreaker, CircuitOpenError, CircuitState
+from kenning.resilience import CircuitBreaker, CircuitOpenError, CircuitState
 
 
 def test_starts_closed():

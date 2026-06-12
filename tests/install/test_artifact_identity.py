@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.install.artifact_identity import (
+from kenning.install.artifact_identity import (
     SRI_SHA512_PREFIX,
     ArtifactIdentity,
     ClawPackContents,

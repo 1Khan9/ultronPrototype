@@ -3,7 +3,7 @@
 A 'Say hello.' utterance went all the way to the LLM with a RAG block
 containing a stale Salesforce-pricing snippet, producing a wildly off-
 topic response. The fix adds a pre-retrieval gate
-(:func:`ultron.llm.inference._is_short_conversational_query`) that
+(:func:`kenning.llm.inference._is_short_conversational_query`) that
 returns True for greetings + acks + very short non-factual utterances;
 :meth:`LLMEngine._retrieve_rag_snippets` checks the gate and short-
 circuits to ``[]`` when it fires.
@@ -16,8 +16,8 @@ from typing import List
 
 import pytest
 
-from ultron.config import MemoryRetrievalConfig
-from ultron.llm.inference import (
+from kenning.config import MemoryRetrievalConfig
+from kenning.llm.inference import (
     LLMEngine,
     _is_short_conversational_query,
 )
@@ -35,7 +35,7 @@ from ultron.llm.inference import (
     "Hello there",
     "hey",
     "good morning",
-    "Good evening, Ultron",
+    "Good evening, Kenning",
     "say hello",
     "Say something.",
     "say anything",
@@ -210,18 +210,18 @@ def test_retrieve_short_circuits_when_memory_is_none():
 def test_skip_rag_for_short_queries_disabled_via_config(monkeypatch):
     """When the config knob is False, even greetings hit retrieve --
     legacy behaviour preserved for operators who want the old way."""
-    from ultron import config as _cfg_module
+    from kenning import config as _cfg_module
 
     snippets = [SimpleNamespace(role="user", content="legacy hit")]
     spy = _SpyMemory(snippets)
     eng = _make_engine_with_memory(spy)
 
     # Build a config with the knob flipped off.
-    cfg = _cfg_module.UltronConfig()
+    cfg = _cfg_module.KenningConfig()
     cfg.memory.retrieval.skip_rag_for_short_queries = False
     monkeypatch.setattr(_cfg_module, "get_config", lambda: cfg)
     monkeypatch.setattr(
-        "ultron.llm.inference.get_config", lambda: cfg,
+        "kenning.llm.inference.get_config", lambda: cfg,
     )
 
     out = eng._retrieve_rag_snippets("hi")

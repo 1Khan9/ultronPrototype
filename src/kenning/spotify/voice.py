@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-logger = logging.getLogger("ultron.spotify.voice")
+logger = logging.getLogger("kenning.spotify.voice")
 
 __all__ = ["SpotifyCommand", "match_spotify_command", "handle_spotify_command"]
 
@@ -176,8 +176,8 @@ def match_spotify_command(text: str) -> Optional[SpotifyCommand]:
 def handle_spotify_command(command: SpotifyCommand, client) -> str:
     """Execute ``command`` against a :class:`SpotifyClient`; return a
     spoken line. Fail-soft: API errors become a short spoken message."""
-    from ultron.spotify.client import SpotifyAPIError
-    from ultron.spotify.auth import SpotifyAuthError
+    from kenning.spotify.client import SpotifyAPIError
+    from kenning.spotify.auth import SpotifyAuthError
 
     try:
         action = command.action

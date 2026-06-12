@@ -28,7 +28,7 @@ typically vendored / generated / binary content.
 
 Path filter: gitignore-respecting by default via ``pathspec`` when
 available; otherwise falls back to a hard-coded skip list mirroring
-:data:`ultron.coding.repo_map.SKIP_DIRECTORIES`.
+:data:`kenning.coding.repo_map.SKIP_DIRECTORIES`.
 
 The watcher is intentionally write-once: each detected comment fires
 the callback ONCE per file mtime cycle. The catalog notes the
@@ -63,7 +63,7 @@ from pathlib import Path
 from typing import Callable, FrozenSet, Iterable, List, Optional, Sequence, Set
 
 
-logger = logging.getLogger("ultron.coding.ai_comment_watcher")
+logger = logging.getLogger("kenning.coding.ai_comment_watcher")
 
 
 # Catalog regex (adapted from aider's pattern with explicit suffix
@@ -97,7 +97,7 @@ DEFAULT_MAX_FILE_BYTES = 1_000_000
 
 
 # Directories we skip wholesale. Mirrors
-# :data:`ultron.coding.repo_map.SKIP_DIRECTORIES` for consistency.
+# :data:`kenning.coding.repo_map.SKIP_DIRECTORIES` for consistency.
 DEFAULT_SKIP_DIRECTORIES: FrozenSet[str] = frozenset({
     "__pycache__",
     ".git",
@@ -337,7 +337,7 @@ class AICommentWatcher:
         self._seed_initial_scan()
         self._thread = threading.Thread(
             target=self._loop,
-            name="ultron-ai-comment-watcher",
+            name="kenning-ai-comment-watcher",
             daemon=True,
         )
         self._thread.start()

@@ -20,24 +20,24 @@ from typing import List, Optional
 
 import pytest
 
-os.environ.setdefault("ULTRON_CODING_MCP_ALLOW_ANY_ROOT", "1")
+os.environ.setdefault("KENNING_CODING_MCP_ALLOW_ANY_ROOT", "1")
 
-from ultron.coding import (
+from kenning.coding import (
     CapabilityVoiceController,
     CodingTaskRunner,
     ProjectRegistry,
     ProjectResolver,
     StatusNarrator,
-    UltronMCPServer,
+    KenningMCPServer,
 )
-from ultron.coding.coordinator import ConversationCoordinator
-from ultron.coding.session import SessionStatus
-from ultron.coding.verification import Verifier
-from ultron.openclaw_routing import (
+from kenning.coding.coordinator import ConversationCoordinator
+from kenning.coding.session import SessionStatus
+from kenning.coding.verification import Verifier
+from kenning.openclaw_routing import (
     RoutingDecisionLog,
     set_routing_log,
 )
-from ultron.resilience import (
+from kenning.resilience import (
     ErrorLog,
     set_error_log,
     reset_phrase_cache,
@@ -133,7 +133,7 @@ def _reset_phrase_cache():
 @pytest.fixture(autouse=True)
 def _reset_external_breakers():
     """Ensure breakers don't leak state between integration tests."""
-    from ultron.web_search import brave as _brave_mod, jina as _jina_mod
+    from kenning.web_search import brave as _brave_mod, jina as _jina_mod
     _brave_mod._BRAVE_BREAKER.reset()
     _jina_mod._JINA_BREAKER.reset()
     yield
@@ -167,7 +167,7 @@ def cap_stack(tmp_path, stub_llm):
     sandbox = tmp_path / "sandbox"
     sandbox.mkdir()
 
-    server = UltronMCPServer(host="127.0.0.1", port=0)
+    server = KenningMCPServer(host="127.0.0.1", port=0)
     verifier = Verifier(store=server.store)
     coordinator = ConversationCoordinator(
         store=server.store, llm=stub_llm, verifier=verifier,
@@ -217,7 +217,7 @@ def dispatch_utterance(cap_stack, utterance: str):
     Returns the VoiceResponse (or None for CONVERSATIONAL passthrough).
     Records routing-decision audit entries via the singleton.
     """
-    from ultron.openclaw_routing import classify_routing
+    from kenning.openclaw_routing import classify_routing
     routing_intent = classify_routing(
         utterance,
         has_active_coding_task=cap_stack.runner.has_active_task(),

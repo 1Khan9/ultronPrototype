@@ -16,9 +16,9 @@ from typing import List
 import numpy as np
 import pytest
 
-from ultron.channels import Channel, ChannelMetadata
-from ultron.memory.embedder import _SparseVec
-from ultron.memory.qdrant_store import (
+from kenning.channels import Channel, ChannelMetadata
+from kenning.memory.embedder import _SparseVec
+from kenning.memory.qdrant_store import (
     ConversationMemory,
     MemoryTurn,
     _payload_to_turn,
@@ -143,7 +143,7 @@ def test_upsert_payload_carries_user_channel(monkeypatch):
 
     # Need to stub the qdrant collection name lookup.
     monkeypatch.setattr(
-        "ultron.memory.qdrant_store.get_config",
+        "kenning.memory.qdrant_store.get_config",
         lambda: SimpleNamespace(qdrant=SimpleNamespace(
             collections=SimpleNamespace(conversations="conv"),
         )),
@@ -166,7 +166,7 @@ def test_upsert_payload_carries_teammate_channel(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "ultron.memory.qdrant_store.get_config",
+        "kenning.memory.qdrant_store.get_config",
         lambda: SimpleNamespace(qdrant=SimpleNamespace(
             collections=SimpleNamespace(conversations="conv"),
         )),
@@ -183,7 +183,7 @@ def test_upsert_payload_carries_system_channel(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "ultron.memory.qdrant_store.get_config",
+        "kenning.memory.qdrant_store.get_config",
         lambda: SimpleNamespace(qdrant=SimpleNamespace(
             collections=SimpleNamespace(conversations="conv"),
         )),
@@ -261,7 +261,7 @@ def test_round_trip_user_channel_via_upsert_and_payload_to_turn(monkeypatch):
     the metadata shape ChannelMetadata produces."""
     m, client = _make_memory_no_qdrant_load()
     monkeypatch.setattr(
-        "ultron.memory.qdrant_store.get_config",
+        "kenning.memory.qdrant_store.get_config",
         lambda: SimpleNamespace(qdrant=SimpleNamespace(
             collections=SimpleNamespace(conversations="conv"),
         )),

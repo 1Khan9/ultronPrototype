@@ -31,7 +31,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.config import LLMConfig, UltronConfig
+from kenning.config import LLMConfig, KenningConfig
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +78,7 @@ def test_spec_decoding_knobs_accept_in_range_values():
 
 def _stub_engine_for_build_llama() -> object:
     """Build a partial LLMEngine skeleton just for ``_build_llama``."""
-    from ultron.llm.inference import LLMEngine
+    from kenning.llm.inference import LLMEngine
     eng = object.__new__(LLMEngine)
     eng._memory = None
     return eng
@@ -225,18 +225,18 @@ def test_build_llama_pld_import_failure_is_fail_open(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Top-level UltronConfig round-trip
+# Top-level KenningConfig round-trip
 # ---------------------------------------------------------------------------
 
 
 def test_full_config_default_keeps_spec_decoding_defaults():
-    cfg = UltronConfig()
+    cfg = KenningConfig()
     assert cfg.llm.speculative_max_ngram_size == 2
     assert cfg.llm.speculative_num_pred_tokens == 10
 
 
 def test_full_config_accepts_spec_decoding_overrides():
-    cfg = UltronConfig.model_validate({
+    cfg = KenningConfig.model_validate({
         "llm": {
             "speculative_max_ngram_size": 3,
             "speculative_num_pred_tokens": 15,

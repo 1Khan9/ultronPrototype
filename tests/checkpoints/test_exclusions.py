@@ -1,8 +1,8 @@
-"""Tests for ultron.checkpoints.exclusions."""
+"""Tests for kenning.checkpoints.exclusions."""
 
 from __future__ import annotations
 
-from ultron.checkpoints import exclusions as ex
+from kenning.checkpoints import exclusions as ex
 
 
 class TestDefaults:
@@ -13,13 +13,13 @@ class TestDefaults:
     def test_voice_baseline_list_covers_locked_files(self) -> None:
         for pat in (
             "SOUL.md",
-            "ultronVoiceAudio/Ultron_vocals_mono_v1.wav",
+            "kenningVoiceAudio/Kenning_vocals_mono_v1.wav",
             # Post-disk-cleaning home of the reference WAV (2026-06-11).
-            "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav",
+            "kenningVoiceAudio/kokoro training audio/Kenning_vocals_mono_v1.wav",
             "models/kokoro/**",
             "models/piper/**",
             "models/rvc/**",
-            "ultron_james_spader_mcu_6941/**",
+            "kenning_rvc_voice/**",
         ):
             assert pat in ex.VOICE_BASELINE_PROTECTED_PATTERNS
 

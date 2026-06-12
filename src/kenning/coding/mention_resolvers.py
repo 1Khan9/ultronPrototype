@@ -1,8 +1,8 @@
 """Extended ``@``-mention resolvers (URLs, problems, memory, clipboard, etc.).
 
 Adapted from cline's ``parseMentions`` pattern (Apache 2.0; see
-``THIRD_PARTY_NOTICES.md``). Ultron already had a file-only resolver
-ported from aider in :mod:`ultron.coding.file_mention_resolver`; this
+``THIRD_PARTY_NOTICES.md``). Kenning already had a file-only resolver
+ported from aider in :mod:`kenning.coding.file_mention_resolver`; this
 module sits next to it as the EXTENDED resolver covering the
 non-file forms that the cline catalog T14 calls out:
 

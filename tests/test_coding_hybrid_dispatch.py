@@ -10,7 +10,7 @@ contract that the wiring introduced:
   * The first coding subtask dispatches through the coding pipeline.
   * Anything AFTER the coding dispatch (a 2nd coding subtask, or automation
     that must follow the code) is surfaced as a deferred plan, NOT fired out
-    of order -- ultron holds one in-flight task and the voice turn is sync.
+    of order -- kenning holds one in-flight task and the voice turn is sync.
 
 All hermetic: a fake async decomposer + stubbed dispatch seams; no LLM, no
 subprocess, no real routing-log file (scoped to tmp_path).
@@ -22,13 +22,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from ultron.coding.bridge import CodingBridge
-from ultron.coding.projects import ProjectRegistry, ProjectResolver
-from ultron.coding.runner import CodingTaskRunner
-from ultron.coding.voice import CapabilityVoiceController, VoiceResponse
-from ultron.openclaw_routing import RoutingDecisionLog, set_routing_log
-from ultron.openclaw_routing.decomposer import DecompositionResult
-from ultron.openclaw_routing.intents import HybridSubtask
+from kenning.coding.bridge import CodingBridge
+from kenning.coding.projects import ProjectRegistry, ProjectResolver
+from kenning.coding.runner import CodingTaskRunner
+from kenning.coding.voice import CapabilityVoiceController, VoiceResponse
+from kenning.openclaw_routing import RoutingDecisionLog, set_routing_log
+from kenning.openclaw_routing.decomposer import DecompositionResult
+from kenning.openclaw_routing.intents import HybridSubtask
 
 
 class _NoopBridge(CodingBridge):
@@ -94,7 +94,7 @@ def test_automation_before_coding_runs_inline(tmp_path, monkeypatch):
         fallback_used=False,
     )
     monkeypatch.setattr(
-        "ultron.openclaw_routing.HybridTaskDecomposer", _fake_decomposer(result),
+        "kenning.openclaw_routing.HybridTaskDecomposer", _fake_decomposer(result),
     )
     calls = []
     monkeypatch.setattr(
@@ -124,7 +124,7 @@ def test_automation_after_coding_is_deferred(tmp_path, monkeypatch):
         fallback_used=False,
     )
     monkeypatch.setattr(
-        "ultron.openclaw_routing.HybridTaskDecomposer", _fake_decomposer(result),
+        "kenning.openclaw_routing.HybridTaskDecomposer", _fake_decomposer(result),
     )
     calls = []
     monkeypatch.setattr(
@@ -153,7 +153,7 @@ def test_only_first_coding_subtask_dispatched(tmp_path, monkeypatch):
         fallback_used=False,
     )
     monkeypatch.setattr(
-        "ultron.openclaw_routing.HybridTaskDecomposer", _fake_decomposer(result),
+        "kenning.openclaw_routing.HybridTaskDecomposer", _fake_decomposer(result),
     )
     seen = []
     monkeypatch.setattr(
@@ -177,7 +177,7 @@ def test_decompose_failure_falls_back_to_coding(tmp_path, monkeypatch):
         async def decompose(self, utterance):
             raise RuntimeError("llm down")
 
-    monkeypatch.setattr("ultron.openclaw_routing.HybridTaskDecomposer", _Boom)
+    monkeypatch.setattr("kenning.openclaw_routing.HybridTaskDecomposer", _Boom)
     seen = []
     monkeypatch.setattr(
         ctrl, "handle_utterance",
@@ -194,7 +194,7 @@ def test_automation_subtask_classified_and_dispatched(tmp_path, monkeypatch):
     """_dispatch_automation_subtask classifies the description and routes a
     real automation kind through the runner; HYBRID/CONVERSATIONAL re-classes
     are surfaced as text (no recursion)."""
-    from ultron.openclaw_routing.intents import RoutingIntentKind
+    from kenning.openclaw_routing.intents import RoutingIntentKind
 
     ctrl = _controller(tmp_path)
     dispatched = []
@@ -206,7 +206,7 @@ def test_automation_subtask_classified_and_dispatched(tmp_path, monkeypatch):
 
     # A real automation kind -> dispatched.
     monkeypatch.setattr(
-        "ultron.openclaw_routing.classifier.classify_routing",
+        "kenning.openclaw_routing.classifier.classify_routing",
         lambda d: SimpleNamespace(kind=RoutingIntentKind.BROWSER_AUTOMATION),
     )
     assert ctrl._dispatch_automation_subtask("open a page") == "done"
@@ -214,7 +214,7 @@ def test_automation_subtask_classified_and_dispatched(tmp_path, monkeypatch):
 
     # A HYBRID re-class -> surfaced as text, NOT dispatched (no recursion).
     monkeypatch.setattr(
-        "ultron.openclaw_routing.classifier.classify_routing",
+        "kenning.openclaw_routing.classifier.classify_routing",
         lambda d: SimpleNamespace(kind=RoutingIntentKind.HYBRID_TASK),
     )
     out = ctrl._dispatch_automation_subtask("a mixed thing")

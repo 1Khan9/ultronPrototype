@@ -1,7 +1,7 @@
 """Proactive notifications to remote channels (Phase 4).
 
 When a coding task completes, a heartbeat alert fires, or a standing
-order produces output, Ultron pings the user's phone via Telegram so
+order produces output, Kenning pings the user's phone via Telegram so
 they hear about it even when away from the desk. This dispatcher is
 the single seam for those proactive pings.
 
@@ -28,9 +28,9 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
-from ultron.config import NotificationsConfig
-from ultron.openclaw_bridge.client import OpenClawClient, SendMessageResult
-from ultron.utils.logging import get_logger
+from kenning.config import NotificationsConfig
+from kenning.openclaw_bridge.client import OpenClawClient, SendMessageResult
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_bridge.notifications")
 

@@ -8,7 +8,7 @@ Covers the 2026-05-10 voice-pipeline swap:
 - Unknown engine names are rejected.
 - ``XttsV3Config`` round-trips through the loader with the expected
   defaults pointing at the audio prep layout.
-- The ultron filter module imports cleanly with all three presets.
+- The kenning filter module imports cleanly with all three presets.
 """
 
 from __future__ import annotations
@@ -16,9 +16,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from ultron.config import (
+from kenning.config import (
     TTSConfig,
-    UltronConfig,
+    KenningConfig,
     XttsV3Config,
 )
 
@@ -57,7 +57,7 @@ def test_xtts_v3_config_defaults_match_audio_prep_layout():
     cfg = XttsV3Config()
     assert cfg.server_python.endswith(".venv-xtts/Scripts/python.exe")
     assert cfg.server_script.endswith("xtts_server.py")
-    assert cfg.reference_audio.endswith("Ultron_vocals_mono_v1.wav")
+    assert cfg.reference_audio.endswith("Kenning_vocals_mono_v1.wav")
     # 2026-06-12 stale-path fix: the WAV moved under the
     # "kokoro training audio" subdirectory during disk cleaning; the
     # default must point at the real on-disk home.
@@ -124,7 +124,7 @@ def test_xtts_v3_client_forwards_speed_in_http_body(monkeypatch, tmp_path):
     silently drops the speed field, this test fails."""
     import json
     import urllib.request
-    from ultron.tts import xtts_v3
+    from kenning.tts import xtts_v3
 
     # The constructor asserts the configured paths exist; stub files
     # under tmp_path satisfy that without spawning anything.
@@ -208,7 +208,7 @@ def test_xtts_v3_client_forwards_temperature_in_http_body(monkeypatch, tmp_path)
     rate goes back up. This test pins that wiring closed."""
     import json
     import urllib.request
-    from ultron.tts import xtts_v3
+    from kenning.tts import xtts_v3
 
     server_py = tmp_path / "python.exe"
     server_py.write_text("")
@@ -326,7 +326,7 @@ def test_trim_phantom_tail_detects_and_removes_classic_phantom():
     long speech -> ~280 ms silence -> ~100 ms isolated burst ->
     ~420 ms silence. The trim should keep the long speech (plus a
     small grace cushion) and drop everything after."""
-    from ultron.tts.xtts_v3 import trim_phantom_tail
+    from kenning.tts.xtts_v3 import trim_phantom_tail
     sr = 24000
     buf = _build_buffer(
         sr,
@@ -348,7 +348,7 @@ def test_trim_phantom_tail_leaves_sustained_speech_alone():
     """An ordinary speech clip with no phantom (just sustained speech
     followed by silence) should NOT be trimmed -- legitimate end-of-
     sentence audio must be preserved."""
-    from ultron.tts.xtts_v3 import trim_phantom_tail
+    from kenning.tts.xtts_v3 import trim_phantom_tail
     sr = 24000
     buf = _build_buffer(
         sr,
@@ -365,7 +365,7 @@ def test_trim_phantom_tail_leaves_short_inter_word_silence_alone():
     two speech regions must NOT be misread as a phantom signature.
     The 150 ms ``min_lead_silence_ms`` threshold should reject a
     100 ms gap as too short."""
-    from ultron.tts.xtts_v3 import trim_phantom_tail
+    from kenning.tts.xtts_v3 import trim_phantom_tail
     sr = 24000
     buf = _build_buffer(
         sr,
@@ -382,7 +382,7 @@ def test_trim_phantom_tail_leaves_legitimate_long_trailing_speech_alone():
     """A trailing event longer than ``max_event_ms`` is legitimate
     speech, not a phantom. Verify even when preceded by long
     silence we don't trim it."""
-    from ultron.tts.xtts_v3 import trim_phantom_tail
+    from kenning.tts.xtts_v3 import trim_phantom_tail
     sr = 24000
     buf = _build_buffer(
         sr,
@@ -396,7 +396,7 @@ def test_trim_phantom_tail_leaves_legitimate_long_trailing_speech_alone():
 
 
 def test_trim_phantom_tail_handles_empty_input():
-    from ultron.tts.xtts_v3 import trim_phantom_tail
+    from kenning.tts.xtts_v3 import trim_phantom_tail
     sr = 24000
     empty = np.zeros(0, dtype=np.float32)
     out, trimmed = trim_phantom_tail(empty, sr)
@@ -407,7 +407,7 @@ def test_trim_phantom_tail_handles_empty_input():
 def test_trim_phantom_tail_handles_very_short_clip():
     """Anything shorter than four analysis windows can't be reliably
     classified -- bail out without trimming."""
-    from ultron.tts.xtts_v3 import trim_phantom_tail
+    from kenning.tts.xtts_v3 import trim_phantom_tail
     sr = 24000
     short = np.zeros(int(0.03 * sr), dtype=np.float32)  # 30 ms < 4 * 20 ms
     out, trimmed = trim_phantom_tail(short, sr)
@@ -417,7 +417,7 @@ def test_trim_phantom_tail_handles_very_short_clip():
 
 def test_trim_phantom_tail_handles_all_silent_clip():
     """Pure silence has no speech to anchor the pattern. Pass through."""
-    from ultron.tts.xtts_v3 import trim_phantom_tail
+    from kenning.tts.xtts_v3 import trim_phantom_tail
     sr = 24000
     silent = np.zeros(int(2.0 * sr), dtype=np.float32)
     out, trimmed = trim_phantom_tail(silent, sr)
@@ -430,7 +430,7 @@ def test_trim_phantom_tail_skips_short_clip_below_min_duration():
     The algorithm can misclassify their stop-consonant release as a
     phantom event when XTTS lengthens the pre-stop closure beyond
     150 ms. The min-clip-duration guard returns these unchanged."""
-    from ultron.tts.xtts_v3 import trim_phantom_tail
+    from kenning.tts.xtts_v3 import trim_phantom_tail
     sr = 24000
     # Build the exact failure profile: voiced body, long closure that
     # would normally exceed min_lead_silence_ms, then a brief stop-
@@ -450,7 +450,7 @@ def test_trim_phantom_tail_skips_short_clip_below_min_duration():
 
 def test_trim_phantom_tail_min_clip_duration_is_tunable():
     """Caller can lower the guard for testing or special cases."""
-    from ultron.tts.xtts_v3 import trim_phantom_tail
+    from kenning.tts.xtts_v3 import trim_phantom_tail
     sr = 24000
     buf = _build_buffer(
         sr,
@@ -472,7 +472,7 @@ def test_trim_phantom_tail_still_fires_on_long_clip_with_phantom():
     multi-sentence clips that DO carry a phantom tail. Reuses the
     canonical phantom profile but checks it crosses the duration
     threshold."""
-    from ultron.tts.xtts_v3 import trim_phantom_tail
+    from kenning.tts.xtts_v3 import trim_phantom_tail
     sr = 24000
     buf = _build_buffer(
         sr,
@@ -493,7 +493,7 @@ def test_trim_phantom_tail_respects_disabled_flag_via_engine(monkeypatch, tmp_pa
     trim entirely -- useful for A/B comparison. Verify by patching
     the trim function and asserting it is NOT called."""
     import urllib.request
-    from ultron.tts import xtts_v3
+    from kenning.tts import xtts_v3
 
     server_py = tmp_path / "python.exe"
     server_py.write_text("")
@@ -558,23 +558,23 @@ def test_xtts_v3_config_nested_under_tts():
     assert cfg.xtts_v3.filter_preset == "v3_heavy"
 
 
-def test_full_ultron_config_round_trips_with_xtts_v3_engine():
-    cfg = UltronConfig()
+def test_full_kenning_config_round_trips_with_xtts_v3_engine():
+    cfg = KenningConfig()
     cfg.tts.engine = "xtts_v3"
     cfg.tts.xtts_v3.filter_preset = "v2_medium"
     # Round-trip through dict to mimic YAML load.
-    cfg2 = UltronConfig.model_validate(cfg.model_dump())
+    cfg2 = KenningConfig.model_validate(cfg.model_dump())
     assert cfg2.tts.engine == "xtts_v3"
     assert cfg2.tts.xtts_v3.filter_preset == "v2_medium"
 
 
 # ---------------------------------------------------------------------------
-# Ultron filter (runtime port)
+# Kenning filter (runtime port)
 # ---------------------------------------------------------------------------
 
 
-def test_ultron_filter_imports_all_three_presets():
-    from ultron.tts.ultron_filter import get_preset
+def test_kenning_filter_imports_all_three_presets():
+    from kenning.tts.kenning_filter import get_preset
     for preset_name in ("v1_subtle", "v2_medium", "v3_heavy"):
         board = get_preset(preset_name)
         # Each preset constructs a fresh Pedalboard with a non-empty plugin chain.
@@ -584,17 +584,17 @@ def test_ultron_filter_imports_all_three_presets():
         assert board is not board2
 
 
-def test_ultron_filter_unknown_preset_raises():
-    from ultron.tts.ultron_filter import get_preset
+def test_kenning_filter_unknown_preset_raises():
+    from kenning.tts.kenning_filter import get_preset
     with pytest.raises(ValueError):
         get_preset("v99_galaxy_brain")  # type: ignore[arg-type]
 
 
-def test_ultron_filter_apply_roundtrips_silence_with_tail_padding():
+def test_kenning_filter_apply_roundtrips_silence_with_tail_padding():
     """A silent input should come back longer by ~tail_silence_ms when
     tail padding is enabled. Validates that the padding logic actually
     extends the buffer (so the reverb tail has room to decay)."""
-    from ultron.tts.ultron_filter import apply_filter
+    from kenning.tts.kenning_filter import apply_filter
     sr = 24000
     silent = np.zeros(int(0.5 * sr), dtype=np.float32)
     out = apply_filter(silent, sr, preset="v3_heavy", tail_silence_ms=200.0)
@@ -603,16 +603,16 @@ def test_ultron_filter_apply_roundtrips_silence_with_tail_padding():
     assert abs(out.shape[0] - expected_len) < int(0.005 * sr)
 
 
-def test_ultron_filter_apply_no_tail_padding_preserves_length():
-    from ultron.tts.ultron_filter import apply_filter
+def test_kenning_filter_apply_no_tail_padding_preserves_length():
+    from kenning.tts.kenning_filter import apply_filter
     sr = 24000
     audio = np.zeros(int(0.5 * sr), dtype=np.float32)
     out = apply_filter(audio, sr, preset="v3_heavy", tail_silence_ms=0.0)
     assert out.shape[0] == audio.shape[0]
 
 
-def test_ultron_filter_apply_int16_preserves_dtype():
-    from ultron.tts.ultron_filter import apply_filter
+def test_kenning_filter_apply_int16_preserves_dtype():
+    from kenning.tts.kenning_filter import apply_filter
     sr = 24000
     audio = np.zeros(int(0.5 * sr), dtype=np.int16)
     out = apply_filter(audio, sr, preset="v3_heavy", tail_silence_ms=0.0)
@@ -625,38 +625,38 @@ def test_ultron_filter_apply_int16_preserves_dtype():
 
 
 def test_normalize_passes_through_empty_and_plain_text():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert normalize_text_for_tts("") == ""
     assert normalize_text_for_tts("It is a small fast-flying bird.") == \
         "It is a small fast-flying bird."
 
 
 def test_normalize_rewrites_time_ampm_lowercase():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     out = normalize_text_for_tts("currently 2:16 a.m. on Tuesday")
     assert "2 16 A M" in out
     assert ":" not in out or "Tuesday" in out  # only the time colon got rewritten
 
 
 def test_normalize_rewrites_time_ampm_uppercase():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "10 30 P M" in normalize_text_for_tts("at 10:30 PM tonight")
 
 
 def test_normalize_rewrites_time_no_dots():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "2 16 A M" in normalize_text_for_tts("2:16 am")
     assert "9 45 P M" in normalize_text_for_tts("9:45 pm")
 
 
 def test_normalize_rewrites_24h_time():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     out = normalize_text_for_tts("the meeting is at 14:30 sharp")
     assert "14 30" in out
 
 
 def test_normalize_24h_pattern_does_not_eat_handled_ampm_colon():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     # First pass converts "2:16 a.m." -> "2 16 A M"; the 24h regex
     # then sees no colon and leaves it alone. The trailing dot stays
     # (input had "a.m." with the second dot, which the letter-strip
@@ -667,13 +667,13 @@ def test_normalize_24h_pattern_does_not_eat_handled_ampm_colon():
 
 
 def test_normalize_rewrites_standalone_ampm():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     out = normalize_text_for_tts("we'll start at 10 a.m. sharp")
     assert "A M" in out
 
 
 def test_normalize_rewrites_windows_drive_path_to_leaf():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     out = normalize_text_for_tts(
         "Saved under C:\\STC\\ultronPrototype\\data\\sandbox\\converts_pdf_docx."
     )
@@ -683,7 +683,7 @@ def test_normalize_rewrites_windows_drive_path_to_leaf():
 
 
 def test_normalize_handles_windows_path_with_extension():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     out = normalize_text_for_tts("Open C:\\Users\\someuser\\foo\\bar.py please.")
     assert "C:\\" not in out
     assert "bar.py" in out
@@ -694,7 +694,7 @@ def test_normalize_strips_urls_for_tts_safety():
     stripped before TTS to keep the XTTS-v2 GPT context under the
     4096-audio-token cap. A live session hit 4830 tokens on a search
     response containing source URLs and the synth worker errored."""
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     url = "https://example.com/path/to/page"
     out = normalize_text_for_tts(f"See {url} for details.")
     assert url not in out
@@ -706,13 +706,13 @@ def test_normalize_strips_urls_for_tts_safety():
 
 def test_normalize_leaves_bare_drive_letter_alone():
     """``C:`` with no backslash is too ambiguous; leave it."""
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     out = normalize_text_for_tts("Drive C: is the boot disk.")
     assert "C:" in out
 
 
 def test_normalize_expands_common_abbreviations():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "for example" in normalize_text_for_tts("e.g. red, green, blue").lower()
     assert "that is" in normalize_text_for_tts("the API i.e. the contract").lower()
     assert "et cetera" in normalize_text_for_tts("apples, oranges, etc.").lower()
@@ -720,7 +720,7 @@ def test_normalize_expands_common_abbreviations():
 
 
 def test_normalize_combines_multiple_patterns():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     out = normalize_text_for_tts(
         "Open C:\\foo\\bar.py at 2:16 a.m. (e.g. on Tuesday)."
     )
@@ -732,7 +732,7 @@ def test_normalize_combines_multiple_patterns():
 
 def test_normalize_handles_full_session_response_pattern():
     """Reproduces the exact pattern from the live session log."""
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     text = (
         "France observes Central European Summer Time (CEST), "
         "currently 2:16 a.m. on Tuesday, May 19, 2026."
@@ -746,7 +746,7 @@ def test_normalize_handles_full_session_response_pattern():
 def test_normalize_falls_back_on_unsupported_patterns():
     """Patterns not in the rule set pass through unchanged -- the
     function is conservative by design."""
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     # Phone number -- not handled (no rule)
     out = normalize_text_for_tts("call 555-1234 tomorrow")
     assert "555-1234" in out
@@ -760,7 +760,7 @@ def test_normalize_falls_back_on_unsupported_patterns():
 
 
 def test_normalize_temperature_fahrenheit():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "72 degrees Fahrenheit" in normalize_text_for_tts("It's 72°F outside")
     assert "98.6 degrees Fahrenheit" in normalize_text_for_tts("98.6°F is normal")
     # With space between number and degree
@@ -768,19 +768,19 @@ def test_normalize_temperature_fahrenheit():
 
 
 def test_normalize_temperature_celsius():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "20 degrees Celsius" in normalize_text_for_tts("20°C in Paris")
     assert "37 degrees Celsius" in normalize_text_for_tts("body temp 37°C")
 
 
 def test_normalize_temperature_negative_values():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "-10 degrees Fahrenheit" in normalize_text_for_tts("-10°F")
     assert "-5 degrees Celsius" in normalize_text_for_tts("-5°C")
 
 
 def test_normalize_bare_degrees():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     out = normalize_text_for_tts("the angle is 45°")
     assert "45 degrees" in out
     assert "°" not in out
@@ -788,7 +788,7 @@ def test_normalize_bare_degrees():
 
 def test_normalize_temperature_does_not_eat_f_c_in_words():
     """Make sure 'F' / 'C' inside other words isn't picked up."""
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     # No degrees symbol -- shouldn't change "Fahrenheit"
     assert normalize_text_for_tts("Fahrenheit scale") == "Fahrenheit scale"
 
@@ -799,28 +799,28 @@ def test_normalize_temperature_does_not_eat_f_c_in_words():
 
 
 def test_normalize_currency_usd_bare():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "100 dollars" in normalize_text_for_tts("It costs $100")
     assert "5.99 dollars" in normalize_text_for_tts("$5.99 each")
     assert "1,000 dollars" in normalize_text_for_tts("$1,000")
 
 
 def test_normalize_currency_usd_with_suffix():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "1.5 million dollars" in normalize_text_for_tts("worth $1.5M")
     assert "2 billion dollars" in normalize_text_for_tts("$2B valuation")
     assert "500 thousand dollars" in normalize_text_for_tts("$500K salary")
 
 
 def test_normalize_currency_euro_and_pound():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "50 euros" in normalize_text_for_tts("paid €50")
     assert "25 pounds" in normalize_text_for_tts("only £25")
     assert "1 million euros" in normalize_text_for_tts("€1M fund")
 
 
 def test_normalize_currency_yen():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "1000 yen" in normalize_text_for_tts("¥1000 fare")
 
 
@@ -830,19 +830,19 @@ def test_normalize_currency_yen():
 
 
 def test_normalize_mass_pounds():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "150 pounds" in normalize_text_for_tts("150 lbs")
     assert "5 pounds" in normalize_text_for_tts("5 lb of flour")
 
 
 def test_normalize_mass_kilograms():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "70 kilograms" in normalize_text_for_tts("70 kg")
     assert "1.5 kilograms" in normalize_text_for_tts("1.5kg loaf")
 
 
 def test_normalize_mass_ounces_milligrams_grams():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "16 ounces" in normalize_text_for_tts("16 oz of water")
     assert "500 milligrams" in normalize_text_for_tts("500 mg dose")
     assert "250 grams" in normalize_text_for_tts("250 g of butter")
@@ -851,7 +851,7 @@ def test_normalize_mass_ounces_milligrams_grams():
 def test_normalize_grams_does_not_eat_g_in_words():
     """``g`` is a unit only when preceded by digits + non-letter
     boundary. ``going`` / ``5G`` should NOT match."""
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     out = normalize_text_for_tts("I am going to the store")
     assert "going" in out
     # ``5G`` (cellular) shouldn't be re-read as "5 grams"
@@ -861,7 +861,7 @@ def test_normalize_grams_does_not_eat_g_in_words():
 
 
 def test_normalize_mass_tons():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "2 tons" in normalize_text_for_tts("2 tons of steel")
     assert "1.5 tonnes" in normalize_text_for_tts("1.5 tonnes")
 
@@ -872,33 +872,33 @@ def test_normalize_mass_tons():
 
 
 def test_normalize_distance_miles_kilometres():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "5 miles" in normalize_text_for_tts("5 mi away")
     assert "10 kilometres" in normalize_text_for_tts("10 km away")
 
 
 def test_normalize_distance_metric_small():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "100 centimetres" in normalize_text_for_tts("100 cm long")
     assert "5 millimetres" in normalize_text_for_tts("5 mm thick")
 
 
 def test_normalize_distance_imperial_small():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "6 feet" in normalize_text_for_tts("6 ft tall")
     assert "18 inches" in normalize_text_for_tts("18 in wide")
     assert "5 yards" in normalize_text_for_tts("5 yds")
 
 
 def test_normalize_bare_metres():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "100 metres" in normalize_text_for_tts("100 m sprint")
 
 
 def test_normalize_metres_does_not_eat_m_in_words():
     """``m`` is a unit only when preceded by digit + non-letter
     boundary. ``I am`` / ``I'm`` should not match."""
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     out = normalize_text_for_tts("I am tired")
     assert "I am" in out
     assert "metres" not in out
@@ -907,7 +907,7 @@ def test_normalize_metres_does_not_eat_m_in_words():
 def test_normalize_inches_does_not_eat_in_preposition():
     """``in`` is a preposition too -- only safe as a unit when adjacent
     to digits + non-letter boundary."""
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     out = normalize_text_for_tts("I sit in the chair")
     assert "in the" in out
     assert "inches" not in out
@@ -919,18 +919,18 @@ def test_normalize_inches_does_not_eat_in_preposition():
 
 
 def test_normalize_speed_mph():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "60 miles per hour" in normalize_text_for_tts("60 mph")
 
 
 def test_normalize_speed_kph_and_km_h():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "100 kilometres per hour" in normalize_text_for_tts("100 km/h")
     assert "100 kilometres per hour" in normalize_text_for_tts("100 kph")
 
 
 def test_normalize_speed_metric_per_second():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "9.8 metres per second" in normalize_text_for_tts("9.8 m/s")
     assert "30 feet per second" in normalize_text_for_tts("30 ft/s")
 
@@ -939,7 +939,7 @@ def test_normalize_compound_does_not_break_bare_unit():
     """``100 km/h`` should produce ``kilometres per hour``, NOT
     ``kilometres / hour``. The compound pattern must consume both
     sides before the bare-km rule runs."""
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     out = normalize_text_for_tts("driving at 100 km/h")
     assert "kilometres per hour" in out
     assert "/" not in out or "hour" in out
@@ -951,7 +951,7 @@ def test_normalize_compound_does_not_break_bare_unit():
 
 
 def test_normalize_time_units():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "200 milliseconds" in normalize_text_for_tts("200 ms latency")
     assert "30 seconds" in normalize_text_for_tts("30 sec timeout")
     assert "5 minutes" in normalize_text_for_tts("5 min remaining")
@@ -959,7 +959,7 @@ def test_normalize_time_units():
 
 
 def test_normalize_storage_sizes():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "8 gigabytes" in normalize_text_for_tts("8 GB RAM")
     assert "500 megabytes" in normalize_text_for_tts("500 MB file")
     assert "256 kilobytes" in normalize_text_for_tts("256 KB block")
@@ -967,7 +967,7 @@ def test_normalize_storage_sizes():
 
 
 def test_normalize_frequency():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "3.5 gigahertz" in normalize_text_for_tts("3.5 GHz clock")
     assert "60 hertz" in normalize_text_for_tts("60 Hz refresh")
     assert "100 kilohertz" in normalize_text_for_tts("100 kHz tone")
@@ -979,7 +979,7 @@ def test_normalize_frequency():
 
 
 def test_normalize_ordinal_calendar_days():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "first" in normalize_text_for_tts("the 1st of May")
     assert "second" in normalize_text_for_tts("on the 2nd")
     assert "third" in normalize_text_for_tts("3rd time")
@@ -991,7 +991,7 @@ def test_normalize_ordinal_calendar_days():
 def test_normalize_ordinal_large_falls_through():
     """Beyond 31, leave the numeric form -- it usually reads better
     than a long compound ordinal word."""
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     out = normalize_text_for_tts("the 100th visitor")
     # Not in our word-mapping table -> stays as "100th"
     assert "100th" in out
@@ -1003,7 +1003,7 @@ def test_normalize_ordinal_large_falls_through():
 
 
 def test_normalize_titles_before_capitalised_names():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "Mister Smith" in normalize_text_for_tts("Mr. Smith")
     assert "Doctor Watson" in normalize_text_for_tts("Dr. Watson")
     assert "Professor Plum" in normalize_text_for_tts("Prof. Plum")
@@ -1015,7 +1015,7 @@ def test_normalize_titles_do_not_fire_without_capitalised_name():
     """``Mr.`` at end of sentence or before non-capitalised word
     shouldn't expand (avoid breaking street addresses, abbreviated
     lists, etc.)."""
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     # End of sentence
     assert "Mister" not in normalize_text_for_tts("Hello Mr.")
     # Lowercase following word
@@ -1028,7 +1028,7 @@ def test_normalize_titles_do_not_fire_without_capitalised_name():
 
 
 def test_normalize_acronym_dots():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "U S A" in normalize_text_for_tts("from the U.S.A.")
     assert "U S" in normalize_text_for_tts("the U.S. economy")
     assert "U K" in normalize_text_for_tts("U.K. parliament")
@@ -1039,7 +1039,7 @@ def test_normalize_acronym_dots():
 
 def test_normalize_acronym_dots_does_not_eat_letter_in_words():
     """``U.S.`` shouldn't match inside other words."""
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     out = normalize_text_for_tts("ous.")  # arbitrary lowercase
     assert "U S" not in out
 
@@ -1050,13 +1050,13 @@ def test_normalize_acronym_dots_does_not_eat_letter_in_words():
 
 
 def test_normalize_ampersand_between_words():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "Tom and Jerry" in normalize_text_for_tts("Tom & Jerry")
     assert "AT and T" in normalize_text_for_tts("AT&T")
 
 
 def test_normalize_extended_latin_abbreviations():
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     assert "compare" in normalize_text_for_tts("cf. Smith 2024").lower()
     assert "approximately" in normalize_text_for_tts("approx. 30 minutes").lower()
     assert "note well" in normalize_text_for_tts("N.B. the disclaimer").lower()
@@ -1069,7 +1069,7 @@ def test_normalize_extended_latin_abbreviations():
 
 def test_normalize_combined_rich_response():
     """A typical weather/news-style response with multiple patterns."""
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     text = (
         "On May 19th at 3:30 p.m. the temperature in the U.S. was "
         "72°F with winds at 15 mph; the storm dropped 2.5 in of rain "
@@ -1090,7 +1090,7 @@ def test_normalize_does_not_break_short_sensible_text():
     """Common simple sentences should pass through with minimal
     rewriting (the rules are scoped tightly enough not to false-fire
     on natural prose)."""
-    from ultron.tts.xtts_v3 import normalize_text_for_tts
+    from kenning.tts.xtts_v3 import normalize_text_for_tts
     samples = [
         "Hello, how are you today?",
         "It is a beautiful day.",
@@ -1109,7 +1109,7 @@ def test_normalize_engine_wiring_uses_spoken_form(monkeypatch, tmp_path):
     with the NORMALISED text, not the raw text."""
     import json
     import urllib.request
-    from ultron.tts import xtts_v3
+    from kenning.tts import xtts_v3
 
     server_py = tmp_path / "python.exe"
     server_py.write_text("")
@@ -1165,7 +1165,7 @@ def test_normalize_engine_wiring_uses_spoken_form(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-from ultron.tts.xtts_v3 import normalize_text_for_tts, XttsV3Speech
+from kenning.tts.xtts_v3 import normalize_text_for_tts, XttsV3Speech
 
 
 def test_normalize_strips_https_url():
@@ -1627,7 +1627,7 @@ def test_run_synth_loop_safety_valve_breaks_runaway_buffer():
 
 def test_xtts_v3_config_extended_reference_defaults():
     """The round-9 defaults bump the Coqui library defaults (6/6/30)
-    so the 3-min Ultron reference actually contributes more than the
+    so the 3-min Kenning reference actually contributes more than the
     first ~6 s. If these regress, the speaker embedding silently
     truncates back to the library defaults."""
     cfg = XttsV3Config()
@@ -1677,7 +1677,7 @@ def test_xtts_v3_client_forwards_reference_window_in_argv(monkeypatch, tmp_path)
     argparse defaults and Coqui's library defaults (6/6/30) take
     over -- which is exactly what we're trying to avoid."""
     import subprocess
-    from ultron.tts import xtts_v3
+    from kenning.tts import xtts_v3
 
     server_py = tmp_path / "python.exe"
     server_py.write_text("")
@@ -1728,7 +1728,7 @@ def test_xtts_v3_client_uses_config_defaults_when_kwargs_omitted(monkeypatch, tm
     reads them from the global config (which mirrors config.yaml).
     Pins the production-default flow so a config bump propagates."""
     import subprocess
-    from ultron.tts import xtts_v3
+    from kenning.tts import xtts_v3
 
     server_py = tmp_path / "python.exe"
     server_py.write_text("")

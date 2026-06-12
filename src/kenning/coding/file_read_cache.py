@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from ultron.llm.response_format import cached_read_notice
+from kenning.llm.response_format import cached_read_notice
 
 
 @dataclass(frozen=True)

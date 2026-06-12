@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.openclaw_routing.disambiguator import (
+from kenning.openclaw_routing.disambiguator import (
     DisambiguationResult,
     IntentDisambiguator,
 )
-from ultron.openclaw_routing.intents import RoutingIntentKind
+from kenning.openclaw_routing.intents import RoutingIntentKind
 
 
 class _StubLLM:
@@ -99,7 +99,7 @@ def test_disambiguator_disabled_in_config_short_circuits(monkeypatch):
     """When config.routing.llm_disambiguation_enabled is False, the
     disambiguator returns UNCLEAR without calling the LLM."""
     llm = _StubLLM(response="CODING")
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config()
     monkeypatch.setattr(cfg.routing, "llm_disambiguation_enabled", False)
     d = IntentDisambiguator(llm)

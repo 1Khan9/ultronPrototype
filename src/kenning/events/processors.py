@@ -33,13 +33,13 @@ import threading
 from dataclasses import dataclass, field
 from typing import Callable
 
-from ultron.events.callbacks import (
+from kenning.events.callbacks import (
     CallbackProcessor,
     CallbackResult,
     CallbackResultStatus,
     RegisteredCallback,
 )
-from ultron.events.models import StoredEvent
+from kenning.events.models import StoredEvent
 
 logger = logging.getLogger(__name__)
 

@@ -9,12 +9,12 @@ deterministic verdict-derivation function. Three architectural pieces:
    Prefixes carve up the namespace by intent: ``malicious.*`` for
    findings whose only purpose is harm; ``suspicious.*`` for findings
    that need human (or LLM) review; ``review.*`` for LLM-routed cases
-   that don't claim a definitive verdict; ``ultron.*`` for
-   ultron-specific extensions that bridge to the safety-validator's
+   that don't claim a definitive verdict; ``kenning.*`` for
+   kenning-specific extensions that bridge to the safety-validator's
    K/A-J/M-S/IT/Cap-1..Cap-4 categories. The clawhub code namespace is
    preserved verbatim (33 codes, ``MODERATION_ENGINE_VERSION`` matches
    ``v2.4.24``) so audit logs can cross-reference upstream issues; the
-   ultron extensions add the seven codes that map to features the
+   kenning extensions add the seven codes that map to features the
    upstream catalogue doesn't have (voice-baseline lock, K-category
    tamper, persona drift, etc.).
 
@@ -29,7 +29,7 @@ deterministic verdict-derivation function. Three architectural pieces:
    skill-load decision routes through.
 
 3. **The severity ladder.** :class:`FindingSeverity` (re-exported from
-   :mod:`ultron.install.static_scanner` for compatibility) is the
+   :mod:`kenning.install.static_scanner` for compatibility) is the
    ``info`` / ``warn`` / ``critical`` ladder. Each code has a default
    severity in :data:`DEFAULT_SEVERITIES`; per-finding context can
    bump it (a ``suspicious.dangerous_exec`` in a SKILL.md body is
@@ -37,16 +37,16 @@ deterministic verdict-derivation function. Three architectural pieces:
    SOUL.md is critical).
 
 The :data:`EXTERNALLY_CLEARABLE_SUSPICIOUS_CODES` set carves out
-codes a moderator (or, in single-user ultron, the user via the
+codes a moderator (or, in single-user kenning, the user via the
 two-phase approval channel) can mark as ``acknowledged`` without
 removing them from the audit trail. The clawhub catalogue currently
-carves out only :data:`REASON_CODES["CREDENTIAL_HARVEST"]`; ultron
+carves out only :data:`REASON_CODES["CREDENTIAL_HARVEST"]`; kenning
 preserves that and adds two more for the voice-baseline contract
 (see code definitions below).
 
 This module is pure data + pure functions. No I/O. Callers (the
 static scanner, the audit log, the voice-narration helpers in
-:mod:`ultron.coding.narration`) consume the helpers without ever
+:mod:`kenning.coding.narration`) consume the helpers without ever
 touching the underlying registry.
 """
 
@@ -56,7 +56,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Iterable, Mapping, Optional
 
-from ultron.install.static_scanner import FindingSeverity
+from kenning.install.static_scanner import FindingSeverity
 
 
 #: Engine version the code namespace is compatible with. Bumped when
@@ -77,7 +77,7 @@ class ReasonPrefix(str, Enum):
       verdict when no malicious code is present.
     * :attr:`REVIEW` — LLM-routed soft signal; does not by itself
       trigger ``suspicious``.
-    * :attr:`ULTRON` — ultron-specific finding bridging to the safety
+    * :attr:`KENNING` — kenning-specific finding bridging to the safety
       validator's K/A-J/M-S/IT/Cap-1..Cap-4 categories. The slug
       sub-prefix determines verdict.
     """
@@ -85,7 +85,7 @@ class ReasonPrefix(str, Enum):
     MALICIOUS = "malicious"
     SUSPICIOUS = "suspicious"
     REVIEW = "review"
-    ULTRON = "ultron"
+    KENNING = "kenning"
 
 
 class ModerationVerdict(str, Enum):
@@ -143,17 +143,17 @@ REASON_CODES: Mapping[str, str] = {
     "KNOWN_BLOCKED_SIGNATURE": "malicious.known_blocked_signature",
     "STEALTH_BROWSER_ABUSE": "malicious.stealth_browser_abuse",
     "LLM_MALICIOUS": "malicious.llm_malicious",
-    # ---- ultron extensions (bridge to safety validator categories) ----
+    # ---- kenning extensions (bridge to safety validator categories) ----
     # Suspicious bridges:
-    "ULTRON_VOICE_BASELINE_TOUCH": "ultron.suspicious.voice_baseline_touch",  # SOUL/RVC/Piper/Kokoro/LLM-model
-    "ULTRON_PERSONA_DRIFT": "ultron.suspicious.persona_drift",  # IDENTITY.md changed mid-session
-    "ULTRON_AUDIT_LOG_TAMPER": "ultron.suspicious.audit_log_tamper",  # K3 hash chain mismatch
-    "ULTRON_VALIDATOR_CONFIG_TAMPER": "ultron.suspicious.validator_config_tamper",  # K7
-    "ULTRON_INTERACTIVE_TOOL": "ultron.suspicious.interactive_tool",  # IT category match
-    "ULTRON_CAP_BYPASS_ATTEMPT": "ultron.suspicious.cap_bypass_attempt",  # Cap-1..Cap-4 carveout abused
+    "KENNING_VOICE_BASELINE_TOUCH": "kenning.suspicious.voice_baseline_touch",  # SOUL/RVC/Piper/Kokoro/LLM-model
+    "KENNING_PERSONA_DRIFT": "kenning.suspicious.persona_drift",  # IDENTITY.md changed mid-session
+    "KENNING_AUDIT_LOG_TAMPER": "kenning.suspicious.audit_log_tamper",  # K3 hash chain mismatch
+    "KENNING_VALIDATOR_CONFIG_TAMPER": "kenning.suspicious.validator_config_tamper",  # K7
+    "KENNING_INTERACTIVE_TOOL": "kenning.suspicious.interactive_tool",  # IT category match
+    "KENNING_CAP_BYPASS_ATTEMPT": "kenning.suspicious.cap_bypass_attempt",  # Cap-1..Cap-4 carveout abused
     # Malicious bridges (K-category self-modification):
-    "ULTRON_K_CATEGORY_SELF_MODIFY": "ultron.malicious.k_category_self_modify",  # Cat-K self-protection
-    "ULTRON_KNOWN_BLOCKED_PATTERN": "ultron.malicious.known_blocked_pattern",
+    "KENNING_K_CATEGORY_SELF_MODIFY": "kenning.malicious.k_category_self_modify",  # Cat-K self-protection
+    "KENNING_KNOWN_BLOCKED_PATTERN": "kenning.malicious.known_blocked_pattern",
 }
 
 
@@ -176,7 +176,7 @@ MALICIOUS_CODES: frozenset[str] = frozenset({
     _code("INSTALL_TERMINAL_PAYLOAD"),
     _code("KNOWN_BLOCKED_SIGNATURE"),
     _code("STEALTH_BROWSER_ABUSE"),
-    _code("ULTRON_KNOWN_BLOCKED_PATTERN"),
+    _code("KENNING_KNOWN_BLOCKED_PATTERN"),
 })
 
 
@@ -185,12 +185,12 @@ MALICIOUS_CODES: frozenset[str] = frozenset({
 #: just doesn't escalate on them. Reserved for codes whose
 #: false-positive rate is high enough that moderator review is the
 #: load-bearing signal (the upstream catalogue carves out only the
-#: env-credential-access code; ultron adds two more for situations
+#: env-credential-access code; kenning adds two more for situations
 #: where the voice user explicitly authorises the action).
 EXTERNALLY_CLEARABLE_SUSPICIOUS_CODES: frozenset[str] = frozenset({
     _code("CREDENTIAL_HARVEST"),
-    _code("ULTRON_VOICE_BASELINE_TOUCH"),
-    _code("ULTRON_PERSONA_DRIFT"),
+    _code("KENNING_VOICE_BASELINE_TOUCH"),
+    _code("KENNING_PERSONA_DRIFT"),
 })
 
 
@@ -233,22 +233,22 @@ DEFAULT_SEVERITIES: Mapping[str, FindingSeverity] = {
     _code("KNOWN_BLOCKED_SIGNATURE"): FindingSeverity.CRITICAL,
     _code("STEALTH_BROWSER_ABUSE"): FindingSeverity.CRITICAL,
     _code("LLM_MALICIOUS"): FindingSeverity.CRITICAL,
-    # ultron.suspicious.* / ultron.malicious.*
-    _code("ULTRON_VOICE_BASELINE_TOUCH"): FindingSeverity.CRITICAL,
-    _code("ULTRON_PERSONA_DRIFT"): FindingSeverity.WARN,
-    _code("ULTRON_AUDIT_LOG_TAMPER"): FindingSeverity.CRITICAL,
-    _code("ULTRON_VALIDATOR_CONFIG_TAMPER"): FindingSeverity.CRITICAL,
-    _code("ULTRON_INTERACTIVE_TOOL"): FindingSeverity.WARN,
-    _code("ULTRON_CAP_BYPASS_ATTEMPT"): FindingSeverity.CRITICAL,
-    _code("ULTRON_K_CATEGORY_SELF_MODIFY"): FindingSeverity.CRITICAL,
-    _code("ULTRON_KNOWN_BLOCKED_PATTERN"): FindingSeverity.CRITICAL,
+    # kenning.suspicious.* / kenning.malicious.*
+    _code("KENNING_VOICE_BASELINE_TOUCH"): FindingSeverity.CRITICAL,
+    _code("KENNING_PERSONA_DRIFT"): FindingSeverity.WARN,
+    _code("KENNING_AUDIT_LOG_TAMPER"): FindingSeverity.CRITICAL,
+    _code("KENNING_VALIDATOR_CONFIG_TAMPER"): FindingSeverity.CRITICAL,
+    _code("KENNING_INTERACTIVE_TOOL"): FindingSeverity.WARN,
+    _code("KENNING_CAP_BYPASS_ATTEMPT"): FindingSeverity.CRITICAL,
+    _code("KENNING_K_CATEGORY_SELF_MODIFY"): FindingSeverity.CRITICAL,
+    _code("KENNING_KNOWN_BLOCKED_PATTERN"): FindingSeverity.CRITICAL,
 }
 
 
 #: Lookup from canonical reason-code string to its short OWASP-Agentic
 #: alignment tag. Used for voice narration and dashboard rollup. The
 #: clawhub catalogue does not ship a formal mapping table; this is
-#: ultron's reading of the conceptual alignment.
+#: kenning's reading of the conceptual alignment.
 OWASP_AGENTIC_ALIGNMENT: Mapping[str, str] = {
     _code("PROMPT_INJECTION_INSTRUCTIONS"): "AS01:prompt-injection",
     _code("EXPOSED_SECRET_LITERAL"): "AS04:credential-exposure",
@@ -267,8 +267,8 @@ OWASP_AGENTIC_ALIGNMENT: Mapping[str, str] = {
     _code("UNSAFE_BROWSER_TEXT_INPUT"): "AS08:tool-misuse",
     _code("BROWSER_FILE_RENDER"): "AS08:tool-misuse",
     _code("UNSAFE_FILE_WRITE"): "AS08:tool-misuse",
-    _code("ULTRON_K_CATEGORY_SELF_MODIFY"): "AS10:context-poisoning",
-    _code("ULTRON_AUDIT_LOG_TAMPER"): "AS10:context-poisoning",
+    _code("KENNING_K_CATEGORY_SELF_MODIFY"): "AS10:context-poisoning",
+    _code("KENNING_AUDIT_LOG_TAMPER"): "AS10:context-poisoning",
 }
 
 
@@ -318,9 +318,9 @@ def verdict_from_codes(codes: Iterable[str]) -> ModerationVerdict:
 
     1. Normalise the input (dedupe, drop empties, sort).
     2. Any code in :data:`MALICIOUS_CODES` OR starting with
-       ``"malicious."`` OR ``"ultron.malicious."`` -> MALICIOUS.
+       ``"malicious."`` OR ``"kenning.malicious."`` -> MALICIOUS.
     3. Any remaining code starting with ``"suspicious."`` OR
-       ``"ultron.suspicious."`` -> SUSPICIOUS.
+       ``"kenning.suspicious."`` -> SUSPICIOUS.
     4. Otherwise -> CLEAN.
 
     Note that ``review.*`` does NOT escalate to suspicious — review
@@ -335,10 +335,10 @@ def verdict_from_codes(codes: Iterable[str]) -> ModerationVerdict:
         if code in MALICIOUS_CODES:
             has_malicious = True
             break
-        if code.startswith("malicious.") or code.startswith("ultron.malicious."):
+        if code.startswith("malicious.") or code.startswith("kenning.malicious."):
             has_malicious = True
             break
-        if code.startswith("suspicious.") or code.startswith("ultron.suspicious."):
+        if code.startswith("suspicious.") or code.startswith("kenning.suspicious."):
             has_suspicious = True
     if has_malicious:
         return ModerationVerdict.MALICIOUS

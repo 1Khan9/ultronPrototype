@@ -1,7 +1,7 @@
-"""ultron's clean-room autonomous self-improvement package.
+"""kenning's clean-room autonomous self-improvement package.
 
 Catalog 13 (clawhub-capability-evolver) clean-room synthesis. This
-package gives ultron a **bounded, autonomous, data-only** self-improvement
+package gives kenning a **bounded, autonomous, data-only** self-improvement
 loop: it notices an unmet need (a *signal*), proposes a new *skill*
 (markdown data, never executable code), pre-flights the proposal through
 the existing safety stack (static scan + capability tags + blast-radius +
@@ -13,10 +13,10 @@ It is capability evolution as **context-injection**, NOT self-modification.
 Every guarantee that makes this safe is enforced here, never assumed:
 
 * **data-only** -- proposals are ``skills/*.md`` data files or in-range
-  config values, NEVER generated Python, NEVER ``src/ultron/``, NEVER a
+  config values, NEVER generated Python, NEVER ``src/kenning/``, NEVER a
   Category-K protected file;
 * **zero network** -- no HTTP / sockets / remote hub / phone-home;
-* **bounded** -- the loop is an :class:`ultron.agent_loop.base.AgentLoop`
+* **bounded** -- the loop is an :class:`kenning.agent_loop.base.AgentLoop`
   subclass, so ``max_steps`` + loop-detection cap every run;
 * **reversible** -- every change is checkpointed before it lands and the
   guardrails trigger an automatic rollback on any regression;
@@ -26,24 +26,24 @@ Every guarantee that makes this safe is enforced here, never assumed:
 
 The modules:
 
-* :mod:`~ultron.evolution.models` -- the GEP data model.
-* :mod:`~ultron.evolution.signals` -- the 17-signal taxonomy + local
+* :mod:`~kenning.evolution.models` -- the GEP data model.
+* :mod:`~kenning.evolution.signals` -- the 17-signal taxonomy + local
   detection + history-aware post-processing.
-* :mod:`~ultron.evolution.blast_radius` -- the change-size policy spine.
-* :mod:`~ultron.evolution.skill_distiller` -- successes -> a ``skills/*.md``
+* :mod:`~kenning.evolution.blast_radius` -- the change-size policy spine.
+* :mod:`~kenning.evolution.skill_distiller` -- successes -> a ``skills/*.md``
   proposal.
-* :mod:`~ultron.evolution.guardrails` -- regression detectors + auto-revert
+* :mod:`~kenning.evolution.guardrails` -- regression detectors + auto-revert
   + the rollback-frequency audit.
-* :mod:`~ultron.evolution.autonomy` -- the tiered-autonomy controller +
+* :mod:`~kenning.evolution.autonomy` -- the tiered-autonomy controller +
   trust-graduation ladder.
-* :mod:`~ultron.evolution.personality` -- adaptive response temperament.
-* :mod:`~ultron.evolution.evolution_loop` -- the bounded loop tying it all
+* :mod:`~kenning.evolution.personality` -- adaptive response temperament.
+* :mod:`~kenning.evolution.evolution_loop` -- the bounded loop tying it all
   together.
 """
 
 from __future__ import annotations
 
-from ultron.evolution.autonomy import (
+from kenning.evolution.autonomy import (
     DEFAULT_SURFACE_TIERS,
     AutonomyMode,
     AutonomyTier,
@@ -51,7 +51,7 @@ from ultron.evolution.autonomy import (
     SurfaceState,
     TieredAutonomyController,
 )
-from ultron.evolution.blast_radius import (
+from kenning.evolution.blast_radius import (
     BLAST_RADIUS_HARD_CAP_FILES,
     BLAST_RADIUS_HARD_CAP_LINES,
     BlastComputation,
@@ -68,7 +68,7 @@ from ultron.evolution.blast_radius import (
     is_validation_command_allowed,
     proposal_policy,
 )
-from ultron.evolution.evolution_loop import (
+from kenning.evolution.evolution_loop import (
     ApplyResult,
     ApplyStatus,
     CheckpointHook,
@@ -76,7 +76,7 @@ from ultron.evolution.evolution_loop import (
     EvolutionLoopConfig,
     EvolutionState,
 )
-from ultron.evolution.guardrails import (
+from kenning.evolution.guardrails import (
     GuardrailBaseline,
     GuardrailConfig,
     GuardrailSample,
@@ -85,7 +85,7 @@ from ultron.evolution.guardrails import (
     RollbackRecord,
     evaluate_guardrails,
 )
-from ultron.evolution.models import (
+from kenning.evolution.models import (
     DEFAULT_FORBIDDEN_PATHS,
     DEFAULT_GENE_MAX_FILES,
     DISTILLED_GENE_MAX_FILES,
@@ -129,13 +129,13 @@ from ultron.evolution.models import (
     derive_pattern_key,
     redact_fragment,
 )
-from ultron.evolution.personality import (
+from kenning.evolution.personality import (
     PersonalityFeedback,
     PersonalityTuner,
     apply_temperament,
     temperament_hint,
 )
-from ultron.evolution.signals import (
+from kenning.evolution.signals import (
     OPPORTUNITY_SIGNALS,
     RecentHistoryAnalysis,
     analyze_recent_history,
@@ -143,7 +143,7 @@ from ultron.evolution.signals import (
     has_opportunity_signal,
     signal_base,
 )
-from ultron.evolution.skill_distiller import (
+from kenning.evolution.skill_distiller import (
     DistillResult,
     SkillProposal,
     auto_distill,

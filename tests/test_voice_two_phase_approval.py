@@ -13,8 +13,8 @@ import threading
 
 import pytest
 
-from ultron.coding.voice import CapabilityVoiceController
-from ultron.safety.two_phase_approval import ApprovalRegistry, set_approval_registry
+from kenning.coding.voice import CapabilityVoiceController
+from kenning.safety.two_phase_approval import ApprovalRegistry, set_approval_registry
 
 
 @pytest.fixture(autouse=True)
@@ -96,7 +96,7 @@ def test_handler_consumes_general_voice_approval(monkeypatch):
     approval when no window-close approval is pending."""
     from types import SimpleNamespace
 
-    import ultron.openclaw_routing as ocr
+    import kenning.openclaw_routing as ocr
 
     # The handler audit-logs via get_routing_log().record(intent, ...) which
     # reads many RoutingIntent fields; stub it so the test uses a thin intent.

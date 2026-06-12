@@ -2,8 +2,8 @@
 
 Loads whichever STT / LLM / TTS engines ``config.yaml`` is currently
 configured for — via the production factories
-:func:`ultron.transcription.make_stt_engine` and
-:func:`ultron.tts.make_tts_engine` — and measures:
+:func:`kenning.transcription.make_stt_engine` and
+:func:`kenning.tts.make_tts_engine` — and measures:
 
   - VRAM at every load checkpoint (idle / +STT / +LLM / +intent / +TTS).
   - STT transcription latency on a synthetic 2.5 s sample (5 reps).
@@ -19,14 +19,14 @@ configured for — via the production factories
 Output: ``baselines.json`` at the worktree root.
 
 The script intentionally exercises the SAME factories the orchestrator
-uses (``ultron.tts.make_tts_engine`` + ``ultron.transcription.make_stt_engine``
-+ ``ultron.intent.UltronIntentRecognizer`` for warmup) so a single
+uses (``kenning.tts.make_tts_engine`` + ``kenning.transcription.make_stt_engine``
++ ``kenning.intent.KenningIntentRecognizer`` for warmup) so a single
 ``config.yaml`` flip moves both production and measurement in lock-step.
 
 **Voice-stack concurrency:** running this script LOADS the voice
 stack. Per ``feedback_voice_stack_concurrency.md`` confirm no other
-Ultron process is running before invoking. The runner refuses to
-start if it detects another Ultron Python process.
+Kenning process is running before invoking. The runner refuses to
+start if it detects another Kenning Python process.
 """
 
 from __future__ import annotations
@@ -155,11 +155,11 @@ def first_sentence_of(
 
 
 def _refuse_if_orchestrator_running() -> Optional[int]:
-    """Return another Ultron Python PID if one is detected, else None.
+    """Return another Kenning Python PID if one is detected, else None.
 
     The ``feedback_voice_stack_concurrency.md`` rule mandates an explicit
     user check before loading the voice stack. This is a runtime
-    backstop: if the orchestrator (``python -m ultron``) is already
+    backstop: if the orchestrator (``python -m kenning``) is already
     running, the load here would steal its CUDA memory and crash. We
     refuse rather than corrupt the running session.
     """
@@ -175,8 +175,8 @@ def _refuse_if_orchestrator_running() -> Optional[int]:
                 continue
             joined = " ".join(cmdline)
             # Identify the orchestrator launch pattern.
-            if "ultron" in joined and (
-                "-m ultron" in joined or "ultron.__main__" in joined
+            if "kenning" in joined and (
+                "-m kenning" in joined or "kenning.__main__" in joined
             ):
                 return proc.info["pid"]
         except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -210,7 +210,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--skip-intent",
         action="store_true",
-        help="Skip the UltronIntentRecognizer warmup (use when "
+        help="Skip the KenningIntentRecognizer warmup (use when "
              "intent.enabled is false in the current config).",
     )
     parser.add_argument(
@@ -229,7 +229,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--allow-concurrent",
         action="store_true",
         help="Bypass the orchestrator-already-running check. ONLY use "
-             "when you know no other Ultron process exists.",
+             "when you know no other Kenning process exists.",
     )
     args = parser.parse_args(argv)
 
@@ -240,18 +240,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     other_pid = None if args.allow_concurrent else _refuse_if_orchestrator_running()
     if other_pid is not None:
         print(
-            f"ERROR: another Ultron process (PID={other_pid}) is running. "
+            f"ERROR: another Kenning process (PID={other_pid}) is running. "
             f"Stop it first or re-run with --allow-concurrent.",
             file=sys.stderr,
         )
         return 2
 
     import os
-    os.environ.setdefault("ULTRON_LOG_LEVEL", "WARNING")
-    from ultron.utils.logging import configure_logging
+    os.environ.setdefault("KENNING_LOG_LEVEL", "WARNING")
+    from kenning.utils.logging import configure_logging
     configure_logging(level="WARNING")
 
-    from ultron.config import get_config
+    from kenning.config import get_config
 
     cfg = get_config()
     stt_engine_name = getattr(cfg.stt, "engine", "?")
@@ -296,7 +296,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # ----- STT load + VRAM probe -----
     print("\nLoading STT engine...")
-    from ultron.transcription import make_stt_engine
+    from kenning.transcription import make_stt_engine
     t = time.monotonic()
     stt = make_stt_engine(cfg.stt)
     print(f"  STT loaded in {time.monotonic() - t:.1f}s ({type(stt).__name__})")
@@ -316,7 +316,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # ----- LLM load + VRAM probe -----
     print("\nLoading LLM...")
-    from ultron.llm import LLMEngine
+    from kenning.llm import LLMEngine
     t = time.monotonic()
     llm = LLMEngine(memory=None)
     print(f"  LLM loaded in {time.monotonic() - t:.1f}s")
@@ -331,10 +331,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     intent = None
     if intent_enabled and not args.skip_intent:
         print("\nLoading intent recognizer (Gemma-300M, q4)...")
-        from ultron.intent.recognizer import UltronIntentRecognizer
+        from kenning.intent.recognizer import KenningIntentRecognizer
         intent_cfg = cfg.intent
         t = time.monotonic()
-        intent = UltronIntentRecognizer(
+        intent = KenningIntentRecognizer(
             model_name=getattr(intent_cfg, "model_name", "embeddinggemma-300m"),
             variant=getattr(intent_cfg, "variant", "q4"),
             threshold=getattr(intent_cfg, "threshold", 0.65),
@@ -353,7 +353,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # ----- TTS load + warmup + VRAM probe -----
     print("\nLoading TTS engine...")
-    from ultron.tts import make_tts_engine
+    from kenning.tts import make_tts_engine
     t = time.monotonic()
     _rvc, tts = make_tts_engine(cfg.tts)
     print(f"  TTS loaded in {time.monotonic() - t:.1f}s ({type(tts).__name__})")

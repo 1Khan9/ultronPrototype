@@ -4,7 +4,7 @@ What this delivers without ClawHub's ``windows-control`` plugin:
 
 - :func:`collect_window_text` -- walk a window's UIA tree and return the
   visible text strings. Used by the screen-context layer (Phase 5) to
-  inject "what's actually written on screen" into Ultron's LLM context.
+  inject "what's actually written on screen" into Kenning's LLM context.
 - :func:`find_element` -- semantic search by name / automation_id within
   a window. Returns a frozen :class:`UIAElement` snapshot.
 - :func:`click_element` -- find + invoke a UIA control. Goes through
@@ -18,7 +18,7 @@ What this delivers without ClawHub's ``windows-control`` plugin:
   UIA element bounding rects come from pywinauto's layer (physical
   pixels in DPI-aware processes), while pyautogui expects physical
   pixels too. The helpers route through
-  :func:`ultron.desktop.win32_helpers.logical_to_physical` so callers
+  :func:`kenning.desktop.win32_helpers.logical_to_physical` so callers
   receiving logical-pixel coordinates from non-DPI-aware sources
   (older VLMs, browser DOM coordinates) land on the right pixel on
   high-DPI / mixed-DPI displays.
@@ -46,10 +46,10 @@ Coordinate-space convention (catalog 07 T5):
   :func:`dpi_aware_click_at_element_center`) which behaves as an
   identity on 100%-DPI displays and applies DPI conversion only when
   the caller explicitly opts in via ``assume_logical=True``.
-- :class:`ultron.desktop.capture.Screenshot` returns physical pixels
+- :class:`kenning.desktop.capture.Screenshot` returns physical pixels
   (mss reads the GDI surface). Crosshairs and bounding boxes drawn
   on those captures must use physical pixels too.
-- :mod:`ultron.desktop.click_preview` uses physical pixel
+- :mod:`kenning.desktop.click_preview` uses physical pixel
   coordinates throughout.
 """
 
@@ -59,8 +59,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
-from ultron.desktop.windows import WindowInfo
-from ultron.utils.logging import get_logger
+from kenning.desktop.windows import WindowInfo
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.uia")
 
@@ -123,7 +123,7 @@ class UIAActionResult:
 
 
 def _import_pywinauto():
-    """Lazy import so ``import ultron.desktop`` doesn't pay the COM cost.
+    """Lazy import so ``import kenning.desktop`` doesn't pay the COM cost.
 
     Returns the ``pywinauto`` module, or None when import fails.
     """
@@ -187,7 +187,7 @@ def collect_window_text(
         connected to, or no text was found.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('uia_read')
     hwnd = _resolve_hwnd(window)
     spec = _connect_window(hwnd)
@@ -263,7 +263,7 @@ def find_element(
     Returns the first matching :class:`UIAElement` snapshot, or None.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('uia_read')
     hwnd = _resolve_hwnd(window)
     spec = _connect_window(hwnd)
@@ -401,7 +401,7 @@ def _validate_uia_action(
     the arguments so those patterns can match.
     """
     try:
-        from ultron.safety.validator import RuleContext, get_validator
+        from kenning.safety.validator import RuleContext, get_validator
 
         ctx = RuleContext(
             tool_name=f"desktop.uia.{action}",
@@ -416,7 +416,7 @@ def _validate_uia_action(
         return get_validator().check(ctx)
     except Exception as e:  # noqa: BLE001
         logger.debug("UIA validator skipped: %s", e)
-        from ultron.safety.validator import ValidatorVerdict, Verdict
+        from kenning.safety.validator import ValidatorVerdict, Verdict
         return ValidatorVerdict(
             verdict=Verdict.ALLOW, reason="validator unavailable",
         )
@@ -443,7 +443,7 @@ def click_element(
     populated on any failure.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('uia_click')
     hwnd = _resolve_hwnd(window)
     spec = _connect_window(hwnd)
@@ -524,7 +524,7 @@ def type_text_into_element(
             cleared (Ctrl+A, Delete) before typing.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('uia_type')
     hwnd = _resolve_hwnd(window)
     spec = _connect_window(hwnd)
@@ -613,7 +613,7 @@ def physical_center_of_element(
         element: a :class:`UIAElement` snapshot.
         assume_logical: when True, ``element.rect`` is treated as
             logical (unscaled) pixels and converted to physical via
-            :func:`ultron.desktop.win32_helpers.logical_to_physical`.
+            :func:`kenning.desktop.win32_helpers.logical_to_physical`.
             When False (default), the rect is treated as already
             physical (pywinauto's normal output in a DPI-aware
             Python process); the function returns the integer
@@ -629,7 +629,7 @@ def physical_center_of_element(
     dimensions before clicking.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard("uia_read")
 
     left, top, right, bottom = element.rect
@@ -642,7 +642,7 @@ def physical_center_of_element(
     # Lazy-import so the win32_helpers ctypes setup only happens
     # when DPI conversion is actually requested.
     try:
-        from ultron.desktop.win32_helpers import logical_to_physical
+        from kenning.desktop.win32_helpers import logical_to_physical
     except Exception as exc:  # noqa: BLE001
         logger.debug("logical_to_physical unavailable: %s", exc)
         return int(cx), int(cy)
@@ -668,7 +668,7 @@ def physical_rect_of_element(
     multi-monitor setups.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard("uia_read")
 
     left, top, right, bottom = element.rect
@@ -676,7 +676,7 @@ def physical_rect_of_element(
         return int(left), int(top), int(right), int(bottom)
 
     try:
-        from ultron.desktop.win32_helpers import logical_to_physical
+        from kenning.desktop.win32_helpers import logical_to_physical
     except Exception as exc:  # noqa: BLE001
         logger.debug("logical_to_physical unavailable: %s", exc)
         return int(left), int(top), int(right), int(bottom)
@@ -714,7 +714,7 @@ def dpi_aware_click_at_element_center(
         element: target element.
         controller: :class:`InputController` instance. When ``None``,
             the module-level singleton from
-            :func:`ultron.desktop.input_control.get_input_controller`
+            :func:`kenning.desktop.input_control.get_input_controller`
             is used.
         button: ``"left"`` / ``"right"`` / ``"middle"``.
         clicks: number of clicks (2 = double click).
@@ -729,7 +729,7 @@ def dpi_aware_click_at_element_center(
     ``(0, 0, 0, 0)`` rects before touching the controller.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('uia_click')
 
     if not element.is_enabled:
@@ -748,7 +748,7 @@ def dpi_aware_click_at_element_center(
 
     if controller is None:
         try:
-            from ultron.desktop.input_control import get_input_controller
+            from kenning.desktop.input_control import get_input_controller
             controller = get_input_controller()
         except Exception as exc:  # noqa: BLE001
             return UIAActionResult(
@@ -826,7 +826,7 @@ class UIElementInfo:
 
 
 # Map from UIA control_type string -> inventory bucket key. Mirrors the
-# clawhub-windows-control category split with the ultron addition that
+# clawhub-windows-control category split with the kenning addition that
 # ``Document`` is treated as a text field (Edge / Chrome PDF viewer
 # exposes the document body as a Document control with editable focus).
 _INVENTORY_BUCKETS: dict[str, str] = {
@@ -887,7 +887,7 @@ def get_ui_element_inventory(
     skipped; a failed tree walk logs WARN and returns ``{}``.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('uia_read')
     hwnd = _resolve_hwnd(window)
     spec = _connect_window(hwnd)
@@ -1059,7 +1059,7 @@ def wait_for_text_in_window(
     polling.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('uia_read')
     needle = (text or "")
     if not needle:
@@ -1078,7 +1078,7 @@ def wait_for_text_in_window(
 
     # Lazy import so a test that monkeypatches enumerate_windows in this
     # module picks up the test double.
-    from ultron.desktop.windows import enumerate_windows
+    from kenning.desktop.windows import enumerate_windows
 
     while True:
         try:
@@ -1157,7 +1157,7 @@ def wait_for_pixel_color(
     Mirrors the :func:`wait_for_text_in_window` polling shape from
     catalog 08 T4: deterministic ``sleep_fn`` / ``clock_fn`` injection,
     deadline-clamped final sleep, fail-open per-sample. Combines with
-    :func:`ultron.desktop.capture.get_pixel_color` for the read.
+    :func:`kenning.desktop.capture.get_pixel_color` for the read.
 
     Use cases:
 
@@ -1193,7 +1193,7 @@ def wait_for_pixel_color(
     without polling.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('wait_for_pixel_color')
     if timeout_s <= 0:
         return False
@@ -1214,7 +1214,7 @@ def wait_for_pixel_color(
 
     # Lazy import so a test that monkeypatches get_pixel_color in this
     # module picks up the test double via the module-level binding.
-    from ultron.desktop.capture import get_pixel_color
+    from kenning.desktop.capture import get_pixel_color
 
     while True:
         try:
@@ -1349,11 +1349,11 @@ def find_browser_window(
         browser window is open.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('uia_read')
     # Lazy import so this module stays cheap to load when nothing in
     # the consumer chain needs browser-specific behaviour.
-    from ultron.desktop.windows import enumerate_windows
+    from kenning.desktop.windows import enumerate_windows
 
     try:
         windows = enumerate_windows(exclude_cloaked=exclude_cloaked)
@@ -1480,7 +1480,7 @@ def extract_browser_content(
         window was found / pywinauto unavailable / connect failed.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('uia_read')
     if full:
         include_buttons = True

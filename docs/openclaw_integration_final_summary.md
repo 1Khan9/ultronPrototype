@@ -1,7 +1,7 @@
 # OpenClaw integration — final summary (Phases 0–13)
 
 OpenClaw is integrated as a peer Gateway sharing the same local
-Qwen via llama-cpp-server. Both Ultron's voice pipeline and OpenClaw
+Qwen via llama-cpp-server. Both Kenning's voice pipeline and OpenClaw
 read from the same workspace files for persona; both call the same
 OpenAI-compat HTTP endpoint for inference (when the voice path
 opts into HTTP mode).
@@ -16,8 +16,8 @@ made explicit so future readers don't re-litigate them.
 |---|---|---|---|
 | 0 | Verification + reachability | ✅ | `llama-cpp-server` launcher (port 8765), supervisor wrapper, OpenClaw config patched to use `litellm` provider, baseline measurements. |
 | 1 | Persona scaffolding | ✅ | Six workspace persona files, `PersonaLoader` with four modes (user_facing / background / heartbeat / bootstrap), hot reload. |
-| 2 | LLM-provider wiring | ✅ | `litellm` provider in OpenClaw config (substituted for Ollama per the runtime decision), three agents (`ultron-test`, `ultron-main`, `ultron-heartbeat`), locked-in tool constraints. |
-| 3 | Bridge layer | ✅ | `OpenClawClient` (CLI subprocess transport), `WorkspaceWriter` (atomic + filelock), `OpenClawEventReceiver` (gated-off scaffold), `UltronMcpRegistrar` (idempotent + retry), `OpenClawBridge` holder + orchestrator wiring. |
+| 2 | LLM-provider wiring | ✅ | `litellm` provider in OpenClaw config (substituted for Ollama per the runtime decision), three agents (`kenning-test`, `kenning-main`, `kenning-heartbeat`), locked-in tool constraints. |
+| 3 | Bridge layer | ✅ | `OpenClawClient` (CLI subprocess transport), `WorkspaceWriter` (atomic + filelock), `OpenClawEventReceiver` (gated-off scaffold), `KenningMcpRegistrar` (idempotent + retry), `OpenClawBridge` holder + orchestrator wiring. |
 | 4 | Telegram channel | ✅ | `NotificationDispatcher` (proactive pings), live `MESSAGING` dispatch via bridge, `fire_and_forget` helper, full Telegram setup docs. |
 | 5 | Heartbeat | ✅ | `HEARTBEAT.md` populated, `HeartbeatAlertLog` (JSONL with atomic update + retention), `record_heartbeat_alert(...)` orchestrator entry. |
 | 6 | Browser tool | ✅ | `BrowserTool` wrapper (six primitives), live `handle_browser` dispatch, `BrowserConfig`. |
@@ -38,10 +38,10 @@ unless reopening the underlying decision.
 1. **`llama-cpp-server` instead of Ollama** ([feedback_llm_runtime_decision.md](<ai-memory-dir>\feedback_llm_runtime_decision.md)).
 2. **`litellm` provider plugin** in OpenClaw (not `openai-provider`
    or `lmstudio-provider`).
-3. **Three-agent split** (`ultron-test` default, `ultron-main`
-   user-facing, `ultron-heartbeat`).
+3. **Three-agent split** (`kenning-test` default, `kenning-main`
+   user-facing, `kenning-heartbeat`).
 4. **PersonaLoader four-mode split** (user_facing / background /
-   heartbeat / bootstrap) — Ultron's character renders only on
+   heartbeat / bootstrap) — Kenning's character renders only on
    user-facing channels.
 5. **AGENTS.md excluded from `user_facing` mode** — adding it
    regressed voice TTFT by +175 %. Voice-relevant rules live in
@@ -62,9 +62,9 @@ unless reopening the underlying decision.
    sub-classifier would be redundant.
 10. **Stdio MCP entry (Phase 13 finish — landed).** Originally
     the bridge's `mcp_server_command` defaulted to `None` because
-    `UltronMCPServer` (in `ultron.coding.mcp_server`) is SSE-based.
+    `KenningMCPServer` (in `kenning.coding.mcp_server`) is SSE-based.
     Phase 13 finish added a separate stdio MCP server
-    (`ultron.openclaw_bridge.mcp_tools` + `scripts/run_ultron_mcp_for_openclaw.py`)
+    (`kenning.openclaw_bridge.mcp_tools` + `scripts/run_kenning_mcp_for_openclaw.py`)
     exposing five tools (heartbeat alerts, acknowledge, maintenance,
     coding session listing, voice-friendly alerts). Default is now
     `mcp_server_command: "auto"` which resolves to the entry script
@@ -122,7 +122,7 @@ order matches their priorities.
 
 ## Setup-readiness checklist
 
-When you're ready to take Ultron live with OpenClaw integration:
+When you're ready to take Kenning live with OpenClaw integration:
 
 1. **Phase 4 — Telegram bot.** 5 min via BotFather; the rest of
    OpenClaw integration becomes useful once you have a remote
@@ -178,10 +178,10 @@ before merging and document the delta.
 When you're tempted to add something to the OpenClaw side:
 
 1. **Does this need to be on the voice path?** If yes, it
-   probably belongs Ultron-side (orchestrator / coding pipeline /
+   probably belongs Kenning-side (orchestrator / coding pipeline /
    Qdrant). If no, OpenClaw is the right home.
 2. **Does this need its own MCP tool?** If you'd write
-   `ultron.foo()` to expose Python state to the OpenClaw agent,
+   `kenning.foo()` to expose Python state to the OpenClaw agent,
    the stdio MCP entrypoint deferred since Phase 3.2 is the
    blocker. Plan to land that first if multiple consumers need it.
 3. **Does this need a new persona file?** Almost never. Update
@@ -210,8 +210,8 @@ When this document was first written, several items were marked
 
 ### Stdio MCP server with five tools
 
-`scripts/run_ultron_mcp_for_openclaw.py` is the canonical stdio
-entry point OpenClaw spawns when calling Ultron tools. It serves
+`scripts/run_kenning_mcp_for_openclaw.py` is the canonical stdio
+entry point OpenClaw spawns when calling Kenning tools. It serves
 five tools via FastMCP stdio:
 
 - `get_heartbeat_alerts(since_seconds_ago, only_unacknowledged, limit)`
@@ -230,9 +230,9 @@ on-disk artifacts the orchestrator already maintains.
 ### Voice-side SYSTEM_STATUS intent
 
 A new `RoutingIntentKind.SYSTEM_STATUS` lets voice queries like
-"what alerts did you flag?" or "what is Ultron working on?" route
+"what alerts did you flag?" or "what is Kenning working on?" route
 through `SystemStatusReporter` (in
-`ultron.openclaw_bridge.system_status`). The reporter reads the
+`kenning.openclaw_bridge.system_status`). The reporter reads the
 same on-disk artifacts the MCP tools expose, then renders a brief
 in-character voice narration. **Voice and OpenClaw paths share the
 same source of truth.**
@@ -240,14 +240,14 @@ same source of truth.**
 The classifier matches three pattern groups:
 
 - "what alerts did you flag", "any pending alerts", ... → focus="alerts"
-- "what is Ultron working on", "list active projects", ... → focus="projects"
+- "what is Kenning working on", "list active projects", ... → focus="projects"
 - "status report", "system status", "what's going on" → focus="all"
 
 ### Auto-resolved MCP entry
 
 `OpenClawBridgeConfig.mcp_server_command` defaults to `"auto"`. The
 holder (`OpenClawBridge._resolve_mcp_command`) translates that into
-`(.venv python, [scripts/run_ultron_mcp_for_openclaw.py, --stdio])`
+`(.venv python, [scripts/run_kenning_mcp_for_openclaw.py, --stdio])`
 at construction. No operator action required — the bridge wires
 itself up to the canonical entry point.
 
@@ -265,12 +265,12 @@ The following configs were enabled live in `~/.openclaw/openclaw.json`:
 - `hooks.internal.entries.command-logger.enabled: true`
 - `plugins.entries.memory-wiki.enabled: true` (Gateway restart
   required for the plugin's tools to register)
-- `mcpServers["ultron-mcp"]` registered via `openclaw mcp set`
+- `mcpServers["kenning-mcp"]` registered via `openclaw mcp set`
 
 None of these change the voice pipeline. Hooks fire on session
 events (read-only, audit-trail use); the memory-wiki plugin
-exposes wiki tools to OpenClaw agents (no Ultron-side effect); the
-MCP registration lets OpenClaw agents call the five Ultron tools
+exposes wiki tools to OpenClaw agents (no Kenning-side effect); the
+MCP registration lets OpenClaw agents call the five Kenning tools
 listed above.
 
 ## What truly remains user-led
@@ -285,7 +285,7 @@ secrets or making preference decisions.
 | Telegram bot token (`@BotFather` + `TELEGRAM_BOT_TOKEN` env) | Requires the user's phone + Telegram account. |
 | `openclaw channels add --channel telegram` | Uses the bot token from above. |
 | `agents[].heartbeat` block in `openclaw.json` | Cadence is a user preference; firing it before Telegram is set up is wasteful. |
-| `tools.alsoAllow: ["browser"]` for `ultron-main` | Requires user to verify Playwright + Chromium are reachable. |
+| `tools.alsoAllow: ["browser"]` for `kenning-main` | Requires user to verify Playwright + Chromium are reachable. |
 | ComfyUI install + `models.providers.comfyui` config | Requires the user to install ComfyUI locally (no cloud / paid alternatives per project policy). |
 | Mobile node pairing (iOS/Android) | Requires hardware. |
 | 16-step Foundation smoke test | Requires real microphone + speaker. |

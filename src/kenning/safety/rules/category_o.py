@@ -12,7 +12,7 @@ O8 -- ETW provider disable / patch.
 
 from __future__ import annotations
 
-from ultron.safety.rules.base import (
+from kenning.safety.rules.base import (
     CommandPatternRule,
     PathPatternRule,
     Rule,

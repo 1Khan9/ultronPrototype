@@ -28,8 +28,8 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from ultron.config import UltronConfig, set_config
-from ultron.tts.speech import ClipItem, TextToSpeech
+from kenning.config import KenningConfig, set_config
+from kenning.tts.speech import ClipItem, TextToSpeech
 
 
 # ---------------------------------------------------------------------------
@@ -147,27 +147,27 @@ def _reset_mock_streams():
 @pytest.fixture
 def parallel_config():
     """Config with all three optimisations on."""
-    cfg = UltronConfig()
+    cfg = KenningConfig()
     cfg.tts.pipeline_parallel_enabled = True
     cfg.tts.speculative_stream_open_enabled = True
     cfg.tts.speculative_stream_sample_rate = 40000
     cfg.tts.output_low_latency_mode = True
     set_config(cfg)
     yield cfg
-    set_config(UltronConfig())
+    set_config(KenningConfig())
 
 
 @pytest.fixture
 def legacy_config():
     """Config with all three optimisations off (single-worker, no spec, no low-latency)."""
-    cfg = UltronConfig()
+    cfg = KenningConfig()
     cfg.tts.pipeline_parallel_enabled = False
     cfg.tts.speculative_stream_open_enabled = False
     cfg.tts.speculative_stream_sample_rate = 40000
     cfg.tts.output_low_latency_mode = False
     set_config(cfg)
     yield cfg
-    set_config(UltronConfig())
+    set_config(KenningConfig())
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +199,7 @@ def test_parallel_pipeline_overlaps_piper_and_rvc(parallel_config):
         "Fifth sentence.",
     ]
 
-    with patch("ultron.tts.speech.sd.OutputStream", _MockOutputStream):
+    with patch("kenning.tts.speech.sd.OutputStream", _MockOutputStream):
         t0 = time.monotonic()
         tts.speak_stream(iter(fragments))
         elapsed = time.monotonic() - t0
@@ -225,7 +225,7 @@ def test_legacy_single_worker_path_runs_when_flag_off(legacy_config):
     Verifies the legacy branch still works end-to-end.
     """
     tts, piper, rvc = _build_tts(with_rvc=True)
-    with patch("ultron.tts.speech.sd.OutputStream", _MockOutputStream):
+    with patch("kenning.tts.speech.sd.OutputStream", _MockOutputStream):
         tts.speak_stream(iter(["Hello there. ", "Second one."]))
 
     assert len(piper.calls) == 2
@@ -242,7 +242,7 @@ def test_parallel_preserves_sentence_ordering(parallel_config):
     tts, piper, rvc = _build_tts(with_rvc=True)
     fragments = ["Alpha. ", "Bravo. ", "Charlie."]
 
-    with patch("ultron.tts.speech.sd.OutputStream", _MockOutputStream):
+    with patch("kenning.tts.speech.sd.OutputStream", _MockOutputStream):
         tts.speak_stream(iter(fragments))
 
     assert piper.calls == ["Alpha.", "Bravo.", "Charlie."]
@@ -258,7 +258,7 @@ def test_parallel_pipeline_disabled_when_no_rvc(parallel_config):
     legacy path is functionally identical and simpler.
     """
     tts, piper, _ = _build_tts(with_rvc=False)
-    with patch("ultron.tts.speech.sd.OutputStream", _MockOutputStream):
+    with patch("kenning.tts.speech.sd.OutputStream", _MockOutputStream):
         tts.speak_stream(iter(["Just Piper."]))
 
     assert piper.calls == ["Just Piper."]
@@ -272,7 +272,7 @@ def test_parallel_pipeline_disabled_when_no_rvc(parallel_config):
 def test_speculative_open_uses_configured_sample_rate(parallel_config):
     """Stream opens at speculative_stream_sample_rate (40000) BEFORE first clip."""
     tts, piper, rvc = _build_tts(with_rvc=True)
-    with patch("ultron.tts.speech.sd.OutputStream", _MockOutputStream):
+    with patch("kenning.tts.speech.sd.OutputStream", _MockOutputStream):
         tts.speak_stream(iter(["Hello."]))
 
     # First constructed stream is the speculative open at 40000.
@@ -291,7 +291,7 @@ def test_speculative_open_reopens_on_sample_rate_mismatch(parallel_config):
     set_config(parallel_config)
 
     tts, piper, rvc = _build_tts(with_rvc=True)
-    with patch("ultron.tts.speech.sd.OutputStream", _MockOutputStream):
+    with patch("kenning.tts.speech.sd.OutputStream", _MockOutputStream):
         tts.speak_stream(iter(["Hello."]))
 
     streams = _MockOutputStream.instances
@@ -305,7 +305,7 @@ def test_speculative_open_reopens_on_sample_rate_mismatch(parallel_config):
 def test_speculative_open_disabled_falls_back_to_first_clip_sr(legacy_config):
     """With spec_open off, stream is opened only after first clip arrives."""
     tts, piper, rvc = _build_tts(with_rvc=True)
-    with patch("ultron.tts.speech.sd.OutputStream", _MockOutputStream):
+    with patch("kenning.tts.speech.sd.OutputStream", _MockOutputStream):
         tts.speak_stream(iter(["Hello."]))
 
     streams = _MockOutputStream.instances
@@ -322,7 +322,7 @@ def test_speculative_open_disabled_falls_back_to_first_clip_sr(legacy_config):
 def test_low_latency_hint_passed_to_outputstream(parallel_config):
     """``latency='low'`` lands in the OutputStream constructor kwargs."""
     tts, piper, rvc = _build_tts(with_rvc=True)
-    with patch("ultron.tts.speech.sd.OutputStream", _MockOutputStream):
+    with patch("kenning.tts.speech.sd.OutputStream", _MockOutputStream):
         tts.speak_stream(iter(["Hello."]))
 
     streams = _MockOutputStream.instances
@@ -333,7 +333,7 @@ def test_low_latency_hint_passed_to_outputstream(parallel_config):
 def test_low_latency_hint_omitted_when_disabled(legacy_config):
     """With ``output_low_latency_mode=False``, no latency kwarg is passed."""
     tts, piper, rvc = _build_tts(with_rvc=True)
-    with patch("ultron.tts.speech.sd.OutputStream", _MockOutputStream):
+    with patch("kenning.tts.speech.sd.OutputStream", _MockOutputStream):
         tts.speak_stream(iter(["Hello."]))
 
     streams = _MockOutputStream.instances
@@ -353,7 +353,7 @@ def test_parallel_pipeline_falls_back_to_raw_piper_on_rvc_error(parallel_config)
     tts, piper, rvc = _build_tts(with_rvc=True)
     rvc.convert = MagicMock(side_effect=RuntimeError("rvc kaboom"))
 
-    with patch("ultron.tts.speech.sd.OutputStream", _MockOutputStream):
+    with patch("kenning.tts.speech.sd.OutputStream", _MockOutputStream):
         tts.speak_stream(iter(["Test sentence."]))
 
     # Stream still opened, sentence still played (raw Piper).
@@ -374,7 +374,7 @@ def test_parallel_pipeline_handles_cancellation_cleanly(parallel_config):
             yield s
             time.sleep(0.01)
 
-    with patch("ultron.tts.speech.sd.OutputStream", _MockOutputStream):
+    with patch("kenning.tts.speech.sd.OutputStream", _MockOutputStream):
         # Stop after a short delay; worker threads should join cleanly.
         timer = threading.Timer(0.05, tts.stop)
         timer.start()
@@ -423,7 +423,7 @@ def test_first_clip_plays_before_next_fragment_yielded(parallel_config):
         observed.append(played_first)
         yield "Second sentence."
 
-    with patch("ultron.tts.speech.sd.OutputStream", _TrackingStream):
+    with patch("kenning.tts.speech.sd.OutputStream", _TrackingStream):
         tts.speak_stream(slow_iter())
 
     assert observed == [True], (
@@ -453,7 +453,7 @@ def test_slow_second_clip_does_not_kill_playback(parallel_config):
         time.sleep(4.0)
         yield "Here is the response."
 
-    with patch("ultron.tts.speech.sd.OutputStream", _MockOutputStream):
+    with patch("kenning.tts.speech.sd.OutputStream", _MockOutputStream):
         t0 = time.monotonic()
         tts.speak_stream(slow_iter())
         elapsed = time.monotonic() - t0
@@ -505,7 +505,7 @@ def test_end_of_stream_sentinel_terminates_playback(parallel_config):
     the final clip even when its is_known_last=False."""
     tts, piper, rvc = _build_tts(with_rvc=True)
 
-    with patch("ultron.tts.speech.sd.OutputStream", _MockOutputStream):
+    with patch("kenning.tts.speech.sd.OutputStream", _MockOutputStream):
         tts.speak_stream(iter(["Single."]))
 
     streams = _MockOutputStream.instances

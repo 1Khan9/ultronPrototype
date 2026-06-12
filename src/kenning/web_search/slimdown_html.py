@@ -36,7 +36,7 @@ import logging
 from typing import Optional
 
 
-logger = logging.getLogger("ultron.web_search.slimdown_html")
+logger = logging.getLogger("kenning.web_search.slimdown_html")
 
 
 # Tags whose ENTIRE subtree is discarded.

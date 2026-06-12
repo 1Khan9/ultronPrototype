@@ -6,8 +6,8 @@ import time
 
 import pytest
 
-from ultron.safety.intent import IntentMatch, matches_explicit_intent
-from ultron.safety.taint import (
+from kenning.safety.intent import IntentMatch, matches_explicit_intent
+from kenning.safety.taint import (
     DEFAULT_TAINT_TTL_SECONDS,
     TaintTracker,
     get_taint_tracker,

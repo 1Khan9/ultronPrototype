@@ -38,14 +38,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from ultron.desktop.monitors import Monitor
-from ultron.desktop.placement import (
+from kenning.desktop.monitors import Monitor
+from kenning.desktop.placement import (
     PlacementResult,
     focus_window,
     move_window_to_monitor,
 )
-from ultron.desktop.windows import enumerate_windows
-from ultron.utils.logging import get_logger
+from kenning.desktop.windows import enumerate_windows
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.launcher")
 
@@ -318,7 +318,7 @@ def _validate_launch(
     validator returns ALLOW via the no-op fallback).
     """
     try:
-        from ultron.safety.validator import RuleContext, get_validator
+        from kenning.safety.validator import RuleContext, get_validator
 
         ctx = RuleContext(
             tool_name="desktop.launch_app",
@@ -332,7 +332,7 @@ def _validate_launch(
         logger.debug("validator skipped: %s", e)
         # Use a minimal allow-shaped object via the actual class so the
         # rest of the launcher can treat the return value uniformly.
-        from ultron.safety.validator import ValidatorVerdict, Verdict
+        from kenning.safety.validator import ValidatorVerdict, Verdict
         return ValidatorVerdict(
             verdict=Verdict.ALLOW, reason="validator unavailable",
         )
@@ -421,7 +421,7 @@ class AppLauncher:
                 safety validator's :class:`RuleContext`.
         """
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('app_launch')
         entry = self.find_app(app_name)
         if entry is None:
@@ -482,7 +482,7 @@ class AppLauncher:
         regular window).
         """
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('app_launch')
         entry = self.find_app("chrome")
         if entry is None:
@@ -533,7 +533,7 @@ class AppLauncher:
         for a fullscreen-style window on the target monitor.
         """
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('app_launch')
         q = (query or "").strip()
         if not q:
@@ -577,7 +577,7 @@ class AppLauncher:
 
         try:
             # DETACHED_PROCESS keeps the spawned process independent of
-            # Ultron's lifetime; CREATE_NEW_PROCESS_GROUP lets it be a
+            # Kenning's lifetime; CREATE_NEW_PROCESS_GROUP lets it be a
             # process-group root.
             creationflags = 0
             if hasattr(subprocess, "DETACHED_PROCESS"):

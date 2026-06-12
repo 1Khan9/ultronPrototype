@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.subprocess.process_registry import (
+from kenning.subprocess.process_registry import (
     DEFAULT_JOB_TTL_SECONDS,
     DEFAULT_MAX_OUTPUT_CHARS,
     DeliveryTarget,
@@ -269,7 +269,7 @@ def test_mark_exited_invokes_subclass_hook(caplog) -> None:
     registry = ProcessRegistry()
     target = DeliveryTarget(channel="voice", handler="callback")
     registry.register("j1", notify_on_exit=target)
-    with caplog.at_level("INFO", logger="ultron.subprocess.process_registry"):
+    with caplog.at_level("INFO", logger="kenning.subprocess.process_registry"):
         registry.mark_exited("j1", exit_code=0)
     assert any("voice" in record.message for record in caplog.records)
 

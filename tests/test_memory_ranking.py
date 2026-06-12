@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from ultron.memory.ranking import (
+from kenning.memory.ranking import (
     CandidateScore,
     RankingWeights,
     compute_composite_score,

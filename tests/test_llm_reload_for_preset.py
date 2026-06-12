@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.llm.inference import LLMEngine
+from kenning.llm.inference import LLMEngine
 
 
 def _make_engine(runtime: str = "in_process") -> LLMEngine:
@@ -65,7 +65,7 @@ def test_reload_rejects_unknown_preset() -> None:
 def test_reload_idempotent_on_same_preset() -> None:
     eng = _make_engine()
     initial_llm = eng._llm
-    with patch("ultron.config.get_config") as gc:
+    with patch("kenning.config.get_config") as gc:
         gc.return_value.llm.preset = "qwen3.5-9b"
         ok, msg = eng.reload_for_preset("qwen3.5-9b")
     assert ok is True
@@ -90,8 +90,8 @@ def test_reload_swaps_to_new_llama_on_success() -> None:
     def fake_build(cfg, *, model_path=None, n_ctx=None, n_gpu_layers=None):
         return new_mock, new_path
 
-    with patch("ultron.config.get_config") as gc, \
-         patch("ultron.config.reload_config") as rc, \
+    with patch("kenning.config.get_config") as gc, \
+         patch("kenning.config.reload_config") as rc, \
          patch.object(eng, "_build_llama", side_effect=fake_build), \
          patch.dict(os.environ, {}, clear=False):
         gc.return_value.llm.preset = "qwen3.5-9b"
@@ -120,18 +120,18 @@ def test_reload_sets_env_for_new_preset() -> None:
     def fake_build(cfg, *, model_path=None, n_ctx=None, n_gpu_layers=None):
         return new_mock, new_path
 
-    with patch("ultron.config.get_config") as gc, \
-         patch("ultron.config.reload_config") as rc, \
+    with patch("kenning.config.get_config") as gc, \
+         patch("kenning.config.reload_config") as rc, \
          patch.object(eng, "_build_llama", side_effect=fake_build), \
          patch.dict(os.environ, {}, clear=False):
         gc.return_value.llm.preset = "qwen3.5-9b"
         rc.return_value.llm = MagicMock()
         eng.reload_for_preset("qwen3.5-4b")
-        assert os.environ.get("ULTRON_LLM_PRESET") == "qwen3.5-4b"
+        assert os.environ.get("KENNING_LLM_PRESET") == "qwen3.5-4b"
 
 
 def test_reload_clears_stale_model_path_env() -> None:
-    """ULTRON_LLM_MODEL_PATH would override the preset's auto-fill —
+    """KENNING_LLM_MODEL_PATH would override the preset's auto-fill —
     a stale value from earlier swaps would silently keep the old
     model. reload_for_preset clears it."""
     eng = _make_engine()
@@ -141,14 +141,14 @@ def test_reload_clears_stale_model_path_env() -> None:
     def fake_build(cfg, *, model_path=None, n_ctx=None, n_gpu_layers=None):
         return new_mock, new_path
 
-    with patch("ultron.config.get_config") as gc, \
-         patch("ultron.config.reload_config") as rc, \
+    with patch("kenning.config.get_config") as gc, \
+         patch("kenning.config.reload_config") as rc, \
          patch.object(eng, "_build_llama", side_effect=fake_build), \
-         patch.dict(os.environ, {"ULTRON_LLM_MODEL_PATH": "/some/stale.gguf"}, clear=False):
+         patch.dict(os.environ, {"KENNING_LLM_MODEL_PATH": "/some/stale.gguf"}, clear=False):
         gc.return_value.llm.preset = "qwen3.5-9b"
         rc.return_value.llm = MagicMock()
         eng.reload_for_preset("qwen3.5-4b")
-        assert "ULTRON_LLM_MODEL_PATH" not in os.environ
+        assert "KENNING_LLM_MODEL_PATH" not in os.environ
 
 
 # ---------------------------------------------------------------------------
@@ -164,8 +164,8 @@ def test_reload_failure_keeps_old_engine() -> None:
     def fake_build_raises(cfg, *, model_path=None, n_ctx=None, n_gpu_layers=None):
         raise FileNotFoundError("the new GGUF doesn't exist")
 
-    with patch("ultron.config.get_config") as gc, \
-         patch("ultron.config.reload_config") as rc, \
+    with patch("kenning.config.get_config") as gc, \
+         patch("kenning.config.reload_config") as rc, \
          patch.object(eng, "_build_llama", side_effect=fake_build_raises), \
          patch.dict(os.environ, {}, clear=False):
         gc.return_value.llm.preset = "qwen3.5-9b"
@@ -191,23 +191,23 @@ def test_reload_failure_restores_env_vars() -> None:
         raise FileNotFoundError("nope")
 
     initial_env = {
-        "ULTRON_LLM_PRESET": "qwen3.5-9b",
-        "ULTRON_LLM_MODEL_PATH": "/initial/path.gguf",
+        "KENNING_LLM_PRESET": "qwen3.5-9b",
+        "KENNING_LLM_MODEL_PATH": "/initial/path.gguf",
     }
-    with patch("ultron.config.get_config") as gc, \
-         patch("ultron.config.reload_config") as rc, \
+    with patch("kenning.config.get_config") as gc, \
+         patch("kenning.config.reload_config") as rc, \
          patch.object(eng, "_build_llama", side_effect=fake_build_raises), \
          patch.dict(os.environ, initial_env, clear=False):
         gc.return_value.llm.preset = "qwen3.5-9b"
         rc.return_value.llm = MagicMock()
         eng.reload_for_preset("qwen3.5-4b")
 
-        assert os.environ["ULTRON_LLM_PRESET"] == "qwen3.5-9b"
-        assert os.environ["ULTRON_LLM_MODEL_PATH"] == "/initial/path.gguf"
+        assert os.environ["KENNING_LLM_PRESET"] == "qwen3.5-9b"
+        assert os.environ["KENNING_LLM_MODEL_PATH"] == "/initial/path.gguf"
 
 
 def test_reload_failure_when_env_was_unset_clears_it() -> None:
-    """If ULTRON_LLM_PRESET wasn't set going in, a failed reload must
+    """If KENNING_LLM_PRESET wasn't set going in, a failed reload must
     leave it unset (not stuck at the failed target)."""
     eng = _make_engine()
 
@@ -215,15 +215,15 @@ def test_reload_failure_when_env_was_unset_clears_it() -> None:
         raise FileNotFoundError("nope")
 
     env_clean = {k: v for k, v in os.environ.items()
-                 if k not in ("ULTRON_LLM_PRESET", "ULTRON_LLM_MODEL_PATH")}
-    with patch("ultron.config.get_config") as gc, \
-         patch("ultron.config.reload_config") as rc, \
+                 if k not in ("KENNING_LLM_PRESET", "KENNING_LLM_MODEL_PATH")}
+    with patch("kenning.config.get_config") as gc, \
+         patch("kenning.config.reload_config") as rc, \
          patch.object(eng, "_build_llama", side_effect=fake_build_raises), \
          patch.dict(os.environ, env_clean, clear=True):
         gc.return_value.llm.preset = "qwen3.5-9b"
         rc.return_value.llm = MagicMock()
         eng.reload_for_preset("qwen3.5-4b")
-        assert "ULTRON_LLM_PRESET" not in os.environ
+        assert "KENNING_LLM_PRESET" not in os.environ
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +241,7 @@ def test_reload_refuses_on_digest_mismatch(monkeypatch, tmp_path) -> None:
     eng = _make_engine()
 
     # Patch the verifier to claim a mismatch.
-    from ultron.install import voice_baseline_verify as vbv
+    from kenning.install import voice_baseline_verify as vbv
 
     def _fake_verify(*a, **kw):
         return vbv.ArtifactVerificationOutcome(
@@ -260,7 +260,7 @@ def test_reload_refuses_on_digest_mismatch(monkeypatch, tmp_path) -> None:
         lambda *a, **kw: build_calls.append((a, kw)),
     )
 
-    with patch("ultron.config.get_config") as gc:
+    with patch("kenning.config.get_config") as gc:
         gc.return_value.llm.preset = "qwen3.5-9b"
         ok, msg = eng.reload_for_preset("qwen3.5-4b")
 
@@ -273,7 +273,7 @@ def test_reload_proceeds_when_digest_verified(monkeypatch) -> None:
     """status='verified' / 'pinned' / 'missing' / 'error' all allow
     the swap to proceed.
     """
-    from ultron.install import voice_baseline_verify as vbv
+    from kenning.install import voice_baseline_verify as vbv
 
     # 'verified' outcome -> proceed
     def _fake_verify_ok(*a, **kw):
@@ -293,8 +293,8 @@ def test_reload_proceeds_when_digest_verified(monkeypatch) -> None:
         lambda *a, **kw: (fake_llm, "models/Qwen3.5-4B-Q4_K_M.gguf"),
     )
 
-    with patch("ultron.config.get_config") as gc, \
-         patch("ultron.config.reload_config") as rc:
+    with patch("kenning.config.get_config") as gc, \
+         patch("kenning.config.reload_config") as rc:
         gc.return_value.llm.preset = "qwen3.5-9b"
         rc.return_value.llm = MagicMock()
         ok, _ = eng.reload_for_preset("qwen3.5-4b")
@@ -307,7 +307,7 @@ def test_reload_continues_when_pre_check_raises(monkeypatch) -> None:
     The actual Llama load + the async voice-baseline verifier provide
     defence in depth.
     """
-    from ultron.install import voice_baseline_verify as vbv
+    from kenning.install import voice_baseline_verify as vbv
 
     def _boom(*a, **kw):
         raise RuntimeError("simulated pre-check failure")
@@ -321,8 +321,8 @@ def test_reload_continues_when_pre_check_raises(monkeypatch) -> None:
         lambda *a, **kw: (fake_llm, "models/Qwen3.5-4B-Q4_K_M.gguf"),
     )
 
-    with patch("ultron.config.get_config") as gc, \
-         patch("ultron.config.reload_config") as rc:
+    with patch("kenning.config.get_config") as gc, \
+         patch("kenning.config.reload_config") as rc:
         gc.return_value.llm.preset = "qwen3.5-9b"
         rc.return_value.llm = MagicMock()
         ok, _ = eng.reload_for_preset("qwen3.5-4b")

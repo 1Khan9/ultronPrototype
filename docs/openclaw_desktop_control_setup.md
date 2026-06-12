@@ -32,7 +32,7 @@ plugins. Enables phrases like `"take a screenshot of the desktop"`,
    - windows: `windows_focus_window`, `windows_click_element`,
      `windows_type_text`
 
-3. **OpenClaw bridge wired** -- Ultron's orchestrator already
+3. **OpenClaw bridge wired** -- Kenning's orchestrator already
    constructs the `OpenClawClient` when `openclaw.enabled: true`.
 
 ## Enabling
@@ -58,7 +58,7 @@ window_control:
   tool_slug_type: "windows_type_text"
 ```
 
-Restart Ultron. The classifier now routes:
+Restart Kenning. The classifier now routes:
 
 | Voice phrase | Routes to | Plugin tool |
 |---|---|---|
@@ -99,13 +99,13 @@ matches the user expectation -- "screenshot of X.com" implies the page,
 
 Once both plugins are enabled, exercise each path:
 
-1. `"Take a screenshot of the desktop"` -> Ultron speaks `"Screenshot
+1. `"Take a screenshot of the desktop"` -> Kenning speaks `"Screenshot
    captured -- saved to <path>."`. The image lands wherever the
    `desktop_screenshot` tool writes it (configured in OpenClaw's
    plugin config).
-2. `"List my open windows"` -> Ultron speaks the count + first few
+2. `"List my open windows"` -> Kenning speaks the count + first few
    titles.
-3. `"Focus the chrome window"` -> Ultron speaks `"Focused chrome."`.
+3. `"Focus the chrome window"` -> Kenning speaks `"Focused chrome."`.
 
 If any of those fail with `"... isn't wired up yet"`, check both the
 `desktop.enabled` / `window_control.enabled` flag AND the

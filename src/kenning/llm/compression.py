@@ -30,7 +30,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, List, Optional, Set
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("llm.compression")
 
@@ -271,10 +271,10 @@ class Compressor:
 
 
 # Imported at module level so test patches against
-# ``ultron.llm.compression.get_config`` are stable. The runtime cost is
-# zero — ``ultron.config`` is already loaded by the time anything in
+# ``kenning.llm.compression.get_config`` are stable. The runtime cost is
+# zero — ``kenning.config`` is already loaded by the time anything in
 # the LLM stack runs.
-from ultron.config import get_config  # noqa: E402  — see module docstring
+from kenning.config import get_config  # noqa: E402  — see module docstring
 
 
 def build_default_compressor(cfg: Any = None) -> Optional[Compressor]:

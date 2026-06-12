@@ -642,7 +642,7 @@ def _post_run_cleanup() -> None:
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Unified Ultron test runner with multi-layer safeguards.",
+        description="Unified Kenning test runner with multi-layer safeguards.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__.split("Usage")[1] if "Usage" in __doc__ else "",
     )
@@ -700,7 +700,7 @@ def main(argv: list[str]) -> int:
     args = _build_arg_parser().parse_args(argv)
 
     print("=" * 70)
-    print(f"Ultron test runner  (PID {os.getpid()})")
+    print(f"Kenning test runner  (PID {os.getpid()})")
     print("=" * 70)
 
     # Layer 1: pre-flight environment check

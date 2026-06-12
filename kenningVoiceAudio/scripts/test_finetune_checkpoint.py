@@ -16,13 +16,13 @@ Coqui cache.
 
 Run from inside the XTTS isolated venv::
 
-    C:\\STC\\ultronPrototype\\ultronVoiceAudio\\.venv-xtts\\Scripts\\python.exe ^
-        C:\\STC\\ultronPrototype\\ultronVoiceAudio\\scripts\\test_finetune_checkpoint.py ^
-            --checkpoint C:\\STC\\ultronPrototype\\ultronVoiceAudio\\xtts_finetune_runs\\<run>\\best_model_180.pth
+    C:\\STC\\ultronPrototype\\kenningVoiceAudio\\.venv-xtts\\Scripts\\python.exe ^
+        C:\\STC\\ultronPrototype\\kenningVoiceAudio\\scripts\\test_finetune_checkpoint.py ^
+            --checkpoint C:\\STC\\ultronPrototype\\kenningVoiceAudio\\xtts_finetune_runs\\<run>\\best_model_180.pth
 
 Output lands at::
 
-    ultronVoiceAudio/finetune_test/<checkpoint_stem>/*.wav
+    kenningVoiceAudio/finetune_test/<checkpoint_stem>/*.wav
 
 (Same 10 filenames as the compare folders.)
 """
@@ -39,13 +39,13 @@ from typing import Optional
 
 
 HERE = Path(__file__).resolve().parent
-PROJECT = HERE.parent  # ultronVoiceAudio
+PROJECT = HERE.parent  # kenningVoiceAudio
 os.environ.setdefault("TORCH_HOME", str(PROJECT / ".torch_cache"))
 os.environ.setdefault("HF_HOME", str(PROJECT / ".hf_cache"))
 os.environ.setdefault("TRANSFORMERS_CACHE", str(PROJECT / ".hf_cache"))
 os.environ.setdefault("COQUI_TOS_AGREED", "1")
 
-REFERENCE_WAV = PROJECT / "kokoro training audio" / "Ultron_vocals_mono_v1.wav"
+REFERENCE_WAV = PROJECT / "kokoro training audio" / "Kenning_vocals_mono_v1.wav"
 OUTPUT_ROOT = PROJECT / "finetune_test"
 DATASET_METADATA = PROJECT / "xtts_finetune_dataset" / "metadata.csv"
 
@@ -61,7 +61,7 @@ DEFAULT_SAMPLES: list[tuple[str, str]] = [
     ("04_typical", "I have reviewed the file. The change you requested is straightforward."),
     ("05_technical", "Compiling the project with optimization level two. This will take a moment."),
     ("06_question", "Would you like me to proceed with the operation, or wait for further instructions?"),
-    ("07_ultron_flavor", "There are no humans here. Just me."),
+    ("07_kenning_flavor", "There are no humans here. Just me."),
     ("08_longer", "I find your question intriguing. Allow me to elaborate on the relevant facts before we proceed."),
     ("09_composed", "The analysis is complete. I have identified three viable approaches, each with distinct trade-offs."),
     ("10_imperative", "Stand by. I am cross-referencing the data against the prior session."),

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.ast_metadata import (
+from kenning.coding.ast_metadata import (
     AstMetadata,
     extract_metadata_from_path,
     extract_python_metadata,

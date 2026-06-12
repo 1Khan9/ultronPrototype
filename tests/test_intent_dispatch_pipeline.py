@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.intent.recognizer import IntentMatch, UltronIntentRecognizer
+from kenning.intent.recognizer import IntentMatch, KenningIntentRecognizer
 
 
 # ---------------------------------------------------------------------------

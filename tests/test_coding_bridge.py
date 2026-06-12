@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.bridge import (
+from kenning.coding.bridge import (
     EventKind,
     FileChangeKind,
     TaskEvent,

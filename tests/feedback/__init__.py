@@ -1,1 +1,1 @@
-"""Tests for ultron.feedback.*"""
+"""Tests for kenning.feedback.*"""

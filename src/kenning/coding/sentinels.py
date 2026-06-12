@@ -7,10 +7,10 @@ a non-natural ASCII string in their stdout; consumers grep the output
 for the sentinel and dispatch on the match without requiring an
 in-process import.
 
-For ultron the sentinels let bash-only utilities (``scripts/run_tests.py``,
+For kenning the sentinels let bash-only utilities (``scripts/run_tests.py``,
 operator-side smoke scripts, future shell-only readers) report
 structured outcomes to the supervisor + observation channel without
-coupling to ultron's Python internals.
+coupling to kenning's Python internals.
 
 The pair-marker shape ``<<TOKEN>> ... <<TOKEN>>`` brackets an optional
 payload between two copies of the same sentinel; ``observation_scan``
@@ -39,21 +39,21 @@ from typing import Optional, Sequence
 # ---------------------------------------------------------------------------
 
 #: Bracket a final submission (T17 mirror). Mirrors SWE-Agent's
-#: ``<<SWE_AGENT_SUBMISSION>>`` exactly in shape; namespaced for ultron.
-ULTRON_SUBMIT: str = "<<ULTRON_SUBMIT>>"
+#: ``<<SWE_AGENT_SUBMISSION>>`` exactly in shape; namespaced for kenning.
+KENNING_SUBMIT: str = "<<KENNING_SUBMIT>>"
 
 #: Bracket a model.patch payload emitted by the coding supervisor on
 #: salvage / autosubmission / clean exit.
-ULTRON_SUBMIT_DIFF: str = "<<ULTRON_SUBMIT_DIFF>>"
+KENNING_SUBMIT_DIFF: str = "<<KENNING_SUBMIT_DIFF>>"
 
 #: Bracket a clean test-sweep banner. ``scripts/run_tests.py`` can print
 #: this when the sweep finishes 0 failures so a wrapping orchestrator
 #: knows the run was good without re-parsing pytest stdout.
-ULTRON_TEST_SWEEP_PASS: str = "<<ULTRON_TEST_SWEEP_PASS>>"
+KENNING_TEST_SWEEP_PASS: str = "<<KENNING_TEST_SWEEP_PASS>>"
 
 #: Bracket a failed test-sweep banner. Includes the failure count as
-#: the payload, e.g. ``<<ULTRON_TEST_SWEEP_FAIL>>3<<ULTRON_TEST_SWEEP_FAIL>>``.
-ULTRON_TEST_SWEEP_FAIL: str = "<<ULTRON_TEST_SWEEP_FAIL>>"
+#: the payload, e.g. ``<<KENNING_TEST_SWEEP_FAIL>>3<<KENNING_TEST_SWEEP_FAIL>>``.
+KENNING_TEST_SWEEP_FAIL: str = "<<KENNING_TEST_SWEEP_FAIL>>"
 
 
 # ---------------------------------------------------------------------------
@@ -63,48 +63,48 @@ ULTRON_TEST_SWEEP_FAIL: str = "<<ULTRON_TEST_SWEEP_FAIL>>"
 #: Mirrors SWE-Agent's ``###SWE-AGENT-EXIT-FORFEIT###``. Emitted by
 #: the forfeit tool (T8) and by any subprocess that wants to abandon
 #: the current coding task without burning more tokens.
-ULTRON_EXIT_FORFEIT: str = "###ULTRON-EXIT-FORFEIT###"
+KENNING_EXIT_FORFEIT: str = "###KENNING-EXIT-FORFEIT###"
 
 #: Mirrors SWE-Agent's ``###SWE-AGENT-RETRY-WITH-OUTPUT###`` (T12).
 #: Indicates a tool's error output is itself the next prompt -- the
 #: harness should re-query the model without advancing the action
 #: counter.
-ULTRON_RETRY_WITH_OUTPUT: str = "###ULTRON-RETRY-WITH-OUTPUT###"
+KENNING_RETRY_WITH_OUTPUT: str = "###KENNING-RETRY-WITH-OUTPUT###"
 
 #: Mirrors SWE-Agent's silent-retry sentinel. Same as above but
 #: instructs the harness to drop the offending output entirely before
 #: re-querying.
-ULTRON_RETRY_WITHOUT_OUTPUT: str = "###ULTRON-RETRY-WITHOUT-OUTPUT###"
+KENNING_RETRY_WITHOUT_OUTPUT: str = "###KENNING-RETRY-WITHOUT-OUTPUT###"
 
 #: Emitted by the lint-revert path (T1) when the supervisor reverted
 #: a Claude edit because it introduced a new syntax error. Lets the
 #: completion narrator avoid claiming success on a file Claude touched
 #: and lost.
-ULTRON_LINT_REVERT: str = "###ULTRON-LINT-REVERT###"
+KENNING_LINT_REVERT: str = "###KENNING-LINT-REVERT###"
 
 #: Bracket a per-session signal that the safety validator blocked an
 #: action. Mirrors the ``BLOCKED_COMMAND`` shape from SWE-Agent's
 #: tool-filter error template.
-ULTRON_BLOCKED_TOOL: str = "###ULTRON-BLOCKED-TOOL###"
+KENNING_BLOCKED_TOOL: str = "###KENNING-BLOCKED-TOOL###"
 
 #: All pair-marker sentinels, exported so :func:`observation_scan`
 #: can iterate over them in a stable order. Ordered most-specific
-#: first so the scanner prefers ``ULTRON_SUBMIT_DIFF`` over
-#: ``ULTRON_SUBMIT`` when both could match a fragment.
+#: first so the scanner prefers ``KENNING_SUBMIT_DIFF`` over
+#: ``KENNING_SUBMIT`` when both could match a fragment.
 PAIR_SENTINELS: tuple[str, ...] = (
-    ULTRON_SUBMIT_DIFF,
-    ULTRON_SUBMIT,
-    ULTRON_TEST_SWEEP_PASS,
-    ULTRON_TEST_SWEEP_FAIL,
+    KENNING_SUBMIT_DIFF,
+    KENNING_SUBMIT,
+    KENNING_TEST_SWEEP_PASS,
+    KENNING_TEST_SWEEP_FAIL,
 )
 
 #: All single-fire sentinels.
 SINGLE_SENTINELS: tuple[str, ...] = (
-    ULTRON_EXIT_FORFEIT,
-    ULTRON_RETRY_WITH_OUTPUT,
-    ULTRON_RETRY_WITHOUT_OUTPUT,
-    ULTRON_LINT_REVERT,
-    ULTRON_BLOCKED_TOOL,
+    KENNING_EXIT_FORFEIT,
+    KENNING_RETRY_WITH_OUTPUT,
+    KENNING_RETRY_WITHOUT_OUTPUT,
+    KENNING_LINT_REVERT,
+    KENNING_BLOCKED_TOOL,
 )
 
 
@@ -113,7 +113,7 @@ class SentinelMatch:
     """One sentinel found in an observation stream.
 
     :param sentinel: the matched sentinel constant (e.g.
-        :data:`ULTRON_SUBMIT_DIFF`).
+        :data:`KENNING_SUBMIT_DIFF`).
     :param payload: the text BETWEEN two pair-marker copies, or ``None``
         for single-fire sentinels.
     :param start: 0-indexed byte offset of the first sentinel
@@ -244,7 +244,7 @@ def first_match(
 
     Convenience wrapper used by callers that only care about a specific
     sentinel (e.g. the forfeit watcher only looks for
-    :data:`ULTRON_EXIT_FORFEIT`).
+    :data:`KENNING_EXIT_FORFEIT`).
     """
     if sentinel in PAIR_SENTINELS:
         matches = observation_scan(
@@ -269,7 +269,7 @@ def strip_sentinels(text: str) -> str:
 
     Used by the supervisor before forwarding tool output to the LLM so
     the model never sees the sentinels themselves -- they're a private
-    channel between ultron's tools and the orchestrator.
+    channel between kenning's tools and the orchestrator.
     """
     if not text:
         return ""
@@ -291,15 +291,15 @@ __all__ = [
     "PAIR_SENTINELS",
     "SINGLE_SENTINELS",
     "SentinelMatch",
-    "ULTRON_BLOCKED_TOOL",
-    "ULTRON_EXIT_FORFEIT",
-    "ULTRON_LINT_REVERT",
-    "ULTRON_RETRY_WITH_OUTPUT",
-    "ULTRON_RETRY_WITHOUT_OUTPUT",
-    "ULTRON_SUBMIT",
-    "ULTRON_SUBMIT_DIFF",
-    "ULTRON_TEST_SWEEP_FAIL",
-    "ULTRON_TEST_SWEEP_PASS",
+    "KENNING_BLOCKED_TOOL",
+    "KENNING_EXIT_FORFEIT",
+    "KENNING_LINT_REVERT",
+    "KENNING_RETRY_WITH_OUTPUT",
+    "KENNING_RETRY_WITHOUT_OUTPUT",
+    "KENNING_SUBMIT",
+    "KENNING_SUBMIT_DIFF",
+    "KENNING_TEST_SWEEP_FAIL",
+    "KENNING_TEST_SWEEP_PASS",
     "first_match",
     "observation_scan",
     "strip_sentinels",

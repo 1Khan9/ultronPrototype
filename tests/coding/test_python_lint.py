@@ -1,5 +1,5 @@
-"""Tests for :mod:`ultron.coding.python_lint` and
-:mod:`ultron.coding.tree_sitter_lint`."""
+"""Tests for :mod:`kenning.coding.python_lint` and
+:mod:`kenning.coding.tree_sitter_lint`."""
 
 from __future__ import annotations
 
@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.python_lint import (
+from kenning.coding.python_lint import (
     DEFAULT_FLAKE8_TIMEOUT,
     FLAKE8_FATAL_SELECT,
     lint_python,
 )
-from ultron.coding.tree_sitter_lint import (
+from kenning.coding.tree_sitter_lint import (
     LintError,
     LintReport,
     tree_sitter_lint,
@@ -220,8 +220,8 @@ def test_runner_lint_listener_disabled_returns_none(monkeypatch, tmp_path: Path)
     factory. This pins the test to the disabled-case behaviour
     regardless of the current default.
     """
-    from ultron.coding.runner import CodingTaskRunner
-    from ultron.config import get_config
+    from kenning.coding.runner import CodingTaskRunner
+    from kenning.config import get_config
 
     # Pin the flag to False for this test only -- monkeypatch restores
     # it on teardown.
@@ -245,8 +245,8 @@ def test_runner_lint_listener_enabled_returns_callable(monkeypatch, tmp_path: Pa
     enabled-case shape so future config-default flips don't silently
     regress either branch.
     """
-    from ultron.coding.runner import CodingTaskRunner
-    from ultron.config import get_config
+    from kenning.coding.runner import CodingTaskRunner
+    from kenning.config import get_config
 
     cfg = get_config().coding.pre_write_lint
     monkeypatch.setattr(cfg, "enabled", True)

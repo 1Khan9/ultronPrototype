@@ -1,4 +1,4 @@
-"""Coding orchestration: Ultron drives AI coding agent to do real work.
+"""Coding orchestration: Kenning drives AI coding agent to do real work.
 
 Phase 6 architecture:
   user voice -> intent detection -> project resolution -> AI coding agent subprocess
@@ -11,7 +11,7 @@ For new projects we create a fresh subdirectory under the sandbox first;
 for edits we resolve to an existing registered project.
 """
 
-from ultron.coding.bridge import (
+from kenning.coding.bridge import (
     CodingBridge,
     EventKind,
     FileChangeKind,
@@ -21,20 +21,20 @@ from ultron.coding.bridge import (
     TaskResult,
     TaskState,
 )
-from ultron.coding.direct_bridge import DirectClaudeCodeBridge
-from ultron.coding.intent import (
+from kenning.coding.direct_bridge import DirectClaudeCodeBridge
+from kenning.coding.intent import (
     CodingIntent,
     CodingIntentKind,
     classify as classify_intent,
     derive_project_name,
 )
-from ultron.coding.mcp_server import (
-    UltronMCPServer,
+from kenning.coding.mcp_server import (
+    KenningMCPServer,
     remove_mcp_config,
     write_mcp_config,
 )
-from ultron.coding.narration import NarrationDelta, StatusNarrator
-from ultron.coding.projections import (
+from kenning.coding.narration import NarrationDelta, StatusNarrator
+from kenning.coding.projections import (
     AdjustmentContextProjection,
     ClarificationContextProjection,
     CompletionContextProjection,
@@ -47,7 +47,7 @@ from ultron.coding.projections import (
     project_correction_context,
     project_status_delta,
 )
-from ultron.coding.projects import (
+from kenning.coding.projects import (
     Project,
     ProjectRegistry,
     ProjectResolution,
@@ -56,8 +56,8 @@ from ultron.coding.projects import (
     new_sandbox_project,
     slugify_for_path,
 )
-from ultron.coding.runner import CodingTaskRunner, build_default_bridge
-from ultron.coding.session import (
+from kenning.coding.runner import CodingTaskRunner, build_default_bridge
+from kenning.coding.session import (
     AdjustmentRecord,
     ClarificationRequest,
     CompletionClaim,
@@ -70,13 +70,13 @@ from ultron.coding.session import (
     TestStatus,
     is_valid_transition,
 )
-from ultron.coding.templates import (
+from kenning.coding.templates import (
     PromptTooLargeError,
     SchemaValidationError,
     TemplateError,
     TemplateRenderer,
 )
-from ultron.coding.voice import (
+from kenning.coding.voice import (
     CapabilityVoiceController,
     CodingVoiceController,
     VoiceResponse,
@@ -118,7 +118,7 @@ __all__ = [
     "TemplateError",
     "TemplateRenderer",
     "TestStatus",
-    "UltronMCPServer",
+    "KenningMCPServer",
     "VoiceResponse",
     "build_default_bridge",
     "classify_intent",

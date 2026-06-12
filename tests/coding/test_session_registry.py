@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.session_registry import (
+from kenning.coding.session_registry import (
     SessionRegistry,
     SessionRegistryStats,
     get_session_registry,
@@ -49,7 +49,7 @@ def test_construction_strips_session_id(tmp_path: Path):
 
 def test_construction_uses_default_root_when_none(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
-        "ultron.coding.session_registry.DEFAULT_REGISTRY_ROOT", tmp_path / "sessions"
+        "kenning.coding.session_registry.DEFAULT_REGISTRY_ROOT", tmp_path / "sessions"
     )
     r = SessionRegistry(session_id="abc")
     # When root=None we still get a fully-qualified path under the
@@ -186,28 +186,28 @@ def test_load_from_empty_file_returns_empty(tmp_path: Path):
 
 
 def test_env_fallback_hits_when_key_missing(reg: SessionRegistry, monkeypatch):
-    monkeypatch.setenv("ULTRON_TEST_FALLBACK", "from-env")
-    assert reg.get("ULTRON_TEST_FALLBACK") == "from-env"
+    monkeypatch.setenv("KENNING_TEST_FALLBACK", "from-env")
+    assert reg.get("KENNING_TEST_FALLBACK") == "from-env"
     assert reg.stats().env_fallback_hits == 1
 
 
 def test_env_fallback_disabled_returns_default(reg: SessionRegistry, monkeypatch):
-    monkeypatch.setenv("ULTRON_TEST_FALLBACK", "from-env")
-    assert reg.get("ULTRON_TEST_FALLBACK", default="DEFAULT", fallback_to_env=False) == "DEFAULT"
+    monkeypatch.setenv("KENNING_TEST_FALLBACK", "from-env")
+    assert reg.get("KENNING_TEST_FALLBACK", default="DEFAULT", fallback_to_env=False) == "DEFAULT"
     assert reg.stats().env_fallback_hits == 0
 
 
 def test_stored_value_wins_over_env(reg: SessionRegistry, monkeypatch):
-    monkeypatch.setenv("ULTRON_TEST_KEY", "from-env")
-    reg["ULTRON_TEST_KEY"] = "from-store"
-    assert reg.get("ULTRON_TEST_KEY") == "from-store"
+    monkeypatch.setenv("KENNING_TEST_KEY", "from-env")
+    reg["KENNING_TEST_KEY"] = "from-store"
+    assert reg.get("KENNING_TEST_KEY") == "from-store"
     assert reg.stats().env_fallback_hits == 0
 
 
 def test_constructor_flag_disables_env_fallback(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("ULTRON_TEST_NOENV", "from-env")
+    monkeypatch.setenv("KENNING_TEST_NOENV", "from-env")
     r = SessionRegistry(session_id="noenv", root=tmp_path, fallback_to_env=False)
-    assert r.get("ULTRON_TEST_NOENV", default="DEFAULT") == "DEFAULT"
+    assert r.get("KENNING_TEST_NOENV", default="DEFAULT") == "DEFAULT"
 
 
 # ---------------------------------------------------------------------------
@@ -245,14 +245,14 @@ def test_set_with_ttl_value_invisible_after_expiry(
     # Use monkeypatch on time.time so we don't actually sleep.
     base = time.time()
     monkeypatch.setattr(
-        "ultron.coding.session_registry.time.time", lambda: base
+        "kenning.coding.session_registry.time.time", lambda: base
     )
     reg.set_with_ttl("ephemeral", "fresh", ttl_seconds=1.0)
     assert reg["ephemeral"] == "fresh"
 
     # Fast-forward beyond the TTL.
     monkeypatch.setattr(
-        "ultron.coding.session_registry.time.time", lambda: base + 5
+        "kenning.coding.session_registry.time.time", lambda: base + 5
     )
     assert reg.get("ephemeral", default="EVICTED") == "EVICTED"
     assert reg.stats().ttl_evictions >= 1

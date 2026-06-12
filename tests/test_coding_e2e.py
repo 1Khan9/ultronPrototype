@@ -39,7 +39,7 @@ from typing import Optional
 
 import pytest
 
-from ultron.coding import (
+from kenning.coding import (
     CodingTaskRunner,
     DirectClaudeCodeBridge,
     Project,
@@ -111,7 +111,7 @@ def test_new_project_creates_files_at_dynamic_root(tmp_path: Path):
     handle = runner.start_task(TaskRequest(
         task_prompt=(
             "Create a single file named `greeting.txt` containing exactly "
-            "the line `hello from ultron`. Do not create any other files."
+            "the line `hello from kenning`. Do not create any other files."
         ),
         cwd=project_root,
         model="haiku",
@@ -133,7 +133,7 @@ def test_new_project_creates_files_at_dynamic_root(tmp_path: Path):
         f"sandbox_contents={list(sandbox.iterdir())}"
     )
     contents = expected_file.read_text(encoding="utf-8").strip()
-    assert "hello from ultron" in contents.lower(), f"unexpected file body: {contents!r}"
+    assert "hello from kenning" in contents.lower(), f"unexpected file body: {contents!r}"
 
     # Sandbox root has no extra files (Claude didn't escape cwd).
     sandbox_files = [p for p in sandbox.iterdir() if p.is_file()]
@@ -152,7 +152,7 @@ def test_new_project_creates_files_at_dynamic_root(tmp_path: Path):
 
 
 def test_existing_project_edits_correct_root(tmp_path: Path):
-    """Two projects exist side-by-side. Asking Ultron to edit project A
+    """Two projects exist side-by-side. Asking Kenning to edit project A
     must modify A's files only -- B must remain pristine."""
     sandbox = tmp_path / "sandbox"
     sandbox.mkdir()
@@ -192,7 +192,7 @@ def test_existing_project_edits_correct_root(tmp_path: Path):
     ))
 
     # Resolve "the calculator" via the registry (lexical -- no embedder needed).
-    from ultron.coding import ProjectResolver, ResolutionKind
+    from kenning.coding import ProjectResolver, ResolutionKind
     resolution = ProjectResolver(registry).resolve("the calculator project")
     assert resolution.kind in {
         ResolutionKind.EXACT, ResolutionKind.ALIAS, ResolutionKind.SUBSTRING,

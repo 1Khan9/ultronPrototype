@@ -1,7 +1,7 @@
 """Configuration loader failure modes.
 
 Validates that load_config raises typed ConfigurationError (subclass of
-UltronError, NOT a generic ValueError or FileNotFoundError) for:
+KenningError, NOT a generic ValueError or FileNotFoundError) for:
   - missing file
   - invalid YAML
   - schema validation failure (unknown key, wrong type, out-of-range)
@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from ultron.config import load_config
-from ultron.errors import ConfigurationError
+from kenning.config import load_config
+from kenning.errors import ConfigurationError
 
 
 def _good_yaml() -> str:

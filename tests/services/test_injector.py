@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from ultron.services.injector import (
+from kenning.services.injector import (
     Injector,
     InjectorRegistry,
     InjectorState,
@@ -298,7 +298,7 @@ def test_install_default_accepts_explicit_injectors():
 
 
 def test_stt_injector_mode_dispatch_uses_gaming():
-    from ultron.services.engine_injectors import STTEngineInjector
+    from kenning.services.engine_injectors import STTEngineInjector
 
     seen_modes = []
 
@@ -319,7 +319,7 @@ def test_stt_injector_mode_dispatch_uses_gaming():
 def test_stt_injector_gaming_factory_failure_falls_back(caplog):
     import logging
     caplog.set_level(logging.WARNING)
-    from ultron.services.engine_injectors import STTEngineInjector
+    from kenning.services.engine_injectors import STTEngineInjector
 
     def _bad_gaming(_state):
         raise RuntimeError("CUDA not available")
@@ -337,7 +337,7 @@ def test_stt_injector_gaming_factory_failure_falls_back(caplog):
 
 
 def test_tts_injector_mode_dispatch():
-    from ultron.services.engine_injectors import TTSEngineInjector
+    from kenning.services.engine_injectors import TTSEngineInjector
 
     injector = TTSEngineInjector(
         standby_factory=lambda _s: ("rvc", "standby_tts"),
@@ -348,7 +348,7 @@ def test_tts_injector_mode_dispatch():
 
 
 def test_resolve_mode_helper_default():
-    from ultron.services.engine_injectors import _resolve_mode
+    from kenning.services.engine_injectors import _resolve_mode
 
     assert _resolve_mode(None) == "standby"
     assert _resolve_mode(InjectorState()) == "standby"
@@ -357,7 +357,7 @@ def test_resolve_mode_helper_default():
 
 
 def test_build_helpers_return_injectors():
-    from ultron.services import (
+    from kenning.services import (
         build_stt_engine_injector,
         build_tts_engine_injector,
         STTEngineInjector,

@@ -1,8 +1,8 @@
-"""Transcribe the 3-min Ultron reference clip with Whisper large-v3.
+"""Transcribe the 3-min Kenning reference clip with Whisper large-v3.
 
 Round-9 Path B step 1 (2026-05-20). Generates the (audio, text) pairs
 that Path B step 2 (``segment_for_finetune.py``) needs to slice the
-3-minute ``Ultron_vocals_mono_v1.wav`` into 5-15 s training clips at
+3-minute ``Kenning_vocals_mono_v1.wav`` into 5-15 s training clips at
 word/sentence boundaries.
 
 Uses faster-whisper large-v3 with word-level timestamps and beam search
@@ -11,7 +11,7 @@ speaker so we expect near-perfect transcription -- if you spot any
 errors in the output, hand-edit ``transcript.txt`` BEFORE running the
 segmenter; the segmenter trusts the words array.
 
-Output goes to ``ultronVoiceAudio/transcript_large_v3/``:
+Output goes to ``kenningVoiceAudio/transcript_large_v3/``:
 
 * ``segments.json`` -- list of Whisper segments with their words
   (each word has ``start``, ``end``, ``word`` for sub-second
@@ -25,7 +25,7 @@ exits. No long-lived process; the orchestrator is unaffected.
 Run from the main venv at the project root::
 
     C:\\STC\\ultronPrototype\\.venv\\Scripts\\python.exe ^
-        C:\\STC\\ultronPrototype\\scripts\\transcribe_ultron_reference.py
+        C:\\STC\\ultronPrototype\\scripts\\transcribe_kenning_reference.py
 """
 
 from __future__ import annotations
@@ -41,8 +41,8 @@ from typing import Optional
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent  # C:/STC/ultronPrototype
 
-DEFAULT_SOURCE = PROJECT / "ultronVoiceAudio" / "kokoro training audio" / "Ultron_vocals_mono_v1.wav"
-DEFAULT_OUT = PROJECT / "ultronVoiceAudio" / "transcript_large_v3"
+DEFAULT_SOURCE = PROJECT / "kenningVoiceAudio" / "kokoro training audio" / "Kenning_vocals_mono_v1.wav"
+DEFAULT_OUT = PROJECT / "kenningVoiceAudio" / "transcript_large_v3"
 
 DEFAULT_MODEL = "large-v3"
 DEFAULT_DEVICE = "cuda"
@@ -162,7 +162,7 @@ def transcribe(
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Whisper large-v3 transcription of the Ultron reference clip."
+        description="Whisper large-v3 transcription of the Kenning reference clip."
     )
     parser.add_argument(
         "--source",

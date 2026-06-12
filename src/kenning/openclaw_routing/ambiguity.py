@@ -147,7 +147,7 @@ def should_clarify_from_config(intent: RoutingIntent) -> AmbiguityVerdict:
     with a reason that surfaces the failure.
     """
     try:
-        from ultron.config import get_config
+        from kenning.config import get_config
 
         cfg = get_config().routing.ambiguity_band_clarification
         return should_clarify(

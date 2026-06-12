@@ -1,8 +1,8 @@
-"""Addressing detection: is this utterance meant for Ultron?
+"""Addressing detection: is this utterance meant for Kenning?
 
 In COLD mode the wake word answers this question — anything captured after
-"ultron" is for Ultron, by definition. In WARM mode (the configurable
-follow-up window after Ultron speaks) there's no wake word, so each VAD-
+"kenning" is for Kenning, by definition. In WARM mode (the configurable
+follow-up window after Kenning speaks) there's no wake word, so each VAD-
 bounded utterance has to be classified.
 
 Two-layer hybrid per spec:
@@ -13,7 +13,7 @@ Both run on CPU. No new VRAM. Rule-pass dominates the wall-clock budget on
 typical traffic; the zero-shot only fires for genuinely ambiguous speech.
 """
 
-from ultron.addressing.classifier import (
+from kenning.addressing.classifier import (
     AddressingClassifier,
     AddressingDecision,
     AddressingVerdict,

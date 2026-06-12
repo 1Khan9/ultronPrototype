@@ -21,8 +21,8 @@ def _build_handle(tmp_path: Path, session_id: str = "test-session-abc"):
 
     The handle wires up _record_tool_use which is what we test.
     """
-    from ultron.coding.bridge import TaskRequest
-    from ultron.coding.direct_bridge import DirectTaskHandle
+    from kenning.coding.bridge import TaskRequest
+    from kenning.coding.direct_bridge import DirectTaskHandle
     import threading
 
     request = TaskRequest(
@@ -78,7 +78,7 @@ def _build_handle(tmp_path: Path, session_id: str = "test-session-abc"):
 
 def _reset_file_history_singleton():
     """Clear the FileHistory module-level cache between tests."""
-    from ultron.coding import file_history
+    from kenning.coding import file_history
 
     # The accessor uses a module-level dict cache; clear it.
     if hasattr(file_history, "_FILE_HISTORY_CACHE"):
@@ -114,7 +114,7 @@ def test_record_pre_edit_captures_existing_content_on_edit(tmp_path, monkeypatch
         raw={"type": "tool_use", "name": "Edit"},
     )
 
-    from ultron.coding.file_history import get_file_history
+    from kenning.coding.file_history import get_file_history
     history = get_file_history(handle.claude_session_id)
     last = history.peek_last(str(target))
     assert last is not None
@@ -133,7 +133,7 @@ def test_record_pre_edit_captures_for_write(tmp_path):
         raw={"type": "tool_use", "name": "Write"},
     )
 
-    from ultron.coding.file_history import get_file_history
+    from kenning.coding.file_history import get_file_history
     history = get_file_history(handle.claude_session_id)
     last = history.peek_last(str(target))
     assert last is not None
@@ -153,7 +153,7 @@ def test_record_pre_edit_captures_none_for_new_file_write(tmp_path):
         raw={"type": "tool_use", "name": "Write"},
     )
 
-    from ultron.coding.file_history import get_file_history
+    from kenning.coding.file_history import get_file_history
     history = get_file_history(handle.claude_session_id)
     last = history.peek_last(str(target))
     assert last is not None
@@ -179,7 +179,7 @@ def test_record_pre_edit_captures_for_multiedit(tmp_path):
         raw={"type": "tool_use", "name": "MultiEdit"},
     )
 
-    from ultron.coding.file_history import get_file_history
+    from kenning.coding.file_history import get_file_history
     history = get_file_history(handle.claude_session_id)
     last = history.peek_last(str(target))
     assert last is not None
@@ -195,7 +195,7 @@ def test_record_pre_edit_skips_for_non_file_tools(tmp_path):
         raw={"type": "tool_use", "name": "Read"},
     )
 
-    from ultron.coding.file_history import get_file_history
+    from kenning.coding.file_history import get_file_history
     history = get_file_history(handle.claude_session_id)
     # No snapshot recorded.
     last = history.peek_last(str(tmp_path / "foo.txt"))
@@ -214,7 +214,7 @@ def test_record_pre_edit_relative_path_resolves_against_cwd(tmp_path):
         raw={"type": "tool_use", "name": "Edit"},
     )
 
-    from ultron.coding.file_history import get_file_history
+    from kenning.coding.file_history import get_file_history
     history = get_file_history(handle.claude_session_id)
     last = history.peek_last(str(target.resolve()))
     assert last is not None
@@ -232,7 +232,7 @@ def test_record_pre_edit_swallows_read_errors(tmp_path, caplog, monkeypatch):
             raise RuntimeError("disk fault")
 
     monkeypatch.setattr(
-        "ultron.coding.file_history.get_file_history",
+        "kenning.coding.file_history.get_file_history",
         lambda session_id: _BrokenHistory(),
     )
 
@@ -249,7 +249,7 @@ def test_record_pre_edit_swallows_read_errors(tmp_path, caplog, monkeypatch):
 
     # FILE_CHANGE + TOOL_USE events should still fire.
     kinds = [getattr(ev, "kind", None) for ev in captured]
-    from ultron.coding.bridge import EventKind
+    from kenning.coding.bridge import EventKind
     assert EventKind.FILE_CHANGE in kinds
     assert EventKind.TOOL_USE in kinds
 
@@ -257,7 +257,7 @@ def test_record_pre_edit_swallows_read_errors(tmp_path, caplog, monkeypatch):
 def test_record_pre_edit_disabled_via_config(tmp_path, monkeypatch):
     """When ``coding.pre_edit_snapshot.enabled=False``, the snapshot
     branch is bypassed entirely."""
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config().coding
     monkeypatch.setattr(cfg.pre_edit_snapshot, "enabled", False)
 
@@ -271,7 +271,7 @@ def test_record_pre_edit_disabled_via_config(tmp_path, monkeypatch):
         raw={"type": "tool_use", "name": "Edit"},
     )
 
-    from ultron.coding.file_history import get_file_history
+    from kenning.coding.file_history import get_file_history
     history = get_file_history(handle.claude_session_id)
     last = history.peek_last(str(target.resolve()))
     assert last is None
@@ -296,7 +296,7 @@ def test_record_pre_edit_session_id_keys_history(tmp_path):
         raw={"type": "tool_use", "name": "Edit"},
     )
 
-    from ultron.coding.file_history import get_file_history
+    from kenning.coding.file_history import get_file_history
     ha = get_file_history("session-A")
     hb = get_file_history("session-B")
     assert ha is not hb
@@ -321,7 +321,7 @@ def test_record_pre_edit_undo_round_trip(tmp_path):
     assert target.read_text(encoding="utf-8") == "MUTATED"
 
     # Undo via FileHistory should restore.
-    from ultron.coding.file_history import get_file_history
+    from kenning.coding.file_history import get_file_history
     history = get_file_history(handle.claude_session_id)
     result = history.undo_last(str(target.resolve()))
     assert result.applied is True
@@ -339,7 +339,7 @@ def test_record_pre_edit_narration_carries_tool_name(tmp_path):
         raw={"type": "tool_use", "name": "Write"},
     )
 
-    from ultron.coding.file_history import get_file_history
+    from kenning.coding.file_history import get_file_history
     history = get_file_history(handle.claude_session_id)
     last = history.peek_last(str(target.resolve()))
     assert last is not None

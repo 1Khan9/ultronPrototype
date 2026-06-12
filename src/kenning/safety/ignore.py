@@ -1,4 +1,4 @@
-"""`.ultronignore` policy: workspace + project + global path-block file.
+"""`.kenningignore` policy: workspace + project + global path-block file.
 
 Adapted from cline's ``ClineIgnoreController`` pattern (Apache 2.0;
 see ``THIRD_PARTY_NOTICES.md``). The on-disk syntax mirrors
@@ -13,9 +13,9 @@ see ``THIRD_PARTY_NOTICES.md``). The on-disk syntax mirrors
   ``Get-Content``, ``Select-String``, ``sls``).
 
 The controller stacks three layers from lowest-precedence to highest:
-global at ``~/.ultron/.ultronignore``, project at
-``<project_root>/.ultron/.ultronignore``, and an optional workspace
-override at ``<project_root>/.ultronignore``. Each layer can include
+global at ``~/.kenning/.kenningignore``, project at
+``<project_root>/.kenning/.kenningignore``, and an optional workspace
+override at ``<project_root>/.kenningignore``. Each layer can include
 others via ``!include``; cycle detection guards against infinite
 loops. Compiled :class:`pathspec.PathSpec` objects are cached and
 re-evaluated on file mtime change (the orchestrator subscribes a
@@ -38,14 +38,14 @@ from typing import Iterable, Optional, Sequence
 LOGGER = logging.getLogger(__name__)
 
 #: Default ignore filename searched at the workspace / project root.
-DEFAULT_IGNORE_FILENAME: str = ".ultronignore"
+DEFAULT_IGNORE_FILENAME: str = ".kenningignore"
 
 #: Default directory under the project root where a versioned
-#: project-level ignore lives (``<project>/.ultron/.ultronignore``).
-DEFAULT_PROJECT_DIR: str = ".ultron"
+#: project-level ignore lives (``<project>/.kenning/.kenningignore``).
+DEFAULT_PROJECT_DIR: str = ".kenning"
 
 #: Default location for the global ignore (per-user, untracked).
-DEFAULT_GLOBAL_IGNORE: Path = Path.home() / ".ultron" / DEFAULT_IGNORE_FILENAME
+DEFAULT_GLOBAL_IGNORE: Path = Path.home() / ".kenning" / DEFAULT_IGNORE_FILENAME
 
 #: Glyph displayed in file listings for ignored entries (matches
 #: response_format.LOCK_TEXT_SYMBOL).
@@ -79,7 +79,7 @@ def _load_pathspec():
         return pathspec
     except ImportError as exc:  # pragma: no cover - import-time only
         raise RuntimeError(
-            "pathspec is required for .ultronignore evaluation; "
+            "pathspec is required for .kenningignore evaluation; "
             "ensure the venv install completed successfully."
         ) from exc
 
@@ -131,17 +131,17 @@ class _Layer:
 
 
 class IgnoreController:
-    """Three-layer ``.ultronignore`` evaluator with command-arg validation.
+    """Three-layer ``.kenningignore`` evaluator with command-arg validation.
 
     Args:
         workspace_root: project / workspace root directory. ``None`` means
             "no workspace layer" — only the global layer is consulted.
         global_path: location of the per-user global ignore. Defaults to
-            ``~/.ultron/.ultronignore``.
+            ``~/.kenning/.kenningignore``.
         project_path: optional project-level path override (defaults to
-            ``<workspace_root>/.ultron/.ultronignore``).
+            ``<workspace_root>/.kenning/.kenningignore``).
         workspace_path: optional workspace-level path override (defaults to
-            ``<workspace_root>/.ultronignore``).
+            ``<workspace_root>/.kenningignore``).
         commands_that_read_files: optional override of the file-reading
             command list (extending the defaults).
 

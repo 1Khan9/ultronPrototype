@@ -1,4 +1,4 @@
-"""Tests for ultron.desktop.capture."""
+"""Tests for kenning.desktop.capture."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from ultron.desktop.capture import (
+from kenning.desktop.capture import (
     ScreenCapture,
     ScreenCaptureError,
     Screenshot,
@@ -14,7 +14,7 @@ from ultron.desktop.capture import (
     get_screen_capture,
     set_screen_capture,
 )
-from ultron.safety.taint import TaintTracker, set_taint_tracker
+from kenning.safety.taint import TaintTracker, set_taint_tracker
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +80,7 @@ def test_capture_region_rejects_nonpositive_size():
 
 def test_capture_monitor_out_of_range_returns_none(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.capture.enumerate_monitors", lambda: [],
+        "kenning.desktop.capture.enumerate_monitors", lambda: [],
     )
     cap = ScreenCapture(record_taint=False)
     assert cap.capture_monitor(0) is None
@@ -120,7 +120,7 @@ def test_record_taint_safe_records_under_screen_context_capability():
     """The capture pipeline must stamp bytes as capability=screen_context
     so the safety validator's outflow gate can match exfil attempts.
     """
-    from ultron.desktop.capture import _record_taint_safe
+    from kenning.desktop.capture import _record_taint_safe
 
     tracker = TaintTracker()
     set_taint_tracker(tracker)
@@ -134,7 +134,7 @@ def test_record_taint_safe_records_under_screen_context_capability():
 
 
 def test_record_taint_safe_skips_empty():
-    from ultron.desktop.capture import _record_taint_safe
+    from kenning.desktop.capture import _record_taint_safe
 
     tracker = TaintTracker()
     set_taint_tracker(tracker)
@@ -147,12 +147,12 @@ def test_record_taint_safe_skips_empty():
 
 def test_record_taint_safe_fail_open(monkeypatch):
     """A broken taint tracker must not break capture."""
-    from ultron.desktop.capture import _record_taint_safe
+    from kenning.desktop.capture import _record_taint_safe
 
     def boom():
         raise RuntimeError("taint module unavailable")
 
-    monkeypatch.setattr("ultron.safety.taint.get_taint_tracker", boom)
+    monkeypatch.setattr("kenning.safety.taint.get_taint_tracker", boom)
     # Must not raise.
     _record_taint_safe(b"some bytes")
 
@@ -170,7 +170,7 @@ pytestmark_windows = pytest.mark.skipif(
 
 @pytestmark_windows
 def test_capture_monitor_live_returns_png():
-    from ultron.desktop.monitors import enumerate_monitors
+    from kenning.desktop.monitors import enumerate_monitors
 
     mons = enumerate_monitors()
     if not mons:
@@ -189,7 +189,7 @@ def test_capture_monitor_live_returns_png():
 
 @pytestmark_windows
 def test_capture_all_monitors_live():
-    from ultron.desktop.monitors import enumerate_monitors
+    from kenning.desktop.monitors import enumerate_monitors
 
     mons = enumerate_monitors()
     if not mons:
@@ -207,7 +207,7 @@ def test_capture_all_monitors_live():
 
 @pytestmark_windows
 def test_capture_records_taint_when_enabled():
-    from ultron.desktop.monitors import enumerate_monitors
+    from kenning.desktop.monitors import enumerate_monitors
 
     if not enumerate_monitors():
         pytest.skip("no monitors detected")
@@ -231,7 +231,7 @@ def test_capture_records_taint_when_enabled():
 
 @pytestmark_windows
 def test_capture_skips_taint_when_disabled():
-    from ultron.desktop.monitors import enumerate_monitors
+    from kenning.desktop.monitors import enumerate_monitors
 
     if not enumerate_monitors():
         pytest.skip("no monitors detected")
@@ -259,7 +259,7 @@ def test_get_pixel_color_passes_coords_to_pyautogui(monkeypatch):
     forwarded as integers and the RGB tuple is returned."""
     import types
 
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     fake = types.SimpleNamespace(pixel=lambda x, y: (10, 20, 30))
     monkeypatch.setitem(sys.modules, "pyautogui", fake)
     rgb = capture_mod.get_pixel_color(123, 456)
@@ -271,7 +271,7 @@ def test_get_pixel_color_normalises_floats(monkeypatch):
     coerces every channel to a plain Python int."""
     import types
 
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     fake = types.SimpleNamespace(pixel=lambda x, y: (255.0, 128.0, 0.0))
     monkeypatch.setitem(sys.modules, "pyautogui", fake)
     rgb = capture_mod.get_pixel_color(0, 0)
@@ -284,7 +284,7 @@ def test_get_pixel_color_returns_none_on_exception(monkeypatch):
     propagating. The polling-loop caller simply continues."""
     import types
 
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
 
     def _boom(x, y):
         raise RuntimeError("display gone")
@@ -297,7 +297,7 @@ def test_get_pixel_color_returns_none_on_malformed_result(monkeypatch):
     """A non-tuple / wrong-length result is treated as failure."""
     import types
 
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     fake = types.SimpleNamespace(pixel=lambda x, y: (255,))  # too short
     monkeypatch.setitem(sys.modules, "pyautogui", fake)
     assert capture_mod.get_pixel_color(0, 0) is None
@@ -306,7 +306,7 @@ def test_get_pixel_color_returns_none_on_malformed_result(monkeypatch):
 def test_get_pixel_color_returns_none_when_pyautogui_returns_none(monkeypatch):
     import types
 
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     fake = types.SimpleNamespace(pixel=lambda x, y: None)
     monkeypatch.setitem(sys.modules, "pyautogui", fake)
     assert capture_mod.get_pixel_color(0, 0) is None
@@ -317,7 +317,7 @@ def test_get_pixel_color_does_not_record_taint(monkeypatch):
     only durable image bytes do."""
     import types
 
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
 
     fake = types.SimpleNamespace(pixel=lambda x, y: (1, 2, 3))
     monkeypatch.setitem(sys.modules, "pyautogui", fake)
@@ -346,7 +346,7 @@ def _allow_path_resolver(monkeypatch):
             return Path(str(raw))
 
     monkeypatch.setattr(
-        "ultron.safety.path_resolver.get_path_resolver", lambda: _Fake(),
+        "kenning.safety.path_resolver.get_path_resolver", lambda: _Fake(),
     )
 
 
@@ -358,7 +358,7 @@ def _reject_path_resolver(monkeypatch):
             return None
 
     monkeypatch.setattr(
-        "ultron.safety.path_resolver.get_path_resolver", lambda: _Fake(),
+        "kenning.safety.path_resolver.get_path_resolver", lambda: _Fake(),
     )
 
 
@@ -367,7 +367,7 @@ def test_find_image_returns_match_on_success(monkeypatch):
     we wrap it in TemplateMatch with computed centre."""
     import types
 
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     _allow_path_resolver(monkeypatch)
     fake = types.SimpleNamespace(
         locateOnScreen=lambda path, **kw: (100, 200, 50, 40),
@@ -387,7 +387,7 @@ def test_find_image_returns_match_on_success(monkeypatch):
 def test_find_image_default_confidence_is_zero_point_eight(monkeypatch):
     import types
 
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     _allow_path_resolver(monkeypatch)
     seen = {}
 
@@ -404,7 +404,7 @@ def test_find_image_default_confidence_is_zero_point_eight(monkeypatch):
 def test_find_image_custom_confidence_forwarded(monkeypatch):
     import types
 
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     _allow_path_resolver(monkeypatch)
     seen = {}
 
@@ -421,7 +421,7 @@ def test_find_image_custom_confidence_forwarded(monkeypatch):
 def test_find_image_region_forwarded(monkeypatch):
     import types
 
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     _allow_path_resolver(monkeypatch)
     seen = {}
 
@@ -439,7 +439,7 @@ def test_find_image_no_match_returns_none(monkeypatch):
     """pyautogui returning None (no match found) maps to None."""
     import types
 
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     _allow_path_resolver(monkeypatch)
     fake = types.SimpleNamespace(locateOnScreen=lambda p, **kw: None)
     monkeypatch.setitem(sys.modules, "pyautogui", fake)
@@ -451,7 +451,7 @@ def test_find_image_opencv_missing_returns_none(monkeypatch):
     The wrapper catches and returns None (fail-open contract)."""
     import types
 
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     _allow_path_resolver(monkeypatch)
 
     def _boom(path, **kw):
@@ -465,7 +465,7 @@ def test_find_image_opencv_missing_returns_none(monkeypatch):
 def test_find_image_generic_exception_returns_none(monkeypatch):
     import types
 
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     _allow_path_resolver(monkeypatch)
 
     def _boom(path, **kw):
@@ -477,18 +477,18 @@ def test_find_image_generic_exception_returns_none(monkeypatch):
 
 
 def test_find_image_rejects_empty_path():
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     assert capture_mod.find_image_on_screen("") is None
 
 
 def test_find_image_rejects_non_string_path():
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     assert capture_mod.find_image_on_screen(None) is None  # type: ignore[arg-type]
     assert capture_mod.find_image_on_screen(42) is None  # type: ignore[arg-type]
 
 
 def test_find_image_rejects_out_of_range_confidence(monkeypatch):
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     _allow_path_resolver(monkeypatch)
     # locateOnScreen must not be called; install a sentinel that would
     # fail if invoked.
@@ -507,7 +507,7 @@ def test_find_image_rejects_out_of_range_confidence(monkeypatch):
 
 
 def test_find_image_rejects_malformed_region(monkeypatch):
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     _allow_path_resolver(monkeypatch)
     import types
 
@@ -529,7 +529,7 @@ def test_find_image_path_resolver_reject_returns_none(monkeypatch):
     etc.) short-circuits before pyautogui is even imported."""
     import types
 
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     _reject_path_resolver(monkeypatch)
 
     def _should_not_be_called(*a, **kw):
@@ -547,7 +547,7 @@ def test_find_image_malformed_box_returns_none(monkeypatch):
     we map it to None."""
     import types
 
-    from ultron.desktop import capture as capture_mod
+    from kenning.desktop import capture as capture_mod
     _allow_path_resolver(monkeypatch)
     fake = types.SimpleNamespace(
         locateOnScreen=lambda p, **kw: "not a box",
@@ -557,7 +557,7 @@ def test_find_image_malformed_box_returns_none(monkeypatch):
 
 
 def test_find_image_template_match_is_frozen():
-    from ultron.desktop.capture import TemplateMatch
+    from kenning.desktop.capture import TemplateMatch
 
     m = TemplateMatch(
         left=0, top=0, width=10, height=10,

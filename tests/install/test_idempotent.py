@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.install import (
+from kenning.install import (
     DEFAULT_MARKER,
     DEFAULT_PRESERVE_SUFFIX,
     InstallAction,
@@ -24,7 +24,7 @@ def _isolate_install_log(monkeypatch, tmp_path):
 
     writer = InstallLogWriter(tmp_path / "install_log.jsonl")
     monkeypatch.setattr(
-        "ultron.install.idempotent._DEFAULT_WRITER",
+        "kenning.install.idempotent._DEFAULT_WRITER",
         writer,
     )
     yield writer
@@ -65,7 +65,7 @@ def test_install_preserves_existing_unmarked_file(tmp_path: Path):
     target.write_text("#!/bin/sh\nuser had their own\n", encoding="utf-8")
     preserve = target.with_suffix(target.suffix + DEFAULT_PRESERVE_SUFFIX)
 
-    new_content = f"#!/bin/sh\n{DEFAULT_MARKER}\nultron version\n"
+    new_content = f"#!/bin/sh\n{DEFAULT_MARKER}\nkenning version\n"
     result = install_with_marker(
         target,
         new_content,
@@ -93,7 +93,7 @@ def test_install_refuses_unmarked_existing_without_explicit_consent(tmp_path: Pa
     target = tmp_path / "user_file.txt"
     target.write_text("user-owned content", encoding="utf-8")
 
-    content = f"{DEFAULT_MARKER}\nultron content"
+    content = f"{DEFAULT_MARKER}\nkenning content"
     result = install_with_marker(target, content)
 
     assert result.ok is False
@@ -125,7 +125,7 @@ def test_dry_run_against_existing_marked_still_skip(tmp_path: Path):
 
 def test_custom_marker_used_for_detection(tmp_path: Path):
     target = tmp_path / "special.sh"
-    custom = "# ULTRON-CUSTOM-MARKER-42"
+    custom = "# KENNING-CUSTOM-MARKER-42"
     target.write_text(f"{custom}\nexisting", encoding="utf-8")
 
     new_content = f"{custom}\nnewer"
@@ -221,7 +221,7 @@ def test_install_audit_log_failure_path_swallowed(tmp_path: Path, monkeypatch):
     blocker.write_text("not a directory", encoding="utf-8")
     writer = InstallLogWriter(blocker / "child" / "log.jsonl")
     monkeypatch.setattr(
-        "ultron.install.idempotent._DEFAULT_WRITER",
+        "kenning.install.idempotent._DEFAULT_WRITER",
         writer,
     )
 

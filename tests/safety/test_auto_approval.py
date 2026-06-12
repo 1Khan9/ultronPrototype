@@ -1,10 +1,10 @@
-"""Tests for ultron.safety.auto_approval."""
+"""Tests for kenning.safety.auto_approval."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.safety import auto_approval as aa
+from kenning.safety import auto_approval as aa
 
 
 class _Clock:

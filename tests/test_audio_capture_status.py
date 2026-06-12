@@ -16,7 +16,7 @@ import logging
 import numpy as np
 import pytest
 
-from ultron.audio.capture import AudioCapture
+from kenning.audio.capture import AudioCapture
 
 
 class _FakeStatus:
@@ -44,7 +44,7 @@ def test_status_flag_warns_first_occurrence_only(caplog):
     # logging does handler I/O under the process-wide logging lock,
     # which must never recur on the PortAudio callback.
     mic = _mk()
-    with caplog.at_level(logging.WARNING, logger="ultron.audio.capture"):
+    with caplog.at_level(logging.WARNING, logger="kenning.audio.capture"):
         for _ in range(50):
             mic._callback(_block(), 256, None, _FakeStatus())
     records = [
@@ -58,7 +58,7 @@ def test_drain_reports_status_flag_recurrence(caplog):
     mic = _mk()
     for _ in range(7):
         mic._callback(_block(), 256, None, _FakeStatus())
-    with caplog.at_level(logging.WARNING, logger="ultron.audio.capture"):
+    with caplog.at_level(logging.WARNING, logger="kenning.audio.capture"):
         mic.drain()
         mic.drain()  # second drain: nothing new to report
     records = [
@@ -73,7 +73,7 @@ def test_drain_does_not_report_single_occurrence(caplog):
     # One occurrence already warned inline; drain must stay silent.
     mic = _mk()
     mic._callback(_block(), 256, None, _FakeStatus())
-    with caplog.at_level(logging.WARNING, logger="ultron.audio.capture"):
+    with caplog.at_level(logging.WARNING, logger="kenning.audio.capture"):
         mic.drain()
     assert not [
         r for r in caplog.records
@@ -83,7 +83,7 @@ def test_drain_does_not_report_single_occurrence(caplog):
 
 def test_falsy_status_no_warning_no_count(caplog):
     mic = _mk()
-    with caplog.at_level(logging.WARNING, logger="ultron.audio.capture"):
+    with caplog.at_level(logging.WARNING, logger="kenning.audio.capture"):
         mic._callback(_block(), 256, None, None)
     assert not [
         r for r in caplog.records if "status flag" in r.getMessage().lower()
@@ -93,7 +93,7 @@ def test_falsy_status_no_warning_no_count(caplog):
 
 def test_queue_full_drops_oldest_and_counts(caplog):
     mic = _mk(max_queue_size=4)
-    with caplog.at_level(logging.DEBUG, logger="ultron.audio.capture"):
+    with caplog.at_level(logging.DEBUG, logger="kenning.audio.capture"):
         for i in range(6):
             mic._callback(_block(value=float(i)), 256, None, None)
     assert mic.qsize() == 4
@@ -111,7 +111,7 @@ def test_drain_reports_drops_once(caplog):
     mic = _mk(max_queue_size=4)
     for i in range(6):
         mic._callback(_block(value=float(i)), 256, None, None)
-    with caplog.at_level(logging.DEBUG, logger="ultron.audio.capture"):
+    with caplog.at_level(logging.DEBUG, logger="kenning.audio.capture"):
         mic.drain()
         mic.drain()  # second drain: nothing new to report
     records = [
@@ -122,7 +122,7 @@ def test_drain_reports_drops_once(caplog):
 
 
 def test_start_resets_counters(monkeypatch):
-    import ultron.audio.capture as capture_mod
+    import kenning.audio.capture as capture_mod
 
     class _FakeStream:
         def __init__(self, *a, **kw) -> None:

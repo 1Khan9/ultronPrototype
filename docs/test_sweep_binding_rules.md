@@ -149,7 +149,7 @@ work-around, not a fix.
 
 ### R8 — Per-module test file
 
-Every new module under `src/ultron/` MUST have a corresponding test
+Every new module under `src/kenning/` MUST have a corresponding test
 file under `tests/` mirroring the path. Aim for both:
 
 * **Unit tests** — mock the seam, verify behaviour at the boundary.

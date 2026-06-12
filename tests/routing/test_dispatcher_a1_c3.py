@@ -15,9 +15,9 @@ from typing import Any, Dict, Optional
 
 import pytest
 
-from ultron.openclaw_routing.dispatcher import OpenClawDispatcher
-from ultron.openclaw_routing.gaming_mode import GamingModeStatus
-from ultron.openclaw_routing.intents import (
+from kenning.openclaw_routing.dispatcher import OpenClawDispatcher
+from kenning.openclaw_routing.gaming_mode import GamingModeStatus
+from kenning.openclaw_routing.intents import (
     DesktopIntent,
     GamingModeIntent,
     WindowIntent,
@@ -106,7 +106,7 @@ class _StubClient:
 
 def _make_dispatcher(*, gaming_mode_manager=None, bridge=None):
     """Build a dispatcher with the V1-gap config sections enabled."""
-    from ultron.config import get_config
+    from kenning.config import get_config
 
     cfg = get_config()
     # Flip dispatcher-side flags ON for the test.

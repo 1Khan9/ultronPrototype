@@ -14,17 +14,17 @@ for performance benchmarking against real models.
 | Piper TTS | not exercised | real | real |
 | RVC | not exercised | real | real |
 | Qdrant memory | not loaded; `memory=None` on LLMEngine | embedded Qdrant | embedded Qdrant |
-| Brave API | `_MockBrave` returns fixture rows | real (only if `ULTRON_BRAVE_API_KEY` set) | mocked (no metering) |
+| Brave API | `_MockBrave` returns fixture rows | real (only if `KENNING_BRAVE_API_KEY` set) | mocked (no metering) |
 | Jina Reader | `_MockJina` returns canned markdown | real | mocked (no metering) |
 | AI coding agent subprocess | `ScriptedClaudeBridge` (in-process worker thread) | real `claude` CLI subprocess | not exercised |
-| MCP server | real `UltronMCPServer` (in-process; no SSE wire) | real with SSE | not exercised |
+| MCP server | real `KenningMCPServer` (in-process; no SSE wire) | real with SSE | not exercised |
 
 ## Fixtures
 
 [tests/integration/conftest.py](conftest.py) provides:
 
 - **`stub_llm`** — `StubLLM` instance. Use `.push("response 1", "response 2")` for scripted replies.
-- **`cap_stack`** — full `CapabilityVoiceController` wired against `UltronMCPServer` + `CodingTaskRunner` + a placeholder `ScriptedClaudeBridge`. Tests that need a real coding task swap in their own scripted bridge.
+- **`cap_stack`** — full `CapabilityVoiceController` wired against `KenningMCPServer` + `CodingTaskRunner` + a placeholder `ScriptedClaudeBridge`. Tests that need a real coding task swap in their own scripted bridge.
 - **`errors_log` / `routing_log`** — tmp-path JSONL writers; replace the singletons for the test duration.
 - **`read_errors` / `read_routing`** — helpers that parse the log files into dict lists.
 - **`_reset_phrase_cache`** (autouse) — clears the error-phrase shuffle cache so each test gets a fresh cycle.

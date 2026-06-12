@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.safety.hierarchical_policy import (
+from kenning.safety.hierarchical_policy import (
     PolicySource,
     ResolvedSandboxToolPolicy,
     SandboxToolPolicy,

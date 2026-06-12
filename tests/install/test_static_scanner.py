@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.install.static_scanner import (
+from kenning.install.static_scanner import (
     DEFAULT_DENYLISTED_PACKAGES,
     DEFAULT_MAX_FILES,
     DEFAULT_MAX_FILE_BYTES,

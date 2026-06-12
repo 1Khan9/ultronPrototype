@@ -11,7 +11,7 @@ PowerShell window and forget about it. For unattended deployment,
 NSSM is still appropriate — see docs/openclaw_integration.md.
 
 The supervisor itself is single-file, dependency-free Python (uses
-only the stdlib + ``ultron`` for the DLL setup the launcher needs).
+only the stdlib + ``kenning`` for the DLL setup the launcher needs).
 
 Run from main checkout (where models/ lives):
 

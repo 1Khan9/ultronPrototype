@@ -25,8 +25,8 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from ultron.config import UltronConfig, set_config
-from ultron.memory.qdrant_store import (
+from kenning.config import KenningConfig, set_config
+from kenning.memory.qdrant_store import (
     ConversationMemory,
     _payload_to_turn,
 )
@@ -86,25 +86,25 @@ def _build_memory_with_mock_client(
 @pytest.fixture
 def relevance_config():
     """Activate the relevance filter at threshold 0.4."""
-    cfg = UltronConfig()
+    cfg = KenningConfig()
     cfg.memory.rag_min_relevance = 0.4
     cfg.memory.rag_top_k = 5
     cfg.memory.rag_exclude_recent = 20
     set_config(cfg)
     yield cfg
-    set_config(UltronConfig())
+    set_config(KenningConfig())
 
 
 @pytest.fixture
 def threshold_disabled():
     """rag_min_relevance=0 -> legacy fast path (no filter, no sort)."""
-    cfg = UltronConfig()
+    cfg = KenningConfig()
     cfg.memory.rag_min_relevance = 0.0
     cfg.memory.rag_top_k = 5
     cfg.memory.rag_exclude_recent = 20
     set_config(cfg)
     yield cfg
-    set_config(UltronConfig())
+    set_config(KenningConfig())
 
 
 # ---------------------------------------------------------------------------
@@ -272,9 +272,9 @@ def test_history_turns_for_llm_caps_recent_feed():
     """``memory.history_turns_for_llm`` caps how many recent turns are
     appended to the LLM message list. Independent of cache size
     (recent_turns)."""
-    from ultron.llm.inference import LLMEngine
+    from kenning.llm.inference import LLMEngine
 
-    cfg = UltronConfig()
+    cfg = KenningConfig()
     cfg.memory.recent_turns = 20
     cfg.memory.history_turns_for_llm = 4
     set_config(cfg)
@@ -307,14 +307,14 @@ def test_history_turns_for_llm_caps_recent_feed():
         # We asked memory.recent for the capped number, not 20.
         assert recent_calls["asked_for"] == 4
     finally:
-        set_config(UltronConfig())
+        set_config(KenningConfig())
 
 
 def test_history_turns_for_llm_respects_cache_size_floor():
     """When the cache size is smaller than the cap, we use the cache size."""
-    from ultron.llm.inference import LLMEngine
+    from kenning.llm.inference import LLMEngine
 
-    cfg = UltronConfig()
+    cfg = KenningConfig()
     cfg.memory.recent_turns = 2
     cfg.memory.history_turns_for_llm = 10
     set_config(cfg)
@@ -342,4 +342,4 @@ def test_history_turns_for_llm_respects_cache_size_floor():
         # Capped at min(history_turns_for_llm=10, recent_turns=2) -> 2.
         assert recent_calls["asked_for"] == 2
     finally:
-        set_config(UltronConfig())
+        set_config(KenningConfig())

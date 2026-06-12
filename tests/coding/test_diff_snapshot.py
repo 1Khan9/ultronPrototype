@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.diff_snapshot import (
+from kenning.coding.diff_snapshot import (
     DEFAULT_GIT_TIMEOUT_SECONDS,
     DIFF_PATCH_FILENAME,
     REGISTRY_KEY_LAST_DIFF,
@@ -23,7 +23,7 @@ from ultron.coding.diff_snapshot import (
     read_persisted_diff,
     salvage_on_error,
 )
-from ultron.coding.session_registry import (
+from kenning.coding.session_registry import (
     SessionRegistry,
     reset_session_registries_for_testing,
 )

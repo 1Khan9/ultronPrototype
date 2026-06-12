@@ -1,10 +1,10 @@
-"""Tests for ultron.streaming.coordinator."""
+"""Tests for kenning.streaming.coordinator."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.streaming import coordinator as co
+from kenning.streaming import coordinator as co
 
 
 # ---------------------------------------------------------------------------

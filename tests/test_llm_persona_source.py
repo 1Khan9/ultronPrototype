@@ -38,7 +38,7 @@ def patch_persona_cfg(monkeypatch):
     """Return a function that swaps ``get_config().llm.persona`` for the
     test's duration. Restores the real config on teardown.
     """
-    from ultron.config import get_config, LLMPersonaConfig
+    from kenning.config import get_config, LLMPersonaConfig
 
     real_persona = get_config().llm.persona
 
@@ -69,7 +69,7 @@ def patch_persona_cfg(monkeypatch):
 
 def test_config_source_uses_cfg_system_prompt(patch_persona_cfg):
     """source='config' (legacy): system_prompt comes from cfg.system_prompt."""
-    from ultron.llm.inference import LLMEngine
+    from kenning.llm.inference import LLMEngine
 
     patch_persona_cfg(source="config")
     engine = LLMEngine(runtime="http_server")
@@ -93,7 +93,7 @@ def test_workspace_source_loads_from_persona_files(
     rules live in background mode only, to keep the voice-path prompt
     short. SOUL.md absorbs the voice-relevant rules.
     """
-    from ultron.llm.inference import LLMEngine
+    from kenning.llm.inference import LLMEngine
 
     patch_persona_cfg(
         source="workspace",
@@ -116,7 +116,7 @@ def test_explicit_system_prompt_overrides_both(
     patch_persona_cfg, workspace_with_persona,
 ):
     """An explicit ``system_prompt=`` arg wins over both sources."""
-    from ultron.llm.inference import LLMEngine
+    from kenning.llm.inference import LLMEngine
 
     patch_persona_cfg(
         source="workspace",
@@ -145,7 +145,7 @@ def test_workspace_source_hot_reloads_on_soul_edit(
     spec asks for: 'modify SOUL.md, verify next response reflects the
     change without restart.'
     """
-    from ultron.llm.inference import LLMEngine
+    from kenning.llm.inference import LLMEngine
 
     patch_persona_cfg(
         source="workspace",
@@ -182,8 +182,8 @@ def test_workspace_empty_falls_back_to_cfg_system_prompt(
 ):
     """source='workspace' but the workspace is empty: behaviour falls
     back to cfg.system_prompt when fallback flag is set."""
-    from ultron.llm.inference import LLMEngine
-    from ultron.config import get_config
+    from kenning.llm.inference import LLMEngine
+    from kenning.config import get_config
 
     empty_ws = tmp_path / "empty_ws"
     empty_ws.mkdir()  # no persona files
@@ -208,7 +208,7 @@ def test_workspace_empty_no_fallback_yields_empty_prompt(
     patch_persona_cfg, tmp_path,
 ):
     """If fallback is disabled, the system prompt is genuinely empty."""
-    from ultron.llm.inference import LLMEngine
+    from kenning.llm.inference import LLMEngine
 
     empty_ws = tmp_path / "empty_ws"
     empty_ws.mkdir()
@@ -233,7 +233,7 @@ def test_self_system_prompt_attr_reflects_resolved_value(
     """Some consumers (tests, debug log dumps) read engine.system_prompt
     directly. After a turn, that attribute must reflect the resolved
     value, not a stale construction-time snapshot."""
-    from ultron.llm.inference import LLMEngine
+    from kenning.llm.inference import LLMEngine
 
     patch_persona_cfg(
         source="workspace",
@@ -249,5 +249,5 @@ def test_default_persona_source_is_workspace():
     """Phase 1 set workspace as the default. Anyone constructing
     LLMEngine without an override should get the workspace path.
     """
-    from ultron.config import get_config
+    from kenning.config import get_config
     assert get_config().llm.persona.source == "workspace"

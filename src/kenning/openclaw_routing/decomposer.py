@@ -24,9 +24,9 @@ import re
 from dataclasses import dataclass
 from typing import Any, List
 
-from ultron.config import get_config
-from ultron.openclaw_routing.intents import HybridSubtask
-from ultron.utils.logging import get_logger
+from kenning.config import get_config
+from kenning.openclaw_routing.intents import HybridSubtask
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_routing.decomposer")
 
@@ -117,7 +117,7 @@ class HybridTaskDecomposer:
         """
         if self._llm is None:
             return ""
-        from ultron.llm.self_consistency import (
+        from kenning.llm.self_consistency import (
             json_winner_aggregator,
             run_self_consistency,
             should_apply_self_consistency,
@@ -161,7 +161,7 @@ class HybridTaskDecomposer:
         if self._llm is None or not broken_output:
             return ""
         try:
-            from ultron.llm.requery import RequeryLoop, RequeryReason
+            from kenning.llm.requery import RequeryLoop, RequeryReason
         except Exception:  # noqa: BLE001
             return ""
         try:
@@ -179,7 +179,7 @@ class HybridTaskDecomposer:
             return (False, RequeryReason.FORMAT, "not a valid subtasks JSON object")
 
         def _generate(messages) -> str:
-            # ultron's LLMEngine.generate takes a single prompt string, so
+            # kenning's LLMEngine.generate takes a single prompt string, so
             # render the temp message list (prompt + broken output +
             # remediation) back into one prompt.
             parts: list[str] = []

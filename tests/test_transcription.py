@@ -18,7 +18,7 @@ import pytest
     reason="set PYTEST_RUN_GPU_TESTS=1 to load CUDA models",
 )
 def test_whisper_transcribes_silence_to_empty():
-    from ultron.transcription import WhisperEngine
+    from kenning.transcription import WhisperEngine
 
     with WhisperEngine() as stt:
         silence = np.zeros(16000, dtype=np.float32)  # 1s of silence
@@ -34,7 +34,7 @@ def test_whisper_transcribes_silence_to_empty():
     reason="set PYTEST_RUN_GPU_TESTS=1 to load CUDA models",
 )
 def test_whisper_handles_empty_input():
-    from ultron.transcription import WhisperEngine
+    from kenning.transcription import WhisperEngine
 
     with WhisperEngine() as stt:
         assert stt.transcribe(np.zeros(0, dtype=np.float32)) == ""

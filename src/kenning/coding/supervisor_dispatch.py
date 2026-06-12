@@ -1,10 +1,10 @@
 """Supervisor dispatch -- narration + barge-in + enriched TaskRequest.
 
-Sits on top of :class:`ultron.coding.project_supervisor.ProjectSupervisor`
+Sits on top of :class:`kenning.coding.project_supervisor.ProjectSupervisor`
 and turns a :class:`SupervisorDecision` into the actual side effects:
 
   * Narrate the decision via TTS with a barge-in window (Phase D).
-  * Build an enriched :class:`ultron.coding.bridge.TaskRequest` that
+  * Build an enriched :class:`kenning.coding.bridge.TaskRequest` that
     includes the project digest + file-tree summary + entry-point
     hints in the prompt body (Phase E).
   * Return a :class:`DispatchOutcome` describing what the orchestrator
@@ -28,23 +28,23 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable, List, Optional
 
-from ultron.coding.bridge import TaskRequest
-from ultron.coding.project_digest import (
+from kenning.coding.bridge import TaskRequest
+from kenning.coding.project_digest import (
     DigestRequest,
     LLMCallable,
     ProjectDigest,
     generate_digest,
 )
-from ultron.coding.project_index import ProjectIndex, ProjectIndexEntry
-from ultron.coding.project_introspect import ProjectSnapshot, snapshot
-from ultron.coding.project_supervisor import (
+from kenning.coding.project_index import ProjectIndex, ProjectIndexEntry
+from kenning.coding.project_introspect import ProjectSnapshot, snapshot
+from kenning.coding.project_supervisor import (
     ProjectSupervisor,
     SupervisorAction,
     SupervisorDecision,
     SupervisorInputs,
 )
 
-logger = logging.getLogger("ultron.coding.supervisor_dispatch")
+logger = logging.getLogger("kenning.coding.supervisor_dispatch")
 
 
 # ---------------------------------------------------------------------------
@@ -249,8 +249,8 @@ class SupervisorDispatchController:
         """Build a short, TTS-safe narration line for the decision.
 
         Naming follows the TTS-safety rules surfaced by
-        :mod:`ultron.coding.voice_lock` and the lesson from
-        :mod:`ultron.coding.runner` -- never speak absolute Windows
+        :mod:`kenning.coding.voice_lock` and the lesson from
+        :mod:`kenning.coding.runner` -- never speak absolute Windows
         paths with backslashes, drive letters, or colons.
         """
         if decision.action == SupervisorAction.RESUME:
@@ -536,7 +536,7 @@ class SupervisorDispatchController:
 
         Convenience wrapper that pulls language + entry-points from a
         fresh snapshot and forwards to
-        :func:`ultron.coding.project_digest.generate_digest`. Used by
+        :func:`kenning.coding.project_digest.generate_digest`. Used by
         the orchestrator's TaskHandle COMPLETE listener.
         """
         snap = snapshot(project_path, use_cache=False)
@@ -564,7 +564,7 @@ def _speakable(text: str) -> str:
     """Strip path-like noise so TTS doesn't choke on a project name.
 
     Mirrors the discipline in
-    :mod:`ultron.coding.runner.completion_narration`: never speak
+    :mod:`kenning.coding.runner.completion_narration`: never speak
     backslashes, drive letters, or colons; just the leaf name.
     """
     if not text:

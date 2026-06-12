@@ -6,7 +6,7 @@ import logging
 
 import pytest
 
-from ultron.llm import context_window_guard as cwg
+from kenning.llm import context_window_guard as cwg
 
 
 # ----------------------------------------------------------------------
@@ -204,7 +204,7 @@ def test_run_guard_or_raise_passes_on_healthy_budget() -> None:
 
 
 def test_run_guard_or_raise_logs_warn(caplog) -> None:
-    with caplog.at_level(logging.WARNING, logger="ultron.llm.context_window_guard"):
+    with caplog.at_level(logging.WARNING, logger="kenning.llm.context_window_guard"):
         cwg.run_guard_or_raise(models_config_tokens=6000)
     assert any("close to the floor" in record.message for record in caplog.records)
 

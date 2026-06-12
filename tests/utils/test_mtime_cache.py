@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.utils.mtime_cache`."""
+"""Tests for :mod:`kenning.utils.mtime_cache`."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.utils.mtime_cache import MtimeCache, MtimeCacheError, open_mtime_cache
+from kenning.utils.mtime_cache import MtimeCache, MtimeCacheError, open_mtime_cache
 
 
 def test_constructor_rejects_non_path():

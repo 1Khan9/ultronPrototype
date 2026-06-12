@@ -1,4 +1,4 @@
-"""Tests for ``ultron.openclaw_bridge.browser.BrowserTool``."""
+"""Tests for ``kenning.openclaw_bridge.browser.BrowserTool``."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from ultron.errors import OpenClawToolError
-from ultron.openclaw_bridge.browser import (
+from kenning.errors import OpenClawToolError
+from kenning.openclaw_bridge.browser import (
     ActionResult,
     BrowserTool,
     NavigateResult,
@@ -17,7 +17,7 @@ from ultron.openclaw_bridge.browser import (
     ScreenshotResult,
     Snapshot,
 )
-from ultron.openclaw_bridge.client import ToolInvocationResult
+from kenning.openclaw_bridge.client import ToolInvocationResult
 
 
 def _make_tool_result(success: bool, text: str = "", error: str = "") -> ToolInvocationResult:
@@ -46,7 +46,7 @@ def test_construction_requires_client() -> None:
 
 def test_default_agent_id(fake_client: Any) -> None:
     tool = BrowserTool(fake_client)
-    assert tool._agent_id == "ultron-main"                  # noqa: SLF001
+    assert tool._agent_id == "kenning-main"                  # noqa: SLF001
     assert tool._default_timeout_s == 90.0                   # noqa: SLF001
 
 

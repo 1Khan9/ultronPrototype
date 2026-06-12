@@ -1,4 +1,4 @@
-"""Ultron MCP server.
+"""Kenning MCP server.
 
 One server hosts both the Qwen-facing supervisor surface (called as
 direct Python methods, no transport) and the Claude-facing worker
@@ -30,8 +30,8 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from config import settings
-from ultron.coding.audit import SessionAuditWriter
-from ultron.coding.session import (
+from kenning.coding.audit import SessionAuditWriter
+from kenning.coding.session import (
     ClarificationRequest,
     CompletionClaim,
     FollowupKind,
@@ -40,9 +40,9 @@ from ultron.coding.session import (
     SessionStatus,
     SessionStore,
 )
-from ultron.errors import FilesystemError, MCPServerError
-from ultron.resilience import get_error_log
-from ultron.utils.logging import get_logger
+from kenning.errors import FilesystemError, MCPServerError
+from kenning.resilience import get_error_log
+from kenning.utils.logging import get_logger
 
 logger = get_logger("coding.mcp_server")
 
@@ -141,11 +141,11 @@ def _set_future_exception_safe(future: asyncio.Future, exc: BaseException) -> No
 
 
 # ---------------------------------------------------------------------------
-# UltronMCPServer
+# KenningMCPServer
 # ---------------------------------------------------------------------------
 
 
-class UltronMCPServer:
+class KenningMCPServer:
     """Owns the FastMCP instance, the session store, and the SSE lifecycle.
 
     Args:
@@ -304,14 +304,14 @@ class UltronMCPServer:
     # and truncation logic lives in projections.py.
 
     def get_status_delta(self, session_id: str):
-        from ultron.coding.projections import project_status_delta
+        from kenning.coding.projections import project_status_delta
         return project_status_delta(self.store.get(session_id))
 
     def get_clarification_context(
         self, session_id: str, clarification_question: str,
         options=None, facts_lookup=None,
     ):
-        from ultron.coding.projections import project_clarification_context
+        from kenning.coding.projections import project_clarification_context
         return project_clarification_context(
             self.store.get(session_id),
             clarification_question=clarification_question,
@@ -323,7 +323,7 @@ class UltronMCPServer:
         self, session_id: str, adjustment_text: str,
         facts_lookup=None, conflict_detector=None,
     ):
-        from ultron.coding.projections import project_adjustment_context
+        from kenning.coding.projections import project_adjustment_context
         return project_adjustment_context(
             self.store.get(session_id),
             adjustment_text=adjustment_text,
@@ -335,7 +335,7 @@ class UltronMCPServer:
         self, session_id: str, *, failures, failed_test_names=None,
         failed_test_messages: str = "",
     ):
-        from ultron.coding.projections import project_correction_context
+        from kenning.coding.projections import project_correction_context
         return project_correction_context(
             self.store.get(session_id),
             failures=failures,
@@ -344,7 +344,7 @@ class UltronMCPServer:
         )
 
     def get_completion_context(self, session_id: str):
-        from ultron.coding.projections import project_completion_context
+        from kenning.coding.projections import project_completion_context
         return project_completion_context(self.store.get(session_id))
 
     def send_followup(
@@ -539,9 +539,9 @@ class UltronMCPServer:
         sandbox = Path(settings.CODING_SANDBOX_PATH).resolve()
         # In production the project must live under the sandbox root. Tests
         # often point at tmp_path -- we relax the check there by allowing
-        # any directory if ULTRON_CODING_MCP_ALLOW_ANY_ROOT=1.
+        # any directory if KENNING_CODING_MCP_ALLOW_ANY_ROOT=1.
         import os
-        relax = os.environ.get("ULTRON_CODING_MCP_ALLOW_ANY_ROOT") == "1"
+        relax = os.environ.get("KENNING_CODING_MCP_ALLOW_ANY_ROOT") == "1"
         if not relax:
             try:
                 project_root.relative_to(sandbox)
@@ -595,7 +595,7 @@ class UltronMCPServer:
 
         @self._mcp.tool(
             description=(
-                "Ask the supervisor (Ultron) for information you need to "
+                "Ask the supervisor (Kenning) for information you need to "
                 "proceed. The supervisor may answer from stored context or "
                 "escalate to the user. Set urgency='preference' if you have "
                 "a sensible default and just want input; 'blocking' if you "
@@ -848,7 +848,7 @@ class UltronMCPServer:
                         pass
 
         self._server_thread = threading.Thread(
-            target=_run, daemon=True, name="ultron-mcp-server",
+            target=_run, daemon=True, name="kenning-mcp-server",
         )
         self._server_thread.start()
         if not self._started.wait(timeout=ready_timeout_s):
@@ -879,7 +879,7 @@ class UltronMCPServer:
             get_error_log().record(err, dependency="mcp_server")
             raise err from original
         logger.info(
-            "Ultron MCP server listening on http://%s:%d%s",
+            "Kenning MCP server listening on http://%s:%d%s",
             self.host, self.port, self.sse_path,
         )
 

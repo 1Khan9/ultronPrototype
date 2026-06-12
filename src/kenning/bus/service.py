@@ -41,9 +41,9 @@ import time
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
-from ultron.bus.event import BusEvent, EventPayload
+from kenning.bus.event import BusEvent, EventPayload
 
-logger = logging.getLogger("ultron.bus")
+logger = logging.getLogger("kenning.bus")
 
 # Callback type alias. Callbacks receive the full :class:`EventPayload`
 # (envelope), not just the properties dict, so subscribers can read the
@@ -64,7 +64,7 @@ _WILDCARD = "*"
 DEFAULT_SLOW_SUBSCRIBER_WARN_MS: float = 15.0
 
 # Optional cross-module fail-open counter hook. Set by
-# ``ultron.resilience.fail_open_log`` when wired in the orchestrator
+# ``kenning.resilience.fail_open_log`` when wired in the orchestrator
 # so the bus's own slow-subscriber events get tallied alongside other
 # fail-open paths for the startup summary. The bus does NOT import
 # the resilience module (avoiding a circular dependency); the
@@ -79,7 +79,7 @@ def set_slow_subscriber_recorder(
 
     The recorder receives ``(category, reason)`` where category is
     ``"bus_slow_subscriber"`` and reason names the event type. Used by
-    :mod:`ultron.resilience.fail_open_log` to aggregate fail-open
+    :mod:`kenning.resilience.fail_open_log` to aggregate fail-open
     events across subsystems. Pass ``None`` to clear the hook.
     """
     global _SLOW_SUBSCRIBER_RECORDER

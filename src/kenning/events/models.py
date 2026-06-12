@@ -9,7 +9,7 @@ kind, session, time window, and chain integrity:
 * ``timestamp`` -- unix epoch seconds (monotonic-aligned at the
   publishing thread; the store may use it for ordering).
 * ``payload`` -- the event's structured data (already validated by
-  the producing :class:`ultron.bus.event.BusEvent`).
+  the producing :class:`kenning.bus.event.BusEvent`).
 * ``chain_prev_hash`` / ``chain_hash`` -- T13 tamper-evidence.
 
 The store is JSON-encodable end-to-end. The canonical encoding helper

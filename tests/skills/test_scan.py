@@ -2,7 +2,7 @@
 
 The scan protects the LLM system prompt from prompt-injection content
 dropped into UNTRUSTED skill sources (user / project / evolution dirs).
-PUBLIC (ultron-shipped) skills are trusted and never scanned.
+PUBLIC (kenning-shipped) skills are trusted and never scanned.
 """
 
 from __future__ import annotations
@@ -11,9 +11,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from ultron.skills.loader import load_skills_from_directory
-from ultron.skills.models import SkillSource
-from ultron.skills.scan import scan_skill, scan_skill_content
+from kenning.skills.loader import load_skills_from_directory
+from kenning.skills.models import SkillSource
+from kenning.skills.scan import scan_skill, scan_skill_content
 
 
 # ---------------------------------------------------------------------------

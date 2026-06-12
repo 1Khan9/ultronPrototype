@@ -16,7 +16,7 @@ and on the rolling failure window.
 
 Usage::
 
-    from ultron.resilience import CircuitBreaker, CircuitOpenError
+    from kenning.resilience import CircuitBreaker, CircuitOpenError
 
     brave_breaker = CircuitBreaker(
         name="brave",
@@ -43,7 +43,7 @@ from collections import deque
 from enum import Enum
 from typing import Callable, Deque, TypeVar
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("resilience.circuit_breaker")
 

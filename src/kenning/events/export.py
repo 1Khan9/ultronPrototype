@@ -1,7 +1,7 @@
 """Session-export zip builder.
 
 The OpenHands V1 server's ``export_conversation`` method zips every event
-+ a ``meta.json`` for a downloadable trajectory. Ultron's analog lives
++ a ``meta.json`` for a downloadable trajectory. Kenning's analog lives
 here -- ``export_session_to_bytes`` returns an in-memory zip; the path
 variant writes to disk via the idempotent installer for the
 "send Anthropic / GitHub a reproducer" use case.
@@ -19,9 +19,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from ultron.events.chain import verify_chain
-from ultron.events.models import StoredEvent
-from ultron.events.store import EventStore
+from kenning.events.chain import verify_chain
+from kenning.events.models import StoredEvent
+from kenning.events.store import EventStore
 
 logger = logging.getLogger(__name__)
 

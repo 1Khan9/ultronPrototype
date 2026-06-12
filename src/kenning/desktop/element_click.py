@@ -19,7 +19,7 @@ Surface:
   :class:`UIElementMatch` records carrying name + control_type +
   enabled state + rect + centre + owning window + is_exact flag.
 * :func:`click_element_by_name` -- the headline. Find + click via
-  the gated :class:`ultron.desktop.input_control.InputController`.
+  the gated :class:`kenning.desktop.input_control.InputController`.
   Promotes exact matches over substring; promotes window-scoped
   matches over global ones (when ``window_title`` is set).
 * :func:`find_text_in_window` -- coordinate-only variant. Returns
@@ -53,8 +53,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
-from ultron.desktop.windows import WindowInfo, enumerate_windows
-from ultron.utils.logging import get_logger
+from kenning.desktop.windows import WindowInfo, enumerate_windows
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.element_click")
 
@@ -342,7 +342,7 @@ def find_elements_by_name(
         matches second (also preserving tree-walk order).
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('element_read')
     needle = (name or "").strip()
     if not needle:
@@ -405,7 +405,7 @@ def click_element_by_name(
 
     This is the primary "act on a button / link / menu by name"
     primitive. Routes the click through
-    :class:`ultron.desktop.input_control.InputController` so the
+    :class:`kenning.desktop.input_control.InputController` so the
     click-preview VLM gate + foreground security check + rate limit +
     safety validator + Cap-3 explicit-intent matcher all apply.
 
@@ -420,7 +420,7 @@ def click_element_by_name(
             the explicit-intent matcher can verify the user actually
             asked for the action.
         controller: :class:`InputController` instance. When None,
-            :func:`ultron.desktop.input_control.get_input_controller`
+            :func:`kenning.desktop.input_control.get_input_controller`
             resolves the module singleton.
         max_windows: cap on windows visited.
         max_elements_per_window: cap on descendants visited per window.
@@ -431,7 +431,7 @@ def click_element_by_name(
         center coordinate + which method actually fired the click.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('element_click')
     types_filter: Optional[tuple[str, ...]] = None
     if control_type is not None:
@@ -461,7 +461,7 @@ def click_element_by_name(
     target = candidates[0]
     if controller is None:
         try:
-            from ultron.desktop.input_control import get_input_controller
+            from kenning.desktop.input_control import get_input_controller
             controller = get_input_controller()
         except Exception as exc:  # noqa: BLE001
             return ClickResult(
@@ -554,7 +554,7 @@ def find_text_in_window(
         no match, pywinauto unavailable, or window-walk failure.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('element_read')
     needle = (text or "")
     if not needle:

@@ -3,7 +3,7 @@
 A strict matcher that fires only on explicit verbatim-recall questions about
 the CURRENT conversation -- "what did I say earlier about the database?",
 "what did you tell me about X?", "remind me what I asked". On a hit the
-orchestrator searches the in-memory :class:`~ultron.memory.dual_history.
+orchestrator searches the in-memory :class:`~kenning.memory.dual_history.
 DualHistoryStore` for the matching verbatim turn(s) and speaks them.
 
 This is distinct from:

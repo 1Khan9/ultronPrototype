@@ -1,6 +1,6 @@
 # OpenClaw integration — Phase 0 verification
 
-This is the running record for the Ultron ↔ OpenClaw peer integration
+This is the running record for the Kenning ↔ OpenClaw peer integration
 work. Phase 0 is the verification gate before any new work begins.
 
 ## Runtime decision: llama-cpp-server, not Ollama
@@ -11,9 +11,9 @@ The integration prompt assumes Ollama is the shared LLM endpoint. We
 prompt. Reasoning is recorded in
 [memory/feedback_llm_runtime_decision.md](<ai-memory-dir>\feedback_llm_runtime_decision.md):
 
-- The Ultron voice pipeline already loads
+- The Kenning voice pipeline already loads
   `models/Qwen3.5-9B-Q4_K_M.gguf` via llama-cpp-python in-process
-  ([src/ultron/llm/inference.py:100](src/ultron/llm/inference.py:100)).
+  ([src/kenning/llm/inference.py:100](src/kenning/llm/inference.py:100)).
 - An Ollama compat test (2026-05-08) showed +1166 MB VRAM regression,
   voice-character drift, and broken EOS handling on this Unsloth quant.
 - Sharing strategy: voice pipeline switches from in-process loader to
@@ -45,25 +45,25 @@ future-Phase-1 reference:
   Reads `models.providers.litellm.{baseUrl, api, apiKey, models}`
   from config, hits `<baseUrl>/chat/completions` directly. Required
   fields: `baseUrl: "http://127.0.0.1:8765/v1"`, `api:
-  "openai-completions"`, `apiKey: "local-ultron"` (placeholder; the
+  "openai-completions"`, `apiKey: "local-kenning"` (placeholder; the
   llama-cpp-server's `--api_key` matches), `models: [{id, name,
   contextWindow, input, reasoning: true}]`.
 
 ## Phase 0 component inventory (autonomous probes)
 
-### Ultron-side (cross-checked against [docs/system_inventory.md](system_inventory.md))
+### Kenning-side (cross-checked against [docs/system_inventory.md](system_inventory.md))
 
 | Area | State |
 |------|-------|
 | Voice / inference stack | All present (LLM, Whisper, Piper, RVC, openWakeWord, VAD, capture). |
-| Coding orchestration | All Phase A + Coding Addendum components present (CodingBridge, DirectClaudeCodeBridge, ProjectRegistry, ProjectResolver, CodingTaskRunner, CodingVoiceController, intent classifier, MCP layer with `UltronMCPServer`, ConversationCoordinator, ProjectSession, prompt templates, Verifier, status narration). |
-| Foundation phase | Complete: unified config (`config.yaml`), typed errors (`src/ultron/errors.py`), circuit breakers + `errors.jsonl` (`src/ultron/resilience/`), capability routing (`src/ultron/openclaw_routing/`), 83 integration tests, 4 ops scripts. |
+| Coding orchestration | All Phase A + Coding Addendum components present (CodingBridge, DirectClaudeCodeBridge, ProjectRegistry, ProjectResolver, CodingTaskRunner, CodingVoiceController, intent classifier, MCP layer with `KenningMCPServer`, ConversationCoordinator, ProjectSession, prompt templates, Verifier, status narration). |
+| Foundation phase | Complete: unified config (`config.yaml`), typed errors (`src/kenning/errors.py`), circuit breakers + `errors.jsonl` (`src/kenning/resilience/`), capability routing (`src/kenning/openclaw_routing/`), 83 integration tests, 4 ops scripts. |
 | Phase 4 deferred wrappers | Wired and tested in this worktree (uncommitted): ClaudeCodeError, AnthropicAPIError, MCPServerError, FilesystemError. |
 | Tests | 699 passing, 15 skipped, 0 failed. |
 | VRAM idle | 2986 MB (under the 3 GB smoke-test threshold). |
 | LLM runtime | llama-cpp-python core importable (v0.3.22). The `[server]` extras are NOT installed yet (`starlette_context`, `pydantic-settings`, `sse-starlette` missing). |
 
-### Ultron system prompt (relevant for Phase 1)
+### Kenning system prompt (relevant for Phase 1)
 
 The hardcoded persona lives at [config.yaml:87 `llm.system_prompt`](../config.yaml). Phase 1 will refactor this into the workspace persona files.
 
@@ -79,7 +79,7 @@ The hardcoded persona lives at [config.yaml:87 `llm.system_prompt`](../config.ya
 | Gateway mode | `local` |
 | Auth token | Present in config (redacted from this doc; do not commit). |
 | Channels configured | None |
-| MCP servers configured | None (Ultron MCP not yet registered with OpenClaw) |
+| MCP servers configured | None (Kenning MCP not yet registered with OpenClaw) |
 | Models configured | Only the `openai/gpt-5.5` placeholder (no API key set) — this is OpenClaw's default placeholder, not a working provider |
 | Default agent | `main`, runtime "OpenClaw Pi Default", placeholder model `gpt-5.5` |
 | Heartbeat default | 30 min on agent `main` |
@@ -88,7 +88,7 @@ The hardcoded persona lives at [config.yaml:87 `llm.system_prompt`](../config.ya
 
 ### Workspace persona files
 
-Stock OpenClaw boilerplate exists at the workspace dir — six prompt-named files (SOUL.md, AGENTS.md, IDENTITY.md, USER.md, HEARTBEAT.md, BOOTSTRAP.md) plus a 7th (TOOLS.md). All contain templating instructions, NO Ultron-specific content. Phase 1 replaces this with content migrated from `config.yaml:llm.system_prompt`.
+Stock OpenClaw boilerplate exists at the workspace dir — six prompt-named files (SOUL.md, AGENTS.md, IDENTITY.md, USER.md, HEARTBEAT.md, BOOTSTRAP.md) plus a 7th (TOOLS.md). All contain templating instructions, NO Kenning-specific content. Phase 1 replaces this with content migrated from `config.yaml:llm.system_prompt`.
 
 ### `openclaw doctor` findings (non-blocking, but worth noting)
 
@@ -101,11 +101,11 @@ Stock OpenClaw boilerplate exists at the workspace dir — six prompt-named file
 
 | Criterion | Status |
 |-----------|--------|
-| All existing Ultron tests pass | ✅ 699 / 699 (15 skipped) |
+| All existing Kenning tests pass | ✅ 699 / 699 (15 skipped) |
 | Voice pipeline smoke test produces audible output in baseline-equivalent time | ⏸ **needs user** (interactive — speak into mic) |
 | `openclaw doctor` reports no errors | ⚠ findings above are non-blocking; no errors |
 | `openclaw agent` produces in-character response | ⏸ **needs user** (no working model provider yet — see Phase 0.7 below) |
-| VRAM during OpenClaw turn equals VRAM during Ultron voice turn (proves sharing) | ⏸ **needs user** (depends on the smoke-test loads above) |
+| VRAM during OpenClaw turn equals VRAM during Kenning voice turn (proves sharing) | ⏸ **needs user** (depends on the smoke-test loads above) |
 | `docs/system_inventory.md` and `baselines.json` updated | ✅ Inventory cross-checked; `phase_0_openclaw_integration` block added (partial) |
 
 ## Patch applied — OpenClaw points at local llama-cpp-server
@@ -133,7 +133,7 @@ repo):
     "providers": {
       "lmstudio": {
         "baseUrl": "http://127.0.0.1:8765",
-        "apiKey": "local-ultron",
+        "apiKey": "local-kenning",
         "models": [
           {
             "id": "qwen3.5-9b-local",
@@ -153,7 +153,7 @@ repo):
 }
 ```
 
-The placeholder API key `local-ultron` is intentionally non-secret —
+The placeholder API key `local-kenning` is intentionally non-secret —
 the loopback-only server is gated by the same value end-to-end. Rotate
 to a real token + env-var reference (`apiKey: "${LM_API_TOKEN}"`) if
 hardening for non-loopback exposure later.
@@ -171,9 +171,9 @@ default. `Local: yes` confirms the provider knows it's a self-hosted
 endpoint.
 
 **Agent design choice deferred:** kept the existing `main` agent as
-the default. Did NOT create a separate `ultron` agent yet — that's a
+the default. Did NOT create a separate `kenning` agent yet — that's a
 Phase 2 design decision. Both routes work for the Phase 0 reachability
-test; a dedicated `ultron` agent only matters once we want
+test; a dedicated `kenning` agent only matters once we want
 agent-specific config (different system prompt, different tools, etc.).
 
 ## Port choice (8765, not 8080)
@@ -196,7 +196,7 @@ To see the full reserved range on Windows:
 ## Server launcher
 
 [scripts/start_llamacpp_server.py](../scripts/start_llamacpp_server.py)
-is the canonical way to run the server, mirroring Ultron voice-pipeline
+is the canonical way to run the server, mirroring Kenning voice-pipeline
 llama-cpp params (n_ctx=8192, n_gpu_layers=-1, flash_attn=on,
 type_k=type_v=8 / Q8_0 KV cache) so character + VRAM behaviour stay
 identical when we eventually switch the voice path off in-process
@@ -207,7 +207,7 @@ cd C:\STC\ultronPrototype
 .venv\Scripts\python.exe scripts/start_llamacpp_server.py
 ```
 
-The wrapper imports `ultron` first so the bundled torch CUDA DLLs are
+The wrapper imports `kenning` first so the bundled torch CUDA DLLs are
 discovered before `llama_cpp` initialises. Running
 `python -m llama_cpp.server` directly fails on Windows with
 "Could not find module 'llama.dll'" because of this.
@@ -257,7 +257,7 @@ verification-criteria table.
   shared workspace (`~/.openclaw/workspace/{IDENTITY,SOUL,USER,
   AGENTS,HEARTBEAT,BOOTSTRAP}.md`).
 - `PersonaLoader` exposes four modes: `user_facing`, `background`,
-  `heartbeat`, `bootstrap`. User-facing channels get full Ultron
+  `heartbeat`, `bootstrap`. User-facing channels get full Kenning
   character; internal workers get a plain task prompt — better
   reliability + no character drift.
 - `LLMEngine` resolves the system prompt fresh on every turn via
@@ -298,7 +298,7 @@ duplication goes away) — within budget.
 
 | Criterion | Status | Notes |
 |-----------|--------|-------|
-| All existing Ultron tests pass | ✅ | 699 / 699 (15 skipped), 0 failed |
+| All existing Kenning tests pass | ✅ | 699 / 699 (15 skipped), 0 failed |
 | Voice pipeline produces audible output in baseline-equivalent time | ✅ | Synthesis path measured, TTFA ~655 ms median, matches Foundation phase. Audible-output via mic + speakers was not run (interactive). |
 | OpenClaw `doctor` reports no errors | ⚠ | Non-blocking findings only (no command owner, missing skill bins for cloud providers). |
 | OpenClaw can reach the local LLM | ✅ | After provider swap to litellm + correct baseUrl + `api: openai-completions`. VRAM monitor confirms inference happens. |
@@ -308,9 +308,9 @@ duplication goes away) — within budget.
 ### What lives where now
 
 - **OpenClaw config** at `~\.openclaw\openclaw.json` — has the
-  litellm provider, the test agent (`ultron-test`, messaging tools
+  litellm provider, the test agent (`kenning-test`, messaging tools
   profile), `reasoning: true` on the model, default agent set to
-  `ultron-test`. Three pre-edit backups exist:
+  `kenning-test`. Three pre-edit backups exist:
   `openclaw.json.pre-llamacpp-bak`, `openclaw.json.pre-test-agent-bak`,
   `openclaw.json.pre-litellm-bak`.
 - **Server launcher** at [scripts/start_llamacpp_server.py](../scripts/start_llamacpp_server.py)

@@ -14,7 +14,7 @@ shape forces the model into a structured 8-section summary:
 8. Next Step / Required Files
 
 The summary is the entire compacted history — everything before the
-condenser's call is dropped. Ultron's variant adds:
+condenser's call is dropped. Kenning's variant adds:
 
 * A voice-friendly 3-section compressed renderer (``compact_for_voice``)
   that picks Primary Intent + Pending Tasks + Next Step to emit a
@@ -33,7 +33,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Optional, Sequence
 
-from ultron.llm.condensers.base import (
+from kenning.llm.condensers.base import (
     CondenseResult,
     Condenser,
     Turn,

@@ -4,11 +4,11 @@ Catalog 11 (clawhub-browser-agent) meta-pattern -- clean-room synthesis.
 
 clawhub-browser-agent does NOT itself implement an agent loop (it is a
 thin CDP primitives wrapper). The catalog's genuine intellectual
-contribution is the observation that ultron already repeats an
+contribution is the observation that kenning already repeats an
 agent-loop shape in several independent places --
-:class:`ultron.desktop.browser_sequence.BrowserSequenceRunner`,
-:class:`ultron.desktop.sequence.DesktopSequenceRunner`,
-:class:`ultron.coding.runner.CodingTaskRunner`, and the gaming-engage
+:class:`kenning.desktop.browser_sequence.BrowserSequenceRunner`,
+:class:`kenning.desktop.sequence.DesktopSequenceRunner`,
+:class:`kenning.coding.runner.CodingTaskRunner`, and the gaming-engage
 state machine -- each with its own ad-hoc step memory, termination
 condition, and failure handling, with no shared safety floor.
 
@@ -53,7 +53,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Optional, Sequence
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("agent_loop.base")
 

@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.coding.ai_comment_watcher`."""
+"""Tests for :mod:`kenning.coding.ai_comment_watcher`."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.ai_comment_watcher import (
+from kenning.coding.ai_comment_watcher import (
     AI_COMMENT_REGEX,
     AICommentKind,
     AICommentTrigger,

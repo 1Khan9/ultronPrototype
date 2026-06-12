@@ -32,14 +32,14 @@ both layers:
   returns an "unavailable" result without crashing.
 
 The Tesseract binary location can be configured via the
-``ULTRON_TESSERACT_CMD`` environment variable; otherwise pytesseract
+``KENNING_TESSERACT_CMD`` environment variable; otherwise pytesseract
 uses its default PATH lookup. Setting the path explicitly is the
 right move on Windows where the installer drops the binary at
 ``C:\\Program Files\\Tesseract-OCR\\tesseract.exe`` and PATH is not
 always updated.
 
-Region capture is delegated to ultron's existing
-:class:`ultron.desktop.capture.ScreenCapture` so the same mss
+Region capture is delegated to kenning's existing
+:class:`kenning.desktop.capture.ScreenCapture` so the same mss
 thread-locality + taint-tracker contract applies.
 
 Safety
@@ -66,7 +66,7 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.ocr")
 
@@ -85,7 +85,7 @@ DEFAULT_LANG: str = "eng"
 #: Environment variable that, when set, points pytesseract at a
 #: specific tesseract binary. Useful on Windows where the installer
 #: doesn't always update PATH.
-TESSERACT_CMD_ENV: str = "ULTRON_TESSERACT_CMD"
+TESSERACT_CMD_ENV: str = "KENNING_TESSERACT_CMD"
 
 
 @dataclass(frozen=True)
@@ -294,7 +294,7 @@ def ocr_screen_region(
 ) -> OCRResult:
     """OCR an arbitrary screen rectangle.
 
-    Captures via ultron's existing :class:`ScreenCapture` (so the
+    Captures via kenning's existing :class:`ScreenCapture` (so the
     taint tracker stamps the bytes as ``screen_context``) then
     delegates to :func:`ocr_image_bytes`.
 
@@ -305,13 +305,13 @@ def ocr_screen_region(
         lang: Tesseract language.
         capture: optional :class:`ScreenCapture` instance for tests;
             production calls resolve the module singleton via
-            :func:`ultron.desktop.capture.get_screen_capture`.
+            :func:`kenning.desktop.capture.get_screen_capture`.
 
     Returns:
         :class:`OCRResult`.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('ocr')
     region = (int(x), int(y), int(width), int(height))
     if width <= 0 or height <= 0:
@@ -322,7 +322,7 @@ def ocr_screen_region(
     cap = capture
     if cap is None:
         try:
-            from ultron.desktop.capture import get_screen_capture
+            from kenning.desktop.capture import get_screen_capture
             cap = get_screen_capture()
         except Exception as exc:  # noqa: BLE001
             return OCRResult(
@@ -368,12 +368,12 @@ def ocr_screen_monitor(
         capture: optional :class:`ScreenCapture` instance for tests.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('ocr')
     cap = capture
     if cap is None:
         try:
-            from ultron.desktop.capture import get_screen_capture
+            from kenning.desktop.capture import get_screen_capture
             cap = get_screen_capture()
         except Exception as exc:  # noqa: BLE001
             return OCRResult(

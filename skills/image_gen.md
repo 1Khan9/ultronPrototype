@@ -20,7 +20,7 @@ triggers:
 
 The user wants an image generated.
 
-* Ultron's media-generation backend is local-only (ComfyUI). Paid
+* Kenning's media-generation backend is local-only (ComfyUI). Paid
   cloud APIs (Fal, Runway, Suno, OpenAI image-gen, Google Imagen) are
   explicitly out of scope.
 * When the request is concrete enough to dispatch ("make a picture of

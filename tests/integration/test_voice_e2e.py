@@ -61,7 +61,7 @@ _HARNESS_PATH = (
 # EVERY RoutingIntentKind through the real Kokoro->Moonshine acoustic path
 # (with an enum-coverage guard); ``short_circuits`` does the same for every
 # orchestrator strict matcher (+ a negative control); ``full_loop`` runs
-# complete turns (audio -> STT -> gate -> LLM with history -> Ultron-voice
+# complete turns (audio -> STT -> gate -> LLM with history -> Kenning-voice
 # TTS, incl. a LIVE search turn); ``coding`` exercises the voice coding
 # engineer with the REAL coding CLI (create -> sandbox run -> edit -> re-run;
 # costs real API tokens).
@@ -78,7 +78,7 @@ def _load_harness() -> Any:
     skip path never load the heavy modules the harness pulls in.
     """
     spec = importlib.util.spec_from_file_location(
-        "ultron_autonomous_e2e_harness", _HARNESS_PATH,
+        "kenning_autonomous_e2e_harness", _HARNESS_PATH,
     )
     if spec is None or spec.loader is None:        # pragma: no cover - defensive
         raise ImportError(f"cannot load harness from {_HARNESS_PATH}")

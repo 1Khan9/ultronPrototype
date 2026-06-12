@@ -4,7 +4,7 @@ Pattern lifted in spirit (not in source) from aider's
 ``linter.py::py_lint`` (Apache 2.0; see ``THIRD_PARTY_NOTICES.md``).
 Three layers run in cascade:
 
-  1. **basic** — :func:`~ultron.coding.tree_sitter_lint.tree_sitter_lint`
+  1. **basic** — :func:`~kenning.coding.tree_sitter_lint.tree_sitter_lint`
      walks the AST for ERROR / is_missing nodes. Cheap (~10-50 ms per
      file).
   2. **compile** — Python's stdlib ``compile(code, fname, "exec")``.
@@ -47,10 +47,10 @@ import traceback
 from pathlib import Path
 from typing import List, Optional
 
-from ultron.coding.tree_sitter_lint import LintError, LintReport, tree_sitter_lint
+from kenning.coding.tree_sitter_lint import LintError, LintReport, tree_sitter_lint
 
 
-logger = logging.getLogger("ultron.coding.python_lint")
+logger = logging.getLogger("kenning.coding.python_lint")
 
 
 # Catalog T8: FATAL flake8 rules ONLY. Anything that "guaranteed
@@ -70,7 +70,7 @@ DEFAULT_FLAKE8_TIMEOUT = 5.0
 
 
 # Subprocess creation flag for Windows — keeps the CREATE_NO_WINDOW
-# discipline that the rest of ultron honours so flake8 doesn't flash
+# discipline that the rest of kenning honours so flake8 doesn't flash
 # a console window when invoked from the FILE_CHANGE listener.
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 

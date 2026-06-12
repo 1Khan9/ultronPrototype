@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.utils.snapshot_guard`."""
+"""Tests for :mod:`kenning.utils.snapshot_guard`."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from ultron.utils.snapshot_guard import (
+from kenning.utils.snapshot_guard import (
     SnapshotGuard,
     StaleSnapshotError,
     matches,

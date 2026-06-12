@@ -1,7 +1,7 @@
 # Comprehensive end-to-end test plan
 
 User-requested exhaustive test architecture covering every subsystem,
-component, and feature of project Ultron. Captures all metrics
+component, and feature of project Kenning. Captures all metrics
 (latency, quality, accuracy, resource usage, intelligence,
 creativity, adaptability, coding ability, web search ability) and
 fixes any bugs discovered without compromising the voice baseline
@@ -32,7 +32,7 @@ contract.
 |---|---|---|
 | Audio capture | AudioCapture, RingBuffer, AudioDeviceError | unit (existing); resource snapshot |
 | VAD | Silero, SpeechEvent, VadResult | unit (existing) |
-| Wake word | openWakeWord, ultron.onnx, hey_jarvis fallback, fired_recently | unit (existing); model presence check |
+| Wake word | openWakeWord, kenning.onnx, hey_jarvis fallback, fired_recently | unit (existing); model presence check |
 | Addressing | rules.py, zero_shot.py, classifier.py | accuracy on labeled set |
 | STT | WhisperEngine | resource snapshot; TTFT contribution |
 | LLM | LLMEngine in_process + http_server, presets, enable_thinking, RAG position, reload_for_preset | TTFT distribution; VRAM peak; preset swap; thinking on/off; RAG position A/B |
@@ -49,7 +49,7 @@ contract.
 | Coding intent | classify, CodingIntentKind | classifier accuracy on labeled utterances |
 | Projects | ProjectRegistry, ProjectResolver, new_sandbox_project | unit (existing); CRUD round-trip |
 | Coordinator | ConversationCoordinator, DecisionPath including FACT_ANSWER (A3), facts_lookup wiring | clarification fast-path coverage |
-| MCP server | UltronMCPServer, lookup_facts (A3) | unit (existing); SSE handshake |
+| MCP server | KenningMCPServer, lookup_facts (A3) | unit (existing); SSE handshake |
 | Narration | StatusNarrator, NarrationDelta | unit (existing) |
 | Projections | 5 projections + ProjectionResult, _finalize_projection | budget-respect under stress |
 | Templates | TemplateRenderer | render-budget enforcement |
@@ -63,7 +63,7 @@ contract.
 | OpenClaw client | OpenClawClient, all CLI methods, plugin methods (A1) | mocked CLI path; structured-failure shapes |
 | Workspace writer | WorkspaceWriter, atomic writes + filelock | concurrent-write integrity (covered) |
 | OpenClaw events | OpenClawEventReceiver | prefix matching; dispatch swallowing |
-| MCP registrar | UltronMcpRegistrar, idempotency, retry | mocked path |
+| MCP registrar | KenningMcpRegistrar, idempotency, retry | mocked path |
 | Bridge holder | OpenClawBridge, from_config / start / shutdown / fire_and_forget / record_heartbeat_alert / auto-resolve | construction with enabled=False vs True+offline |
 | Notifications | NotificationDispatcher | per-event gating; recipient resolution; transport-error fail-open |
 | Heartbeat alerts | HeartbeatAlertLog | record/get/ack/prune |

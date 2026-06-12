@@ -22,7 +22,7 @@ This script is **idempotent + safe**:
 
 Usage::
 
-    # Stop any running Ultron instance first (the qdrant store is
+    # Stop any running Kenning instance first (the qdrant store is
     # held with an exclusive lock).
     python scripts/migrate_embeddings.py
 
@@ -49,7 +49,7 @@ from pathlib import Path
 from typing import List, Optional
 
 
-# Add project root + src/ to path so `from ultron.config import ...` works
+# Add project root + src/ to path so `from kenning.config import ...` works
 # whether you run from project root or wherever.
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -156,8 +156,8 @@ def _embed_and_insert(
     Idempotent: re-running the migration with contextualization on
     reuses the existing summary instead of regenerating.
     """
-    from ultron.config import get_config
-    from ultron.memory.embedder import HybridEmbedder
+    from kenning.config import get_config
+    from kenning.memory.embedder import HybridEmbedder
     from qdrant_client.models import PointStruct, SparseVector
 
     ctx_cfg = get_config().memory.contextual_retrieval
@@ -165,7 +165,7 @@ def _embed_and_insert(
     ctx_gen = None
     if contextualize:
         try:
-            from ultron.memory.contextualizer import ContextGenerator
+            from kenning.memory.contextualizer import ContextGenerator
             ctx_gen = ContextGenerator(eager=True)
             print("  contextual retrieval ENABLED; will generate per-turn "
                   "summaries during re-embed.")
@@ -281,7 +281,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     try:
-        from ultron.config import get_config
+        from kenning.config import get_config
         cfg = get_config()
         new_dim = cfg.embeddings.dense_dim
         new_model = cfg.embeddings.dense_model
@@ -303,10 +303,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         print()
         print("  -> source dim matches target dim; nothing to migrate.")
         print("     If you really need to re-embed (e.g., changed model "
-              "within the same dim), delete data/qdrant and let Ultron "
+              "within the same dim), delete data/qdrant and let Kenning "
               "rebuild from JSONL.")
         # Make sure the old client releases the lock so subsequent runs
-        # of Ultron don't error out.
+        # of Kenning don't error out.
         try:
             old_client.close()
         except Exception:

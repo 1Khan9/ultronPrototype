@@ -1,14 +1,14 @@
-"""Start the shared llama-cpp-server for Ultron + OpenClaw.
+"""Start the shared llama-cpp-server for Kenning + OpenClaw.
 
 This is the OpenAI-compatible HTTP server that exposes the active LLM
 GGUF to both consumers, replacing the in-process llama-cpp-python load
-currently used by Ultron's voice pipeline. The OpenClaw Gateway
+currently used by Kenning's voice pipeline. The OpenClaw Gateway
 connects via ``@openclaw/lmstudio-provider`` configured with
 ``baseUrl: http://127.0.0.1:8765`` (see ``~/.openclaw/openclaw.json``).
 
 Why a Python wrapper rather than ``python -m llama_cpp.server``:
 ``llama_cpp`` needs the bundled torch CUDA DLL directory on PATH on
-Windows. ``ultron.__init__`` adds it automatically; importing ultron
+Windows. ``kenning.__init__`` adds it automatically; importing kenning
 first ensures the load order is right. Running ``python -m
 llama_cpp.server`` directly fails to find ``llama.dll``.
 
@@ -18,10 +18,10 @@ Run from the main checkout (where models/ lives):
     .venv\\Scripts\\python.exe scripts/start_llamacpp_server.py
 
 The server stays in the foreground until Ctrl+C. Send Ctrl+C cleanly to
-unload the model from VRAM. The default ``--api_key local-ultron``
+unload the model from VRAM. The default ``--api_key local-kenning``
 matches the OpenClaw config; rotate later if hardening for non-loopback.
 
-Flags mirror Ultron voice-pipeline llama-cpp config (see
+Flags mirror Kenning voice-pipeline llama-cpp config (see
 [config.yaml:llm](../config.yaml)) so character + VRAM behaviour are
 preserved when we switch the voice path off in-process loading.
 
@@ -100,7 +100,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--host", type=str, default="127.0.0.1")
-    parser.add_argument("--api-key", dest="api_key", type=str, default="local-ultron")
+    parser.add_argument("--api-key", dest="api_key", type=str, default="local-kenning")
     parser.add_argument(
         "--model-alias",
         dest="model_alias",
@@ -153,7 +153,7 @@ def _config_overlay() -> dict[str, Any]:
     """Read ``config.yaml:llm`` and return launcher-relevant fields.
 
     Imports are deferred so the launcher's CLI parsing + tests don't
-    require the ultron package to be importable.
+    require the kenning package to be importable.
     """
     # Make the worktree's src/ importable from any cwd (the launcher is
     # often run from main checkout).
@@ -161,7 +161,7 @@ def _config_overlay() -> dict[str, Any]:
     src = here / "src"
     if str(src) not in sys.path:
         sys.path.insert(0, str(src))
-    from ultron.config import get_config, resolve_path
+    from kenning.config import get_config, resolve_path
 
     cfg = get_config().llm
     overlay: dict[str, Any] = {
@@ -178,7 +178,7 @@ def _resolve_kwargs(args: argparse.Namespace, *, overlay: Optional[dict[str, Any
 
     The overlay (from ``--from-config``) provides defaults that the
     CLI flags can still override. Tests inject ``overlay`` directly to
-    avoid importing the ultron package.
+    avoid importing the kenning package.
     """
     parser = _build_arg_parser()
     cli_set: set[str] = set()
@@ -271,9 +271,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         )
         return 2
 
-    # Crucial: ultron.__init__ adds <venv>/Lib/site-packages/torch/lib to
+    # Crucial: kenning.__init__ adds <venv>/Lib/site-packages/torch/lib to
     # PATH so llama-cpp-python can find its bundled CUDA DLLs.
-    import ultron  # noqa: F401
+    import kenning  # noqa: F401
 
     from llama_cpp.server.app import create_app
     from llama_cpp.server.settings import (

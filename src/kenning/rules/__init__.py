@@ -1,7 +1,7 @@
 """Conditional rule activation with frontmatter ``paths`` / ``intents`` / etc.
 
-This package implements the activation engine for ``.ultron/rules/*.md``
-markdown files (and their global equivalent at ``~/.ultron/rules/``).
+This package implements the activation engine for ``.kenning/rules/*.md``
+markdown files (and their global equivalent at ``~/.kenning/rules/``).
 The frontmatter on each rule file declares per-turn activation
 conditions; the engine evaluates those conditions against the current
 user-transcript / intent / system-state and returns the subset of

@@ -1,7 +1,7 @@
 """STT engine latency benchmark.
 
 Loads the STT engine selected by ``config.yaml`` (via
-:func:`ultron.transcription.make_stt_engine`) and measures
+:func:`kenning.transcription.make_stt_engine`) and measures
 transcription latency on synthetic 16 kHz audio of varying lengths
 (1s, 3s, 5s, 8s). Reports median / p95 / RTF for each length.
 
@@ -10,7 +10,7 @@ swapped a hard-coded WhisperEngine for the production factory so the
 script tracks whichever engine is live (Moonshine / Parakeet /
 Whisper) without script edits.
 
-Run from main checkout (or set ULTRON_LLM_MODEL_PATH=...) so models
+Run from main checkout (or set KENNING_LLM_MODEL_PATH=...) so models
 resolve.
 
 Usage:
@@ -34,7 +34,7 @@ ROOT = HERE.parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-import ultron  # noqa: F401
+import kenning  # noqa: F401
 
 
 def _make_speech_like(seconds: float, *, sr: int = 16000) -> np.ndarray:
@@ -78,7 +78,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     lengths_s = [float(x) for x in args.lengths.split(",") if x.strip()]
 
-    from ultron.transcription import make_stt_engine
+    from kenning.transcription import make_stt_engine
 
     print("  loading STT engine...", flush=True)
     t_load = time.monotonic()

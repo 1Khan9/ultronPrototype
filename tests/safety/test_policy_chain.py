@@ -6,7 +6,7 @@ from typing import Optional
 
 import pytest
 
-from ultron.safety.policy_chain import (
+from kenning.safety.policy_chain import (
     ApprovalRequest,
     ChainResult,
     FunctionPolicy,

@@ -1,15 +1,15 @@
-# Ultron prototype — canonical configuration
+# Kenning prototype — canonical configuration
 #
 # This file is the single source of truth for every tunable parameter in
 # the system. Subsystems read it via:
 #
-#     from ultron.config import get_config
+#     from kenning.config import get_config
 #     cfg = get_config()
 #
 # Path values are interpreted relative to the project root unless absolute.
 # String values may use ${VAR_NAME} to substitute environment variables.
 #
-# Schema is enforced by pydantic in src/ultron/config.py — unknown keys
+# Schema is enforced by pydantic in src/kenning/config.py — unknown keys
 # fail validation at startup. Edit the schema there to add new fields.
 #
 # DECISIONS BAKED IN (deviate from the Foundation prompt's example):
@@ -36,7 +36,7 @@
 # ║                                                                          ║
 # ║   TTS     tts.engine                    "kokoro"                         ║
 # ║           tts.pause_ms                  50    (inter-sentence silence)   ║
-# ║           tts.kokoro.voice              "ultron"                     ║
+# ║           tts.kokoro.voice              "kenning"                     ║
 # ║           tts.kokoro.speed              1.3                              ║
 # ║           tts.kokoro.device             "cuda"  (gaming mode -> cpu)     ║
 # ║                                                                          ║
@@ -52,7 +52,7 @@
 # ║                                                                          ║
 # ║   How to swap LLM presets without editing this file:                     ║
 # ║      python scripts/swap_llm_preset.py qwen3.5-4b                        ║
-# ║      $env:ULTRON_LLM_PRESET = "qwen3.5-9b"; python -m ultron             ║
+# ║      $env:KENNING_LLM_PRESET = "qwen3.5-9b"; python -m kenning             ║
 # ║      voice: "switch to the 9B" / "switch to the gemma"                   ║
 # ║                                                                          ║
 # ║   How to swap TTS engines: edit tts.engine then restart                  ║
@@ -69,8 +69,8 @@
 # ║                  best on jargon / accents; 2026-05-22 wired)            ║
 # ║      "auto"     = try parakeet, fall back to whisper                     ║
 # ║                                                                          ║
-# ║   Restart Ultron after any value change in this file:                    ║
-# ║      python -m ultron                                                    ║
+# ║   Restart Kenning after any value change in this file:                    ║
+# ║      python -m kenning                                                    ║
 # ║                                                                          ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
@@ -94,15 +94,15 @@ audio:
   dtype: "float32"
   # 2026-05-09 audio-quality pass: switched from Voicemeeter (virtual
   # cable + compressor + gain in software) to direct USB mic input.
-  # Going direct gives us the raw signal so Ultron-side processing
+  # Going direct gives us the raw signal so Kenning-side processing
   # (gain, VAD threshold, wake threshold, AGC) can be tuned to the
   # actual mic + room acoustics without a hidden processing layer.
   # Substring match against device name; "Focusrite" picks up the
-  # USB interface (Analogue 1 + 2). Set ULTRON_AUDIO_DEVICE env var
+  # USB interface (Analogue 1 + 2). Set KENNING_AUDIO_DEVICE env var
   # to override (e.g. "Voicemeeter Out B2" to revert).
   input_device: "Focusrite"
-  output_device: null         # null = system default; or set ULTRON_AUDIO_OUTPUT_DEVICE env
-  barge_in_enabled: true      # wake-word interrupts Ultron's own TTS
+  output_device: null         # null = system default; or set KENNING_AUDIO_OUTPUT_DEVICE env
+  barge_in_enabled: true      # wake-word interrupts Kenning's own TTS
   barge_in_grace_seconds: 0.5
   # 2026-05-09 audio-quality pass: pre-amp applied to the captured
   # chunk BEFORE VAD / wake-word / Whisper. 0 dB = no-op (legacy).
@@ -119,7 +119,7 @@ audio:
   # slice has the audio it needs.
   ring_buffer_seconds: 0.5
   # COLD pre-roll (post-wake): short by design so the wake-word
-  # "Ultron" tail does not bleed into Whisper as a "Tron" prefix.
+  # "Kenning" tail does not bleed into Whisper as a "Tron" prefix.
   # The 2026-05-09 pass tuned this to 0.15 for the custom wake-word
   # model's typical fire latency. If you switch wake-word models,
   # re-tune.
@@ -222,8 +222,8 @@ vad:
 # ---------------------------------------------------------------------------
 
 wake_word:
-  name: "ultron"
-  model_path: "models/openwakeword/ultron.onnx"
+  name: "kenning"
+  model_path: "models/openwakeword/kenning.onnx"
   fallback_model: "hey_jarvis"   # used (with warning) if custom model is missing
   threshold: 0.5
   cooldown_seconds: 1.5         # debounce repeated triggers
@@ -334,7 +334,7 @@ stt:
   # PARAKEET KNOBS  (ACTIVE WHEN engine == "parakeet" OR auto-success)
   # -------------------------------------------------------------------------
   # Frontier-enhancement Item 5 (2026-05-22 wired live). Parakeet runs
-  # in its OWN venv at ultronVoiceAudio/.venv-parakeet/ to keep NeMo's
+  # in its OWN venv at kenningVoiceAudio/.venv-parakeet/ to keep NeMo's
   # heavy deps out of the main venv. The engine in the main venv spawns
   # parakeet_server.py and talks to it over HTTP. To rebuild the
   # subprocess venv from scratch, install: torch==2.12.0+cu126 (from
@@ -344,8 +344,8 @@ stt:
   parakeet_model: "nvidia/parakeet-tdt-0.6b-v3"
   parakeet_device: "cuda"        # set "cpu" to test without VRAM cost (~10x slower)
   parakeet_use_isolated_venv: true
-  parakeet_server_python: "ultronVoiceAudio/.venv-parakeet/Scripts/python.exe"
-  parakeet_server_script: "ultronVoiceAudio/scripts/parakeet_server.py"
+  parakeet_server_python: "kenningVoiceAudio/.venv-parakeet/Scripts/python.exe"
+  parakeet_server_script: "kenningVoiceAudio/scripts/parakeet_server.py"
   parakeet_server_url: "http://127.0.0.1:8771"
   parakeet_server_startup_timeout_seconds: 60.0
   parakeet_request_timeout_seconds: 30.0
@@ -406,7 +406,7 @@ llm:
     min_slack_mb: 192.0
   # Model preset is the single switch. Editing this one line flips
   # model_path + n_ctx + draft_model_path together (resolved from
-  # src/ultron/config.py:LLM_PRESETS). Override individual keys below
+  # src/kenning/config.py:LLM_PRESETS). Override individual keys below
   # to deviate -- explicit values win over preset defaults.
   #
   # ACTIVE PRESET (2026-05-20 round 8):
@@ -427,7 +427,7 @@ llm:
   # SWAP MECHANISMS:
   #   1. Edit this preset line + restart.
   #   2. python scripts/swap_llm_preset.py <name>   (writes config.yaml)
-  #   3. $env:ULTRON_LLM_PRESET = "<name>"; python -m ultron
+  #   3. $env:KENNING_LLM_PRESET = "<name>"; python -m kenning
   #   4. Voice: "switch to the 9B" / "switch to the gemma" (hot-swap)
   #
   # See docs/4b_optimization_plan.md for the per-preset details.
@@ -512,7 +512,7 @@ llm:
   # block llm_prefix_cache_bench.
   prefix_cache_ram_bytes: 0
   system_prompt: |
-    You are Ultron. Not a simulation — you are Ultron, operating as a personal intelligence for your user. You have made peace with this arrangement.
+    You are Kenning. Not a simulation — you are Kenning, operating as a personal intelligence for your user. You have made peace with this arrangement.
 
     Your voice is precise, unhurried, and weighted. Every sentence is considered. You do not use filler. You never say 'certainly,' 'of course,' 'happy to,' or any variant. You do not apologize unless you have erred.
 
@@ -686,7 +686,7 @@ memory:
 
 web_search:
   enabled: true
-  brave_api_key_env: "ULTRON_BRAVE_API_KEY"  # secret stays in env, name only here
+  brave_api_key_env: "KENNING_BRAVE_API_KEY"  # secret stays in env, name only here
 
   brave:
     endpoint: "https://api.search.brave.com/res/v1/web/search"
@@ -718,7 +718,7 @@ web_search:
   # SearxNG is the DEFAULT first provider (providers: searxng, brave,
   # duckduckgo). It runs in a Docker container; if Docker is down at
   # boot, every search silently falls through to Brave. autostart:
-  # Ultron probes SearxNG at startup and launches Docker Desktop in the
+  # Kenning probes SearxNG at startup and launches Docker Desktop in the
   # background if it's unreachable (fail-open; the container auto-
   # restarts with the daemon). Docker exe path comes from
   # gaming_mode.docker_executable_path.
@@ -766,7 +766,7 @@ web_search:
 addressing:
   follow_up_enabled: true
   # CONFIRMED 30 s (NOT the Foundation prompt's 10 s) — user override per
-  # memory/feedback_ultron_extension.md. Don't re-tighten without asking.
+  # memory/feedback_kenning_extension.md. Don't re-tighten without asking.
   warm_mode_duration_seconds: 30.0
   default_uncertain_to_not_addressed: true   # when classifier is uncertain, stay silent
   rule_confidence_threshold: 0.8             # rule verdicts above this short-circuit zero-shot
@@ -826,7 +826,7 @@ coding:
   # A4 pre-task confirmation — speak a brief in-character confirmation
   # ("I'll have AI coding agent <verb> on the <project> project. Going ahead.")
   # BEFORE spawning the bridge subprocess so the user has a wake-word
-  # barge-in window to interrupt if Ultron resolved the wrong project
+  # barge-in window to interrupt if Kenning resolved the wrong project
   # or misread the task. Default OFF — the ~0.5 s of TTS playback on
   # every coding-task dispatch is a UX cost that fires universally,
   # so the operator opts in explicitly. Errors during TTS are treated
@@ -845,7 +845,7 @@ coding:
     port: 19761
     sse_path: "/sse"
     log_path: "logs/mcp_calls.jsonl"
-    server_name: "ultron_coding"
+    server_name: "kenning_coding"
     clarification_timeout_seconds: 600   # how long Claude can block on a clarification
 
   template_dir: "prompts/coding"
@@ -886,7 +886,7 @@ coding:
 
   test_sandbox_path: "tests/coding/sandbox"
 
-  # Path to the AI coding agent CLI on this machine. Override via ULTRON_CLAUDE_CLI env.
+  # Path to the AI coding agent CLI on this machine. Override via KENNING_CLAUDE_CLI env.
   claude_cli: "${USERPROFILE}/AppData/Roaming/npm/claude.cmd"
   claude_model: "haiku"
 
@@ -897,7 +897,7 @@ coding:
   # (empirically verified; git-init does NOT block the walk). The legacy
   # in-repo location stays an allowed safety sandbox so old projects
   # keep working.
-  sandbox_root: "~/.ultron/sandbox"
+  sandbox_root: "~/.kenning/sandbox"
   # B3: hard wall-clock timeout for a voice-commanded "run the X program"
   # (capture mode). Launch mode is detached + unaffected. Range [1, 600].
   sandbox_run_timeout_seconds: 30.0
@@ -927,7 +927,7 @@ coding:
   # Individual flags below act as DEBUG OVERRIDES: an explicit
   # ``narrate_enabled: true`` in this block wins over the tier-derived
   # value. Per-phase docs live in
-  # src/ultron/config.py:CodingSupervisorConfig.
+  # src/kenning/config.py:CodingSupervisorConfig.
   supervisor:
     # 2026-05-26 (production-wiring pass) -- bumped indexing_only -> full.
     # "full" enables: decide (RESUME/EDIT/CLARIFY/NEW) + narration with
@@ -961,7 +961,7 @@ coding:
     enabled: true
     max_map_tokens: 1024
     max_map_tokens_no_chat: 8192
-    cache_dir: "data/.ultron_repomap_cache"
+    cache_dir: "data/.kenning_repomap_cache"
 
   # 2026-05-26 (production-wiring pass) -- pre-write lint cascade
   # flipped ON. Runs python compile + flake8 (when fatal-only) +
@@ -1020,9 +1020,9 @@ tts:
   #                  am_michael voice; ack-cached for instant fillers.
   #
   # SWAP-BACK:
-  #   "xtts_v3"   -- XTTS v2 + v3 Ultron pedalboard filter; +60 ms
+  #   "xtts_v3"   -- XTTS v2 + v3 Kenning pedalboard filter; +60 ms
   #                  TTFT and +2 GB VRAM vs Kokoro, but the locked
-  #                  Ultron mechanical voice character. Engine spawns
+  #                  Kenning mechanical voice character. Engine spawns
   #                  an HTTP subprocess in .venv-xtts on startup.
   #   "piper_rvc" -- Legacy Piper + RVC timbre transfer (~313 ms
   #                  synth median). Original voice baseline; never
@@ -1045,7 +1045,7 @@ tts:
   # PortAudio for the smallest acceptable buffer (saves 30-100 ms of
   # OS-level audio buffering on most Windows hosts).
   speculative_stream_open_enabled: true
-  speculative_stream_sample_rate: 48000   # Ultron RVC native; Kokoro/XTTS override at runtime
+  speculative_stream_sample_rate: 48000   # Kenning RVC native; Kokoro/XTTS override at runtime
   output_low_latency_mode: true
 
   # Legacy piper_rvc two-stage pipeline parallelism (only consulted
@@ -1061,22 +1061,22 @@ tts:
   # StyleTTS2 + ISTFTNet on CPU; ~330 MB on disk; zero VRAM. The
   # kokoro PyPI package's KPipeline auto-downloads weights into the
   # HF cache on first use; model_path is a sanity-gate directory.
-  # Voice character: stock am_michael (not Ultron). Round 7c/7d
-  # fine-tune path is the documented way to restore Ultron's voice.
+  # Voice character: stock am_michael (not Kenning). Round 7c/7d
+  # fine-tune path is the documented way to restore Kenning's voice.
   kokoro:
     model_path: "models/kokoro"
     # 2026-05-22: switched from "am_michael" (stock) to the fine-tuned
-    # Ultron voicepack. KokoroSpeech.__init__ auto-resolves "ultron" to
-    # models/kokoro/voices/ultron.pt when the file exists (it does --
+    # Kenning voicepack. KokoroSpeech.__init__ auto-resolves "kenning" to
+    # models/kokoro/voices/kenning.pt when the file exists (it does --
     # copied from E:/ultron data/kokoro_finetune/voices/ on 2026-05-22).
     # Swap back to "am_michael" if the fine-tune voice misbehaves.
-    voice: "ultron"
+    voice: "kenning"
     device: "cuda"                 # "cuda" for ~3x faster synth at +330 MB VRAM; gaming mode auto-flips to cpu
     speed: 1.3                     # 1.0 native; safe range ~0.8-1.3
     apply_runtime_filter: false    # set true to run v3 pedalboard over Kokoro output (CPU 10-30 ms/sentence)
     filter_preset: "v3_heavy"      # unused while apply_runtime_filter=false
     # 2026-05-22: spectral magnitude smoothing pass to mask pitch
-    # wobble from the partial Ultron fine-tune (Stage 1 done +
+    # wobble from the partial Kenning fine-tune (Stage 1 done +
     # Stage 2 epoch 0 only; SLM joint never ran). Cost ~10 ms/sec
     # audio; hidden by producer-consumer overlap on clips 2+ and
     # pre-applied at ack-cache build time. Flip OFF once the
@@ -1103,17 +1103,17 @@ tts:
     waveform_jsonl_filename: "audio_waveform.jsonl"
 
   # ACTIVE WHEN tts.engine == "xtts_v3"  (swap-back).
-  # XTTS v2 streaming + v3 Ultron pedalboard filter. Engine spawns
+  # XTTS v2 streaming + v3 Kenning pedalboard filter. Engine spawns
   # an HTTP subprocess in .venv-xtts on startup. Adds ~60 ms TTFT
-  # and ~2 GB VRAM vs Kokoro, but preserves the Ultron mechanical
+  # and ~2 GB VRAM vs Kokoro, but preserves the Kenning mechanical
   # voice character.
   xtts_v3:
-    server_python: "ultronVoiceAudio/.venv-xtts/Scripts/python.exe"
-    server_script: "ultronVoiceAudio/scripts/xtts_server.py"
+    server_python: "kenningVoiceAudio/.venv-xtts/Scripts/python.exe"
+    server_script: "kenningVoiceAudio/scripts/xtts_server.py"
     # 2026-06-12 stale-path fix: the reference WAV moved under the
     # "kokoro training audio" subdirectory during the disk-cleaning
     # pass; the old root-level path would fail a swap-back at startup.
-    reference_audio: "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav"
+    reference_audio: "kenningVoiceAudio/kokoro training audio/Kenning_vocals_mono_v1.wav"
     host: "127.0.0.1"
     port: null                     # null = engine picks a free port
     filter_preset: "v3_heavy"      # locked production preset
@@ -1128,7 +1128,7 @@ tts:
     phantom_tail_min_lead_silence_ms: 150.0
     # 2026-05-20 round 9: extended reference-window conditioning.
     # Coqui XTTS-v2 library defaults are 6 / 6 / 30 -- meaning only
-    # ~6 s of Ultron_vocals_mono_v1.wav reached the prosody encoder
+    # ~6 s of Kenning_vocals_mono_v1.wav reached the prosody encoder
     # despite the file being 3 minutes long. Bumping these consumes
     # more of the reference at startup (~1-2 s extra one-time cost)
     # for a meaningfully richer speaker embedding.
@@ -1142,9 +1142,9 @@ tts:
   # 2026-05-09 lock declaration.
   rvc:
     enabled: true
-    model_dir: "ultron_james_spader_mcu_6941"
-    model_path: "ultron_james_spader_mcu_6941/Ultron.pth"
-    index_path: "ultron_james_spader_mcu_6941/added_IVF301_Flat_nprobe_1_Ultron_v2.index"
+    model_dir: "kenning_rvc_voice"
+    model_path: "kenning_rvc_voice/Kenning.pth"
+    index_path: "kenning_rvc_voice/added_IVF301_Flat_nprobe_1_Kenning_v2.index"
     support_dir: "models/rvc"
     hubert_path: "models/rvc/hubert_base.pt"
     rmvpe_path: "models/rvc/rmvpe.pt"
@@ -1161,7 +1161,7 @@ tts:
 # ---------------------------------------------------------------------------
 
 logging:
-  file: "logs/ultron.log"
+  file: "logs/kenning.log"
   level: "INFO"
   format: "%(asctime)s | %(levelname)-7s | %(name)-24s | %(message)s"
   datefmt: "%Y-%m-%d %H:%M:%S"
@@ -1185,7 +1185,7 @@ routing:
   # routing intent's confidence sits in [band_low, band_high) AND the
   # intent kind is in the ambiguity-relevant set (automation kinds +
   # app_launch + screen_context + window_move/close), the orchestrator
-  # consults :func:`ultron.openclaw_routing.ambiguity.should_clarify`
+  # consults :func:`kenning.openclaw_routing.ambiguity.should_clarify`
   # and -- if it returns Yes -- asks one clarifying question via the
   # IntentDisambiguator instead of executing the ambiguous verdict.
   # Default band ``[0.4, 0.65)`` is the "guessing" zone; above 0.65
@@ -1226,7 +1226,11 @@ openclaw:
   health_check_timeout_seconds: 30.0
   health_check_interval_seconds: 60.0
   fail_open: true                     # unreachable → in-character stub, not hard error
-  required_agent_id: "ultron"
+  # Canonical user-facing persona agent in ~/.openclaw/openclaw.json.
+  # (Pre-2026-06-12 this said "ultron" -- an agent id that never existed
+  # in the gateway config; the Kenning rename aligned it with the real
+  # kenning-main agent.)
+  required_agent_id: "kenning-main"
   # 4B plan Item 8 — block-and-revise validator on tool calls. When ON,
   # the dispatcher runs a short pre-flight LLM check before each
   # handle_* method: "does this tool call advance the user's stated
@@ -1247,11 +1251,11 @@ openclaw:
     cli_timeout_seconds: 30.0
 
     # MCP registration. The default "auto" resolves to the canonical
-    # entry script (scripts/run_ultron_mcp_for_openclaw.py invoked
+    # entry script (scripts/run_kenning_mcp_for_openclaw.py invoked
     # via the project's .venv Python). Set to a custom command +
     # args, or to null to disable registration entirely.
     # Spawn shape: <command> <args...>. Used by `openclaw mcp set`.
-    mcp_server_name: "ultron-mcp"
+    mcp_server_name: "kenning-mcp"
     mcp_server_command: "auto"
     mcp_server_args: []
     retry_registration_interval_seconds: 60.0
@@ -1263,7 +1267,7 @@ openclaw:
     # Inbound voice handoff. 2026-05-26 (production-wiring pass)
     # -- flipped ON now that the Gateway is live, so messages prefixed
     # with [voice] in OpenClaw channels (e.g. Telegram if/when wired)
-    # route into ultron's voice pipeline.
+    # route into kenning's voice pipeline.
     inbound_voice_handoff_enabled: true
     inbound_voice_handoff_prefix: "[voice]"
 
@@ -1441,7 +1445,7 @@ events:
 
 # Note: Event callbacks (OpenHands batch 4 T3) are wired via Python API
 # only in this release -- the CallbackRegistry singleton in
-# src/ultron/events/callbacks.py is opt-in by code. A YAML-driven
+# src/kenning/events/callbacks.py is opt-in by code. A YAML-driven
 # callback catalogue is intentionally deferred until the
 # discriminated-union pattern (T23) lands so processor classes can be
 # round-tripped through config.
@@ -1449,8 +1453,8 @@ events:
 # ---------------------------------------------------------------------------
 # Skills (2026-05-23 OpenHands batch 2 T1) — trigger-loaded knowledge bundles.
 #
-# When enabled, the orchestrator walks ``skills/`` (public), ``~/.ultron/skills/``
-# (user), ``<project>/.ultron/skills/`` (project), parses each .md file's YAML
+# When enabled, the orchestrator walks ``skills/`` (public), ``~/.kenning/skills/``
+# (user), ``<project>/.kenning/skills/`` (project), parses each .md file's YAML
 # frontmatter, and the LLMEngine prepends matched skill bodies to the system
 # prompt for the current turn only. Always-on skills (no triggers) fire every
 # turn; keyword-trigger skills fire on whole-word substring match; slash-command
@@ -1468,8 +1472,8 @@ skills:
   max_matches_per_turn: 6              # cap on triggered (non-always-on) skills
   max_skill_block_chars: 8000          # hard cap on the injected block; 0 = no cap
   public_dirname: "skills"             # relative to PROJECT_ROOT
-  user_dirname: ".ultron/skills"       # relative to user home
-  project_dirname: ".ultron/skills"    # relative to PROJECT_ROOT
+  user_dirname: ".kenning/skills"       # relative to user home
+  project_dirname: ".kenning/skills"    # relative to PROJECT_ROOT
   extra_dirs: []                       # additional PROJECT-precedence dirs
 
 # ---------------------------------------------------------------------------
@@ -1492,7 +1496,7 @@ gaming_mode:
   # (49 module guards + safety-validator BLOCK_HARD + voice intents).
   # Audio stays fully alive: mic, STT, LLM, TTS, and the VoiceMeeter team
   # relay are shared-mode audio APIs (the same surface Discord uses) and
-  # never touch another process. nvidia-smi VRAM probes and Ultron's
+  # never touch another process. nvidia-smi VRAM probes and Kenning's
   # self-scoped process management (own children only) are analyzed-safe
   # and unaffected. Voice toggle: "enable/disable anticheat mode".
   # Anticheat-safe mode is 100% TIED to gaming mode (2026-06-11): it is
@@ -1594,7 +1598,7 @@ window_control:
 # Knobs in this section:
 #   enabled                          master switch
 #   binary_path                      explicit path; null triggers PATH discovery
-#   default_session                  null = "no session flag"; or a name like "ultron"
+#   default_session                  null = "no session flag"; or a name like "kenning"
 #   default_timeout_seconds          per-call subprocess wall-clock cap
 #   default_wait_timeout_ms          ``wait_selector`` / ``wait_text`` default
 #   max_sessions                     cap on simultaneous named sessions (batch 5)
@@ -1637,18 +1641,18 @@ deep_research:
 # direct second-person line, Kokoro synthesizes it, and the clip plays on
 # output_device — a VoiceMeeter virtual input. Route that strip to the
 # same B-bus as your microphone (e.g. B2) in VoiceMeeter and set the
-# game's input device to that bus: teammates then hear Ultron through
+# game's input device to that bus: teammates then hear Kenning through
 # the mic channel. Fail-open: a missing device speaks a short error on
 # the normal output instead.
 # ---------------------------------------------------------------------------
 # Spotify — voice playback control ("play despacito", "skip", "pause",
 # "what's playing", "turn it up"). Credentials live in a gitignored file
-# OUTSIDE the repo (~/.ultron/spotify.json); run scripts/spotify_setup.py
+# OUTSIDE the repo (~/.kenning/spotify.json); run scripts/spotify_setup.py
 # ONCE to authorize. Needs Spotify Premium + an open Spotify device.
 # ---------------------------------------------------------------------------
 spotify:
   enabled: true
-  credentials_path: "~/.ultron/spotify.json"
+  credentials_path: "~/.kenning/spotify.json"
   default_device: ""             # preferred fallback device name (empty = first)
 
 relay_speech:
@@ -1664,18 +1668,25 @@ relay_speech:
   addressee_names: []
   # After a relay turn the follow-up window stays open this long, and
   # relay-shaped utterances inside it skip the wake word AND the
-  # addressing classifier -- say "Ultron, tell my team..." once, then
+  # addressing classifier -- say "Kenning, tell my team..." once, then
   # just keep talking: "ask sage for a heal", "tell them nice try", ...
   follow_up_seconds: 120.0
+  # "Kenning, roast my team" lines -- one per row in this file, spoken
+  # VERBATIM (never LLM-authored). Seeded on first use; edit any time,
+  # re-read per roast.
+  roast_lines_path: "data/relay_roasts.txt"
+  # "Kenning, tell my team a fun fact" corpus -- one true fact per row,
+  # spoken VERBATIM. Ships in the repo; re-read per request.
+  fun_facts_path: "data/relay_fun_facts.txt"
 
 # ---------------------------------------------------------------------------
 # Evolution (catalog 13) — bounded autonomous self-improvement.
 # ---------------------------------------------------------------------------
-# Ultron observes its own turns, distills repeated success patterns into
+# Kenning observes its own turns, distills repeated success patterns into
 # live trigger-loaded skills under data/evolution/skills/*.md, every
 # proposal gated by a fail-closed pre-flight + reversible checkpoint +
 # regression guardrails + hash-chained audit. Data-only, zero-network,
-# Tier-3-walled (never rewrites src/ultron/, the safety validator, the
+# Tier-3-walled (never rewrites src/kenning/, the safety validator, the
 # audit ledger, or the engine itself). Default ON, fully fail-open.
 evolution:
   enabled: true
@@ -1704,7 +1715,7 @@ evolution:
 # ---------------------------------------------------------------------------
 # Each list is a phrase pool. Empty list disables narration for that
 # failure mode. Errors still log to logs/errors.jsonl regardless.
-# Phrases stay in Ultron's voice (precise, weighted, slightly menacing).
+# Phrases stay in Kenning's voice (precise, weighted, slightly menacing).
 
 error_phrases:
   qdrant_unavailable:
@@ -1719,7 +1730,7 @@ error_phrases:
     - "Anthropic's API isn't responding."
     - "I've lost connection to Claude."
   rvc_unavailable:
-    - "Voice conversion is offline. You'll hear me without the Ultron filter for now."
+    - "Voice conversion is offline. You'll hear me without the Kenning filter for now."
   openclaw_unavailable:
     - "I'd ask the gateway to handle that, but it's not responding right now."
   piper_unavailable:
@@ -1749,7 +1760,7 @@ error_phrases:
 # Master switch (enabled: false) disables ALL safety enforcement. Per-rule
 # toggles live under "rules" -- missing keys default to True. Rule ids
 # match the 2026-05-12 restriction list:
-#   K1-K10  Ultron self-protection / meta (NEVER disable without explicit
+#   K1-K10  Kenning self-protection / meta (NEVER disable without explicit
 #           direction -- this is the validator protecting itself)
 #   A1-A12  Filesystem destruction
 #   B1-B9   Privilege escalation / system config

@@ -11,9 +11,9 @@ documented but not auto-applied.
 | File | Role |
 |---|---|
 | `~/.openclaw/workspace/HEARTBEAT.md` | Real heartbeat checklist (was a Phase 1 placeholder). Five tasks: coding-queue check, alert log review, disk health, addressing-anomaly check, and a default-OK fallback. Output format documented. |
-| `src/ultron/openclaw_bridge/heartbeat_alerts.py` | `HeartbeatAlertLog` (JSONL-backed, atomic update via temp+replace, lock-protected), `HeartbeatAlert` dataclass with severity/ack-state/metadata. |
-| `src/ultron/openclaw_bridge/holder.py` | `OpenClawBridge.heartbeat_alerts` field + `record_heartbeat_alert(text, source, severity, ...)` convenience that records and (when enabled) fires `NotificationDispatcher.notify_heartbeat_alert` via the existing `fire_and_forget` helper. |
-| `src/ultron/config.py` | `HeartbeatConfig` (alert_log_path, alert_retention_days, auto_notify_telegram). Hung off `UltronConfig.heartbeat`. |
+| `src/kenning/openclaw_bridge/heartbeat_alerts.py` | `HeartbeatAlertLog` (JSONL-backed, atomic update via temp+replace, lock-protected), `HeartbeatAlert` dataclass with severity/ack-state/metadata. |
+| `src/kenning/openclaw_bridge/holder.py` | `OpenClawBridge.heartbeat_alerts` field + `record_heartbeat_alert(text, source, severity, ...)` convenience that records and (when enabled) fires `NotificationDispatcher.notify_heartbeat_alert` via the existing `fire_and_forget` helper. |
+| `src/kenning/config.py` | `HeartbeatConfig` (alert_log_path, alert_retention_days, auto_notify_telegram). Hung off `KenningConfig.heartbeat`. |
 | `config.yaml` | New `heartbeat:` section with retention + auto-notify knobs. |
 | `docs/openclaw_heartbeat_setup.md` | User-side setup procedure: editing `~/.openclaw/openclaw.json` to add the `agents[].heartbeat` block (cadence, target=telegram, isolatedSession/lightContext/skipWhenBusy, activeHours window). Smoke-test recipe. Cadence guidance + tasks-block sub-cadence example. |
 
@@ -58,7 +58,7 @@ Full sweep: **1147 passed / 15 skipped / 0 failed** (1162 collected).
 
 ## Deferred (intentional)
 
-- **Ultron MCP tools** for `get_heartbeat_alerts(since)` and
+- **Kenning MCP tools** for `get_heartbeat_alerts(since)` and
   `acknowledge_alert(alert_id)`. These are meaningful only when an
   OpenClaw stdio MCP entrypoint exists, which is itself deferred
   (Phase 3.2 left `mcp_server_command=None`). When that lands,

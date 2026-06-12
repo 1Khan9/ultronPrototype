@@ -19,7 +19,7 @@ from typing import Any, Dict, List
 import numpy as np
 import pytest
 
-from ultron.transcription import parakeet_engine as parakeet_module
+from kenning.transcription import parakeet_engine as parakeet_module
 
 
 # ---------------------------------------------------------------------------

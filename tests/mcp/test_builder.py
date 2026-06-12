@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.config import McpConfig, McpServerSpec
-from ultron.mcp import McpServerState, reset_mcp_server_registry_for_testing
-from ultron.mcp.builder import (
+from kenning.config import McpConfig, McpServerSpec
+from kenning.mcp import McpServerState, reset_mcp_server_registry_for_testing
+from kenning.mcp.builder import (
     _make_stdio_starter,
     build_mcp_server_registry,
     transport_from_spec,
@@ -120,8 +120,8 @@ def test_stop_invokes_killer_for_stdio():
 
 
 def test_stdio_starter_spawns_with_injected_popen():
-    from ultron.mcp.registry import McpServerHandle
-    from ultron.mcp.transport import StdioMcpTransportConfig
+    from kenning.mcp.registry import McpServerHandle
+    from kenning.mcp.transport import StdioMcpTransportConfig
 
     calls: dict = {}
 
@@ -145,8 +145,8 @@ def test_stdio_starter_spawns_with_injected_popen():
 
 
 def test_stdio_starter_returns_none_for_http_transport():
-    from ultron.mcp.registry import McpServerHandle
-    from ultron.mcp.transport import HttpMcpTransportConfig
+    from kenning.mcp.registry import McpServerHandle
+    from kenning.mcp.transport import HttpMcpTransportConfig
 
     starter = _make_stdio_starter(popen=lambda *a, **k: None)
     handle = McpServerHandle(

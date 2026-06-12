@@ -110,71 +110,71 @@ baselines_post_*.json
 # Voice TTS swap project (2026-05-10) — local audio prep + working artifacts
 # ---------------------------------------------------------------------------
 # Isolated venvs created during the voice swap. Each is ~1.5-3 GB.
-ultronVoiceAudio/.venv-*/
+kenningVoiceAudio/.venv-*/
 # Model caches (torch hub, HuggingFace) for the audio prep tools.
-ultronVoiceAudio/.torch_cache/
-ultronVoiceAudio/.hf_cache*/
+kenningVoiceAudio/.torch_cache/
+kenningVoiceAudio/.hf_cache*/
 # Demucs source-separation outputs (regenerable; large WAVs).
-ultronVoiceAudio/demucs_out/
+kenningVoiceAudio/demucs_out/
 # Working sample directories (manual review staging, sanity batches,
 # filter A/B variants, post-clean copies). All regenerable from the
-# scripts in ultronVoiceAudio/scripts/.
-ultronVoiceAudio/for_review/
-ultronVoiceAudio/sanity_*/
-ultronVoiceAudio/smoke_*/
-ultronVoiceAudio/synth_audio/
+# scripts in kenningVoiceAudio/scripts/.
+kenningVoiceAudio/for_review/
+kenningVoiceAudio/sanity_*/
+kenningVoiceAudio/smoke_*/
+kenningVoiceAudio/synth_audio/
 # Bulk synthetic Kokoro training corpus (deferred to Kokoro phase;
 # regenerable via generate_bulk_synthetic.py once we revisit).
-ultronVoiceAudio/manifest.csv
-ultronVoiceAudio/manifest.jsonl
-ultronVoiceAudio/generation_log.jsonl
+kenningVoiceAudio/manifest.csv
+kenningVoiceAudio/manifest.jsonl
+kenningVoiceAudio/generation_log.jsonl
 # Per-run logs from voice-prep tools.
-ultronVoiceAudio/*.log
-ultronVoiceAudio/smoke_*.wav
+kenningVoiceAudio/*.log
+kenningVoiceAudio/smoke_*.wav
 # Audio source assets (large + personal-content; user supplies these).
-ultronVoiceAudio/*.wav
-ultronVoiceAudio/*.mp3
+kenningVoiceAudio/*.wav
+kenningVoiceAudio/*.mp3
 # Working subdirectory created by the smoke test path-resolution bug
-# (writes to worktrees/.../ultronVoiceAudio/ in dev). Don't commit.
-.claude/worktrees/ultronVoiceAudio/
+# (writes to worktrees/.../kenningVoiceAudio/ in dev). Don't commit.
+.claude/worktrees/kenningVoiceAudio/
 
 # F5-TTS detour artifacts (TTS engine abandoned 2026-05-10 due to
 # native ffmpeg / segfault issues on Windows; venv removed).
-ultronVoiceAudio/scripts/generate_f5_samples.py
-ultronVoiceAudio/scripts/process_f5_samples.py
+kenningVoiceAudio/scripts/generate_f5_samples.py
+kenningVoiceAudio/scripts/process_f5_samples.py
 
 # ---------------------------------------------------------------------------
 # Kokoro fine-tune project (2026-05-21/-22) -- live fine-tune training arc
 # ---------------------------------------------------------------------------
-# ``ultronVoiceAudio/kokoro_finetune/`` is a fork of the upstream
-# ``kokoro-deutsch`` repo (adapted to English single-speaker Ultron
+# ``kenningVoiceAudio/kokoro_finetune/`` is a fork of the upstream
+# ``kokoro-deutsch`` repo (adapted to English single-speaker Kenning
 # fine-tune). It has its own ``.git/`` -- this outer repo doesn't
-# track any of its files. Our customizations (configs/config_ultron_ft.yml,
-# scripts/{prepare_ultron_training,launch_or_resume_training,
-# install_training_autoresume,extract_voicepack,test_ultron_voice}.py)
+# track any of its files. Our customizations (configs/config_kenning_ft.yml,
+# scripts/{prepare_kenning_training,launch_or_resume_training,
+# install_training_autoresume,extract_voicepack,test_kenning_voice}.py)
 # are committed to that inner repo. To recreate:
 #   1. ``git clone https://github.com/<kokoro-deutsch-fork>``
 #   2. Apply our config + scripts from the memory file's documented list
-# See project_ultron_2026_05_22_partial_finetune_ship_*.md for the full
+# See project_kenning_2026_05_22_partial_finetune_ship_*.md for the full
 # project layout + resume-training procedure.
-ultronVoiceAudio/kokoro_finetune/
+kenningVoiceAudio/kokoro_finetune/
 
 # Bulk synthetic training corpora (per-pass; ~300 MB each of 24 kHz
 # mono PCM_16 WAVs + manifests). Regenerable from
-# ``ultronVoiceAudio/scripts/bulk_evaluate_finetune.py``.
-ultronVoiceAudio/kokoro_training_corpus_*/
+# ``kenningVoiceAudio/scripts/bulk_evaluate_finetune.py``.
+kenningVoiceAudio/kokoro_training_corpus_*/
 
 # Bulk evaluation outputs (filtered XTTS clips for A/B comparison;
 # WAVs + tracking JSONL). Regenerable.
-ultronVoiceAudio/bulk_eval/
+kenningVoiceAudio/bulk_eval/
 
 # XTTS fine-tune detour (deferred; checkpoints + dataset). The
 # ``xtts_finetune_runs/`` dir grows to 20+ GB on a long run.
-ultronVoiceAudio/xtts_finetune_dataset/
-ultronVoiceAudio/xtts_finetune_runs/
+kenningVoiceAudio/xtts_finetune_dataset/
+kenningVoiceAudio/xtts_finetune_runs/
 
 # Whisper large-v3 transcripts produced during corpus prep.
-ultronVoiceAudio/transcript_large_v3/
+kenningVoiceAudio/transcript_large_v3/
 
 # ---------------------------------------------------------------------------
 # Misc runtime data NOT to be committed (regenerated on each run)
@@ -202,10 +202,10 @@ data/.run_tests_current
 data/.run_tests_progress.jsonl
 data/.run_tests.lock
 # 2026-06-12 single-instance guard (held OS file lock + holder PID
-# metadata) -- see src/ultron/lifecycle/single_instance.py.
-data/.ultron_instance.lock
+# metadata) -- see src/kenning/lifecycle/single_instance.py.
+data/.kenning_instance.lock
 # 2026-05-22 catalog batch 2 repo-map cache (mtime-keyed SQLite).
-data/.ultron_repomap_cache*/
+data/.kenning_repomap_cache*/
 # 2026-05-23 SWE-Agent batch 1 SessionRegistry (T15) per-session JSON state
 # at data/coding/sessions/<session_id>/registry.json. Pure runtime artefact.
 data/coding/

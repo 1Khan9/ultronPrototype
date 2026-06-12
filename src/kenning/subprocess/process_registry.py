@@ -18,7 +18,7 @@ subprocess. Adds four capabilities beyond plain ``Popen``:
   on exit (``notify_on_exit``) so completion routes back to the
   right caller even if the parent session has rolled.
 
-The registry composes with :func:`ultron.subprocess.kill_tree.kill_process_tree`
+The registry composes with :func:`kenning.subprocess.kill_tree.kill_process_tree`
 (T8) for shutdown; with :class:`ZombieKiller` (cline T23) for the
 overall hard cap. This T12 primitive is the FINE-grained per-process
 lifecycle layer between those two.

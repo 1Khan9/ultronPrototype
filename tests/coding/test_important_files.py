@@ -1,8 +1,8 @@
-"""Tests for :mod:`ultron.coding.important_files`."""
+"""Tests for :mod:`kenning.coding.important_files`."""
 
 from __future__ import annotations
 
-from ultron.coding.important_files import (
+from kenning.coding.important_files import (
     IMPORTANT_FILENAMES,
     IMPORTANT_RELATIVE_PATHS,
     filter_important,
@@ -19,8 +19,8 @@ def test_classic_markers_match():
     assert is_important("Dockerfile")
 
 
-def test_ultron_specific_additions():
-    """Ultron's own operational files are in the allowlist."""
+def test_kenning_specific_additions():
+    """Kenning's own operational files are in the allowlist."""
     assert is_important("CLAUDE.md")
     assert is_important("MEMORY.md")
     assert is_important("SOUL.md")
@@ -57,7 +57,7 @@ def test_nested_basename_match():
 
 
 def test_random_source_files_not_important():
-    assert not is_important("src/ultron/utils/foo.py")
+    assert not is_important("src/kenning/utils/foo.py")
     assert not is_important("tests/test_random.py")
     assert not is_important("notes.txt")
 

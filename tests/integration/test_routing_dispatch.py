@@ -121,8 +121,8 @@ def test_system_status_alerts_handled(cap_stack, routing_log, read_routing):
 
 
 def test_system_status_projects_handled(cap_stack, routing_log, read_routing):
-    """`what is Ultron working on` returns a voice response."""
-    response = dispatch_utterance(cap_stack, "what is Ultron working on")
+    """`what is Kenning working on` returns a voice response."""
+    response = dispatch_utterance(cap_stack, "what is Kenning working on")
     assert response is not None
     assert response.handled is True
     rec = read_routing()[-1]
@@ -141,11 +141,11 @@ def test_system_status_combined_handled(cap_stack, routing_log, read_routing):
     assert rec["handler"] == "voice.system_status"
 
 
-def test_system_status_in_ultron_voice(cap_stack, routing_log):
+def test_system_status_in_kenning_voice(cap_stack, routing_log):
     """Spot-check: status responses don't use forbidden filler phrases."""
     for utt in (
         "what alerts did you flag",
-        "what is Ultron working on",
+        "what is Kenning working on",
         "status report",
     ):
         response = dispatch_utterance(cap_stack, utt)
@@ -161,7 +161,7 @@ def test_system_status_in_ultron_voice(cap_stack, routing_log):
 
 
 # ---------------------------------------------------------------------------
-# Stub voice quality: every stub message stays in Ultron's voice
+# Stub voice quality: every stub message stays in Kenning's voice
 # ---------------------------------------------------------------------------
 
 
@@ -175,7 +175,7 @@ def test_system_status_in_ultron_voice(cap_stack, routing_log):
 def test_stub_voice_messages_in_character(cap_stack, routing_log, utt):
     """The stub voice messages defined in OpenClawDispatcher must NOT
     contain banned filler ('certainly', 'of course', 'happy to', etc.)
-    per Ultron's system prompt."""
+    per Kenning's system prompt."""
     response = dispatch_utterance(cap_stack, utt)
     assert response is not None
     msg = response.text.lower()

@@ -5,12 +5,12 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable
 
-from ultron.llm.condensers.amortized import AmortizedCondenser
-from ultron.llm.condensers.base import Condenser, CondenserError
-from ultron.llm.condensers.llm_summarizing import LLMSummarizingCondenser
-from ultron.llm.condensers.noop import NoOpCondenser
-from ultron.llm.condensers.observation_masking import ObservationMaskingCondenser
-from ultron.llm.condensers.recent import RecentCondenser
+from kenning.llm.condensers.amortized import AmortizedCondenser
+from kenning.llm.condensers.base import Condenser, CondenserError
+from kenning.llm.condensers.llm_summarizing import LLMSummarizingCondenser
+from kenning.llm.condensers.noop import NoOpCondenser
+from kenning.llm.condensers.observation_masking import ObservationMaskingCondenser
+from kenning.llm.condensers.recent import RecentCondenser
 
 logger = logging.getLogger(__name__)
 

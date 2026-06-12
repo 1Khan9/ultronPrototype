@@ -3,7 +3,7 @@
 Per spec: ">= 90 % accuracy on a small handcrafted test set of 50 mixed
 utterances". Each row is ``(utterance, expected, recent_seconds, note)``,
 where ``expected`` is the AddressingDecision and ``recent_seconds`` is how
-recently Ultron last spoke (relevant for continuation rules).
+recently Kenning last spoke (relevant for continuation rules).
 
 The full classifier (rules + Flan-T5-small fallback) is exercised via the
 ``test_full_classifier_meets_accuracy_bar`` test, which is gated on
@@ -19,18 +19,18 @@ from typing import List, Tuple
 
 import pytest
 
-from ultron.addressing import AddressingClassifier, AddressingDecision
-from ultron.addressing.rules import classify as classify_rules
+from kenning.addressing import AddressingClassifier, AddressingDecision
+from kenning.addressing.rules import classify as classify_rules
 
 D = AddressingDecision
 
 # (utterance, expected_decision, seconds_since_last_response, why)
 _CASES: List[Tuple[str, AddressingDecision, float, str]] = [
     # --- Direct address ---
-    ("Ultron, what time is it?", D.ADDRESSED, 0.0, "vocative + question"),
-    ("Hey Ultron, play some music.", D.ADDRESSED, 0.0, "vocative + command"),
-    ("Ultron.", D.ADDRESSED, 0.0, "name alone"),
-    ("Okay Ultron, run the build.", D.ADDRESSED, 0.0, "vocative + imperative"),
+    ("Kenning, what time is it?", D.ADDRESSED, 0.0, "vocative + question"),
+    ("Hey Kenning, play some music.", D.ADDRESSED, 0.0, "vocative + command"),
+    ("Kenning.", D.ADDRESSED, 0.0, "name alone"),
+    ("Okay Kenning, run the build.", D.ADDRESSED, 0.0, "vocative + imperative"),
 
     # --- Imperatives ---
     ("Play the next track.", D.ADDRESSED, 2.0, "imperative play"),
@@ -74,10 +74,10 @@ _CASES: List[Tuple[str, AddressingDecision, float, str]] = [
     ("Lol.", D.NOT_ADDRESSED, 5.0, "reaction"),
     ("Ow!", D.NOT_ADDRESSED, 5.0, "pain reaction"),
 
-    # --- Third-person mention of Ultron ---
-    ("Ultron just told me the wrong thing.", D.NOT_ADDRESSED, 30.0, "talking about Ultron"),
-    ("Ultron said it would take an hour.", D.NOT_ADDRESSED, 30.0, "third-person quote"),
-    ("Yeah, Ultron mentioned that earlier.", D.NOT_ADDRESSED, 30.0, "Ultron as topic"),
+    # --- Third-person mention of Kenning ---
+    ("Kenning just told me the wrong thing.", D.NOT_ADDRESSED, 30.0, "talking about Kenning"),
+    ("Kenning said it would take an hour.", D.NOT_ADDRESSED, 30.0, "third-person quote"),
+    ("Yeah, Kenning mentioned that earlier.", D.NOT_ADDRESSED, 30.0, "Kenning as topic"),
 
     # --- Off-topic ambient speech (zero-shot territory) ---
     ("Did you put the laundry in?", D.NOT_ADDRESSED, 60.0, "household question to housemate"),
@@ -136,7 +136,7 @@ def test_rule_layer_handles_obvious_yes_and_no_cases():
 
 def test_third_party_narrative_rule_catches_session_log_failures():
     """2026-05-11 regression: real-session log showed third-person
-    narration about Ultron sliding through the rule layer and landing
+    narration about Kenning sliding through the rule layer and landing
     at zero-shot YES with 0.75 confidence. The narrow narrative rule
     should catch the specific surface forms observed."""
     # The exact utterances from the failing log + variants. Each must
@@ -178,11 +178,11 @@ def test_third_party_narrative_rule_catches_session_log_failures():
 
 
 def test_third_party_narrative_rule_does_not_break_legit_commands():
-    """The narrative rule must NOT match legitimate Ultron commands
+    """The narrative rule must NOT match legitimate Kenning commands
     that happen to reference a third party ('tell him to ...'). False
     negatives here mean the user can't issue routine commands."""
     legit_commands = [
-        # Pronoun-target commands that legitimately go to Ultron.
+        # Pronoun-target commands that legitimately go to Kenning.
         "Tell him to send the email.",
         "Ask her about the meeting.",
         "Send him the report.",
@@ -193,15 +193,15 @@ def test_third_party_narrative_rule_does_not_break_legit_commands():
         "Play some music.",
         "Set a timer for ten minutes.",
         "Turn off the kitchen light.",
-        # Direct Ultron address.
-        "Ultron, what time is it?",
+        # Direct Kenning address.
+        "Kenning, what time is it?",
     ]
     for utt in legit_commands:
         hit = classify_rules(utt, seconds_since_response=2.0)
         # We don't care WHICH rule wins, only that the narrative rule
         # didn't wrongly classify these as NOT_ADDRESSED.
         if hit is not None and hit.decision == AddressingDecision.NOT_ADDRESSED:
-            if hit.reason == "narrating Ultron to a third party":
+            if hit.reason == "narrating Kenning to a third party":
                 pytest.fail(
                     f"Narrative rule wrongly fired on legit command: "
                     f"{utt!r} (reason={hit.reason}, conf={hit.confidence:.2f})"
@@ -214,7 +214,7 @@ def test_zero_shot_addressed_min_confidence_gate_demotes_low_confidence_yes():
     (with default_silent=True). This is the lever that catches the
     saturated-at-0.75 third-person verdicts."""
     from unittest.mock import patch
-    from ultron.addressing.classifier import AddressingClassifier
+    from kenning.addressing.classifier import AddressingClassifier
 
     classifier = AddressingClassifier(
         rule_confidence_threshold=0.8,
@@ -246,7 +246,7 @@ def test_zero_shot_addressed_min_confidence_gate_allows_high_confidence_yes():
     """The gate must NOT block high-confidence YES verdicts -- those
     are real direct addresses and need to pass through."""
     from unittest.mock import patch
-    from ultron.addressing.classifier import AddressingClassifier
+    from kenning.addressing.classifier import AddressingClassifier
 
     classifier = AddressingClassifier(
         rule_confidence_threshold=0.8,
@@ -271,7 +271,7 @@ def test_zero_shot_min_confidence_gate_default_zero_preserves_legacy_behaviour()
     """The default value 0.0 keeps legacy behaviour for callers that
     don't opt in -- borderline YES verdicts still route to ADDRESSED."""
     from unittest.mock import patch
-    from ultron.addressing.classifier import AddressingClassifier
+    from kenning.addressing.classifier import AddressingClassifier
 
     classifier = AddressingClassifier(
         rule_confidence_threshold=0.8,

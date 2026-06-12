@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.skills.models import (
+from kenning.skills.models import (
     KeywordTrigger,
     Skill,
     SkillMatch,

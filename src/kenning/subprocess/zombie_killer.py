@@ -1,7 +1,7 @@
 """Periodic subprocess reaper with persistent-tag carve-out.
 
 Adapted from cline's ``BACKGROUND_COMMAND_TIMEOUT_MS`` pattern
-(Apache 2.0; see ``THIRD_PARTY_NOTICES.md``). Ultron's variant:
+(Apache 2.0; see ``THIRD_PARTY_NOTICES.md``). Kenning's variant:
 
 * Registers EVERY tracked subprocess in a single shared registry so a
   voice command can answer "what's running right now?".
@@ -12,10 +12,10 @@ Adapted from cline's ``BACKGROUND_COMMAND_TIMEOUT_MS`` pattern
 * Single-threaded periodic check (no per-process timers); poll cadence
   defaults to 60 s.
 
-The killer NEVER touches the live Ultron orchestrator process or its
+The killer NEVER touches the live Kenning orchestrator process or its
 ancestor chain (the safety contract from
 ``scripts/cleanup_stale_processes.py``). When the registry lacks a
-process for a pid (a child spawned outside ultron's tracking), the
+process for a pid (a child spawned outside kenning's tracking), the
 killer does NOT touch it — only registered children are managed.
 """
 
@@ -219,7 +219,7 @@ class ZombieKiller:
             self._stop_event.clear()
             self._thread = threading.Thread(
                 target=self._loop,
-                name="ultron-zombie-killer",
+                name="kenning-zombie-killer",
                 daemon=True,
             )
             self._thread.start()
@@ -349,7 +349,7 @@ class ZombieKiller:
         """Run a single sweep and return the resulting reports.
 
         Suitable for tests that don't want to spawn the worker thread,
-        and for the manual ``ultron stats`` CLI.
+        and for the manual ``kenning stats`` CLI.
         """
         produced: list[ZombieReport] = []
         with self._lock:

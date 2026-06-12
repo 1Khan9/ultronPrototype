@@ -3,12 +3,12 @@
 T7 (openclaw-clawhub catalog port; see ``THIRD_PARTY_NOTICES.md``).
 The marketplace pattern is "identity claim must match a pre-registered
 tuple before a short-lived token is minted, replacing long-lived
-secrets with revocation-by-expiry". The single-user ultron
+secrets with revocation-by-expiry". The single-user kenning
 adaptation maps the pattern onto four call sites the catalogue
 called out:
 
 * **MCP server startup** — instead of a long-lived
-  ``ULTRON_MCP_TOKEN`` in the server's env, the orchestrator
+  ``KENNING_MCP_TOKEN`` in the server's env, the orchestrator
   mints a short-lived JWT scoped to that server's PID + start
   time + tool allowlist.
 * **Coding bridge subprocess** — the coding agent subprocess
@@ -27,7 +27,7 @@ secret stored at ``data/identity/short_lived_token_secret.bin``.
 Generated on first use; rotation supported via :func:`rotate_secret`.
 RSA-256 with TPM-backed keys is documented as the future hardening
 path (the JWT contract is identical -- only the algorithm and key
-storage change). HS256 is sufficient for ultron's single-user
+storage change). HS256 is sufficient for kenning's single-user
 runtime where the verifier and minter share trust boundary.
 
 Audit-log integration: every mint + verify is logged to a
@@ -110,7 +110,7 @@ JWT_KEY_JWT_ID: str = "jti"
 
 #: Issuer string emitted in minted tokens (the audit-log "who
 #: signed this" anchor).
-DEFAULT_ISSUER: str = "ultron-local"
+DEFAULT_ISSUER: str = "kenning-local"
 
 
 # ---------------------------------------------------------------------------
@@ -563,7 +563,7 @@ def load_trusted_caller(
     """Return the latest :class:`TrustedCaller` row for ``caller_id`` or None.
 
     Reads the entire JSONL file -- linear in registrations. For
-    ultron's single-user runtime this is fine; high-volume servers
+    kenning's single-user runtime this is fine; high-volume servers
     would index. Malformed rows are skipped (logged at debug).
     """
     path = _trusted_callers_path(project_root)

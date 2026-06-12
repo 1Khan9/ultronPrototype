@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.feedback.moderation_plan import (
+from kenning.feedback.moderation_plan import (
     ImpactSeverity,
     ModerationPlan,
     PlanImpact,
@@ -130,16 +130,16 @@ def test_render_skips_confirm_prompt_when_not_required() -> None:
 
 def test_build_plan_basic() -> None:
     plan = build_plan(
-        subject="voicepack:ultron",
+        subject="voicepack:kenning",
         outcome=PlanOutcome.QUARANTINE,
         impacts=[PlanImpact(message="Stop loading the voicepack.")],
         actor="voice-user",
     )
-    assert plan.subject == "voicepack:ultron"
+    assert plan.subject == "voicepack:kenning"
     assert plan.outcome is PlanOutcome.QUARANTINE
     assert plan.actor == "voice-user"
     assert plan.requires_confirmation is True
-    assert "Plan for voicepack:ultron" in plan.confirm_prompt
+    assert "Plan for voicepack:kenning" in plan.confirm_prompt
     assert len(plan.plan_id) == 12
 
 

@@ -1,7 +1,7 @@
 """System clipboard read / write with safety validator + taint integration.
 
 Catalog 09 T4 (YELLOW): closes the "no clipboard abstraction" gap in
-ultron's desktop stack. The clipboard is the natural data-transfer
+kenning's desktop stack. The clipboard is the natural data-transfer
 channel between desktop applications:
 
 * "Copy the error message from the terminal" -> read.
@@ -16,7 +16,7 @@ Reads (Cap-2 -- ephemeral observation):
 
 * The clipboard can hold sensitive content (passwords, private keys,
   partial credit-card numbers, confidential documents). Every read
-  records the returned bytes in :mod:`ultron.safety.taint` so any
+  records the returned bytes in :mod:`kenning.safety.taint` so any
   subsequent outbound tool call carrying those exact bytes trips the
   validator's exfil-detection layer.
 * Reads do NOT require explicit-intent unless the caller is on the
@@ -46,7 +46,7 @@ so orchestrators can branch on it.
 
 Cross-platform: pyperclip uses ``win32clipboard`` on Windows,
 ``xclip`` / ``xsel`` on Linux, and ``pbcopy`` / ``pbpaste`` on macOS.
-Ultron's production target is Windows but the abstraction stays
+Kenning's production target is Windows but the abstraction stays
 portable.
 """
 
@@ -55,7 +55,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.clipboard")
 
@@ -120,7 +120,7 @@ def _validate_clipboard_action(
     returns ALLOW.
     """
     try:
-        from ultron.safety.validator import RuleContext, get_validator
+        from kenning.safety.validator import RuleContext, get_validator
 
         ctx = RuleContext(
             tool_name=f"desktop.clipboard.{action}",
@@ -131,7 +131,7 @@ def _validate_clipboard_action(
         return get_validator().check(ctx)
     except Exception as e:  # noqa: BLE001
         logger.debug("clipboard validator skipped: %s", e)
-        from ultron.safety.validator import ValidatorVerdict, Verdict
+        from kenning.safety.validator import ValidatorVerdict, Verdict
         return ValidatorVerdict(
             verdict=Verdict.ALLOW, reason="validator unavailable",
         )
@@ -171,7 +171,7 @@ class ClipboardManager:
     The orchestrator holds a single instance; downstream callers route
     through it rather than touching ``pyperclip`` directly so the
     safety validator and taint tracker fire uniformly. Like
-    :class:`ultron.desktop.input_control.InputController`, the manager
+    :class:`kenning.desktop.input_control.InputController`, the manager
     accepts injected hooks for the validator and taint tracker so
     tests can pin behaviour without monkey-patching the singletons.
     """
@@ -208,7 +208,7 @@ class ClipboardManager:
             taint tracker recorded the bytes.
         """
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('clipboard_read')
         # Validator first -- it can refuse the read entirely before we
         # even touch pyperclip.
@@ -291,7 +291,7 @@ class ClipboardManager:
             :class:`ClipboardResult` with ``action="write"``.
         """
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('clipboard_write')
         if not isinstance(text, str):
             try:
@@ -360,7 +360,7 @@ class ClipboardManager:
     def _record_taint_safe(text: str, *, capability: str) -> bool:
         """Record clipboard bytes in the taint tracker. Fail-open."""
         try:
-            from ultron.safety.taint import get_taint_tracker
+            from kenning.safety.taint import get_taint_tracker
 
             data = text.encode("utf-8", errors="replace")
             get_taint_tracker().record(data=data, capability=capability)

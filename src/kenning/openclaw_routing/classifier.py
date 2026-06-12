@@ -3,7 +3,7 @@
 Layered:
 
 1. **Coding triggers fire first.** Existing
-   :func:`ultron.coding.intent.classify` handles CODE_TASK,
+   :func:`kenning.coding.intent.classify` handles CODE_TASK,
    PROGRESS_QUERY, CANCEL, MID_SESSION_ADJUSTMENT, CLARIFICATION_RESPONSE.
    When that returns NONE, fall through to the new categories.
 
@@ -26,7 +26,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-from ultron.coding.intent import (
+from kenning.coding.intent import (
     CodingIntentKind,
     classify as classify_coding,
 )
@@ -42,11 +42,11 @@ def _safe_get_config():
     pre-Phase-3 behaviour.
     """
     try:
-        from ultron.config import get_config
+        from kenning.config import get_config
         return get_config()
     except Exception:
         return None
-from ultron.openclaw_routing.intents import (
+from kenning.openclaw_routing.intents import (
     ActiveWindowQueryIntent,
     AppLaunchIntent,
     BrowserIntent,
@@ -134,9 +134,9 @@ _MODEL_SWITCH_PATTERNS = re.compile(
 
 
 # ---------------------------------------------------------------------------
-# System status — read-only voice queries about Ultron's own state
+# System status — read-only voice queries about Kenning's own state
 # (heartbeat alerts, active coding sessions, standing-order activity).
-# Matched at high priority so utterances like "what is Ultron working on"
+# Matched at high priority so utterances like "what is Kenning working on"
 # don't get pulled into hybrid / coding rules below.
 # ---------------------------------------------------------------------------
 
@@ -157,8 +157,8 @@ _SYSTEM_STATUS_ALERT_PATTERNS = re.compile(
 
 _SYSTEM_STATUS_PROJECT_PATTERNS = re.compile(
     r"\b(?:"
-    r"what(?:'s|\s+is)?\s+(?:ultron\s+|currently\s+)?(?:working\s+on|running)|"
-    r"what\s+(?:are\s+you|is\s+ultron)\s+(?:working\s+on|doing)|"
+    r"what(?:'s|\s+is)?\s+(?:kenning\s+|currently\s+)?(?:working\s+on|running)|"
+    r"what\s+(?:are\s+you|is\s+kenning)\s+(?:working\s+on|doing)|"
     r"(?:what\s+(?:are\s+the\s+|the\s+)?|list\s+(?:the\s+|all\s+)?)?"
     r"(?:active|in[-\s]?flight|pending)\s+(?:projects?|coding\s+(?:tasks?|sessions?)|tasks?|sessions?)|"
     r"any\s+active\s+(?:projects?|coding|tasks?|sessions?)|"
@@ -174,7 +174,7 @@ _SYSTEM_STATUS_BOTH_PATTERNS = re.compile(
     r"system\s+status|"
     r"give\s+me\s+(?:a\s+)?status\s+update|"
     r"what(?:'s|\s+is)?\s+going\s+on|"
-    r"what(?:'s|\s+is)?\s+(?:ultron's|your)\s+state"
+    r"what(?:'s|\s+is)?\s+(?:kenning's|your)\s+state"
     r")\b",
     re.IGNORECASE,
 )
@@ -637,7 +637,7 @@ def classify_routing(
     )
     latency_ms = (_time.perf_counter() - start) * 1000.0
     try:
-        from ultron.observations import observe_routing_verdict
+        from kenning.observations import observe_routing_verdict
 
         observe_routing_verdict(
             utterance=utterance or "",
@@ -661,7 +661,7 @@ def _classify_routing_impl(
     """Classify ``utterance`` into a top-level :class:`RoutingIntent`.
 
     Order:
-      1. Coding intent (delegated to ``ultron.coding.intent.classify``)
+      1. Coding intent (delegated to ``kenning.coding.intent.classify``)
       2. Hybrid task signals
       3. Automation rules (browser / media / messaging / file / shell)
       4. CONVERSATIONAL fallback
@@ -729,15 +729,15 @@ def _classify_routing_impl(
             coding_intent=coding,
         )
 
-    # 1.4) SYSTEM_STATUS — read-only voice queries about Ultron's own
+    # 1.4) SYSTEM_STATUS — read-only voice queries about Kenning's own
     #      state. Resolved without OpenClaw (read from heartbeat alert
     #      log + active session list). High-priority match so
-    #      utterances like "what is Ultron working on" don't get pulled
+    #      utterances like "what is Kenning working on" don't get pulled
     #      into hybrid / coding rules.
     if not has_pending_clarification:
         status_match = _classify_system_status(text)
         if status_match is not None:
-            from ultron.openclaw_routing.intents import SystemStatusIntent
+            from kenning.openclaw_routing.intents import SystemStatusIntent
             focus, reason = status_match
             return RoutingIntent(
                 kind=RoutingIntentKind.SYSTEM_STATUS,
@@ -980,7 +980,7 @@ def _classify_routing_impl(
 
     # 2.0) APP_LAUNCH (Phase 8) -- "open YouTube on monitor 2",
     #      "launch Cursor on my left monitor", "show me a picture of X".
-    #      Native via :mod:`ultron.desktop.launcher`; routes to user's
+    #      Native via :mod:`kenning.desktop.launcher`; routes to user's
     #      real Chrome / Cursor / etc. (NOT the OpenClaw Playwright
     #      plugin). Must fire BEFORE the BROWSER_AUTOMATION rule below
     #      so "open google.com" doesn't go to the isolated Playwright
@@ -1095,7 +1095,7 @@ _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 # Phase 8 (2026-05-12): Desktop automation native classifier patterns.
 #
 # These fire BEFORE the OpenClaw-gated BROWSER / DESKTOP / WINDOW patterns
-# because they route to native modules (ultron.desktop.*) that don't
+# because they route to native modules (kenning.desktop.*) that don't
 # depend on the OpenClaw Gateway being enabled. The user's specific use
 # cases:
 #   - "open YouTube on my 2nd monitor" -> APP_LAUNCH with Chrome+URL+monitor
@@ -1452,7 +1452,7 @@ _IMAGE_SEARCH_BARE_RE = re.compile(
 # repositions it. The user's session said "Put Discord on my right
 # monitor" expecting their existing Discord window to move; the
 # previous classifier didn't have this verb so it leaked to
-# conversational and Ultron hallucinated "I cannot perform actions
+# conversational and Kenning hallucinated "I cannot perform actions
 # on your device."
 _WINDOW_MOVE_RE = re.compile(
     r"\b(?:put|move|send|throw|drag|relocate|push|bring|shift)\s+"
@@ -1494,7 +1494,7 @@ _WINDOW_CLOSE_DENY = frozenset({
     "session", "the session",
     "file", "the file",  # file_op territory
     "everything", "all of it", "all of them",  # too broad
-    "ultron", "yourself", "your mouth",  # don't shut Ultron down here
+    "kenning", "yourself", "your mouth",  # don't shut Kenning down here
 })
 
 

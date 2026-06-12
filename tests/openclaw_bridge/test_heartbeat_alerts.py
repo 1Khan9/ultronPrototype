@@ -1,4 +1,4 @@
-"""Tests for ``ultron.openclaw_bridge.heartbeat_alerts``."""
+"""Tests for ``kenning.openclaw_bridge.heartbeat_alerts``."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.openclaw_bridge.heartbeat_alerts import (
+from kenning.openclaw_bridge.heartbeat_alerts import (
     HeartbeatAlert,
     HeartbeatAlertLog,
 )

@@ -1,9 +1,9 @@
-"""Kill stale Ultron-related Python processes safely.
+"""Kill stale Kenning-related Python processes safely.
 
-Use case: after a pytest run, an interrupted ``python -m ultron``, or
+Use case: after a pytest run, an interrupted ``python -m kenning``, or
 a crashed background task, Python workers can be left holding RAM and
 VRAM. This script finds them and kills them -- while always preserving
-a currently-running Ultron instance (detected by port 19761, the MCP
+a currently-running Kenning instance (detected by port 19761, the MCP
 server's listen port).
 
 Usage:
@@ -15,15 +15,15 @@ Usage:
 Detection logic:
 
 * Enumerate every running ``python.exe`` process.
-* Identify the running Ultron via TCP port 19761; that process and its
+* Identify the running Kenning via TCP port 19761; that process and its
   parent chain + child chain are PRESERVED no matter what.
 * Identify the running XTTS server via the spawned subprocess (which
-  binds an ephemeral port). The Ultron parent chain check covers it.
+  binds an ephemeral port). The Kenning parent chain check covers it.
 * Anything else matching the staleness rules below is killed:
    - ``pytest`` in the command line.
-   - ``run_ultron_mcp_for_openclaw.py`` from any worktree.
-   - ``ultronVoiceAudio\\scripts\\xtts_server.py`` not under the running
-     Ultron's parent chain (orphaned voice server from a crashed run).
+   - ``run_kenning_mcp_for_openclaw.py`` from any worktree.
+   - ``kenningVoiceAudio\\scripts\\xtts_server.py`` not under the running
+     Kenning's parent chain (orphaned voice server from a crashed run).
    - Older than ``--max-age-minutes`` (default 30) Python processes
      with no readable command line AND >= 200 MB RAM (orphaned workers
      from killed-without-cleanup tests).
@@ -46,7 +46,7 @@ except ImportError:
     sys.exit(2)
 
 
-ULTRON_MCP_PORT = 19761
+KENNING_MCP_PORT = 19761
 RUNUP_GUARD_SECONDS = 10  # don't kill a child that started <10s ago
 
 
@@ -126,14 +126,14 @@ def _age_minutes(proc: psutil.Process) -> float:
         return 0.0
 
 
-def find_running_ultron() -> set[int]:
-    """Return the set of PIDs we must preserve (the running Ultron stack).
+def find_running_kenning() -> set[int]:
+    """Return the set of PIDs we must preserve (the running Kenning stack).
 
     Computed as: the process holding port 19761, plus its ancestors,
     plus all its descendants. The XTTS server is a child of the
     orchestrator and therefore caught by the descendant scan.
     """
-    holders = _processes_holding_port(ULTRON_MCP_PORT)
+    holders = _processes_holding_port(KENNING_MCP_PORT)
     if not holders:
         return set()
     preserved: set[int] = set(holders)
@@ -164,8 +164,12 @@ def is_stale(
     cmd = _cmdline(proc).lower()
     if "pytest" in cmd:
         return "pytest worker"
+    if "run_kenning_mcp_for_openclaw.py" in cmd:
+        return "stale MCP-stub (run_kenning_mcp_for_openclaw)"
     if "run_ultron_mcp_for_openclaw.py" in cmd:
-        return "stale MCP-stub (run_ultron_mcp_for_openclaw)"
+        # Pre-rename (2026-06-12) script name: a stale process spawned
+        # before the Kenning rename can outlive the rename itself.
+        return "stale MCP-stub (legacy run_ultron_mcp_for_openclaw)"
     if "xtts_server.py" in cmd:
         # The currently-running XTTS would have been pulled in via the
         # preserved descendant scan; reaching here means it's orphaned.
@@ -238,7 +242,7 @@ def kill(procs: Iterable[psutil.Process], *, timeout: float = 5.0) -> tuple[int,
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Kill stale Ultron-related Python processes "
+            "Kill stale Kenning-related Python processes "
             "(pytest workers, orphaned MCP stubs, orphaned XTTS servers)."
         ),
     )
@@ -263,15 +267,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    preserved = find_running_ultron()
+    preserved = find_running_kenning()
     if preserved:
         print(
-            f"running Ultron detected (port {ULTRON_MCP_PORT}): "
+            f"running Kenning detected (port {KENNING_MCP_PORT}): "
             f"preserving PIDs {sorted(preserved)}"
         )
     else:
         print(
-            f"no running Ultron detected on port {ULTRON_MCP_PORT}; "
+            f"no running Kenning detected on port {KENNING_MCP_PORT}; "
             f"nothing will be preserved by the port-listener rule"
         )
 

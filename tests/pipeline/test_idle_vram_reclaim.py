@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ultron.pipeline.orchestrator import Orchestrator
+from kenning.pipeline.orchestrator import Orchestrator
 
 
 def _bare():
@@ -29,7 +29,7 @@ def _fake_torch(*, available=True, reserved=0, allocated=0, calls=None):
 
 
 def _patch_cfg(monkeypatch, *, enabled=True, min_slack_mb=192.0):
-    import ultron.config as config_mod
+    import kenning.config as config_mod
 
     monkeypatch.setattr(
         config_mod, "get_config",
@@ -96,7 +96,7 @@ def test_fail_open_on_torch_missing(monkeypatch) -> None:
 
 
 def test_config_defaults() -> None:
-    from ultron.config import IdleVramReclaimConfig, LLMConfig
+    from kenning.config import IdleVramReclaimConfig, LLMConfig
 
     cfg = IdleVramReclaimConfig()
     assert cfg.enabled is True

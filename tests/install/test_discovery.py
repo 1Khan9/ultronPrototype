@@ -7,7 +7,7 @@ from typing import Callable
 
 import pytest
 
-from ultron.install.discovery import (
+from kenning.install.discovery import (
     DEFAULT_DISCOVERY_TTL_SECONDS,
     DEFAULT_REGISTRY_BASE,
     DISCOVERY_ENV_OVERRIDE,
@@ -31,7 +31,7 @@ def _ok_payload(**overrides: object) -> str:
     base = {
         "apiBase": "https://example.test/api",
         "authBase": "https://example.test/auth",
-        "minUltronVersion": "u1.0.0",
+        "minKenningVersion": "u1.0.0",
         "extras": {"region": "us-west"},
     }
     base.update(overrides)
@@ -138,7 +138,7 @@ def test_discover_accepts_snake_case_keys() -> None:
             status=200,
             body=json.dumps({
                 "api_base": "https://example.test/api",
-                "min_ultron_version": "u2.0.0",
+                "min_kenning_version": "u2.0.0",
             }),
         )
 
@@ -391,11 +391,11 @@ def test_cache_caches_none_result() -> None:
 
 
 def test_well_known_constant_value() -> None:
-    assert WELL_KNOWN_PATH == "/.well-known/ultron.json"
+    assert WELL_KNOWN_PATH == "/.well-known/kenning.json"
 
 
 def test_well_known_legacy_constant_value() -> None:
-    assert WELL_KNOWN_LEGACY_PATH == "/.well-known/ultron.legacy.json"
+    assert WELL_KNOWN_LEGACY_PATH == "/.well-known/kenning.legacy.json"
 
 
 def test_default_ttl_constant() -> None:

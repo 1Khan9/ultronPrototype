@@ -15,13 +15,13 @@ from pathlib import Path
 
 import pytest
 
-from ultron.config import (
+from kenning.config import (
     LLMConfig,
     MemoryConfig,
-    UltronConfig,
+    KenningConfig,
     set_config,
 )
-from ultron.memory.background_summarizer import (
+from kenning.memory.background_summarizer import (
     BackgroundSummarizer,
     DecisionEntry,
     FactEntry,
@@ -29,7 +29,7 @@ from ultron.memory.background_summarizer import (
     SummaryResult,
     TurnSnapshot,
 )
-from ultron.pipeline.orchestrator import Orchestrator
+from kenning.pipeline.orchestrator import Orchestrator
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ def bare_orchestrator():
 def cfg_with_summary_enabled(tmp_path, monkeypatch):
     """Push a config with memory.background_summary enabled + a tmp
     output path; restore defaults on teardown."""
-    cfg = UltronConfig()
+    cfg = KenningConfig()
     cfg.memory.background_summary.enabled = True
     cfg.memory.background_summary.cadence_turns = 2
     cfg.memory.background_summary.min_turns = 2
@@ -119,7 +119,7 @@ def cfg_with_summary_enabled(tmp_path, monkeypatch):
     try:
         yield cfg
     finally:
-        set_config(UltronConfig())
+        set_config(KenningConfig())
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +129,7 @@ def cfg_with_summary_enabled(tmp_path, monkeypatch):
 
 def test_loader_returns_none_when_flag_off(bare_orchestrator):
     # Default config has background_summary.enabled=False.
-    set_config(UltronConfig())
+    set_config(KenningConfig())
     bare_orchestrator.memory = _StubMemory()
     bare_orchestrator.llm = _StubLLM()
     out = Orchestrator._load_background_summarizer_if_enabled(bare_orchestrator)
@@ -183,7 +183,7 @@ def test_loader_summarizer_calls_llm_isolated(
     ])
     assert len(llm.isolated_calls) == 1
     call = llm.isolated_calls[0]
-    assert "internal worker for the Ultron memory system" in call["system_prompt"]
+    assert "internal worker for the Kenning memory system" in call["system_prompt"]
     assert "Summarise the conversation below" in call["user_prompt"]
     assert "[user] hello" in call["user_prompt"]
 

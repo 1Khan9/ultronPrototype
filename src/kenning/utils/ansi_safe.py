@@ -1,6 +1,6 @@
 """ANSI / control-character sanitisation + grapheme-aware width.
 
-Three primitives ultron needs across logging, memory persistence,
+Three primitives kenning needs across logging, memory persistence,
 web-search ingestion, and TTS chunking:
 
 * :func:`strip_ansi` — remove ANSI CSI (``ESC[...``) and OSC

@@ -1,10 +1,10 @@
 """User-initiated report queue with append-only audit chain (T12 part 1).
 
 T12 (openclaw-clawhub catalog port; see ``THIRD_PARTY_NOTICES.md``).
-Single-user ultron's adaptation of the marketplace's report-queue
+Single-user kenning's adaptation of the marketplace's report-queue
 + appeal workflow. The upstream pattern is "community files
 concerns against a published artifact + moderator triages"; the
-ultron adaptation is "voice user files concerns against a turn /
+kenning adaptation is "voice user files concerns against a turn /
 response / skill / provider / memory entry + the same voice user
 (or a future operator review pass) triages them later".
 
@@ -12,7 +12,7 @@ Three architectural pieces:
 
 1. **Filing.** :meth:`ReportQueue.file_report(target, reason)` adds
    one :class:`Report` row with status OPEN. Voice intent
-   ("ultron, log a concern that the last response was wrong")
+   ("kenning, log a concern that the last response was wrong")
    triggers this; the orchestrator wires the target metadata
    (turn id, response text id, etc.) before persisting.
 
@@ -20,20 +20,20 @@ Three architectural pieces:
    note, final_action)` updates the row to CONFIRMED or DISMISSED
    with an optional ``final_action`` (NONE / HIDE / QUARANTINE /
    REVOKE). Per the catalog's YELLOW gating, every triage call
-   that changes state is paired with a :mod:`ultron.safety.two_phase_approval`
+   that changes state is paired with a :mod:`kenning.safety.two_phase_approval`
    handle so a compromised in-process LLM cannot dismiss real
    reports as a covert channel.
 
 3. **Persistence + audit.** Reports live in an append-only JSONL
    file with the same SHA-256 hash chain shape as
-   :mod:`ultron.safety.audit` so the log is tamper-evident.
+   :mod:`kenning.safety.audit` so the log is tamper-evident.
    :meth:`replay_from_log` rebuilds the in-memory state on
    startup; :meth:`verify_log_chain` returns False on tampered
    rows.
 
 The catalog's "moderation plan preview" pattern (universal pre-
 act surface for every voice command with irreversible impact) is
-implemented in :mod:`ultron.feedback.moderation_plan` and consumed
+implemented in :mod:`kenning.feedback.moderation_plan` and consumed
 by triage flows before they call :meth:`ReportQueue.triage`.
 
 The single-user model means there's no "appeal workflow" in the
@@ -79,7 +79,7 @@ class FinalAction(str, Enum):
 class ReportTargetKind(str, Enum):
     """Discriminator for what a report concerns.
 
-    Ultron-specific extension of the upstream marketplace's
+    Kenning-specific extension of the upstream marketplace's
     skill/package target kinds. Each kind picks a different audit-
     reviewer path (a turn-quality report goes to offline LLM-drift
     review; a memory-quality report goes to the topical-cleanup
@@ -354,7 +354,7 @@ class ReportQueue:
                 closed (CONFIRMED / DISMISSED) -- callers must
                 explicitly re-open via a separate mutation if
                 supported by the caller policy (single-user
-                ultron currently does not).
+                kenning currently does not).
             ValueError if status is OPEN (triage moves to a closed
                 state; staying open is a no-op).
         """

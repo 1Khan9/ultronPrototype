@@ -1,6 +1,6 @@
 """Acknowledgment phrases for the web-search workflow.
 
-When the gate decides a search is needed, Ultron speaks one of these
+When the gate decides a search is needed, Kenning speaks one of these
 phrases immediately so the user isn't stuck in silence while Brave +
 Jina + the LLM cycle through. Phrases stay in character (precise,
 weighted, slightly menacing) and avoid the filler vocabulary explicitly
@@ -14,7 +14,7 @@ import threading
 from typing import List
 
 # Curated pool. Kept short -- the user shouldn't notice the same phrase
-# twice in the same session. All preserve Ultron's voice (no
+# twice in the same session. All preserve Kenning's voice (no
 # "Of course!" / "Sure thing!" / etc).
 _PHRASES: List[str] = [
     "Querying external sources.",

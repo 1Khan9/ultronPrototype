@@ -16,7 +16,7 @@ that are reachable:
 
 1. Active LLM preset (e.g. "Qwen 3.5 4B").
 2. STT engine (e.g. "Moonshine streaming").
-3. TTS engine + voice (e.g. "Kokoro on CUDA, voice ultron").
+3. TTS engine + voice (e.g. "Kokoro on CUDA, voice kenning").
 4. Gaming mode (engaged / standby).
 5. Last fail-open counter line, if non-zero.
 

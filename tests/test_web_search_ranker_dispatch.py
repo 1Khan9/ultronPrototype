@@ -15,8 +15,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.config import WebSearchConfig, UltronConfig
-from ultron.web_search.brave import SearchResult
+from kenning.config import WebSearchConfig, KenningConfig
+from kenning.web_search.brave import SearchResult
 
 
 def _result(rank, title, snippet="", url=None):
@@ -48,7 +48,7 @@ def test_ranker_validates_literal():
 
 
 def test_full_config_ranker_round_trip():
-    cfg = UltronConfig.model_validate({
+    cfg = KenningConfig.model_validate({
         "web_search": {"ranker": "llm"}
     })
     assert cfg.web_search.ranker == "llm"
@@ -61,7 +61,7 @@ def test_full_config_ranker_round_trip():
 
 def test_dispatch_none_takes_provider_order(monkeypatch):
     """``ranker: none`` returns results in provider order, no compute."""
-    from ultron.web_search import search as search_module
+    from kenning.web_search import search as search_module
 
     # Force config to "none"
     cfg = MagicMock()
@@ -77,7 +77,7 @@ def test_dispatch_cross_encoder_when_default(monkeypatch):
     """``ranker: cross_encoder`` (default) goes through the cross-encoder
     path. We mock the inner ``_rank_snippets_cross_encoder`` and verify
     it's called."""
-    from ultron.web_search import search as search_module
+    from kenning.web_search import search as search_module
 
     cfg = MagicMock()
     cfg.web_search.ranker = "cross_encoder"
@@ -108,7 +108,7 @@ def test_dispatch_cross_encoder_when_default(monkeypatch):
 
 def test_dispatch_llm_path(monkeypatch):
     """``ranker: llm`` routes to the legacy LLM ranker."""
-    from ultron.web_search import search as search_module
+    from kenning.web_search import search as search_module
 
     cfg = MagicMock()
     cfg.web_search.ranker = "llm"
@@ -140,7 +140,7 @@ def test_dispatch_llm_path(monkeypatch):
 def test_dispatch_short_lists_skip_ranking():
     """When results <= top_n, all dispatch paths short-circuit
     to ``results[:top_n]`` without invoking any model."""
-    from ultron.web_search.search import _rank_snippets
+    from kenning.web_search.search import _rank_snippets
 
     results = [_result(i, f"t{i}") for i in range(3)]
     out = _rank_snippets(None, "query", results, top_n=3)
@@ -148,14 +148,14 @@ def test_dispatch_short_lists_skip_ranking():
 
 
 def test_dispatch_empty_results_short_circuits():
-    from ultron.web_search.search import _rank_snippets
+    from kenning.web_search.search import _rank_snippets
     assert _rank_snippets(None, "query", [], top_n=3) == []
 
 
 def test_dispatch_config_failure_falls_back_to_cross_encoder(monkeypatch):
     """If ``get_config()`` raises (test fixture, etc.), dispatch
     defaults to cross_encoder rather than crashing."""
-    from ultron.web_search import search as search_module
+    from kenning.web_search import search as search_module
 
     def boom():
         raise RuntimeError("simulated config failure")
@@ -185,7 +185,7 @@ def test_cross_encoder_returns_provider_order_when_reranker_unavailable(monkeypa
     """If ``_get_cross_encoder`` returns None (load failed), the
     cross-encoder ranker returns ``results[:top_n]`` in provider
     order without crashing."""
-    from ultron.web_search import search as search_module
+    from kenning.web_search import search as search_module
 
     monkeypatch.setattr(search_module, "_get_cross_encoder", lambda: None)
     results = [_result(i, f"t{i}") for i in range(8)]
@@ -197,7 +197,7 @@ def test_cross_encoder_uses_scores_to_reorder(monkeypatch):
     """Mock the underlying model.predict to return scores in a
     deliberate order; verify the ranker returns candidates sorted
     by descending score."""
-    from ultron.web_search import search as search_module
+    from kenning.web_search import search as search_module
 
     # Fake reranker that returns deterministic scores
     fake_model = MagicMock()
@@ -218,7 +218,7 @@ def test_cross_encoder_uses_scores_to_reorder(monkeypatch):
 
 def test_cross_encoder_predict_failure_falls_back(monkeypatch):
     """If model.predict raises, return results[:top_n] in provider order."""
-    from ultron.web_search import search as search_module
+    from kenning.web_search import search as search_module
 
     fake_model = MagicMock()
     fake_model.predict.side_effect = RuntimeError("simulated predict crash")
@@ -242,8 +242,8 @@ def test_get_cross_encoder_caches_instance(monkeypatch):
     module's process-wide ``get_shared_reranker`` factory so the
     memory + web-search sides share one model instance. Patch that.
     """
-    from ultron.web_search import search as search_module
-    from ultron.memory import reranker as reranker_module
+    from kenning.web_search import search as search_module
+    from kenning.memory import reranker as reranker_module
 
     # Reset both caches
     search_module._CROSS_ENCODER_CACHE = None
@@ -274,8 +274,8 @@ def test_get_cross_encoder_caches_instance(monkeypatch):
 def test_get_cross_encoder_caches_failure(monkeypatch):
     """If construction fails once, the cache stores a sentinel so
     we don't retry on every search query."""
-    from ultron.web_search import search as search_module
-    from ultron.memory import reranker as reranker_module
+    from kenning.web_search import search as search_module
+    from kenning.memory import reranker as reranker_module
 
     search_module._CROSS_ENCODER_CACHE = None
     reranker_module.reset_shared_reranker()

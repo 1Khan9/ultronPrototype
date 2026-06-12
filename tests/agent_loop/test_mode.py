@@ -1,10 +1,10 @@
-"""Tests for ultron.agent_loop.mode."""
+"""Tests for kenning.agent_loop.mode."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.agent_loop import mode as md
+from kenning.agent_loop import mode as md
 
 
 class FakeClock:

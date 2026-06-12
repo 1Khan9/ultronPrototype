@@ -37,7 +37,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, List, Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.preferences")
 
@@ -367,7 +367,7 @@ def get_preference_logger(
         target = path
         if target is None:
             try:
-                from ultron.config import PROJECT_ROOT
+                from kenning.config import PROJECT_ROOT
                 target = PROJECT_ROOT / DEFAULT_PREFERENCES_PATH
             except Exception as e:  # noqa: BLE001
                 logger.debug("project root resolution failed: %s", e)

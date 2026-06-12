@@ -35,7 +35,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List, Optional, Set
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("coding.canonical_monitor")
 
@@ -57,7 +57,7 @@ CODE_TASK_CANONICAL_TOOLS: Set[str] = {
     "WEBSEARCH",  # ditto
     "POWERSHELL",  # Windows shell parity with Bash
     # MCP tools that the in-process MCP server exposes are also
-    # canonical (the worker calls back to Ultron via SSE).
+    # canonical (the worker calls back to Kenning via SSE).
     "REPORT_PROGRESS",
     "REQUEST_CLARIFICATION",
     "REPORT_TEST_RESULTS",
@@ -216,9 +216,9 @@ class CanonicalPathMonitor:
 
 
 # Imported at module level so test patches against
-# ``ultron.coding.canonical_monitor.get_config`` are stable. Same
-# rationale as ``ultron.llm.compression``.
-from ultron.config import get_config  # noqa: E402  — see module docstring
+# ``kenning.coding.canonical_monitor.get_config`` are stable. Same
+# rationale as ``kenning.llm.compression``.
+from kenning.config import get_config  # noqa: E402  — see module docstring
 
 
 def build_default_monitor(intent_type: str = "CODE_TASK", cfg: Any = None) -> Optional[CanonicalPathMonitor]:

@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ultron.llm.inference import LLMEngine, _rag_query_has_min_content
+from kenning.llm.inference import LLMEngine, _rag_query_has_min_content
 
 
 @pytest.mark.parametrize("query,expected", [
@@ -33,7 +33,7 @@ def test_rag_block_header_marks_memories_as_possibly_stale(
 ) -> None:
     # Bypass the optional compression pass (it legitimately rewrites
     # wording); this test pins the UNCOMPRESSED header contract.
-    import ultron.llm.compression as compression
+    import kenning.llm.compression as compression
 
     monkeypatch.setattr(compression, "maybe_compress",
                         lambda block, surface: block)
@@ -58,7 +58,7 @@ def test_rag_block_empty_snippets_stay_empty() -> None:
 
 
 def test_no_think_marker_only_for_qwen_presets(monkeypatch) -> None:
-    import ultron.config as config_mod
+    import kenning.config as config_mod
 
     msgs = [{"role": "user", "content": "hello there"}]
 

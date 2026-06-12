@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.errors import BraveAPIError
-from ultron.providers.auth_profiles import reset_profile_store_for_testing
-from ultron.web_search.brave import (
+from kenning.errors import BraveAPIError
+from kenning.providers.auth_profiles import reset_profile_store_for_testing
+from kenning.web_search.brave import (
     BraveSearchClient,
     RotatingBraveClient,
     SearchResult,
@@ -29,7 +29,7 @@ def _fresh_store():
 
 
 def _cfg():
-    from ultron.config import get_config
+    from kenning.config import get_config
     return get_config().web_search
 
 
@@ -37,27 +37,27 @@ def _cfg():
 
 
 def test_resolve_primary_key_only(monkeypatch):
-    monkeypatch.setenv("ULTRON_BRAVE_API_KEY", "primary-key")
+    monkeypatch.setenv("KENNING_BRAVE_API_KEY", "primary-key")
     monkeypatch.setattr(_cfg(), "brave_additional_api_key_envs", [])
     assert resolve_brave_api_keys() == ["primary-key"]
 
 
 def test_resolve_primary_plus_additional(monkeypatch):
-    monkeypatch.setenv("ULTRON_BRAVE_API_KEY", "k1")
-    monkeypatch.setenv("ULTRON_BRAVE_API_KEY_2", "k2")
-    monkeypatch.setattr(_cfg(), "brave_additional_api_key_envs", ["ULTRON_BRAVE_API_KEY_2"])
+    monkeypatch.setenv("KENNING_BRAVE_API_KEY", "k1")
+    monkeypatch.setenv("KENNING_BRAVE_API_KEY_2", "k2")
+    monkeypatch.setattr(_cfg(), "brave_additional_api_key_envs", ["KENNING_BRAVE_API_KEY_2"])
     assert resolve_brave_api_keys() == ["k1", "k2"]
 
 
 def test_resolve_dedups_identical_keys(monkeypatch):
-    monkeypatch.setenv("ULTRON_BRAVE_API_KEY", "same")
-    monkeypatch.setenv("ULTRON_BRAVE_API_KEY_2", "same")
-    monkeypatch.setattr(_cfg(), "brave_additional_api_key_envs", ["ULTRON_BRAVE_API_KEY_2"])
+    monkeypatch.setenv("KENNING_BRAVE_API_KEY", "same")
+    monkeypatch.setenv("KENNING_BRAVE_API_KEY_2", "same")
+    monkeypatch.setattr(_cfg(), "brave_additional_api_key_envs", ["KENNING_BRAVE_API_KEY_2"])
     assert resolve_brave_api_keys() == ["same"]
 
 
 def test_resolve_skips_empty_envs(monkeypatch):
-    monkeypatch.delenv("ULTRON_BRAVE_API_KEY", raising=False)
+    monkeypatch.delenv("KENNING_BRAVE_API_KEY", raising=False)
     monkeypatch.setattr(_cfg(), "brave_additional_api_key_envs", [])
     assert resolve_brave_api_keys() == []
 
@@ -66,8 +66,8 @@ def test_resolve_skips_empty_envs(monkeypatch):
 
 
 def test_rotation_falls_through_rate_limited_key_to_next(monkeypatch):
-    monkeypatch.setenv("ULTRON_BRAVE_API_KEY", "k1")
-    monkeypatch.setenv("ULTRON_BRAVE_API_KEY_2", "k2")
+    monkeypatch.setenv("KENNING_BRAVE_API_KEY", "k1")
+    monkeypatch.setenv("KENNING_BRAVE_API_KEY_2", "k2")
     rc = RotatingBraveClient(["k1", "k2"])
 
     hit = SearchResult(url="https://x", title="X", snippet="s", rank=0)
@@ -87,8 +87,8 @@ def test_rotation_falls_through_rate_limited_key_to_next(monkeypatch):
 
 
 def test_rotation_all_keys_rate_limited_returns_empty(monkeypatch):
-    monkeypatch.setenv("ULTRON_BRAVE_API_KEY", "k1")
-    monkeypatch.setenv("ULTRON_BRAVE_API_KEY_2", "k2")
+    monkeypatch.setenv("KENNING_BRAVE_API_KEY", "k1")
+    monkeypatch.setenv("KENNING_BRAVE_API_KEY_2", "k2")
     rc = RotatingBraveClient(["k1", "k2"])
 
     def _rate_limited(query, count):
@@ -114,9 +114,9 @@ def test_rotating_client_requires_a_key():
 
 
 def test_chain_uses_plain_client_for_single_key(monkeypatch):
-    monkeypatch.setenv("ULTRON_BRAVE_API_KEY", "only-key")
+    monkeypatch.setenv("KENNING_BRAVE_API_KEY", "only-key")
     monkeypatch.setattr(_cfg(), "brave_additional_api_key_envs", [])
-    from ultron.web_search.provider_chain import _make_brave
+    from kenning.web_search.provider_chain import _make_brave
 
     client = _make_brave(recorder=None)
     assert isinstance(client, BraveSearchClient)
@@ -124,10 +124,10 @@ def test_chain_uses_plain_client_for_single_key(monkeypatch):
 
 
 def test_chain_uses_rotating_client_for_two_keys(monkeypatch):
-    monkeypatch.setenv("ULTRON_BRAVE_API_KEY", "k1")
-    monkeypatch.setenv("ULTRON_BRAVE_API_KEY_2", "k2")
-    monkeypatch.setattr(_cfg(), "brave_additional_api_key_envs", ["ULTRON_BRAVE_API_KEY_2"])
-    from ultron.web_search.provider_chain import _make_brave
+    monkeypatch.setenv("KENNING_BRAVE_API_KEY", "k1")
+    monkeypatch.setenv("KENNING_BRAVE_API_KEY_2", "k2")
+    monkeypatch.setattr(_cfg(), "brave_additional_api_key_envs", ["KENNING_BRAVE_API_KEY_2"])
+    from kenning.web_search.provider_chain import _make_brave
 
     client = _make_brave(recorder=None)
     assert isinstance(client, RotatingBraveClient)

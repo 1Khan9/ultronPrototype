@@ -5,7 +5,7 @@ denylists govern what a subagent may invoke:
 
 * :data:`SUBAGENT_TOOL_DENY_ALWAYS` — tools a subagent NEVER gets
   regardless of depth. These are orchestrator-only capabilities:
-  the gateway / sessions / cron management surface. For ultron,
+  the gateway / sessions / cron management surface. For kenning,
   the equivalents are TTS speaking (subagents must not speak
   via Kokoro), gaming-mode toggle (mode transitions are
   orchestrator-only), and the safety-validator override path.
@@ -37,7 +37,7 @@ from typing import Iterable, Optional
 DEFAULT_SUBAGENT_MAX_SPAWN_DEPTH: int = 1
 
 #: Tools every subagent loses regardless of depth. Pattern from
-#: OpenClaw's ``SUBAGENT_TOOL_DENY_ALWAYS``. Adapted to ultron's
+#: OpenClaw's ``SUBAGENT_TOOL_DENY_ALWAYS``. Adapted to kenning's
 #: tool-name conventions: gateway management, session listing,
 #: cron, direct messaging across the announce chain (subagents
 #: communicate via announce, not direct send), TTS speaking,
@@ -49,7 +49,7 @@ SUBAGENT_TOOL_DENY_ALWAYS: frozenset[str] = frozenset({
     "session_status",
     "cron",
     "sessions_send",
-    # Ultron-specific extensions: subagents are research/read tools;
+    # Kenning-specific extensions: subagents are research/read tools;
     # they MUST NOT speak via TTS, toggle modes, or modify safety.
     "tts_speak",
     "kokoro_speak",
@@ -64,14 +64,14 @@ SUBAGENT_TOOL_DENY_ALWAYS: frozenset[str] = frozenset({
 #: Tools a LEAF subagent loses (in addition to DENY_ALWAYS).
 #: Intermediate subagents (depth < max_spawn_depth) keep these so
 #: they can manage their own children. Pattern from OpenClaw's
-#: ``SUBAGENT_TOOL_DENY_LEAF`` plus ultron MCP add/remove extensions.
+#: ``SUBAGENT_TOOL_DENY_LEAF`` plus kenning MCP add/remove extensions.
 SUBAGENT_TOOL_DENY_LEAF: frozenset[str] = frozenset({
     # OpenClaw direct ports.
     "subagents",
     "sessions_list",
     "sessions_history",
     "sessions_spawn",
-    # Ultron extensions: MCP server lifecycle is orchestrator-only.
+    # Kenning extensions: MCP server lifecycle is orchestrator-only.
     "mcp_add_server",
     "mcp_remove_server",
 })

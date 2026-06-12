@@ -13,10 +13,10 @@ from typing import Any
 
 import pytest
 
-import ultron.agent_loop.deep_loops as deep_loops_mod
-import ultron.desktop.element_click as element_click_mod
-import ultron.openclaw_routing as routing_pkg
-from ultron.coding.voice import CapabilityVoiceController
+import kenning.agent_loop.deep_loops as deep_loops_mod
+import kenning.desktop.element_click as element_click_mod
+import kenning.openclaw_routing as routing_pkg
+from kenning.coding.voice import CapabilityVoiceController
 
 
 def _controller(llm: Any = object()) -> Any:
@@ -62,7 +62,7 @@ class TestDeepClickFallback:
         assert c._deep_discover_click_retry(_intent(), _routing_intent()) is None
 
     def test_none_when_knob_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import ultron.config as cfgmod
+        import kenning.config as cfgmod
 
         cfg = SimpleNamespace(desktop=SimpleNamespace(deep_ui_discovery_enabled=False))
         monkeypatch.setattr(cfgmod, "get_config", lambda: cfg)
@@ -70,7 +70,7 @@ class TestDeepClickFallback:
         assert c._deep_discover_click_retry(_intent(), _routing_intent()) is None
 
     def test_successful_deep_click(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import ultron.config as cfgmod
+        import kenning.config as cfgmod
 
         cfg = SimpleNamespace(desktop=SimpleNamespace(deep_ui_discovery_enabled=True))
         monkeypatch.setattr(cfgmod, "get_config", lambda: cfg)
@@ -101,7 +101,7 @@ class TestDeepClickFallback:
     def test_all_candidates_fail_returns_none(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import ultron.config as cfgmod
+        import kenning.config as cfgmod
 
         cfg = SimpleNamespace(desktop=SimpleNamespace(deep_ui_discovery_enabled=True))
         monkeypatch.setattr(cfgmod, "get_config", lambda: cfg)
@@ -115,7 +115,7 @@ class TestDeepClickFallback:
         assert c._deep_discover_click_retry(_intent(), _routing_intent()) is None
 
     def test_loop_raise_is_fail_open(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import ultron.config as cfgmod
+        import kenning.config as cfgmod
 
         cfg = SimpleNamespace(desktop=SimpleNamespace(deep_ui_discovery_enabled=True))
         monkeypatch.setattr(cfgmod, "get_config", lambda: cfg)
@@ -131,7 +131,7 @@ class TestDeepClickFallback:
     def test_window_title_threaded_into_find(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import ultron.config as cfgmod
+        import kenning.config as cfgmod
 
         cfg = SimpleNamespace(desktop=SimpleNamespace(deep_ui_discovery_enabled=True))
         monkeypatch.setattr(cfgmod, "get_config", lambda: cfg)

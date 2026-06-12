@@ -1,11 +1,11 @@
 """XTTS v2 HTTP server.
 
 Long-lived process living in the isolated XTTS venv. Loads the model
-once, pre-computes the Ultron speaker embedding once, then serves
+once, pre-computes the Kenning speaker embedding once, then serves
 streaming synthesis requests over HTTP.
 
-The Ultron orchestrator (in the main venv) talks to this server via
-:mod:`src.ultron.tts.xtts_v3` (the client). HTTP keeps the two venvs
+The Kenning orchestrator (in the main venv) talks to this server via
+:mod:`src.kenning.tts.xtts_v3` (the client). HTTP keeps the two venvs
 decoupled -- the main venv doesn't have to deal with Coqui's
 transformers 4.x pin or the omegaconf / hydra constraints that
 fairseq/RVC also needs.
@@ -31,7 +31,7 @@ Run:
     python xtts_server.py [--host 127.0.0.1] [--port 8770] \\
         [--reference C:/path/to/reference.wav]
 
-If the reference is omitted, the cleaned Ultron mono reference is
+If the reference is omitted, the cleaned Kenning mono reference is
 used by default.
 """
 
@@ -58,7 +58,7 @@ from pydantic import BaseModel
 
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
-DEFAULT_REFERENCE = PROJECT / "kokoro training audio" / "Ultron_vocals_mono_v1.wav"
+DEFAULT_REFERENCE = PROJECT / "kokoro training audio" / "Kenning_vocals_mono_v1.wav"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -220,7 +220,7 @@ class SynthRequest(BaseModel):
 
 
 def build_app(holder: XttsHolder) -> FastAPI:
-    app = FastAPI(title="Ultron XTTS server", version="1.0")
+    app = FastAPI(title="Kenning XTTS server", version="1.0")
 
     @app.get("/healthz")
     def healthz():
@@ -340,14 +340,14 @@ def build_app(holder: XttsHolder) -> FastAPI:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Ultron XTTS HTTP server")
+    parser = argparse.ArgumentParser(description="Kenning XTTS HTTP server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8770)
     parser.add_argument(
         "--reference",
         type=Path,
         default=DEFAULT_REFERENCE,
-        help="Path to the speaker reference WAV (default: cleaned Ultron mono).",
+        help="Path to the speaker reference WAV (default: cleaned Kenning mono).",
     )
     parser.add_argument(
         "--gpt-cond-len",
@@ -356,7 +356,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         help=(
             "Seconds of reference audio fed to the XTTS GPT prosody encoder. "
             "Coqui library default is 6; bumped to 30 (2026-05-20 round 9) "
-            "so the 3-min Ultron reference actually contributes more than "
+            "so the 3-min Kenning reference actually contributes more than "
             "the first ~6 s."
         ),
     )

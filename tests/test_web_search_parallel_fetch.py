@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.web_search import (
+from kenning.web_search import (
     BraveResult,
     BraveSearchClient,
     JinaReaderClient,

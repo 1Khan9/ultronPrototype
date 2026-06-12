@@ -21,12 +21,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.subprocess.process_registry import (
+from kenning.subprocess.process_registry import (
     JobState,
     get_process_registry,
     reset_process_registry_for_testing,
 )
-from ultron.subprocess.zombie_killer import (
+from kenning.subprocess.zombie_killer import (
     get_zombie_killer,
     reset_zombie_killer_for_testing,
 )
@@ -48,7 +48,7 @@ def _fresh_singletons():
 
 
 def test_parakeet_stop_unregisters_from_zombie_killer(monkeypatch):
-    from ultron.transcription import parakeet_engine as pe_mod
+    from kenning.transcription import parakeet_engine as pe_mod
 
     killer = get_zombie_killer()
     killer.register(4242, "parakeet-server", persistent=True)
@@ -63,7 +63,7 @@ def test_parakeet_stop_unregisters_from_zombie_killer(monkeypatch):
     fake_requests = MagicMock()
     monkeypatch.setitem(__import__("sys").modules, "requests", fake_requests)
 
-    import ultron.subprocess.kill_tree as kt_mod
+    import kenning.subprocess.kill_tree as kt_mod
 
     def _fake_kill_tree(pid, *, grace_seconds=3.0, **_):
         class _Result:
@@ -85,7 +85,7 @@ def test_parakeet_stop_unregisters_from_zombie_killer(monkeypatch):
 
 
 def test_xtts_stop_unregisters_from_zombie_killer(monkeypatch):
-    from ultron.tts.xtts_v3 import XttsV3Speech
+    from kenning.tts.xtts_v3 import XttsV3Speech
 
     killer = get_zombie_killer()
     killer.register(8888, "xtts-server", persistent=True)
@@ -120,8 +120,8 @@ def _make_handle(task_id: str, pid: int, tmp_path):
     """Build a DirectTaskHandle via __new__ with the minimal attrs the
     _launch / _finalize paths touch -- bypasses the real subprocess + the
     directory snapshot in __init__."""
-    from ultron.coding.bridge import TaskState, _StateMutex
-    from ultron.coding.direct_bridge import DirectTaskHandle
+    from kenning.coding.bridge import TaskState, _StateMutex
+    from kenning.coding.direct_bridge import DirectTaskHandle
 
     h = DirectTaskHandle.__new__(DirectTaskHandle)
     h._task_id = task_id
@@ -145,8 +145,8 @@ def _make_handle(task_id: str, pid: int, tmp_path):
 
 
 def test_direct_bridge_launch_registers_subprocess(monkeypatch, tmp_path):
-    from ultron.coding import direct_bridge as db_mod
-    from ultron.coding.direct_bridge import DirectTaskHandle
+    from kenning.coding import direct_bridge as db_mod
+    from kenning.coding.direct_bridge import DirectTaskHandle
 
     h = _make_handle("abc123", 5555, tmp_path)
     h._proc = None  # _launch will set it from the faked Popen

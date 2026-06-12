@@ -8,7 +8,7 @@ or on a smaller dedicated CPU model (the spec's alternative -- e.g.,
 The script:
 
   1. Loads the configured candidate models. Main LLM uses the live
-     Ultron config; the CPU candidate is loaded into a separate
+     Kenning config; the CPU candidate is loaded into a separate
      ``llama_cpp.Llama`` with ``n_gpu_layers=0`` so no VRAM lands on
      the GPU (CPU-only path the spec asked about).
   2. Issues the existing pre-flight prompt against 30 representative
@@ -43,7 +43,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-# Project bootstrap: lift to repo root so ``ultron`` resolves.
+# Project bootstrap: lift to repo root so ``kenning`` resolves.
 _HERE = Path(__file__).resolve()
 _REPO = _HERE.parent.parent
 if str(_REPO) not in sys.path:
@@ -136,8 +136,8 @@ class _BackendSummary:
 
 
 def _build_main_llm():
-    """Construct the live Ultron LLMEngine."""
-    from ultron.llm.inference import LLMEngine
+    """Construct the live Kenning LLMEngine."""
+    from kenning.llm.inference import LLMEngine
 
     return LLMEngine(memory=None)
 
@@ -176,7 +176,7 @@ def _benchmark_backend(
     queries: List[_BenchQuery],
 ) -> _BackendSummary:
     """Run the existing classify_by_preflight against every query."""
-    from ultron.web_search.gating import classify_by_preflight
+    from kenning.web_search.gating import classify_by_preflight
 
     per_query: List[_PerQueryResult] = []
     for q in queries:

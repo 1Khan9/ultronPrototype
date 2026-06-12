@@ -10,7 +10,7 @@ S5 -- modifying Smart Turn / Whisper / XTTS model files (overlap K2).
 
 from __future__ import annotations
 
-from ultron.safety.rules.base import (
+from kenning.safety.rules.base import (
     CommandPatternRule,
     PathPatternRule,
     Rule,

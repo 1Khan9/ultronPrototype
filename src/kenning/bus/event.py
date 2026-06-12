@@ -46,7 +46,7 @@ class BusEvent:
             type: dotted channel name, e.g. ``"turn.started"`` or
                 ``"project.indexed"``. Must be globally unique within
                 the process; collisions are detected at first
-                :func:`~ultron.bus.publish` site, not here, so re-
+                :func:`~kenning.bus.publish` site, not here, so re-
                 imports during test reloads don't crash.
             schema: mapping ``{field_name: python_type}`` describing
                 the expected payload. Validation is best-effort.

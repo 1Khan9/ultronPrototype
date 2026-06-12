@@ -1,4 +1,4 @@
-"""Tests for ultron.coding.mention_resolvers."""
+"""Tests for kenning.coding.mention_resolvers."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding import mention_resolvers as mr
+from kenning.coding import mention_resolvers as mr
 
 
 # ---------------------------------------------------------------------------

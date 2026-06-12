@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from ultron.openclaw_routing import (
+from kenning.openclaw_routing import (
     RoutingDecisionLog,
     classify_routing,
     get_routing_log,
     set_routing_log,
 )
-from ultron.openclaw_routing.intents import (
+from kenning.openclaw_routing.intents import (
     HybridSubtask,
     RoutingIntent,
     RoutingIntentKind,

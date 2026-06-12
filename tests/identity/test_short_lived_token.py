@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.identity.short_lived_token import (
+from kenning.identity.short_lived_token import (
     ALGORITHM_HS256,
     DEFAULT_TTL_SECONDS,
     MAX_TTL_SECONDS,
@@ -110,7 +110,7 @@ def test_mint_basic_token(tmp_path: Path) -> None:
     token = mint_token(
         project_root=tmp_path,
         caller_id="mcp:tools",
-        audience="ultron-mcp-server",
+        audience="kenning-mcp-server",
         scope=["x"],
     )
     assert token.count(".") == 2
@@ -208,7 +208,7 @@ def test_mint_extra_claims_cannot_override_reserved(tmp_path: Path) -> None:
     )
     payload = json.loads(_b64url_decode(token.split(".")[1]))
     assert payload["aud"] == "aud"  # not overridden
-    assert payload["iss"] == "ultron-local"
+    assert payload["iss"] == "kenning-local"
 
 
 # ---------------------------------------------------------------------------

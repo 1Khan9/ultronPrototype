@@ -9,14 +9,14 @@ follow-up work (2026-05-08).
 ```
 [ llama-cpp-server (port 8765) ]──┬──→ in-process LLMEngine (voice path)
                                   ├──→ OpenClaw Gateway (port 18789)
-                                  │       ├── ultron-test     (worker)
-                                  │       ├── ultron-main     (user-facing)
-                                  │       └── ultron-heartbeat
+                                  │       ├── kenning-test     (worker)
+                                  │       ├── kenning-main     (user-facing)
+                                  │       └── kenning-heartbeat
                                   └──→ direct curl / scripts
 ```
 
 llama-cpp-server holds the only resident copy of
-`models/Qwen3.5-9B-Q4_K_M.gguf`. Both Ultron's voice pipeline (when
+`models/Qwen3.5-9B-Q4_K_M.gguf`. Both Kenning's voice pipeline (when
 opted in) and OpenClaw point at it via OpenAI-compat HTTP. One model,
 one VRAM allocation.
 
@@ -60,18 +60,18 @@ difference is their `systemPromptOverride`.
 
 | Agent | Audience | systemPromptOverride source | Default? |
 |-------|----------|------------------------------|----------|
-| `ultron-test` | Internal verification | Tight worker prompt: "respond plainly, no NO_REPLY" | yes |
-| `ultron-main` | User (voice + Telegram) | `PersonaLoader.get_system_prompt(mode='user_facing')` — full Ultron character | no |
-| `ultron-heartbeat` | Periodic background tick | `PersonaLoader.get_system_prompt(mode='heartbeat')` — minimal checklist | no |
+| `kenning-test` | Internal verification | Tight worker prompt: "respond plainly, no NO_REPLY" | yes |
+| `kenning-main` | User (voice + Telegram) | `PersonaLoader.get_system_prompt(mode='user_facing')` — full Kenning character | no |
+| `kenning-heartbeat` | Periodic background tick | `PersonaLoader.get_system_prompt(mode='heartbeat')` — minimal checklist | no |
 
-Default agent is `ultron-test` so `openclaw agent ...` without
+Default agent is `kenning-test` so `openclaw agent ...` without
 `--agent` runs through the verification harness. Use `--agent
-ultron-main` for actual user-facing flows once channels are wired
+kenning-main` for actual user-facing flows once channels are wired
 in later phases.
 
 ## Persona separation
 
-Ultron's character lives in user-facing channels only. Internal jobs
+Kenning's character lives in user-facing channels only. Internal jobs
 (heartbeat, cron, tool selection, summarization, RAG gating, etc.)
 use a plain task-focused prompt. This:
 
@@ -79,14 +79,14 @@ use a plain task-focused prompt. This:
   request patterns.
 - Saves context budget — background mode is ~50% smaller than
   user-facing.
-- Improves reliability for tasks where Ultron's terseness and
+- Improves reliability for tasks where Kenning's terseness and
   hedging-aversion would obscure the answer.
 
 Implemented via `PersonaLoader` modes — see
-[persona.py](../src/ultron/openclaw_bridge/persona.py).
+[persona.py](../src/kenning/openclaw_bridge/persona.py).
 
 ```python
-loader.get_system_prompt("user_facing")  # full Ultron, voice + Telegram
+loader.get_system_prompt("user_facing")  # full Kenning, voice + Telegram
 loader.get_system_prompt("background")   # plain worker, internal jobs
 loader.get_system_prompt("heartbeat")    # minimal checklist
 loader.get_system_prompt("bootstrap")    # one-time init
@@ -130,19 +130,19 @@ Phase 0 verification:
 
 The supervisor (`scripts/supervised_llamacpp_server.py`) is the
 recommended way to run the server day-to-day. It catches crashes,
-backs off, and restarts. For unattended deployment (e.g., if Ultron
+backs off, and restarts. For unattended deployment (e.g., if Kenning
 runs as a service and you want llama-cpp-server up before the voice
 loop starts), the supervisor can be wrapped with NSSM:
 
 ```
-nssm install ultron-llamacpp \
+nssm install kenning-llamacpp \
     "C:\STC\ultronPrototype\.venv\Scripts\python.exe" \
     "C:\STC\ultronPrototype\.claude\worktrees\fervent-meitner-98bfe7\scripts\supervised_llamacpp_server.py"
-nssm set ultron-llamacpp AppDirectory "C:\STC\ultronPrototype"
-nssm set ultron-llamacpp AppStdout "C:\STC\ultronPrototype\logs\llamacpp.out.log"
-nssm set ultron-llamacpp AppStderr "C:\STC\ultronPrototype\logs\llamacpp.err.log"
-nssm set ultron-llamacpp AppRotateFiles 1
-nssm start ultron-llamacpp
+nssm set kenning-llamacpp AppDirectory "C:\STC\ultronPrototype"
+nssm set kenning-llamacpp AppStdout "C:\STC\ultronPrototype\logs\llamacpp.out.log"
+nssm set kenning-llamacpp AppStderr "C:\STC\ultronPrototype\logs\llamacpp.err.log"
+nssm set kenning-llamacpp AppRotateFiles 1
+nssm start kenning-llamacpp
 ```
 
 NSSM not installed by default; download from nssm.cc. The

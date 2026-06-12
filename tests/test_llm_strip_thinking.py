@@ -1,4 +1,4 @@
-"""Tests for :func:`ultron.llm.inference.strip_thinking_text`.
+"""Tests for :func:`kenning.llm.inference.strip_thinking_text`.
 
 The blocking ``LLMEngine.generate`` path now applies this filter before
 returning so callers that take the whole response in one shot (the
@@ -10,7 +10,7 @@ boundaries; this filter is the materialised-string analogue.
 
 from __future__ import annotations
 
-from ultron.llm.inference import strip_thinking_text
+from kenning.llm.inference import strip_thinking_text
 
 
 def test_passes_through_clean_text():

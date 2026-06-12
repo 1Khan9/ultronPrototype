@@ -12,7 +12,7 @@ from typing import List
 
 import pytest
 
-from ultron.memory.topical_chunking import (
+from kenning.memory.topical_chunking import (
     DEFAULT_BOUNDARY_SIMILARITY,
     DEFAULT_TOPIC_TIMEOUT_S,
     TopicObservation,

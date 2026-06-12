@@ -88,7 +88,7 @@ class EditDiagnosticResult:
 
 
 # ---------------------------------------------------------------------------
-# Templates (verbatim shape from SWE-Agent; ultron-friendly phrasing tweaks)
+# Templates (verbatim shape from SWE-Agent; kenning-friendly phrasing tweaks)
 # ---------------------------------------------------------------------------
 
 _NOT_FOUND = (

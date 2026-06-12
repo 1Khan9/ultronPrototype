@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.safety.path_resolver import (
+from kenning.safety.path_resolver import (
     PathResolveError,
     PathResolver,
     get_path_resolver,
@@ -68,7 +68,7 @@ def test_resolve_relative_against_project_root(tmp_path, monkeypatch):
     r = PathResolver()
     # Force the resolver's PROJECT_ROOT to a known value via the
     # internal cache. (In production this comes from
-    # ultron.config.PROJECT_ROOT.)
+    # kenning.config.PROJECT_ROOT.)
     r._project_root = tmp_path
     out = r.resolve("subdir/file.txt")
     expected = (tmp_path / "subdir" / "file.txt").resolve(strict=False)

@@ -2,7 +2,7 @@
 
 Wired into the orchestrator's WARM-mode (FOLLOW_UP_LISTENING) state to
 decide whether each VAD-bounded utterance is a continuation of the
-conversation with Ultron or stray speech.
+conversation with Kenning or stray speech.
 """
 
 from __future__ import annotations
@@ -15,13 +15,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
-from ultron.addressing.rules import (
+from kenning.addressing.rules import (
     AddressingDecision,
     RuleHit,
     classify as classify_by_rules,
 )
-from ultron.addressing.zero_shot import ZeroShotAddresseeModel
-from ultron.utils.logging import get_logger
+from kenning.addressing.zero_shot import ZeroShotAddresseeModel
+from kenning.utils.logging import get_logger
 
 logger = get_logger("addressing.classifier")
 
@@ -133,8 +133,8 @@ class AddressingClassifier:
             )
         except Exception as e:
             logger.warning("Zero-shot classifier failed: %s -- defaulting to silent", e)
-            from ultron.errors import AddressingClassifierError
-            from ultron.resilience import get_error_log
+            from kenning.errors import AddressingClassifierError
+            from kenning.resilience import get_error_log
             get_error_log().record(
                 AddressingClassifierError(
                     f"zero-shot classify failed: {e}",
@@ -225,7 +225,7 @@ class AddressingClassifier:
         # log-file write so a JSONL write failure doesn't suppress the
         # observation row.
         try:
-            from ultron.observations import observe_addressing_verdict
+            from kenning.observations import observe_addressing_verdict
 
             observe_addressing_verdict(
                 utterance=utterance,

@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.coding.bridge import EventKind, TaskEvent
+from kenning.coding.bridge import EventKind, TaskEvent
 
 
 def _enabled_cfg() -> MagicMock:
@@ -36,7 +36,7 @@ def _make_runner_with_mocks():
     listener doesn't pollute the listener list — keeps tests focused
     on the canonical-monitor listener specifically.
     """
-    from ultron.coding.runner import CodingTaskRunner
+    from kenning.coding.runner import CodingTaskRunner
 
     bridge = MagicMock()
     bridge.name.return_value = "mock"
@@ -78,11 +78,11 @@ def _has_canonical_monitor_listener(handle) -> bool:
 
 
 def test_listener_not_attached_when_disabled() -> None:
-    from ultron.coding.bridge import TaskRequest
+    from kenning.coding.bridge import TaskRequest
 
     runner, handle = _make_runner_with_mocks()
     cfg = _disabled_cfg()
-    with patch("ultron.coding.canonical_monitor.get_config", return_value=cfg):
+    with patch("kenning.coding.canonical_monitor.get_config", return_value=cfg):
         request = TaskRequest(
             task_prompt="x", cwd="C:/tmp", model="haiku", label="t",
         )
@@ -97,11 +97,11 @@ def test_listener_not_attached_when_disabled() -> None:
 
 
 def test_listener_attached_when_enabled() -> None:
-    from ultron.coding.bridge import TaskRequest
+    from kenning.coding.bridge import TaskRequest
 
     runner, handle = _make_runner_with_mocks()
     cfg = _enabled_cfg()
-    with patch("ultron.coding.canonical_monitor.get_config", return_value=cfg):
+    with patch("kenning.coding.canonical_monitor.get_config", return_value=cfg):
         request = TaskRequest(
             task_prompt="x", cwd="C:/tmp", model="haiku", label="t",
         )
@@ -117,11 +117,11 @@ def test_listener_attached_when_enabled() -> None:
 
 
 def test_listener_cancels_handle_on_abort_verdict() -> None:
-    from ultron.coding.bridge import TaskRequest
+    from kenning.coding.bridge import TaskRequest
 
     runner, handle = _make_runner_with_mocks()
     cfg = _enabled_cfg()
-    with patch("ultron.coding.canonical_monitor.get_config", return_value=cfg):
+    with patch("kenning.coding.canonical_monitor.get_config", return_value=cfg):
         request = TaskRequest(
             task_prompt="x", cwd="C:/tmp", model="haiku", label="t",
         )
@@ -145,11 +145,11 @@ def test_listener_cancels_handle_on_abort_verdict() -> None:
 
 
 def test_listener_does_not_cancel_on_canonical_calls() -> None:
-    from ultron.coding.bridge import TaskRequest
+    from kenning.coding.bridge import TaskRequest
 
     runner, handle = _make_runner_with_mocks()
     cfg = _enabled_cfg()
-    with patch("ultron.coding.canonical_monitor.get_config", return_value=cfg):
+    with patch("kenning.coding.canonical_monitor.get_config", return_value=cfg):
         request = TaskRequest(
             task_prompt="x", cwd="C:/tmp", model="haiku", label="t",
         )
@@ -167,11 +167,11 @@ def test_listener_latches_after_first_abort() -> None:
     """Once the listener has cancelled, subsequent off-canonical calls
     must NOT trigger a second cancel — bridge events keep flowing
     until the handle's own cancel propagation completes."""
-    from ultron.coding.bridge import TaskRequest
+    from kenning.coding.bridge import TaskRequest
 
     runner, handle = _make_runner_with_mocks()
     cfg = _enabled_cfg()
-    with patch("ultron.coding.canonical_monitor.get_config", return_value=cfg):
+    with patch("kenning.coding.canonical_monitor.get_config", return_value=cfg):
         request = TaskRequest(
             task_prompt="x", cwd="C:/tmp", model="haiku", label="t",
         )
@@ -187,12 +187,12 @@ def test_listener_latches_after_first_abort() -> None:
 def test_listener_swallows_exceptions() -> None:
     """A listener exception must NEVER raise back to the bridge —
     that would break event delivery."""
-    from ultron.coding.bridge import TaskRequest
+    from kenning.coding.bridge import TaskRequest
 
     runner, handle = _make_runner_with_mocks()
     cfg = _enabled_cfg()
     handle.cancel.side_effect = RuntimeError("cancel boom")
-    with patch("ultron.coding.canonical_monitor.get_config", return_value=cfg):
+    with patch("kenning.coding.canonical_monitor.get_config", return_value=cfg):
         request = TaskRequest(
             task_prompt="x", cwd="C:/tmp", model="haiku", label="t",
         )
@@ -212,7 +212,7 @@ def test_listener_swallows_exceptions() -> None:
 def test_voice_controller_polls_canonical_abort_warning(tmp_path) -> None:
     """``CapabilityVoiceController.pending_canonical_abort`` returns the
     runner's queued narration once and clears."""
-    from ultron.coding.voice import CapabilityVoiceController
+    from kenning.coding.voice import CapabilityVoiceController
 
     runner = MagicMock()
     runner.pop_canonical_abort_warning.return_value = "I'm stopping that task — XYZ."
@@ -226,7 +226,7 @@ def test_voice_controller_polls_canonical_abort_warning(tmp_path) -> None:
 
 
 def test_voice_controller_canonical_abort_swallows_runner_exception(tmp_path) -> None:
-    from ultron.coding.voice import CapabilityVoiceController
+    from kenning.coding.voice import CapabilityVoiceController
 
     runner = MagicMock()
     runner.pop_canonical_abort_warning.side_effect = RuntimeError("boom")

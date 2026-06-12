@@ -10,7 +10,7 @@ had no such acknowledgment, so on a typical turn the user faces:
     LLM TTFT (~79 ms)
     TTS synth first chunk (~350 ms)
     ----
-    ~2.5 s of silence before Ultron speaks
+    ~2.5 s of silence before Kenning speaks
 
 That's a long perceived gap. Filler-ack masks it: yield a short
 thinking-noise phrase (``Mm.``, ``Right.``, etc.) BEFORE the LLM
@@ -27,7 +27,7 @@ Heuristic gate keeps it from firing where it would feel weird:
   has its own narration flow for those and a double-ack is confusing.
 
 The phrase pool is intentionally tiny and tonally non-committal --
-they read as Ultron pausing to consider, not Ultron narrating
+they read as Kenning pausing to consider, not Kenning narrating
 external activity. Voice-quality lock preserved: no SOUL.md change,
 no persona change; this is a per-call additive token like the
 web-search ack.
@@ -37,12 +37,12 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from ultron.web_search.acknowledgments import AcknowledgmentSource
+from kenning.web_search.acknowledgments import AcknowledgmentSource
 
 
 # Conversational filler-acks. Short, in-character thinking noises.
 # Distinct from the web-search ack pool (which describes external
-# activity); these read as Ultron deliberating. Keep the pool small
+# activity); these read as Kenning deliberating. Keep the pool small
 # so the user doesn't notice the same phrase too often -- the
 # shuffled-cycle in AcknowledgmentSource ensures no immediate repeats.
 _CONVERSATIONAL_PHRASES: List[str] = [

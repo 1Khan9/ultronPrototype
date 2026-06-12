@@ -1,7 +1,7 @@
 """Routing intent dataclasses + enum.
 
 Top-level :class:`RoutingIntent` is what the orchestrator sees. It wraps
-either a coding intent (existing :class:`ultron.coding.intent.CodingIntent`)
+either a coding intent (existing :class:`kenning.coding.intent.CodingIntent`)
 or one of the OpenClaw-bound automation intents below.
 
 Conversational utterances also carry a :class:`RoutingIntent` (kind=
@@ -24,7 +24,7 @@ class RoutingIntentKind(str, Enum):
     # Default / fallback
     CONVERSATIONAL = "conversational"
 
-    # Coding (delegated to ultron.coding.intent)
+    # Coding (delegated to kenning.coding.intent)
     CODE_TASK = "code_task"
     PROGRESS_QUERY = "progress_query"
     CANCEL = "cancel"
@@ -44,8 +44,8 @@ class RoutingIntentKind(str, Enum):
     # Self-management — voice-driven runtime model swap. 4B plan addition.
     MODEL_SWITCH = "model_switch"
 
-    # System status — "what alerts did you flag?", "what is Ultron working on?",
-    # "any pending alerts?". Resolved Ultron-side (no OpenClaw call) by reading
+    # System status — "what alerts did you flag?", "what is Kenning working on?",
+    # "any pending alerts?". Resolved Kenning-side (no OpenClaw call) by reading
     # the heartbeat alert log + active coding session list. Phase 13 finish.
     SYSTEM_STATUS = "system_status"
 
@@ -68,13 +68,13 @@ class RoutingIntentKind(str, Enum):
     # App launch (desktop automation, 2026-05-12 Phase 8) — "open
     # <X> on monitor <N>", "launch Cursor on my left monitor",
     # "pull up YouTube fullscreen on monitor 2". Routes natively
-    # via :mod:`ultron.desktop.launcher` (NOT OpenClaw plugins).
+    # via :mod:`kenning.desktop.launcher` (NOT OpenClaw plugins).
     APP_LAUNCH = "app_launch"
 
     # Screen-context query (desktop automation, 2026-05-12 Phase 8) --
     # "explain what I'm looking at", "what's on my screen", "help me
     # with what I'm doing". Routes natively via
-    # :mod:`ultron.desktop.screen_context` -- captures the foreground
+    # :mod:`kenning.desktop.screen_context` -- captures the foreground
     # monitor + UIA tree text + optional VLM description and injects
     # into the next LLM call as context.
     SCREEN_CONTEXT_QUERY = "screen_context_query"
@@ -82,7 +82,7 @@ class RoutingIntentKind(str, Enum):
     # Window move (2026-05-14 second-pass) -- "Put Discord on my right
     # monitor", "move YouTube to the main monitor", "send Cursor to
     # the left screen". Finds an existing window by name and
-    # repositions it via :func:`ultron.desktop.placement.move_window_to_monitor`.
+    # repositions it via :func:`kenning.desktop.placement.move_window_to_monitor`.
     # Distinct from APP_LAUNCH (which spawns a NEW process / window);
     # WINDOW_MOVE operates on already-open windows only.
     WINDOW_MOVE = "window_move"
@@ -110,7 +110,7 @@ class RoutingIntentKind(str, Enum):
     # Active window query (2026 catalog 08/09 wiring) -- "what's my
     # active window?", "what am I looking at?", "what window am I
     # using?". Returns the foreground window title via
-    # :func:`ultron.desktop.windows.get_active_window_title`. Lighter
+    # :func:`kenning.desktop.windows.get_active_window_title`. Lighter
     # than SCREEN_CONTEXT_QUERY (no UIA walk, no capture, no VLM); a
     # ~1-2 ms pywin32 probe suitable for quick "where am I?" voice
     # queries that don't need the full screen context.
@@ -119,7 +119,7 @@ class RoutingIntentKind(str, Enum):
     # Semantic click (2026 catalog 08/09 wiring) -- "click the Submit
     # button", "activate the File menu", "tap on the OK button", "press
     # the Cancel button". Routes via
-    # :func:`ultron.desktop.element_click.click_element_by_name` which
+    # :func:`kenning.desktop.element_click.click_element_by_name` which
     # walks the foreground UIA tree for the named element and clicks
     # via the gated :class:`InputController` (click-preview VLM +
     # foreground security + Cap-3 explicit-intent + rate limit all
@@ -252,7 +252,7 @@ class WindowIntent:
 class AppLaunchIntent:
     """Native app launch (2026-05-12 Phase 8 desktop automation).
 
-    Routes via :class:`ultron.desktop.launcher.AppLauncher`. Distinct
+    Routes via :class:`kenning.desktop.launcher.AppLauncher`. Distinct
     from BROWSER_AUTOMATION (which goes through the OpenClaw browser
     plugin's isolated Playwright instance): this opens the user's
     REAL application binary with their REAL profile / sessions.
@@ -285,10 +285,10 @@ class AppLaunchIntent:
 class ScreenContextIntent:
     """Screen-context query (2026-05-12 Phase 8 desktop automation).
 
-    Routes via :func:`ultron.desktop.screen_context.build_screen_context`.
+    Routes via :func:`kenning.desktop.screen_context.build_screen_context`.
     The handler captures the relevant monitor + UIA text + optional
     VLM description and feeds the result back to the LLM as injected
-    context so Ultron can answer about what's actually on the user's
+    context so Kenning can answer about what's actually on the user's
     screen.
 
     Attributes:
@@ -318,7 +318,7 @@ class WindowMoveIntent:
             said "monitor 2" / "second monitor".
         monitor_query: directional / named target ("left" / "right" /
             "main" / "primary") to resolve via
-            :func:`ultron.desktop.monitors.find_monitor` at dispatch.
+            :func:`kenning.desktop.monitors.find_monitor` at dispatch.
         fullscreen: fill the target monitor (as a regular window).
         maximize: SW_MAXIMIZE after placement.
     """
@@ -391,7 +391,7 @@ class OpenLastSourceIntent:
 class ActiveWindowQueryIntent:
     """Voice query for the current foreground window's title.
 
-    Resolves via :func:`ultron.desktop.windows.get_active_window_title`
+    Resolves via :func:`kenning.desktop.windows.get_active_window_title`
     -- a ~1-2 ms pywin32 probe with no UIA walk, capture, or VLM
     cost. Distinct from SCREEN_CONTEXT_QUERY (which builds a full
     snapshot for the LLM).
@@ -407,7 +407,7 @@ class ActiveWindowQueryIntent:
 class SemanticClickIntent:
     """Voice command to click a UI element by its accessible name.
 
-    Routes via :func:`ultron.desktop.element_click.click_element_by_name`
+    Routes via :func:`kenning.desktop.element_click.click_element_by_name`
     which walks the foreground UIA tree for the named element and
     clicks through the gated :class:`InputController` (click-preview
     VLM + foreground security + Cap-3 explicit-intent + rate limit
@@ -466,7 +466,7 @@ class NavigateToSiteIntent:
        brand name), domain cleanliness (no subdomain, plain .com /
        .net / .org TLD), and source rank.
     3. Open the best candidate via :func:`webbrowser.open` (default
-       browser) OR through :func:`ultron.desktop.voice.handle_app_launch`
+       browser) OR through :func:`kenning.desktop.voice.handle_app_launch`
        with Chrome when a monitor target is set.
 
     Attributes:
@@ -486,13 +486,13 @@ class NavigateToSiteIntent:
 
 @dataclass
 class SystemStatusIntent:
-    """A voice query about Ultron's overall state.
+    """A voice query about Kenning's overall state.
 
     ``focus`` narrows the response: ``"alerts"`` reads from the
     heartbeat alert log only, ``"projects"`` lists active coding
     sessions only, ``"all"`` does both. The classifier picks the
     focus from the utterance ("what alerts" → alerts, "what's
-    Ultron working on" → projects, "status report" → all).
+    Kenning working on" → projects, "status report" → all).
     """
 
     focus: str = "all"  # "alerts" | "projects" | "all"

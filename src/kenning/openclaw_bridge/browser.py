@@ -1,9 +1,9 @@
 """Browser tool wrapper (Phase 6).
 
 Thin facade over :meth:`OpenClawClient.invoke_tool` that exposes the
-browser primitives Ultron's dispatcher / future skills want to call.
+browser primitives Kenning's dispatcher / future skills want to call.
 Each method assembles a structured prompt asking the OpenClaw
-``ultron-main`` agent to use the browser tool with specific
+``kenning-main`` agent to use the browser tool with specific
 parameters; the agent runs the tool turn and the wrapper unpacks the
 result into a typed dataclass.
 
@@ -18,7 +18,7 @@ Phase 6 ships the wrapper and rewrites
 :meth:`OpenClawDispatcher.handle_browser` to use it. Multi-step
 flows (login → navigate → fill form) stay on the OpenClaw side via
 the agent's reasoning; the wrapper is for one-shot operations
-fired by Ultron's intent dispatch.
+fired by Kenning's intent dispatch.
 """
 
 from __future__ import annotations
@@ -27,9 +27,9 @@ import base64
 from dataclasses import dataclass, field
 from typing import Any, Dict, Literal, Optional
 
-from ultron.errors import OpenClawToolError
-from ultron.openclaw_bridge.client import OpenClawClient, ToolInvocationResult
-from ultron.utils.logging import get_logger
+from kenning.errors import OpenClawToolError
+from kenning.openclaw_bridge.client import OpenClawClient, ToolInvocationResult
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_bridge.browser")
 
@@ -100,7 +100,7 @@ class BrowserTool:
             without a live client, callers must short-circuit before
             constructing the wrapper.
         agent_id: which OpenClaw agent runs the browser tool turns.
-            Defaults to ``ultron-main`` (the user-facing persona);
+            Defaults to ``kenning-main`` (the user-facing persona);
             tests / background workflows can override.
         default_timeout_s: per-call timeout. Browser actions can take
             seconds to a minute or more; default is generous.
@@ -110,7 +110,7 @@ class BrowserTool:
         self,
         client: OpenClawClient,
         *,
-        agent_id: str = "ultron-main",
+        agent_id: str = "kenning-main",
         default_timeout_s: float = 90.0,
     ) -> None:
         if client is None:

@@ -11,7 +11,7 @@ import pytest
 PIL = pytest.importorskip("PIL")
 from PIL import Image  # noqa: E402
 
-from ultron.llm.image_markdown import (
+from kenning.llm.image_markdown import (
     DEFAULT_ALLOWED_MIME_TYPES,
     DEFAULT_MAX_DIM,
     EncodedImage,

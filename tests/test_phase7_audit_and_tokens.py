@@ -18,20 +18,20 @@ from typing import List
 
 import pytest
 
-from ultron.coding.audit import SessionAuditWriter
-from ultron.coding.bridge import EventKind, TaskEvent, TaskRequest
-from ultron.coding.coordinator import ConversationCoordinator
-from ultron.coding.runner import CodingTaskRunner
-from ultron.coding.session import (
+from kenning.coding.audit import SessionAuditWriter
+from kenning.coding.bridge import EventKind, TaskEvent, TaskRequest
+from kenning.coding.coordinator import ConversationCoordinator
+from kenning.coding.runner import CodingTaskRunner
+from kenning.coding.session import (
     ClarificationRequest,
     SessionStatus,
     SessionStore,
 )
-from ultron.coding.verification import Verifier
+from kenning.coding.verification import Verifier
 
 from tests.coding.mock_bridge import ClaudeScript, ScriptedClaudeBridge
 
-os.environ.setdefault("ULTRON_CODING_MCP_ALLOW_ANY_ROOT", "1")
+os.environ.setdefault("KENNING_CODING_MCP_ALLOW_ANY_ROOT", "1")
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ def test_store_auto_logs_every_state_change(tmp_path: Path):
 
 
 def test_store_logs_completion_claim(tmp_path: Path):
-    from ultron.coding.session import CompletionClaim
+    from kenning.coding.session import CompletionClaim
 
     log_dir = tmp_path / "sessions"
     store = SessionStore(audit_writer=SessionAuditWriter(log_dir=log_dir))
@@ -240,9 +240,9 @@ def test_runner_forwards_usage_events_to_session(tmp_path: Path):
     """ScriptedClaudeBridge emits USAGE events via .tokens(). The runner's
     listener forwards them to store.record_tokens, which updates the
     session's tokens_used."""
-    from ultron.coding.mcp_server import UltronMCPServer
+    from kenning.coding.mcp_server import KenningMCPServer
 
-    server = UltronMCPServer(host="127.0.0.1", port=0)
+    server = KenningMCPServer(host="127.0.0.1", port=0)
     s = server.create_session(
         project_root=tmp_path / "p", initial_prompt="hi",
     )
@@ -285,12 +285,12 @@ def test_runner_forwards_usage_events_to_session(tmp_path: Path):
 
 def test_runner_queues_warning_when_budget_threshold_crossed(tmp_path: Path, monkeypatch):
     from config import settings as _settings
-    from ultron.coding.mcp_server import UltronMCPServer
+    from kenning.coding.mcp_server import KenningMCPServer
 
     monkeypatch.setattr(_settings, "CODING_TOKEN_BUDGET_PER_SESSION", 1000)
     monkeypatch.setattr(_settings, "CODING_TOKEN_WARNING_THRESHOLD", 0.8)
 
-    server = UltronMCPServer(host="127.0.0.1", port=0)
+    server = KenningMCPServer(host="127.0.0.1", port=0)
     s = server.create_session(
         project_root=tmp_path / "p", initial_prompt="hi",
     )
@@ -328,12 +328,12 @@ def test_runner_queues_warning_when_budget_threshold_crossed(tmp_path: Path, mon
 
 def test_runner_halts_at_100_percent_budget(tmp_path: Path, monkeypatch):
     from config import settings as _settings
-    from ultron.coding.mcp_server import UltronMCPServer
+    from kenning.coding.mcp_server import KenningMCPServer
 
     monkeypatch.setattr(_settings, "CODING_TOKEN_BUDGET_PER_SESSION", 500)
     monkeypatch.setattr(_settings, "CODING_TOKEN_WARNING_THRESHOLD", 0.8)
 
-    server = UltronMCPServer(host="127.0.0.1", port=0)
+    server = KenningMCPServer(host="127.0.0.1", port=0)
     s = server.create_session(
         project_root=tmp_path / "p", initial_prompt="hi",
     )
@@ -371,10 +371,10 @@ def test_runner_halts_at_100_percent_budget(tmp_path: Path, monkeypatch):
 def test_runner_logs_initial_prompt_to_session_log(tmp_path: Path):
     """Phase 7 spec: the per-session log captures every prompt sent to
     Claude. start_task -> claude_prompt_sent (kind=initial)."""
-    from ultron.coding.mcp_server import UltronMCPServer
+    from kenning.coding.mcp_server import KenningMCPServer
 
     log_dir = tmp_path / "sessions"
-    server = UltronMCPServer(host="127.0.0.1", port=0)
+    server = KenningMCPServer(host="127.0.0.1", port=0)
     # Wire in our own audit writer so the per-session log lands here.
     server.session_audit = SessionAuditWriter(log_dir=log_dir)
     server.store._audit = server.session_audit
@@ -410,10 +410,10 @@ def test_runner_logs_initial_prompt_to_session_log(tmp_path: Path):
 
 def test_runner_logs_followup_prompts_to_session_log(tmp_path: Path):
     """Each send_followup also lands in the per-session log with its kind."""
-    from ultron.coding.mcp_server import UltronMCPServer
+    from kenning.coding.mcp_server import KenningMCPServer
 
     log_dir = tmp_path / "sessions"
-    server = UltronMCPServer(host="127.0.0.1", port=0)
+    server = KenningMCPServer(host="127.0.0.1", port=0)
     server.session_audit = SessionAuditWriter(log_dir=log_dir)
     server.store._audit = server.session_audit
     s = server.create_session(
@@ -456,11 +456,11 @@ def test_runner_logs_followup_prompts_to_session_log(tmp_path: Path):
 
 def test_runner_pop_budget_warning_consumes_once(tmp_path: Path, monkeypatch):
     from config import settings as _settings
-    from ultron.coding.mcp_server import UltronMCPServer
+    from kenning.coding.mcp_server import KenningMCPServer
 
     monkeypatch.setattr(_settings, "CODING_TOKEN_BUDGET_PER_SESSION", 1000)
 
-    server = UltronMCPServer(host="127.0.0.1", port=0)
+    server = KenningMCPServer(host="127.0.0.1", port=0)
     s = server.create_session(
         project_root=tmp_path / "p", initial_prompt="hi",
     )

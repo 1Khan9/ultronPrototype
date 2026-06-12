@@ -6,9 +6,9 @@ transitions to READY, ``update_conversation_id`` rekeys the rows to the
 real conversation id and ``_process_pending_messages`` delivers each
 message in order.
 
-Ultron's adaptation is in-process and optionally disk-persisted. The
+Kenning's adaptation is in-process and optionally disk-persisted. The
 classic use case is the cold-start UX win documented in the catalog:
-the user wakes ultron and immediately starts speaking before the LLM
+the user wakes kenning and immediately starts speaking before the LLM
 has finished loading; STT captures the audio + transcript and queues
 it under the cold-start task id; once the LLM is READY, the queue
 flushes in order so the user gets the answer with a small delay
@@ -19,7 +19,7 @@ Other applications:
 * Gaming-mode swap (the LLM is mid-swap and the user keeps talking).
 * Coding-session bootstrap (the user requests "refactor this" before
   the supervisor has finished indexing the project).
-* Wake-during-TTS (the user barges in while ultron is still speaking;
+* Wake-during-TTS (the user barges in while kenning is still speaking;
   the queue captures the new utterance for after barge-in completes).
 """
 
@@ -44,7 +44,7 @@ DEFAULT_QUEUE_LIMIT = 32
 When the backlog exceeds this cap, the oldest message is dropped + a
 WARN is logged. Tuned for typical voice cold-start (a user produces
 at most a handful of utterances in the ~3 s window before LLM ready);
-higher values risk masking a real "ultron is stuck" symptom.
+higher values risk masking a real "kenning is stuck" symptom.
 """
 
 

@@ -1,4 +1,4 @@
-"""Tests for ``ultron.openclaw_bridge.events.OpenClawEventReceiver``.
+"""Tests for ``kenning.openclaw_bridge.events.OpenClawEventReceiver``.
 
 Phase 3.4 ships only the prefix-matching scaffold; tests lock down
 the contract so the future transport layer can ride on top without
@@ -11,7 +11,7 @@ from typing import List
 
 import pytest
 
-from ultron.openclaw_bridge.events import (
+from kenning.openclaw_bridge.events import (
     IncomingMessage,
     OpenClawEventReceiver,
 )

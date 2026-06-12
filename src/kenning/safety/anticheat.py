@@ -3,7 +3,7 @@
 Kernel-level anticheats (Vanguard, EAC, BattlEye) ban accounts for
 input injection, screen capture of the game, window manipulation, and
 anything resembling game-state reading. While this mode is ACTIVE,
-Ultron disables EVERY capability in those classes -- synthetic input
+Kenning disables EVERY capability in those classes -- synthetic input
 (SendInput via pyautogui), screen capture (mss / pixel reads / template
 matching / OCR), UIA tree reading, clipboard automation, dialog and
 element automation, window close/move/launch placement, browser CDP
@@ -18,8 +18,8 @@ Deliberately NOT blocked (analyzed, categorically safe):
 * ``nvidia-smi`` GPU/VRAM queries (a signed NVIDIA binary doing global
   driver queries -- the same thing MSI Afterburner / GeForce overlay do;
   it never opens the game process).
-* ``psutil`` self-management (killing Ultron's OWN child process tree,
-  raising Ultron's OWN priority) -- never opens a foreign process handle
+* ``psutil`` self-management (killing Kenning's OWN child process tree,
+  raising Kenning's OWN priority) -- never opens a foreign process handle
   beyond shell-level metadata.
 * LLM / web search / memory / evolution (no OS interaction at all).
 
@@ -42,11 +42,11 @@ Vanguard (kernel-level) analysis, 2026-06-11: the classes a boot-time
 kernel anticheat actually bans for are foreign-process handle opens,
 game-memory read/write, remote-thread/DLL injection, global input
 hooks (``SetWindowsHookEx``), raw-input device registration, and
-driver-level input emulation. Ultron's source contains ZERO uses of
+driver-level input emulation. Kenning's source contains ZERO uses of
 any of these (pinned by ``test_no_ban_class_apis_anywhere_in_source``;
 the only textual matches in the repo are the ``safety/rules/``
 DEFENSE regexes that block those patterns in model-proposed commands).
-What Ultron CAN do -- ``SendInput`` via pyautogui, GDI screen capture
+What Kenning CAN do -- ``SendInput`` via pyautogui, GDI screen capture
 via mss, UIA COM reads (which message target windows), clipboard,
 window management -- is exactly the surface this mode hard-blocks,
 out of maximum caution, even though none of it opens the game process.
@@ -65,7 +65,7 @@ import threading
 import time
 from typing import Optional
 
-logger = logging.getLogger("ultron.safety.anticheat")
+logger = logging.getLogger("kenning.safety.anticheat")
 
 __all__ = [
     "AnticheatBlockedError",
@@ -124,7 +124,7 @@ def anticheat_active() -> bool:
     if not _config_pin_enabled:
         return False
     try:
-        from ultron.config import get_config
+        from kenning.config import get_config
 
         return bool(getattr(
             getattr(get_config(), "gaming_mode", None),

@@ -1,7 +1,7 @@
 """RVC v2 voice conversion via ``infer-rvc-python``.
 
 Takes Piper's neutral-voice audio and re-paints it as the trained target
-voice (Ultron / James Spader). Adds ~300 ms per sentence on a 3060 Ti.
+voice (Kenning / James Spader). Adds ~300 ms per sentence on a 3060 Ti.
 
 Inference runs in-memory on numpy arrays — no temp WAV files in the hot
 path — via ``BaseLoader.generate_from_cache((audio, sr), tag=...)``.
@@ -16,15 +16,15 @@ from typing import Optional
 import numpy as np
 
 from config import settings
-from ultron.utils.fairseq_compat import (
+from kenning.utils.fairseq_compat import (
     patch_fairseq_dataclasses,
     patch_torch_load_for_fairseq,
 )
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("tts.rvc")
 
-_TAG = "ultron"  # internal handle for the loaded voice
+_TAG = "kenning"  # internal handle for the loaded voice
 
 
 class RvcConverter:

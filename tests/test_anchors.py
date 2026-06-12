@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.coding.anchors` (pure primitives).
+"""Tests for :mod:`kenning.coding.anchors` (pure primitives).
 
 The runner-integration tests live in :mod:`tests.test_coding_runner_anchors`.
 This file exercises the decomposer + budget + plan dataclasses
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.coding.anchors import (
+from kenning.coding.anchors import (
     AnchorBudget,
     AnchorPlan,
     GoalAnchor,

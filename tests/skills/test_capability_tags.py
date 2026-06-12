@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.skills.capability_tags import (
+from kenning.skills.capability_tags import (
     GAMING_MODE_INCOMPATIBLE_TAGS,
     K_PROTECTED_TAGS,
     CapabilityTag,

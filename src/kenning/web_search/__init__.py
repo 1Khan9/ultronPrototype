@@ -12,16 +12,16 @@ search query so repeated queries within the freshness window skip the
 API call entirely.
 """
 
-from ultron.web_search.acknowledgments import AcknowledgmentSource
-from ultron.web_search.brave import (
+from kenning.web_search.acknowledgments import AcknowledgmentSource
+from kenning.web_search.brave import (
     BraveResult,  # deprecated alias for backward-compat
     BraveSearchClient,
     SearchResult,
 )
-from ultron.web_search.cache import WebResultsCache
-from ultron.web_search.gating import GateDecision, GateVerdict, WebSearchGate
-from ultron.web_search.jina import JinaReaderClient
-from ultron.web_search.search import (
+from kenning.web_search.cache import WebResultsCache
+from kenning.web_search.gating import GateDecision, GateVerdict, WebSearchGate
+from kenning.web_search.jina import JinaReaderClient
+from kenning.web_search.search import (
     SearchPayload,
     SearchSource,
     WebSearchExecutor,

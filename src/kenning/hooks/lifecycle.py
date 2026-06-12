@@ -2,7 +2,7 @@
 
 The lifecycle points mirror cline's nine-hook catalog (TaskStart,
 TaskResume, TaskCancel, TaskComplete, UserPromptSubmit, PreToolUse,
-PostToolUse, PreCompact, Notification) with ultron-specific extras
+PostToolUse, PreCompact, Notification) with kenning-specific extras
 exposed for the voice path: PreMemoryWrite, PreGamingEngage,
 PreDesktopAction, WakeWordTriggered.
 """
@@ -28,7 +28,7 @@ class HookKind(str, Enum):
     """Lifecycle point at which a hook may fire.
 
     Initial 14 lifecycle points came from cline's hook catalog plus
-    ultron-specific voice extensions. T3 (OpenClaw catalog port; see
+    kenning-specific voice extensions. T3 (OpenClaw catalog port; see
     ``THIRD_PARTY_NOTICES.md``) adds 22 additional events giving a
     total of ~36 lifecycle points covering every meaningful agent
     transition: model resolution, prompt build, compaction symmetry,
@@ -47,7 +47,7 @@ class HookKind(str, Enum):
     POST_TOOL_USE = "PostToolUse"
     PRE_COMPACT = "PreCompact"
     NOTIFICATION = "Notification"
-    # Ultron-specific voice extensions (original 5).
+    # Kenning-specific voice extensions (original 5).
     PRE_LLM_REQUEST = "PreLLMRequest"
     PRE_MEMORY_WRITE = "PreMemoryWrite"
     PRE_GAMING_ENGAGE = "PreGamingEngage"

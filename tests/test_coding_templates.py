@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.templates import (
+from kenning.coding.templates import (
     PromptTooLargeError,
     SchemaValidationError,
     TemplateRenderer,
@@ -57,9 +57,9 @@ def test_scenario_1_new_simple_python_cli(renderer):
     # Project root absolute
     assert r"C:\STC\ultronPrototype\data\sandbox\weather_cli" in text
     # MCP tool names appear (so Claude knows what to call)
-    assert "mcp__ultron_coding__report_progress" in text
-    assert "mcp__ultron_coding__request_clarification" in text
-    assert "mcp__ultron_coding__declare_complete" in text
+    assert "mcp__kenning_coding__report_progress" in text
+    assert "mcp__kenning_coding__request_clarification" in text
+    assert "mcp__kenning_coding__declare_complete" in text
     # Within budget
     assert result.token_estimate <= renderer.token_budget
 

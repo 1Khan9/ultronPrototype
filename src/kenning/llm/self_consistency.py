@@ -31,7 +31,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("llm.self_consistency")
 
@@ -67,7 +67,7 @@ def should_apply_self_consistency(call_site: str, cfg: Any = None) -> bool:
          ``llm.self_consistency.disabled_sites`` (per-site opt-out).
     """
     if cfg is None:
-        from ultron.config import get_config
+        from kenning.config import get_config
         cfg = get_config()
     sc = cfg.llm.self_consistency
     if not sc.enabled:

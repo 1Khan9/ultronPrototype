@@ -13,10 +13,10 @@ use_default_settings:
 
 general:
   debug: false
-  instance_name: "ultron-local"
+  instance_name: "kenning-local"
 
 server:
-  secret_key: "ultron-local-search-do-not-use-in-public"
+  secret_key: "kenning-local-search-do-not-use-in-public"
   limiter: false
   public_instance: false
   image_proxy: false

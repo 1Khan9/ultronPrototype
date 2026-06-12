@@ -9,12 +9,12 @@ optional preserve-existing-as semantics.
 
 The marker design here adds a UUID-style suffix to defend against the
 catalog's documented foot-gun: a user accidentally writing the literal
-marker text into a hook of their own. Ultron's marker is
-``# INSTALLED-BY-ULTRON-3f9a7d2`` (the suffix matches the catalog's
+marker text into a hook of their own. Kenning's marker is
+``# INSTALLED-BY-KENNING-3f9a7d2`` (the suffix matches the catalog's
 worked example).
 
 A best-effort audit log keeps a JSONL trail of every install action so
-``ultron diag installs`` can summarise what ultron has ever touched.
+``kenning diag installs`` can summarise what kenning has ever touched.
 Pattern lineage attributed in ``THIRD_PARTY_NOTICES.md``.
 """
 
@@ -34,11 +34,18 @@ from typing import Callable
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MARKER: str = "# INSTALLED-BY-ULTRON-3f9a7d2"
-"""Default marker substring tagging files written by ultron's installer."""
+DEFAULT_MARKER: str = "# INSTALLED-BY-KENNING-3f9a7d2"
+"""Default marker substring tagging files written by kenning's installer."""
+
+LEGACY_MARKERS: tuple[str, ...] = ("# INSTALLED-BY-ULTRON-3f9a7d2",)
+"""Markers written by pre-rename installs (2026-06-12 Kenning rename).
+
+Files tagged with a legacy marker are treated as already-installed so
+the rename does not cause previously-managed external files to be
+double-installed or clobbered."""
 
 DEFAULT_PRESERVE_SUFFIX: str = ".local"
-"""Default suffix appended when preserving an existing non-ultron file."""
+"""Default suffix appended when preserving an existing non-kenning file."""
 
 DEFAULT_INSTALL_LOG_PATH = Path("logs") / "install_log.jsonl"
 """Default path (relative to project root) for the install audit log."""
@@ -199,7 +206,7 @@ def _atomic_write(target: Path, content: str, *, encoding: str) -> int:
     target.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(
         prefix=target.name + ".",
-        suffix=".ultron.tmp",
+        suffix=".kenning.tmp",
         dir=str(target.parent),
     )
     try:
@@ -254,8 +261,8 @@ def install_with_marker(
     Args:
         target_path: Where to write.
         content: Content to write. Should contain ``marker`` somewhere so
-            future calls recognise this file as ultron-installed.
-        marker: Substring used to detect "ultron already installed this".
+            future calls recognise this file as kenning-installed.
+        marker: Substring used to detect "kenning already installed this".
             Default :data:`DEFAULT_MARKER` (UUID-suffixed).
         preserve_existing_as: When the target exists without the marker,
             rename it to this path before writing the new content.
@@ -312,7 +319,11 @@ def install_with_marker(
             _emit_audit(writer, result)
             return result
 
-    if existing_text is not None and marker and marker in existing_text:
+    already_marked = existing_text is not None and marker and (
+        marker in existing_text
+        or any(legacy in existing_text for legacy in LEGACY_MARKERS)
+    )
+    if already_marked:
         result = InstallResult(
             target_path=resolved_target,
             action=InstallAction.SKIPPED_ALREADY_MARKED,

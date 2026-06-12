@@ -57,12 +57,12 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, List, Mapping, Optional, Sequence
 
-from ultron.utils.snapshot_guard import SnapshotGuard
-from ultron.utils.snapshot_guard import matches as snapshot_matches
-from ultron.utils.snapshot_guard import take as snapshot_take
+from kenning.utils.snapshot_guard import SnapshotGuard
+from kenning.utils.snapshot_guard import matches as snapshot_matches
+from kenning.utils.snapshot_guard import take as snapshot_take
 
 
-logger = logging.getLogger("ultron.memory.history_compression")
+logger = logging.getLogger("kenning.memory.history_compression")
 
 
 # Default summary preamble — prepended to the compressed message so
@@ -505,7 +505,7 @@ def messages_to_dicts(messages: Sequence[Any]) -> List[Message]:
     """Coerce arbitrary message objects into ``{"role", "content"}`` dicts.
 
     Useful when the caller is passing in dataclass instances or
-    :class:`ultron.memory.background_summarizer.TurnSnapshot` objects;
+    :class:`kenning.memory.background_summarizer.TurnSnapshot` objects;
     the algorithm operates on plain dicts internally.
     """
     out: List[Message] = []

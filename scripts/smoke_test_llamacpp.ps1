@@ -11,7 +11,7 @@
 
 $ErrorActionPreference = 'Stop'
 $base = 'http://127.0.0.1:8765'
-$auth = @{ Authorization = 'Bearer local-ultron' }
+$auth = @{ Authorization = 'Bearer local-kenning' }
 
 Write-Host '--- /v1/models ---' -ForegroundColor Cyan
 $models = Invoke-RestMethod -Uri "$base/v1/models" -Headers $auth

@@ -1,10 +1,10 @@
-"""Tests for ultron.streaming.presentation_scheduler."""
+"""Tests for kenning.streaming.presentation_scheduler."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.streaming import presentation_scheduler as ps
+from kenning.streaming import presentation_scheduler as ps
 
 
 class _Clock:

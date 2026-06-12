@@ -7,7 +7,7 @@ from typing import Any, List
 
 import pytest
 
-from ultron import latency_hygiene
+from kenning import latency_hygiene
 
 
 # ---------------------------------------------------------------------------

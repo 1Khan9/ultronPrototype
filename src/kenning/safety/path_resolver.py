@@ -58,7 +58,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger("ultron.safety.path_resolver")
+logger = logging.getLogger("kenning.safety.path_resolver")
 
 # ``\\?\`` prefix removes the MAX_PATH limit on Windows. We strip it for
 # canonicalisation purposes because two paths that differ only by the
@@ -134,13 +134,13 @@ class PathResolver:
     def project_root(self) -> Path:
         """Resolve PROJECT_ROOT lazily.
 
-        Imported from :mod:`ultron.config` on first access. This keeps
+        Imported from :mod:`kenning.config` on first access. This keeps
         the path resolver importable from very low-level code that
         runs before config is fully built (e.g. early test discovery).
         """
         if self._project_root is None:
             try:
-                from ultron.config import PROJECT_ROOT
+                from kenning.config import PROJECT_ROOT
                 self._project_root = Path(PROJECT_ROOT).resolve()
             except Exception:
                 self._project_root = Path(os.getcwd()).resolve()

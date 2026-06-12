@@ -2,14 +2,14 @@
 
 Catalog 13 (clawhub-capability-evolver) clean-room synthesis. This is the
 module that ties everything together into ONE auto-apply + auto-revert
-cycle, built on :class:`ultron.agent_loop.base.AgentLoop` so it inherits
+cycle, built on :class:`kenning.agent_loop.base.AgentLoop` so it inherits
 the load-bearing ``max_steps`` cap + loop detection + fail-open execution
 for free.
 
 One cycle (:meth:`EvolutionLoop.run_once`):
 
 1. **observe** the current opportunity signals;
-2. **plan** -- distil a :class:`~ultron.evolution.skill_distiller.SkillProposal`
+2. **plan** -- distil a :class:`~kenning.evolution.skill_distiller.SkillProposal`
    from the accumulated successful capsules (returns ``None`` -> done when
    the gates are not met / nothing new);
 3. **pre-flight, FAIL-CLOSED** -- path containment + dangerous-char
@@ -23,13 +23,13 @@ One cycle (:meth:`EvolutionLoop.run_once`):
 5. **checkpoint** the workspace;
 6. **apply** -- write the proposal markdown (data only);
 7. **measure + constrain** -- compute the blast radius and run
-   :func:`~ultron.evolution.blast_radius.check_constraints`; a hard
+   :func:`~kenning.evolution.blast_radius.check_constraints`; a hard
    violation triggers an immediate revert;
 8. **monitor** the four guardrails over the window and **keep or
    auto-revert** via the checkpoint;
 9. **record** the outcome into the autonomy ledger, emit an
    ``EvolutionEvent`` to the audit sink, and (on keep) a success
-   :class:`~ultron.evolution.models.Capsule` for future distillation.
+   :class:`~kenning.evolution.models.Capsule` for future distillation.
 
 Every collaborator is injected, so the whole loop is exercisable with
 fakes -- no git, no real files (beyond an optional tmp write), no model
@@ -46,9 +46,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence
 
-from ultron.agent_loop.base import AgentLoop, StepRecord
-from ultron.evolution.autonomy import AutonomyTransition, TieredAutonomyController
-from ultron.evolution.blast_radius import (
+from kenning.agent_loop.base import AgentLoop, StepRecord
+from kenning.evolution.autonomy import AutonomyTransition, TieredAutonomyController
+from kenning.evolution.blast_radius import (
     BlastComputation,
     check_constraints,
     detect_ethics_violations,
@@ -58,14 +58,14 @@ from ultron.evolution.blast_radius import (
     normalize_rel_path,
     proposal_policy,
 )
-from ultron.evolution.guardrails import (
+from kenning.evolution.guardrails import (
     GuardrailBaseline,
     GuardrailSample,
     GuardrailVerdict,
     RollbackRecord,
     evaluate_guardrails,
 )
-from ultron.evolution.models import (
+from kenning.evolution.models import (
     BlastRadius,
     Capsule,
     EvolutionEvent,
@@ -75,12 +75,12 @@ from ultron.evolution.models import (
     new_capsule_id,
     new_event_id,
 )
-from ultron.evolution.skill_distiller import (
+from kenning.evolution.skill_distiller import (
     SkillProposal,
     auto_distill,
     auto_distill_from_failures,
 )
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("evolution.loop")
 
@@ -395,7 +395,7 @@ class EvolutionLoop(AgentLoop):
 
         # dangerous-char rejection (fail-closed on resolver error)
         try:
-            from ultron.safety.path_resolver import PathResolveError, get_path_resolver
+            from kenning.safety.path_resolver import PathResolveError, get_path_resolver
 
             try:
                 get_path_resolver().resolve(str(target))
@@ -413,7 +413,7 @@ class EvolutionLoop(AgentLoop):
 
         # static scan of the proposal text (catches embedded dangerous code)
         try:
-            from ultron.install.static_scanner import scan_python_text
+            from kenning.install.static_scanner import scan_python_text
 
             findings = scan_python_text("proposal.md", proposal.markdown)
             if any(getattr(f.severity, "value", f.severity) == "critical" for f in findings):
@@ -424,7 +424,7 @@ class EvolutionLoop(AgentLoop):
 
         # capability-tag gate
         try:
-            from ultron.skills.capability_tags import derive_capability_tags
+            from kenning.skills.capability_tags import derive_capability_tags
 
             tags = derive_capability_tags(source=proposal.markdown)
             tag_names = {getattr(t, "value", str(t)) for t in tags}
@@ -447,7 +447,7 @@ class EvolutionLoop(AgentLoop):
         if self._approval is None:
             return None
         try:
-            from ultron.safety.two_phase_approval import ApprovalRequest
+            from kenning.safety.two_phase_approval import ApprovalRequest
 
             request = ApprovalRequest(
                 kind="evolution_proposal",

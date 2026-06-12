@@ -38,7 +38,7 @@ def _stub_orchestrator(stt_result: Optional[str] = "hello world",
     attached. The stub ``stt`` returns ``stt_result`` (or raises) after
     ``stt_delay_s`` so tests can exercise the thread-coordination
     paths."""
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
     o = object.__new__(Orchestrator)
     o._speculative_stt_lock = threading.Lock()
     o._speculative_stt_thread = None

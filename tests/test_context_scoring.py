@@ -1,10 +1,10 @@
-"""Tests for :mod:`ultron.llm.context_scoring`."""
+"""Tests for :mod:`kenning.llm.context_scoring`."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.llm.context_scoring import (
+from kenning.llm.context_scoring import (
     ContextRecommendation,
     score_context,
 )

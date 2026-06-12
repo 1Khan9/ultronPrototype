@@ -9,7 +9,7 @@ from typing import Iterator
 
 import pytest
 
-from ultron.observations import (
+from kenning.observations import (
     Observation,
     ObservationWriter,
     OutcomeResolver,

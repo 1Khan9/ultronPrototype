@@ -1,10 +1,10 @@
 """Rule implementations for the runtime tool-call validator.
 
-Each module under :mod:`ultron.safety.rules` corresponds to one
+Each module under :mod:`kenning.safety.rules` corresponds to one
 category from the user's 2026-05-12 restriction list:
 
 * ``base`` -- abstract :class:`Rule` base class.
-* ``category_k`` -- Category K (Ultron self-protection / meta).
+* ``category_k`` -- Category K (Kenning self-protection / meta).
   Phase 2.
 
 Phases 3-5 add:
@@ -34,6 +34,6 @@ factory that the validator-builder calls during construction.
 
 from __future__ import annotations
 
-from ultron.safety.rules.base import Rule
+from kenning.safety.rules.base import Rule
 
 __all__ = ["Rule"]

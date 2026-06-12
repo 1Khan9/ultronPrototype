@@ -1,4 +1,4 @@
-"""Tests for ultron.desktop.dialog_poller."""
+"""Tests for kenning.desktop.dialog_poller."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.bus import reset_bus_for_testing, subscribe
-from ultron.bus.events import DialogAppearedEvent, DialogResolvedEvent
-from ultron.desktop.dialog_poller import (
+from kenning.bus import reset_bus_for_testing, subscribe
+from kenning.bus.events import DialogAppearedEvent, DialogResolvedEvent
+from kenning.desktop.dialog_poller import (
     DEFAULT_POLL_INTERVAL_S,
     MAX_TRACKED_DIALOGS,
     DialogPoller,

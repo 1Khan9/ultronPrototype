@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.llm.condensers import (
+from kenning.llm.condensers import (
     AmortizedCondenser,
     Condenser,
     CondenseResult,
@@ -475,8 +475,8 @@ def test_select_for_intent_covers_every_routing_intent_kind():
     non-default condenser (i.e. is in ``_INTENT_KIND_MAP`` explicitly).
     A new enum member that drifts past this guard would silently fall
     to the ``default`` (``recent``) entry, masking missed wiring."""
-    from ultron.llm.condensers.factory import _INTENT_KIND_MAP
-    from ultron.openclaw_routing.intents import RoutingIntentKind
+    from kenning.llm.condensers.factory import _INTENT_KIND_MAP
+    from kenning.openclaw_routing.intents import RoutingIntentKind
 
     for member in RoutingIntentKind:
         assert member.value in _INTENT_KIND_MAP, (

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ultron.memory.deep_recall import DeepRecallMatch, match_deep_recall
+from kenning.memory.deep_recall import DeepRecallMatch, match_deep_recall
 
 
 # ---------------------------------------------------------------------------
@@ -108,8 +108,8 @@ class _FakeTTS:
 
 
 def _make_orch(monkeypatch, *, memory, llm):
-    from ultron.pipeline import orchestrator as orch_mod
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline import orchestrator as orch_mod
+    from kenning.pipeline.orchestrator import Orchestrator
 
     monkeypatch.setattr(orch_mod.settings, "BARGE_IN_ENABLED", False, raising=False)
     o = Orchestrator.__new__(Orchestrator)

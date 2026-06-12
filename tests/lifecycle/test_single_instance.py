@@ -1,7 +1,7 @@
-"""Tests for ultron.lifecycle.single_instance.
+"""Tests for kenning.lifecycle.single_instance.
 
 Hermetic: tmp_path-scoped lock files only (never the repo's
-``data/`` lock, so a live Ultron on this machine cannot interfere),
+``data/`` lock, so a live Kenning on this machine cannot interfere),
 monkeypatch-only mutation, no network, no voice stack, no sleeps.
 """
 
@@ -13,7 +13,7 @@ import os
 
 import pytest
 
-from ultron.lifecycle import single_instance as si
+from kenning.lifecycle import single_instance as si
 
 
 def test_acquire_writes_metadata_and_releases(tmp_path):
@@ -195,4 +195,4 @@ def test_default_lock_path_is_under_data():
     # The default anchors at <project>/data so any launch CWD shares
     # the same guard for this install.
     assert si.DEFAULT_LOCK_PATH.parent.name == "data"
-    assert si.DEFAULT_LOCK_PATH.name == ".ultron_instance.lock"
+    assert si.DEFAULT_LOCK_PATH.name == ".kenning_instance.lock"

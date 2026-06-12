@@ -1,6 +1,6 @@
 """Real model-based speculative draft (2026-05-22 experiment).
 
-Until now Ultron's "speculative decoding" surface has been:
+Until now Kenning's "speculative decoding" surface has been:
 - ``LlamaPromptLookupDecoding`` (PLD) -- n-gram matching against the
   prompt, no model loaded. Hit a ``llama_decode returned -1`` bug
   in llama-cpp-python 0.3.22 that we couldn't work around. Disabled.
@@ -57,7 +57,7 @@ def _import_base():
     """Late import of LlamaDraftModel + Llama. The wrapping ``Llama``
     class triggers a ctypes dlopen of llama.dll at import time, which
     we want gated behind the explicit ``draft_kind: "model"`` opt-in
-    so plain ``import ultron.llm.draft_model`` doesn't load the C lib
+    so plain ``import kenning.llm.draft_model`` doesn't load the C lib
     on machines that don't have it."""
     from llama_cpp import Llama
     from llama_cpp.llama_speculative import LlamaDraftModel

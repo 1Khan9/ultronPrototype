@@ -1,4 +1,4 @@
-"""Discover and load ``.ultron/`` per-project configuration.
+"""Discover and load ``.kenning/`` per-project configuration.
 
 The discovery layer reads files from disk and returns a frozen
 :class:`ProjectConfig` snapshot. It does NOT invoke the setup script,
@@ -7,7 +7,7 @@ are caller-side decisions gated by the safety validator's
 explicit-intent matcher (e.g. a setup.sh in a freshly-cloned repo must
 get explicit user consent before any future session executes it).
 
-The mtime cache keys on ``(repo_root, .ultron mtime)`` so a touched
+The mtime cache keys on ``(repo_root, .kenning mtime)`` so a touched
 config file invalidates on the next ``discover_project_config`` call.
 Per the OpenHands shape, missing components are silently absent
 rather than errors -- a project may opt into one piece without the
@@ -27,7 +27,7 @@ from typing import Any, Mapping
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PROJECT_CONFIG_DIRNAME = ".ultron"
+DEFAULT_PROJECT_CONFIG_DIRNAME = ".kenning"
 """Directory name under each project root holding the per-project config."""
 
 _DEFAULT_FILENAMES: dict[str, str] = {
@@ -75,7 +75,7 @@ class ProjectDiscoveryStats:
 
 @dataclass(frozen=True)
 class ProjectConfig:
-    """Snapshot of the ``.ultron/`` contents for one repository.
+    """Snapshot of the ``.kenning/`` contents for one repository.
 
     Every attribute is optional; missing pieces are ``None``. The
     :attr:`raw_paths` mapping records the absolute paths the discovery
@@ -213,7 +213,7 @@ def _directory_mtime(directory: Path) -> float:
     """Return the most recent mtime within ``directory`` (or the dir's own).
 
     Walks one level deep so a touched immediate child invalidates the
-    cache. ``.ultron/skills/`` deep edits should be picked up by the
+    cache. ``.kenning/skills/`` deep edits should be picked up by the
     skill registry's own mtime cache (it tracks the skills/ tree
     independently); discovery only needs to spot top-level changes.
     """
@@ -249,7 +249,7 @@ def discover_project_config(
             fingerprint.
 
     Returns:
-        A frozen :class:`ProjectConfig`. When no ``.ultron/`` directory
+        A frozen :class:`ProjectConfig`. When no ``.kenning/`` directory
         exists OR the directory is empty, the returned config has
         every optional field set to ``None`` (``has_any_field=False``).
         Discovery NEVER raises -- per-file errors land in

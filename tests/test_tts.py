@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ultron.tts.speech import TextToSpeech
+from kenning.tts.speech import TextToSpeech
 
 
 class FakePiperVoice:

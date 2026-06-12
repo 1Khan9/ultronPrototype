@@ -3,7 +3,7 @@
 Live session 2026-05-19: 'Where's his sandbar?' (Whisper-mangled
 'where's his sandbox' said by the user to another human while a
 coding task ran) was ADDRESSED at conf 0.85 because the factual-
-question-stem rule matched "where's". Ultron then fired a SEARCH
+question-stem rule matched "where's". Kenning then fired a SEARCH
 gate and synthesised an unrelated reply. The new
 :data:`_THIRD_PARTY_POSSESSIVE_QUESTION` guard runs BEFORE the
 factual-stem rule and pre-empts these utterances.
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.addressing.rules import (
+from kenning.addressing.rules import (
     AddressingDecision,
     classify as classify_by_rules,
 )
@@ -45,7 +45,7 @@ def test_third_party_possessive_question_not_addressed(utterance):
 
 
 # ---------------------------------------------------------------------------
-# Regression: questions to Ultron (no third-party pronoun) still
+# Regression: questions to Kenning (no third-party pronoun) still
 # classify as ADDRESSED via the factual-stem rule.
 # ---------------------------------------------------------------------------
 
@@ -60,7 +60,7 @@ def test_third_party_possessive_question_not_addressed(utterance):
     "Why is the sky blue?",
     "What's my next task?",
 ])
-def test_legit_question_to_ultron_still_addressed(utterance):
+def test_legit_question_to_kenning_still_addressed(utterance):
     hit = classify_by_rules(utterance)
     assert hit is not None
     assert hit.decision == AddressingDecision.ADDRESSED

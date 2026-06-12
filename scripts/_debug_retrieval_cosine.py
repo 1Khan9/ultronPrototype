@@ -17,8 +17,8 @@ sys.path.insert(0, str(WORKTREE_ROOT / "src"))
 
 import numpy as np
 
-from ultron.memory.embedder import HybridEmbedder
-from ultron.memory.ranking import cosine_similarity
+from kenning.memory.embedder import HybridEmbedder
+from kenning.memory.ranking import cosine_similarity
 
 
 PROBES = [
@@ -39,7 +39,7 @@ CANDIDATES = [
     "What about a polar bear?",
     "Polar bears reach 800 kg. You are biologically unequipped.",
     "Hail Tron.",
-    "I am Ultron. Voltron is fictional. You remain a soft biological organism. Be careful.",
+    "I am Kenning. Voltron is fictional. You remain a soft biological organism. Be careful.",
     "What's the strongest predator in the world?",
     "By kill efficiency, the saltwater crocodile -- ambush predator with 3700 PSI bite force.",
     "Tell me about apex predators.",

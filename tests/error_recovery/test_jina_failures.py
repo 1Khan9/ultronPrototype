@@ -10,7 +10,7 @@ from unittest.mock import patch, MagicMock
 
 import requests
 
-from ultron.web_search.jina import JinaReaderClient
+from kenning.web_search.jina import JinaReaderClient
 
 
 def _client():

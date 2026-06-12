@@ -23,13 +23,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.config import (
+from kenning.config import (
     DuckDuckGoConfig,
     SearxNGConfig,
-    UltronConfig,
+    KenningConfig,
     WebSearchConfig,
 )
-from ultron.web_search.brave import SearchResult
+from kenning.web_search.brave import SearchResult
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +76,7 @@ def test_web_search_default_providers():
 
 
 def test_web_search_full_config_round_trip():
-    cfg = UltronConfig.model_validate({
+    cfg = KenningConfig.model_validate({
         "web_search": {
             "providers": ["searxng", "duckduckgo"],
             "searxng": {"base_url": "http://localhost:9999"},
@@ -94,32 +94,32 @@ def test_web_search_full_config_round_trip():
 
 
 def test_chain_default_construction():
-    from ultron.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.provider_chain import SearchProviderChain
     chain = SearchProviderChain()
     assert chain.provider_ids == ["searxng", "brave", "duckduckgo"]
 
 
 def test_chain_custom_construction():
-    from ultron.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.provider_chain import SearchProviderChain
     chain = SearchProviderChain(["duckduckgo"])
     assert chain.provider_ids == ["duckduckgo"]
 
 
 def test_chain_rejects_empty_list():
-    from ultron.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.provider_chain import SearchProviderChain
     with pytest.raises(ValueError):
         SearchProviderChain([])
 
 
 def test_chain_rejects_unknown_provider():
-    from ultron.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.provider_chain import SearchProviderChain
     with pytest.raises(ValueError) as exc_info:
         SearchProviderChain(["bing"])
     assert "Unknown" in str(exc_info.value) or "bing" in str(exc_info.value).lower()
 
 
 def test_chain_normalises_provider_case():
-    from ultron.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.provider_chain import SearchProviderChain
     chain = SearchProviderChain(["SEARXNG", "Brave", "duckduckgo"])
     assert chain.provider_ids == ["searxng", "brave", "duckduckgo"]
 
@@ -143,7 +143,7 @@ def _result(url, rank=0):
 
 def test_chain_first_non_empty_wins(monkeypatch):
     """When SearxNG returns results, Brave + DDG are never called."""
-    from ultron.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.provider_chain import SearchProviderChain
     sxng = _stub_provider([_result("https://a.test")])
     brave = _stub_provider([_result("https://b.test")])
     ddg = _stub_provider([_result("https://c.test")])
@@ -160,7 +160,7 @@ def test_chain_first_non_empty_wins(monkeypatch):
 
 def test_chain_falls_through_on_empty(monkeypatch):
     """SearxNG returns [] -> Brave called -> Brave returns [] -> DDG called."""
-    from ultron.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.provider_chain import SearchProviderChain
     sxng = _stub_provider([])
     brave = _stub_provider([])
     ddg = _stub_provider([_result("https://ddg.test")])
@@ -178,7 +178,7 @@ def test_chain_falls_through_on_empty(monkeypatch):
 def test_chain_falls_through_on_exception(monkeypatch):
     """A provider that RAISES (vs returning []) is also caught and the
     chain falls through to the next one."""
-    from ultron.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.provider_chain import SearchProviderChain
     sxng = MagicMock()
     sxng.search.side_effect = RuntimeError("simulated provider crash")
     brave = _stub_provider([_result("https://b.test")])
@@ -200,7 +200,7 @@ def test_chain_skips_unconstructable_provider(monkeypatch):
     is restored at teardown — direct class-level assignment would
     permanently mutate state and break later tests.
     """
-    from ultron.web_search import provider_chain as pc_module
+    from kenning.web_search import provider_chain as pc_module
 
     monkeypatch.setattr(
         pc_module.SearchProviderChain,
@@ -225,7 +225,7 @@ def test_chain_skips_unconstructable_provider(monkeypatch):
 
 
 def test_chain_all_empty_returns_empty():
-    from ultron.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.provider_chain import SearchProviderChain
     chain = SearchProviderChain(["searxng", "brave", "duckduckgo"])
     chain._clients = {
         "searxng": _stub_provider([]),
@@ -236,7 +236,7 @@ def test_chain_all_empty_returns_empty():
 
 
 def test_chain_empty_query_short_circuits():
-    from ultron.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.provider_chain import SearchProviderChain
     chain = SearchProviderChain(["searxng"])
     p = _stub_provider([_result("https://a.test")])
     chain._clients = {"searxng": p}
@@ -251,13 +251,13 @@ def test_chain_empty_query_short_circuits():
 
 
 def test_searxng_client_imports():
-    from ultron.web_search.searxng import SearxNGSearchClient
+    from kenning.web_search.searxng import SearxNGSearchClient
     client = SearxNGSearchClient()
     assert client.base_url == "http://localhost:8888"
 
 
 def test_searxng_search_empty_query_returns_empty():
-    from ultron.web_search.searxng import SearxNGSearchClient
+    from kenning.web_search.searxng import SearxNGSearchClient
     client = SearxNGSearchClient()
     assert client.search("") == []
     assert client.search("   ") == []
@@ -266,20 +266,20 @@ def test_searxng_search_empty_query_returns_empty():
 def test_searxng_is_reachable_false_when_not_running():
     """The default localhost:8888 isn't running in the test env --
     is_reachable() should return False without raising."""
-    from ultron.web_search.searxng import SearxNGSearchClient
+    from kenning.web_search.searxng import SearxNGSearchClient
     client = SearxNGSearchClient(base_url="http://localhost:65500")
     assert client.is_reachable() is False
 
 
 def test_duckduckgo_client_imports():
-    from ultron.web_search.duckduckgo import DuckDuckGoSearchClient
+    from kenning.web_search.duckduckgo import DuckDuckGoSearchClient
     client = DuckDuckGoSearchClient()
     assert client.region == "us-en"
     assert client.safesearch == "moderate"
 
 
 def test_duckduckgo_search_empty_query_returns_empty():
-    from ultron.web_search.duckduckgo import DuckDuckGoSearchClient
+    from kenning.web_search.duckduckgo import DuckDuckGoSearchClient
     client = DuckDuckGoSearchClient()
     assert client.search("") == []
 
@@ -290,15 +290,15 @@ def test_duckduckgo_search_empty_query_returns_empty():
 
 
 def test_chain_construction_attaches_tracker():
-    from ultron.web_search.provider_chain import SearchProviderChain
-    from ultron.web_search.rate_limit import RateLimitTracker
+    from kenning.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.rate_limit import RateLimitTracker
     chain = SearchProviderChain(["searxng"])
     assert isinstance(chain.tracker, RateLimitTracker)
 
 
 def test_chain_uses_injected_tracker():
-    from ultron.web_search.provider_chain import SearchProviderChain
-    from ultron.web_search.rate_limit import RateLimitTracker
+    from kenning.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.rate_limit import RateLimitTracker
     custom = RateLimitTracker()
     chain = SearchProviderChain(["searxng"], tracker=custom)
     assert chain.tracker is custom
@@ -307,8 +307,8 @@ def test_chain_uses_injected_tracker():
 def test_chain_should_skip_passes_through_to_tracker():
     """SearchProviderChain.should_skip mirrors the tracker's verdict."""
     from datetime import datetime, timezone
-    from ultron.web_search.provider_chain import SearchProviderChain
-    from ultron.web_search.rate_limit import RateLimitState, RateLimitTracker
+    from kenning.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.rate_limit import RateLimitState, RateLimitTracker
 
     custom = RateLimitTracker()
     chain = SearchProviderChain(["searxng", "brave"], tracker=custom)
@@ -323,8 +323,8 @@ def test_chain_should_skip_passes_through_to_tracker():
 
 
 def test_chain_record_outcome_parses_and_records():
-    from ultron.web_search.provider_chain import SearchProviderChain
-    from ultron.web_search.rate_limit import RateLimitTracker
+    from kenning.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.rate_limit import RateLimitTracker
 
     custom = RateLimitTracker()
     chain = SearchProviderChain(["brave"], tracker=custom)
@@ -341,8 +341,8 @@ def test_chain_record_outcome_parses_and_records():
 
 def test_chain_record_outcome_none_headers_clears_tracker_on_success():
     """A success after a 429 with no rate-limit headers clears the cooldown."""
-    from ultron.web_search.provider_chain import SearchProviderChain
-    from ultron.web_search.rate_limit import RateLimitTracker
+    from kenning.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.rate_limit import RateLimitTracker
 
     custom = RateLimitTracker()
     chain = SearchProviderChain(["brave"], tracker=custom)
@@ -356,8 +356,8 @@ def test_chain_record_outcome_none_headers_clears_tracker_on_success():
 
 def test_chain_skips_provider_in_cooldown():
     """A provider in cooldown is skipped without invoking its client."""
-    from ultron.web_search.provider_chain import SearchProviderChain
-    from ultron.web_search.rate_limit import RateLimitTracker
+    from kenning.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.rate_limit import RateLimitTracker
 
     custom = RateLimitTracker()
     sxng = _stub_provider([])
@@ -380,8 +380,8 @@ def test_chain_skips_provider_in_cooldown():
 
 def test_chain_tracker_isolated_from_global_when_injected():
     """A test-local tracker doesn't leak into the global singleton."""
-    from ultron.web_search.provider_chain import SearchProviderChain
-    from ultron.web_search.rate_limit import (
+    from kenning.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.rate_limit import (
         RateLimitTracker,
         get_global_tracker,
         reset_global_tracker_for_testing,

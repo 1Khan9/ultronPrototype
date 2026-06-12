@@ -16,13 +16,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.skills.models import KeywordTrigger, Skill, SkillSource
-from ultron.skills.registry import (
+from kenning.skills.models import KeywordTrigger, Skill, SkillSource
+from kenning.skills.registry import (
     SkillRegistry,
     reset_skill_registry_for_testing,
     set_skill_registry,
 )
-from ultron.skills.registry import _SourceSpec  # type: ignore[attr-defined]
+from kenning.skills.registry import _SourceSpec  # type: ignore[attr-defined]
 
 
 @pytest.fixture(autouse=True)
@@ -44,7 +44,7 @@ def _make_engine_stub(system_prompt: str):
     the goal is to test ONLY the skills-injection branch.
     """
 
-    from ultron.llm.inference import LLMEngine
+    from kenning.llm.inference import LLMEngine
 
     engine = LLMEngine.__new__(LLMEngine)
     engine._explicit_system_prompt = system_prompt  # type: ignore[attr-defined]
@@ -67,7 +67,7 @@ def _make_engine_stub(system_prompt: str):
 def test_no_registry_means_no_skills_block(monkeypatch):
     """When no registry is set, the system prompt is unchanged."""
 
-    from ultron.llm import inference as inference_mod
+    from kenning.llm import inference as inference_mod
 
     engine = _make_engine_stub("BASE SYSTEM PROMPT")
 
@@ -96,7 +96,7 @@ def test_registry_match_injects_block(tmp_path: Path, monkeypatch):
     )
     set_skill_registry(registry)
 
-    from ultron.llm import inference as inference_mod
+    from kenning.llm import inference as inference_mod
 
     engine = _make_engine_stub("BASE SYSTEM PROMPT")
     fake_cfg = MagicMock()
@@ -121,7 +121,7 @@ def test_registry_no_match_leaves_prompt_alone(tmp_path: Path, monkeypatch):
     )
     set_skill_registry(registry)
 
-    from ultron.llm import inference as inference_mod
+    from kenning.llm import inference as inference_mod
 
     engine = _make_engine_stub("BASE SYSTEM PROMPT")
     fake_cfg = MagicMock()
@@ -143,7 +143,7 @@ def test_registry_exception_is_swallowed(monkeypatch):
     broken = _Broken([])
     set_skill_registry(broken)
 
-    from ultron.llm import inference as inference_mod
+    from kenning.llm import inference as inference_mod
 
     engine = _make_engine_stub("BASE SYSTEM PROMPT")
     fake_cfg = MagicMock()
@@ -163,7 +163,7 @@ def test_always_on_skill_injected_regardless_of_text(tmp_path: Path, monkeypatch
     )
     set_skill_registry(registry)
 
-    from ultron.llm import inference as inference_mod
+    from kenning.llm import inference as inference_mod
 
     engine = _make_engine_stub("BASE SYSTEM PROMPT")
     fake_cfg = MagicMock()

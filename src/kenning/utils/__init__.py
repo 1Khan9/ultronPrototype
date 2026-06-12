@@ -1,19 +1,19 @@
 """Cross-cutting utilities (logging, caches, text transforms, etc.)."""
 
-from ultron.utils.logging import configure_logging, get_logger
-from ultron.utils.mtime_cache import MtimeCache, MtimeCacheError, open_mtime_cache
-from ultron.utils.relative_indent import (
+from kenning.utils.logging import configure_logging, get_logger
+from kenning.utils.mtime_cache import MtimeCache, MtimeCacheError, open_mtime_cache
+from kenning.utils.relative_indent import (
     RelativeIndenter,
     absolute_indent,
     relative_indent,
 )
-from ultron.utils.snapshot_guard import (
+from kenning.utils.snapshot_guard import (
     SnapshotGuard,
     StaleSnapshotError,
     matches as snapshot_matches,
     take as snapshot_take,
 )
-from ultron.utils.token_budget import (
+from kenning.utils.token_budget import (
     BudgetTooSmallError,
     PackResult,
     char_count_tokens,

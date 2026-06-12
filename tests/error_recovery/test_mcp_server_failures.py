@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-os.environ.setdefault("ULTRON_CODING_MCP_ALLOW_ANY_ROOT", "1")
+os.environ.setdefault("KENNING_CODING_MCP_ALLOW_ANY_ROOT", "1")
 
-from ultron.coding.mcp_server import _AuditLog, UltronMCPServer  # noqa: E402
-from ultron.errors import MCPServerError  # noqa: E402
+from kenning.coding.mcp_server import _AuditLog, KenningMCPServer  # noqa: E402
+from kenning.errors import MCPServerError  # noqa: E402
 
 
 def _free_port() -> int:
@@ -39,7 +39,7 @@ def test_bind_failure_raises_mcp_server_error_and_logs(
     logged to errors.jsonl with dependency=mcp_server."""
     port = _free_port()
 
-    first = UltronMCPServer(
+    first = KenningMCPServer(
         host="127.0.0.1", port=port, sse_path="/sse",
         log_path=tmp_path / "audit-1.jsonl",
         clarification_timeout_s=2.0,
@@ -47,7 +47,7 @@ def test_bind_failure_raises_mcp_server_error_and_logs(
     first.start(ready_timeout_s=5.0)
 
     try:
-        second = UltronMCPServer(
+        second = KenningMCPServer(
             host="127.0.0.1", port=port, sse_path="/sse",
             log_path=tmp_path / "audit-2.jsonl",
             clarification_timeout_s=2.0,
@@ -92,7 +92,7 @@ def test_serve_failure_cancels_waiter_task(monkeypatch, tmp_path, errors_log):
     import uvicorn
 
     monkeypatch.setattr(uvicorn.Server, "serve", fake_serve)
-    server = UltronMCPServer(
+    server = KenningMCPServer(
         host="127.0.0.1", port=_free_port(), sse_path="/sse",
         log_path=tmp_path / "audit.jsonl",
         clarification_timeout_s=2.0,
@@ -116,7 +116,7 @@ def test_no_active_session_raises_typed_error_and_logs(
 ):
     """Calling a Claude-side tool helper before any session exists must
     produce an MCPServerError (not a bare RuntimeError) and log it."""
-    server = UltronMCPServer(
+    server = KenningMCPServer(
         host="127.0.0.1", port=_free_port(), sse_path="/sse",
         log_path=tmp_path / "audit.jsonl",
         clarification_timeout_s=2.0,

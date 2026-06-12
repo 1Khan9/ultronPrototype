@@ -1,4 +1,4 @@
-"""Tests for ultron.coding.supervisor_dispatch."""
+"""Tests for kenning.coding.supervisor_dispatch."""
 
 from __future__ import annotations
 
@@ -7,16 +7,16 @@ from typing import List, Optional
 
 import pytest
 
-from ultron.coding.project_index import ProjectIndexEntry
-from ultron.coding.project_supervisor import (
+from kenning.coding.project_index import ProjectIndexEntry
+from kenning.coding.project_supervisor import (
     ProjectSupervisor,
     SupervisorAction,
     SupervisorCandidate,
     SupervisorDecision,
     SupervisorInputs,
 )
-from ultron.coding.projects import Project, ProjectRegistry
-from ultron.coding.supervisor_dispatch import (
+from kenning.coding.projects import Project, ProjectRegistry
+from kenning.coding.supervisor_dispatch import (
     DispatchActionKind,
     DispatchOutcome,
     SupervisorDispatchController,

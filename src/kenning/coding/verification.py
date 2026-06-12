@@ -37,12 +37,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from config import settings
-from ultron.coding.session import (
+from kenning.coding.session import (
     CompletionClaim,
     ProjectSession,
     SessionStore,
 )
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("coding.verification")
 

@@ -41,7 +41,7 @@ def _find_real_model() -> Path:
     the most-likely path even when nothing is found, so the test's
     skip message gives an informative location.
     """
-    from ultron.config import PROJECT_ROOT
+    from kenning.config import PROJECT_ROOT
     candidate = PROJECT_ROOT / "models" / "smart_turn" / "smart-turn-v3.2-cpu.onnx"
     if candidate.is_file():
         return candidate
@@ -74,7 +74,7 @@ def test_smart_turn_config_defaults_match_production_layout():
     """Defaults point at the v3.2-cpu ONNX bundled by
     scripts/download_models.py. If the download path moves, this test
     fails first so the schema and download stay in sync."""
-    from ultron.config import SmartTurnConfig
+    from kenning.config import SmartTurnConfig
     cfg = SmartTurnConfig()
     assert cfg.enabled is True
     assert cfg.model_path.endswith("smart-turn-v3.2-cpu.onnx")
@@ -94,7 +94,7 @@ def test_smart_turn_config_completion_threshold_range():
     always says complete (cuts off mid-thought); above ~0.95 it
     almost never says complete (always falls back to slow path)."""
     from pydantic import ValidationError
-    from ultron.config import SmartTurnConfig
+    from kenning.config import SmartTurnConfig
     SmartTurnConfig(completion_threshold=0.05)
     SmartTurnConfig(completion_threshold=0.95)
     with pytest.raises(ValidationError):
@@ -105,7 +105,7 @@ def test_smart_turn_config_completion_threshold_range():
 
 def test_smart_turn_config_fast_path_silence_range():
     from pydantic import ValidationError
-    from ultron.config import SmartTurnConfig
+    from kenning.config import SmartTurnConfig
     SmartTurnConfig(fast_path_silence_duration_ms=100)
     SmartTurnConfig(fast_path_silence_duration_ms=2000)
     with pytest.raises(ValidationError):
@@ -116,7 +116,7 @@ def test_smart_turn_config_fast_path_silence_range():
 
 def test_smart_turn_config_incomplete_extension_range():
     from pydantic import ValidationError
-    from ultron.config import SmartTurnConfig
+    from kenning.config import SmartTurnConfig
     SmartTurnConfig(incomplete_extension_ms=0)  # legal: no extension
     SmartTurnConfig(incomplete_extension_ms=3000)
     with pytest.raises(ValidationError):
@@ -129,7 +129,7 @@ def test_smart_turn_config_window_seconds_range():
     """Below 1 s the model has nothing to look at; above 30 s we'd
     be feeding clipped audio (smart-turn only sees the last 8 s)."""
     from pydantic import ValidationError
-    from ultron.config import SmartTurnConfig
+    from kenning.config import SmartTurnConfig
     SmartTurnConfig(window_seconds=1.0)
     SmartTurnConfig(window_seconds=30.0)
     with pytest.raises(ValidationError):
@@ -140,7 +140,7 @@ def test_smart_turn_config_window_seconds_range():
 
 def test_smart_turn_config_num_threads_range():
     from pydantic import ValidationError
-    from ultron.config import SmartTurnConfig
+    from kenning.config import SmartTurnConfig
     SmartTurnConfig(num_threads=1)
     SmartTurnConfig(num_threads=16)
     with pytest.raises(ValidationError):
@@ -150,7 +150,7 @@ def test_smart_turn_config_num_threads_range():
 
 
 def test_smart_turn_config_round_trips_through_dict():
-    from ultron.config import SmartTurnConfig
+    from kenning.config import SmartTurnConfig
     cfg = SmartTurnConfig(
         enabled=False,
         completion_threshold=0.7,
@@ -177,14 +177,14 @@ def test_smart_turn_config_early_completion_threshold_default_is_065():
     """Default 0.65: empirically conservative bar that eliminates
     virtually all false-positive cut-offs while still firing on
     confidently-complete turns at the shortened fast-path."""
-    from ultron.config import SmartTurnConfig
+    from kenning.config import SmartTurnConfig
     cfg = SmartTurnConfig()
     assert cfg.early_completion_threshold == 0.65
 
 
 def test_smart_turn_config_early_completion_threshold_range():
     from pydantic import ValidationError
-    from ultron.config import SmartTurnConfig
+    from kenning.config import SmartTurnConfig
     SmartTurnConfig(early_completion_threshold=0.05)
     SmartTurnConfig(early_completion_threshold=0.99)
     with pytest.raises(ValidationError):
@@ -197,14 +197,14 @@ def test_smart_turn_config_medium_grace_ms_default_is_200():
     """Default 200 ms: 300 (fast_path) + 200 (grace) = 500 ms,
     matching the prior legacy baseline for medium-confidence turns.
     This is the no-regression contract for the medium band."""
-    from ultron.config import SmartTurnConfig
+    from kenning.config import SmartTurnConfig
     cfg = SmartTurnConfig()
     assert cfg.medium_grace_ms == 200
 
 
 def test_smart_turn_config_medium_grace_ms_range():
     from pydantic import ValidationError
-    from ultron.config import SmartTurnConfig
+    from kenning.config import SmartTurnConfig
     SmartTurnConfig(medium_grace_ms=0)  # legal: no grace, trust early verdict
     SmartTurnConfig(medium_grace_ms=1500)
     with pytest.raises(ValidationError):
@@ -221,7 +221,7 @@ def test_smart_turn_config_medium_grace_ms_range():
 def _stub_orch_for_classifier():
     """Build a minimal Orchestrator skeleton with the three threshold
     knobs set, for testing _classify_smart_turn_verdict in isolation."""
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
     o = object.__new__(Orchestrator)
     o._smart_turn_completion_threshold = 0.5
     o._smart_turn_early_completion_threshold = 0.65
@@ -231,7 +231,7 @@ def _stub_orch_for_classifier():
 def test_classify_smart_turn_verdict_none_is_undecided():
     """None verdict (model load failed / inference raised) -> caller
     falls back to legacy VAD-only trust."""
-    from ultron.audio.smart_turn import SmartTurnVerdict  # noqa: F401
+    from kenning.audio.smart_turn import SmartTurnVerdict  # noqa: F401
     o = _stub_orch_for_classifier()
     assert o._classify_smart_turn_verdict(None) == "undecided"
 
@@ -239,7 +239,7 @@ def test_classify_smart_turn_verdict_none_is_undecided():
 def test_classify_smart_turn_verdict_early_complete():
     """prob >= early_completion_threshold -> submit immediately at
     the shortened fast-path baseline."""
-    from ultron.audio.smart_turn import SmartTurnVerdict
+    from kenning.audio.smart_turn import SmartTurnVerdict
     o = _stub_orch_for_classifier()
     v = SmartTurnVerdict(is_complete=True, probability=0.9, latency_ms=10.0)
     assert o._classify_smart_turn_verdict(v) == "early_complete"
@@ -248,7 +248,7 @@ def test_classify_smart_turn_verdict_early_complete():
 def test_classify_smart_turn_verdict_early_complete_at_threshold():
     """Boundary: prob == early_completion_threshold still counts as
     early_complete (>= not >)."""
-    from ultron.audio.smart_turn import SmartTurnVerdict
+    from kenning.audio.smart_turn import SmartTurnVerdict
     o = _stub_orch_for_classifier()
     v = SmartTurnVerdict(is_complete=True, probability=0.65, latency_ms=10.0)
     assert o._classify_smart_turn_verdict(v) == "early_complete"
@@ -257,7 +257,7 @@ def test_classify_smart_turn_verdict_early_complete_at_threshold():
 def test_classify_smart_turn_verdict_medium_complete():
     """completion_threshold <= prob < early_completion_threshold:
     medium-confidence -- wait the grace window then trust."""
-    from ultron.audio.smart_turn import SmartTurnVerdict
+    from kenning.audio.smart_turn import SmartTurnVerdict
     o = _stub_orch_for_classifier()
     v = SmartTurnVerdict(is_complete=True, probability=0.6, latency_ms=10.0)
     assert o._classify_smart_turn_verdict(v) == "medium_complete"
@@ -265,7 +265,7 @@ def test_classify_smart_turn_verdict_medium_complete():
 
 def test_classify_smart_turn_verdict_medium_at_lower_boundary():
     """Boundary: prob == completion_threshold counts as medium_complete."""
-    from ultron.audio.smart_turn import SmartTurnVerdict
+    from kenning.audio.smart_turn import SmartTurnVerdict
     o = _stub_orch_for_classifier()
     v = SmartTurnVerdict(is_complete=True, probability=0.5, latency_ms=10.0)
     assert o._classify_smart_turn_verdict(v) == "medium_complete"
@@ -274,7 +274,7 @@ def test_classify_smart_turn_verdict_medium_at_lower_boundary():
 def test_classify_smart_turn_verdict_incomplete():
     """prob < completion_threshold -> user trailed off; enter the
     incomplete-extension wait path."""
-    from ultron.audio.smart_turn import SmartTurnVerdict
+    from kenning.audio.smart_turn import SmartTurnVerdict
     o = _stub_orch_for_classifier()
     v = SmartTurnVerdict(is_complete=False, probability=0.3, latency_ms=10.0)
     assert o._classify_smart_turn_verdict(v) == "incomplete"
@@ -282,14 +282,14 @@ def test_classify_smart_turn_verdict_incomplete():
 
 def test_classify_smart_turn_verdict_just_below_completion_is_incomplete():
     """prob just below completion_threshold -> incomplete."""
-    from ultron.audio.smart_turn import SmartTurnVerdict
+    from kenning.audio.smart_turn import SmartTurnVerdict
     o = _stub_orch_for_classifier()
     v = SmartTurnVerdict(is_complete=False, probability=0.49, latency_ms=10.0)
     assert o._classify_smart_turn_verdict(v) == "incomplete"
 
 
 def test_vad_config_includes_smart_turn_subsection():
-    from ultron.config import VADConfig, SmartTurnConfig
+    from kenning.config import VADConfig, SmartTurnConfig
     cfg = VADConfig()
     assert isinstance(cfg.smart_turn, SmartTurnConfig)
     # Nested round-trip via dict (the YAML path).
@@ -307,7 +307,7 @@ def test_vad_config_includes_smart_turn_subsection():
 def test_truncate_or_pad_keeps_audio_under_window():
     """Audio shorter than the window passes through unchanged --
     padding is the feature extractor's job, not this helper's."""
-    from ultron.audio.smart_turn import truncate_or_pad_for_smart_turn
+    from kenning.audio.smart_turn import truncate_or_pad_for_smart_turn
     audio = np.random.randn(3 * 16000).astype(np.float32)
     out = truncate_or_pad_for_smart_turn(audio, 16000)
     assert out.shape[0] == audio.shape[0]
@@ -318,7 +318,7 @@ def test_truncate_or_pad_truncates_to_last_n_seconds():
     """Audio longer than the window is cut HEAD-first: the most
     recent ``window_seconds`` is kept. Matches Pipecat's reference
     behaviour (the model is trained on audio anchored to the end)."""
-    from ultron.audio.smart_turn import truncate_or_pad_for_smart_turn
+    from kenning.audio.smart_turn import truncate_or_pad_for_smart_turn
     audio = np.arange(12 * 16000, dtype=np.float32) / 1000.0
     out = truncate_or_pad_for_smart_turn(audio, 16000, window_seconds=8.0)
     assert out.shape[0] == 8 * 16000
@@ -327,28 +327,28 @@ def test_truncate_or_pad_truncates_to_last_n_seconds():
 
 
 def test_truncate_or_pad_converts_to_float32():
-    from ultron.audio.smart_turn import truncate_or_pad_for_smart_turn
+    from kenning.audio.smart_turn import truncate_or_pad_for_smart_turn
     audio = (np.random.randn(16000) * 1000).astype(np.int16)
     out = truncate_or_pad_for_smart_turn(audio, 16000)
     assert out.dtype == np.float32
 
 
 def test_truncate_or_pad_flattens_multidim_input():
-    from ultron.audio.smart_turn import truncate_or_pad_for_smart_turn
+    from kenning.audio.smart_turn import truncate_or_pad_for_smart_turn
     audio = np.random.randn(16000, 1).astype(np.float32)
     out = truncate_or_pad_for_smart_turn(audio, 16000)
     assert out.ndim == 1
 
 
 def test_truncate_or_pad_rejects_non_16khz():
-    from ultron.audio.smart_turn import truncate_or_pad_for_smart_turn
+    from kenning.audio.smart_turn import truncate_or_pad_for_smart_turn
     audio = np.zeros(48000, dtype=np.float32)
     with pytest.raises(ValueError):
         truncate_or_pad_for_smart_turn(audio, 48000)
 
 
 def test_truncate_or_pad_respects_custom_window_seconds():
-    from ultron.audio.smart_turn import truncate_or_pad_for_smart_turn
+    from kenning.audio.smart_turn import truncate_or_pad_for_smart_turn
     audio = np.random.randn(5 * 16000).astype(np.float32)
     out = truncate_or_pad_for_smart_turn(audio, 16000, window_seconds=2.0)
     assert out.shape[0] == 2 * 16000
@@ -361,13 +361,13 @@ def test_truncate_or_pad_respects_custom_window_seconds():
 
 
 def test_detector_construction_rejects_missing_model(tmp_path):
-    from ultron.audio.smart_turn import SmartTurnDetector, SmartTurnLoadError
+    from kenning.audio.smart_turn import SmartTurnDetector, SmartTurnLoadError
     with pytest.raises(SmartTurnLoadError):
         SmartTurnDetector(tmp_path / "no_such.onnx")
 
 
 def test_detector_construction_rejects_out_of_range_threshold(tmp_path):
-    from ultron.audio.smart_turn import SmartTurnDetector, SmartTurnLoadError
+    from kenning.audio.smart_turn import SmartTurnDetector, SmartTurnLoadError
     stub = tmp_path / "stub.onnx"
     stub.write_bytes(b"")  # presence check only -- never opened in this test
     with pytest.raises(SmartTurnLoadError):
@@ -379,7 +379,7 @@ def test_detector_construction_rejects_out_of_range_threshold(tmp_path):
 
 
 def test_detector_construction_rejects_negative_window(tmp_path):
-    from ultron.audio.smart_turn import SmartTurnDetector, SmartTurnLoadError
+    from kenning.audio.smart_turn import SmartTurnDetector, SmartTurnLoadError
     stub = tmp_path / "stub.onnx"
     stub.write_bytes(b"")
     with pytest.raises(SmartTurnLoadError):
@@ -389,7 +389,7 @@ def test_detector_construction_rejects_negative_window(tmp_path):
 
 
 def test_detector_construction_rejects_zero_threads(tmp_path):
-    from ultron.audio.smart_turn import SmartTurnDetector, SmartTurnLoadError
+    from kenning.audio.smart_turn import SmartTurnDetector, SmartTurnLoadError
     stub = tmp_path / "stub.onnx"
     stub.write_bytes(b"")
     with pytest.raises(SmartTurnLoadError):
@@ -400,7 +400,7 @@ def test_detector_is_lazy_loaded(tmp_path):
     """Construction must NOT load the ONNX session into memory --
     that happens on first is_complete() call or via warmup(). Keeps
     cold start cheap when the detector is enabled but never invoked."""
-    from ultron.audio.smart_turn import SmartTurnDetector
+    from kenning.audio.smart_turn import SmartTurnDetector
     stub = tmp_path / "stub.onnx"
     stub.write_bytes(b"")  # presence check only; we never call is_complete
     det = SmartTurnDetector(stub)
@@ -412,7 +412,7 @@ def test_detector_is_lazy_loaded(tmp_path):
 def test_detector_warmup_propagates_load_failure(tmp_path):
     """warmup() returns False when load fails (bogus ONNX bytes).
     Subsequent is_complete() calls return None (undecided)."""
-    from ultron.audio.smart_turn import SmartTurnDetector
+    from kenning.audio.smart_turn import SmartTurnDetector
     stub = tmp_path / "bogus.onnx"
     stub.write_bytes(b"this is not a real onnx model")
     det = SmartTurnDetector(stub)
@@ -424,7 +424,7 @@ def test_detector_warmup_propagates_load_failure(tmp_path):
 def test_detector_is_complete_returns_none_when_load_failed(tmp_path):
     """After a failed load, all subsequent is_complete() calls return
     None (treated as 'undecided' by the orchestrator -> trust VAD)."""
-    from ultron.audio.smart_turn import SmartTurnDetector
+    from kenning.audio.smart_turn import SmartTurnDetector
     stub = tmp_path / "bogus.onnx"
     stub.write_bytes(b"not onnx")
     det = SmartTurnDetector(stub)
@@ -436,7 +436,7 @@ def test_detector_is_complete_returns_none_when_load_failed(tmp_path):
 def test_detector_is_complete_returns_none_on_empty_audio(tmp_path):
     """Empty audio buffer can't be classified -- return None so the
     caller falls back to VAD's verdict."""
-    from ultron.audio.smart_turn import SmartTurnDetector
+    from kenning.audio.smart_turn import SmartTurnDetector
     stub = tmp_path / "stub.onnx"
     stub.write_bytes(b"")
     det = SmartTurnDetector(stub)
@@ -447,7 +447,7 @@ def test_detector_is_complete_returns_none_on_empty_audio(tmp_path):
 def test_detector_is_complete_returns_none_on_wrong_sample_rate(tmp_path):
     """Wrong sample rate -> None (logged at WARN). Callers shouldn't
     silently get a misclassified verdict on a resampling error."""
-    from ultron.audio.smart_turn import SmartTurnDetector
+    from kenning.audio.smart_turn import SmartTurnDetector
     stub = tmp_path / "stub.onnx"
     stub.write_bytes(b"")
     det = SmartTurnDetector(stub)
@@ -456,7 +456,7 @@ def test_detector_is_complete_returns_none_on_wrong_sample_rate(tmp_path):
 
 
 def test_detector_close_is_idempotent_and_disables(tmp_path):
-    from ultron.audio.smart_turn import SmartTurnDetector
+    from kenning.audio.smart_turn import SmartTurnDetector
     stub = tmp_path / "stub.onnx"
     stub.write_bytes(b"")
     det = SmartTurnDetector(stub)
@@ -475,8 +475,8 @@ def test_detector_close_is_idempotent_and_disables(tmp_path):
 def test_build_detector_returns_none_when_disabled(tmp_path):
     """``enabled=false`` skips construction even when the model file
     exists -- operator opt-out path."""
-    from ultron.audio.smart_turn import build_detector_from_config
-    from ultron.config import SmartTurnConfig
+    from kenning.audio.smart_turn import build_detector_from_config
+    from kenning.config import SmartTurnConfig
     cfg = SmartTurnConfig(enabled=False)
     assert build_detector_from_config(cfg, tmp_path) is None
 
@@ -486,8 +486,8 @@ def test_build_detector_returns_none_when_model_missing(tmp_path):
     falls back to legacy VAD-only end-of-turn. This is the primary
     rollout-safety path: users who haven't run download_models.py
     don't get a hard error."""
-    from ultron.audio.smart_turn import build_detector_from_config
-    from ultron.config import SmartTurnConfig
+    from kenning.audio.smart_turn import build_detector_from_config
+    from kenning.config import SmartTurnConfig
     cfg = SmartTurnConfig(
         enabled=True,
         model_path="models/smart_turn/does-not-exist.onnx",
@@ -497,8 +497,8 @@ def test_build_detector_returns_none_when_model_missing(tmp_path):
 
 def test_build_detector_returns_none_when_absolute_path_missing(tmp_path):
     """Absolute paths are honoured directly -- no PROJECT_ROOT join."""
-    from ultron.audio.smart_turn import build_detector_from_config
-    from ultron.config import SmartTurnConfig
+    from kenning.audio.smart_turn import build_detector_from_config
+    from kenning.config import SmartTurnConfig
     cfg = SmartTurnConfig(model_path=str(tmp_path / "nope.onnx"))
     assert build_detector_from_config(cfg, tmp_path) is None
 
@@ -508,8 +508,8 @@ def test_build_detector_succeeds_when_file_present(tmp_path):
     succeeds and returns a detector. (The detector is lazy, so we
     don't have to bake in a real ONNX -- the file just has to exist
     and be non-empty.)"""
-    from ultron.audio.smart_turn import build_detector_from_config, SmartTurnDetector
-    from ultron.config import SmartTurnConfig
+    from kenning.audio.smart_turn import build_detector_from_config, SmartTurnDetector
+    from kenning.config import SmartTurnConfig
     stub = tmp_path / "models" / "smart_turn" / "stub.onnx"
     stub.parent.mkdir(parents=True)
     stub.write_bytes(b"stub")
@@ -536,7 +536,7 @@ def test_real_model_loads_and_warmup_succeeds():
 
     CPU-only -- doesn't touch GPU or load any voice-stack component.
     Safe in the default test sweep when the model is present."""
-    from ultron.audio.smart_turn import SmartTurnDetector
+    from kenning.audio.smart_turn import SmartTurnDetector
     det = SmartTurnDetector(_REAL_MODEL_PATH)
     assert det.warmup() is True
     assert det.available is True
@@ -550,7 +550,7 @@ def test_real_model_returns_well_formed_verdict_on_silence():
     """Pure silence is highly unlikely to be classified as a
     complete utterance -- but the structural contract holds:
     probability in [0,1], latency_ms > 0, is_complete is a bool."""
-    from ultron.audio.smart_turn import SmartTurnDetector
+    from kenning.audio.smart_turn import SmartTurnDetector
     det = SmartTurnDetector(_REAL_MODEL_PATH)
     silence = np.zeros(8 * 16000, dtype=np.float32)
     verdict = det.is_complete(silence)
@@ -568,7 +568,7 @@ def test_real_model_threshold_changes_verdict():
     """Same audio, different thresholds -> potentially different
     verdicts. The probability stays the same; only is_complete flips.
     """
-    from ultron.audio.smart_turn import SmartTurnDetector
+    from kenning.audio.smart_turn import SmartTurnDetector
     audio = np.random.randn(8 * 16000).astype(np.float32) * 0.1
     det_loose = SmartTurnDetector(_REAL_MODEL_PATH, completion_threshold=0.1)
     det_strict = SmartTurnDetector(_REAL_MODEL_PATH, completion_threshold=0.9)
@@ -590,7 +590,7 @@ def test_real_model_threshold_changes_verdict():
 def test_real_model_handles_short_audio():
     """Audio much shorter than the 8s window should still produce a
     valid verdict (WhisperFeatureExtractor pads zeros at the start)."""
-    from ultron.audio.smart_turn import SmartTurnDetector
+    from kenning.audio.smart_turn import SmartTurnDetector
     det = SmartTurnDetector(_REAL_MODEL_PATH)
     short = np.random.randn(int(0.5 * 16000)).astype(np.float32) * 0.1
     verdict = det.is_complete(short)
@@ -605,7 +605,7 @@ def test_real_model_handles_short_audio():
 def test_real_model_handles_long_audio_via_truncation():
     """Audio longer than 8s is truncated to the last 8s by the
     wrapper; the model never sees more than 8s of input."""
-    from ultron.audio.smart_turn import SmartTurnDetector
+    from kenning.audio.smart_turn import SmartTurnDetector
     det = SmartTurnDetector(_REAL_MODEL_PATH)
     long_audio = np.random.randn(12 * 16000).astype(np.float32) * 0.1
     verdict = det.is_complete(long_audio)
@@ -622,7 +622,7 @@ def test_real_model_inference_latency_under_budget():
     150 ms ceiling -- the first call includes one-time graph
     optimisation and may be slower; the median of subsequent calls
     should be comfortably under the target."""
-    from ultron.audio.smart_turn import SmartTurnDetector
+    from kenning.audio.smart_turn import SmartTurnDetector
     det = SmartTurnDetector(_REAL_MODEL_PATH)
     det.warmup()  # eat the first-call overhead
     audio = np.random.randn(8 * 16000).astype(np.float32) * 0.1
@@ -646,7 +646,7 @@ def _make_orch_for_smart_turn(*, smart_turn=None, smart_turn_cfg=None):
     """Build a partially-initialised Orchestrator with just enough
     attributes for the smart-turn helper methods. The construction
     skips audio/vad/llm/tts/etc."""
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
     o = Orchestrator.__new__(Orchestrator)
     o.smart_turn = smart_turn
     o._smart_turn_cfg = smart_turn_cfg
@@ -658,7 +658,7 @@ def _make_orch_for_smart_turn(*, smart_turn=None, smart_turn_cfg=None):
 
 def test_orchestrator_smart_turn_should_check_returns_false_when_detector_missing():
     """No detector -> always skip the check, regardless of speech state."""
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
     o = _make_orch_for_smart_turn(smart_turn=None)
     assert o._smart_turn_should_check(speech_seen=True, speech_samples=8000) is False
 
@@ -708,7 +708,7 @@ def test_orchestrator_run_smart_turn_swallows_exceptions():
 
 def test_orchestrator_run_smart_turn_passes_through_verdict():
     """A successful verdict from the detector is returned verbatim."""
-    from ultron.audio.smart_turn import SmartTurnVerdict
+    from kenning.audio.smart_turn import SmartTurnVerdict
     expected = SmartTurnVerdict(
         is_complete=True, probability=0.85, latency_ms=10.0,
     )
@@ -737,7 +737,7 @@ def test_orchestrator_build_smart_turn_detector_returns_none_when_disabled():
 
 def test_orchestrator_build_smart_turn_detector_returns_none_when_file_missing(tmp_path):
     """Enabled config + missing file -> None (fail-open)."""
-    from ultron.config import SmartTurnConfig
+    from kenning.config import SmartTurnConfig
     cfg = SmartTurnConfig(
         enabled=True,
         model_path="models/smart_turn/does-not-exist.onnx",

@@ -1,6 +1,6 @@
 """2026-05-19 round 4 fix: local clock / date short-circuit.
 
-The live session showed Ultron asking "what time is it?" triggering a
+The live session showed Kenning asking "what time is it?" triggering a
 SEARCH gate, hitting brave.com + NIST, then crashing XTTS with a
 4595-token overflow error -- the user got nothing. Even when search
 succeeds, asking the network for the wall-clock time is absurd: the
@@ -39,7 +39,7 @@ except ImportError:                                          # pragma: no cover
 
 
 # Strict: the WHOLE utterance is a time question. Optional leading
-# "ultron," / "hey ultron," / "and " / "so " is tolerated. Trailing
+# "kenning," / "hey kenning," / "and " / "so " is tolerated. Trailing
 # punctuation only. No mixed intent ("what time is it and the
 # weather"). Matches: "what time is it" / "what is the time" /
 # "tell me the time" / "do you know what time it is" / "the time
@@ -47,7 +47,7 @@ except ImportError:                                          # pragma: no cover
 _TIME_QUERY_RE = re.compile(
     r"""
     ^\s*
-    (?:(?:hey\s+|hi\s+|ok\s+|okay\s+)?ultron[,\s]+)?
+    (?:(?:hey\s+|hi\s+|ok\s+|okay\s+)?kenning[,\s]+)?
     # STT-artifact prefixes that Moonshine sometimes prepends to short
     # utterances ("you", "yeah", "uh", "um"). Tolerating them here so
     # "you What time is it in Paris?" still routes to local clock.
@@ -73,7 +73,7 @@ _TIME_QUERY_RE = re.compile(
 _DATE_QUERY_RE = re.compile(
     r"""
     ^\s*
-    (?:(?:hey\s+|hi\s+|ok\s+|okay\s+)?ultron[,\s]+)?
+    (?:(?:hey\s+|hi\s+|ok\s+|okay\s+)?kenning[,\s]+)?
     # STT-artifact prefixes that Moonshine sometimes prepends to short
     # utterances ("you", "yeah", "uh", "um"). Tolerating them here so
     # "you What time is it in Paris?" still routes to local clock.
@@ -232,7 +232,7 @@ _CITY_TIMEZONES = {
 _TIME_IN_LOCATION_RE = re.compile(
     r"""
     ^\s*
-    (?:(?:hey\s+|hi\s+|ok\s+|okay\s+)?ultron[,\s]+)?
+    (?:(?:hey\s+|hi\s+|ok\s+|okay\s+)?kenning[,\s]+)?
     # STT-artifact prefixes that Moonshine sometimes prepends to short
     # utterances ("you", "yeah", "uh", "um"). Tolerating them here so
     # "you What time is it in Paris?" still routes to local clock.
@@ -302,7 +302,7 @@ def _render_time_for_tts(now: datetime) -> str:
 
     Format: "It's 2:16 PM." -- emitted with leading article + period
     so XTTS treats it as a complete sentence. The hour-minute split
-    relies on :func:`ultron.tts.xtts_v3.normalize_text_for_tts`'s
+    relies on :func:`kenning.tts.xtts_v3.normalize_text_for_tts`'s
     AM/PM rewriter to convert ``PM`` -> ``P M`` on the TTS side, so
     the user hears clearly-spoken letters instead of a slurred
     ligature.

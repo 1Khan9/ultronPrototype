@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.openclaw_routing.intents import (
+from kenning.openclaw_routing.intents import (
     RoutingIntent,
     RoutingIntentKind,
     WindowCloseConfirmationIntent,
@@ -20,12 +20,12 @@ from ultron.openclaw_routing.intents import (
 
 @pytest.fixture
 def fresh_approval_registry(monkeypatch):
-    from ultron.safety.two_phase_approval import (
+    from kenning.safety.two_phase_approval import (
         ApprovalRegistry, set_approval_registry,
     )
     registry = ApprovalRegistry()
     monkeypatch.setattr(
-        "ultron.safety.two_phase_approval.get_approval_registry",
+        "kenning.safety.two_phase_approval.get_approval_registry",
         lambda: registry,
     )
     set_approval_registry(registry)
@@ -34,7 +34,7 @@ def fresh_approval_registry(monkeypatch):
 
 
 def _make_controller(monkeypatch):
-    from ultron.coding.voice import CapabilityVoiceController
+    from kenning.coding.voice import CapabilityVoiceController
 
     return CapabilityVoiceController(
         runner=MagicMock(),
@@ -64,7 +64,7 @@ def test_close_with_suspected_unsaved_registers_approval(
     the controller registers a two-phase approval and speaks the
     prompt INSTEAD OF force-closing."""
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_window_close",
+        "kenning.desktop.voice.handle_window_close",
         lambda intent: _FakeCloseResult(
             success=False,
             voice_message="VS Code may have unsaved work.",
@@ -95,7 +95,7 @@ def test_close_without_suspected_unsaved_no_approval(
 ):
     """A clean graceful close path doesn't register approval."""
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_window_close",
+        "kenning.desktop.voice.handle_window_close",
         lambda intent: _FakeCloseResult(
             success=True,
             voice_message="Closed Discord.",
@@ -128,7 +128,7 @@ def test_yes_reply_force_closes(monkeypatch, fresh_approval_registry):
     a force close and clears the pending approval."""
     # First close: suspected_unsaved=True.
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_window_close",
+        "kenning.desktop.voice.handle_window_close",
         lambda intent: _FakeCloseResult(
             success=False,
             voice_message="Notepad may have unsaved work.",
@@ -146,7 +146,7 @@ def test_yes_reply_force_closes(monkeypatch, fresh_approval_registry):
         )
 
     monkeypatch.setattr(
-        "ultron.desktop.windows.close_window", _fake_close_window,
+        "kenning.desktop.windows.close_window", _fake_close_window,
     )
     controller = _make_controller(monkeypatch)
 
@@ -184,7 +184,7 @@ def test_no_reply_aborts_close(monkeypatch, fresh_approval_registry):
     """The user's 'no' reply cancels the close without calling
     force_close."""
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_window_close",
+        "kenning.desktop.voice.handle_window_close",
         lambda intent: _FakeCloseResult(
             success=False,
             voice_message="x may have unsaved work.",
@@ -193,7 +193,7 @@ def test_no_reply_aborts_close(monkeypatch, fresh_approval_registry):
     )
     force_calls = []
     monkeypatch.setattr(
-        "ultron.desktop.windows.close_window",
+        "kenning.desktop.windows.close_window",
         lambda **kw: force_calls.append(kw) or _FakeCloseResult(
             success=True, voice_message="closed",
         ),
@@ -249,7 +249,7 @@ def test_force_close_failure_surfaces_voice_error(
     """When the force-close itself fails after approval, the user
     hears the failure message."""
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_window_close",
+        "kenning.desktop.voice.handle_window_close",
         lambda intent: _FakeCloseResult(
             success=False,
             voice_message="x may have unsaved work.",
@@ -257,7 +257,7 @@ def test_force_close_failure_surfaces_voice_error(
         ),
     )
     monkeypatch.setattr(
-        "ultron.desktop.windows.close_window",
+        "kenning.desktop.windows.close_window",
         lambda **kw: _FakeCloseResult(
             success=False,
             voice_message="",
@@ -286,7 +286,7 @@ def test_force_close_exception_swallowed(
     monkeypatch, fresh_approval_registry,
 ):
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_window_close",
+        "kenning.desktop.voice.handle_window_close",
         lambda intent: _FakeCloseResult(
             success=False, voice_message="x", suspected_unsaved=True,
         ),
@@ -294,7 +294,7 @@ def test_force_close_exception_swallowed(
 
     def _boom(**kw):
         raise RuntimeError("display gone")
-    monkeypatch.setattr("ultron.desktop.windows.close_window", _boom)
+    monkeypatch.setattr("kenning.desktop.windows.close_window", _boom)
     controller = _make_controller(monkeypatch)
 
     controller._handle_window_close(RoutingIntent(
@@ -319,7 +319,7 @@ def test_second_close_supersedes_first(
     """When the user fires a second close before answering the first,
     the latest one supersedes."""
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_window_close",
+        "kenning.desktop.voice.handle_window_close",
         lambda intent: _FakeCloseResult(
             success=False,
             voice_message=f"{intent.window_query} may have unsaved.",
@@ -358,10 +358,10 @@ def test_approval_registry_unavailable_falls_through(
         raise RuntimeError("registry gone")
 
     monkeypatch.setattr(
-        "ultron.safety.two_phase_approval.get_approval_registry", _boom,
+        "kenning.safety.two_phase_approval.get_approval_registry", _boom,
     )
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_window_close",
+        "kenning.desktop.voice.handle_window_close",
         lambda intent: _FakeCloseResult(
             success=False,
             voice_message="x may have unsaved.",

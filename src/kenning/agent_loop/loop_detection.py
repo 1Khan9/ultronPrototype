@@ -20,7 +20,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Optional
 
-from ultron.llm.response_format import loop_hard_escalation, loop_soft_warning
+from kenning.llm.response_format import loop_hard_escalation, loop_soft_warning
 
 #: First escalation tier; soft hint injected into the next prompt.
 DEFAULT_SOFT_THRESHOLD: int = 3

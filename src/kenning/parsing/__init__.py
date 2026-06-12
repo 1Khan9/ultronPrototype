@@ -3,12 +3,12 @@
 The OpenHands ``_parse_skill_frontmatter`` + ``_load_skills_from_dir`` pair
 established the pattern of "log warning, skip, continue" for every per-file
 parse. A single malformed YAML file should never crash a subsystem at
-startup. This package generalises that contract for ultron.
+startup. This package generalises that contract for kenning.
 
 Pattern lineage attributed in ``THIRD_PARTY_NOTICES.md``.
 """
 
-from ultron.parsing.frontmatter import (
+from kenning.parsing.frontmatter import (
     FrontmatterResult,
     parse_frontmatter,
     parse_frontmatter_text,

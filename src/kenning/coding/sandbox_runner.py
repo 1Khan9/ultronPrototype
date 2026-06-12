@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("coding.sandbox_runner")
 
@@ -203,7 +203,7 @@ def _validator_blocks(entry: EntryPoint, *, mode: str, user_text: str) -> Option
     unavailability returns ``None`` (the sandbox-confinement check is the hard
     guard that has already run)."""
     try:
-        from ultron.safety.validator import RuleContext, get_validator
+        from kenning.safety.validator import RuleContext, get_validator
         ctx = RuleContext(
             tool_name=f"coding.sandbox.{mode}",
             arguments={"command": entry.display, "path": str(entry.entry_path or "")},

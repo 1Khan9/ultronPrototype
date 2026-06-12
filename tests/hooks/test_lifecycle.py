@@ -1,8 +1,8 @@
-"""Tests for ultron.hooks.lifecycle."""
+"""Tests for kenning.hooks.lifecycle."""
 
 from __future__ import annotations
 
-from ultron.hooks import lifecycle as lc
+from kenning.hooks import lifecycle as lc
 
 
 class TestHookKind:
@@ -14,7 +14,7 @@ class TestHookKind:
         ):
             assert name in {k.value for k in lc.HookKind}
 
-    def test_ultron_specific_extensions(self) -> None:
+    def test_kenning_specific_extensions(self) -> None:
         for name in (
             "PreLLMRequest", "PreMemoryWrite", "PreGamingEngage",
             "PreDesktopAction", "WakeWordTriggered",

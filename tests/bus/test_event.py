@@ -1,8 +1,8 @@
-"""Tests for ultron.bus.event primitives."""
+"""Tests for kenning.bus.event primitives."""
 
 from __future__ import annotations
 
-from ultron.bus.event import BusEvent, EventPayload
+from kenning.bus.event import BusEvent, EventPayload
 
 
 # ---------------------------------------------------------------------------

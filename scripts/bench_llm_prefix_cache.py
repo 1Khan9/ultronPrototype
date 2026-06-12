@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 
-# Project-root path setup so ``from ultron.*`` works.
+# Project-root path setup so ``from kenning.*`` works.
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
 sys.path.insert(0, str(_ROOT))
@@ -88,11 +88,11 @@ def _build_engine(prefix_cache_ram_bytes: int):
     # Override the cache config via env-style hook: we pass a custom
     # constructor arg path through the usual init. Simpler: temporarily
     # mutate the loaded config singleton.
-    from ultron.config import get_config, reload_config
+    from kenning.config import get_config, reload_config
     cfg = get_config()
     # In-place override -- this is a one-process bench script.
     object.__setattr__(cfg.llm, "prefix_cache_ram_bytes", prefix_cache_ram_bytes)
-    from ultron.llm.inference import LLMEngine
+    from kenning.llm.inference import LLMEngine
     return LLMEngine()
 
 

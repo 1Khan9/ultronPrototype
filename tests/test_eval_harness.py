@@ -18,7 +18,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 HARNESS_PATH = PROJECT_ROOT / "scripts" / "eval_harness.py"
 
-spec = importlib.util.spec_from_file_location("ultron_eval_harness", HARNESS_PATH)
+spec = importlib.util.spec_from_file_location("kenning_eval_harness", HARNESS_PATH)
 assert spec is not None and spec.loader is not None
 eval_harness = importlib.util.module_from_spec(spec)
 sys.modules.setdefault(spec.name, eval_harness)
@@ -219,7 +219,7 @@ def test_score_addressing_handles_none_rule_hit() -> None:
         eval_harness.parse_corpus_row(
             {
                 "id": "addressed",
-                "utterance": "ultron, open chrome",
+                "utterance": "kenning, open chrome",
                 "expected_addressing": "ADDRESSED",
             }
         ),

@@ -1,6 +1,6 @@
-"""Ultron eval harness.
+"""Kenning eval harness.
 
-Runs labeled queries from a corpus file against Ultron's pure-Python
+Runs labeled queries from a corpus file against Kenning's pure-Python
 classifier surfaces (routing, addressing rules, web-search gating
 rules), scores outcomes per dimension, writes a JSON report, and exits
 non-zero when any per-dimension accuracy gate is below threshold.
@@ -55,7 +55,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 # The harness is intentionally lazy about imports so a corpus-only
-# dry run can succeed even when the ultron package is partly broken.
+# dry run can succeed even when the kenning package is partly broken.
 # Concrete imports happen inside the dimension scorers below.
 
 DEFAULT_CORPUS = PROJECT_ROOT / "tests" / "eval" / "corpus.jsonl"
@@ -215,7 +215,7 @@ def score_routing(rows: Iterable[CorpusRow]) -> DimensionScore:
     Rows without ``expected_routing_kind`` are skipped (counted in
     ``DimensionScore.skipped``).
     """
-    from ultron.openclaw_routing.classifier import classify_routing
+    from kenning.openclaw_routing.classifier import classify_routing
 
     score = DimensionScore(name="routing")
     for row in rows:
@@ -267,7 +267,7 @@ def score_addressing(rows: Iterable[CorpusRow]) -> DimensionScore:
     to the string ``"NONE"`` so the corpus can label "no rule should
     fire; caller should escalate to zero-shot" cases.
     """
-    from ultron.addressing.rules import classify as addressing_classify
+    from kenning.addressing.rules import classify as addressing_classify
 
     score = DimensionScore(name="addressing")
     for row in rows:
@@ -314,7 +314,7 @@ def score_web_gate(rows: Iterable[CorpusRow]) -> DimensionScore:
 
     Same ``None`` -> ``"NONE"`` convention as the addressing scorer.
     """
-    from ultron.web_search.gating import classify_by_rules
+    from kenning.web_search.gating import classify_by_rules
 
     score = DimensionScore(name="web_gate")
     for row in rows:
@@ -465,7 +465,7 @@ def write_report(report: Mapping[str, Any], output_path: Path) -> Path:
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Run Ultron's classifier eval harness over a labeled corpus. "
+            "Run Kenning's classifier eval harness over a labeled corpus. "
             "Classifier-only by default (no voice stack load)."
         )
     )

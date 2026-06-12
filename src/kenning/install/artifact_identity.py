@@ -406,7 +406,7 @@ class PinnedDigest:
     Fields:
         identifier: caller-supplied key. Convention: a stable
             string like ``"github:owner/repo@v1.2.3"`` or
-            ``"voicepack:ultron"``.
+            ``"voicepack:kenning"``.
         sha256_hex: pinned SHA-256.
         sha512_sri: pinned SHA-512 SRI.
         sha1_shasum: pinned SHA-1.

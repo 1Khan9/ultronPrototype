@@ -13,7 +13,7 @@ matching content into multi-modal segments
 ``[{type: text}, {type: image_url}, {type: text}]`` that
 multimodal-capable LLMs consume natively.
 
-For ultron the encoder + parser are pure-Python and import-safe.
+For kenning the encoder + parser are pure-Python and import-safe.
 They're useful even before a multimodal LLM is wired in because:
 
 * The supervisor / narrator can pass images through audit logs in

@@ -1,4 +1,4 @@
-"""XTTS-v2 GPT fine-tune driver for the Ultron voice corpus.
+"""XTTS-v2 GPT fine-tune driver for the Kenning voice corpus.
 
 Round-9 Path B step 3 (2026-05-20). Loads the LJSpeech-format
 dataset built by ``segment_for_finetune.py`` and fine-tunes the
@@ -10,10 +10,10 @@ embedding to audio tokens.
 Runs inside the isolated ``.venv-xtts`` venv (Coqui TTS only lives
 there)::
 
-    C:\\STC\\ultronPrototype\\ultronVoiceAudio\\.venv-xtts\\Scripts\\python.exe ^
-        C:\\STC\\ultronPrototype\\ultronVoiceAudio\\scripts\\train_xtts_finetune.py
+    C:\\STC\\ultronPrototype\\kenningVoiceAudio\\.venv-xtts\\Scripts\\python.exe ^
+        C:\\STC\\ultronPrototype\\kenningVoiceAudio\\scripts\\train_xtts_finetune.py
 
-Output runs land under ``ultronVoiceAudio/xtts_finetune_runs/<run_name>/``
+Output runs land under ``kenningVoiceAudio/xtts_finetune_runs/<run_name>/``
 with checkpoints every ``--save-every-step`` steps. The best
 checkpoint can later be loaded by the XTTS server in place of the
 stock checkpoint.
@@ -24,7 +24,7 @@ ideal corpus size for XTTS-v2 fine-tuning (the Coqui community
 sweet spot is ~30 min - 2 hr of clean speech). Expect prosodic
 overfitting and limited generalisation to text far outside the
 training distribution. A good "first pass" check is whether the
-fine-tuned model preserves the Ultron timbre while the base
+fine-tuned model preserves the Kenning timbre while the base
 model's prosody bleeds through enough to handle unseen text.
 
 The script is intentionally a thin wrapper -- the real heavy
@@ -45,7 +45,7 @@ from pathlib import Path
 
 
 HERE = Path(__file__).resolve().parent
-PROJECT = HERE.parent           # ultronVoiceAudio
+PROJECT = HERE.parent           # kenningVoiceAudio
 ROOT = PROJECT.parent           # ultronPrototype
 
 # Pin Coqui caches to the workshop dir so we never write into the
@@ -61,7 +61,7 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 DEFAULT_DATASET_DIR = PROJECT / "xtts_finetune_dataset"
 DEFAULT_OUTPUT_DIR = PROJECT / "xtts_finetune_runs"
-DEFAULT_REFERENCE = PROJECT / "kokoro training audio" / "Ultron_vocals_mono_v1.wav"
+DEFAULT_REFERENCE = PROJECT / "kokoro training audio" / "Kenning_vocals_mono_v1.wav"
 
 
 def build_argparser() -> argparse.ArgumentParser:
@@ -80,7 +80,7 @@ def build_argparser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--run-name",
-        default=time.strftime("ultron_finetune_%Y%m%d_%H%M%S"),
+        default=time.strftime("kenning_finetune_%Y%m%d_%H%M%S"),
         help="Subdirectory name under --out-path for this training run.",
     )
     parser.add_argument(
@@ -243,7 +243,7 @@ def main(argv=None) -> int:
 
     dataset_cfg = BaseDatasetConfig(
         formatter="ljspeech",
-        dataset_name="ultron_reference",
+        dataset_name="kenning_reference",
         path=str(args.dataset),
         meta_file_train="metadata.csv",
         language="en",
@@ -306,8 +306,8 @@ def main(argv=None) -> int:
         output_path=str(run_dir),
         model_args=model_args,
         run_name=args.run_name,
-        project_name="UltronXTTS",
-        run_description="XTTS-v2 fine-tune on 3-min Ultron reference (round-9, 2026-05-20)",
+        project_name="KenningXTTS",
+        run_description="XTTS-v2 fine-tune on 3-min Kenning reference (round-9, 2026-05-20)",
         dashboard_logger="tensorboard",
         logger_uri=None,
         audio=audio_cfg,

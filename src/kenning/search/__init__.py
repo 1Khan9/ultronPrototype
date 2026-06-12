@@ -1,4 +1,4 @@
-"""Direct-search utilities for Ultron (ripgrep wrapper + helpers).
+"""Direct-search utilities for Kenning (ripgrep wrapper + helpers).
 
 This package exposes the ripgrep-backed regex search surface used by
 the voice path ("find files about X"), the supervisor, and any caller

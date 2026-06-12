@@ -11,14 +11,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.transcription import (
+from kenning.transcription import (
     DualSTTRegistry,
     MoonshineEngine,
     ParakeetEngine,
     WhisperEngine,
     make_dual_stt_engines,
 )
-import ultron.transcription as factory_module
+import kenning.transcription as factory_module
 
 
 # ---------------------------------------------------------------------------

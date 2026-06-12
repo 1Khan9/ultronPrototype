@@ -60,9 +60,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
 
-from ultron.utils.ansi_safe import sanitize_for_log
+from kenning.utils.ansi_safe import sanitize_for_log
 
-logger = logging.getLogger("ultron.safety.audit")
+logger = logging.getLogger("kenning.safety.audit")
 
 DEFAULT_AUDIT_PATH = "logs/safety_audit.jsonl"
 
@@ -211,11 +211,11 @@ class AuditLog:
             context: rule-specific details. Optional. Keep small; the
                 log is hot.
             canonical_codes: optional sequence of T3 canonical reason
-                codes (e.g. ``"ultron.malicious.k_category_violation"``).
+                codes (e.g. ``"kenning.malicious.k_category_violation"``).
                 When supplied the entry carries them under the
                 ``canonical_codes`` key so downstream consumers
                 (dashboards, voice narration via
-                :func:`ultron.install.reason_codes.summarize_reason_codes`)
+                :func:`kenning.install.reason_codes.summarize_reason_codes`)
                 can cross-reference upstream advisories without parsing
                 ``reason`` strings. Empty / None omits the field.
             category: optional T16 analytics label (rule-supplied).

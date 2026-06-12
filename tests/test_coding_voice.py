@@ -9,7 +9,7 @@ from typing import List, Optional
 
 import pytest
 
-from ultron.coding.bridge import (
+from kenning.coding.bridge import (
     CodingBridge,
     EventKind,
     EventListener,
@@ -20,14 +20,14 @@ from ultron.coding.bridge import (
     TaskResult,
     TaskState,
 )
-from ultron.coding.projects import (
+from kenning.coding.projects import (
     Project,
     ProjectRegistry,
     ProjectResolver,
     new_sandbox_project,
 )
-from ultron.coding.runner import CodingTaskRunner
-from ultron.coding.voice import CodingVoiceController
+from kenning.coding.runner import CodingTaskRunner
+from kenning.coding.voice import CodingVoiceController
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +220,7 @@ def test_voice_dispatch_defaults_to_no_test_mandate(setup):
 def test_voice_dispatch_honors_config_flag_for_testing(setup, monkeypatch):
     """Operators who want the testing mandate on every voice dispatch
     can opt back in via ``coding.voice_task_require_testing: true``."""
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config()
     monkeypatch.setattr(cfg.coding, "voice_task_require_testing", True)
     _utter_and_dispatch(
@@ -238,7 +238,7 @@ def test_render_prompt_omits_discipline_preamble_without_testing():
     ~270-token "you MUST write tests" preamble. This is the load-
     bearing change for the token-efficiency win."""
     from pathlib import Path
-    from ultron.coding.bridge import TaskRequest, render_prompt
+    from kenning.coding.bridge import TaskRequest, render_prompt
 
     request_lean = TaskRequest(
         task_prompt="write a hello world",
@@ -271,7 +271,7 @@ def test_render_prompt_omits_discipline_preamble_without_testing():
 
 
 def test_coding_config_voice_task_require_testing_defaults_false():
-    from ultron.config import CodingConfig
+    from kenning.config import CodingConfig
     cfg = CodingConfig()
     assert cfg.voice_task_require_testing is False
 
@@ -508,7 +508,7 @@ def test_pre_task_confirmation_no_change_for_progress_query(setup, monkeypatch):
 
 def test_pre_task_confirmation_summarise_strips_filler():
     """Direct unit test of the action-phrase summariser."""
-    from ultron.coding.voice import CapabilityVoiceController
+    from kenning.coding.voice import CapabilityVoiceController
     summarise = CapabilityVoiceController._summarise_intent_for_voice
 
     assert summarise(

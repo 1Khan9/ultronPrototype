@@ -2,7 +2,7 @@
 
 The ABC mirrors the OpenHands :class:`EventService` surface: ``save_event``,
 ``get_event``, ``search_events``, ``count_events``, plus a default
-``batch_get_events`` built on the others. Ultron's contract is sync (no
+``batch_get_events`` built on the others. Kenning's contract is sync (no
 asyncio) and per-session-scoped (the orchestrator owns the session
 identifier passed at construction).
 
@@ -34,8 +34,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Iterator
 
-from ultron.events.chain import compute_event_chain_hash
-from ultron.events.models import (
+from kenning.events.chain import compute_event_chain_hash
+from kenning.events.models import (
     DEFAULT_PAGE_LIMIT,
     EventPage,
     EventQuery,

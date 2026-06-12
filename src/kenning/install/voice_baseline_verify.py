@@ -29,7 +29,7 @@ Design contracts:
   a process-wide :class:`VerificationReport` that callers can poll
   on demand.
 * **Pin-on-first-use is the default for missing-pin paths.** The
-  first time ultron sees a model file it records the digest. The
+  first time kenning sees a model file it records the digest. The
   second + later runs verify against the pin and detect tampering.
 """
 
@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Mapping, Optional, Sequence
 
-from ultron.install.artifact_identity import (
+from kenning.install.artifact_identity import (
     DEFAULT_PIN_FILE_RELATIVE,
     ArtifactIdentity,
     IdentityVerificationResult,
@@ -167,7 +167,7 @@ class VerificationReport:
 def default_voice_baseline_artifacts(project_root: Path) -> Sequence[VoiceBaselineArtifact]:
     """Return the canonical list of voice-baseline artifacts to verify.
 
-    Mirrors :data:`ULTRON_DEFAULT_PINS` from ``install.pin`` but
+    Mirrors :data:`KENNING_DEFAULT_PINS` from ``install.pin`` but
     points at the actual on-disk files. Optional entries (draft GGUF
     is opt-in via ``llm.draft_kind``; smart-turn ONNX is opt-in via
     ``vad.smart_turn.enabled``) carry ``required=False`` so missing
@@ -188,22 +188,22 @@ def default_voice_baseline_artifacts(project_root: Path) -> Sequence[VoiceBaseli
             notes="speculative-decoding draft (currently disabled by default)",
         ),
         VoiceBaselineArtifact(
-            identifier=f"{PIN_IDENTIFIER_PREFIX}voicepack:ultron",
-            path=root / "models" / "kokoro" / "voices" / "ultron.pt",
+            identifier=f"{PIN_IDENTIFIER_PREFIX}voicepack:kenning",
+            path=root / "models" / "kokoro" / "voices" / "kenning.pt",
             required=True,
-            notes="Kokoro fine-tuned voicepack (Ultron voice character)",
+            notes="Kokoro fine-tuned voicepack (Kenning voice character)",
         ),
         VoiceBaselineArtifact(
             identifier=f"{PIN_IDENTIFIER_PREFIX}voicepack:kokoro_finetune",
-            path=root / "models" / "kokoro" / "ultron_finetune.pth",
+            path=root / "models" / "kokoro" / "kenning_finetune.pth",
             required=True,
             notes="Kokoro fine-tune model weights (decoder/predictor/text_encoder/bert)",
         ),
         VoiceBaselineArtifact(
-            identifier=f"{PIN_IDENTIFIER_PREFIX}wake_word:ultron",
-            path=root / "models" / "openwakeword" / "ultron.onnx",
+            identifier=f"{PIN_IDENTIFIER_PREFIX}wake_word:kenning",
+            path=root / "models" / "openwakeword" / "kenning.onnx",
             required=True,
-            notes="custom openWakeWord ONNX for the 'ultron' wake word",
+            notes="custom openWakeWord ONNX for the 'kenning' wake word",
         ),
         VoiceBaselineArtifact(
             identifier=f"{PIN_IDENTIFIER_PREFIX}smart_turn:v3",

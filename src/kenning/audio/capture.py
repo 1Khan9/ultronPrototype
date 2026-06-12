@@ -16,8 +16,8 @@ import numpy as np
 import sounddevice as sd
 
 from config import settings
-from ultron.audio.devices import describe_device, resolve_device
-from ultron.utils.logging import get_logger
+from kenning.audio.devices import describe_device, resolve_device
+from kenning.utils.logging import get_logger
 
 logger = get_logger("audio.capture")
 
@@ -70,7 +70,7 @@ class AudioCapture:
         # tests to construct AudioCapture without a config singleton).
         if input_gain_db is None:
             try:
-                from ultron.config import get_config
+                from kenning.config import get_config
                 input_gain_db = float(getattr(get_config().audio, "input_gain_db", 0.0))
             except Exception:
                 input_gain_db = 0.0

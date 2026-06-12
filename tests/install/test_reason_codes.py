@@ -6,7 +6,7 @@ Covers:
   prefix; every code has a default severity; the malicious-codes set
   is a subset of the catalogue).
 * :func:`verdict_from_codes` short-circuit precedence across the four
-  prefixes plus ultron's malicious/suspicious bridges.
+  prefixes plus kenning's malicious/suspicious bridges.
 * :func:`compute_status` with PENDING / NOT_RUN cases.
 * :func:`normalize_reason_codes` deduplication + sort.
 * :func:`summarize_reason_codes` output shapes.
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.install.reason_codes import (
+from kenning.install.reason_codes import (
     DEFAULT_SEVERITIES,
     EXTERNALLY_CLEARABLE_SUSPICIOUS_CODES,
     KIND_TO_CODE,
@@ -52,7 +52,7 @@ def test_engine_version_constant_is_set() -> None:
 
 
 def test_every_code_has_recognised_prefix() -> None:
-    allowed_prefixes = ("review.", "suspicious.", "malicious.", "ultron.")
+    allowed_prefixes = ("review.", "suspicious.", "malicious.", "kenning.")
     for name, code in REASON_CODES.items():
         assert any(
             code.startswith(p) for p in allowed_prefixes
@@ -75,7 +75,7 @@ def test_externally_clearable_subset_of_suspicious() -> None:
     for code in EXTERNALLY_CLEARABLE_SUSPICIOUS_CODES:
         assert code in all_codes, f"{code!r} not in REASON_CODES"
         assert (
-            code.startswith("suspicious.") or code.startswith("ultron.suspicious.")
+            code.startswith("suspicious.") or code.startswith("kenning.suspicious.")
         ), f"{code!r} is not a suspicious-tier code"
 
 
@@ -131,15 +131,15 @@ def test_unknown_malicious_prefix_still_escalates() -> None:
     ) is ModerationVerdict.MALICIOUS
 
 
-def test_ultron_malicious_bridge_escalates() -> None:
+def test_kenning_malicious_bridge_escalates() -> None:
     assert verdict_from_codes(
-        [REASON_CODES["ULTRON_K_CATEGORY_SELF_MODIFY"]]
+        [REASON_CODES["KENNING_K_CATEGORY_SELF_MODIFY"]]
     ) is ModerationVerdict.MALICIOUS
 
 
-def test_ultron_suspicious_bridge_escalates() -> None:
+def test_kenning_suspicious_bridge_escalates() -> None:
     assert verdict_from_codes(
-        [REASON_CODES["ULTRON_VOICE_BASELINE_TOUCH"]]
+        [REASON_CODES["KENNING_VOICE_BASELINE_TOUCH"]]
     ) is ModerationVerdict.SUSPICIOUS
 
 
@@ -263,9 +263,9 @@ def test_credential_harvest_is_clearable() -> None:
     assert is_externally_clearable_suspicious_code(REASON_CODES["CREDENTIAL_HARVEST"])
 
 
-def test_ultron_voice_baseline_is_clearable() -> None:
+def test_kenning_voice_baseline_is_clearable() -> None:
     assert is_externally_clearable_suspicious_code(
-        REASON_CODES["ULTRON_VOICE_BASELINE_TOUCH"]
+        REASON_CODES["KENNING_VOICE_BASELINE_TOUCH"]
     )
 
 
@@ -357,9 +357,9 @@ def test_code_for_kind_keeps_existing_scanner_kinds() -> None:
 # Edge cases
 
 
-def test_verdict_with_only_ultron_review_codes_returns_clean() -> None:
-    # ultron.review.* never escalates by itself.
-    assert verdict_from_codes(["ultron.review.something"]) is ModerationVerdict.CLEAN
+def test_verdict_with_only_kenning_review_codes_returns_clean() -> None:
+    # kenning.review.* never escalates by itself.
+    assert verdict_from_codes(["kenning.review.something"]) is ModerationVerdict.CLEAN
 
 
 @pytest.mark.parametrize(

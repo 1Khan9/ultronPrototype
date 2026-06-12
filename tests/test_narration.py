@@ -23,19 +23,19 @@ from typing import List, Optional
 
 import pytest
 
-from ultron.coding.bridge import (
+from kenning.coding.bridge import (
     CodingBridge, EventListener, FileChangeKind, TaskEvent, TaskHandle,
     TaskRequest, TaskResult, TaskState,
 )
-from ultron.coding.narration import StatusNarrator, NarrationDelta
-from ultron.coding.runner import CodingTaskRunner
-from ultron.coding.session import (
+from kenning.coding.narration import StatusNarrator, NarrationDelta
+from kenning.coding.runner import CodingTaskRunner
+from kenning.coding.session import (
     ClarificationRequest, CompletionClaim, FileRecord, ProjectSession,
     SessionStatus, SessionStore, StageRecord,
 )
 # Aliased to dodge pytest's "test_*" / Test* collection heuristics that
 # would otherwise warn about the dataclass having an __init__.
-from ultron.coding.session import TestStatus as _TestStatusDC
+from kenning.coding.session import TestStatus as _TestStatusDC
 
 
 # ---------------------------------------------------------------------------
@@ -787,8 +787,8 @@ def test_voice_controller_progress_routes_through_session_when_coordinator_wired
     """The voice controller should pull the active session from the
     coordinator's store and pass it to the runner, getting rich
     narration."""
-    from ultron.coding.projects import ProjectRegistry, ProjectResolver
-    from ultron.coding.voice import CodingVoiceController
+    from kenning.coding.projects import ProjectRegistry, ProjectResolver
+    from kenning.coding.voice import CodingVoiceController
 
     sandbox = tmp_path / "sandbox"
     sandbox.mkdir()
@@ -838,9 +838,9 @@ def test_voice_controller_progress_falls_back_to_legacy_without_coordinator(
     settings shim back to False so ``_submit`` runs synchronously
     and the bridge has an active handle for the progress query.
     """
-    from ultron.coding import voice as voice_module
-    from ultron.coding.projects import ProjectRegistry, ProjectResolver
-    from ultron.coding.voice import CodingVoiceController
+    from kenning.coding import voice as voice_module
+    from kenning.coding.projects import ProjectRegistry, ProjectResolver
+    from kenning.coding.voice import CodingVoiceController
 
     # Pin the legacy path for this test only -- monkeypatch restores
     # the setting on teardown.

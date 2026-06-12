@@ -14,8 +14,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from ultron.coding.bridge import EventKind
-from ultron.coding.runner import CodingTaskRunner
+from kenning.coding.bridge import EventKind
+from kenning.coding.runner import CodingTaskRunner
 
 
 def _runner():
@@ -85,7 +85,7 @@ def test_listener_never_raises_on_malformed_event():
 
 
 def test_disabled_via_config_returns_no_listener(monkeypatch):
-    from ultron.config import get_config
+    from kenning.config import get_config
 
     cfg = get_config()
     monkeypatch.setattr(cfg.coding, "loop_detection_enabled", False)

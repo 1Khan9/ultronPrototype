@@ -17,9 +17,9 @@ from unittest.mock import patch
 
 import pytest
 
-from ultron.coding import direct_bridge as bridge_mod
-from ultron.coding.bridge import TaskRequest
-from ultron.coding.direct_bridge import (
+from kenning.coding import direct_bridge as bridge_mod
+from kenning.coding.bridge import TaskRequest
+from kenning.coding.direct_bridge import (
     DirectClaudeCodeBridge,
     DirectTaskHandle,
     _looks_like_anthropic_api_error,
@@ -70,7 +70,7 @@ def _make_minimal_handle(tmp_path) -> DirectTaskHandle:
     h._task_id = "test-task-id"
     h._listeners = []
     h._listeners_lock = threading.Lock()
-    from ultron.coding.bridge import TaskState, _StateMutex
+    from kenning.coding.bridge import TaskState, _StateMutex
     h._state = _StateMutex(TaskState(
         label="test", task_prompt="x", cwd=tmp_path, started_at=time.time(),
     ))

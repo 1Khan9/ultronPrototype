@@ -1,4 +1,4 @@
-"""Tests for the streaming endpoints in ``ultronVoiceAudio/scripts/parakeet_server.py``.
+"""Tests for the streaming endpoints in ``kenningVoiceAudio/scripts/parakeet_server.py``.
 
 We exercise the FastAPI app via ``starlette.testclient`` with the
 NeMo-backed :class:`ParakeetHolder` replaced by a deterministic stub.
@@ -22,13 +22,13 @@ from fastapi.testclient import TestClient
 
 
 # ---------------------------------------------------------------------------
-# Load the server module by file path (it lives in ultronVoiceAudio/scripts/)
+# Load the server module by file path (it lives in kenningVoiceAudio/scripts/)
 # ---------------------------------------------------------------------------
 
 
 _SERVER_PATH = (
     Path(__file__).resolve().parent.parent
-    / "ultronVoiceAudio" / "scripts" / "parakeet_server.py"
+    / "kenningVoiceAudio" / "scripts" / "parakeet_server.py"
 )
 
 

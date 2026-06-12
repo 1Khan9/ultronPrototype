@@ -1,7 +1,7 @@
 """Async-friendly retry decorator with exponential backoff and retry-after parsing.
 
 Adapted from cline's ``withRetry`` decorator pattern (Apache 2.0; see
-``THIRD_PARTY_NOTICES.md``). Ultron's variant adds:
+``THIRD_PARTY_NOTICES.md``). Kenning's variant adds:
 
 * Native ``async def`` and ``async def *`` (async generator) decoration.
 * Sync ``def`` decoration via a separate decorator entry point.

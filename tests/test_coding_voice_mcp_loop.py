@@ -2,7 +2,7 @@
 
 Regression coverage for the production-hardening campaign: voice-dispatched
 coding tasks must write a per-project ``.mcp.json`` pointing at the live
-Ultron MCP server (so the spawned subprocess can call request_clarification /
+Kenning MCP server (so the spawned subprocess can call request_clarification /
 report_progress / declare_complete back into the coordinator + verifier loop),
 register a ProjectSession so ``_claude_active_session`` resolves, and set a hard
 ``timeout_s`` on supervisor-built requests. The ``.mcp.json`` is deliberately
@@ -22,7 +22,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import List, Optional
 
-from ultron.coding.bridge import (
+from kenning.coding.bridge import (
     CodingBridge,
     EventKind,
     EventListener,
@@ -32,9 +32,9 @@ from ultron.coding.bridge import (
     TaskResult,
     TaskState,
 )
-from ultron.coding.projects import ProjectRegistry, ProjectResolver
-from ultron.coding.runner import CodingTaskRunner
-from ultron.coding.voice import CodingVoiceController
+from kenning.coding.projects import ProjectRegistry, ProjectResolver
+from kenning.coding.runner import CodingTaskRunner
+from kenning.coding.voice import CodingVoiceController
 
 
 # --------------------------------------------------------------------------
@@ -93,7 +93,7 @@ class _FakeBridge(CodingBridge):
 
 
 class _RunningServer:
-    """Minimal stand-in for a live UltronMCPServer."""
+    """Minimal stand-in for a live KenningMCPServer."""
 
     def __init__(self, sse_url: str = "http://127.0.0.1:19761/sse"):
         self._sse = sse_url

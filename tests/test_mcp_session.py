@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.session import (
+from kenning.coding.session import (
     ClarificationRequest,
     CompletionClaim,
     ProjectSession,

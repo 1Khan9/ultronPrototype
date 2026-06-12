@@ -1,33 +1,33 @@
-"""Registry discovery via /.well-known/ultron.json (T8).
+"""Registry discovery via /.well-known/kenning.json (T8).
 
 T8 (openclaw-clawhub catalog port; see ``THIRD_PARTY_NOTICES.md``).
-A stable, namespaced JSON file at ``<site>/.well-known/ultron.json``
-returning ``{api_base, auth_base?, min_ultron_version?, extras?}``.
+A stable, namespaced JSON file at ``<site>/.well-known/kenning.json``
+returning ``{api_base, auth_base?, min_kenning_version?, extras?}``.
 Clients fetch this once at startup to discover the actual API base
 + auth base + minimum-supported runtime version. The fallback
 chain is:
 
     well-known-current
-      -> well-known-legacy (``ultron.json.legacy.json`` -- present
+      -> well-known-legacy (``kenning.json.legacy.json`` -- present
          only when the registry has gone through a rename and wants
          old clients to keep resolving)
-      -> environment-variable override (``ULTRON_REGISTRY``)
+      -> environment-variable override (``KENNING_REGISTRY``)
       -> hardcoded default
 
-The ``min_ultron_version`` field lets the registry refuse to talk
+The ``min_kenning_version`` field lets the registry refuse to talk
 to outdated clients without an explicit error code: clients see
 the published minimum and self-warn / refuse to connect when
 local version is below.
 
-Net-new ultron utility: lets the user (or operator) flip endpoints
+Net-new kenning utility: lets the user (or operator) flip endpoints
 (e.g. local-network mirror) without code edits. Future skill /
 MCP / voicepack registries can publish their well-known file so
-ultron auto-discovers them.
+kenning auto-discovers them.
 
 Network IO is INJECTED via a fetcher callable so tests stay
 hermetic and the same primitive composes with rate-limit tracker
 (T14), trust envelope (T1), and trusted-hosts gate (already in
-:mod:`ultron.skills.marketplace`).
+:mod:`kenning.skills.marketplace`).
 """
 
 from __future__ import annotations
@@ -43,10 +43,10 @@ from urllib.parse import urlparse
 LOGGER = logging.getLogger(__name__)
 
 #: Canonical path under any registry origin.
-WELL_KNOWN_PATH: str = "/.well-known/ultron.json"
+WELL_KNOWN_PATH: str = "/.well-known/kenning.json"
 
 #: Legacy path read as fallback (registry-name rotation tolerance).
-WELL_KNOWN_LEGACY_PATH: str = "/.well-known/ultron.legacy.json"
+WELL_KNOWN_LEGACY_PATH: str = "/.well-known/kenning.legacy.json"
 
 #: Default in-memory cache TTL (seconds). Sub-15-minute by design --
 #: short enough that the orchestrator picks up registry-side config
@@ -55,10 +55,10 @@ DEFAULT_DISCOVERY_TTL_SECONDS: int = 15 * 60
 
 #: Environment-variable override read before falling back to the
 #: hardcoded default.
-DISCOVERY_ENV_OVERRIDE: str = "ULTRON_REGISTRY"
+DISCOVERY_ENV_OVERRIDE: str = "KENNING_REGISTRY"
 
 #: Hardcoded default when no override + no well-known file.
-#: Single-user ultron mostly runs without any registry so this
+#: Single-user kenning mostly runs without any registry so this
 #: stays empty by default; operators populate per-deployment.
 DEFAULT_REGISTRY_BASE: str = ""
 
@@ -85,7 +85,7 @@ class DiscoveredRegistry:
         api_base: the resolved API base URL.
         auth_base: optional separate auth-endpoint base (None when
             auth runs on the same origin as the API).
-        min_runtime_version: minimum ultron runtime version the
+        min_runtime_version: minimum kenning runtime version the
             registry advertises support for. Clients with a lower
             version should self-warn.
         extras: free-form metadata the registry chose to include
@@ -94,7 +94,7 @@ class DiscoveredRegistry:
         discovered_at: when the discovery succeeded (Unix epoch
             seconds).
         from_legacy: True iff resolution fell through to the
-            ``ultron.legacy.json`` path.
+            ``kenning.legacy.json`` path.
     """
 
     api_base: str
@@ -156,7 +156,7 @@ def _build_discovered(payload: dict, *, source_url: str, from_legacy: bool, now:
     auth_base: Optional[str] = None
     if isinstance(auth_base_raw, str) and auth_base_raw.strip():
         auth_base = _normalise_base(auth_base_raw.strip())
-    min_version_raw = payload.get("minUltronVersion") or payload.get("min_ultron_version")
+    min_version_raw = payload.get("minKenningVersion") or payload.get("min_kenning_version")
     min_version: Optional[str] = None
     if isinstance(min_version_raw, str) and min_version_raw.strip():
         min_version = min_version_raw.strip()
@@ -182,7 +182,7 @@ def discover(
     trusted_hosts: Optional[frozenset[str]] = None,
     now: Optional[Callable[[], float]] = None,
 ) -> Optional[DiscoveredRegistry]:
-    """Fetch ``<site>/.well-known/ultron.json`` (legacy-path fallback).
+    """Fetch ``<site>/.well-known/kenning.json`` (legacy-path fallback).
 
     Returns None when both the current + legacy paths return 404 (a
     registry that simply doesn't publish a well-known file). Raises

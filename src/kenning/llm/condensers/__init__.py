@@ -20,7 +20,7 @@ strategies port here:
   middle into one synthesised turn.
 
 The closed-window file-view processor from the SWE-Agent catalog T2 is
-intentionally kept in :mod:`ultron.llm.history_processors` -- it's
+intentionally kept in :mod:`kenning.llm.history_processors` -- it's
 specialised to the bash_only file-view shape and not a general history
 compressor.
 
@@ -30,7 +30,7 @@ Selection: :func:`build_condenser` reads
 greetings, Recent for voice turns, LLMSummarizing for coding sessions).
 """
 
-from ultron.llm.condensers.base import (
+from kenning.llm.condensers.base import (
     Condenser,
     CondenserError,
     CondenseResult,
@@ -38,15 +38,15 @@ from ultron.llm.condensers.base import (
     char_count_tokens_for_turns,
     turn_text,
 )
-from ultron.llm.condensers.noop import NoOpCondenser
-from ultron.llm.condensers.recent import RecentCondenser
-from ultron.llm.condensers.amortized import AmortizedCondenser
-from ultron.llm.condensers.observation_masking import (
+from kenning.llm.condensers.noop import NoOpCondenser
+from kenning.llm.condensers.recent import RecentCondenser
+from kenning.llm.condensers.amortized import AmortizedCondenser
+from kenning.llm.condensers.observation_masking import (
     DEFAULT_MASK_TEMPLATE,
     ObservationMaskingCondenser,
 )
-from ultron.llm.condensers.llm_summarizing import LLMSummarizingCondenser
-from ultron.llm.condensers.factory import (
+from kenning.llm.condensers.llm_summarizing import LLMSummarizingCondenser
+from kenning.llm.condensers.factory import (
     DEFAULT_CONDENSER_KIND,
     KNOWN_CONDENSER_KINDS,
     build_condenser,

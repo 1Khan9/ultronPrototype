@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.agent_loop.subagent_policy import (
+from kenning.agent_loop.subagent_policy import (
     DEFAULT_SUBAGENT_MAX_SPAWN_DEPTH,
     PolicySource,
     SUBAGENT_TOOL_DENY_ALWAYS,
@@ -28,7 +28,7 @@ def test_deny_always_includes_gateway_and_tts() -> None:
     # OpenClaw direct ports.
     for name in ("gateway", "agents_list", "session_status", "cron", "sessions_send"):
         assert name in SUBAGENT_TOOL_DENY_ALWAYS
-    # Ultron extensions.
+    # Kenning extensions.
     for name in ("tts_speak", "kokoro_speak", "gaming_mode_engage", "set_validator"):
         assert name in SUBAGENT_TOOL_DENY_ALWAYS
 
@@ -36,7 +36,7 @@ def test_deny_always_includes_gateway_and_tts() -> None:
 def test_deny_leaf_includes_spawn_management() -> None:
     for name in ("subagents", "sessions_list", "sessions_history", "sessions_spawn"):
         assert name in SUBAGENT_TOOL_DENY_LEAF
-    # Ultron extensions.
+    # Kenning extensions.
     for name in ("mcp_add_server", "mcp_remove_server"):
         assert name in SUBAGENT_TOOL_DENY_LEAF
 

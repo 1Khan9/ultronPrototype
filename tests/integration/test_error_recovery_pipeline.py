@@ -28,7 +28,7 @@ import json
 import pytest
 
 from tests.integration.conftest import dispatch_utterance
-from ultron.openclaw_routing import RoutingDecisionLog, set_routing_log
+from kenning.openclaw_routing import RoutingDecisionLog, set_routing_log
 
 
 def test_routing_log_write_error_does_not_break_dispatch(cap_stack, tmp_path):
@@ -83,7 +83,7 @@ def test_classify_routing_exception_propagates_to_caller(
     """If classify_routing itself raised, the orchestrator's call site
     should see the exception (not silent failure). We patch it to raise
     once, dispatch, and verify the exception is observable."""
-    import ultron.openclaw_routing as _router
+    import kenning.openclaw_routing as _router
 
     original = _router.classify_routing
 
@@ -104,7 +104,7 @@ def test_capability_dispatch_handles_unknown_intent_kind(cap_stack):
     """If a future RoutingIntentKind is added but the controller doesn't
     have a branch for it, dispatch returns None (passthrough) rather
     than crashing — the voice-path safety net catches it."""
-    from ultron.openclaw_routing.intents import RoutingIntent, RoutingIntentKind
+    from kenning.openclaw_routing.intents import RoutingIntent, RoutingIntentKind
 
     # Construct an intent that bypasses our normal flow. We re-use an
     # existing kind but the test would catch a regression where a new

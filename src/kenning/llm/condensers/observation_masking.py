@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
-from ultron.llm.condensers.base import (
+from kenning.llm.condensers.base import (
     CondenseResult,
     Condenser,
     CondenserError,

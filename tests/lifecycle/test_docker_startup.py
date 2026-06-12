@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from ultron.lifecycle.docker_startup import (
+from kenning.lifecycle.docker_startup import (
     DockerStartupResult,
     ensure_docker_running,
     searxng_reachable,
@@ -123,6 +123,6 @@ def test_searxng_unreachable_probe(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_searxng_config_autostart_default() -> None:
-    from ultron.config import SearxNGConfig
+    from kenning.config import SearxNGConfig
 
     assert SearxNGConfig().autostart_docker_on_boot is True

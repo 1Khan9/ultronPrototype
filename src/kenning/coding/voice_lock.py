@@ -41,13 +41,13 @@ DEFAULT_VOICE_LOCKED_PATHS: tuple[str, ...] = (
     # Persona file (workspace-side, also K8-protected when ingested).
     "~/.openclaw/workspace/SOUL.md",
     # Legacy TTS engine + RVC wrapper.
-    "src/ultron/tts/speech.py",
-    "src/ultron/tts/rvc.py",
+    "src/kenning/tts/speech.py",
+    "src/kenning/tts/rvc.py",
     # Reference vocal sample for XTTS. Both the legacy root-level
     # location and the post-disk-cleaning home are locked (additive --
     # the file moved 2026-06-11; protections follow it, never shrink).
-    "ultronVoiceAudio/Ultron_vocals_mono_v1.wav",
-    "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav",
+    "kenningVoiceAudio/Kenning_vocals_mono_v1.wav",
+    "kenningVoiceAudio/kokoro training audio/Kenning_vocals_mono_v1.wav",
 )
 
 DEFAULT_VOICE_LOCKED_GLOBS: tuple[str, ...] = (
@@ -57,12 +57,12 @@ DEFAULT_VOICE_LOCKED_GLOBS: tuple[str, ...] = (
     # RVC support files.
     "models/rvc/**",
     "models/rvc/*",
-    # RVC voice model directory (specific to Ultron's character).
-    "ultron_james_spader_mcu_6941/**",
-    "ultron_james_spader_mcu_6941/*",
+    # RVC voice model directory (specific to Kenning's character).
+    "kenning_rvc_voice/**",
+    "kenning_rvc_voice/*",
     # Coqui XTTS speaker embeddings (any future reference files).
-    "ultronVoiceAudio/*.wav",
-    "ultronVoiceAudio/*.npy",
+    "kenningVoiceAudio/*.wav",
+    "kenningVoiceAudio/*.npy",
 )
 
 
@@ -86,7 +86,7 @@ def _matches_any(path_norm: str, patterns: Sequence[str]) -> Optional[str]:
         pat_norm = _normalise_path(pat)
         if fnmatch.fnmatch(path_norm, pat_norm):
             return pat
-        # Also try suffix match -- "src/ultron/tts/speech.py" should
+        # Also try suffix match -- "src/kenning/tts/speech.py" should
         # match against the canonical relative path even if the input is
         # an absolute path under the repo.
         if path_norm.endswith("/" + pat_norm.lstrip("/")):

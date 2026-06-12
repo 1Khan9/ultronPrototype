@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.utils.heartbeat` (catalog 11 T2).
+"""Tests for :mod:`kenning.utils.heartbeat` (catalog 11 T2).
 
 Hermetic + deterministic: targets signal a :class:`threading.Event` so
 the test waits on the actual beat rather than sleeping a guessed
@@ -13,7 +13,7 @@ import threading
 
 import pytest
 
-from ultron.utils.heartbeat import (
+from kenning.utils.heartbeat import (
     DEFAULT_HEARTBEAT_INTERVAL_S,
     HeartbeatStats,
     HeartbeatThread,

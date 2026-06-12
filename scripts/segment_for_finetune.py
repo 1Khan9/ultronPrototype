@@ -1,7 +1,7 @@
-"""Slice the Ultron reference clip into LJSpeech-format training data.
+"""Slice the Kenning reference clip into LJSpeech-format training data.
 
 Round-9 Path B step 2 (2026-05-20). Consumes the word-level transcript
-from ``transcribe_ultron_reference.py`` and writes a Coqui XTTS-v2
+from ``transcribe_kenning_reference.py`` and writes a Coqui XTTS-v2
 fine-tune-ready dataset:
 
 * ``wavs/0001.wav`` ... ``wavs/NNNN.wav`` -- mono 22050 Hz PCM clips,
@@ -34,9 +34,9 @@ from typing import Optional, Sequence
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
 
-DEFAULT_AUDIO_SOURCE = PROJECT / "ultronVoiceAudio" / "kokoro training audio" / "Ultron_vocals_mono_v1.wav"
-DEFAULT_TRANSCRIPT_DIR = PROJECT / "ultronVoiceAudio" / "transcript_large_v3"
-DEFAULT_OUT_DIR = PROJECT / "ultronVoiceAudio" / "xtts_finetune_dataset"
+DEFAULT_AUDIO_SOURCE = PROJECT / "kenningVoiceAudio" / "kokoro training audio" / "Kenning_vocals_mono_v1.wav"
+DEFAULT_TRANSCRIPT_DIR = PROJECT / "kenningVoiceAudio" / "transcript_large_v3"
+DEFAULT_OUT_DIR = PROJECT / "kenningVoiceAudio" / "xtts_finetune_dataset"
 
 # Target segment length (seconds). XTTS-v2 fine-tune sweet spot is
 # 5-15 s; longer hurts batching, shorter starves the GPT context.
@@ -210,7 +210,7 @@ def plan_segments(
 
 def _load_words_from_segments_json(segments_path: Path) -> list[_Word]:
     """Read the segments.json file written by
-    ``transcribe_ultron_reference.py`` and flatten to a single
+    ``transcribe_kenning_reference.py`` and flatten to a single
     word list (sorted by start time)."""
     data = json.loads(segments_path.read_text(encoding="utf-8"))
     words: list[_Word] = []
@@ -227,7 +227,7 @@ def _load_words_from_segments_json(segments_path: Path) -> list[_Word]:
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Slice the Ultron reference clip into LJSpeech training data."
+        description="Slice the Kenning reference clip into LJSpeech training data."
     )
     parser.add_argument("--audio", type=Path, default=DEFAULT_AUDIO_SOURCE)
     parser.add_argument("--transcript-dir", type=Path, default=DEFAULT_TRANSCRIPT_DIR)
@@ -245,7 +245,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     segments_json = args.transcript_dir / "segments.json"
     if not segments_json.is_file():
         print(f"ERROR: transcript missing: {segments_json}. "
-              f"Run transcribe_ultron_reference.py first.")
+              f"Run transcribe_kenning_reference.py first.")
         return 1
 
     import numpy as np

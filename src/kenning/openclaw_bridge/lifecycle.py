@@ -34,13 +34,13 @@ from typing import Optional
 
 import requests
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_bridge.lifecycle")
 
 
 # Gateway local-loopback default. Confirmed via `openclaw status` on a
-# fresh OpenClaw 2026.5.7 install. Override via ULTRON_OPENCLAW_GATEWAY_URL.
+# fresh OpenClaw 2026.5.7 install. Override via KENNING_OPENCLAW_GATEWAY_URL.
 _DEFAULT_GATEWAY_URL = "http://127.0.0.1:18789"
 
 # Path to OpenClaw's user config. The auth token lives at
@@ -89,7 +89,7 @@ def _read_token(config_path: Path = _DEFAULT_CONFIG_PATH) -> Optional[str]:
 def _resolve_gateway_url(override: Optional[str] = None) -> str:
     """Resolve the Gateway HTTP URL.
 
-    Order: explicit ``override`` arg → ``ULTRON_OPENCLAW_GATEWAY_URL``
+    Order: explicit ``override`` arg → ``KENNING_OPENCLAW_GATEWAY_URL``
     env var → ``http://127.0.0.1:18789`` default.
 
     The Gateway listens on HTTP for tool/agent calls and on WebSocket
@@ -99,7 +99,7 @@ def _resolve_gateway_url(override: Optional[str] = None) -> str:
     """
     if override:
         return override.rstrip("/")
-    env = os.getenv("ULTRON_OPENCLAW_GATEWAY_URL")
+    env = os.getenv("KENNING_OPENCLAW_GATEWAY_URL")
     if env:
         return env.rstrip("/")
     return _DEFAULT_GATEWAY_URL
@@ -167,7 +167,7 @@ class OpenClawLifecycle:
         """Block until the Gateway is reachable or ``timeout_s`` elapses.
 
         Returns True if reachable within the deadline, False otherwise.
-        Useful at Ultron startup when we want to register Ultron's MCP
+        Useful at Kenning startup when we want to register Kenning's MCP
         with the Gateway as soon as it's up.
         """
         deadline = time.monotonic() + timeout_s

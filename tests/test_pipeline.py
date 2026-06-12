@@ -22,7 +22,7 @@ import pytest
 )
 def test_orchestrator_constructs_and_shuts_down():
     """Verify all components load without raising."""
-    from ultron.pipeline import Orchestrator
+    from kenning.pipeline import Orchestrator
 
     orch = Orchestrator()
     # Don't run(); just confirm shutdown is graceful.
@@ -31,9 +31,9 @@ def test_orchestrator_constructs_and_shuts_down():
 
 def test_pipeline_imports_clean():
     """Pure-import smoke test that doesn't touch heavy components."""
-    from ultron.audio.ring_buffer import RingBuffer
-    from ultron.audio.vad import SpeechEvent
-    from ultron.audio import VoiceActivityDetector  # noqa: F401
+    from kenning.audio.ring_buffer import RingBuffer
+    from kenning.audio.vad import SpeechEvent
+    from kenning.audio import VoiceActivityDetector  # noqa: F401
 
     assert SpeechEvent.SPEECH_START.value == "speech_start"
     rb = RingBuffer(8)

@@ -12,7 +12,7 @@ from typing import List, Tuple
 
 import pytest
 
-from ultron.web_search.gating import (
+from kenning.web_search.gating import (
     GateDecision,
     WebSearchGate,
     classify_by_rules,
@@ -188,7 +188,7 @@ def test_time_in_location_does_not_match_bare_time_query():
     the gate runs)."""
     # The gate's NO_SEARCH rules (greeting/ack) catch some of these,
     # but the time-in-location rule specifically must not fire.
-    from ultron.web_search.gating import _TIME_IN_LOCATION_GATE_RE
+    from kenning.web_search.gating import _TIME_IN_LOCATION_GATE_RE
     assert not _TIME_IN_LOCATION_GATE_RE.search("what time is it")
     assert not _TIME_IN_LOCATION_GATE_RE.search("what's the time")
     assert not _TIME_IN_LOCATION_GATE_RE.search("current time")
@@ -312,7 +312,7 @@ def test_gate_without_llm_returns_uncertain_for_uncovered_cases():
 def test_preflight_routes_stable_factual_to_no_search():
     """A genuinely stable factual question (no time markers, no
     personal context) should route NO_SEARCH from the preflight."""
-    from ultron.llm import LLMEngine
+    from kenning.llm import LLMEngine
 
     llm = LLMEngine(memory=None)
     gate = WebSearchGate(llm=llm)
@@ -330,7 +330,7 @@ def test_preflight_routes_stable_factual_to_no_search():
 def test_preflight_routes_specific_recent_facts_to_search():
     """A specific factual question about something recent should route
     SEARCH from the preflight (no time-marker keyword in the utterance)."""
-    from ultron.llm import LLMEngine
+    from kenning.llm import LLMEngine
 
     llm = LLMEngine(memory=None)
     gate = WebSearchGate(llm=llm)
@@ -420,7 +420,7 @@ def test_knowledge_source_default_branch_when_no_llm():
 
 
 def test_gate_verdict_default_context_categories_empty():
-    from ultron.web_search.gating import GateVerdict
+    from kenning.web_search.gating import GateVerdict
     v = GateVerdict(D.NO_SEARCH, "high", "rule", "test")
     assert v.context_categories == []
     assert v.memory_search_queries == []
@@ -437,7 +437,7 @@ def test_classify_by_rules_leaves_categories_empty():
 
 def test_knowledge_source_resolver_helper_directly():
     """Unit-test the helper so its decision tree is locked down."""
-    from ultron.web_search.gating import _resolve_knowledge_source
+    from kenning.web_search.gating import _resolve_knowledge_source
 
     # Rule precedence: search wins.
     assert _resolve_knowledge_source(

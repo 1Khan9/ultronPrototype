@@ -1,10 +1,10 @@
 """Cross-system deep-gather loops -- the catalog-12 (felo-search T3) creative
 extensions of the deep-research pattern, generalised beyond web search.
 
-The :class:`~ultron.web_search.deep_research.DeepResearchLoop` proved the
+The :class:`~kenning.web_search.deep_research.DeepResearchLoop` proved the
 pattern for web search. The catalog's insight is that the SAME bounded
 "decompose the question -> gather over a source -> identify gaps -> gather
-the gaps -> stop (max_steps cap)" loop applies to ultron's other retrieval
+the gaps -> stop (max_steps cap)" loop applies to kenning's other retrieval
 surfaces:
 
 * **memory** -- iterative RAG over the Qdrant conversation store, for
@@ -15,7 +15,7 @@ surfaces:
   windows where a single semantic-name lookup misses.
 
 Rather than copy the loop three times, this module factors the shared logic
-into one generic :class:`DeepGatherLoop` (a :class:`~ultron.agent_loop.base.AgentLoop`
+into one generic :class:`DeepGatherLoop` (a :class:`~kenning.agent_loop.base.AgentLoop`
 subclass) parameterised by three injected callables -- ``gather`` (a
 sub-query string -> an iterable of domain items), ``item_key`` (item ->
 hashable dedup key), and ``item_summary`` (item -> a short string for the
@@ -41,13 +41,13 @@ from __future__ import annotations
 import time
 from typing import Any, Callable, Hashable, Iterable, List, Optional, Sequence
 
-from ultron.agent_loop.base import AgentLoop, StepRecord
-from ultron.utils.logging import get_logger
+from kenning.agent_loop.base import AgentLoop, StepRecord
+from kenning.utils.logging import get_logger
 
 # Reuse the tolerant JSON-list parser + sub-query dedup from the web
 # deep-research module (same package-family helpers; keeps the prompt-output
 # parsing identical across every deep loop).
-from ultron.web_search.deep_research import _dedupe_subqueries, _parse_json_list
+from kenning.web_search.deep_research import _dedupe_subqueries, _parse_json_list
 
 logger = get_logger("agent_loop.deep_loops")
 
@@ -239,7 +239,7 @@ class DeepGatherLoop(AgentLoop):
             )
             raw = (out["choices"][0]["message"]["content"] or "").strip()
             try:
-                from ultron.llm.inference import strip_thinking_text
+                from kenning.llm.inference import strip_thinking_text
 
                 raw = strip_thinking_text(raw).strip()
             except Exception:  # noqa: BLE001
@@ -385,7 +385,7 @@ class DeepExplorationLoop(DeepGatherLoop):
     """Iterative codebase exploration via ripgrep (felo-search T3 extension).
 
     ``search`` is a ``Callable[[str], Iterable[match]]`` -- typically a thin
-    adapter over :func:`ultron.search.ripgrep.regex_search_files` returning
+    adapter over :func:`kenning.search.ripgrep.regex_search_files` returning
     its match rows (objects exposing ``.file_path`` / ``.line_number`` /
     ``.text``, or any object -- the key/summary fall back to ``str()``).
     """
@@ -440,7 +440,7 @@ class DeepUIDiscoveryLoop(DeepGatherLoop):
     """Iterative UIA element discovery (felo-search T3 extension).
 
     ``find`` is a ``Callable[[str], Iterable[match]]`` -- typically a thin
-    adapter over :func:`ultron.desktop.element_click.find_elements_by_name`
+    adapter over :func:`kenning.desktop.element_click.find_elements_by_name`
     returning its match rows (objects exposing ``.name`` / ``.control_type``
     / ``.window``). Intended as a FALLBACK when a single semantic-name
     lookup misses on a complex / dynamically-loaded window.

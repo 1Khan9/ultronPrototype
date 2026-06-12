@@ -20,7 +20,7 @@ from unittest.mock import MagicMock
 
 
 def _make_engine_stub(system_prompt: str):
-    from ultron.llm.inference import LLMEngine
+    from kenning.llm.inference import LLMEngine
 
     engine = LLMEngine.__new__(LLMEngine)
     engine._explicit_system_prompt = system_prompt  # type: ignore[attr-defined]
@@ -37,7 +37,7 @@ def _make_engine_stub(system_prompt: str):
 
 
 def _patch_cfg(monkeypatch):
-    from ultron.llm import inference as inference_mod
+    from kenning.llm import inference as inference_mod
 
     fake_cfg = MagicMock()
     fake_cfg.llm.rag.position = "recency"
@@ -94,8 +94,8 @@ def test_setter_clears_on_empty_and_none(monkeypatch):
 
 def test_skills_block_and_tone_compose(monkeypatch, tmp_path):
     """Both injections can coexist without clobbering each other."""
-    from ultron.skills.models import SkillSource
-    from ultron.skills.registry import (
+    from kenning.skills.models import SkillSource
+    from kenning.skills.registry import (
         SkillRegistry,
         _SourceSpec,  # type: ignore[attr-defined]
         reset_skill_registry_for_testing,

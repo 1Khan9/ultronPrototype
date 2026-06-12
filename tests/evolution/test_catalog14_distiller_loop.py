@@ -4,15 +4,15 @@ wired into the bounded EvolutionLoop. Hermetic (fake collaborators, tmp_path).
 
 from __future__ import annotations
 
-from ultron.evolution import skill_distiller as D
-from ultron.evolution.autonomy import TieredAutonomyController
-from ultron.evolution.evolution_loop import (
+from kenning.evolution import skill_distiller as D
+from kenning.evolution.autonomy import TieredAutonomyController
+from kenning.evolution.evolution_loop import (
     ApplyStatus,
     EvolutionLoop,
     EvolutionLoopConfig,
 )
-from ultron.evolution.guardrails import GuardrailSample
-from ultron.evolution.models import (
+from kenning.evolution.guardrails import GuardrailSample
+from kenning.evolution.models import (
     REPAIR_DISTILLED_ID_PREFIX,
     Capsule,
     Outcome,

@@ -8,7 +8,7 @@ on the active hardware.
 
 This script REPLACES the running orchestrator's voice stack while it
 runs -- per the voice-stack-concurrency rule, the user must confirm
-Ultron is NOT running before invoking it.
+Kenning is NOT running before invoking it.
 
 Usage:
 
@@ -39,15 +39,15 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-# Make ``ultron`` importable when running from the repo root or a
+# Make ``kenning`` importable when running from the repo root or a
 # worktree. The script intentionally NOT a package member.
 HERE = Path(__file__).resolve()
 ROOT = HERE.parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-# Import after path setup. CUDA DLL discovery runs in ultron/__init__.
-import ultron  # noqa: F401  -- registers CUDA DLL search path on Windows
+# Import after path setup. CUDA DLL discovery runs in kenning/__init__.
+import kenning  # noqa: F401  -- registers CUDA DLL search path on Windows
 
 
 # Representative voice-length prompts. Match the production
@@ -110,14 +110,14 @@ def _run_combination(
     Returns a dict with median / p95 / per-prompt timings.
     """
     # Tweak config in-process so each combination gets a fresh load.
-    from ultron.config import get_config, set_config
+    from kenning.config import get_config, set_config
 
     cfg = get_config()
     cfg.llm.n_batch = n_batch
     cfg.llm.n_ubatch = n_ubatch
     set_config(cfg)
 
-    from ultron.llm import LLMEngine
+    from kenning.llm import LLMEngine
 
     print(
         f"\n  --- (n_batch={n_batch}, n_ubatch={n_ubatch}) ---",

@@ -25,7 +25,7 @@ useful across the desktop automation stack:
 * :func:`is_window_cloaked` -- detect Windows compositor-cloaked windows
   (virtual-desktop occluded, DWM-hidden) that ``IsWindowVisible``
   returns True for. Improves accuracy of the foreground-window
-  security check in :mod:`ultron.desktop.input_control` and lets
+  security check in :mod:`kenning.desktop.input_control` and lets
   :func:`enumerate_windows` filter out windows that visually aren't
   there.
 
@@ -52,7 +52,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Iterator, Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.win32_helpers")
 
@@ -549,7 +549,7 @@ def block_input_context(
 
     watchdog = threading.Thread(
         target=_watchdog,
-        name="ultron-block-input-watchdog",
+        name="kenning-block-input-watchdog",
         daemon=True,
     )
     watchdog.start()

@@ -17,9 +17,9 @@ import time
 import uuid
 from typing import Iterable, List, Optional, Tuple
 
-from ultron.config import get_config
-from ultron.utils.logging import get_logger
-from ultron.web_search.brave import SearchResult
+from kenning.config import get_config
+from kenning.utils.logging import get_logger
+from kenning.web_search.brave import SearchResult
 
 logger = get_logger("web_search.cache")
 

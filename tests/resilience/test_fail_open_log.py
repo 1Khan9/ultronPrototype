@@ -1,4 +1,4 @@
-"""Tests for ultron.resilience.fail_open_log."""
+"""Tests for kenning.resilience.fail_open_log."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.resilience import fail_open_log
+from kenning.resilience import fail_open_log
 
 
 @pytest.fixture(autouse=True)

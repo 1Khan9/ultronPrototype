@@ -16,7 +16,7 @@ from typing import List
 import numpy as np
 import pytest
 
-from ultron.tts.kokoro_engine import (
+from kenning.tts.kokoro_engine import (
     ClipItem,
     KokoroEngineLoadError,
     KokoroSpeech,
@@ -283,7 +283,7 @@ def test_runtime_filter_does_not_crash_on_unimportable():
     )
     engine._model = _FakeKPipeline()
     engine._loaded = True
-    # Should not raise even if pedalboard / ultron_filter are
+    # Should not raise even if pedalboard / kenning_filter are
     # unavailable -- the engine catches the exception.
     pcm, _sr = engine._synthesize("test")
     assert pcm.dtype == np.int16
@@ -328,7 +328,7 @@ def test_spectral_smooth_disabled_skips_call(monkeypatch):
 
     # Replace spectral_smooth with a sentinel that records calls.
     calls: list[int] = []
-    import ultron.tts.spectral_smooth as smooth_mod
+    import kenning.tts.spectral_smooth as smooth_mod
     real = smooth_mod.spectral_smooth
 
     def _spy(*a, **kw):
@@ -353,7 +353,7 @@ def test_spectral_smooth_fail_open_on_scipy_missing(monkeypatch):
     engine._model = _FakeKPipeline(audio_samples=3000)
     engine._loaded = True
 
-    import ultron.tts.spectral_smooth as smooth_mod
+    import kenning.tts.spectral_smooth as smooth_mod
 
     def _broken(*a, **kw):
         raise ImportError("simulated missing scipy")
@@ -371,7 +371,7 @@ def test_spectral_smooth_cache_hit_skips_smoothing():
     """Cached clips are pre-smoothed at cache-build time; the
     cache-hit fast path must NOT re-run smoothing (it would double-
     apply + cost ~10 ms / sec on every ack)."""
-    from ultron.tts.precomputed_ack import PrecomputedAckClipCache
+    from kenning.tts.precomputed_ack import PrecomputedAckClipCache
 
     cache = PrecomputedAckClipCache(["Mm."])
     sentinel_pcm = np.array([42, 43, 44], dtype=np.int16)
@@ -447,13 +447,13 @@ def test_clipitem_namedtuple_shape():
 
 def test_kokoro_engine_in_tts_schema():
     """tts.engine accepts 'kokoro' alongside legacy + xtts_v3."""
-    from ultron.config import TTSConfig
+    from kenning.config import TTSConfig
     cfg = TTSConfig(engine="kokoro")
     assert cfg.engine == "kokoro"
 
 
 def test_kokoro_config_has_sensible_defaults():
-    from ultron.config import KokoroConfig
+    from kenning.config import KokoroConfig
     cfg = KokoroConfig()
     assert cfg.model_path == "models/kokoro"
     assert cfg.voice == "af_alloy"
@@ -470,7 +470,7 @@ def test_kokoro_config_has_sensible_defaults():
 def test_kokoro_config_spectral_smooth_window_validated():
     """spectral_smooth_window has bounded range to avoid runaway
     median filters that would smear consonants."""
-    from ultron.config import KokoroConfig
+    from kenning.config import KokoroConfig
     from pydantic import ValidationError
     # Lower bound: 1 (no-op).
     KokoroConfig(spectral_smooth_window=1)
@@ -992,11 +992,11 @@ def test_speak_stream_stop_event_interrupts(monkeypatch):
 def test_set_ack_cache_attaches_and_logs(caplog):
     """`set_ack_cache(cache)` stores the cache and logs phrase count."""
     import logging
-    from ultron.tts.precomputed_ack import PrecomputedAckClipCache
+    from kenning.tts.precomputed_ack import PrecomputedAckClipCache
 
     cache = PrecomputedAckClipCache(["Mm.", "Right.", "Considering."])
     engine = KokoroSpeech(model_path=Path("/stub"))
-    with caplog.at_level(logging.INFO, logger="ultron.tts.kokoro"):
+    with caplog.at_level(logging.INFO, logger="kenning.tts.kokoro"):
         engine.set_ack_cache(cache)
     assert engine._ack_cache is cache
     # Expect a log line mentioning the phrase count.
@@ -1005,7 +1005,7 @@ def test_set_ack_cache_attaches_and_logs(caplog):
 
 def test_set_ack_cache_none_detaches():
     """Passing `None` detaches the cache (used after server restart)."""
-    from ultron.tts.precomputed_ack import PrecomputedAckClipCache
+    from kenning.tts.precomputed_ack import PrecomputedAckClipCache
 
     engine = KokoroSpeech(model_path=Path("/stub"))
     cache = PrecomputedAckClipCache(["Mm."])
@@ -1017,7 +1017,7 @@ def test_set_ack_cache_none_detaches():
 
 def test_synthesize_cache_hit_skips_kpipeline():
     """Cache hit returns the stored clip without touching the KPipeline."""
-    from ultron.tts.precomputed_ack import PrecomputedAckClipCache
+    from kenning.tts.precomputed_ack import PrecomputedAckClipCache
 
     cached_pcm = np.array([1, 2, 3, 4], dtype=np.int16)
     cached_sr = 24000
@@ -1048,7 +1048,7 @@ def test_synthesize_cache_hit_skips_kpipeline():
 
 def test_synthesize_cache_miss_falls_through_to_kpipeline():
     """Cache miss runs the live KPipeline path unchanged."""
-    from ultron.tts.precomputed_ack import PrecomputedAckClipCache
+    from kenning.tts.precomputed_ack import PrecomputedAckClipCache
 
     cache = PrecomputedAckClipCache(["Right."])
     cache._clips = {
@@ -1076,7 +1076,7 @@ def test_synthesize_with_no_cache_attached_uses_kpipeline():
 def test_synthesize_cache_hit_skips_apply_runtime_filter():
     """Cached clip is returned verbatim -- runtime filter does NOT
     re-run on the cached path (the cache stores already-filtered audio)."""
-    from ultron.tts.precomputed_ack import PrecomputedAckClipCache
+    from kenning.tts.precomputed_ack import PrecomputedAckClipCache
 
     cache = PrecomputedAckClipCache(["Mm."])
     sentinel_pcm = np.array([42, 43, 44], dtype=np.int16)
@@ -1095,7 +1095,7 @@ def test_synthesize_cache_hit_skips_apply_runtime_filter():
 def test_synthesize_cache_uses_stripped_key():
     """The orchestrator's flow strips text before calling _synthesize;
     the cache should be keyed by the same stripped form."""
-    from ultron.tts.precomputed_ack import PrecomputedAckClipCache
+    from kenning.tts.precomputed_ack import PrecomputedAckClipCache
 
     cache = PrecomputedAckClipCache(["Mm."])
     cache._clips = {"Mm.": (np.array([7], dtype=np.int16), 24000)}

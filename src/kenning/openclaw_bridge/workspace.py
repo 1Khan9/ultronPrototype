@@ -1,7 +1,7 @@
 """Shared workspace writer (Phase 3.3).
 
-Both Ultron and OpenClaw read from the same workspace directory
-(``~/.openclaw/workspace`` by default). Ultron's maintenance pass
+Both Kenning and OpenClaw read from the same workspace directory
+(``~/.openclaw/workspace`` by default). Kenning's maintenance pass
 writes to ``USER.md`` (auto-populated user facts), and both processes
 may append to ``memory/YYYY-MM-DD.md`` daily files. Without
 coordination, simultaneous writes can corrupt the file or race past
@@ -22,7 +22,7 @@ What this writer does NOT do: it doesn't touch persona files
 (SOUL.md, IDENTITY.md, AGENTS.md, BOOTSTRAP.md, HEARTBEAT.md). Those
 are version-controlled human-edited content; modifying them from
 code would race with the user's editor. Read-only access is in
-:mod:`ultron.openclaw_bridge.persona`.
+:mod:`kenning.openclaw_bridge.persona`.
 """
 
 from __future__ import annotations
@@ -38,9 +38,9 @@ from typing import Optional
 
 from filelock import FileLock, Timeout
 
-from ultron.errors import FilesystemError
-from ultron.openclaw_bridge.persona import default_workspace_dir
-from ultron.utils.logging import get_logger
+from kenning.errors import FilesystemError
+from kenning.openclaw_bridge.persona import default_workspace_dir
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_bridge.workspace")
 

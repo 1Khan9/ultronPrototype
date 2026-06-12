@@ -39,13 +39,13 @@ sys.path.insert(0, str(_MAIN))
 sys.path.insert(0, str(_WORKTREE_ROOT / "src"))
 
 # Repoint PROJECT_ROOT to main checkout
-import ultron.config as _cfg_mod
+import kenning.config as _cfg_mod
 _cfg_mod.PROJECT_ROOT = _MAIN
 _cfg_mod.MODELS_DIR = _MAIN / "models"
 _cfg_mod.LOGS_DIR = _MAIN / "logs"
 _cfg_mod.DEFAULT_CONFIG_PATH = _MAIN / "config.yaml"
 
-# Load .env so ULTRON_BRAVE_API_KEY is available
+# Load .env so KENNING_BRAVE_API_KEY is available
 def _load_dotenv() -> None:
     env_path = _MAIN / ".env"
     if not env_path.exists():
@@ -135,7 +135,7 @@ Q3B_QUERIES = [
 def run_q3b_snippet_utilization(executor, llm) -> dict[str, Any]:
     print("\n[Q3.B] Snippet utilization vs hallucination (4 chains)")
     print("-" * 60)
-    from ultron.web_search.search import format_sources_for_prompt
+    from kenning.web_search.search import format_sources_for_prompt
 
     results = []
     for query in Q3B_QUERIES:
@@ -330,7 +330,7 @@ def run_q3d_cache(executor) -> dict[str, Any]:
 def run_q3e_citation() -> dict[str, Any]:
     print("\n[Q3.E] Citation rendering correctness")
     print("-" * 60)
-    from ultron.web_search.search import _render_inline_marker
+    from kenning.web_search.search import _render_inline_marker
 
     super_expected = {
         1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵",
@@ -375,7 +375,7 @@ def run_q3e_citation() -> dict[str, Any]:
 def run_q3f_ack_latency() -> dict[str, Any]:
     print("\n[Q3.F] Acknowledgment latency")
     print("-" * 60)
-    from ultron.web_search.acknowledgments import AcknowledgmentSource
+    from kenning.web_search.acknowledgments import AcknowledgmentSource
 
     src = AcknowledgmentSource()
     latencies = []
@@ -401,7 +401,7 @@ def run_q3f_ack_latency() -> dict[str, Any]:
 def run_q3g_dedup() -> dict[str, Any]:
     print("\n[Q3.G] Query dedup correctness")
     print("-" * 60)
-    from ultron.web_search.search import _dedupe_queries
+    from kenning.web_search.search import _dedupe_queries
 
     cases = [
         # input, expected output count after dedup
@@ -446,13 +446,13 @@ def main() -> int:
     print("Q3 WEB-SEARCH QUALITY HARNESS")
     print("=" * 60)
 
-    if not os.environ.get("ULTRON_BRAVE_API_KEY"):
-        print("ULTRON_BRAVE_API_KEY missing; aborting.")
+    if not os.environ.get("KENNING_BRAVE_API_KEY"):
+        print("KENNING_BRAVE_API_KEY missing; aborting.")
         return 1
 
-    from ultron.web_search.brave import BraveSearchClient
-    from ultron.web_search.jina import JinaReaderClient
-    from ultron.web_search.search import WebSearchExecutor
+    from kenning.web_search.brave import BraveSearchClient
+    from kenning.web_search.jina import JinaReaderClient
+    from kenning.web_search.search import WebSearchExecutor
 
     brave = BraveSearchClient()
     jina = JinaReaderClient()
@@ -469,7 +469,7 @@ def main() -> int:
 
     # Q3.B feeds the cache too; Q3.D depends on cache being warm
     # We need the LLM for Q3.B
-    from ultron.llm import LLMEngine
+    from kenning.llm import LLMEngine
     print("\nLoading LLM for Q3.B...")
     llm = LLMEngine(memory=None)
     out["q3_b_snippet_utilization"] = run_q3b_snippet_utilization(executor, llm)

@@ -1,7 +1,7 @@
 """Extended loop detectors (T1): unknown-tool / known-poll / ping-pong / global circuit breaker.
 
 T1 (OpenClaw catalog port; see ``THIRD_PARTY_NOTICES.md``). The
-existing :mod:`ultron.agent_loop.loop_detection` ships a single
+existing :mod:`kenning.agent_loop.loop_detection` ships a single
 generic-repeat detector (counts consecutive identical signatures).
 The four detectors here cover the cases the generic primitive
 cannot:
@@ -30,7 +30,7 @@ Constants default to OpenClaw's values
 ``CRITICAL_THRESHOLD=20``, ``GLOBAL_CIRCUIT_BREAKER_THRESHOLD=30``,
 ``UNKNOWN_TOOL_THRESHOLD=10``). The hash scheme is SHA-256 of the
 canonical-JSON signature already used by
-:func:`ultron.agent_loop.loop_detection.tool_call_signature` so the
+:func:`kenning.agent_loop.loop_detection.tool_call_signature` so the
 detectors stay compatible with the existing primitive's signature
 contract.
 
@@ -51,8 +51,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping, Optional
 
-from ultron.agent_loop.loop_detection import LoopVerdict, tool_call_signature
-from ultron.llm.response_format import loop_hard_escalation, loop_soft_warning
+from kenning.agent_loop.loop_detection import LoopVerdict, tool_call_signature
+from kenning.llm.response_format import loop_hard_escalation, loop_soft_warning
 
 #: Sliding history window the detectors maintain. Mirrors OpenClaw.
 TOOL_CALL_HISTORY_SIZE: int = 30

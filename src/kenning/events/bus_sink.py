@@ -1,7 +1,7 @@
 """Subscribe to the typed bus and write every payload into the event store.
 
 Adopts the OpenHands "every conversation fact is an event row" mental
-model on top of ultron's existing pub/sub bus. The sink is opt-in --
+model on top of kenning's existing pub/sub bus. The sink is opt-in --
 ``install_bus_event_sink(store)`` subscribes once; ``uninstall_bus_event_sink()``
 removes the subscription. The store implementation is whatever the
 caller wired (memory / jsonl / qdrant).
@@ -27,8 +27,8 @@ import threading
 import time
 from typing import Any, Callable
 
-from ultron.events.models import StoredEvent, new_event_id
-from ultron.events.store import EventStore
+from kenning.events.models import StoredEvent, new_event_id
+from kenning.events.store import EventStore
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ class BusEventSink:
         if self._unsubscribe is not None:
             return
         try:
-            from ultron.bus import subscribe_all  # type: ignore[import-not-found]
+            from kenning.bus import subscribe_all  # type: ignore[import-not-found]
         except Exception as exc:  # noqa: BLE001
             logger.warning("bus event sink install skipped (no bus): %r", exc)
             return
@@ -122,7 +122,7 @@ class BusEventSink:
         # Import lazily so the bus sink stays usable without the
         # callbacks module loaded (e.g. minimal test setups).
         try:
-            from ultron.events.callbacks import get_callback_registry
+            from kenning.events.callbacks import get_callback_registry
         except Exception:                                    # pragma: no cover
             return
         registry = get_callback_registry()

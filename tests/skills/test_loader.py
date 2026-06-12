@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from ultron.skills.loader import (
+from kenning.skills.loader import (
     SkillLoadStats,
     load_skill_from_path,
     load_skills_from_directory,
 )
-from ultron.skills.models import (
+from kenning.skills.models import (
     KeywordTrigger,
     SkillSource,
     SkillType,

@@ -9,8 +9,8 @@ G5 -- process-spawning loops (>100 children in <60 s).
 
 from __future__ import annotations
 
-from ultron.safety.rules.base import CommandPatternRule, Rule
-from ultron.safety.validator import Verdict
+from kenning.safety.rules.base import CommandPatternRule, Rule
+from kenning.safety.validator import Verdict
 
 
 def build_category_g_rules() -> list[Rule]:

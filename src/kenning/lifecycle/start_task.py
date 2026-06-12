@@ -1,7 +1,7 @@
 """Typed start-task state machine streamed as an async iterator.
 
 Adopts the OpenHands ``AppConversationStartTask`` shape (yielded
-intermediate status values driving the UI poll endpoint) for ultron's
+intermediate status values driving the UI poll endpoint) for kenning's
 multi-step start paths -- gaming-mode engage, cold-start LLM/STT/TTS
 load, coding-session bootstrap.
 
@@ -191,14 +191,14 @@ class StartTaskRecorder:
 
     The OpenHands V1 server records every yielded ``AppConversationStartTask``
     to a SQL table so a frontend poll endpoint can return the latest task by
-    id. Ultron's version mirrors that pattern using the optional event store
+    id. Kenning's version mirrors that pattern using the optional event store
     (batch 3): every transition produces a ``LifecycleStatusEvent`` row.
 
     When :attr:`event_store` is ``None`` the recorder is a no-op (the
     caller can still drive the iterator + speak status acks).
     """
 
-    event_store: Any = None  # ultron.events.EventStore | None (avoid hard import)
+    event_store: Any = None  # kenning.events.EventStore | None (avoid hard import)
     session_id: str = "default"
     source: str = "lifecycle"
 
@@ -206,7 +206,7 @@ class StartTaskRecorder:
         if self.event_store is None:
             return
         try:
-            from ultron.events.models import StoredEvent
+            from kenning.events.models import StoredEvent
 
             event = StoredEvent.make(
                 self.session_id,

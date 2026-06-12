@@ -3,7 +3,7 @@
 **Status:** OPEN. Architecture from Phase 3 is in place; this is the
 mechanical-cleanup phase that retires the `config/settings.py` shim by
 migrating the remaining subsystems to read directly from
-`ultron.config.get_config()`.
+`kenning.config.get_config()`.
 
 **Why this exists:** Phase 3 of the Foundation prompt landed `config.yaml`
 + the pydantic loader + a thin re-export shim at `config/settings.py`.
@@ -22,7 +22,7 @@ following a pattern proven by 6 already-migrated subsystems.
 Read these in order to get oriented:
 - [docs/configuration.md](configuration.md) — config reference + migration-status table at the bottom
 - [docs/config_discovery.md](config_discovery.md) — full per-key inventory (already-mapped, already-decided)
-- [src/ultron/config.py](../src/ultron/config.py) — pydantic schema + loader
+- [src/kenning/config.py](../src/kenning/config.py) — pydantic schema + loader
 - [config.yaml](../config.yaml) — canonical values
 - [config/settings.py](../config/settings.py) — the shim (this is what shrinks)
 
@@ -36,12 +36,12 @@ templates:
 
 | Subsystem | Reference for the pattern |
 |---|---|
-| logging | [src/ultron/utils/logging.py:27-46](../src/ultron/utils/logging.py:27) |
-| addressing + follow-up | [src/ultron/pipeline/orchestrator.py:276-283](../src/ultron/pipeline/orchestrator.py:276) — `_addr_cfg = get_config().addressing` cached in `run()` and reused; [scripts/review_addressing.py](../scripts/review_addressing.py) |
-| web_search | [src/ultron/web_search/brave.py:48-67](../src/ultron/web_search/brave.py:48) — `__init__` defaults are `None`, look up inside body |
-| llm | [src/ultron/llm/inference.py:91-150](../src/ultron/llm/inference.py:91) — covers ctor defaults + per-method `_llm_cfg = get_config().llm` |
-| embeddings + memory + qdrant | [src/ultron/memory/embedder.py:55-68](../src/ultron/memory/embedder.py:55), [src/ultron/memory/qdrant_store.py:77-110](../src/ultron/memory/qdrant_store.py:77) |
-| projections (config-aware logging) | [src/ultron/coding/projections.py:120-158](../src/ultron/coding/projections.py:120) |
+| logging | [src/kenning/utils/logging.py:27-46](../src/kenning/utils/logging.py:27) |
+| addressing + follow-up | [src/kenning/pipeline/orchestrator.py:276-283](../src/kenning/pipeline/orchestrator.py:276) — `_addr_cfg = get_config().addressing` cached in `run()` and reused; [scripts/review_addressing.py](../scripts/review_addressing.py) |
+| web_search | [src/kenning/web_search/brave.py:48-67](../src/kenning/web_search/brave.py:48) — `__init__` defaults are `None`, look up inside body |
+| llm | [src/kenning/llm/inference.py:91-150](../src/kenning/llm/inference.py:91) — covers ctor defaults + per-method `_llm_cfg = get_config().llm` |
+| embeddings + memory + qdrant | [src/kenning/memory/embedder.py:55-68](../src/kenning/memory/embedder.py:55), [src/kenning/memory/qdrant_store.py:77-110](../src/kenning/memory/qdrant_store.py:77) |
+| projections (config-aware logging) | [src/kenning/coding/projections.py:120-158](../src/kenning/coding/projections.py:120) |
 
 ---
 
@@ -51,15 +51,15 @@ In recommended migration order (least → most coupled):
 
 ### 1. uncertainty (1 file, ~5 refs)
 
-[src/ultron/uncertainty.py](../src/ultron/uncertainty.py). Single function
+[src/kenning/uncertainty.py](../src/kenning/uncertainty.py). Single function
 `apply()`. Should be a 5-line edit. Tests: `tests/test_uncertainty.py`.
 
 ### 2. audio + VAD (4 files, small)
 
-- [src/ultron/audio/capture.py](../src/ultron/audio/capture.py)
-- [src/ultron/audio/devices.py](../src/ultron/audio/devices.py)
-- [src/ultron/audio/vad.py](../src/ultron/audio/vad.py)
-- [src/ultron/audio/ring_buffer.py](../src/ultron/audio/ring_buffer.py) (if it reads settings)
+- [src/kenning/audio/capture.py](../src/kenning/audio/capture.py)
+- [src/kenning/audio/devices.py](../src/kenning/audio/devices.py)
+- [src/kenning/audio/vad.py](../src/kenning/audio/vad.py)
+- [src/kenning/audio/ring_buffer.py](../src/kenning/audio/ring_buffer.py) (if it reads settings)
 
 Tests: `tests/test_audio.py`. After: remove the audio + vad blocks from
 the shim (`SAMPLE_RATE`, `CHANNELS`, `BLOCKSIZE`, `DTYPE`, `AUDIO_DEVICE`,
@@ -69,22 +69,22 @@ the shim (`SAMPLE_RATE`, `CHANNELS`, `BLOCKSIZE`, `DTYPE`, `AUDIO_DEVICE`,
 
 ### 3. wake_word (1 file)
 
-[src/ultron/audio/wake_word.py](../src/ultron/audio/wake_word.py). Reads
+[src/kenning/audio/wake_word.py](../src/kenning/audio/wake_word.py). Reads
 `WAKE_WORD_*`. Tests: integration via orchestrator construction.
 
 ### 4. stt — Whisper (1 file)
 
-[src/ultron/transcription/whisper_engine.py](../src/ultron/transcription/whisper_engine.py).
+[src/kenning/transcription/whisper_engine.py](../src/kenning/transcription/whisper_engine.py).
 Tests: `tests/test_transcription.py`.
 
 ### 5. tts — Piper (1 file)
 
-[src/ultron/tts/speech.py](../src/ultron/tts/speech.py). Tests:
+[src/kenning/tts/speech.py](../src/kenning/tts/speech.py). Tests:
 `tests/test_tts.py`.
 
 ### 6. tts.rvc (1 file)
 
-[src/ultron/tts/rvc.py](../src/ultron/tts/rvc.py). Reads `RVC_*`. Tests:
+[src/kenning/tts/rvc.py](../src/kenning/tts/rvc.py). Reads `RVC_*`. Tests:
 rvc-import path in `tests/test_tts.py`.
 
 ### 7. coding cluster (the big one — 14 files)
@@ -92,19 +92,19 @@ rvc-import path in `tests/test_tts.py`.
 This is the largest and most intricate. ~80 reference sites. Subsystems
 within:
 
-- [src/ultron/coding/audit.py](../src/ultron/coding/audit.py)
-- [src/ultron/coding/bridge.py](../src/ultron/coding/bridge.py)
-- [src/ultron/coding/coordinator.py](../src/ultron/coding/coordinator.py) — **see warning below about `LLM_MAX_TOKENS` mutation**
-- [src/ultron/coding/direct_bridge.py](../src/ultron/coding/direct_bridge.py)
-- [src/ultron/coding/intent.py](../src/ultron/coding/intent.py)
-- [src/ultron/coding/mcp_server.py](../src/ultron/coding/mcp_server.py)
-- [src/ultron/coding/narration.py](../src/ultron/coding/narration.py)
-- [src/ultron/coding/projects.py](../src/ultron/coding/projects.py)
-- [src/ultron/coding/runner.py](../src/ultron/coding/runner.py)
-- [src/ultron/coding/session.py](../src/ultron/coding/session.py)
-- [src/ultron/coding/templates.py](../src/ultron/coding/templates.py)
-- [src/ultron/coding/verification.py](../src/ultron/coding/verification.py)
-- [src/ultron/coding/voice.py](../src/ultron/coding/voice.py)
+- [src/kenning/coding/audit.py](../src/kenning/coding/audit.py)
+- [src/kenning/coding/bridge.py](../src/kenning/coding/bridge.py)
+- [src/kenning/coding/coordinator.py](../src/kenning/coding/coordinator.py) — **see warning below about `LLM_MAX_TOKENS` mutation**
+- [src/kenning/coding/direct_bridge.py](../src/kenning/coding/direct_bridge.py)
+- [src/kenning/coding/intent.py](../src/kenning/coding/intent.py)
+- [src/kenning/coding/mcp_server.py](../src/kenning/coding/mcp_server.py)
+- [src/kenning/coding/narration.py](../src/kenning/coding/narration.py)
+- [src/kenning/coding/projects.py](../src/kenning/coding/projects.py)
+- [src/kenning/coding/runner.py](../src/kenning/coding/runner.py)
+- [src/kenning/coding/session.py](../src/kenning/coding/session.py)
+- [src/kenning/coding/templates.py](../src/kenning/coding/templates.py)
+- [src/kenning/coding/verification.py](../src/kenning/coding/verification.py)
+- [src/kenning/coding/voice.py](../src/kenning/coding/voice.py)
 
 Plus the test file [tests/coding/test_orchestration.py](../tests/coding/test_orchestration.py)
 which references settings (likely just for `CODING_TEST_SANDBOX_PATH`).
@@ -113,7 +113,7 @@ Tests: every `tests/test_coding_*.py` and `tests/coding/*.py`. Heavy test
 suite — run after every coding-file migration.
 
 **KNOWN HAZARD (caught during Phase 3):**
-[coordinator.py:895-900](../src/ultron/coding/coordinator.py:895) does
+[coordinator.py:895-900](../src/kenning/coding/coordinator.py:895) does
 `settings.LLM_MAX_TOKENS = max_tokens` to temporarily override the
 default before an LLM call, then restores. This is a pre-existing hack
 that mutates module state. Removing `LLM_MAX_TOKENS` from the shim
@@ -131,7 +131,7 @@ it cleanly.
 
 Remaining `settings.X` sites in:
 
-- [src/ultron/pipeline/orchestrator.py](../src/ultron/pipeline/orchestrator.py) — leftover memory / coding refs
+- [src/kenning/pipeline/orchestrator.py](../src/kenning/pipeline/orchestrator.py) — leftover memory / coding refs
 - [scripts/benchmark.py](../scripts/benchmark.py)
 - [scripts/download_models.py](../scripts/download_models.py)
 - [scripts/maintenance.py](../scripts/maintenance.py)
@@ -152,7 +152,7 @@ For each subsystem, follow this exact loop. Tests gate every step.
 ```
 1. Open the file. Note every `settings.X` reference inside.
 2. Replace `from config import settings` with
-   `from ultron.config import get_config` (and `resolve_path` if any
+   `from kenning.config import get_config` (and `resolve_path` if any
    path values are used). Add `from typing import Optional` if you'll
    be widening function signatures.
 3. For class __init__ defaults like `param: T = settings.X`:
@@ -197,8 +197,8 @@ When Phase 3.5 is complete:
 - VRAM and latency unchanged from Phase 3 finish state (idle ~2640 MB)
 
 The HF cache pre-init either stays in `config/__init__.py` as a small
-bootstrap module, or moves to `src/ultron/config_bootstrap.py` and is
-imported once by `src/ultron/__init__.py`. Either is fine; pick whichever
+bootstrap module, or moves to `src/kenning/config_bootstrap.py` and is
+imported once by `src/kenning/__init__.py`. Either is fine; pick whichever
 makes the entry-point story cleaner.
 
 ---
@@ -238,7 +238,7 @@ grep -rn "from config import settings\|settings\." src/ tests/ scripts/ \
 
 # Confirm config loads cleanly
 C:/STC/ultronPrototype/.venv/Scripts/python.exe -c "
-from ultron.config import get_config
+from kenning.config import get_config
 c = get_config()
 print('addressing.warm:', c.addressing.warm_mode_duration_seconds)
 print('llm.provider:', c.llm.provider)

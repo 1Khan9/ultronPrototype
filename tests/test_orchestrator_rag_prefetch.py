@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.pipeline.orchestrator import Orchestrator
+from kenning.pipeline.orchestrator import Orchestrator
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +73,7 @@ def _set_multi_pass(cfg_value: bool, monkeypatch):
     fake_cfg = MagicMock()
     fake_cfg.memory.retrieval.multi_pass_enabled = cfg_value
     monkeypatch.setattr(
-        "ultron.config.get_config", lambda: fake_cfg, raising=True,
+        "kenning.config.get_config", lambda: fake_cfg, raising=True,
     )
 
 

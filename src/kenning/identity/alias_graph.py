@@ -1,7 +1,7 @@
 """Stable-identity alias graph: rename / merge / transfer / reservation (T6).
 
 T6 (openclaw-clawhub catalog port; see ``THIRD_PARTY_NOTICES.md``).
-Closes the "rename breaks references" gap for every namespace ultron
+Closes the "rename breaks references" gap for every namespace kenning
 exposes. The marketplace pattern boils down to three operations
 plus a soft-delete + reservation window, all driven through a
 persistent + tamper-evident graph the resolver walks at every
@@ -30,7 +30,7 @@ the terminal canonical name plus the metadata along the chain.
 Persistence: a JSONL append-only audit log at
 ``data/identity/aliases.jsonl`` (configurable). Each row is one
 :class:`AliasGraphEvent` envelope with a SHA-256 hash chain linking
-it to the previous row (mirrors :mod:`ultron.safety.audit`). The
+it to the previous row (mirrors :mod:`kenning.safety.audit`). The
 in-memory state is a derived projection; a hash-chain verifier can
 replay the log to detect tampering.
 
@@ -63,7 +63,7 @@ LOGGER = logging.getLogger(__name__)
 
 #: Slug validation regex. Optional ``@scope/`` prefix; body is
 #: lowercase alphanumeric + dot, underscore, hyphen. 1-128 chars
-#: total (matches the upstream package-name pattern; ultron's slugs
+#: total (matches the upstream package-name pattern; kenning's slugs
 #: reuse the shape).
 SLUG_PATTERN: re.Pattern[str] = re.compile(
     r"^(?:@[a-z0-9][a-z0-9._-]{0,62}/)?[a-z0-9][a-z0-9._-]{0,127}$"
@@ -76,7 +76,7 @@ MAX_REDIRECT_DEPTH: int = 32
 DEFAULT_RESERVATION_DAYS: int = 30
 
 #: Hardcoded reserved slugs that can never be claimed by any owner.
-#: Mirrors the upstream pattern but tailored to ultron's namespaces
+#: Mirrors the upstream pattern but tailored to kenning's namespaces
 #: (skills, intents, sandbox projects, voicepacks).
 RESERVED_SLUGS: frozenset[str] = frozenset({
     # Generic platform reservations
@@ -97,11 +97,14 @@ RESERVED_SLUGS: frozenset[str] = frozenset({
     "settings",
     "support",
     "system",
+    "kenning",
+    # The product's pre-2026-06-12 name stays reserved so nothing can
+    # squat the legacy identity after the Kenning rename.
     "ultron",
     "user",
     "users",
     "well-known",
-    # Ultron-protected slugs
+    # Kenning-protected slugs
     "soul",
     "identity",
     "persona",
@@ -259,7 +262,7 @@ class AliasGraphEntry:
 
 @dataclass(frozen=True)
 class AliasGraphEvent:
-    """One audit-log event envelope (mirrors :mod:`ultron.safety.audit`).
+    """One audit-log event envelope (mirrors :mod:`kenning.safety.audit`).
 
     Each row carries an ``op`` discriminator, a payload (typed per
     op kind), the actor identifier, the timestamp, and a hash chain

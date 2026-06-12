@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.observations import (
+from kenning.observations import (
     Observation,
     ObservationWriter,
     emit_observation,
@@ -16,7 +16,7 @@ from ultron.observations import (
     new_event_id,
     set_observation_writer,
 )
-from ultron.observations import writer as writer_mod
+from kenning.observations import writer as writer_mod
 
 
 @pytest.fixture(autouse=True)
@@ -101,7 +101,7 @@ def test_emit_handles_serialize_failure(tmp_path: Path, caplog) -> None:
         event_type="v",
         extra={"bad": _Bomb()},
     )
-    with caplog.at_level("WARNING", logger="ultron.observations"):
+    with caplog.at_level("WARNING", logger="kenning.observations"):
         result = w.emit(obs)
     assert result is False
     assert w.dropped == 1
@@ -121,7 +121,7 @@ def test_emit_handles_io_failure(tmp_path: Path, caplog, monkeypatch) -> None:
         return original_open(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "open", boom)
-    with caplog.at_level("WARNING", logger="ultron.observations"):
+    with caplog.at_level("WARNING", logger="kenning.observations"):
         result = w.emit(Observation.create(subsystem="routing", event_type="v"))
     assert result is False
     assert w.dropped == 1
@@ -137,7 +137,7 @@ def test_emit_warn_once_per_failure_kind(tmp_path: Path, caplog, monkeypatch) ->
         raise OSError("simulated")
 
     monkeypatch.setattr(Path, "open", boom)
-    with caplog.at_level("WARNING", logger="ultron.observations"):
+    with caplog.at_level("WARNING", logger="kenning.observations"):
         for _ in range(10):
             w.emit(Observation.create(subsystem="routing", event_type="v"))
     warn_lines = [r for r in caplog.records if "failed to append" in r.message]
@@ -153,7 +153,7 @@ def test_reset_warning_state_re_arms_warnings(tmp_path: Path, caplog, monkeypatc
         raise OSError("simulated")
 
     monkeypatch.setattr(Path, "open", boom)
-    with caplog.at_level("WARNING", logger="ultron.observations"):
+    with caplog.at_level("WARNING", logger="kenning.observations"):
         w.emit(Observation.create(subsystem="routing", event_type="v"))
         w.reset_warning_state()
         w.emit(Observation.create(subsystem="routing", event_type="v"))

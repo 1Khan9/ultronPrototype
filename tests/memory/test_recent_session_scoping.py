@@ -20,9 +20,9 @@ import threading
 
 import pytest
 
-from ultron.channels import Channel
-from ultron.memory.embedder import _SparseVec
-from ultron.memory.qdrant_store import (
+from kenning.channels import Channel
+from kenning.memory.embedder import _SparseVec
+from kenning.memory.qdrant_store import (
     ConversationMemory,
     MemoryTurn,
 )
@@ -92,7 +92,7 @@ def test_recent_caps_at_n_within_current_session():
 
 
 def test_recent_returns_empty_when_only_other_sessions_in_cache():
-    """Fresh Ultron boot: cache has 100 prior-session turns loaded,
+    """Fresh Kenning boot: cache has 100 prior-session turns loaded,
     but the new session has no turns yet. recent() should return
     [] -- NOT the cached prior-session content."""
     m = _make_memory_no_qdrant_load(session_id="fresh-boot")
@@ -139,7 +139,7 @@ def test_live_session_2026_05_19_salesforce_does_not_leak_to_new_session():
     Salesforce content in the cross-session cache must NOT see that
     content via recent()."""
     m = _make_memory_no_qdrant_load(session_id="2026-05-19-new")
-    # Pre-load the cache as it would be on Ultron boot with 100 prior turns.
+    # Pre-load the cache as it would be on Kenning boot with 100 prior turns.
     stale = [
         _turn(1, "user", "tell me about agentforce", session_id="2026-05-18-old"),
         _turn(

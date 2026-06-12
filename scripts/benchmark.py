@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from config import settings  # noqa: E402
-from ultron.utils.logging import configure_logging  # noqa: E402
+from kenning.utils.logging import configure_logging  # noqa: E402
 
 
 def _load_wav(path: Path) -> np.ndarray:
@@ -63,9 +63,9 @@ def main() -> int:
     print(f"\nBenchmarking with {len(audio) / settings.SAMPLE_RATE:.2f}s of audio\n")
 
     print("Loading components...")
-    from ultron.llm import LLMEngine
-    from ultron.transcription import make_stt_engine
-    from ultron.tts import make_tts_engine
+    from kenning.llm import LLMEngine
+    from kenning.transcription import make_stt_engine
+    from kenning.tts import make_tts_engine
 
     t0 = time.monotonic()
     stt = make_stt_engine()

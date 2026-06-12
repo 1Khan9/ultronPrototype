@@ -1,11 +1,11 @@
-"""Per-project configuration discovery (`.ultron/` convention).
+"""Per-project configuration discovery (`.kenning/` convention).
 
 Pattern lineage attributed in ``THIRD_PARTY_NOTICES.md``.
 
 OpenHands looks for ``.openhands/skills/``, ``.openhands/setup.sh``,
 ``.openhands/pre-commit.sh``, ``.openhands/hooks.json`` at the project
-root when starting a conversation against a repo. Ultron's analog uses
-the ``.ultron/`` directory carrying:
+root when starting a conversation against a repo. Kenning's analog uses
+the ``.kenning/`` directory carrying:
 
 * ``skills/`` -- per-project skill catalogue, merged at PROJECT
   precedence with the global + user sources.
@@ -34,7 +34,7 @@ and intentionally non-binding: every component is optional and the
 returned :class:`ProjectConfig` carries ``None`` for missing pieces.
 """
 
-from ultron.projects.discovery import (
+from kenning.projects.discovery import (
     DEFAULT_PROJECT_CONFIG_DIRNAME,
     ProjectConfig,
     ProjectConfigField,

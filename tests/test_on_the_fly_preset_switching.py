@@ -1,5 +1,5 @@
 """4B optimization plan — tests for the on-the-fly preset-switching
-infrastructure: ULTRON_LLM_PRESET env var, preset-aware check_vram.py,
+infrastructure: KENNING_LLM_PRESET env var, preset-aware check_vram.py,
 and swap_llm_preset.py rewriter.
 
 The goal: switching the active LLM should be a single action — one env
@@ -15,11 +15,11 @@ from unittest.mock import patch
 
 import pytest
 
-from ultron.config import load_config
+from kenning.config import load_config
 
 
 # ---------------------------------------------------------------------------
-# ULTRON_LLM_PRESET env var override
+# KENNING_LLM_PRESET env var override
 # ---------------------------------------------------------------------------
 
 
@@ -30,13 +30,13 @@ def _write_yaml(tmp_path: Path, body: str) -> Path:
 
 
 def test_env_var_overrides_yaml_preset(tmp_path: Path) -> None:
-    """ULTRON_LLM_PRESET=qwen3.5-4b on a YAML pinned to 9b ⇒ 4b wins."""
+    """KENNING_LLM_PRESET=qwen3.5-4b on a YAML pinned to 9b ⇒ 4b wins."""
     cfg_path = _write_yaml(tmp_path, """
 version: "1.0"
 llm:
   preset: "qwen3.5-9b"
 """)
-    with patch.dict(os.environ, {"ULTRON_LLM_PRESET": "qwen3.5-4b"}, clear=False):
+    with patch.dict(os.environ, {"KENNING_LLM_PRESET": "qwen3.5-4b"}, clear=False):
         cfg = load_config(cfg_path)
     assert cfg.llm.preset == "qwen3.5-4b"
     assert cfg.llm.model_path == "models/Qwen3.5-4B-Q4_K_M.gguf"
@@ -56,7 +56,7 @@ llm:
   model_path: "models/Qwen3.5-9B-Q4_K_M.gguf"
   n_ctx: 4096
 """)
-    with patch.dict(os.environ, {"ULTRON_LLM_PRESET": "qwen3.5-4b"}, clear=False):
+    with patch.dict(os.environ, {"KENNING_LLM_PRESET": "qwen3.5-4b"}, clear=False):
         cfg = load_config(cfg_path)
     assert cfg.llm.preset == "qwen3.5-4b"
     assert cfg.llm.model_path == "models/Qwen3.5-4B-Q4_K_M.gguf"  # preset wins
@@ -66,7 +66,7 @@ llm:
 
 
 def test_env_var_keep_overrides_flag(tmp_path: Path) -> None:
-    """ULTRON_LLM_PRESET_KEEP_OVERRIDES=1 lets explicit YAML values
+    """KENNING_LLM_PRESET_KEEP_OVERRIDES=1 lets explicit YAML values
     survive the env-var preset switch (advanced/debug use)."""
     cfg_path = _write_yaml(tmp_path, """
 version: "1.0"
@@ -76,8 +76,8 @@ llm:
   n_ctx: 4096
 """)
     env = {
-        "ULTRON_LLM_PRESET": "qwen3.5-4b",
-        "ULTRON_LLM_PRESET_KEEP_OVERRIDES": "1",
+        "KENNING_LLM_PRESET": "qwen3.5-4b",
+        "KENNING_LLM_PRESET_KEEP_OVERRIDES": "1",
     }
     with patch.dict(os.environ, env, clear=False):
         cfg = load_config(cfg_path)
@@ -95,7 +95,7 @@ llm:
   preset: "qwen3.5-4b"
 """)
     # Ensure env var is absent
-    env_clean = {k: v for k, v in os.environ.items() if k != "ULTRON_LLM_PRESET"}
+    env_clean = {k: v for k, v in os.environ.items() if k != "KENNING_LLM_PRESET"}
     with patch.dict(os.environ, env_clean, clear=True):
         cfg = load_config(cfg_path)
     assert cfg.llm.preset == "qwen3.5-4b"
@@ -165,7 +165,7 @@ def test_check_vram_unknown_preset_falls_back_to_default(check_vram) -> None:
 
 
 def test_check_vram_env_var_picks_target(check_vram) -> None:
-    with patch.dict(os.environ, {"ULTRON_LLM_PRESET": "qwen3.5-4b"}, clear=False):
+    with patch.dict(os.environ, {"KENNING_LLM_PRESET": "qwen3.5-4b"}, clear=False):
         target, label = check_vram._resolve_target_mb(None)
     assert target == 6700
     assert label == "qwen3.5-4b"

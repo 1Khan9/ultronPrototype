@@ -19,9 +19,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.config import (
+from kenning.config import (
     TrafilaturaConfig,
-    UltronConfig,
+    KenningConfig,
     WebSearchConfig,
 )
 
@@ -63,7 +63,7 @@ def test_web_search_default_readers():
 def test_web_search_round_trip_with_legacy_readers():
     """An operator can disable the local reader by setting only
     ``jina`` in the readers list (legacy behaviour)."""
-    cfg = UltronConfig.model_validate({
+    cfg = KenningConfig.model_validate({
         "web_search": {"readers": ["jina"]}
     })
     assert cfg.web_search.readers == ["jina"]
@@ -75,32 +75,32 @@ def test_web_search_round_trip_with_legacy_readers():
 
 
 def test_chain_default_construction():
-    from ultron.web_search.reader_chain import ReaderChain
+    from kenning.web_search.reader_chain import ReaderChain
     chain = ReaderChain()
     assert chain.reader_ids == ["trafilatura", "jina"]
 
 
 def test_chain_custom_construction():
-    from ultron.web_search.reader_chain import ReaderChain
+    from kenning.web_search.reader_chain import ReaderChain
     chain = ReaderChain(["jina"])
     assert chain.reader_ids == ["jina"]
 
 
 def test_chain_rejects_empty_list():
-    from ultron.web_search.reader_chain import ReaderChain
+    from kenning.web_search.reader_chain import ReaderChain
     with pytest.raises(ValueError):
         ReaderChain([])
 
 
 def test_chain_rejects_unknown_reader():
-    from ultron.web_search.reader_chain import ReaderChain
+    from kenning.web_search.reader_chain import ReaderChain
     with pytest.raises(ValueError) as exc_info:
         ReaderChain(["beautifulsoup"])
     assert "Unknown" in str(exc_info.value)
 
 
 def test_chain_normalises_case():
-    from ultron.web_search.reader_chain import ReaderChain
+    from kenning.web_search.reader_chain import ReaderChain
     chain = ReaderChain(["TRAFILATURA", "JINA"])
     assert chain.reader_ids == ["trafilatura", "jina"]
 
@@ -118,7 +118,7 @@ def _stub_reader(result):
 
 def test_chain_first_non_empty_wins():
     """When trafilatura returns text, Jina is never called."""
-    from ultron.web_search.reader_chain import ReaderChain
+    from kenning.web_search.reader_chain import ReaderChain
     traf = _stub_reader("# Local extraction\nContent here.")
     jina = _stub_reader("# Jina extraction\nDifferent content.")
     chain = ReaderChain(["trafilatura", "jina"])
@@ -133,7 +133,7 @@ def test_chain_first_non_empty_wins():
 
 def test_chain_falls_through_on_none():
     """trafilatura returns None -> Jina called."""
-    from ultron.web_search.reader_chain import ReaderChain
+    from kenning.web_search.reader_chain import ReaderChain
     traf = _stub_reader(None)
     jina = _stub_reader("# Jina got it")
     chain = ReaderChain(["trafilatura", "jina"])
@@ -147,7 +147,7 @@ def test_chain_falls_through_on_none():
 
 def test_chain_falls_through_on_empty_string():
     """trafilatura returns empty string -> treated as failure -> Jina called."""
-    from ultron.web_search.reader_chain import ReaderChain
+    from kenning.web_search.reader_chain import ReaderChain
     traf = _stub_reader("   ")
     jina = _stub_reader("# Jina got it")
     chain = ReaderChain(["trafilatura", "jina"])
@@ -160,7 +160,7 @@ def test_chain_falls_through_on_empty_string():
 
 def test_chain_falls_through_on_exception():
     """A reader that raises (vs returning None) is also caught."""
-    from ultron.web_search.reader_chain import ReaderChain
+    from kenning.web_search.reader_chain import ReaderChain
     traf = MagicMock()
     traf.fetch.side_effect = RuntimeError("simulated parser crash")
     jina = _stub_reader("# Jina recovered")
@@ -182,7 +182,7 @@ def test_chain_skips_unconstructable_reader(monkeypatch):
     the original factory set (e.g. catalog batch 12's playwright
     factory check).
     """
-    from ultron.web_search import reader_chain as rc_module
+    from kenning.web_search import reader_chain as rc_module
 
     monkeypatch.setattr(
         rc_module.ReaderChain,
@@ -200,7 +200,7 @@ def test_chain_skips_unconstructable_reader(monkeypatch):
 
 
 def test_chain_all_readers_none_returns_none():
-    from ultron.web_search.reader_chain import ReaderChain
+    from kenning.web_search.reader_chain import ReaderChain
     chain = ReaderChain(["trafilatura", "jina"])
     chain._clients = {
         "trafilatura": _stub_reader(None),
@@ -210,7 +210,7 @@ def test_chain_all_readers_none_returns_none():
 
 
 def test_chain_empty_url_short_circuits():
-    from ultron.web_search.reader_chain import ReaderChain
+    from kenning.web_search.reader_chain import ReaderChain
     chain = ReaderChain(["trafilatura"])
     r = _stub_reader("anything")
     chain._clients = {"trafilatura": r}
@@ -225,7 +225,7 @@ def test_chain_empty_url_short_circuits():
 
 
 def test_trafilatura_client_imports():
-    from ultron.web_search.trafilatura_reader import TrafilaturaReaderClient
+    from kenning.web_search.trafilatura_reader import TrafilaturaReaderClient
     client = TrafilaturaReaderClient()
     assert client.timeout_s == 6.0
     # 2026-05-22: tightened defaults; see test_trafilatura_config_defaults.
@@ -234,7 +234,7 @@ def test_trafilatura_client_imports():
 
 
 def test_trafilatura_empty_url_returns_none():
-    from ultron.web_search.trafilatura_reader import TrafilaturaReaderClient
+    from kenning.web_search.trafilatura_reader import TrafilaturaReaderClient
     client = TrafilaturaReaderClient()
     assert client.fetch("") is None
     assert client.fetch("   ") is None

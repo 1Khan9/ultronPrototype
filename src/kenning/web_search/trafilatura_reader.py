@@ -29,7 +29,7 @@ Trade-offs vs Jina Reader (the external fallback):
   Jina sees every URL you fetch.
 
 Same ``fetch(url) -> Optional[str]`` interface as
-:class:`ultron.web_search.jina.JinaReaderClient` so the reader chain
+:class:`kenning.web_search.jina.JinaReaderClient` so the reader chain
 can swap them transparently.
 """
 
@@ -38,10 +38,10 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from ultron.config import get_config
-from ultron.errors import JinaReaderError
-from ultron.resilience import CircuitBreaker, CircuitOpenError, get_error_log
-from ultron.utils.logging import get_logger
+from kenning.config import get_config
+from kenning.errors import JinaReaderError
+from kenning.resilience import CircuitBreaker, CircuitOpenError, get_error_log
+from kenning.utils.logging import get_logger
 
 logger = get_logger("web_search.trafilatura")
 

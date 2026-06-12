@@ -24,7 +24,7 @@ import pytest
 
 def _whisper_with_mock_model():
     """Build a WhisperEngine without loading a real model."""
-    from ultron.transcription.whisper_engine import WhisperEngine
+    from kenning.transcription.whisper_engine import WhisperEngine
     eng = WhisperEngine.__new__(WhisperEngine)
     eng.model_name = "test"
     eng.device = "cpu"
@@ -81,7 +81,7 @@ def test_piper_synth_failure_returns_silent_clip_and_logs(
     tmp_path, errors_log, read_errors,
 ):
     """Piper synth raising returns a zero-length int16 array; errors logged."""
-    from ultron.tts.speech import TextToSpeech
+    from kenning.tts.speech import TextToSpeech
     tts = TextToSpeech.__new__(TextToSpeech)
     tts._voice = MagicMock()
     tts._voice.synthesize_wav.side_effect = RuntimeError("piper crashed")
@@ -108,7 +108,7 @@ def test_piper_synth_failure_returns_silent_clip_and_logs(
 
 def test_rvc_convert_failure_passes_piper_through(errors_log, read_errors):
     """RVC raising -> _synthesize returns the raw Piper PCM; errors logged."""
-    from ultron.tts.speech import TextToSpeech
+    from kenning.tts.speech import TextToSpeech
     tts = TextToSpeech.__new__(TextToSpeech)
     tts._voice = MagicMock()
     # Stub _piper_synth to skip the wav round-trip.

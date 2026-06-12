@@ -9,9 +9,9 @@ exit cleanly rather than wasting the rest of the token budget.
 
 Two routes to forfeit:
 
-1. **In-band sentinel.** The model emits :data:`ULTRON_EXIT_FORFEIT`
+1. **In-band sentinel.** The model emits :data:`KENNING_EXIT_FORFEIT`
    in its output; the supervisor's observation scanner catches it
-   via :mod:`ultron.coding.sentinels`. This is the SWE-Agent
+   via :mod:`kenning.coding.sentinels`. This is the SWE-Agent
    pattern -- a tool prints the sentinel + the harness picks it up.
 
 2. **Out-of-band trigger.** The user says "scrap it" / "give up" /
@@ -22,7 +22,7 @@ Two routes to forfeit:
 The forfeit handler:
 
 * Records the forfeit reason + per-session metadata via :class:`SessionRegistry`.
-* Triggers the salvage path from :mod:`ultron.coding.diff_snapshot`
+* Triggers the salvage path from :mod:`kenning.coding.diff_snapshot`
   so partial work is preserved.
 * Optionally calls a caller-supplied :class:`ForfeitListener` to
   emit a bus event / queue a narration line.
@@ -55,11 +55,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable, Optional
 
-from ultron.coding.diff_snapshot import (
+from kenning.coding.diff_snapshot import (
     SalvageResult,
     salvage_on_error,
 )
-from ultron.coding.session_registry import (
+from kenning.coding.session_registry import (
     SessionRegistry,
     get_session_registry,
 )
@@ -258,7 +258,7 @@ class ForfeitController:
             except Exception as exc:
                 logger.warning("forfeit salvage failed: %s", exc)
         if tier == ForfeitTier.REVERT and files_to_revert:
-            from ultron.coding.file_history import get_file_history
+            from kenning.coding.file_history import get_file_history
 
             fh = get_file_history(self.registry.session_id, registry=self.registry)
             for path in files_to_revert:

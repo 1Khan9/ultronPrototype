@@ -15,7 +15,7 @@ This module is the wrapper. The disambiguator calls
 ``InputReformulator.reformulate(utterance, ...)`` when
 ``cfg.routing.irma.enabled`` is True; otherwise the raw utterance flows
 through unchanged. Default OFF — see the docstring on
-:class:`ultron.config.RoutingIRMAConfig`.
+:class:`kenning.config.RoutingIRMAConfig`.
 
 Pure CPU; no LLM call here. The reformulator just shapes the prompt.
 The disambiguator's downstream LLM call is unchanged in shape (still
@@ -28,7 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable, List, Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_routing.irma")
 
@@ -129,12 +129,12 @@ def build_default_reformulator(cfg: Any = None) -> InputReformulator:
     """Construct an :class:`InputReformulator` from the live config.
 
     Centralised so callers don't replicate the ``cfg.routing.irma.*``
-    field-reading logic. ``cfg`` is the top-level :class:`UltronConfig`
+    field-reading logic. ``cfg`` is the top-level :class:`KenningConfig`
     (or a stand-in with the same shape); pass ``None`` to read from
     :func:`get_config`.
     """
     if cfg is None:
-        from ultron.config import get_config
+        from kenning.config import get_config
         cfg = get_config()
     return InputReformulator(max_recent=cfg.routing.irma.max_recent_decisions)
 

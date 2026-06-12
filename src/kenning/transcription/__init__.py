@@ -25,21 +25,21 @@ from __future__ import annotations
 
 from typing import Union, TYPE_CHECKING
 
-from ultron.transcription.moonshine_engine import (
+from kenning.transcription.moonshine_engine import (
     MOONSHINE_INSTALL_HINT,
     MoonshineEngine,
     is_moonshine_available,
 )
-from ultron.transcription.parakeet_engine import (
+from kenning.transcription.parakeet_engine import (
     PARAKEET_INSTALL_HINT,
     ParakeetEngine,
     is_nemo_available,
 )
-from ultron.transcription.whisper_engine import WhisperEngine
-from ultron.utils.logging import get_logger
+from kenning.transcription.whisper_engine import WhisperEngine
+from kenning.utils.logging import get_logger
 
 if TYPE_CHECKING:
-    from ultron.config import STTConfig
+    from kenning.config import STTConfig
 
 logger = get_logger("transcription.factory")
 
@@ -66,7 +66,7 @@ def make_stt_engine(cfg: "STTConfig | None" = None) -> STTEngine:
     voice transcription regresses.
     """
     if cfg is None:
-        from ultron.config import get_config
+        from kenning.config import get_config
         cfg = get_config().stt
 
     selector = getattr(cfg, "engine", "whisper")
@@ -232,7 +232,7 @@ def make_dual_stt_engines(
     loads, just without the swap-on-engage capability.
     """
     if cfg is None:
-        from ultron.config import get_config
+        from kenning.config import get_config
         cfg = get_config().stt
 
     primary = make_stt_engine(cfg)

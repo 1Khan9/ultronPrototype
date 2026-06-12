@@ -5,8 +5,8 @@ Drop-in replacement for :class:`WhisperEngine` -- same
 interface, very different model underneath.
 
 **Isolation architecture (default):** NeMo runs in an isolated venv
-at ``ultronVoiceAudio/.venv-parakeet/`` via a FastAPI HTTP server
-(``ultronVoiceAudio/scripts/parakeet_server.py``). The main venv
+at ``kenningVoiceAudio/.venv-parakeet/`` via a FastAPI HTTP server
+(``kenningVoiceAudio/scripts/parakeet_server.py``). The main venv
 stays clean of NeMo's dependency cascade (transformers 4.57+,
 numpy>=2, librosa 0.11+, hydra 1.3+) which is incompatible with
 the rest of the voice stack (fairseq/RVC need hydra<1.1; torchcrepe
@@ -47,20 +47,20 @@ from typing import List, Optional
 import numpy as np
 
 from config import settings
-from ultron.errors import WhisperTranscriptionError
-from ultron.resilience import get_error_log
-from ultron.utils.logging import get_logger
+from kenning.errors import WhisperTranscriptionError
+from kenning.resilience import get_error_log
+from kenning.utils.logging import get_logger
 
 logger = get_logger("transcription.parakeet")
 
 
 PARAKEET_INSTALL_HINT = (
     "Parakeet requires either:\n"
-    "  (a) An isolated venv at ultronVoiceAudio/.venv-parakeet/ with\n"
+    "  (a) An isolated venv at kenningVoiceAudio/.venv-parakeet/ with\n"
     "      nemo_toolkit[asr] + fastapi + uvicorn + soundfile installed.\n"
     "      Set up with:\n"
-    "        python -m venv ultronVoiceAudio/.venv-parakeet\n"
-    "        ultronVoiceAudio/.venv-parakeet/Scripts/python.exe \\\n"
+    "        python -m venv kenningVoiceAudio/.venv-parakeet\n"
+    "        kenningVoiceAudio/.venv-parakeet/Scripts/python.exe \\\n"
     "            -m pip install nemo_toolkit[asr] fastapi uvicorn soundfile\n"
     "  (b) Or NeMo in the main venv (set stt.parakeet_use_isolated_venv:\n"
     "      false). NOT RECOMMENDED -- breaks the main venv's pinned\n"
@@ -75,7 +75,7 @@ def is_nemo_available() -> bool:
 
     Two modes:
     1. Isolated venv (default): check that
-       ``ultronVoiceAudio/.venv-parakeet/`` exists with a python
+       ``kenningVoiceAudio/.venv-parakeet/`` exists with a python
        executable AND the parakeet_server.py script is present.
        We don't actually try to import NeMo from the main venv --
        that's expected to fail.
@@ -85,7 +85,7 @@ def is_nemo_available() -> bool:
     Returns False on any error.
     """
     try:
-        from ultron.config import get_config
+        from kenning.config import get_config
         stt_cfg = get_config().stt
         use_isolated = getattr(stt_cfg, "parakeet_use_isolated_venv", True)
     except Exception:                                                  # noqa: BLE001
@@ -93,14 +93,14 @@ def is_nemo_available() -> bool:
 
     if use_isolated:
         try:
-            from ultron.config import resolve_path
+            from kenning.config import resolve_path
             python_exe = resolve_path(
                 getattr(stt_cfg, "parakeet_server_python",
-                        "ultronVoiceAudio/.venv-parakeet/Scripts/python.exe"),
+                        "kenningVoiceAudio/.venv-parakeet/Scripts/python.exe"),
             )
             script = resolve_path(
                 getattr(stt_cfg, "parakeet_server_script",
-                        "ultronVoiceAudio/scripts/parakeet_server.py"),
+                        "kenningVoiceAudio/scripts/parakeet_server.py"),
             )
             return Path(python_exe).is_file() and Path(script).is_file()
         except Exception:                                              # noqa: BLE001
@@ -147,14 +147,14 @@ def _spawn_server_if_needed(stt_cfg) -> str:
     except Exception:
         pass  # not running; spawn below
 
-    from ultron.config import resolve_path
+    from kenning.config import resolve_path
     python_exe = str(resolve_path(
         getattr(stt_cfg, "parakeet_server_python",
-                "ultronVoiceAudio/.venv-parakeet/Scripts/python.exe"),
+                "kenningVoiceAudio/.venv-parakeet/Scripts/python.exe"),
     ))
     script = str(resolve_path(
         getattr(stt_cfg, "parakeet_server_script",
-                "ultronVoiceAudio/scripts/parakeet_server.py"),
+                "kenningVoiceAudio/scripts/parakeet_server.py"),
     ))
     if not Path(python_exe).is_file():
         raise ImportError(
@@ -202,7 +202,7 @@ def _spawn_server_if_needed(stt_cfg) -> str:
     # (it is a long-lived server, managed by stop_parakeet_server below).
     # Fail-open: tracking must never break the spawn.
     try:
-        from ultron.subprocess.zombie_killer import get_zombie_killer
+        from kenning.subprocess.zombie_killer import get_zombie_killer
         get_zombie_killer().register(proc.pid, "parakeet-server", persistent=True)
     except Exception:  # noqa: BLE001
         pass
@@ -270,7 +270,7 @@ class ParakeetEngine:
         model_name: Optional[str] = None,
         device: Optional[str] = None,
     ) -> None:
-        from ultron.config import get_config
+        from kenning.config import get_config
         stt_cfg = get_config().stt
 
         self.model_name = model_name or getattr(
@@ -707,7 +707,7 @@ def stop_parakeet_server(timeout_seconds: float = 5.0) -> bool:
             # uvicorn worker children + their grandchildren in one
             # call. Cross-platform; psutil-driven; fail-open on
             # missing psutil.
-            from ultron.subprocess.kill_tree import kill_process_tree
+            from kenning.subprocess.kill_tree import kill_process_tree
             result = kill_process_tree(
                 _SERVER_PROCESS.pid,
                 grace_seconds=max(0.5, float(timeout_seconds) - graceful_budget),
@@ -718,7 +718,7 @@ def stop_parakeet_server(timeout_seconds: float = 5.0) -> bool:
                     len(result.force_killed),
                 )
         try:
-            from ultron.subprocess.zombie_killer import get_zombie_killer
+            from kenning.subprocess.zombie_killer import get_zombie_killer
             get_zombie_killer().unregister(_SERVER_PROCESS.pid)
         except Exception:  # noqa: BLE001
             pass
@@ -741,7 +741,7 @@ def start_parakeet_server(stt_cfg=None, *, wait_for_ready: bool = True) -> str:
     immediately and let the caller poll readiness on their own thread.
     """
     if stt_cfg is None:
-        from ultron.config import get_config
+        from kenning.config import get_config
         stt_cfg = get_config().stt
     if wait_for_ready:
         return _spawn_server_if_needed(stt_cfg)

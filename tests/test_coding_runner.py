@@ -15,7 +15,7 @@ from typing import List, Optional
 
 import pytest
 
-from ultron.coding.bridge import (
+from kenning.coding.bridge import (
     CodingBridge,
     EventKind,
     EventListener,
@@ -26,7 +26,7 @@ from ultron.coding.bridge import (
     TaskResult,
     TaskState,
 )
-from ultron.coding.runner import CodingTaskRunner
+from kenning.coding.runner import CodingTaskRunner
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +171,7 @@ def test_safety_listener_blocks_file_change_on_protected_path(tmp_path, monkeypa
     ``event.path`` / ``event.change_kind``. Before the fix it silently no-op'd
     on every real TaskEvent, disabling all file-write safety validation on the
     coding bridge."""
-    import ultron.safety as safety_mod
+    import kenning.safety as safety_mod
 
     seen: dict = {}
 

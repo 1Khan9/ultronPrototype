@@ -24,7 +24,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.llm.inference import LLMEngine
+from kenning.llm.inference import LLMEngine
 
 
 class _StubMemory:
@@ -66,9 +66,9 @@ def _make_engine_no_load(memory) -> LLMEngine:
     eng = object.__new__(LLMEngine)
     eng._memory = memory
     eng._history = []
-    eng._explicit_system_prompt = "You are Ultron. Test prompt."
+    eng._explicit_system_prompt = "You are Kenning. Test prompt."
     eng._persona_loader = None
-    eng.system_prompt = "You are Ultron. Test prompt."
+    eng.system_prompt = "You are Kenning. Test prompt."
     eng._logged_initial_persona = True
     return eng
 

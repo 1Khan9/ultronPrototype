@@ -26,7 +26,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.config import EmbeddingsConfig, UltronConfig
+from kenning.config import EmbeddingsConfig, KenningConfig
 
 
 # ---------------------------------------------------------------------------
@@ -61,14 +61,14 @@ def test_embeddings_can_opt_in_to_jina_v3():
 
 
 def test_full_config_round_trip_with_bge_default():
-    cfg = UltronConfig()
+    cfg = KenningConfig()
     assert cfg.embeddings.dense_model == "BAAI/bge-small-en-v1.5"
     assert cfg.embeddings.dense_dim == 384
 
 
 def test_full_config_round_trip_with_explicit_jina_override():
     """Explicit YAML override flips on jina-v3."""
-    cfg = UltronConfig.model_validate({
+    cfg = KenningConfig.model_validate({
         "embeddings": {
             "dense_model": "jinaai/jina-embeddings-v3",
             "dense_dim": 1024,
@@ -103,7 +103,7 @@ def _stub_qdrant_collection(existing_dim: int):
 def _stub_memory_for_init():
     """Build a ConversationMemory-like object with just the fields
     ``_ensure_collections`` needs."""
-    from ultron.memory.qdrant_store import ConversationMemory
+    from kenning.memory.qdrant_store import ConversationMemory
     cm = object.__new__(ConversationMemory)
     cm._client = None
     cm._embedder = MagicMock()
@@ -114,7 +114,7 @@ def _stub_memory_for_init():
 def test_dim_mismatch_raises_with_actionable_message():
     """When configured dim (1024) doesn't match existing collection
     dim (384), startup raises with the migration instructions."""
-    from ultron.memory.qdrant_store import ConversationMemory
+    from kenning.memory.qdrant_store import ConversationMemory
 
     cm = _stub_memory_for_init()
     cm._client = _stub_qdrant_collection(existing_dim=384)
@@ -134,7 +134,7 @@ def test_dim_mismatch_raises_with_actionable_message():
 
 def test_dim_match_does_not_raise():
     """When configured dim matches the existing collection, no error."""
-    from ultron.memory.qdrant_store import ConversationMemory
+    from kenning.memory.qdrant_store import ConversationMemory
 
     cm = _stub_memory_for_init()
     cm._client = _stub_qdrant_collection(existing_dim=1024)
@@ -145,7 +145,7 @@ def test_dim_match_does_not_raise():
 def test_no_existing_collection_does_not_raise():
     """Fresh install (no `conversations` collection yet) skips the
     dim-check and proceeds to create the collection."""
-    from ultron.memory.qdrant_store import ConversationMemory
+    from kenning.memory.qdrant_store import ConversationMemory
 
     cm = _stub_memory_for_init()
     # No collections at all.
@@ -160,7 +160,7 @@ def test_introspect_failure_is_fail_open(monkeypatch, caplog):
     """If get_collection itself errors (corrupt metadata, future API
     change, etc.), we log WARN and continue. We don't want to brick
     the orchestrator on diagnostic IO."""
-    from ultron.memory.qdrant_store import ConversationMemory
+    from kenning.memory.qdrant_store import ConversationMemory
 
     cm = _stub_memory_for_init()
     cm._client = MagicMock()

@@ -270,7 +270,7 @@ class WaitingSpinner:
         self._stop_event.clear()
         self._spinner.start()
         self._thread = threading.Thread(
-            target=self._loop, name="ultron-spinner", daemon=True,
+            target=self._loop, name="kenning-spinner", daemon=True,
         )
         self._thread.start()
 

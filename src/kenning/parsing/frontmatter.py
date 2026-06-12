@@ -3,9 +3,9 @@
 This is a clean-room adaptation of the ``_parse_skill_frontmatter`` pattern
 from ``openhands/app_server/user/skills_router.py``. The shape stays the
 same -- look for a leading ``---``, find the closing ``---``, ``yaml.safe_load``
-the slice, catch ``yaml.YAMLError`` and log a warning -- but ultron's
+the slice, catch ``yaml.YAMLError`` and log a warning -- but kenning's
 version returns BOTH the frontmatter dict and the post-frontmatter body
-text in a single :class:`FrontmatterResult`, because every ultron use site
+text in a single :class:`FrontmatterResult`, because every kenning use site
 (skills, identity overrides, project safety rules) wants both pieces.
 
 Fail-open contract: every error path returns a :class:`FrontmatterResult`
@@ -56,7 +56,7 @@ class FrontmatterResult:
         error: ``None`` when parsing succeeded, otherwise a short
             human-readable description of what went wrong.
 
-    The frozen dataclass shape mirrors ultron's other result records
+    The frozen dataclass shape mirrors kenning's other result records
     (``LintReport``, ``EditDiagnosticResult``, etc.) so consumers can
     pattern-match on the same attribute names.
     """

@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.openclaw_routing import classify_routing
-from ultron.openclaw_routing.intents import RoutingIntentKind
+from kenning.openclaw_routing import classify_routing
+from kenning.openclaw_routing.intents import RoutingIntentKind
 
 
 @pytest.fixture(autouse=True)
@@ -27,7 +27,7 @@ def _enable_openclaw_features():
     The fixture is autouse so it applies to every test in the file
     without requiring each parametrise block to opt in.
     """
-    from ultron.config import get_config
+    from kenning.config import get_config
 
     cfg = get_config()
     saved = (
@@ -348,7 +348,7 @@ def test_code_task_classified(utt):
 
 
 # ---------------------------------------------------------------------------
-# SYSTEM_STATUS — Phase 13 voice queries about Ultron's own state
+# SYSTEM_STATUS — Phase 13 voice queries about Kenning's own state
 # ---------------------------------------------------------------------------
 
 
@@ -365,7 +365,7 @@ _SYSTEM_STATUS_ALERT_QUERIES = [
 
 
 _SYSTEM_STATUS_PROJECT_QUERIES = [
-    "what is Ultron working on",
+    "what is Kenning working on",
     "what are you working on",
     "what's running",
     "what is currently running",
@@ -625,7 +625,7 @@ def _classify_with_flags(
     window_control: bool = True,
 ):
     """Run classify_routing under explicit flag overrides."""
-    from ultron.config import get_config
+    from kenning.config import get_config
 
     cfg = get_config()
     saved = (

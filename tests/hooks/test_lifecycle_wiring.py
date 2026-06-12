@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ultron.coding.runner import CodingTaskRunner
+from kenning.coding.runner import CodingTaskRunner
 
 
 def _runner():
@@ -29,7 +29,7 @@ def _fanout(cancelled, per_hook=()):
 
 
 def test_task_start_hook_cancel_raises(monkeypatch):
-    import ultron.hooks as H
+    import kenning.hooks as H
 
     blocked = SimpleNamespace(
         outcome=SimpleNamespace(cancel=True, error_message="blocked by policy"),
@@ -43,7 +43,7 @@ def test_task_start_hook_cancel_raises(monkeypatch):
 
 
 def test_task_start_hook_pass_proceeds(monkeypatch):
-    import ultron.hooks as H
+    import kenning.hooks as H
 
     monkeypatch.setattr(
         H, "get_hook_registry",
@@ -56,7 +56,7 @@ def test_task_start_hook_pass_proceeds(monkeypatch):
 
 def test_task_start_no_scripts_real_registry():
     """Real registry, no hooks installed -> empty fast path -> no raise."""
-    from ultron.hooks import reset_hook_registry_for_testing
+    from kenning.hooks import reset_hook_registry_for_testing
 
     reset_hook_registry_for_testing()
     try:
@@ -67,7 +67,7 @@ def test_task_start_no_scripts_real_registry():
 
 
 def test_task_start_fire_error_is_swallowed(monkeypatch):
-    import ultron.hooks as H
+    import kenning.hooks as H
 
     def _boom(*a, **k):
         raise RuntimeError("registry exploded")
@@ -79,10 +79,10 @@ def test_task_start_fire_error_is_swallowed(monkeypatch):
 
 
 def test_task_start_disabled_skips_registry(monkeypatch):
-    from ultron.config import get_config
+    from kenning.config import get_config
 
     monkeypatch.setattr(get_config().hooks, "enabled", False)
-    import ultron.hooks as H
+    import kenning.hooks as H
 
     called: list[int] = []
     monkeypatch.setattr(
@@ -98,8 +98,8 @@ def test_task_start_disabled_skips_registry(monkeypatch):
 
 
 def test_complete_listener_fires_on_complete(monkeypatch):
-    import ultron.hooks as H
-    from ultron.coding.bridge import EventKind
+    import kenning.hooks as H
+    from kenning.coding.bridge import EventKind
 
     fired: list = []
     monkeypatch.setattr(
@@ -116,8 +116,8 @@ def test_complete_listener_fires_on_complete(monkeypatch):
 
 
 def test_complete_listener_ignores_non_complete(monkeypatch):
-    import ultron.hooks as H
-    from ultron.coding.bridge import EventKind
+    import kenning.hooks as H
+    from kenning.coding.bridge import EventKind
 
     fired: list = []
     monkeypatch.setattr(
@@ -131,7 +131,7 @@ def test_complete_listener_ignores_non_complete(monkeypatch):
 
 
 def test_complete_listener_none_when_disabled(monkeypatch):
-    from ultron.config import get_config
+    from kenning.config import get_config
 
     monkeypatch.setattr(get_config().hooks, "enabled", False)
     r = _runner()

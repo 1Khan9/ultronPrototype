@@ -7,7 +7,7 @@ appropriate for the requested *mode*.
 
 ## Modes
 
-Ultron's character is for user-facing channels only. Internal
+Kenning's character is for user-facing channels only. Internal
 background jobs (heartbeat, cron, compaction, tool selection,
 summarization, RAG retrieval gating, etc.) use a plain
 task-focused prompt. This protects the user-facing voice character
@@ -17,7 +17,7 @@ character-driven hedging or terseness would obscure the answer.
 
 Modes (passed to :meth:`PersonaLoader.get_system_prompt`):
 
-- ``"user_facing"`` (default) — the full Ultron persona. Use for
+- ``"user_facing"`` (default) — the full Kenning persona. Use for
   voice path, Telegram, any channel where the user reads or hears
   the response. Composition: IDENTITY + SOUL + USER + AGENTS.
 - ``"background"`` — plain operating rules, no character. Use for
@@ -27,7 +27,7 @@ Modes (passed to :meth:`PersonaLoader.get_system_prompt`):
   heartbeat tick. Composition: HEARTBEAT only.
 - ``"bootstrap"`` — one-time init. Composition: BOOTSTRAP only.
 
-Both Ultron's voice pipeline and OpenClaw read the same workspace
+Both Kenning's voice pipeline and OpenClaw read the same workspace
 files — a change to ``SOUL.md`` is reflected in both consumers'
 next user-facing system-prompt build. Background prompts deliberately
 DON'T pull in SOUL.md / IDENTITY.md, so persona changes don't leak
@@ -47,7 +47,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Literal, Optional, Tuple
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_bridge.persona")
 
@@ -61,7 +61,7 @@ _FILES_IN_ORDER = (
     "BOOTSTRAP.md",
 )
 
-# Mode names. ``user_facing`` is the default — full Ultron character.
+# Mode names. ``user_facing`` is the default — full Kenning character.
 # Background/heartbeat/bootstrap deliberately strip the character so
 # internal worker reliability isn't compromised by persona drift.
 PromptMode = Literal["user_facing", "background", "heartbeat", "bootstrap"]
@@ -87,7 +87,7 @@ _MODE_FILES: Dict[PromptMode, Tuple[str, ...]] = {
 _MODE_PREFIX: Dict[PromptMode, str] = {
     "user_facing": "",
     "background": (
-        "You are an internal worker for the Ultron system. The user is "
+        "You are an internal worker for the Kenning system. The user is "
         "not reading or hearing this turn directly. Respond to the "
         "instruction with the literal output it asks for — no "
         "personality, no preamble, no hedging, no NO_REPLY sentinel "
@@ -108,12 +108,12 @@ _MODE_PREFIX: Dict[PromptMode, str] = {
 def default_workspace_dir() -> Path:
     """Resolve the OpenClaw workspace dir.
 
-    Order: ``ULTRON_OPENCLAW_WORKSPACE`` env var → user-home default
+    Order: ``KENNING_OPENCLAW_WORKSPACE`` env var → user-home default
     (``~/.openclaw/workspace``). Does not call ``openclaw`` CLI to
     avoid a subprocess on every load. Tests can pass an explicit
     ``workspace_dir`` to :class:`PersonaLoader`.
     """
-    override = os.environ.get("ULTRON_OPENCLAW_WORKSPACE")
+    override = os.environ.get("KENNING_OPENCLAW_WORKSPACE")
     if override:
         return Path(override)
     return Path.home() / ".openclaw" / "workspace"
@@ -266,7 +266,7 @@ class PersonaLoader:
         ``mode`` controls which persona files are included:
 
         - ``"user_facing"`` — IDENTITY + SOUL + USER + AGENTS. Full
-          Ultron character. Default.
+          Kenning character. Default.
         - ``"background"`` — short "internal worker" prefix + AGENTS.
           No character. For heartbeat preflight, cron, summarization,
           tool selection, RAG gating, internal classifiers.

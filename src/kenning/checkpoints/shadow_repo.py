@@ -30,7 +30,7 @@ from .exclusions import compose_gitignore
 
 LOGGER = logging.getLogger(__name__)
 
-#: Hard timeout (seconds) on the init pass. Cline uses 15 s; ultron
+#: Hard timeout (seconds) on the init pass. Cline uses 15 s; kenning
 #: matches that since git can take a while on big monorepos.
 DEFAULT_INIT_TIMEOUT_SECONDS: float = 15.0
 
@@ -123,7 +123,7 @@ class ShadowRepoTracker:
         session_id: caller's session identifier (used in commit
             message labelling).
         gitignore_body: optional pre-composed gitignore content. When
-            absent, :func:`ultron.checkpoints.exclusions.compose_gitignore`
+            absent, :func:`kenning.checkpoints.exclusions.compose_gitignore`
             is invoked with defaults.
         init_timeout_seconds / init_warning_seconds / commit_timeout_seconds:
             see module-level defaults.
@@ -133,7 +133,7 @@ class ShadowRepoTracker:
         The tracker enforces a per-session :class:`threading.RLock` so
         concurrent commits serialise without corrupting the index.
         The lock does NOT protect cross-process access — only one
-        ultron instance should touch a given checkpoint dir at a time.
+        kenning instance should touch a given checkpoint dir at a time.
     """
 
     def __init__(
@@ -263,8 +263,8 @@ class ShadowRepoTracker:
                 allow_nonzero=True,
             )
             add_args = [
-                "-c", "user.name=ultron",
-                "-c", "user.email=ultron@local.invalid",
+                "-c", "user.name=kenning",
+                "-c", "user.email=kenning@local.invalid",
                 "commit",
                 "--no-verify",
                 "--no-gpg-sign",
@@ -414,7 +414,7 @@ class ShadowRepoTracker:
         if not self._git_dir.exists():
             try:
                 completed = _run_git(
-                    ["init", "--initial-branch", "ultron"],
+                    ["init", "--initial-branch", "kenning"],
                     cwd=self._repo_root,
                     env=init_env,
                     timeout_seconds=self._init_timeout,

@@ -17,7 +17,7 @@ from typing import Callable, List
 
 import pytest
 
-from ultron.memory.background_summarizer import (
+from kenning.memory.background_summarizer import (
     BackgroundSummarizer,
     DecisionEntry,
     FactEntry,

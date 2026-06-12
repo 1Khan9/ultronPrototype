@@ -1,6 +1,6 @@
 """Tests for the ``coding.supervisor.tier`` rollup field.
 
-Mirrors :meth:`ultron.config.LLMConfig._apply_preset` semantics: setting
+Mirrors :meth:`kenning.config.LLMConfig._apply_preset` semantics: setting
 ``tier`` fills in the per-phase flags the operator left unset; explicit
 per-flag values always win.
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.config import SUPERVISOR_TIERS, CodingSupervisorConfig
+from kenning.config import SUPERVISOR_TIERS, CodingSupervisorConfig
 
 
 # ---------------------------------------------------------------------------

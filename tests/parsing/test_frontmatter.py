@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.parsing import (
+from kenning.parsing import (
     FrontmatterResult,
     parse_frontmatter,
     parse_frontmatter_text,
@@ -240,7 +240,7 @@ def test_parse_frontmatter_str_path_accepted(tmp_path: Path):
 
 def test_default_constants_are_stable():
     """Pin the public-API constants so refactors are deliberate."""
-    from ultron.parsing import frontmatter as fm
+    from kenning.parsing import frontmatter as fm
 
     assert fm._FRONTMATTER_DELIMITER == "---"
     assert ".md" in fm._DEFAULT_FILE_EXTENSIONS

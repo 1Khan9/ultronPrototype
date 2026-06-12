@@ -27,7 +27,7 @@ sys.path.insert(0, str(_MAIN))
 sys.path.insert(0, str(_WORKTREE_ROOT / "src"))
 
 
-# Pull .env so ULTRON_BRAVE_API_KEY is available.
+# Pull .env so KENNING_BRAVE_API_KEY is available.
 def _load_dotenv() -> None:
     env_path = _MAIN / ".env"
     if not env_path.exists():
@@ -42,7 +42,7 @@ def _load_dotenv() -> None:
 
 def smoke_brave_one() -> dict:
     """1 Brave query.  Returns count + first-title fingerprint."""
-    from ultron.web_search.brave import BraveSearchClient
+    from kenning.web_search.brave import BraveSearchClient
 
     print("\n[Brave] 1 live query")
     print("-" * 50)
@@ -69,9 +69,9 @@ def smoke_brave_one() -> dict:
 
 def smoke_search_chain() -> dict:
     """1 full Brave -> Jina chain via WebSearchExecutor."""
-    from ultron.web_search.brave import BraveSearchClient
-    from ultron.web_search.jina import JinaReaderClient
-    from ultron.web_search.search import WebSearchExecutor
+    from kenning.web_search.brave import BraveSearchClient
+    from kenning.web_search.jina import JinaReaderClient
+    from kenning.web_search.search import WebSearchExecutor
 
     print("\n[Search chain] 1 Brave + Jina round-trip")
     print("-" * 50)
@@ -115,7 +115,7 @@ def smoke_claude_code_one() -> dict:
     print("-" * 50)
 
     claude_cli = os.environ.get(
-        "ULTRON_CLAUDE_CLI",
+        "KENNING_CLAUDE_CLI",
         str(Path.home() / "AppData" / "Roaming" / "npm" / "claude.cmd"),
     )
     if not Path(claude_cli).exists():
@@ -155,8 +155,8 @@ def smoke_claude_code_one() -> dict:
 
 def main() -> int:
     _load_dotenv()
-    if not os.environ.get("ULTRON_BRAVE_API_KEY"):
-        print("ULTRON_BRAVE_API_KEY missing from environment; skipping Brave probes.")
+    if not os.environ.get("KENNING_BRAVE_API_KEY"):
+        print("KENNING_BRAVE_API_KEY missing from environment; skipping Brave probes.")
         brave_result = {"ok": False, "skipped": True}
         chain_result = {"ok": False, "skipped": True}
     else:

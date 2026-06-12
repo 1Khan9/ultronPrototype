@@ -15,7 +15,7 @@ from typing import Optional
 
 from .schema import Observation
 
-LOGGER = logging.getLogger("ultron.observations")
+LOGGER = logging.getLogger("kenning.observations")
 
 _DEFAULT_PATH = Path("data") / "observations.jsonl"
 

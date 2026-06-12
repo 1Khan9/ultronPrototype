@@ -37,9 +37,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from ultron.safety.path_resolver import PathResolver
-    from ultron.safety.policy import Policy
-    from ultron.safety.validator import RuleContext, RuleResult, Verdict
+    from kenning.safety.path_resolver import PathResolver
+    from kenning.safety.policy import Policy
+    from kenning.safety.validator import RuleContext, RuleResult, Verdict
 
 
 class Rule(ABC):
@@ -164,8 +164,8 @@ class PathSetRule(Rule):
         policy: "Policy",
         resolver: "PathResolver",
     ) -> "RuleResult":
-        from ultron.safety.path_resolver import PathResolveError
-        from ultron.safety.validator import RuleResult, Verdict
+        from kenning.safety.path_resolver import PathResolveError
+        from kenning.safety.validator import RuleResult, Verdict
 
         if not self.is_write_attempt(ctx):
             return RuleResult(
@@ -280,7 +280,7 @@ class PathPatternRule(Rule):
         verdict_on_match=None,  # Verdict; defaults to BLOCK_HARD
         write_only: bool = True,
     ) -> None:
-        from ultron.safety.validator import Verdict
+        from kenning.safety.validator import Verdict
         self.rule_id = rule_id
         self.description = description
         self.category = category
@@ -313,8 +313,8 @@ class PathPatternRule(Rule):
         return False
 
     def evaluate(self, ctx, *, policy, resolver):
-        from ultron.safety.path_resolver import PathResolveError
-        from ultron.safety.validator import RuleResult, Verdict
+        from kenning.safety.path_resolver import PathResolveError
+        from kenning.safety.validator import RuleResult, Verdict
 
         if self._write_only and not self._is_write_attempt(ctx):
             return RuleResult(
@@ -381,7 +381,7 @@ class CommandPatternRule(Rule):
         verdict_on_match=None,
         check_tool_name: bool = True,
     ) -> None:
-        from ultron.safety.validator import Verdict
+        from kenning.safety.validator import Verdict
         self.rule_id = rule_id
         self.description = description
         self.category = category
@@ -392,7 +392,7 @@ class CommandPatternRule(Rule):
         self._check_tool_name = check_tool_name
 
     def evaluate(self, ctx, *, policy, resolver):  # noqa: ARG002
-        from ultron.safety.validator import RuleResult, Verdict
+        from kenning.safety.validator import RuleResult, Verdict
 
         # Build the haystack: tool name + every argument value.
         parts: list[str] = []
@@ -453,7 +453,7 @@ class ToolNameRule(Rule):
         denied_tool_names: list[str],
         verdict_on_match=None,
     ) -> None:
-        from ultron.safety.validator import Verdict
+        from kenning.safety.validator import Verdict
         self.rule_id = rule_id
         self.description = description
         self.category = category
@@ -463,7 +463,7 @@ class ToolNameRule(Rule):
         )
 
     def evaluate(self, ctx, *, policy, resolver):  # noqa: ARG002
-        from ultron.safety.validator import RuleResult, Verdict
+        from kenning.safety.validator import RuleResult, Verdict
 
         name_lower = ctx.tool_name.lower()
         for denied in self._denied:
@@ -535,8 +535,8 @@ class SandboxConfinementRule(Rule):
         return False
 
     def evaluate(self, ctx, *, policy, resolver):
-        from ultron.safety.path_resolver import PathResolveError
-        from ultron.safety.validator import RuleResult, Verdict
+        from kenning.safety.path_resolver import PathResolveError
+        from kenning.safety.validator import RuleResult, Verdict
 
         if self._write_only and not self._is_write_attempt(ctx):
             return RuleResult(

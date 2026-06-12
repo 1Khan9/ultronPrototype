@@ -130,37 +130,37 @@ def main() -> int:
     print("Search-augmented contamination + blending test pass")
     print("=" * 60)
 
-    os.environ["ULTRON_LOG_LEVEL"] = "WARNING"
-    from ultron.utils.logging import configure_logging
+    os.environ["KENNING_LOG_LEVEL"] = "WARNING"
+    from kenning.utils.logging import configure_logging
     configure_logging(level="WARNING")
 
     # Quick env check.
-    brave_key = os.environ.get("ULTRON_BRAVE_API_KEY")
+    brave_key = os.environ.get("KENNING_BRAVE_API_KEY")
     if not brave_key:
         # Try .env file load.
         try:
             from dotenv import load_dotenv
             load_dotenv()
-            brave_key = os.environ.get("ULTRON_BRAVE_API_KEY")
+            brave_key = os.environ.get("KENNING_BRAVE_API_KEY")
         except Exception:
             pass
     if not brave_key:
-        print("ERROR: ULTRON_BRAVE_API_KEY not set. Cannot run search tests.")
+        print("ERROR: KENNING_BRAVE_API_KEY not set. Cannot run search tests.")
         return 1
 
     # Isolated tmp Qdrant.
-    tmp_qdrant_dir = Path(tempfile.mkdtemp(prefix="ultron_search_qa_"))
+    tmp_qdrant_dir = Path(tempfile.mkdtemp(prefix="kenning_search_qa_"))
     print(f"Isolated Qdrant: {tmp_qdrant_dir}")
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config()
     cfg.qdrant.data_dir = str(tmp_qdrant_dir)
 
     # Stack.
     print("Loading stack (embedder + memory + LLM + brave + jina)...")
-    from ultron.memory.embedder import HybridEmbedder
-    from ultron.memory.qdrant_store import ConversationMemory, MemoryTurn
-    from ultron.llm import LLMEngine
-    from ultron.web_search import (
+    from kenning.memory.embedder import HybridEmbedder
+    from kenning.memory.qdrant_store import ConversationMemory, MemoryTurn
+    from kenning.llm import LLMEngine
+    from kenning.web_search import (
         BraveSearchClient, JinaReaderClient, WebSearchExecutor,
         WebSearchGate, format_sources_for_prompt,
     )

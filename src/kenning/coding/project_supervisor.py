@@ -18,9 +18,9 @@ Decision strategy (priority order, first hit wins):
   * **Active-task + adjustment**: if a Claude session is currently
     running AND the utterance matches ``_ADJUSTMENT_PATTERNS``
     (the "now add error handling" pattern from
-    :mod:`ultron.coding.intent`), RESUME.
+    :mod:`kenning.coding.intent`), RESUME.
   * **Strong semantic match**: top
-    :class:`ultron.coding.project_index.ProjectMatch` score
+    :class:`kenning.coding.project_index.ProjectMatch` score
     ``>= resolve_threshold`` (default 0.75) → EDIT that project.
   * **Lexical exact match** in the registry → EDIT.
   * **Ambiguous match band**: top score in ``[clarify_threshold,
@@ -46,10 +46,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
-from ultron.bus import SupervisorDecidedEvent, publish as bus_publish
-from ultron.coding.intent import CodingIntent, CodingIntentKind, _ADJUSTMENT_PATTERNS
-from ultron.coding.project_index import ProjectIndex, ProjectMatch
-from ultron.coding.projects import (
+from kenning.bus import SupervisorDecidedEvent, publish as bus_publish
+from kenning.coding.intent import CodingIntent, CodingIntentKind, _ADJUSTMENT_PATTERNS
+from kenning.coding.project_index import ProjectIndex, ProjectMatch
+from kenning.coding.projects import (
     Project,
     ProjectRegistry,
     ProjectResolution,
@@ -57,7 +57,7 @@ from ultron.coding.projects import (
     ResolutionKind,
 )
 
-logger = logging.getLogger("ultron.coding.project_supervisor")
+logger = logging.getLogger("kenning.coding.project_supervisor")
 
 
 # ---------------------------------------------------------------------------
@@ -581,7 +581,7 @@ class ProjectSupervisor:
             entry = self.index.get(top.project_id)
             if entry is not None:
                 # Pull the "Relevant Files" section out of the digest.
-                from ultron.coding.project_digest import extract_files_from_digest
+                from kenning.coding.project_digest import extract_files_from_digest
                 file_hints = extract_files_from_digest(entry.digest_markdown)
         return SupervisorDecision(
             action=SupervisorAction.EDIT,
@@ -736,11 +736,11 @@ def _registry_to_candidate(
 def _project_id_for_registry(project: Project) -> str:
     """Map a registry :class:`Project` to a stable project_id.
 
-    Mirrors :func:`ultron.coding.project_index._derive_project_id`
+    Mirrors :func:`kenning.coding.project_index._derive_project_id`
     so a registry project + an indexed project at the same path
     collapse to the same id during candidate merging.
     """
-    from ultron.coding.project_index import _derive_project_id
+    from kenning.coding.project_index import _derive_project_id
     return _derive_project_id(Path(project.path))
 
 

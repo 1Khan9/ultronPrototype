@@ -23,7 +23,7 @@ turns).
 
 Digests are produced by a single LLM call against the in-process
 Qwen voice model. The call runs on a background thread (mirrors
-:class:`ultron.memory.background_summarizer.BackgroundSummarizer`'s
+:class:`kenning.memory.background_summarizer.BackgroundSummarizer`'s
 posture) so the voice loop is never blocked. Fail-open: any LLM
 error, parse failure, or empty result falls back to a deterministic
 template-from-task-metadata so the project still has *something*
@@ -44,7 +44,7 @@ Public surface:
     access without re-LLM-call).
 
 The actual digest write-to-disk + Qdrant upsert is handled by
-:class:`ultron.coding.project_index.ProjectIndex`. This module is
+:class:`kenning.coding.project_index.ProjectIndex`. This module is
 pure compute -- inputs in, dataclass out.
 """
 
@@ -57,7 +57,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-logger = logging.getLogger("ultron.coding.project_digest")
+logger = logging.getLogger("kenning.coding.project_digest")
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +147,7 @@ class DigestRequest:
 
     Attributes:
         project_name: canonical project name from
-            :class:`ultron.coding.projects.ProjectRegistry`.
+            :class:`kenning.coding.projects.ProjectRegistry`.
         project_path: absolute on-disk path.
         task_summary: final assistant text from the Claude session.
         files_created: paths created in this session.
@@ -159,7 +159,7 @@ class DigestRequest:
             session (e.g. "build a PDF-to-DOCX converter with a Tkinter UI"),
             used to seed the Goal section when no prior digest.
         language: detected language ("python", "javascript", ...);
-            seeded by :mod:`ultron.coding.project_introspect`.
+            seeded by :mod:`kenning.coding.project_introspect`.
         entry_points: list of detected entry-point file paths.
     """
 
@@ -206,7 +206,7 @@ class ProjectDigest:
 
 # Type alias for the LLM-call callable. Accepts a single prompt string,
 # returns the full completion text. Pass an
-# :class:`ultron.llm.inference.LLMEngine`-bound function or a stub
+# :class:`kenning.llm.inference.LLMEngine`-bound function or a stub
 # in tests.
 LLMCallable = Callable[[str], str]
 

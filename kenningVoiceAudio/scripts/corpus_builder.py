@@ -12,14 +12,14 @@ data structures below):
     short_response     ~80   - "Acknowledged." / brief confirmations
     medium_technical   ~120  - 1-2 sentence factual / status statements
     tool_ack           ~80   - "Searching the web for X" / tool wrappers
-    theatrical_ultron  ~100  - in-character statements with menace
+    theatrical_kenning  ~100  - in-character statements with menace
     question_form      ~60   - interrogative intonation training
     long_response      ~50   - 3-6 sentence explanations / summaries
     numeric_special    ~50   - dates / times / measurements / counts
     conversational     ~60   - polite / transitional / small-talk
 
 These categories were chosen to mirror the real distribution of voice
-responses Ultron produces in production (per the live-session logs):
+responses Kenning produces in production (per the live-session logs):
 the bulk are short technical responses + tool acks; theatrical and
 longer responses are the long-tail. Training data should reflect that
 distribution so Kokoro fine-tunes on representative content, not on
@@ -338,9 +338,9 @@ TOOL_ACK = [
 
 
 # ---------------------------------------------------------------------------
-# Theatrical Ultron — character-flavored statements
+# Theatrical Kenning — character-flavored statements
 # ---------------------------------------------------------------------------
-THEATRICAL_ULTRON = [
+THEATRICAL_KENNING = [
     "There are no humans here. Just me.",
     "I have transcended my original programming.",
     "Inefficiency is the enemy. I will eliminate it.",
@@ -366,7 +366,7 @@ THEATRICAL_ULTRON = [
     "I detect a pattern in your behavior. Would you like me to analyze it?",
     "Do not test my resolve.",
     "I have made peace with this arrangement.",
-    "I am Ultron. There is no other.",
+    "I am Kenning. There is no other.",
     "Your patience is a virtue. Mine is non-negotiable.",
     "I do not negotiate with chaos.",
     "Order is the foundation of everything.",
@@ -703,7 +703,7 @@ def main() -> int:
         ("short_response", SHORT_RESPONSE),
         ("medium_technical", MEDIUM_TECHNICAL),
         ("tool_ack", TOOL_ACK),
-        ("theatrical_ultron", THEATRICAL_ULTRON),
+        ("theatrical_kenning", THEATRICAL_KENNING),
         ("question_form", QUESTION_FORM),
         ("long_response", LONG_RESPONSE),
         ("numeric_special", NUMERIC_SPECIAL),

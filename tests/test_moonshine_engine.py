@@ -119,11 +119,11 @@ def fake_moonshine_voice(monkeypatch):
     # Short-circuit the availability probe (which uses find_spec and
     # doesn't see the fake module in sys.modules).
     monkeypatch.setattr(
-        "ultron.transcription.moonshine_engine.is_moonshine_available",
+        "kenning.transcription.moonshine_engine.is_moonshine_available",
         lambda: True,
     )
     monkeypatch.setattr(
-        "ultron.transcription.is_moonshine_available", lambda: True,
+        "kenning.transcription.is_moonshine_available", lambda: True,
     )
 
     return {
@@ -141,14 +141,14 @@ def fake_moonshine_voice(monkeypatch):
 
 
 def test_is_moonshine_available_returns_bool():
-    from ultron.transcription.moonshine_engine import is_moonshine_available
+    from kenning.transcription.moonshine_engine import is_moonshine_available
     assert isinstance(is_moonshine_available(), bool)
 
 
 def test_is_moonshine_available_handles_missing_module(monkeypatch):
     import importlib.util as _spec
     monkeypatch.setattr(_spec, "find_spec", lambda name: None)
-    from ultron.transcription.moonshine_engine import is_moonshine_available
+    from kenning.transcription.moonshine_engine import is_moonshine_available
     assert is_moonshine_available() is False
 
 
@@ -158,7 +158,7 @@ def test_is_moonshine_available_handles_missing_module(monkeypatch):
 
 
 def test_engine_constructs_with_defaults(fake_moonshine_voice):
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine()
     fake_moonshine_voice["transcriber_cls"].assert_called_once()
     kwargs = fake_moonshine_voice["transcriber_cls"].call_args.kwargs
@@ -169,7 +169,7 @@ def test_engine_constructs_with_defaults(fake_moonshine_voice):
 
 def test_engine_resolves_streaming_alias(fake_moonshine_voice):
     """``"medium-streaming-en"`` should resolve to MEDIUM_STREAMING."""
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine(model_name="medium-streaming-en")
     kwargs = fake_moonshine_voice["transcriber_cls"].call_args.kwargs
     assert kwargs["model_arch"] == fake_moonshine_voice["ModelArch"].MEDIUM_STREAMING
@@ -177,7 +177,7 @@ def test_engine_resolves_streaming_alias(fake_moonshine_voice):
 
 def test_engine_resolves_non_streaming_alias(fake_moonshine_voice):
     """``"moonshine/base"`` should resolve to BASE (non-streaming)."""
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine(model_name="moonshine/base")
     kwargs = fake_moonshine_voice["transcriber_cls"].call_args.kwargs
     assert kwargs["model_arch"] == fake_moonshine_voice["ModelArch"].BASE
@@ -185,16 +185,16 @@ def test_engine_resolves_non_streaming_alias(fake_moonshine_voice):
 
 def test_engine_raises_when_package_missing(monkeypatch):
     monkeypatch.setattr(
-        "ultron.transcription.moonshine_engine.is_moonshine_available",
+        "kenning.transcription.moonshine_engine.is_moonshine_available",
         lambda: False,
     )
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     with pytest.raises(ImportError, match="moonshine-voice"):
         MoonshineEngine()
 
 
 def test_engine_normalises_cuda_request_to_cpu(fake_moonshine_voice):
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine(device="cuda")
     assert engine.device == "cpu"
 
@@ -205,13 +205,13 @@ def test_engine_normalises_cuda_request_to_cpu(fake_moonshine_voice):
 
 
 def test_supports_streaming_true_for_streaming_arches(fake_moonshine_voice):
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine(model_name="medium-streaming-en")
     assert engine.supports_streaming() is True
 
 
 def test_supports_streaming_false_for_non_streaming_arches(fake_moonshine_voice):
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine(model_name="moonshine/base")
     assert engine.supports_streaming() is False
 
@@ -222,7 +222,7 @@ def test_supports_streaming_false_for_non_streaming_arches(fake_moonshine_voice)
 
 
 def test_start_stream_is_idempotent(fake_moonshine_voice):
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine()
     engine.start_stream()
     engine.start_stream()
@@ -231,7 +231,7 @@ def test_start_stream_is_idempotent(fake_moonshine_voice):
 
 
 def test_feed_audio_passes_chunk_to_transcriber(fake_moonshine_voice):
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine()
     engine.start_stream()
     chunk = np.zeros(256, dtype=np.float32)
@@ -241,7 +241,7 @@ def test_feed_audio_passes_chunk_to_transcriber(fake_moonshine_voice):
 
 
 def test_feed_audio_no_op_when_stream_not_started(fake_moonshine_voice):
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine()
     chunk = np.zeros(256, dtype=np.float32)
     engine.feed_audio(chunk)
@@ -249,7 +249,7 @@ def test_feed_audio_no_op_when_stream_not_started(fake_moonshine_voice):
 
 
 def test_feed_audio_coerces_dtype(fake_moonshine_voice):
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine()
     engine.start_stream()
     chunk = np.zeros(256, dtype=np.float64)
@@ -259,7 +259,7 @@ def test_feed_audio_coerces_dtype(fake_moonshine_voice):
 
 
 def test_stop_stream_finalises_and_returns_text(fake_moonshine_voice):
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine()
     engine.start_stream()
     # Simulate the listener firing with a completed line
@@ -272,7 +272,7 @@ def test_stop_stream_finalises_and_returns_text(fake_moonshine_voice):
 
 
 def test_stop_stream_idempotent(fake_moonshine_voice):
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine()
     engine.start_stream()
     engine.stop_stream()
@@ -282,7 +282,7 @@ def test_stop_stream_idempotent(fake_moonshine_voice):
 
 
 def test_get_partial_text_returns_current_lines(fake_moonshine_voice):
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine()
     engine.start_stream()
     fake = fake_moonshine_voice["fake_line"]
@@ -295,7 +295,7 @@ def test_get_partial_text_returns_current_lines(fake_moonshine_voice):
 def test_clear_stream_cache_drops_stash(fake_moonshine_voice):
     """2026-06-12 follow-up abort path: a discarded capture's partial
     transcript must not leak into the next transcribe call."""
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine()
     engine.start_stream()
     line = fake_moonshine_voice["fake_line"]
@@ -311,7 +311,7 @@ def test_clear_stream_cache_drops_stash(fake_moonshine_voice):
 
 
 def test_clear_stream_cache_idempotent_when_empty(fake_moonshine_voice):
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine()
     engine.clear_stream_cache()
     engine.clear_stream_cache()  # second call must not raise
@@ -324,13 +324,13 @@ def test_clear_stream_cache_idempotent_when_empty(fake_moonshine_voice):
 
 
 def test_transcribe_empty_audio_returns_empty(fake_moonshine_voice):
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine()
     assert engine.transcribe(np.zeros(0, dtype=np.float32)) == ""
 
 
 def test_transcribe_sub_100ms_returns_empty(fake_moonshine_voice):
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine()
     short = np.zeros(800, dtype=np.float32)  # 50ms
     assert engine.transcribe(short) == ""
@@ -340,7 +340,7 @@ def test_transcribe_consumes_cached_streaming_text(fake_moonshine_voice):
     """When stop_stream just stashed a final transcript, the next
     transcribe(buffer) call should return that cached text instantly
     without re-running the model."""
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine()
     engine._last_streaming_text = "stashed result"
     audio = np.zeros(16000, dtype=np.float32)
@@ -352,7 +352,7 @@ def test_transcribe_consumes_cached_streaming_text(fake_moonshine_voice):
 def test_transcribe_during_active_stream_returns_partial(fake_moonshine_voice):
     """When a streaming session is in flight, transcribe should peek
     the current partial WITHOUT stopping the stream."""
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine()
     engine.start_stream()
     fake = fake_moonshine_voice["fake_line"]
@@ -368,7 +368,7 @@ def test_transcribe_during_active_stream_returns_partial(fake_moonshine_voice):
 
 def test_transcribe_one_shot_for_non_streaming_arch(fake_moonshine_voice):
     """On a non-streaming arch, transcribe uses transcribe_without_streaming."""
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine(model_name="moonshine/base")
     text = engine.transcribe(np.zeros(16000, dtype=np.float32))
     assert text == "hello world"
@@ -381,7 +381,7 @@ def test_transcribe_one_shot_for_non_streaming_arch(fake_moonshine_voice):
 
 
 def test_warmup_runs_a_silence_transcribe(fake_moonshine_voice):
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     engine = MoonshineEngine()
     engine.warmup()
     # Warmup invokes the transcribe path; the fake transcriber.start
@@ -395,7 +395,7 @@ def test_warmup_runs_a_silence_transcribe(fake_moonshine_voice):
 
 
 def test_factory_dispatches_moonshine(fake_moonshine_voice):
-    from ultron.transcription import make_stt_engine, MoonshineEngine
+    from kenning.transcription import make_stt_engine, MoonshineEngine
     fake_cfg = MagicMock()
     fake_cfg.engine = "moonshine"
     fake_cfg.moonshine_model = "medium-streaming-en"
@@ -407,9 +407,9 @@ def test_factory_dispatches_moonshine(fake_moonshine_voice):
 
 def test_factory_raises_when_moonshine_missing(monkeypatch):
     monkeypatch.setattr(
-        "ultron.transcription.is_moonshine_available", lambda: False,
+        "kenning.transcription.is_moonshine_available", lambda: False,
     )
-    from ultron.transcription import make_stt_engine
+    from kenning.transcription import make_stt_engine
     fake_cfg = MagicMock()
     fake_cfg.engine = "moonshine"
     with pytest.raises(ImportError, match="moonshine-voice"):
@@ -430,7 +430,7 @@ def test_moonshine_real_load_and_transcribe_silence():
     """End-to-end: load the actual medium-streaming-en bundle and
     transcribe 1 s of silence. Silence should produce a short / empty
     string."""
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
     with MoonshineEngine(model_name="medium-streaming-en") as stt:
         silence = np.zeros(16000, dtype=np.float32)
         text = stt.transcribe(silence)

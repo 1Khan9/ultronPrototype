@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.web_search.gating import GateDecision, classify_by_preflight
+from kenning.web_search.gating import GateDecision, classify_by_preflight
 
 
 @pytest.fixture
@@ -55,7 +55,7 @@ def test_preflight_default_uses_single_call_temp_zero(cfg_mock) -> None:
         '{"needs_search": true, "knowledge_confidence": "low", '
         '"search_queries": ["q1"], "reason": "current data needed"}'
     )
-    with patch("ultron.config.get_config", return_value=cfg_mock):
+    with patch("kenning.config.get_config", return_value=cfg_mock):
         verdict = classify_by_preflight(llm, "what's the latest x?")
     # Exactly one LLM call
     assert llm._llm.create_chat_completion.call_count == 1
@@ -87,7 +87,7 @@ def test_preflight_strips_think_block_from_raw_output(cfg_mock) -> None:
         '"search_queries": [], "reason": "command, not search"}'
     )
     llm = _llm_returning(raw_with_think)
-    with patch("ultron.config.get_config", return_value=cfg_mock):
+    with patch("kenning.config.get_config", return_value=cfg_mock):
         verdict = classify_by_preflight(llm, "show me a chicken on my main monitor")
     assert verdict.decision == GateDecision.NO_SEARCH
     assert verdict.source == "preflight"
@@ -99,7 +99,7 @@ def test_preflight_unterminated_think_block_does_not_crash(cfg_mock) -> None:
     NO_SEARCH"."""
     truncated = "<think>\nOkay, let me break down the user's query."
     llm = _llm_returning(truncated)
-    with patch("ultron.config.get_config", return_value=cfg_mock):
+    with patch("kenning.config.get_config", return_value=cfg_mock):
         verdict = classify_by_preflight(llm, "show me a chicken on my main monitor")
     # Empty raw -> default NO_SEARCH (source="default" or fallback).
     assert verdict.decision == GateDecision.NO_SEARCH
@@ -110,7 +110,7 @@ def test_preflight_default_no_search_back_compat(cfg_mock) -> None:
         '{"needs_search": false, "knowledge_confidence": "high", '
         '"search_queries": [], "reason": "in weights"}'
     )
-    with patch("ultron.config.get_config", return_value=cfg_mock):
+    with patch("kenning.config.get_config", return_value=cfg_mock):
         verdict = classify_by_preflight(llm, "boiling point of water?")
     assert verdict.decision == GateDecision.NO_SEARCH
     assert llm._llm.create_chat_completion.call_count == 1
@@ -128,7 +128,7 @@ def test_preflight_self_consistency_calls_n_times(cfg_mock) -> None:
         '{"needs_search": true, "knowledge_confidence": "low", '
         '"search_queries": ["q1"], "reason": "r"}'
     )
-    with patch("ultron.config.get_config", return_value=cfg_mock):
+    with patch("kenning.config.get_config", return_value=cfg_mock):
         verdict = classify_by_preflight(llm, "u")
     assert llm._llm.create_chat_completion.call_count == 3
     assert verdict.decision == GateDecision.SEARCH
@@ -144,7 +144,7 @@ def test_preflight_self_consistency_uses_configured_temperature(cfg_mock) -> Non
         '{"needs_search": false, "knowledge_confidence": "high", '
         '"search_queries": [], "reason": "r"}'
     )
-    with patch("ultron.config.get_config", return_value=cfg_mock):
+    with patch("kenning.config.get_config", return_value=cfg_mock):
         classify_by_preflight(llm, "u")
     # All three calls should use temperature 0.85
     for call in llm._llm.create_chat_completion.call_args_list:
@@ -164,7 +164,7 @@ def test_preflight_self_consistency_majority_wins(cfg_mock) -> None:
         '"search_queries": [], "reason": "r"}'
     )
     llm = _llm_returning(search_resp, search_resp, no_search_resp)
-    with patch("ultron.config.get_config", return_value=cfg_mock):
+    with patch("kenning.config.get_config", return_value=cfg_mock):
         verdict = classify_by_preflight(llm, "u")
     assert verdict.decision == GateDecision.SEARCH
 
@@ -178,7 +178,7 @@ def test_preflight_self_consistency_per_site_disabled(cfg_mock) -> None:
         '{"needs_search": false, "knowledge_confidence": "high", '
         '"search_queries": [], "reason": "r"}'
     )
-    with patch("ultron.config.get_config", return_value=cfg_mock):
+    with patch("kenning.config.get_config", return_value=cfg_mock):
         classify_by_preflight(llm, "u")
     # Single call (back-compat) and temp 0.0
     assert llm._llm.create_chat_completion.call_count == 1
@@ -190,7 +190,7 @@ def test_preflight_self_consistency_unparseable_falls_back(cfg_mock) -> None:
     """All samples unparseable ⇒ NO_SEARCH default (the safer side)."""
     cfg_mock.llm.self_consistency.enabled = True
     llm = _llm_returning("garbage")
-    with patch("ultron.config.get_config", return_value=cfg_mock):
+    with patch("kenning.config.get_config", return_value=cfg_mock):
         verdict = classify_by_preflight(llm, "u")
     assert verdict.decision == GateDecision.NO_SEARCH
 
@@ -199,6 +199,6 @@ def test_preflight_llm_exception_returns_no_search(cfg_mock) -> None:
     """LLM crash ⇒ default NO_SEARCH; never raises out of the gate."""
     llm = MagicMock()
     llm._llm.create_chat_completion.side_effect = RuntimeError("boom")
-    with patch("ultron.config.get_config", return_value=cfg_mock):
+    with patch("kenning.config.get_config", return_value=cfg_mock):
         verdict = classify_by_preflight(llm, "u")
     assert verdict.decision == GateDecision.NO_SEARCH

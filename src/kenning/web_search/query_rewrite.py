@@ -2,7 +2,7 @@
 
 Felo's API returns a ``query_analysis`` array -- the reformulated sub-queries
 it derived server-side before searching -- which is evidence that decomposing
-a complex question into several targeted queries improves recall. Ultron
+a complex question into several targeted queries improves recall. Kenning
 previously forwarded the user's utterance (or the preflight's queries)
 straight to the provider chain. This module adds an in-process reformulation
 step over the FREE local-first ladder:
@@ -19,7 +19,7 @@ step over the FREE local-first ladder:
 
 Both paths FAIL OPEN: any error returns no variants so the original query
 still searches and the path never breaks. The reformulated variants are
-merged into :meth:`ultron.web_search.search.WebSearchExecutor.run`'s existing
+merged into :meth:`kenning.web_search.search.WebSearchExecutor.run`'s existing
 query list, deduped by its canonical form, and fanned out through the same
 provider chain + URL-dedup + cache. A hard ceiling
 (:data:`MAX_TOTAL_QUERIES`) bounds the total fan-out regardless of how many
@@ -40,7 +40,7 @@ import time
 from dataclasses import dataclass
 from typing import List, Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("web_search.query_rewrite")
 
@@ -260,7 +260,7 @@ def expand_query_llm(
         )
         raw = (out["choices"][0]["message"]["content"] or "").strip()
         try:
-            from ultron.llm.inference import strip_thinking_text
+            from kenning.llm.inference import strip_thinking_text
 
             raw = strip_thinking_text(raw).strip()
         except Exception:  # noqa: BLE001
@@ -352,7 +352,7 @@ def maybe_reformulate_queries(
     fallback = base or ([user_query.strip()] if (user_query or "").strip() else [])
 
     try:
-        from ultron.config import get_config
+        from kenning.config import get_config
 
         cfg = get_config().web_search.query_reformulation
     except Exception:  # noqa: BLE001
@@ -394,7 +394,7 @@ def _log_reformulation(
     """Append one JSONL row to ``logs/search_reformulations.jsonl`` for
     offline tuning. Best-effort: never raises into the search path."""
     try:
-        from ultron.config import LOGS_DIR
+        from kenning.config import LOGS_DIR
 
         path = LOGS_DIR / "search_reformulations.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,6 @@
 """Tiered-autonomy controller + per-surface trust-graduation ladder.
 
-Catalog 13 (clawhub-capability-evolver) clean-room synthesis. ultron's
+Catalog 13 (clawhub-capability-evolver) clean-room synthesis. kenning's
 self-improvement is **genuinely autonomous within a bounded envelope** --
 it self-improves and earns more autonomy over time; the user sets the
 trust envelope once and is kept informed via a periodic digest, never
@@ -31,7 +31,7 @@ Two feedback loops move a surface between modes:
 
 This module is the stateful policy controller; the actual approval call
 (for a GATED surface) and the audit/checkpoint are done by the loop. It
-depends only on :mod:`ultron.evolution.guardrails`.
+depends only on :mod:`kenning.evolution.guardrails`.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 from typing import Mapping, Optional
 
-from ultron.evolution.guardrails import (
+from kenning.evolution.guardrails import (
     ROLLBACK_DEMOTE_THRESHOLD,
     ROLLBACK_MIN_SAMPLES,
     RollbackAudit,
@@ -73,7 +73,7 @@ class AutonomyMode(str, Enum):
     PAUSED = "paused"  # autonomy suspended after a demotion
 
 
-#: Default per-surface tier classification across ultron's subsystems.
+#: Default per-surface tier classification across kenning's subsystems.
 DEFAULT_SURFACE_TIERS: dict[str, AutonomyTier] = {
     # Tier 0 -- parameter self-tuning
     "personality": AutonomyTier.PARAM,

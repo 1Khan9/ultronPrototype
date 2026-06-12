@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import re
 
-from ultron.safety.rules.base import CommandPatternRule, Rule
-from ultron.safety.validator import RuleResult, Verdict
+from kenning.safety.rules.base import CommandPatternRule, Rule
+from kenning.safety.validator import RuleResult, Verdict
 
 
 def build_category_j_rules() -> list[Rule]:

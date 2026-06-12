@@ -1,10 +1,10 @@
-"""Tests for ultron.evolution.signals -- local signal extraction +
+"""Tests for kenning.evolution.signals -- local signal extraction +
 history-aware post-processing. All hermetic (pure functions)."""
 
 from __future__ import annotations
 
-from ultron.evolution import signals as S
-from ultron.evolution.models import BlastRadius, EvolutionEvent, Outcome, OutcomeStatus
+from kenning.evolution import signals as S
+from kenning.evolution.models import BlastRadius, EvolutionEvent, Outcome, OutcomeStatus
 
 
 def _event(*, intent="", sigs=(), status="success", files=1, lines=1, gene=""):

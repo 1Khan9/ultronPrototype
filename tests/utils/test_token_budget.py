@@ -1,10 +1,10 @@
-"""Tests for :mod:`ultron.utils.token_budget`."""
+"""Tests for :mod:`kenning.utils.token_budget`."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.utils.token_budget import (
+from kenning.utils.token_budget import (
     BudgetTooSmallError,
     PackResult,
     char_count_tokens,

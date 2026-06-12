@@ -1,4 +1,4 @@
-"""Comprehensive end-to-end test harness for project Ultron.
+"""Comprehensive end-to-end test harness for project Kenning.
 
 Exercises multiple subsystems in one Python process to amortise import
 cost. Captures concrete metrics for the comprehensive test report.
@@ -45,7 +45,7 @@ _HERE = Path(__file__).resolve().parent
 _WORKTREE_ROOT = _HERE.parent
 _MAIN_CHECKOUT = Path(r"C:\STC\ultronPrototype")
 sys.path.insert(0, str(_MAIN_CHECKOUT))            # config/ shim
-sys.path.insert(0, str(_WORKTREE_ROOT / "src"))    # newest ultron code
+sys.path.insert(0, str(_WORKTREE_ROOT / "src"))    # newest kenning code
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("comprehensive_harness")
@@ -141,7 +141,7 @@ ROUTING_CORPUS: list[tuple[str, str]] = [
 
     # SYSTEM_STATUS (Phase 13)
     ("What alerts did you flag?", "system_status"),
-    ("What is Ultron working on?", "system_status"),
+    ("What is Kenning working on?", "system_status"),
     ("Status report.", "system_status"),
     ("Any pending alerts?", "system_status"),
     ("List active projects.", "system_status"),
@@ -174,7 +174,7 @@ ROUTING_ADVERSARIAL: list[tuple[str, str]] = [
 
 
 def run_routing_accuracy() -> dict[str, Any]:
-    from ultron.openclaw_routing.classifier import classify_routing
+    from kenning.openclaw_routing.classifier import classify_routing
 
     print("\n[P4] Routing classifier accuracy")
     print("-" * 50)
@@ -260,7 +260,7 @@ GATING_RULE_CORPUS: list[tuple[str, str]] = [
 
 
 def run_gating_rules_accuracy() -> dict[str, Any]:
-    from ultron.web_search.gating import classify_by_rules
+    from kenning.web_search.gating import classify_by_rules
 
     print("\n[P5a] Web-gate rule classifier accuracy")
     print("-" * 50)
@@ -292,7 +292,7 @@ def run_gating_rules_accuracy() -> dict[str, Any]:
 
 
 def run_circuit_breaker_state_machine() -> dict[str, Any]:
-    from ultron.resilience.circuit_breaker import (
+    from kenning.resilience.circuit_breaker import (
         CircuitBreaker, CircuitState, CircuitOpenError,
     )
 
@@ -377,8 +377,8 @@ def run_circuit_breaker_state_machine() -> dict[str, Any]:
 
 def run_memory_stress(num_turns: int = 200) -> dict[str, Any]:
     """Concurrent-write + retrieve test against a temp Qdrant store."""
-    from ultron.memory.embedder import HybridEmbedder
-    from ultron.memory.qdrant_store import ConversationMemory
+    from kenning.memory.embedder import HybridEmbedder
+    from kenning.memory.qdrant_store import ConversationMemory
     import tempfile
 
     print("\n[P6] Memory + Qdrant stress")
@@ -497,8 +497,8 @@ def run_classifier_gating_regression() -> dict[str, Any]:
     ``openclaw.enabled``.  With OpenClaw offline (today's default), the
     new branches MUST NOT fire.
     """
-    from ultron.openclaw_routing.classifier import classify_routing
-    from ultron.config import get_config
+    from kenning.openclaw_routing.classifier import classify_routing
+    from kenning.config import get_config
 
     print("\n[P8] Classifier gating regression")
     print("-" * 50)

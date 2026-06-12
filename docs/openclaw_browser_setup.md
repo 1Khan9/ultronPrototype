@@ -2,21 +2,21 @@
 
 Phase 6 of the OpenClaw integration. The browser tool drives a real
 Chrome instance via OpenClaw's bundled Playwright plugin, letting
-Ultron open pages, fill forms, click elements, and capture
+Kenning open pages, fill forms, click elements, and capture
 screenshots in response to voice or Telegram queries.
 
-The Ultron-side wiring (`BrowserTool` wrapper, dispatcher rewrite,
+The Kenning-side wiring (`BrowserTool` wrapper, dispatcher rewrite,
 config) is fully in place after Phase 6. Live browser activity
 requires OpenClaw's browser tool to be reachable from the Gateway —
 which in turn requires Playwright + a Chromium install.
 
 ## What's done autonomously (Phase 6)
 
-- `src/ultron/openclaw_bridge/browser.py` — `BrowserTool` wrapper
+- `src/kenning/openclaw_bridge/browser.py` — `BrowserTool` wrapper
   with navigate / snapshot / click / type / screenshot /
   get_page_text primitives. Each method maps to a structured agent
   prompt and unpacks the result into a typed dataclass.
-- `src/ultron/openclaw_routing/dispatcher.py` —
+- `src/kenning/openclaw_routing/dispatcher.py` —
   `OpenClawDispatcher.handle_browser` rewritten to use the wrapper
   when a bridge is wired and `browser.enabled: true`. Falls back
   to the existing stub voice message otherwise.
@@ -63,7 +63,7 @@ npx playwright install chromium
 After the Gateway is restarted with the browser plugin reachable:
 
 ```powershell
-& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" agent --agent ultron-main `
+& "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" agent --agent kenning-main `
     -m "Take a screenshot of news.ycombinator.com using the browser tool."
 ```
 
@@ -79,7 +79,7 @@ The locked-in constraint from Phase 0 is `tools.profile: messaging`
 on every local-Qwen agent in `~/.openclaw/openclaw.json`. The
 messaging profile does NOT include the browser tool by default.
 
-To enable browser dispatch on `ultron-main` while keeping the
+To enable browser dispatch on `kenning-main` while keeping the
 prompt-budget / 30 s OpenAI SDK timeout safety, layer browser into
 the deny list's `alsoAllow` (per OpenClaw 2026.5.7 schema):
 
@@ -88,7 +88,7 @@ the deny list's `alsoAllow` (per OpenClaw 2026.5.7 schema):
   agents: {
     list: [
       {
-        id: "ultron-main",
+        id: "kenning-main",
         // ... existing fields stay ...
         tools: {
           profile: "messaging",
@@ -109,7 +109,7 @@ Re-run Phase 0 verification after the change to confirm:
 
 1. Voice TTFT (median ≤ 100 ms baseline) unchanged on routine
    queries that don't hit the browser.
-2. The `ultron-test` agent's deny list is unchanged — the worker
+2. The `kenning-test` agent's deny list is unchanged — the worker
    agent stays locked down.
 
 ## Voice response strategy

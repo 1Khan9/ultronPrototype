@@ -1,4 +1,4 @@
-"""Tests for ultron.desktop.input_control."""
+"""Tests for kenning.desktop.input_control."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.desktop.input_control import (
+from kenning.desktop.input_control import (
     InputController,
     InputControlResult,
     _foreground_is_security_window,
@@ -63,7 +63,7 @@ def _no_block_controller():
 
 def test_click_rejects_unknown_button(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.input_control.pyautogui",
+        "kenning.desktop.input_control.pyautogui",
         MagicMock(),
     )
     c = _no_block_controller()
@@ -74,7 +74,7 @@ def test_click_rejects_unknown_button(monkeypatch):
 
 def test_click_rejects_out_of_range_clicks(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.input_control.pyautogui",
+        "kenning.desktop.input_control.pyautogui",
         MagicMock(),
     )
     c = _no_block_controller()
@@ -84,7 +84,7 @@ def test_click_rejects_out_of_range_clicks(monkeypatch):
 
 def test_type_text_rejects_non_string(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.input_control.pyautogui",
+        "kenning.desktop.input_control.pyautogui",
         MagicMock(),
     )
     c = _no_block_controller()
@@ -94,7 +94,7 @@ def test_type_text_rejects_non_string(monkeypatch):
 
 def test_type_text_empty_string_is_noop(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     c = _no_block_controller()
     r = c.type_text("")
     assert r.success is True
@@ -103,7 +103,7 @@ def test_type_text_empty_string_is_noop(monkeypatch):
 
 def test_press_key_rejects_empty(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.input_control.pyautogui",
+        "kenning.desktop.input_control.pyautogui",
         MagicMock(),
     )
     c = _no_block_controller()
@@ -115,7 +115,7 @@ def test_press_key_rejects_empty(monkeypatch):
 
 def test_press_hotkey_rejects_empty(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.input_control.pyautogui",
+        "kenning.desktop.input_control.pyautogui",
         MagicMock(),
     )
     c = _no_block_controller()
@@ -130,7 +130,7 @@ def test_press_hotkey_rejects_empty(monkeypatch):
 
 def test_rate_limit_blocks_after_threshold(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     # Disable validator + security-window check so rate-limit is the only gate.
     c = InputController(
         max_actions_per_second=3.0,
@@ -150,7 +150,7 @@ def test_rate_limit_blocks_after_threshold(monkeypatch):
 
 def test_rate_limit_resets_after_window(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     c = InputController(
         max_actions_per_second=2.0,
         enforce_security_window_block=False,
@@ -172,9 +172,9 @@ def test_rate_limit_resets_after_window(monkeypatch):
 
 def test_security_foreground_blocks_input(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     monkeypatch.setattr(
-        "ultron.desktop.input_control._foreground_is_security_window",
+        "kenning.desktop.input_control._foreground_is_security_window",
         lambda: True,
     )
     c = InputController(max_actions_per_second=999.0)
@@ -186,13 +186,13 @@ def test_security_foreground_blocks_input(monkeypatch):
 
 def test_security_check_false_when_no_foreground(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.windows.get_foreground_window", lambda: None,
+        "kenning.desktop.windows.get_foreground_window", lambda: None,
     )
     assert _foreground_is_security_window() is False
 
 
 def test_security_check_recognises_uac_class(monkeypatch):
-    from ultron.desktop.windows import WindowInfo
+    from kenning.desktop.windows import WindowInfo
     fake_fg = WindowInfo(
         hwnd=1, title="User Account Control", class_name="ConsentUI",
         process_name="consent.exe", pid=0,
@@ -200,14 +200,14 @@ def test_security_check_recognises_uac_class(monkeypatch):
         is_minimized=False, is_foreground=True,
     )
     monkeypatch.setattr(
-        "ultron.desktop.windows.get_foreground_window", lambda: fake_fg,
+        "kenning.desktop.windows.get_foreground_window", lambda: fake_fg,
     )
     assert _foreground_is_security_window() is True
 
 
 def test_security_check_corewindow_only_when_title_matches(monkeypatch):
     """CoreWindow class is too broad; require the title to match a security keyword."""
-    from ultron.desktop.windows import WindowInfo
+    from kenning.desktop.windows import WindowInfo
 
     fake_fg = WindowInfo(
         hwnd=1, title="Calculator", class_name="Windows.UI.Core.CoreWindow",
@@ -216,7 +216,7 @@ def test_security_check_corewindow_only_when_title_matches(monkeypatch):
         is_minimized=False, is_foreground=True,
     )
     monkeypatch.setattr(
-        "ultron.desktop.windows.get_foreground_window", lambda: fake_fg,
+        "kenning.desktop.windows.get_foreground_window", lambda: fake_fg,
     )
     assert _foreground_is_security_window() is False
 
@@ -228,7 +228,7 @@ def test_security_check_corewindow_only_when_title_matches(monkeypatch):
         is_minimized=False, is_foreground=True,
     )
     monkeypatch.setattr(
-        "ultron.desktop.windows.get_foreground_window", lambda: security_fg,
+        "kenning.desktop.windows.get_foreground_window", lambda: security_fg,
     )
     assert _foreground_is_security_window() is True
 
@@ -239,16 +239,16 @@ def test_security_check_corewindow_only_when_title_matches(monkeypatch):
 
 
 def test_validator_block_short_circuits_click(monkeypatch):
-    from ultron.safety.validator import ValidatorVerdict, Verdict
+    from kenning.safety.validator import ValidatorVerdict, Verdict
 
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     monkeypatch.setattr(
-        "ultron.desktop.input_control._foreground_is_security_window",
+        "kenning.desktop.input_control._foreground_is_security_window",
         lambda: False,
     )
     monkeypatch.setattr(
-        "ultron.desktop.input_control._validate_input_action",
+        "kenning.desktop.input_control._validate_input_action",
         lambda **kw: ValidatorVerdict(
             verdict=Verdict.BLOCK_HARD, reason="policy block",
             triggered_rule_id="test", user_message="refused",
@@ -262,16 +262,16 @@ def test_validator_block_short_circuits_click(monkeypatch):
 
 
 def test_validator_allow_lets_click_through(monkeypatch):
-    from ultron.safety.validator import ValidatorVerdict, Verdict
+    from kenning.safety.validator import ValidatorVerdict, Verdict
 
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     monkeypatch.setattr(
-        "ultron.desktop.input_control._foreground_is_security_window",
+        "kenning.desktop.input_control._foreground_is_security_window",
         lambda: False,
     )
     monkeypatch.setattr(
-        "ultron.desktop.input_control._validate_input_action",
+        "kenning.desktop.input_control._validate_input_action",
         lambda **kw: ValidatorVerdict(verdict=Verdict.ALLOW, reason="ok"),
     )
     c = InputController(max_actions_per_second=999.0)
@@ -281,16 +281,16 @@ def test_validator_allow_lets_click_through(monkeypatch):
 
 
 def test_pyautogui_exception_returns_failure(monkeypatch):
-    from ultron.safety.validator import ValidatorVerdict, Verdict
+    from kenning.safety.validator import ValidatorVerdict, Verdict
     pa = MagicMock()
     pa.click.side_effect = RuntimeError("simulated input failure")
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     monkeypatch.setattr(
-        "ultron.desktop.input_control._foreground_is_security_window",
+        "kenning.desktop.input_control._foreground_is_security_window",
         lambda: False,
     )
     monkeypatch.setattr(
-        "ultron.desktop.input_control._validate_input_action",
+        "kenning.desktop.input_control._validate_input_action",
         lambda **kw: ValidatorVerdict(verdict=Verdict.ALLOW, reason="ok"),
     )
     c = InputController(max_actions_per_second=999.0)
@@ -305,20 +305,20 @@ def test_pyautogui_exception_returns_failure(monkeypatch):
 
 
 def _set_allow_all(monkeypatch):
-    from ultron.safety.validator import ValidatorVerdict, Verdict
+    from kenning.safety.validator import ValidatorVerdict, Verdict
     monkeypatch.setattr(
-        "ultron.desktop.input_control._foreground_is_security_window",
+        "kenning.desktop.input_control._foreground_is_security_window",
         lambda: False,
     )
     monkeypatch.setattr(
-        "ultron.desktop.input_control._validate_input_action",
+        "kenning.desktop.input_control._validate_input_action",
         lambda **kw: ValidatorVerdict(verdict=Verdict.ALLOW, reason="ok"),
     )
 
 
 def test_move_mouse_invokes_pyautogui(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     c = InputController(max_actions_per_second=999.0)
     r = c.move_mouse(500, 600, duration_s=0.05)
@@ -328,7 +328,7 @@ def test_move_mouse_invokes_pyautogui(monkeypatch):
 
 def test_press_hotkey_invokes_pyautogui(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     c = InputController(max_actions_per_second=999.0)
     r = c.press_hotkey("ctrl", "s")
@@ -338,7 +338,7 @@ def test_press_hotkey_invokes_pyautogui(monkeypatch):
 
 def test_scroll_invokes_pyautogui(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     c = InputController(max_actions_per_second=999.0)
     r = c.scroll(120, x=500, y=400)
@@ -365,7 +365,7 @@ def _build_test_png(*, width: int = 100, height: int = 100) -> bytes:
 
 def test_click_preview_default_disabled_skips_vlm(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     # No capture / vlm callables set -> preview path inert.
     c = InputController(max_actions_per_second=999.0)
@@ -376,7 +376,7 @@ def test_click_preview_default_disabled_skips_vlm(monkeypatch):
 
 def test_click_preview_blocks_when_vlm_disagrees(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     png = _build_test_png()
     captures: list[None] = []
@@ -403,7 +403,7 @@ def test_click_preview_blocks_when_vlm_disagrees(monkeypatch):
 
 def test_click_preview_allows_when_vlm_confirms(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     png = _build_test_png()
     c = InputController(
@@ -419,7 +419,7 @@ def test_click_preview_allows_when_vlm_confirms(monkeypatch):
 
 def test_click_preview_auto_pass_skips_second_vlm_round(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     png = _build_test_png()
     vlm_calls = []
@@ -442,7 +442,7 @@ def test_click_preview_auto_pass_skips_second_vlm_round(monkeypatch):
 
 def test_click_preview_degraded_default_allows(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     # vlm_describe=None forces DEGRADED -> default policy is allow.
     png = _build_test_png()
@@ -459,7 +459,7 @@ def test_click_preview_degraded_default_allows(monkeypatch):
 
 def test_click_preview_degraded_blocks_when_strict(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     png = _build_test_png()
     c = InputController(
@@ -477,7 +477,7 @@ def test_click_preview_degraded_blocks_when_strict(monkeypatch):
 
 def test_click_preview_skips_when_no_coordinates(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     captures = []
     c = InputController(
@@ -499,7 +499,7 @@ def test_click_preview_skips_when_no_coordinates(monkeypatch):
 
 def test_drag_to_rejects_unknown_button(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.input_control.pyautogui",
+        "kenning.desktop.input_control.pyautogui",
         MagicMock(),
     )
     c = _no_block_controller()
@@ -510,7 +510,7 @@ def test_drag_to_rejects_unknown_button(monkeypatch):
 
 def test_drag_to_rejects_negative_duration(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.input_control.pyautogui",
+        "kenning.desktop.input_control.pyautogui",
         MagicMock(),
     )
     c = _no_block_controller()
@@ -521,7 +521,7 @@ def test_drag_to_rejects_negative_duration(monkeypatch):
 
 def test_drag_to_returns_success_when_pyautogui_succeeds(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     c = _no_block_controller()
     r = c.drag_to(100, 200, 300, 400, duration_s=0.05)
     assert r.success is True
@@ -537,7 +537,7 @@ def test_drag_to_returns_success_when_pyautogui_succeeds(monkeypatch):
 
 def test_drag_to_supports_right_button(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     c = _no_block_controller()
     r = c.drag_to(10, 20, 30, 40, button="right")
     assert r.success is True
@@ -547,7 +547,7 @@ def test_drag_to_supports_right_button(monkeypatch):
 
 def test_drag_to_rate_limit_enforced(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     c = InputController(
         max_actions_per_second=1.0,
         enforce_security_window_block=False,
@@ -562,11 +562,11 @@ def test_drag_to_rate_limit_enforced(monkeypatch):
 
 def test_drag_to_blocked_by_security_window(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.input_control.pyautogui",
+        "kenning.desktop.input_control.pyautogui",
         MagicMock(),
     )
     monkeypatch.setattr(
-        "ultron.desktop.input_control._foreground_is_security_window",
+        "kenning.desktop.input_control._foreground_is_security_window",
         lambda: True,
     )
     c = InputController(max_actions_per_second=999.0)
@@ -577,14 +577,14 @@ def test_drag_to_blocked_by_security_window(monkeypatch):
 
 def test_drag_to_blocked_by_safety_validator(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
-    from ultron.safety.validator import ValidatorVerdict, Verdict
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
+    from kenning.safety.validator import ValidatorVerdict, Verdict
     blocked = ValidatorVerdict(
         verdict=Verdict.BLOCK_HARD, reason="cap-3 hardstop",
         triggered_rule_id="test", user_message="refused",
     )
     monkeypatch.setattr(
-        "ultron.safety.validator.get_validator",
+        "kenning.safety.validator.get_validator",
         lambda: type("V", (), {"check": lambda self, ctx: blocked})(),
     )
     c = _no_block_controller()
@@ -597,7 +597,7 @@ def test_drag_to_blocked_by_safety_validator(monkeypatch):
 def test_drag_to_returns_failure_when_pyautogui_raises(monkeypatch):
     pa = MagicMock()
     pa.dragTo.side_effect = RuntimeError("pyautogui blew up")
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     c = _no_block_controller()
     r = c.drag_to(0, 0, 10, 10)
     assert r.success is False
@@ -606,7 +606,7 @@ def test_drag_to_returns_failure_when_pyautogui_raises(monkeypatch):
 
 def test_drag_to_click_preview_block_short_circuits(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     png = _build_test_png()
 
@@ -631,7 +631,7 @@ def test_drag_to_click_preview_block_short_circuits(monkeypatch):
 def test_drag_to_works_at_zero_duration(monkeypatch):
     """duration_s=0 is valid (snap drag, no animation)."""
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     c = _no_block_controller()
     r = c.drag_to(0, 0, 50, 50, duration_s=0.0)
     assert r.success is True
@@ -648,7 +648,7 @@ def test_scroll_default_direction_is_vertical_back_compat(monkeypatch):
     """Existing scroll callers without ``direction`` should keep using
     pyautogui.scroll (vertical axis). Back-compat invariant."""
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     c = InputController(max_actions_per_second=999.0)
     r = c.scroll(120, x=200, y=300)
@@ -660,7 +660,7 @@ def test_scroll_default_direction_is_vertical_back_compat(monkeypatch):
 def test_scroll_horizontal_dispatches_to_hscroll(monkeypatch):
     """direction='horizontal' must route to pyautogui.hscroll, not scroll."""
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     c = InputController(max_actions_per_second=999.0)
     r = c.scroll(80, direction="horizontal", x=400, y=500)
@@ -671,7 +671,7 @@ def test_scroll_horizontal_dispatches_to_hscroll(monkeypatch):
 
 def test_scroll_vertical_explicit_still_uses_scroll(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     c = InputController(max_actions_per_second=999.0)
     r = c.scroll(-60, direction="vertical")
@@ -680,10 +680,10 @@ def test_scroll_vertical_explicit_still_uses_scroll(monkeypatch):
 
 
 def test_scroll_rejects_unknown_direction(monkeypatch):
-    """Unlike the upstream plugin (silent fallthrough), ultron rejects
+    """Unlike the upstream plugin (silent fallthrough), kenning rejects
     invalid ``direction`` with a structured error."""
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     c = _no_block_controller()
     r = c.scroll(50, direction="diagonal")
     assert r.success is False
@@ -696,7 +696,7 @@ def test_scroll_horizontal_with_no_coords_passes_none(monkeypatch):
     """When x/y are not supplied, both are passed as None to pyautogui
     so the scroll fires at the current cursor location."""
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     c = InputController(max_actions_per_second=999.0)
     r = c.scroll(40, direction="horizontal")
@@ -708,19 +708,19 @@ def test_scroll_validator_arguments_carry_direction(monkeypatch):
     """The validator must see the direction so audit log entries
     distinguish vertical vs horizontal scroll attempts."""
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     seen: dict = {}
 
     def _spy(**kw):
         seen.update(kw)
-        from ultron.safety.validator import ValidatorVerdict, Verdict
+        from kenning.safety.validator import ValidatorVerdict, Verdict
         return ValidatorVerdict(verdict=Verdict.ALLOW, reason="ok")
 
     monkeypatch.setattr(
-        "ultron.desktop.input_control._validate_input_action", _spy,
+        "kenning.desktop.input_control._validate_input_action", _spy,
     )
     monkeypatch.setattr(
-        "ultron.desktop.input_control._foreground_is_security_window",
+        "kenning.desktop.input_control._foreground_is_security_window",
         lambda: False,
     )
     c = InputController(max_actions_per_second=999.0)
@@ -741,7 +741,7 @@ def test_type_text_wpm_overrides_interval_s(monkeypatch):
     interval = 1.0 / chars_per_second.
     """
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     c = InputController(max_actions_per_second=999.0)
     # 60 WPM = 300 chars/min = 5 chars/s -> interval = 0.2 s
@@ -753,7 +753,7 @@ def test_type_text_wpm_overrides_interval_s(monkeypatch):
 
 def test_type_text_wpm_120_yields_short_interval(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     c = InputController(max_actions_per_second=999.0)
     # 120 WPM = 600 chars/min = 10 chars/s -> interval = 0.1 s
@@ -765,9 +765,9 @@ def test_type_text_wpm_120_yields_short_interval(monkeypatch):
 
 def test_type_text_wpm_zero_rejected(monkeypatch):
     """The upstream plugin's bare ``1.0 / ((wpm * 5) / 60)`` would raise
-    ZeroDivisionError on wpm=0. Ultron returns a structured error."""
+    ZeroDivisionError on wpm=0. Kenning returns a structured error."""
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     c = _no_block_controller()
     r = c.type_text("hi", wpm=0)
     assert r.success is False
@@ -777,7 +777,7 @@ def test_type_text_wpm_zero_rejected(monkeypatch):
 
 def test_type_text_wpm_negative_rejected(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     c = _no_block_controller()
     r = c.type_text("hi", wpm=-30)
     assert r.success is False
@@ -788,7 +788,7 @@ def test_type_text_wpm_negative_rejected(monkeypatch):
 def test_type_text_wpm_none_falls_back_to_interval_s(monkeypatch):
     """Back-compat: wpm=None preserves the legacy interval_s contract."""
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     c = InputController(max_actions_per_second=999.0)
     r = c.type_text("hello", interval_s=0.025)
@@ -799,19 +799,19 @@ def test_type_text_wpm_none_falls_back_to_interval_s(monkeypatch):
 
 def test_type_text_validator_arguments_carry_wpm(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     seen: dict = {}
 
     def _spy(**kw):
         seen.update(kw)
-        from ultron.safety.validator import ValidatorVerdict, Verdict
+        from kenning.safety.validator import ValidatorVerdict, Verdict
         return ValidatorVerdict(verdict=Verdict.ALLOW, reason="ok")
 
     monkeypatch.setattr(
-        "ultron.desktop.input_control._validate_input_action", _spy,
+        "kenning.desktop.input_control._validate_input_action", _spy,
     )
     monkeypatch.setattr(
-        "ultron.desktop.input_control._foreground_is_security_window",
+        "kenning.desktop.input_control._foreground_is_security_window",
         lambda: False,
     )
     c = InputController(max_actions_per_second=999.0)
@@ -831,7 +831,7 @@ def test_move_mouse_smooth_off_uses_linear(monkeypatch):
     """Default smooth=False matches the legacy back-compat call shape:
     no ``tween`` kwarg to pyautogui.moveTo."""
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     c = InputController(max_actions_per_second=999.0)
     r = c.move_mouse(100, 200, duration_s=0.2)
@@ -843,7 +843,7 @@ def test_move_mouse_smooth_off_uses_linear(monkeypatch):
 
 def test_move_mouse_smooth_with_duration_uses_easeInOutQuad(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     c = InputController(max_actions_per_second=999.0)
     r = c.move_mouse(300, 400, duration_s=0.5, smooth=True)
@@ -857,7 +857,7 @@ def test_move_mouse_smooth_true_but_zero_duration_no_tween(monkeypatch):
     """smooth=True with duration_s=0 yields an instant non-tweened
     move (matches the upstream plugin's branching)."""
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     _set_allow_all(monkeypatch)
     c = InputController(max_actions_per_second=999.0)
     r = c.move_mouse(50, 50, duration_s=0.0, smooth=True)
@@ -869,19 +869,19 @@ def test_move_mouse_smooth_true_but_zero_duration_no_tween(monkeypatch):
 
 def test_move_mouse_validator_arguments_carry_smooth(monkeypatch):
     pa = MagicMock()
-    monkeypatch.setattr("ultron.desktop.input_control.pyautogui", pa)
+    monkeypatch.setattr("kenning.desktop.input_control.pyautogui", pa)
     seen: dict = {}
 
     def _spy(**kw):
         seen.update(kw)
-        from ultron.safety.validator import ValidatorVerdict, Verdict
+        from kenning.safety.validator import ValidatorVerdict, Verdict
         return ValidatorVerdict(verdict=Verdict.ALLOW, reason="ok")
 
     monkeypatch.setattr(
-        "ultron.desktop.input_control._validate_input_action", _spy,
+        "kenning.desktop.input_control._validate_input_action", _spy,
     )
     monkeypatch.setattr(
-        "ultron.desktop.input_control._foreground_is_security_window",
+        "kenning.desktop.input_control._foreground_is_security_window",
         lambda: False,
     )
     c = InputController(max_actions_per_second=999.0)

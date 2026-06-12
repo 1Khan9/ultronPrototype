@@ -21,7 +21,7 @@ When new errors survive the subtraction, the edit gets REVERTED
 This module ships only the pure functions. The runner-side wiring
 (snapshot pre, run edit, snapshot post, compute diff, revert via
 :class:`FileHistory`, narrate via supervisor) lives in the existing
-:mod:`ultron.coding.runner` integration points and an opt-in
+:mod:`kenning.coding.runner` integration points and an opt-in
 config flag.
 """
 

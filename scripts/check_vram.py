@@ -56,20 +56,20 @@ def _resolve_target_mb(override: Optional[str] = None) -> tuple[int, str]:
 
     Order:
       1. ``--target-preset`` CLI override.
-      2. ``ULTRON_LLM_PRESET`` env var.
+      2. ``KENNING_LLM_PRESET`` env var.
       3. ``config.yaml:llm.preset`` (loaded best-effort).
       4. ``DEFAULT_TARGET_MB`` fallback.
     """
     if override:
         return TARGET_MB_BY_PRESET.get(override, DEFAULT_TARGET_MB), override
     import os
-    env_preset = os.environ.get("ULTRON_LLM_PRESET")
+    env_preset = os.environ.get("KENNING_LLM_PRESET")
     if env_preset:
         return TARGET_MB_BY_PRESET.get(env_preset, DEFAULT_TARGET_MB), env_preset
     # Try the loaded config without raising if anything's broken.
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-        from ultron.config import get_config  # noqa: WPS433
+        from kenning.config import get_config  # noqa: WPS433
         preset = get_config().llm.preset
         return TARGET_MB_BY_PRESET.get(preset, DEFAULT_TARGET_MB), preset
     except Exception:
@@ -151,7 +151,7 @@ def main(argv=None) -> int:
         help=(
             "Force the soft target to a specific preset's value "
             "(qwen3.5-9b / qwen3.5-4b / custom). Default: read from "
-            "ULTRON_LLM_PRESET env var or config.yaml."
+            "KENNING_LLM_PRESET env var or config.yaml."
         ),
     )
     args = parser.parse_args(argv)

@@ -1,12 +1,12 @@
-"""Console entrypoint: ``python -m ultron``."""
+"""Console entrypoint: ``python -m kenning``."""
 
 from __future__ import annotations
 
 import signal
 import sys
 
-from ultron.pipeline import Orchestrator
-from ultron.utils.logging import configure_logging, get_logger
+from kenning.pipeline import Orchestrator
+from kenning.utils.logging import configure_logging, get_logger
 
 
 def _ensure_utf8_stdio() -> None:
@@ -46,14 +46,14 @@ def main() -> int:
     logger = get_logger("main")
 
     # 2026-06-12 single-instance guard: two simultaneous `python -m
-    # ultron` processes both grab the mic and double-respond (and the
+    # kenning` processes both grab the mic and double-respond (and the
     # second collides on the embedded Qdrant lock + MCP port 19761).
     # Acquired BEFORE any model load; releases automatically on
     # process death (held OS file lock), so a crash never blocks the
     # next launch. The guard lives HERE (not in Orchestrator) so
     # pytest / the GPU e2e suite / measurement scripts that construct
     # the Orchestrator directly never contend.
-    from ultron.lifecycle.single_instance import (
+    from kenning.lifecycle.single_instance import (
         ALLOW_MULTIPLE_ENV,
         DEFAULT_LOCK_PATH,
         acquire_single_instance_lock,
@@ -65,7 +65,7 @@ def main() -> int:
         meta = read_lock_metadata(DEFAULT_LOCK_PATH) or {}
         other_pid = meta.get("pid", "unknown")
         msg = (
-            f"Another Ultron instance is already running (PID {other_pid}); "
+            f"Another Kenning instance is already running (PID {other_pid}); "
             f"refusing to start a duplicate. Set {ALLOW_MULTIPLE_ENV}=1 "
             "to override."
         )
@@ -75,7 +75,7 @@ def main() -> int:
 
     try:
         print("\n" + "=" * 60)
-        print("  ULTRON")
+        print("  KENNING")
         print("  Local voice-first AI assistant — prototype")
         print("=" * 60)
         print("  Loading models — this can take 1–3 minutes on first run.")

@@ -36,7 +36,7 @@ restarts.
 Output is deterministic on input ordering (no random tie-breaks);
 when multiple basenames hit, they're returned in the input candidate
 order. Use the result as ``mentioned_fnames`` input to
-:class:`~ultron.coding.repo_map.RepoMap` to bias its personalization
+:class:`~kenning.coding.repo_map.RepoMap` to bias its personalization
 vector toward the right files.
 """
 
@@ -50,7 +50,7 @@ from pathlib import PurePosixPath
 from typing import Iterable, List, Optional, Sequence, Set
 
 
-logger = logging.getLogger("ultron.coding.file_mention_resolver")
+logger = logging.getLogger("kenning.coding.file_mention_resolver")
 
 
 # Special characters that signal a token is "filename-shaped" rather

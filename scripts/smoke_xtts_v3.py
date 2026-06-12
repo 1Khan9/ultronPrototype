@@ -7,7 +7,7 @@ shuts down. Verifies end-to-end:
         -> spawns xtts_server.py in .venv-xtts
         -> POST /synthesize
         -> receives streamed PCM
-        -> applies v3 Ultron filter via main-venv pedalboard
+        -> applies v3 Kenning filter via main-venv pedalboard
         -> returns int16 clip ready for the playback path
 
 Does NOT play audio (no speaker access); writes the synthesised clip
@@ -33,7 +33,7 @@ sys.path.insert(0, str(WORKTREE))
 
 
 def main() -> int:
-    from ultron.config import get_config, load_config
+    from kenning.config import get_config, load_config
 
     cfg_path = WORKTREE / "config.yaml"
     cfg = load_config(str(cfg_path))
@@ -42,21 +42,21 @@ def main() -> int:
     # Force xtts_v3 + point at the audio-prep paths in the MAIN
     # checkout (the .venv-xtts and reference audio live next to the
     # main config.yaml, not under the worktree).
-    from ultron.config import set_config
+    from kenning.config import set_config
     cfg.tts.engine = "xtts_v3"
     main_checkout = Path("C:/STC/ultronPrototype")
     cfg.tts.xtts_v3.server_python = str(
-        main_checkout / "ultronVoiceAudio" / ".venv-xtts" / "Scripts" / "python.exe"
+        main_checkout / "kenningVoiceAudio" / ".venv-xtts" / "Scripts" / "python.exe"
     )
     cfg.tts.xtts_v3.server_script = str(
-        main_checkout / "ultronVoiceAudio" / "scripts" / "xtts_server.py"
+        main_checkout / "kenningVoiceAudio" / "scripts" / "xtts_server.py"
     )
     cfg.tts.xtts_v3.reference_audio = str(
-        main_checkout / "ultronVoiceAudio" / "kokoro training audio" / "Ultron_vocals_mono_v1.wav"
+        main_checkout / "kenningVoiceAudio" / "kokoro training audio" / "Kenning_vocals_mono_v1.wav"
     )
     set_config(cfg)
 
-    from ultron.tts.xtts_v3 import XttsV3Speech
+    from kenning.tts.xtts_v3 import XttsV3Speech
 
     print(f"\nXTTS paths (overridden to main checkout):")
     print(f"  server_python   = {cfg.tts.xtts_v3.server_python}")
@@ -84,7 +84,7 @@ def main() -> int:
         f"in {elapsed*1000:.0f} ms (RTF {elapsed/max(audio_dur,1e-6):.2f})"
     )
 
-    out_path = WORKTREE.parent / "ultronVoiceAudio" / "smoke_xtts_v3_output.wav"
+    out_path = WORKTREE.parent / "kenningVoiceAudio" / "smoke_xtts_v3_output.wav"
     out_path.parent.mkdir(exist_ok=True)
     import soundfile as sf
     sf.write(str(out_path), pcm, sr, subtype="PCM_16")

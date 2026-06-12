@@ -1,15 +1,15 @@
 """Background dialog poller that publishes :class:`DialogAppearedEvent`.
 
-Wires :func:`ultron.desktop.dialog_control.find_dialogs` into a daemon
+Wires :func:`kenning.desktop.dialog_control.find_dialogs` into a daemon
 thread + the typed event bus so subscribers (coding-bridge
 auto-handler, voice narrator, autonomy gate) react to dialog
 appearance without polling themselves.
 
 Catalog 08's `wait_for_dialog` is a synchronous one-shot barrier; this
 module is the continuous, event-driven equivalent. The poller fires
-:data:`ultron.bus.events.DialogAppearedEvent` exactly once per newly-
+:data:`kenning.bus.events.DialogAppearedEvent` exactly once per newly-
 seen dialog (deduplicated by hwnd + first-seen timestamp) and fires
-:data:`ultron.bus.events.DialogResolvedEvent` when a previously-
+:data:`kenning.bus.events.DialogResolvedEvent` when a previously-
 announced dialog disappears from the next tick.
 
 Default poll cadence is 750 ms (`DEFAULT_POLL_INTERVAL_S=0.75`). Fast
@@ -37,7 +37,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.dialog_poller")
 
@@ -80,9 +80,9 @@ class DialogPoller:
             :data:`DEFAULT_POLL_INTERVAL_S`. Lower values reduce
             detection latency at the cost of more UIA traffic.
         find_dialogs_fn: injection hook for tests -- defaults to
-            :func:`ultron.desktop.dialog_control.find_dialogs`.
+            :func:`kenning.desktop.dialog_control.find_dialogs`.
         publish_fn: injection hook for tests -- defaults to the
-            module-level :func:`ultron.bus.publish`.
+            module-level :func:`kenning.bus.publish`.
         clock_fn: injection hook for tests -- defaults to
             :func:`time.monotonic` for the tick interval AND
             :func:`time.time` for the timestamp recorded in the event.
@@ -292,7 +292,7 @@ class DialogPoller:
         finder = self._find_dialogs
         if finder is None:
             try:
-                from ultron.desktop.dialog_control import find_dialogs
+                from kenning.desktop.dialog_control import find_dialogs
             except Exception as exc:  # noqa: BLE001
                 logger.debug("dialog_poller find_dialogs import failed: %s", exc)
                 return []
@@ -309,15 +309,15 @@ class DialogPoller:
         publisher = self._publish
         if publisher is None:
             try:
-                from ultron.bus import publish as _publish
-                from ultron.bus.events import DialogAppearedEvent
+                from kenning.bus import publish as _publish
+                from kenning.bus.events import DialogAppearedEvent
             except Exception as exc:  # noqa: BLE001
                 logger.debug("dialog_poller bus import failed: %s", exc)
                 return
             publisher = _publish
             event_def = DialogAppearedEvent
         else:
-            from ultron.bus.events import DialogAppearedEvent
+            from kenning.bus.events import DialogAppearedEvent
             event_def = DialogAppearedEvent
         try:
             publisher(
@@ -346,15 +346,15 @@ class DialogPoller:
         publisher = self._publish
         if publisher is None:
             try:
-                from ultron.bus import publish as _publish
-                from ultron.bus.events import DialogResolvedEvent
+                from kenning.bus import publish as _publish
+                from kenning.bus.events import DialogResolvedEvent
             except Exception as exc:  # noqa: BLE001
                 logger.debug("dialog_poller bus import failed: %s", exc)
                 return
             publisher = _publish
             event_def = DialogResolvedEvent
         else:
-            from ultron.bus.events import DialogResolvedEvent
+            from kenning.bus.events import DialogResolvedEvent
             event_def = DialogResolvedEvent
         try:
             lifetime_ms = max(

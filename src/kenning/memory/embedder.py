@@ -18,8 +18,8 @@ from typing import Iterable, List, Optional, Sequence
 
 import numpy as np
 
-from ultron.config import get_config
-from ultron.utils.logging import get_logger
+from kenning.config import get_config
+from kenning.utils.logging import get_logger
 
 logger = get_logger("memory.embedder")
 

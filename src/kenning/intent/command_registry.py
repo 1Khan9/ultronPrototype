@@ -14,7 +14,7 @@ replacement. So this module ships as a PURELY ADDITIVE registry:
     LLM-driven intent classifier with a per-phrase prompt corpus,
     an alternate dispatch layer for advanced users — can opt in
     without first ripping out the existing 22-value
-    :class:`ultron.routing.intent_kinds.RoutingIntentKind` enum.
+    :class:`kenning.routing.intent_kinds.RoutingIntentKind` enum.
 
 Each command is a frozen dataclass:
 
@@ -62,7 +62,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
 
-logger = logging.getLogger("ultron.intent.command_registry")
+logger = logging.getLogger("kenning.intent.command_registry")
 
 
 # Sentinel handler used when a command is registered for help-text
@@ -153,7 +153,7 @@ class CommandRegistry:
 
             {
                 "name": "engage_gaming_mode",
-                "description": "Switch ultron into gaming-mode VRAM profile.",
+                "description": "Switch kenning into gaming-mode VRAM profile.",
                 "phrases": ["engage gaming mode", "switch to gaming mode"],
                 "examples": ["I'm about to play Valorant"],
                 "tags": ["voice", "vram"]
@@ -312,7 +312,7 @@ class CommandRegistry:
     ) -> str:
         """Render a Markdown-style help listing for narration.
 
-        Useful for a future ``/help`` voice command — "Ultron, what
+        Useful for a future ``/help`` voice command — "Kenning, what
         can you do?" → narrate this.
         """
         commands = (

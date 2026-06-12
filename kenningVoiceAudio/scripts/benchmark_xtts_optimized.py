@@ -26,13 +26,13 @@ import torch
 
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
-REFERENCE_WAV = PROJECT / "kokoro training audio" / "Ultron_vocals_mono_v1.wav"
+REFERENCE_WAV = PROJECT / "kokoro training audio" / "Kenning_vocals_mono_v1.wav"
 
 # Same 5 sentences as the sanity batch so we can compare against
 # the prior (non-optimised) numbers head-to-head.
 SAMPLES = [
     ("01_short", "Acknowledged. Initiating the requested operation."),
-    ("02_ultron_flavor", "There are no humans here. Just me."),
+    ("02_kenning_flavor", "There are no humans here. Just me."),
     ("03_medium_technical", "I have completed the analysis. The optimal solution requires three steps."),
     ("04_tool_ack", "Searching the web for that information now."),
     ("05_longer", "I find your question intriguing. Allow me to elaborate on the relevant facts before we proceed."),

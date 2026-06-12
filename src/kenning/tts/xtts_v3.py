@@ -1,4 +1,4 @@
-"""XTTS v2 + v3 Ultron filter TTS engine (drop-in replacement for Piper+RVC).
+"""XTTS v2 + v3 Kenning filter TTS engine (drop-in replacement for Piper+RVC).
 
 Architecture:
 
@@ -12,7 +12,7 @@ Architecture:
 The XTTS server runs as a subprocess in its own Python venv (the
 ``.venv-xtts`` next to the audio prep). HTTP keeps the venvs decoupled
 because Coqui TTS's deps (transformers 4.x pinned, hydra 1.3, omegaconf
-2.3) conflict with what the main Ultron venv needs (older omegaconf
+2.3) conflict with what the main Kenning venv needs (older omegaconf
 that fairseq 0.12.2 wants for the legacy RVC path).
 
 Latency:
@@ -47,10 +47,10 @@ import numpy as np
 import sounddevice as sd
 
 from config import settings
-from ultron.audio.devices import describe_device, resolve_device
-from ultron.tts.precomputed_ack import PrecomputedAckClipCache
-from ultron.tts.ultron_filter import apply_filter as apply_ultron_filter
-from ultron.utils.logging import get_logger
+from kenning.audio.devices import describe_device, resolve_device
+from kenning.tts.precomputed_ack import PrecomputedAckClipCache
+from kenning.tts.kenning_filter import apply_filter as apply_kenning_filter
+from kenning.utils.logging import get_logger
 
 logger = get_logger("tts.xtts_v3")
 
@@ -67,7 +67,7 @@ class ClipItem(NamedTuple):
 
 
 # Same generous timeout as the Piper+RVC path's playback queue (matches
-# ultron.tts.speech._QUEUE_GET_TIMEOUT_SECONDS so downstream playback
+# kenning.tts.speech._QUEUE_GET_TIMEOUT_SECONDS so downstream playback
 # behaviour is consistent).
 _QUEUE_GET_TIMEOUT_SECONDS = 60.0
 
@@ -571,9 +571,9 @@ def _find_free_port() -> int:
 
 
 class XttsV3Speech:
-    """XTTS v2 streaming TTS with v3 Ultron post-filter.
+    """XTTS v2 streaming TTS with v3 Kenning post-filter.
 
-    Drop-in replacement for ``ultron.tts.speech.TextToSpeech``. Same
+    Drop-in replacement for ``kenning.tts.speech.TextToSpeech``. Same
     public surface (``speak``, ``speak_stream``, ``warmup``, ``stop``)
     so the orchestrator can swap engines via config without touching
     the playback path.
@@ -603,21 +603,21 @@ class XttsV3Speech:
     ) -> None:
         # Resolve paths via config when not explicitly passed. Defaults
         # point at the layout established in the audio prep work.
-        from ultron.config import get_config, resolve_path
+        from kenning.config import get_config, resolve_path
         cfg = get_config()
         xtts_cfg = getattr(cfg.tts, "xtts_v3", None)
 
         if server_python is None:
             sp = (xtts_cfg.server_python if xtts_cfg else None) or \
-                "ultronVoiceAudio/.venv-xtts/Scripts/python.exe"
+                "kenningVoiceAudio/.venv-xtts/Scripts/python.exe"
             server_python = resolve_path(sp)
         if server_script is None:
             ss = (xtts_cfg.server_script if xtts_cfg else None) or \
-                "ultronVoiceAudio/scripts/xtts_server.py"
+                "kenningVoiceAudio/scripts/xtts_server.py"
             server_script = resolve_path(ss)
         if reference_audio is None:
             ra = (xtts_cfg.reference_audio if xtts_cfg else None) or \
-                "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav"
+                "kenningVoiceAudio/kokoro training audio/Kenning_vocals_mono_v1.wav"
             reference_audio = resolve_path(ra)
 
         if not Path(server_python).is_file():
@@ -801,7 +801,7 @@ class XttsV3Speech:
         # T12/T23: track the XTTS daemon as PERSISTENT (tracked in the
         # "what's running" registry, never auto-reaped). Fail-open.
         try:
-            from ultron.subprocess.zombie_killer import get_zombie_killer
+            from kenning.subprocess.zombie_killer import get_zombie_killer
             if self._server_proc is not None:
                 get_zombie_killer().register(
                     self._server_proc.pid, "xtts-server", persistent=True,
@@ -873,13 +873,13 @@ class XttsV3Speech:
             self._server_proc.wait(timeout=2.0)
         except subprocess.TimeoutExpired:
             try:
-                from ultron.subprocess.kill_tree import kill_process_tree
+                from kenning.subprocess.kill_tree import kill_process_tree
                 kill_process_tree(self._server_proc.pid, grace_seconds=2.0)
             except Exception as e:  # noqa: BLE001
                 logger.debug("xtts kill_process_tree raised (swallowed): %s", e)
         finally:
             try:
-                from ultron.subprocess.zombie_killer import get_zombie_killer
+                from kenning.subprocess.zombie_killer import get_zombie_killer
                 if self._server_proc is not None:
                     get_zombie_killer().unregister(self._server_proc.pid)
             except Exception:  # noqa: BLE001
@@ -944,7 +944,7 @@ class XttsV3Speech:
             if self._preopened_stream is not None:
                 return
             try:
-                from ultron.config import get_config
+                from kenning.config import get_config
                 tts_cfg = get_config().tts
                 low_latency = bool(tts_cfg.output_low_latency_mode)
             except Exception:
@@ -1016,7 +1016,7 @@ class XttsV3Speech:
         """Consume token fragments and play sentence-by-sentence.
 
         Same producer-signaled lookahead playback contract as
-        :meth:`ultron.tts.speech.TextToSpeech.speak_stream` -- queues
+        :meth:`kenning.tts.speech.TextToSpeech.speak_stream` -- queues
         :class:`ClipItem` tuples onto an internal audio queue and
         plays each clip immediately on receipt without blocking on
         the next clip first.
@@ -1024,7 +1024,7 @@ class XttsV3Speech:
         self._stop_event.clear()
 
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
             tts_cfg = get_config().tts
             spec_open = tts_cfg.speculative_stream_open_enabled
             # 2026-05-11 SR-mismatch fix: ``tts.speculative_stream_sample_rate``
@@ -1492,8 +1492,8 @@ class XttsV3Speech:
             pcm_i16 = self._http_synthesize(spoken)
         except Exception as e:
             logger.error("XTTS server synth failed for %r: %s", text[:60], e)
-            from ultron.errors import PiperSynthesisError  # closest typed error
-            from ultron.resilience import get_error_log
+            from kenning.errors import PiperSynthesisError  # closest typed error
+            from kenning.resilience import get_error_log
             get_error_log().record(
                 PiperSynthesisError(
                     f"XTTS server synth failed: {e}",
@@ -1535,14 +1535,14 @@ class XttsV3Speech:
                 logger.warning("Phantom-tail trim failed (using raw PCM): %s", e)
 
         try:
-            filtered_f32 = apply_ultron_filter(
+            filtered_f32 = apply_kenning_filter(
                 pcm_f32,
                 self._sample_rate,
                 preset=self.filter_preset,
                 tail_silence_ms=self.filter_tail_silence_ms,
             )
         except Exception as e:
-            logger.warning("Ultron filter failed (using raw PCM): %s", e)
+            logger.warning("Kenning filter failed (using raw PCM): %s", e)
             filtered_f32 = pcm_f32
 
         # Convert back to int16 with clipping.
@@ -1623,7 +1623,7 @@ class XttsV3Speech:
         """Single-shot playback. Same shape as TextToSpeech._play."""
         pcm, sr = clip
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
             low_latency = get_config().tts.output_low_latency_mode
         except Exception:
             low_latency = False

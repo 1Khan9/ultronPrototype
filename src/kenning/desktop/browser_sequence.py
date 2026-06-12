@@ -1,13 +1,13 @@
 """Browser sequence runner with per-step screenshot bracketing.
 
 Catalog 10 batch 8 (creative extension). The browser-domain analog
-of :class:`ultron.desktop.sequence.DesktopSequenceRunner` (catalog 09
+of :class:`kenning.desktop.sequence.DesktopSequenceRunner` (catalog 09
 T5): runs a list of browser steps with a before/after screenshot
 bracket per step + optional VLM verification + fail-fast contract.
 
 Where the desktop runner captures frames via mss
-(:class:`ultron.desktop.capture.ScreenCapture`), this runner captures
-via :meth:`ultron.desktop.browser_use.BrowserUseTool.screenshot` in
+(:class:`kenning.desktop.capture.ScreenCapture`), this runner captures
+via :meth:`kenning.desktop.browser_use.BrowserUseTool.screenshot` in
 base64 mode -- so the page is captured headlessly WITHOUT occupying
 the user's display. That is the headline difference + the reason a
 browser sequence is worth a distinct runner: a multi-step web
@@ -33,13 +33,13 @@ Architecture mirrors the desktop runner:
 
 The shared :class:`SequenceStatus` / :class:`StepOutcome` /
 :class:`VlmVerdict` enums are re-used from
-:mod:`ultron.desktop.sequence` so consumers handle one taxonomy
+:mod:`kenning.desktop.sequence` so consumers handle one taxonomy
 across desktop + browser sequences.
 
 Things deliberately NOT ported from the upstream browser-use recipe
 docs (matching the desktop runner's posture):
 
-* No natural-language step planner -- ultron's LLM intent router is
+* No natural-language step planner -- kenning's LLM intent router is
   more capable; the runner takes an explicit step list.
 * No blocking ``input()`` approval between steps -- incompatible
   with the voice-first model. Risky individual actions (eval /
@@ -54,13 +54,13 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional, Sequence
 
-from ultron.desktop.sequence import (
+from kenning.desktop.sequence import (
     SEQUENCE_AUTO_PASS_RADIUS_PX,
     SequenceStatus,
     StepOutcome,
     VlmVerdict,
 )
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.browser_sequence")
 
@@ -101,7 +101,7 @@ class BrowserSequenceStep:
 class BrowserScreenshotRef:
     """Pointer to one bracketed browser screenshot.
 
-    Mirrors :class:`ultron.desktop.sequence.ScreenshotRef` but the
+    Mirrors :class:`kenning.desktop.sequence.ScreenshotRef` but the
     source is the headless browser screenshot, not a monitor capture.
     """
 
@@ -135,7 +135,7 @@ class BrowserStepResult:
 class BrowserSequenceResult:
     """Outcome of a full browser sequence run.
 
-    Schema mirrors :class:`ultron.desktop.sequence.SequenceResult`:
+    Schema mirrors :class:`kenning.desktop.sequence.SequenceResult`:
     ``task / status / success / steps / screenshots / failed_at_step
     / error / elapsed_s``.
     """
@@ -202,7 +202,7 @@ class BrowserSequenceRunner:
         if self._tool is not None:
             return self._tool
         try:
-            from ultron.desktop.browser_use import get_browser_use_tool
+            from kenning.desktop.browser_use import get_browser_use_tool
 
             return get_browser_use_tool()
         except Exception as exc:  # noqa: BLE001 -- defensive

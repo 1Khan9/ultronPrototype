@@ -18,10 +18,10 @@ top-level supervisor / runner exception handler catches everything
 EXCEPT :class:`KeyboardInterrupt` and writes the latest captured
 diff to disk so the user's partial work survives.
 
-For ultron the wiring differs from SWE-Agent's:
+For kenning the wiring differs from SWE-Agent's:
 
 * **Git invocation is OPTIONAL.** SWE-Agent assumes the
-  ``/root/`` workspace is a git repo. Ultron coding sessions
+  ``/root/`` workspace is a git repo. Kenning coding sessions
   run under ``data/sandbox/<project>/`` which is git-init'd
   by default but may not be -- the snapshotter checks first
   and degrades to a file-list-only summary when git is absent.
@@ -33,7 +33,7 @@ For ultron the wiring differs from SWE-Agent's:
   diff intact.
 
 The salvage path also publishes a :class:`SalvageEvent` on the
-ultron bus (when available) so subscribers can react in-process.
+kenning bus (when available) so subscribers can react in-process.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, ContextManager, Iterable, Optional
 
-from ultron.coding.session_registry import (
+from kenning.coding.session_registry import (
     SessionRegistry,
     get_session_registry,
 )
@@ -390,7 +390,7 @@ def _persist_diff(
         return ""
     root = sessions_root
     if root is None:
-        from ultron.coding.session_registry import DEFAULT_REGISTRY_ROOT
+        from kenning.coding.session_registry import DEFAULT_REGISTRY_ROOT
         root = DEFAULT_REGISTRY_ROOT
     target_dir = Path(root) / session_id
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -417,7 +417,7 @@ def read_persisted_diff(
     """
     root = sessions_root
     if root is None:
-        from ultron.coding.session_registry import DEFAULT_REGISTRY_ROOT
+        from kenning.coding.session_registry import DEFAULT_REGISTRY_ROOT
         root = DEFAULT_REGISTRY_ROOT
     path = Path(root) / session_id / DIFF_PATCH_FILENAME
     if not path.exists():
@@ -552,7 +552,7 @@ def _persist_salvage_meta(
 ) -> None:
     root = sessions_root
     if root is None:
-        from ultron.coding.session_registry import DEFAULT_REGISTRY_ROOT
+        from kenning.coding.session_registry import DEFAULT_REGISTRY_ROOT
         root = DEFAULT_REGISTRY_ROOT
     target_dir = Path(root) / session_id
     target_dir.mkdir(parents=True, exist_ok=True)

@@ -1,4 +1,4 @@
-"""Tests for ultron.checkpoints.shadow_repo (requires git)."""
+"""Tests for kenning.checkpoints.shadow_repo (requires git)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.checkpoints import shadow_repo as sr
+from kenning.checkpoints import shadow_repo as sr
 
 
 # Skip the integration tests when git is missing.

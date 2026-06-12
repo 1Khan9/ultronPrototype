@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.feedback.report_queue import (
+from kenning.feedback.report_queue import (
     FinalAction,
     IllegalTriageError,
     Report,

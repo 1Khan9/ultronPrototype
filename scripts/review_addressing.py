@@ -24,7 +24,7 @@ _REPO = _HERE.parent.parent
 sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "src"))
 
-from ultron.config import get_config, resolve_path  # noqa: E402
+from kenning.config import get_config, resolve_path  # noqa: E402
 
 
 def _format_record(record: dict) -> str:
@@ -65,7 +65,7 @@ def main() -> int:
 
     log_path = Path(args.log)
     if not log_path.is_file():
-        print(f"No addressing log at {log_path} yet -- run Ultron first.")
+        print(f"No addressing log at {log_path} yet -- run Kenning first.")
         return 0
 
     records: list[dict] = []

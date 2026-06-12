@@ -1,7 +1,7 @@
 """Tests for sandbox project isolation (the phase-11 e2e finding).
 
 A sandbox project must become its own git root so the spawned coding
-CLI stops walking up into the ultron repo (where it would load the
+CLI stops walking up into the kenning repo (where it would load the
 repo's large local orientation context into every voice coding task).
 All hermetic: the git subprocess is injected (binding rule R3/R4).
 """
@@ -14,8 +14,8 @@ from typing import Any
 
 import pytest
 
-import ultron.coding.projects as projects_mod
-from ultron.coding.projects import (
+import kenning.coding.projects as projects_mod
+from kenning.coding.projects import (
     ProjectRegistry,
     ensure_sandbox_isolation,
     new_sandbox_project,

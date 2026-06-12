@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from typing import Callable, List, Optional, Protocol
 
 
-logger = logging.getLogger("ultron.coding.architect_narrator")
+logger = logging.getLogger("kenning.coding.architect_narrator")
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ logger = logging.getLogger("ultron.coding.architect_narrator")
 
 
 class _SpeakableTTS(Protocol):
-    """Minimal protocol every TTS engine in :mod:`ultron.tts` satisfies.
+    """Minimal protocol every TTS engine in :mod:`kenning.tts` satisfies.
 
     The narrator uses synchronous ``speak`` so it doesn't have to
     juggle the producer-consumer queue; this is fine for the
@@ -101,7 +101,7 @@ class NarrationResult:
 
 
 # Conservative sentence splitter: end-of-line + standard punctuation
-# stops. Tuned to match the splitter in :mod:`ultron.tts.kokoro_engine`'s
+# stops. Tuned to match the splitter in :mod:`kenning.tts.kokoro_engine`'s
 # flush logic so the narrator chunks the plan exactly the way the
 # producer-consumer pipeline would chunk a streaming LLM response.
 # Avoids splitting on decimals (3.14), ellipses (...), and abbreviated
@@ -151,7 +151,7 @@ class ArchitectNarrator:
     """Speaks an architect plan with a per-sentence barge-in window.
 
     Args:
-        tts: TTS engine instance from :mod:`ultron.tts`. Any object
+        tts: TTS engine instance from :mod:`kenning.tts`. Any object
             exposing ``speak(text)`` + ``stop()`` works.
         max_chars: Cap on characters spoken before the narrator gives
             up and returns ``completed=False, error="max_chars_exceeded"``.

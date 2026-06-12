@@ -1,12 +1,12 @@
 <div align="center">
 
-# Ultron
+# Kenning
 
 ### A local, voice-first AI assistant — no cloud, no telemetry, sub-second latency.
 
-*Say "ultron." Talk. Get answers in a custom voice. Everything runs on your GPU.*
+*Say "kenning." Talk. Get answers in a custom voice. Everything runs on your GPU.*
 
-[![tests](https://img.shields.io/badge/tests-9653%20passing-brightgreen?style=flat-square)](https://github.com/1v9Khan/ultronPrototype)
+[![tests](https://img.shields.io/badge/tests-9719%20passing-brightgreen?style=flat-square)](https://github.com/1v9Khan/ultronPrototype)
 [![latency](https://img.shields.io/badge/TTFA-~266ms-blueviolet?style=flat-square)](#-at-a-glance)
 [![VRAM](https://img.shields.io/badge/VRAM-6.3GB%20standby-orange?style=flat-square)](#-at-a-glance)
 [![python](https://img.shields.io/badge/python-3.11+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
@@ -18,12 +18,12 @@
 
 ---
 
-## ⚡ Why Ultron?
+## ⚡ Why Kenning?
 
 > **What would a voice assistant feel like if it lived entirely on your GPU instead of in someone else's data center?**
 
 - 🔒 **Fully local.** Your voice, your queries, your context — none of it leaves the machine.
-- ⚡ **Fast.** ~210–300 ms from "stop talking" to "Ultron starts speaking" on a cache-hit turn.
+- ⚡ **Fast.** ~210–300 ms from "stop talking" to "Kenning starts speaking" on a cache-hit turn.
 - 🧠 **Smart.** 23-kind intent router · three-layer memory · hot-swappable models · gaming-mode VRAM reclaim.
 - 🎙️ **Yours.** Custom wake word · fine-tuned voicepack · your apps in the launcher · your safety rules.
 
@@ -31,18 +31,18 @@
 
 ## 🎬 What you say → What it does
 
-| You say | Ultron does |
+| You say | Kenning does |
 |---|---|
-| 🌦️ &nbsp;`"ultron, what's the weather in Paris?"` | Detects fresh-data intent → SearxNG → reads result → speaks the forecast |
-| 💻 &nbsp;`"ultron, write me a script that converts PDFs to Docx"` | Spawns isolated AI coding agent → scaffolds project → runs tests → narrates progress |
-| 🎮 &nbsp;`"ultron, engage gaming mode"` | Swaps LLM → kills GPU services → frees **~2.3 GB VRAM** for your game |
-| 🌐 &nbsp;`"ultron, take me to HBO Max"` | Recognizes navigate intent → opens Chrome to the best-matching domain |
-| 🕐 &nbsp;`"ultron, what time is it in Tokyo?"` | Hits local zoneinfo cache → speaks the answer in ~5 ms (no LLM, no search) |
-| 🧭 &nbsp;`"ultron, switch to the 8B"` | Hot-swaps the local LLM preset mid-conversation |
-| 🗣️ &nbsp;`"ultron, tell my team to rotate B"` | Rephrases into a natural spoken line → plays it on a VoiceMeeter strip → your game voice chat hears Ultron (named agent callouts, no wake word mid-conversation) |
-| 🎛️ &nbsp;`"ultron, pull up your settings"` | Spawns a detached dark-theme control panel → edit knobs at a glance → every toggle hot-applies live (no restart) → CLOSE leaves zero residue |
-| 🎵 &nbsp;`"ultron, play some Daft Punk"` | Searches Spotify → starts playback on your active device (play/pause/skip/queue/volume/shuffle, all by voice) |
-| 🛡️ &nbsp;`"ultron, engage gaming mode"` | Frees VRAM/Docker **and** hard-disables every desktop-interaction surface (input, capture, windows) — kernel-anticheat-safe; voice + team relay stay live |
+| 🌦️ &nbsp;`"kenning, what's the weather in Paris?"` | Detects fresh-data intent → SearxNG → reads result → speaks the forecast |
+| 💻 &nbsp;`"kenning, write me a script that converts PDFs to Docx"` | Spawns isolated AI coding agent → scaffolds project → runs tests → narrates progress |
+| 🎮 &nbsp;`"kenning, engage gaming mode"` | Swaps LLM → kills GPU services → frees **~2.3 GB VRAM** for your game |
+| 🌐 &nbsp;`"kenning, take me to HBO Max"` | Recognizes navigate intent → opens Chrome to the best-matching domain |
+| 🕐 &nbsp;`"kenning, what time is it in Tokyo?"` | Hits local zoneinfo cache → speaks the answer in ~5 ms (no LLM, no search) |
+| 🧭 &nbsp;`"kenning, switch to the 8B"` | Hot-swaps the local LLM preset mid-conversation |
+| 🗣️ &nbsp;`"kenning, tell my team to rotate B"` | Rephrases into a natural spoken line → plays it on a VoiceMeeter strip → your game voice chat hears Kenning (named agent callouts, no wake word mid-conversation) |
+| 🎛️ &nbsp;`"kenning, pull up your settings"` | Spawns a detached dark-theme control panel → edit knobs at a glance → every toggle hot-applies live (no restart) → CLOSE leaves zero residue |
+| 🎵 &nbsp;`"kenning, play some Daft Punk"` | Searches Spotify → starts playback on your active device (play/pause/skip/queue/volume/shuffle, all by voice) |
+| 🛡️ &nbsp;`"kenning, engage gaming mode"` | Frees VRAM/Docker **and** hard-disables every desktop-interaction surface (input, capture, windows) — kernel-anticheat-safe; voice + team relay stay live |
 
 ---
 
@@ -50,7 +50,7 @@
 
 |  |  |
 |---|---|
-| 🧪 &nbsp;**Tests** | 9653 passing · 39 skipped · 0 failed (~131 s sweep) |
+| 🧪 &nbsp;**Tests** | 9719 passing · 39 skipped · 0 failed (~144 s sweep) |
 | ⚡ &nbsp;**Latency (TTFA)** | ~266 ms composite cache-hit turn (LLM TTFT 172 ms, TTS synth 78 ms, STT 16 ms) |
 | 🧠 &nbsp;**VRAM** | ~6.3 GB standby on RTX 4070 Ti (peak ~6.7 GB) → ~2.1 GB in gaming mode |
 | 🛠️ &nbsp;**Active stack** | Parakeet TDT STT (CUDA) · Qwen 3.5 4B Q4_K_M (CUDA) · Kokoro StyleTTS2 (CUDA, fine-tuned voice) · OpenClaw bridge live |
@@ -65,7 +65,7 @@
 <td width="50%" valign="top">
 
 ### 🎤 Voice pipeline
-- Custom-trained `ultron` wake word (OpenWakeWord)
+- Custom-trained `kenning` wake word (OpenWakeWord)
 - Silero VAD + **Smart Turn V3** — semantic end-of-turn in ~12 ms
 - Dual-engine STT registry (Moonshine · Parakeet TDT · Whisper)
 - **Custom fine-tuned voicepack** — Kokoro StyleTTS2 on CUDA
@@ -116,7 +116,7 @@
 ## 🏗️ Pipeline
 
 ```text
-mic → wake "ultron" OR addressing classifier (WARM)
+mic → wake "kenning" OR addressing classifier (WARM)
   → Silero VAD + Smart Turn V3 (CPU, ~12 ms)
   → STT: DualSTTRegistry (moonshine | parakeet | whisper)
   → Intent recognizer (Gemma-300M CPU): short-circuits gaming / fresh-data intents
@@ -162,10 +162,10 @@ copy .env.example .env          # optional: add Brave API key for web search
 # tune config.yaml for your mic / monitors / preferences
 
 # 5. Launch
-python -m ultron
+python -m kenning
 ```
 
-Then say: **"ultron"** — and start talking.
+Then say: **"kenning"** — and start talking.
 
 > ⚠️ **This is a research prototype**, not a turn-key product. It targets one developer's specific hardware (RTX 4070 Ti, AMD CPU, Windows 11) and use case. Treat the setup as a recipe to adapt, not a one-click install. Some optional integrations (OpenClaw, Telegram, ComfyUI media gen, mobile node) require additional credential-dependent setup — see the docs below.
 
@@ -187,7 +187,7 @@ Then say: **"ultron"** — and start talking.
 
 ## ⚙️ Configuration
 
-All tunables live in `config.yaml` at the project root — schema-validated by Pydantic in `src/ultron/config.py`. The top of that file lists the ~12 actively-tuned knobs.
+All tunables live in `config.yaml` at the project root — schema-validated by Pydantic in `src/kenning/config.py`. The top of that file lists the ~12 actively-tuned knobs.
 
 Key sections:
 
@@ -203,7 +203,7 @@ Key sections:
 | `coding.supervisor` | opencode-inspired project digest stack (default OFF) |
 | `gaming_mode` | VRAM reclaim chain triggers + targets |
 
-Override via `ULTRON_*` env vars; see `.env.example`. Restart after any change.
+Override via `KENNING_*` env vars; see `.env.example`. Restart after any change.
 
 ---
 
@@ -260,13 +260,13 @@ Override via `ULTRON_*` env vars; see `.env.example`. Restart after any change.
 
 This is a **research prototype**, not a production product. It evolves through many tight iteration cycles. Behavior-changing features land behind feature flags (default OFF) until live-validated. The voice-quality baseline is treated as a strict latency / VRAM contract — any hot-path change re-runs `scripts/measure_baseline.py` and documents the delta.
 
-If you're reading the source, the highest-leverage entry point is [`src/ultron/pipeline/orchestrator.py`](src/ultron/pipeline/orchestrator.py) — the main event loop everything else hangs off.
+If you're reading the source, the highest-leverage entry point is [`src/kenning/pipeline/orchestrator.py`](src/kenning/pipeline/orchestrator.py) — the main event loop everything else hangs off.
 
 ---
 
 ## ⭐ Star history
 
-If you find Ultron interesting, a star helps it surface to other folks who want a local voice assistant.
+If you find Kenning interesting, a star helps it surface to other folks who want a local voice assistant.
 
 [![Star History Chart](https://api.star-history.com/svg?repos=1v9Khan/ultronPrototype&type=Date)](https://star-history.com/#1v9Khan/ultronPrototype&Date)
 

@@ -23,13 +23,13 @@ import pytest
 
 @pytest.fixture(scope="module")
 def embedder():
-    from ultron.memory import HybridEmbedder
+    from kenning.memory import HybridEmbedder
     return HybridEmbedder(eager=True)
 
 
 @pytest.fixture
 def memory(tmp_path: Path, embedder):
-    from ultron.memory import ConversationMemory
+    from kenning.memory import ConversationMemory
 
     mem = ConversationMemory(
         path=tmp_path / "qdrant",
@@ -391,7 +391,7 @@ def test_search_facts_handles_empty_collection(memory):
 def test_retrieve_for_query_falls_back_to_single_pass_when_disabled(memory, monkeypatch):
     """Operator opt-out: multi_pass_enabled=False -> route to retrieve()."""
     monkeypatch.setattr(
-        "ultron.memory.qdrant_store.get_config",
+        "kenning.memory.qdrant_store.get_config",
         lambda: _make_config_with_multi_pass(False),
     )
     for i in range(15):
@@ -480,7 +480,7 @@ def test_retrieve_multi_falls_back_on_embedder_failure(memory, monkeypatch):
 
 def test_retrieve_for_query_uses_multi_pass_when_enabled(memory, monkeypatch):
     monkeypatch.setattr(
-        "ultron.memory.qdrant_store.get_config",
+        "kenning.memory.qdrant_store.get_config",
         lambda: _make_config_with_multi_pass(True),
     )
     for i in range(20):
@@ -500,7 +500,7 @@ def test_retrieve_for_query_uses_multi_pass_when_enabled(memory, monkeypatch):
 def _make_config_with_multi_pass(enabled: bool):
     """Helper: produce a clone of the live config with multi_pass_enabled
     flipped. Avoids mutating the global cache."""
-    from ultron.config import get_config
+    from kenning.config import get_config
 
     cfg = get_config()
     cfg.memory.retrieval.multi_pass_enabled = enabled

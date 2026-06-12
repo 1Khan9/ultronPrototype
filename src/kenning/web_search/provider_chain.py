@@ -35,7 +35,7 @@ Empty-list semantics:
   base knowledge with uncertainty caveat).
 
 This matches the existing single-provider failure semantics so
-:class:`ultron.web_search.search.WebSearchExecutor` doesn't need to
+:class:`kenning.web_search.search.WebSearchExecutor` doesn't need to
 change.
 """
 
@@ -44,10 +44,10 @@ from __future__ import annotations
 import time
 from typing import Callable, List, Mapping, Optional
 
-from ultron.config import get_config
-from ultron.utils.logging import get_logger
-from ultron.web_search.brave import SearchResult
-from ultron.web_search.rate_limit import (
+from kenning.config import get_config
+from kenning.utils.logging import get_logger
+from kenning.web_search.brave import SearchResult
+from kenning.web_search.rate_limit import (
     RateLimitState,
     RateLimitTracker,
     get_global_tracker,
@@ -280,7 +280,7 @@ class SearchProviderChain:
 
 
 def _make_searxng(recorder: ProviderRecorder):
-    from ultron.web_search.searxng import SearxNGSearchClient
+    from kenning.web_search.searxng import SearxNGSearchClient
     return SearxNGSearchClient(on_response=recorder)
 
 
@@ -290,7 +290,7 @@ def _make_brave(recorder: ProviderRecorder):
     # key -> cooled down -> next key) before falling through to DuckDuckGo.
     # With 0-1 keys the legacy single-client + circuit-breaker path is used
     # unchanged (0 keys -> ValueError, caught by the chain -> provider skipped).
-    from ultron.web_search.brave import (
+    from kenning.web_search.brave import (
         BraveSearchClient,
         RotatingBraveClient,
         resolve_brave_api_keys,
@@ -304,7 +304,7 @@ def _make_brave(recorder: ProviderRecorder):
 
 
 def _make_duckduckgo(recorder: ProviderRecorder):
-    from ultron.web_search.duckduckgo import DuckDuckGoSearchClient
+    from kenning.web_search.duckduckgo import DuckDuckGoSearchClient
     return DuckDuckGoSearchClient(on_response=recorder)
 
 

@@ -1,10 +1,10 @@
-"""Tests for :mod:`ultron.coding.coder_modes`."""
+"""Tests for :mod:`kenning.coding.coder_modes`."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.coding.coder_modes import (
+from kenning.coding.coder_modes import (
     CODER_MODES,
     CoderMode,
     EditFormat,

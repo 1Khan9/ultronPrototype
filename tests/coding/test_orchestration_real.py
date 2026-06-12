@@ -31,19 +31,19 @@ from typing import List
 
 import pytest
 
-os.environ.setdefault("ULTRON_CODING_MCP_ALLOW_ANY_ROOT", "1")
+os.environ.setdefault("KENNING_CODING_MCP_ALLOW_ANY_ROOT", "1")
 
-from ultron.coding import (
+from kenning.coding import (
     CodingTaskRunner,
     DirectClaudeCodeBridge,
     StatusNarrator,
-    UltronMCPServer,
+    KenningMCPServer,
 )
-from ultron.coding.bridge import TaskRequest
-from ultron.coding.coordinator import ConversationCoordinator
-from ultron.coding.mcp_server import write_mcp_config
-from ultron.coding.session import SessionStatus
-from ultron.coding.verification import Verifier
+from kenning.coding.bridge import TaskRequest
+from kenning.coding.coordinator import ConversationCoordinator
+from kenning.coding.mcp_server import write_mcp_config
+from kenning.coding.session import SessionStatus
+from kenning.coding.verification import Verifier
 
 
 pytestmark = [

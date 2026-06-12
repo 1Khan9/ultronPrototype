@@ -46,7 +46,7 @@ def _stub_orchestrator(
     transcripts in tests to drive deterministic SEARCH / NO_SEARCH /
     None outcomes.
     """
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
     o = object.__new__(Orchestrator)
     o._speculative_classification_lock = threading.Lock()
     o._speculative_classification = None
@@ -286,7 +286,7 @@ def test_collect_returns_none_when_invalidated():
 def test_collect_defensive_on_missing_lock():
     """Fixture without the classification lock -> collect returns None
     rather than crashing."""
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
     o = object.__new__(Orchestrator)
     # Note: no _speculative_classification_lock attribute.
     result = o._collect_speculative_classification("anything")
@@ -323,7 +323,7 @@ def test_reset_clears_state_and_cancels_rag():
 
 def test_reset_defensive_on_missing_lock():
     """Fixture without the lock -> reset returns cleanly."""
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
     o = object.__new__(Orchestrator)
     # No lock attribute.
     o._reset_speculative_classification_state()
@@ -337,7 +337,7 @@ def test_reset_defensive_on_missing_lock():
 def test_stt_thread_chains_classification_on_success():
     """When speculative STT succeeds and the result is non-empty, the
     same daemon thread calls _run_speculative_classification."""
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
     o = object.__new__(Orchestrator)
     o._speculative_stt_lock = threading.Lock()
     o._speculative_stt_thread = None
@@ -374,7 +374,7 @@ def test_stt_thread_chains_classification_on_success():
 def test_stt_thread_skips_classification_on_empty_transcript():
     """Whisper returning empty / whitespace transcript means there was
     no real speech -- don't speculate downstream."""
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
     o = object.__new__(Orchestrator)
     o._speculative_stt_lock = threading.Lock()
     o._speculative_stt_thread = None
@@ -408,7 +408,7 @@ def test_stt_thread_skips_classification_when_invalidated():
     """If STT was invalidated before the thread finishes, the
     chained classification must not run -- the user has resumed
     speaking and the audio buffer is now stale."""
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
     o = object.__new__(Orchestrator)
     o._speculative_stt_lock = threading.Lock()
     o._speculative_stt_thread = None
@@ -454,7 +454,7 @@ def test_stt_reset_also_clears_classification():
     """The combined STT+classification reset called at the top of
     _capture_utterance / _follow_up_listen must clear BOTH slots
     so a prior turn's state doesn't leak."""
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
     o = object.__new__(Orchestrator)
     o._speculative_stt_lock = threading.Lock()
     o._speculative_stt_thread = None

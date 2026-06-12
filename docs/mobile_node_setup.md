@@ -3,18 +3,18 @@
 Phase 11 of the OpenClaw integration. Documents the procedure for
 pairing a phone with the local Gateway. Pairing is **optional** and
 **not required** for any other phase — Telegram (Phase 4) covers
-"text Ultron from your phone" perfectly well without a dedicated
+"text Kenning from your phone" perfectly well without a dedicated
 app.
 
 When you'd actually want to install a mobile node:
 
 - **Voice triggering from the phone.** The OpenClaw iOS app
   supports Voice Wake (the host machine's openWakeWord doesn't
-  match the phone's audio). Lets you say "Ultron" into your
+  match the phone's audio). Lets you say "Kenning" into your
   phone and have the Gateway wake.
-- **Camera input.** "Ultron, what is this?" with a photo from
+- **Camera input.** "Kenning, what is this?" with a photo from
   the phone.
-- **Screen capture.** "Ultron, look at my screen" — the agent
+- **Screen capture.** "Kenning, look at my screen" — the agent
   reads what's on the phone's display.
 - **Voice notes** — record on the phone, transcribe on the
   Gateway, process the transcript.
@@ -94,8 +94,8 @@ Expected: the new iOS node listed with its hostname / device id.
 
 From the iOS app:
 
-- Send a text message to Ultron. Verify in-character reply.
-- Try Voice Wake (say "Ultron" — the app's wake-word trigger
+- Send a text message to Kenning. Verify in-character reply.
+- Try Voice Wake (say "Kenning" — the app's wake-word trigger
   forwards to the Gateway).
 - Take a photo and ask "what is this?" — agent describes it.
 - Test screen capture: open something on the phone, ask
@@ -138,9 +138,9 @@ When multiple nodes are paired (Windows host + iOS, e.g.), the
 Gateway routes incoming events based on `agents[].defaults` and
 the channel that received the event:
 
-- An iOS Voice Wake → routed to `ultron-main`, response speaks
+- An iOS Voice Wake → routed to `kenning-main`, response speaks
   back to the iOS app.
-- A Telegram message → routed to `ultron-main`, response goes
+- A Telegram message → routed to `kenning-main`, response goes
   back to Telegram.
 - A heartbeat tick → fires through `agents[].heartbeat.target`
   (typically `telegram`).
@@ -173,7 +173,7 @@ device's auth without un-installing the app — re-pair to restore.
 
 ## Why this is optional
 
-The integration prompt's stretch goal is "Ultron accessible from
+The integration prompt's stretch goal is "Kenning accessible from
 anywhere via the phone app." The minimum useful version of that is
 **Telegram-only** — Phase 4 already gives you in-character text
 chat plus proactive notifications from your phone, without needing
@@ -190,7 +190,7 @@ been performed** — Phase 11 is intentionally docs-only unless the
 user indicates they have hardware to pair.
 
 If you have a paired iOS or Android node and want to verify the
-Ultron-side wiring works:
+Kenning-side wiring works:
 
 1. Trigger a coding-task completion notification.
 2. Confirm it arrives in the OpenClaw mobile app (and Telegram, if

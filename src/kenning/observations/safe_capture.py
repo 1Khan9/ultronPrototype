@@ -5,15 +5,15 @@ Adapted from cline's ``TelemetryService.safeCapture`` pattern (Apache
 emit-site failure (writer crash, schema mismatch, disk full) NEVER
 propagates back into the call site that triggered the observation.
 
-Ultron's observation framework already lives in
-``src/ultron/observations/`` (writer, schema, integrations, etc.).
+Kenning's observation framework already lives in
+``src/kenning/observations/`` (writer, schema, integrations, etc.).
 This module adds the canonical wrapper that every external caller
 should route through. The contract is:
 
 * The wrapped callable is invoked synchronously OR asynchronously,
   matching the caller's idiom.
 * Any exception during the call is logged at WARN (via the standard
-  ``ultron.observations.safe_capture`` logger) and swallowed.
+  ``kenning.observations.safe_capture`` logger) and swallowed.
 * The wrapper returns the call's result on success; on failure it
   returns the optional ``fallback`` value (default ``None``).
 * An optional per-call ``error_context`` string is included in the
@@ -41,7 +41,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional, TypeVar
 
-LOGGER = logging.getLogger("ultron.observations.safe_capture")
+LOGGER = logging.getLogger("kenning.observations.safe_capture")
 
 T = TypeVar("T")
 

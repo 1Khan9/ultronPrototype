@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import re
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("response_style")
 

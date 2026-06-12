@@ -1,5 +1,5 @@
 """Phase 1 e2e: real AI coding agent subprocess connects to a real running
-:class:`UltronMCPServer` over SSE and calls our tools.
+:class:`KenningMCPServer` over SSE and calls our tools.
 
 This is the spec's "AI coding agent can connect to the worker-facing server
 and call all four worker tools" criterion. Slow tier (PYTEST_RUN_GPU_TESTS=1)
@@ -16,12 +16,12 @@ from typing import List
 
 import pytest
 
-os.environ.setdefault("ULTRON_CODING_MCP_ALLOW_ANY_ROOT", "1")
+os.environ.setdefault("KENNING_CODING_MCP_ALLOW_ANY_ROOT", "1")
 
-from ultron.coding.direct_bridge import DirectClaudeCodeBridge  # noqa: E402
-from ultron.coding.bridge import TaskRequest  # noqa: E402
-from ultron.coding.mcp_server import UltronMCPServer, write_mcp_config  # noqa: E402
-from ultron.coding.session import SessionStatus  # noqa: E402
+from kenning.coding.direct_bridge import DirectClaudeCodeBridge  # noqa: E402
+from kenning.coding.bridge import TaskRequest  # noqa: E402
+from kenning.coding.mcp_server import KenningMCPServer, write_mcp_config  # noqa: E402
+from kenning.coding.session import SessionStatus  # noqa: E402
 
 
 pytestmark = [
@@ -60,7 +60,7 @@ def test_real_claude_calls_report_progress_and_declare_complete(tmp_path: Path):
     project = tmp_path / "p"
     project.mkdir()
 
-    server = UltronMCPServer(
+    server = KenningMCPServer(
         host="127.0.0.1", port=_free_port(),
         log_path=tmp_path / "mcp_calls.jsonl",
     )
@@ -75,16 +75,16 @@ def test_real_claude_calls_report_progress_and_declare_complete(tmp_path: Path):
         bridge = _bridge()
 
         prompt = (
-            "Use the ultron_coding MCP tools as follows. "
-            "Step 1: call mcp__ultron_coding__report_progress with "
+            "Use the kenning_coding MCP tools as follows. "
+            "Step 1: call mcp__kenning_coding__report_progress with "
             "stage='scaffolding', summary='greeting file scaffolded', "
             "files_touched=['greeting.txt']. "
             "Step 2: write a single file `greeting.txt` containing the line "
             "'hi from claude' (use the Write tool). "
-            "Step 3: call mcp__ultron_coding__report_test_results with "
+            "Step 3: call mcp__kenning_coding__report_test_results with "
             "passing=0, failing=0, skipped=0, details='no tests for this '"
             "single-file artifact'. "
-            "Step 4: call mcp__ultron_coding__declare_complete with "
+            "Step 4: call mcp__kenning_coding__declare_complete with "
             "summary='single-file greeting written', entry_point=null, "
             "run_command=null, files_created=['greeting.txt'], "
             "files_modified=[]. "

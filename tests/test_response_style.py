@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.response_style import (
+from kenning.response_style import (
     apply_brevity_hint,
     is_brief_question,
     is_factual_question,

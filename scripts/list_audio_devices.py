@@ -1,7 +1,7 @@
 """List input/output audio devices visible to sounddevice.
 
-Use this to find a device name you can pass via ``ULTRON_AUDIO_DEVICE`` or
-``ULTRON_AUDIO_OUTPUT_DEVICE`` in ``.env`` if the system defaults are wrong.
+Use this to find a device name you can pass via ``KENNING_AUDIO_DEVICE`` or
+``KENNING_AUDIO_OUTPUT_DEVICE`` in ``.env`` if the system defaults are wrong.
 """
 
 from __future__ import annotations

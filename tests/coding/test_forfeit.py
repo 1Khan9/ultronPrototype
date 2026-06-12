@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from ultron.coding.forfeit import (
+from kenning.coding.forfeit import (
     DEFAULT_MIN_ACTIONS,
     DEFAULT_MIN_RUNTIME_SECONDS,
     ForfeitController,
@@ -17,7 +17,7 @@ from ultron.coding.forfeit import (
     ForfeitTier,
     get_forfeit_controller,
 )
-from ultron.coding.session_registry import (
+from kenning.coding.session_registry import (
     SessionRegistry,
     reset_session_registries_for_testing,
 )

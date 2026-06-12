@@ -13,8 +13,8 @@ from typing import Any
 
 import pytest
 
-from ultron.desktop import browser_sessions as bs
-from ultron.desktop.browser_use import BrowserUseResult
+from kenning.desktop import browser_sessions as bs
+from kenning.desktop.browser_use import BrowserUseResult
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +55,7 @@ class _FakeProcessRegistry:
 
 class _FakeValidator:
     def __init__(self) -> None:
-        from ultron.safety.validator import ValidatorVerdict, Verdict
+        from kenning.safety.validator import ValidatorVerdict, Verdict
 
         self.contexts: list = []
         self._allow = ValidatorVerdict(verdict=Verdict.ALLOW, reason="ok")
@@ -66,7 +66,7 @@ class _FakeValidator:
         return self.next_verdict
 
     def block(self, message: str = "blocked") -> None:
-        from ultron.safety.validator import ValidatorVerdict, Verdict
+        from kenning.safety.validator import ValidatorVerdict, Verdict
 
         self.next_verdict = ValidatorVerdict(
             verdict=Verdict.BLOCK_HARD,
@@ -77,7 +77,7 @@ class _FakeValidator:
 
 class _FakeApprovalRegistry:
     def __init__(self) -> None:
-        from ultron.safety.two_phase_approval import ApprovalHandle
+        from kenning.safety.two_phase_approval import ApprovalHandle
 
         self.registrations: list = []
         self._n = 0

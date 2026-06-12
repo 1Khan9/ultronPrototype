@@ -32,7 +32,7 @@ from pathlib import Path
 from threading import Event
 from unittest.mock import MagicMock
 
-# Path setup so ``ultron`` + ``config`` import.
+# Path setup so ``kenning`` + ``config`` import.
 _HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_HERE))
 sys.path.insert(0, str(_HERE / "src"))
@@ -81,8 +81,8 @@ def _count_tokens(text: str) -> int:
 
 def verify_item_4_live() -> dict:
     _section("Item 4 — LLMLingua-style compression (LIVE)")
-    from ultron.llm.compression import Compressor
-    from ultron.config import get_config
+    from kenning.llm.compression import Compressor
+    from kenning.config import get_config
 
     raw_block = _build_rag_block()
     raw_chars = len(raw_block)
@@ -109,8 +109,8 @@ def verify_item_4_live() -> dict:
     # Live TTFT delta — load the 4B, time generation with raw vs compressed
     # block prepended to a fixed user query.
     print("\nLive TTFT measurement (loads 4B; ~3 s warmup):")
-    import ultron  # noqa: F401 — Windows CUDA DLL paths
-    from ultron.llm import LLMEngine
+    import kenning  # noqa: F401 — Windows CUDA DLL paths
+    from kenning.llm import LLMEngine
 
     print("  loading LLM...", end="", flush=True)
     t0 = time.monotonic()
@@ -172,7 +172,7 @@ def verify_item_4_live() -> dict:
 def verify_item_4_dry() -> dict:
     """No-LLM version of Item 4 verification (compression only)."""
     _section("Item 4 — LLMLingua-style compression (dry, no LLM)")
-    from ultron.llm.compression import Compressor
+    from kenning.llm.compression import Compressor
 
     raw_block = _build_rag_block()
     compressor = Compressor(target_ratio=1.5)
@@ -197,10 +197,10 @@ def verify_item_4_dry() -> dict:
 
 def verify_item_5() -> dict:
     _section("Item 5 — IRMA-style input reformulation")
-    from ultron.openclaw_routing.irma import (
+    from kenning.openclaw_routing.irma import (
         InputReformulator, ReformulationContext, RecentDecision,
     )
-    from ultron.openclaw_routing.disambiguator import (
+    from kenning.openclaw_routing.disambiguator import (
         _DISAMBIG_PROMPT, _DISAMBIG_PROMPT_IRMA,
     )
 
@@ -256,7 +256,7 @@ def verify_item_5() -> dict:
 def verify_item_6() -> dict:
     _section("Item 6 — Self-consistency (stability on noisy outputs)")
     import random
-    from ultron.llm.self_consistency import (
+    from kenning.llm.self_consistency import (
         run_self_consistency, json_winner_aggregator,
     )
 
@@ -327,8 +327,8 @@ def verify_item_6() -> dict:
 
 def verify_item_7() -> dict:
     _section("Item 7 — Canonical-path monitor (abort firing)")
-    from ultron.coding.canonical_monitor import CanonicalPathMonitor
-    from ultron.coding.bridge import EventKind, TaskEvent
+    from kenning.coding.canonical_monitor import CanonicalPathMonitor
+    from kenning.coding.bridge import EventKind, TaskEvent
 
     monitor = CanonicalPathMonitor(off_canonical_threshold=3, early_window_calls=10)
 
@@ -373,8 +373,8 @@ def verify_item_7() -> dict:
 def verify_item_8() -> dict:
     _section("Item 8 — Block-and-revise validator")
     import asyncio
-    from ultron.openclaw_routing.dispatcher import OpenClawDispatcher
-    from ultron.openclaw_routing.intents import BrowserIntent
+    from kenning.openclaw_routing.dispatcher import OpenClawDispatcher
+    from kenning.openclaw_routing.intents import BrowserIntent
 
     cfg = MagicMock()
     cfg.openclaw.enabled = False

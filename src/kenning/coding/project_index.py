@@ -1,6 +1,6 @@
 """Project index -- Qdrant-backed digest store + semantic search.
 
-Companion to :mod:`ultron.coding.project_digest`. Whenever a project
+Companion to :mod:`kenning.coding.project_digest`. Whenever a project
 digest is generated, :class:`ProjectIndex` upserts it into a dedicated
 Qdrant collection (separate from conversational memory so RAG over
 chat history doesn't surface project source).
@@ -29,13 +29,13 @@ Fail-open:
   * Qdrant unavailable / connection error -> all methods return
     safe defaults (empty list, None). The orchestrator's supervisor
     handler checks for None and falls back to lexical
-    :class:`ultron.coding.projects.ProjectResolver`.
+    :class:`kenning.coding.projects.ProjectResolver`.
   * Embedder failure during upsert -> WARN logged, entry NOT
     written; caller can retry.
 
 Bus integration:
   * Every successful upsert publishes
-    :data:`ultron.bus.events.ProjectIndexedEvent`. Subscribers can
+    :data:`kenning.bus.events.ProjectIndexedEvent`. Subscribers can
     use this for liveness tracking or to invalidate adjacent
     caches.
 """
@@ -52,10 +52,10 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
 
-from ultron.bus import ProjectIndexedEvent, publish as bus_publish
-from ultron.coding.project_digest import ProjectDigest
+from kenning.bus import ProjectIndexedEvent, publish as bus_publish
+from kenning.coding.project_digest import ProjectDigest
 
-logger = logging.getLogger("ultron.coding.project_index")
+logger = logging.getLogger("kenning.coding.project_index")
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +181,7 @@ class ProjectIndex:
         """Construct + open the underlying Qdrant collection.
 
         Args:
-            embedder: a :class:`ultron.memory.embedder.HybridEmbedder`.
+            embedder: a :class:`kenning.memory.embedder.HybridEmbedder`.
                 Required for both upsert + search. Same embedder used
                 by ConversationMemory -- vectors share the bge-small
                 space so cross-pollination is well-defined (though we
@@ -206,7 +206,7 @@ class ProjectIndex:
                 OWNER controls the close lifecycle; :meth:`close` is a
                 no-op on borrowed clients.
         """
-        from ultron.config import get_config, resolve_path
+        from kenning.config import get_config, resolve_path
 
         cfg = get_config()
 
@@ -312,7 +312,7 @@ class ProjectIndex:
 
         Args:
             digest: the :class:`ProjectDigest` from
-                :func:`ultron.coding.project_digest.generate_digest`.
+                :func:`kenning.coding.project_digest.generate_digest`.
             project_id: stable id. When omitted, derived from
                 ``digest.project_path`` so the same project always
                 lands on the same row (re-runs overwrite).

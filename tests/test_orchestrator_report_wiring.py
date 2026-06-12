@@ -2,7 +2,7 @@
 orchestrator (Batch C of the deferred-primitive wiring pass).
 
 Orchestrator.__new__ pattern; no voice stack. The real round-trip
-redirects ultron.config.PROJECT_ROOT to tmp_path so nothing touches
+redirects kenning.config.PROJECT_ROOT to tmp_path so nothing touches
 the repo data/ dir (R9).
 """
 
@@ -14,7 +14,7 @@ import pytest
 
 
 def _bare_orchestrator() -> Any:
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
 
     o = Orchestrator.__new__(Orchestrator)
     o._report_queue = None
@@ -46,8 +46,8 @@ class TestInitReportQueue:
     def test_real_construction_under_tmp(
         self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import ultron.config as cfgmod
-        from ultron.feedback.report_queue import ReportQueue
+        import kenning.config as cfgmod
+        from kenning.feedback.report_queue import ReportQueue
 
         monkeypatch.setattr(cfgmod, "PROJECT_ROOT", tmp_path)
         o = _bare_orchestrator()
@@ -86,7 +86,7 @@ class TestMaybeHandleReportConcern:
         assert handled is True
         assert len(q.filed) == 1
         filed = q.filed[0]
-        from ultron.feedback.report_queue import ReportTargetKind
+        from kenning.feedback.report_queue import ReportTargetKind
 
         assert filed["target_kind"] is ReportTargetKind.RESPONSE
         assert filed["reason"].startswith("log a concern")
@@ -115,7 +115,7 @@ class TestMaybeHandleReportConcern:
         o._maybe_handle_report_concern(
             "log a concern that you misremembered my preference"
         )
-        from ultron.feedback.report_queue import ReportTargetKind
+        from kenning.feedback.report_queue import ReportTargetKind
 
         assert q.filed[0]["target_kind"] is ReportTargetKind.MEMORY
 
@@ -133,8 +133,8 @@ class TestMaybeHandleReportConcern:
     def test_real_queue_round_trip(
         self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import ultron.config as cfgmod
-        from ultron.feedback.report_queue import ReportQueue, ReportStatus
+        import kenning.config as cfgmod
+        from kenning.feedback.report_queue import ReportQueue, ReportStatus
 
         monkeypatch.setattr(cfgmod, "PROJECT_ROOT", tmp_path)
         o = _bare_orchestrator()

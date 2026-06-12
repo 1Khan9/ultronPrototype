@@ -1,5 +1,5 @@
 """Tests for the catalog 11 (clawhub-browser-agent) additions to
-:class:`ultron.desktop.browser_use.BrowserUseTool`:
+:class:`kenning.desktop.browser_use.BrowserUseTool`:
 
 * T3 -- :meth:`click_css_selector` (CSS-selector -> getBoundingClientRect
   -> centre coordinate -> gated :meth:`click_at_coords`).
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 
-from ultron.desktop.browser_use import (
+from kenning.desktop.browser_use import (
     BrowserActionResult,
     BrowserEvalResult,
     BrowserUseResult,

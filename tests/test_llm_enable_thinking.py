@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.llm.inference import LLMEngine
+from kenning.llm.inference import LLMEngine
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +153,7 @@ def test_in_process_generate_injects_no_think_when_false() -> None:
         "choices": [{"message": {"content": "hi"}}],
         "usage": {"completion_tokens": 1},
     }
-    with patch("ultron.llm.inference.get_config") as gc:
+    with patch("kenning.llm.inference.get_config") as gc:
         gc.return_value.llm = _LLMCfg()
         eng.generate("hello", enable_thinking=False)
     call_kwargs = eng._llm.create_chat_completion.call_args.kwargs
@@ -172,7 +172,7 @@ def test_in_process_generate_no_marker_when_true_or_default() -> None:
             "choices": [{"message": {"content": "hi"}}],
             "usage": {},
         }
-        with patch("ultron.llm.inference.get_config") as gc:
+        with patch("kenning.llm.inference.get_config") as gc:
             gc.return_value.llm = _LLMCfg()
             eng.generate("hello", enable_thinking=et)
         call_kwargs = eng._llm.create_chat_completion.call_args.kwargs
@@ -189,7 +189,7 @@ def test_in_process_generate_stream_injects_no_think_when_false() -> None:
     def _fake_stream() -> Iterator[dict]:
         yield {"choices": [{"delta": {"content": "ok"}}]}
     eng._llm.create_chat_completion.return_value = _fake_stream()
-    with patch("ultron.llm.inference.get_config") as gc:
+    with patch("kenning.llm.inference.get_config") as gc:
         gc.return_value.llm = _LLMCfg()
         list(eng.generate_stream("hi", enable_thinking=False))
     call_kwargs = eng._llm.create_chat_completion.call_args.kwargs
@@ -205,7 +205,7 @@ def test_in_process_generate_stream_default_no_marker() -> None:
     def _fake_stream() -> Iterator[dict]:
         yield {"choices": [{"delta": {"content": "ok"}}]}
     eng._llm.create_chat_completion.return_value = _fake_stream()
-    with patch("ultron.llm.inference.get_config") as gc:
+    with patch("kenning.llm.inference.get_config") as gc:
         gc.return_value.llm = _LLMCfg()
         list(eng.generate_stream("hi"))
     call_kwargs = eng._llm.create_chat_completion.call_args.kwargs
@@ -235,7 +235,7 @@ def test_in_process_generate_does_not_crash_with_real_llamacpp_signature() -> No
         "choices": [{"message": {"content": "ok"}}],
         "usage": {},
     }
-    with patch("ultron.llm.inference.get_config") as gc:
+    with patch("kenning.llm.inference.get_config") as gc:
         gc.return_value.llm = _LLMCfg()
         eng.generate("hello", enable_thinking=False)
     call_kwargs = set(eng._llm.create_chat_completion.call_args.kwargs)
@@ -286,7 +286,7 @@ def test_http_payload_includes_enable_thinking_false() -> None:
         resp.raise_for_status = MagicMock()
         return resp
 
-    with patch("ultron.llm.inference.get_config") as gc, \
+    with patch("kenning.llm.inference.get_config") as gc, \
          patch("requests.post", side_effect=fake_post):
         gc.return_value.llm = _LLMCfg()
         eng.generate("hello", enable_thinking=False)
@@ -307,7 +307,7 @@ def test_http_payload_omits_when_default() -> None:
         resp.raise_for_status = MagicMock()
         return resp
 
-    with patch("ultron.llm.inference.get_config") as gc, \
+    with patch("kenning.llm.inference.get_config") as gc, \
          patch("requests.post", side_effect=fake_post):
         gc.return_value.llm = _LLMCfg()
         eng.generate("hello")

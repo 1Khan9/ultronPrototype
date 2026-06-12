@@ -1,7 +1,7 @@
 """Skill discovery + frontmatter -> :class:`Skill` conversion.
 
 Walks a directory, parses every ``.md`` file's YAML frontmatter via
-:func:`ultron.parsing.parse_frontmatter` (T11), and turns the result into
+:func:`kenning.parsing.parse_frontmatter` (T11), and turns the result into
 a :class:`Skill` value object. Per-file errors are logged and skipped so
 one malformed skill never breaks discovery -- the fail-open posture from
 the frontmatter parser carries through.
@@ -14,8 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
-from ultron.parsing import FrontmatterResult, parse_frontmatter, walk_directory_with_frontmatter
-from ultron.skills.models import (
+from kenning.parsing import FrontmatterResult, parse_frontmatter, walk_directory_with_frontmatter
+from kenning.skills.models import (
     KeywordTrigger,
     Skill,
     SkillSource,
@@ -224,9 +224,9 @@ def load_skills_from_directory(
 
     When ``scan_untrusted`` is True (default) AND ``source`` is not
     :attr:`SkillSource.PUBLIC`, each built skill is run through
-    :func:`ultron.skills.scan.scan_skill` and QUARANTINED (skipped, counted
+    :func:`kenning.skills.scan.scan_skill` and QUARANTINED (skipped, counted
     in :attr:`SkillLoadStats.skipped_quarantined`, logged at WARN) on any
-    prompt-injection / instruction-override detection. PUBLIC (ultron-
+    prompt-injection / instruction-override detection. PUBLIC (kenning-
     shipped) skills are trusted and never scanned. Fail-open: a scanner
     error degrades to "clean" so the catalog is never silently emptied.
     """
@@ -265,13 +265,13 @@ def load_skills_from_directory(
             continue
 
         # Trust gate: scan skills from untrusted sources (USER / PROJECT /
-        # OTHER -- e.g. ~/.ultron/skills, a project .ultron/skills, or the
+        # OTHER -- e.g. ~/.kenning/skills, a project .kenning/skills, or the
         # autonomous data/evolution/skills dir) for prompt-injection content
         # BEFORE they can be injected into the system prompt. PUBLIC
-        # (ultron-shipped) skills are trusted. Fail-open.
+        # (kenning-shipped) skills are trusted. Fail-open.
         if scan_untrusted and source != SkillSource.PUBLIC:
             try:
-                from ultron.skills.scan import scan_skill
+                from kenning.skills.scan import scan_skill
 
                 scan_result = scan_skill(skill)
             except Exception as exc:  # noqa: BLE001 -- never drop on scanner bug

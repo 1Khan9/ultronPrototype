@@ -41,11 +41,11 @@ import time
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
-from ultron.config import get_config
-from ultron.utils.logging import get_logger
+from kenning.config import get_config
+from kenning.utils.logging import get_logger
 
 if TYPE_CHECKING:
-    from ultron.config import LLMConfig, MemoryContextualRetrievalConfig
+    from kenning.config import LLMConfig, MemoryContextualRetrievalConfig
 
 logger = get_logger("memory.contextualizer")
 
@@ -124,11 +124,11 @@ class ContextGenerator:
     def _resolve_path(p: str) -> Path:
         """Resolve a model path relative to project root when relative,
         else absolute. Mirrors the pattern in
-        :mod:`ultron.utils.paths`."""
+        :mod:`kenning.utils.paths`."""
         path = Path(p)
         if not path.is_absolute():
             # ROOT = the project root inferred from this file's
-            # location. ``src/ultron/memory/contextualizer.py`` ->
+            # location. ``src/kenning/memory/contextualizer.py`` ->
             # project root is three parents up.
             root = Path(__file__).resolve().parents[3]
             path = root / path

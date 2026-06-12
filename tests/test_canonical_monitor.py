@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.coding.canonical_monitor import (
+from kenning.coding.canonical_monitor import (
     CODE_TASK_CANONICAL_TOOLS,
     CanonicalPathMonitor,
     MonitorVerdict,

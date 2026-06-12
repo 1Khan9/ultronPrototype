@@ -1,8 +1,8 @@
 """Kokoro TTS engine (2026-05-19, Track 5).
 
 Wrapper around the Kokoro StyleTTS2 + ISTFTNet inference model. Same
-public surface as :class:`ultron.tts.xtts_v3.XttsV3Speech` (and the
-legacy :class:`ultron.tts.speech.TextToSpeech`) so the orchestrator
+public surface as :class:`kenning.tts.xtts_v3.XttsV3Speech` (and the
+legacy :class:`kenning.tts.speech.TextToSpeech`) so the orchestrator
 can switch engines via ``tts.engine`` without touching the playback
 path.
 
@@ -22,11 +22,11 @@ scope of this change small:
    filter pass exists as an opt-in ``apply_runtime_filter`` flag for
    pre-fine-tune use while the corpus is being prepared.
 2. **No isolated venv subprocess.** Kokoro's dep tree (transformers,
-   phonemizer, scipy) overlaps cleanly with the main Ultron venv.
+   phonemizer, scipy) overlaps cleanly with the main Kenning venv.
    In-process loading saves a CUDA context + ~50 ms IPC overhead per
    synth.
 3. **No fine-tune training code.** Training pipelines live in
-   ``ultronVoiceAudio/`` per the existing voice-prep convention.
+   ``kenningVoiceAudio/`` per the existing voice-prep convention.
    This module is inference-only.
 
 Default ``tts.engine`` is unchanged. To use Kokoro: place weights at
@@ -44,12 +44,12 @@ from typing import Callable, ClassVar, Iterable, NamedTuple, Optional, Tuple
 
 import numpy as np
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("tts.kokoro")
 
 
-# Mirror of ultron.tts.xtts_v3._QUEUE_GET_TIMEOUT_SECONDS / the legacy
+# Mirror of kenning.tts.xtts_v3._QUEUE_GET_TIMEOUT_SECONDS / the legacy
 # speech.py constant. Long enough to absorb a slow first-clip synth
 # (Kokoro lazy-load on first call) without false-killing the playback
 # loop.
@@ -96,7 +96,7 @@ def _make_kokoro_finetune_compat(src: Path) -> Path:
     naming so the pip-installed ``kokoro`` package's KModel can load
     the fine-tuned weights without falling through to ``strict=False``.
 
-    The training submodule (``ultronVoiceAudio/kokoro_finetune/kokoro``)
+    The training submodule (``kenningVoiceAudio/kokoro_finetune/kokoro``)
     uses ``torch.nn.utils.parametrizations.weight_norm`` (new API),
     storing weight_norm as ``<layer>.parametrizations.weight.original0``
     (magnitude g) and ``...original1`` (direction v). The pip package
@@ -179,7 +179,7 @@ class KokoroSpeech:
             Defaults to ``models/kokoro/``. The directory must exist
             for the engine to load; missing weights produce a
             :class:`KokoroEngineLoadError` on first inference.
-        voice: name of the voice to render. Production-tuned Ultron
+        voice: name of the voice to render. Production-tuned Kenning
             voice is loaded from ``model_path/voices/{voice}.pt`` once
             the fine-tune lands; pre-fine-tune we fall back to one of
             Kokoro's stock voices (typically ``af_alloy`` or
@@ -193,7 +193,7 @@ class KokoroSpeech:
         speed: speech-rate multiplier (1.0 = native). Mirrors the
             XTTS speed knob -- the orchestrator can hot-swap engines
             without re-tuning cadence.
-        apply_runtime_filter: when True, the v3 Ultron pedalboard
+        apply_runtime_filter: when True, the v3 Kenning pedalboard
             filter runs on Kokoro's output (CPU; ~10-30 ms /
             sentence). Useful pre-fine-tune so the voice character
             matches the XTTS pipeline. Default False since the
@@ -238,8 +238,8 @@ class KokoroSpeech:
     ) -> None:
         self.model_path = Path(model_path) if model_path else Path("models/kokoro")
         # 2026-05-22: when the configured voice name resolves to a local
-        # ``.pt`` voicepack on disk (e.g. the fine-tuned ``ultron`` voice
-        # at ``models/kokoro/voices/ultron.pt``), pass the FULL path to
+        # ``.pt`` voicepack on disk (e.g. the fine-tuned ``kenning`` voice
+        # at ``models/kokoro/voices/kenning.pt``), pass the FULL path to
         # KPipeline so it loads from disk via the
         # ``voice.endswith('.pt')`` branch in
         # ``kokoro.pipeline.KPipeline.load_single_voice`` instead of
@@ -433,17 +433,17 @@ class KokoroSpeech:
         #
         # 2026-05-22 fine-tune integration: if a converted Kokoro-
         # format fine-tune weights file is present at
-        # ``model_path/ultron_finetune.pth``, construct an explicit
+        # ``model_path/kenning_finetune.pth``, construct an explicit
         # KModel pointing at those weights and hand it to KPipeline.
         # Without this, voicepack alone only provides the style
         # vectors; the underlying decoder / predictor / text_encoder
         # remain stock Kokoro, which dilutes the trained voice
         # character. The converted file is produced from a StyleTTS2
         # Stage-2 checkpoint via
-        # ``ultronVoiceAudio/kokoro_finetune/scripts/test_inference.py``
+        # ``kenningVoiceAudio/kokoro_finetune/scripts/test_inference.py``
         # ``convert_checkpoint`` helper (bert + bert_encoder +
         # predictor + text_encoder + decoder, ~330 MB).
-        finetune_path = self.model_path / "ultron_finetune.pth"
+        finetune_path = self.model_path / "kenning_finetune.pth"
         if finetune_path.is_file():
             try:
                 # 2026-05-22: the fine-tune was trained with PyTorch's
@@ -591,7 +591,7 @@ class KokoroSpeech:
         self._stop_event.clear()
 
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
             tts_cfg = get_config().tts
             spec_open = tts_cfg.speculative_stream_open_enabled
             low_latency = tts_cfg.output_low_latency_mode
@@ -760,7 +760,7 @@ class KokoroSpeech:
         # 3B preset). Pure regex on a short string -- microseconds; an
         # empty result returns a zero clip the playback paths skip.
         try:
-            from ultron.tts.text_hygiene import sanitize_spoken_text
+            from kenning.tts.text_hygiene import sanitize_spoken_text
 
             text = sanitize_spoken_text(text)
         except Exception:                                     # noqa: BLE001
@@ -826,7 +826,7 @@ class KokoroSpeech:
         # silently to the raw output rather than dropping the clip.
         if self.apply_spectral_smooth:
             try:
-                from ultron.tts.spectral_smooth import spectral_smooth
+                from kenning.tts.spectral_smooth import spectral_smooth
                 pcm_f32 = spectral_smooth(
                     pcm_f32, sr=self._sample_rate,
                     median_window_frames=self.spectral_smooth_window,
@@ -844,7 +844,7 @@ class KokoroSpeech:
         # through without dropping the clip.
         if self.apply_trim_fade:
             try:
-                from ultron.tts.spectral_smooth import trim_and_fade
+                from kenning.tts.spectral_smooth import trim_and_fade
                 pcm_f32 = trim_and_fade(
                     pcm_f32, sr=self._sample_rate,
                     threshold_db=self.trim_fade_threshold_db,
@@ -857,14 +857,14 @@ class KokoroSpeech:
         # Optional pre-fine-tune runtime filter pass.
         if self.apply_runtime_filter:
             try:
-                from ultron.tts.ultron_filter import apply_filter
+                from kenning.tts.kenning_filter import apply_filter
                 pcm_f32 = apply_filter(
                     pcm_f32, self._sample_rate,
                     preset=self.filter_preset,
                     tail_silence_ms=200.0,
                 )
             except Exception as e:                            # noqa: BLE001
-                logger.warning("Ultron filter on Kokoro output failed: %s", e)
+                logger.warning("Kenning filter on Kokoro output failed: %s", e)
 
         # Clip + convert to int16 (mirrors the XTTS engine's tail).
         np.clip(pcm_f32, -1.0, 1.0, out=pcm_f32)
@@ -877,7 +877,7 @@ class KokoroSpeech:
         # otherwise untouched, and ack-cache hits above (static,
         # pre-rendered clips) deliberately skip analysis.
         try:
-            from ultron.audio.output_quality import get_output_watcher
+            from kenning.audio.output_quality import get_output_watcher
 
             watcher = get_output_watcher()
             if watcher is not None:

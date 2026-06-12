@@ -177,7 +177,7 @@ def observe_llm_thinking_drift_sample(
     Stored verbatim (truncated) so a future review pass can spot
     regressions when ``enable_thinking=False`` is the active default.
     Production sampling is gated by
-    :class:`ultron.config.LLMConfig.enable_thinking_drift_sample_rate`;
+    :class:`kenning.config.LLMConfig.enable_thinking_drift_sample_rate`;
     when the dice roll lands the orchestrator calls this helper. The
     helper itself does no sampling -- the caller decides whether to
     emit.

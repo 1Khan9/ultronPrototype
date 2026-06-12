@@ -25,7 +25,7 @@ Added `llm.preset: "qwen3.5-9b" | "qwen3.5-4b" | "custom"` (default
 `"qwen3.5-9b"`; flips to `"qwen3.5-4b"` after Stage H gate passes).
 Preset auto-resolves `model_path` + `draft_model_path` + `n_ctx` via
 the `LLM_PRESETS` table in
-[src/ultron/config.py](../src/ultron/config.py), but **only when those
+[src/kenning/config.py](../src/kenning/config.py), but **only when those
 keys are absent from the YAML** — explicit user values always win
 (via `model_fields_set` check in the after-validator). `preset: "custom"`
 disables auto-resolution entirely (back-compat for tests + advanced
@@ -97,7 +97,7 @@ will measure the actual TTFT delta on the live stack.
 ### Stage D — 4B baseline ✅ DONE (4B alone; 4B+spec deferred to Stage H sweep)
 First-pass measurement: 4B alone via the in-process llama-cpp-python
 loader (no speculative decoding yet), driven by
-`scripts/measure_baseline.py` with `ULTRON_LLM_MODEL_PATH` overriding
+`scripts/measure_baseline.py` with `KENNING_LLM_MODEL_PATH` overriding
 the default 9B path. Recorded snapshot:
 [baselines_4b_q4_in_process.json](../baselines_4b_q4_in_process.json).
 
@@ -140,7 +140,7 @@ cd C:\STC\ultronPrototype
 ```
 
 The plan's verification criterion is qualitative — "user confirms
-Ultron sounds unchanged". The script collects the data; the gate is
+Kenning sounds unchanged". The script collects the data; the gate is
 your judgement. If the 4B sounds the same (cadence, terseness,
 character), Stage E passes and Stage H can flip the default. If not,
 the rollback is to keep the `qwen3.5-9b` preset (one-line YAML revert).
@@ -237,10 +237,10 @@ The flip is now a single switch via any of **four** paths:
 
 ```text
 4. Voice command (no keyboard / file edit needed):
-   "Ultron, switch to the 4B"
-   "Ultron, use the 9B model"
-   "Ultron, load 4B"
-   "Ultron, swap to nine B"
+   "Kenning, switch to the 4B"
+   "Kenning, use the 9B model"
+   "Kenning, load 4B"
+   "Kenning, swap to nine B"
 ```
 
 The voice command:
@@ -251,10 +251,10 @@ The voice command:
    `LLMEngine.reload_for_preset(target)`, which builds the new
    `Llama` instance BEFORE releasing the old one (failure-safe — a
    missing GGUF leaves the engine intact). On success the env var
-   `ULTRON_LLM_PRESET` is updated so subsequent reload paths agree;
+   `KENNING_LLM_PRESET` is updated so subsequent reload paths agree;
    in-memory history is cleared (different `n_ctx`); the cancel
    flag is reset.
-3. Ultron speaks the result: `"Switched to the 4B."` or
+3. Kenning speaks the result: `"Switched to the 4B."` or
    `"I couldn't switch to the 4B. Reason: …"`.
 
 Mid-clarification utterances are suppressed — model-swap commands
@@ -279,7 +279,7 @@ llm:
 
 ```powershell
 # 2. Env var, no file edit needed
-$env:ULTRON_LLM_PRESET = "qwen3.5-4b"; python -m ultron
+$env:KENNING_LLM_PRESET = "qwen3.5-4b"; python -m kenning
 
 # 3. Swap helper script (validates GGUFs exist + atomic write)
 python scripts/swap_llm_preset.py qwen3.5-4b
@@ -290,18 +290,18 @@ python scripts/swap_llm_preset.py --list     # show all presets + paths
 The env-var path also clears any explicit `model_path` /
 `draft_model_path` / `n_ctx` overrides in YAML so the preset's table
 values fully take effect. Override that with
-`ULTRON_LLM_PRESET_KEEP_OVERRIDES=1` if you want YAML-pinned values to
+`KENNING_LLM_PRESET_KEEP_OVERRIDES=1` if you want YAML-pinned values to
 survive the env-var preset switch.
 
 VRAM target follows the preset: `check_vram.py` now reads
-`ULTRON_LLM_PRESET` / `config.yaml:llm.preset` and reports the matching
+`KENNING_LLM_PRESET` / `config.yaml:llm.preset` and reports the matching
 soft target (`qwen3.5-9b → 9216 MB`, `qwen3.5-4b → 6700 MB`,
 `custom → 9216 MB` fallback). The hard cap (11500 MB) is unchanged —
 it's the GPU physics.
 
 **User-led steps remaining:**
 1. Run [scripts/verify_voice_character_4b.py](../scripts/verify_voice_character_4b.py)
-   (Stage E). If Ultron sounds unchanged on the five A/B queries → continue.
+   (Stage E). If Kenning sounds unchanged on the five A/B queries → continue.
 2. Run the 16-step real-stack smoke test in [docs/smoke_test.md](smoke_test.md).
 3. Flip via any of the three paths above. Recommended:
    `python scripts/swap_llm_preset.py qwen3.5-4b` (validates GGUFs,
@@ -329,7 +329,7 @@ the rule is "default ON when the flag is a no-op outside its trigger
 scenario AND a real benefit when triggered."
 
 ### Item 4 — LLMLingua-style compression ✅
-[`src/ultron/llm/compression.py`](../src/ultron/llm/compression.py).
+[`src/kenning/llm/compression.py`](../src/kenning/llm/compression.py).
 Heuristic compressor (no extra model) drops stopwords (negation-
 preserving), contractions, redundant punctuation, repeated sentence
 signatures. `Compressor(perplexity_scorer=...)` kwarg lets a future
@@ -342,7 +342,7 @@ surface flags: `compress_rag` / `compress_web` / `compress_history`
 compress_history}`.
 
 ### Item 5 — IRMA-style input reformulation ✅
-[`src/ultron/openclaw_routing/irma.py`](../src/ultron/openclaw_routing/irma.py).
+[`src/kenning/openclaw_routing/irma.py`](../src/kenning/openclaw_routing/irma.py).
 `InputReformulator` is a pure-text shaper (no LLM call) — wraps the
 disambiguator's input with optional recent-decision context, active
 session summary, and routing hints. Wired into `IntentDisambiguator`
@@ -351,7 +351,7 @@ legacy prompt — disambiguator path never crashes. 15 tests. Config:
 `routing.irma.{enabled, max_recent_decisions}`.
 
 ### Item 6 — Self-consistency for high-stakes calls ✅
-[`src/ultron/llm/self_consistency.py`](../src/ultron/llm/self_consistency.py).
+[`src/kenning/llm/self_consistency.py`](../src/kenning/llm/self_consistency.py).
 Three aggregator families: `majority_vote_text`, `majority_vote_json`,
 `majority_vote_label`. `run_self_consistency(sampler, n, temperature,
 aggregator)` driver. Wired into `HybridTaskDecomposer.decompose` (JSON
@@ -360,7 +360,7 @@ ready-to-extend with the same pattern. 27 tests. Config:
 `llm.self_consistency.{enabled, n, temperature, disabled_sites}`.
 
 ### Item 7 — Canonical-path monitor for coding sessions ✅
-[`src/ultron/coding/canonical_monitor.py`](../src/ultron/coding/canonical_monitor.py).
+[`src/kenning/coding/canonical_monitor.py`](../src/kenning/coding/canonical_monitor.py).
 `CanonicalPathMonitor.observe(event)` ingests `TaskEvent`-shaped
 objects (duck-typed; works with both the dataclass and dicts in
 tests). Tracks tool_use events; signals abort when off-canonical
@@ -373,7 +373,7 @@ and-restart-with-cleaner-prompt flow as a follow-up. Config:
 early_window_calls}`.
 
 ### Item 8 — Block-and-revise validator on OpenClaw tool calls ✅
-[`src/ultron/openclaw_routing/block_and_revise.py`](../src/ultron/openclaw_routing/block_and_revise.py).
+[`src/kenning/openclaw_routing/block_and_revise.py`](../src/kenning/openclaw_routing/block_and_revise.py).
 `ToolCallValidator(llm).validate(goal, tool_name, tool_args)` runs a
 short pre-flight LLM check ("does this tool call advance the goal?")
 returning `ValidationResult(allow, reason, verdict, raw_response)`.
@@ -431,6 +431,6 @@ When resuming this work in a fresh session:
    mode infrastructure).
 2. Read this file.
 3. Verify the current model is still 9B via
-   `python scripts/check_vram.py` after `python -m ultron` cold-start
+   `python scripts/check_vram.py` after `python -m kenning` cold-start
    (peak ~10 GB = 9B; ~7 GB = 4B already swapped).
 4. Start with Stage A.

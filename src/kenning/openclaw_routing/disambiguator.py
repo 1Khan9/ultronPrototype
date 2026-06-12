@@ -15,9 +15,9 @@ import re
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from ultron.config import get_config
-from ultron.openclaw_routing.intents import RoutingIntentKind
-from ultron.utils.logging import get_logger
+from kenning.config import get_config
+from kenning.openclaw_routing.intents import RoutingIntentKind
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_routing.disambiguator")
 
@@ -101,7 +101,7 @@ class IntentDisambiguator:
         # ``routing.irma.enabled``; this just removes the wiring step.
         if reformulator is None:
             try:
-                from ultron.openclaw_routing.irma import build_default_reformulator
+                from kenning.openclaw_routing.irma import build_default_reformulator
                 reformulator = build_default_reformulator()
             except Exception as e:
                 # Never fail construction because of IRMA setup —

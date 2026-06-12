@@ -1,7 +1,7 @@
 """Ripgrep subprocess wrapper with byte-capped grouped JSON-line output.
 
 Adapted from cline's ``regexSearchFiles`` pattern (Apache 2.0; see
-``THIRD_PARTY_NOTICES.md``). Ultron's variant:
+``THIRD_PARTY_NOTICES.md``). Kenning's variant:
 
 * Uses Python ``subprocess.Popen`` with line-buffered stdout so the
   result accumulator can stop early once any cap is hit.
@@ -10,7 +10,7 @@ Adapted from cline's ``regexSearchFiles`` pattern (Apache 2.0; see
 * Adds Windows-specific ``CREATE_NO_WINDOW`` to keep a phantom console
   from flashing during synth-and-search voice turns.
 * Accepts an optional path-predicate (``ignore_predicate``) so the
-  result set can be filtered against ``.ultronignore`` policy before
+  result set can be filtered against ``.kenningignore`` policy before
   rendering.
 
 Output shape mirrors cline's grouped-by-file format with pipe-character

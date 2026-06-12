@@ -31,7 +31,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Iterable, List, Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("web_search.gating")
 
@@ -325,7 +325,7 @@ _PERSONAL_QUESTIONS = re.compile(
 # This shortcut keeps the LLM preflight off the hot path for the
 # overwhelming majority of stable-knowledge queries.
 _STABLE_FACTUAL_REQUEST = re.compile(
-    r"^\s*(?:(?:hey\s+|okay\s+|alright\s+)?ultron[\s,.\-:]+)?"
+    r"^\s*(?:(?:hey\s+|okay\s+|alright\s+)?kenning[\s,.\-:]+)?"
     r"(?:and\s+|but\s+|so\s+|also\s+|then\s+)?"
     r"(?:"
     r"what(?:'s|\s+is|\s+are|\s+was|\s+were|\s+does|\s+do|\s+did|\s+kind|\s+type|\s+sort|\s+about|\s+do\s+you\s+think)|"
@@ -363,12 +363,12 @@ _CREATIVE_TASKS = re.compile(
 
 # 2026-05-19 round 5: bare greetings + acks should NEVER reach the LLM
 # preflight. Live session 2026-05-19 bhoza25go.output:
-# - 'Ultron say hello' -> SEARCH preflight -> brave + jina on 'Ultron
+# - 'Kenning say hello' -> SEARCH preflight -> brave + jina on 'Kenning
 #   character details', wasted 5+ seconds and produced a fake "Marvel
 #   character" framing
 # - The preflight LLM (Gemma) is over-eager: it sees ANY question as
 #   potentially searchable and gives reasons like "The query requires
-#   confirming Ultron's established character traits".
+#   confirming Kenning's established character traits".
 #
 # Anchored at sentence start (^) -- partial matches inside longer
 # utterances (e.g. "thanks for the explanation, now what's the
@@ -376,7 +376,7 @@ _CREATIVE_TASKS = re.compile(
 _GREETING_OR_ACK = re.compile(
     r"""
     ^\s*
-    (?:(?:hey\s+|hi\s+|ok\s+|okay\s+)?ultron[,\s]+)?
+    (?:(?:hey\s+|hi\s+|ok\s+|okay\s+)?kenning[,\s]+)?
     (?:and\s+|so\s+|then\s+|but\s+|please\s+)?
     (?:
         # Greetings
@@ -408,8 +408,8 @@ def _preflight_call(llm, prompt: str, max_tokens: int) -> str:
     regardless of whether self-consistency was used. Returns ``""`` on
     error (callers treat that as "preflight failed -> default NO_SEARCH").
     """
-    from ultron.config import get_config
-    from ultron.llm.self_consistency import (
+    from kenning.config import get_config
+    from kenning.llm.self_consistency import (
         json_winner_aggregator,
         run_self_consistency,
         should_apply_self_consistency,
@@ -443,7 +443,7 @@ def _preflight_call(llm, prompt: str, max_tokens: int) -> str:
             # tokeniser sees the open-tag token early in sampling. Strip
             # any residual blocks here so the JSON parser downstream
             # never sees them.
-            from ultron.llm.inference import strip_thinking_text
+            from kenning.llm.inference import strip_thinking_text
             return strip_thinking_text(raw).strip()
         except Exception as e:
             logger.warning("preflight LLM call failed: %s", e)
@@ -466,7 +466,7 @@ def _preflight_call(llm, prompt: str, max_tokens: int) -> str:
 def _trace(msg: str, **kwargs):
     """Best-effort trace helper -- never breaks classification."""
     try:
-        from ultron import trace
+        from kenning import trace
         trace.tlog(logger, msg, **kwargs)
     except Exception:
         pass
@@ -493,8 +493,8 @@ def classify_by_rules(utterance: str) -> Optional[GateVerdict]:
 
     # 2026-05-19 round 5: greetings / acks are NEVER worth searching.
     # Pre-empts the LLM preflight which was firing creative reasons
-    # like "The query requires confirming Ultron's established character
-    # traits" -> SEARCH on "Ultron say hello". The preflight is expensive
+    # like "The query requires confirming Kenning's established character
+    # traits" -> SEARCH on "Kenning say hello". The preflight is expensive
     # AND was producing wrong verdicts on these obvious cases.
     if _GREETING_OR_ACK.match(text):
         reason = "greeting / ack -- no web lookup needed"
@@ -734,7 +734,7 @@ def classify_by_preflight(
     site ``"web_gating_preflight"`` isn't disabled, the JSON output is
     sampled N times (at the configured non-zero temperature, since
     self-consistency requires diverse samples) and majority-voted via
-    :func:`ultron.llm.self_consistency.json_winner_aggregator`. The
+    :func:`kenning.llm.self_consistency.json_winner_aggregator`. The
     winning JSON is parsed identically to the single-greedy path.
     Default OFF preserves byte-for-byte single-call behaviour.
     """

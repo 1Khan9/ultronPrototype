@@ -1,7 +1,7 @@
 """Priority-banded presentation scheduler with environment-adaptive cadence.
 
 Adapted from cline's ``TaskPresentationScheduler`` pattern (Apache 2.0;
-see ``THIRD_PARTY_NOTICES.md``). Ultron's variant maps cline's
+see ``THIRD_PARTY_NOTICES.md``). Kenning's variant maps cline's
 text / reasoning / tool_calls priorities onto TTS-appropriate bands:
 
 * :attr:`PresentationPriority.IMMEDIATE` — sentence-boundary chunks
@@ -126,7 +126,7 @@ class PresentationScheduler:
         The scheduler is single-threaded by contract; callers feed
         chunks via :meth:`enqueue` and pump via :meth:`maybe_emit`
         (or :meth:`flush` to force). The :class:`StreamCoordinator`
-        in :mod:`ultron.streaming.coordinator` is the typical driver.
+        in :mod:`kenning.streaming.coordinator` is the typical driver.
     """
 
     def __init__(

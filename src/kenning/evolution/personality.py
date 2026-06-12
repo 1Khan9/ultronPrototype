@@ -3,7 +3,7 @@
 Catalog 13 (clawhub-capability-evolver) clean-room synthesis. The upstream
 stamped every evolution event with a five-trait ``PersonalityState`` and
 ranked configs by cumulative success -- i.e. the agent learned which
-"temperament" produced the best outcomes. ultron adopts the safe core of
+"temperament" produced the best outcomes. kenning adopts the safe core of
 that idea as a **Tier-0 auto-tune**: an adaptive response *temperament*
 that drifts toward what actually satisfies the user (measured from
 follow-up corrections, re-asks, and barge-ins), expressed purely as a
@@ -34,7 +34,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Any, Deque, Mapping, Optional
 
-from ultron.evolution.models import PersonalityState, clamp01
+from kenning.evolution.models import PersonalityState, clamp01
 
 # --- tuning constants -------------------------------------------------------
 

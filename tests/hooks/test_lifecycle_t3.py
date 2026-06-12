@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.hooks.lifecycle import (
+from kenning.hooks.lifecycle import (
     HOOK_DECISION_SEVERITY,
     HookDecision,
     HookKind,
@@ -23,8 +23,8 @@ from ultron.hooks.lifecycle import (
 
 
 def test_hookkind_contains_expected_event_count() -> None:
-    # 9 cline-derived + 5 ultron voice + 29 T3 OpenClaw additions = 43.
-    # (The OpenClaw catalog itself ships 36 events; ultron's superset
+    # 9 cline-derived + 5 kenning voice + 29 T3 OpenClaw additions = 43.
+    # (The OpenClaw catalog itself ships 36 events; kenning's superset
     # adds voice-specific lifecycle points beyond OpenClaw's set.)
     assert len(HookKind) == 9 + 5 + 29
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.safety.audit import (
+from kenning.safety.audit import (
     GENESIS_PREV_HASH,
     AuditLog,
     _hash_line,

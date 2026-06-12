@@ -1,9 +1,9 @@
 """Strict voice-intent matcher for explicit deep CODE exploration.
 
-Companion to :func:`ultron.memory.deep_recall.match_deep_recall` (memory) and
-:func:`ultron.web_search.deep_research.match_deep_research` (web): gates the
+Companion to :func:`kenning.memory.deep_recall.match_deep_recall` (memory) and
+:func:`kenning.web_search.deep_research.match_deep_research` (web): gates the
 orchestrator's ``_maybe_handle_code_exploration`` short-circuit, which runs a
-bounded :class:`ultron.agent_loop.deep_loops.DeepExplorationLoop` (iterative
+bounded :class:`kenning.agent_loop.deep_loops.DeepExplorationLoop` (iterative
 ripgrep: decompose -> search -> gap-fill -> search over the project source) and
 reports where in the code the answer lives.
 

@@ -1,13 +1,13 @@
-"""Tests for ultron.evolution.service -- the runtime bundle + JSONL store.
+"""Tests for kenning.evolution.service -- the runtime bundle + JSONL store.
 Hermetic: all persistence goes to tmp_path; no network, no model loads."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 
-from ultron.evolution.evolution_loop import EvolutionState
-from ultron.evolution.models import Capsule, EvolutionEvent, Outcome, OutcomeStatus
-from ultron.evolution.service import EvolutionService, EvolutionStore
+from kenning.evolution.evolution_loop import EvolutionState
+from kenning.evolution.models import Capsule, EvolutionEvent, Outcome, OutcomeStatus
+from kenning.evolution.service import EvolutionService, EvolutionStore
 
 
 def _cfg(**kw):

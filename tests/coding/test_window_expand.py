@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.coding.window_expand import (
+from kenning.coding.window_expand import (
     DEFAULT_MAX_ADDED_LINES,
     ExpansionResult,
     SCORE_BLANK_LINE,

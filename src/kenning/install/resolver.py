@@ -2,7 +2,7 @@
 
 T13 (openclaw-clawhub catalog port; see ``THIRD_PARTY_NOTICES.md``).
 Replaces the conditional ``if kind == github / elif kind == git / ...``
-branches in :mod:`ultron.skills.marketplace` with a typed
+branches in :mod:`kenning.skills.marketplace` with a typed
 :class:`ResolvedArtifact` envelope per source. Each variant carries
 the format-specific fetch URL plus the kind-specific verification
 rules so the install driver doesn't have to guess archive format
@@ -18,7 +18,7 @@ The resolver pattern (mirrored from the upstream marketplace):
 3. **Verify.** Per-kind verification rules: NPM_PACK + ClawPack
    add manifest-name + manifest-version + npm-integrity checks;
    GITHUB sources verify against the commit-SHA-implied tag;
-   LOCAL_PATH verifies content fingerprint via :mod:`ultron.install.lockfile`.
+   LOCAL_PATH verifies content fingerprint via :mod:`kenning.install.lockfile`.
 4. **Extract.** Driver materialises bytes into the target dir
    using the per-kind :class:`ExtractStrategy` hint.
 
@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Iterable, Mapping, Optional
 
-from ultron.install.artifact_identity import (
+from kenning.install.artifact_identity import (
     ArtifactIdentity,
     ClawPackParseError,
     IdentityMismatch,
@@ -43,7 +43,7 @@ from ultron.install.artifact_identity import (
     verify_clawpack_tarball,
     verify_identity,
 )
-from ultron.install.trust_envelope import ArtifactKind
+from kenning.install.trust_envelope import ArtifactKind
 
 LOGGER = logging.getLogger(__name__)
 
@@ -120,7 +120,7 @@ def build_local_path_artifact(
     Local-path sources have no fetch IO -- the artifact's bytes are
     on the local filesystem already. ``fingerprint`` (when supplied)
     is the SHA-256 of the canonical content payload computed by
-    :func:`ultron.install.lockfile.compute_skill_fingerprint`; the
+    :func:`kenning.install.lockfile.compute_skill_fingerprint`; the
     install driver uses it as the sha256 for verification.
     """
     return ResolvedArtifact(

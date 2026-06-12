@@ -21,9 +21,9 @@ from pathlib import Path
 
 import pytest
 
-from ultron.skills.capability_tags import CapabilityTag
-from ultron.skills.models import Skill, SkillSource, SkillType
-from ultron.skills.registry import (
+from kenning.skills.capability_tags import CapabilityTag
+from kenning.skills.models import Skill, SkillSource, SkillType
+from kenning.skills.registry import (
     SkillRegistry,
     _SourceSpec,
     _coerce_capability_tag_strings,
@@ -210,7 +210,7 @@ class TestSkillActiveForCapabilityTags:
         # Force the lazy import to fail. The skill MUST stay active so
         # the legacy "no filter" behaviour is preserved when the
         # capability_tags module is broken.
-        monkeypatch.setitem(_sys.modules, "ultron.skills.capability_tags", None)
+        monkeypatch.setitem(_sys.modules, "kenning.skills.capability_tags", None)
         skill = _skill_with_tags(CapabilityTag.REQUIRES_VLM.value)
         assert _skill_active_for_capability_tags(
             skill, gaming_mode=False, vlm_loaded=False, has_internet=True,
@@ -442,7 +442,7 @@ class TestMaybeGetSkillsBlockForwarding:
         assert block == ""
 
     def test_exception_returns_empty(self, monkeypatch):
-        from ultron.skills import registry as registry_module
+        from kenning.skills import registry as registry_module
 
         def _boom():
             raise RuntimeError("registry broken")

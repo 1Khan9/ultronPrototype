@@ -44,7 +44,7 @@ import threading
 from typing import Any, Optional
 
 
-logger = logging.getLogger("ultron.web_search.playwright_reader")
+logger = logging.getLogger("kenning.web_search.playwright_reader")
 
 
 # Wait condition forwarded to Playwright's ``page.goto``. The catalog
@@ -216,8 +216,8 @@ class PlaywrightReader:
 def _slim_and_convert(html_text: str) -> Optional[str]:
     """Slim → pandoc. Returns markdown or None."""
     try:
-        from ultron.web_search.slimdown_html import slimdown_html
-        from ultron.web_search.pandoc_converter import html_to_markdown
+        from kenning.web_search.slimdown_html import slimdown_html
+        from kenning.web_search.pandoc_converter import html_to_markdown
     except ImportError:
         return None
     slimmed = slimdown_html(html_text)

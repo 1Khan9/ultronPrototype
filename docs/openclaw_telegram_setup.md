@@ -1,17 +1,17 @@
 # Telegram channel setup
 
 Phase 4 of the OpenClaw integration. The Telegram bot is the first
-remote channel for Ultron — it lets you text Ultron from your phone
+remote channel for Kenning — it lets you text Kenning from your phone
 and receive proactive notifications (coding-task completion,
 heartbeat alerts, etc.) when you're away from the desk.
 
 ## What this gets you
 
 - **Inbound text → in-character response.** Send "what did we work
-  on yesterday?" via Telegram; OpenClaw runs an `ultron-main` agent
-  turn against the local Qwen, calls Ultron's MCP tools for Qdrant
-  retrieval, and replies in Ultron's voice.
-- **Proactive notifications from Ultron.** Coding tasks complete,
+  on yesterday?" via Telegram; OpenClaw runs an `kenning-main` agent
+  turn against the local Qwen, calls Kenning's MCP tools for Qdrant
+  retrieval, and replies in Kenning's voice.
+- **Proactive notifications from Kenning.** Coding tasks complete,
   heartbeat alerts fire, weekly review summaries land — all sent to
   your phone via Telegram instead of (or in addition to) the
   speakers.
@@ -27,7 +27,7 @@ heartbeat alerts, etc.) when you're away from the desk.
 - Does not introduce new VRAM. Telegram is text-only on the
   OpenClaw side; the Qwen turn it triggers shares the same
   llama-cpp-server instance the voice path already uses.
-- Does not add an OpenClaw-side TTS provider. Ultron's voice stays
+- Does not add an OpenClaw-side TTS provider. Kenning's voice stays
   Piper + RVC; OpenClaw's ElevenLabs/Azure TTS providers are
   intentionally not enabled.
 
@@ -35,8 +35,8 @@ heartbeat alerts, etc.) when you're away from the desk.
 
 1. Open Telegram, search for `@BotFather`, start a chat.
 2. Send `/newbot`.
-3. Pick a display name ("Ultron") and a username ending in `bot`
-   (e.g. `your_ultron_bot`).
+3. Pick a display name ("Kenning") and a username ending in `bot`
+   (e.g. `your_kenning_bot`).
 4. BotFather replies with an HTTP API token. **Copy it** — it
    looks like `123456789:ABCdef...`. Keep it private; this token
    gives full control of the bot.
@@ -112,9 +112,9 @@ After Gateway restart:
 # expected: telegram listed, enabled=true
 ```
 
-Send "Hello, Ultron." to your bot from your phone. Within a few
+Send "Hello, Kenning." to your bot from your phone. Within a few
 seconds you should get an in-character text reply (the OpenClaw
-`ultron-main` agent runs a Qwen turn through the persona files and
+`kenning-main` agent runs a Qwen turn through the persona files and
 posts the reply back to Telegram).
 
 If the reply doesn't arrive:
@@ -124,9 +124,9 @@ If the reply doesn't arrive:
 3. Confirm your Telegram id is in `allowedUsers`. Non-allowed users
    get silently dropped — there's no error feedback to the sender.
 
-## Ultron-side wiring (already in place after Phase 4)
+## Kenning-side wiring (already in place after Phase 4)
 
-These knobs in `config.yaml` control how Ultron uses the channel
+These knobs in `config.yaml` control how Kenning uses the channel
 once the OpenClaw side is configured:
 
 ```yaml
@@ -149,7 +149,7 @@ pings while you experiment.
 ## Inbound voice handoff (deliberately deferred)
 
 The integration spec describes a "voice handoff" escape hatch where
-prefixing a Telegram message with `[voice]` causes Ultron's
+prefixing a Telegram message with `[voice]` causes Kenning's
 orchestrator to speak the response through Piper + RVC (assumes
 someone is at the desk to hear). The receiver scaffolding is in
 place (`openclaw_bridge.events.OpenClawEventReceiver`) but the
@@ -173,10 +173,10 @@ To turn it on later (Phase 4+ or whenever a real need arises):
   add `channels.telegram.{enabled, botToken}`.
 - **Replies arrive but sound generic, not in-character** — the
   agent isn't reading `SOUL.md`. Check that `agents.list[].id` is
-  `ultron-main` (or whichever you configured) and its
+  `kenning-main` (or whichever you configured) and its
   `systemPromptOverride` is the user-facing persona (set up in
   Phase 1).
-- **Ultron voice pipeline gets slower when Telegram is active** —
+- **Kenning voice pipeline gets slower when Telegram is active** —
   shouldn't happen, but if it does it's because the Qwen turn for
   Telegram is queueing on the same llama-cpp-server. Voice path
   re-prioritises automatically since it's in-process. If you see

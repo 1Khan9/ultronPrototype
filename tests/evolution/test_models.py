@@ -1,4 +1,4 @@
-"""Tests for ultron.evolution.models -- the GEP data model.
+"""Tests for kenning.evolution.models -- the GEP data model.
 
 All hermetic: pure data, no IO, no network, no voice stack.
 """
@@ -9,7 +9,7 @@ import math
 
 import pytest
 
-from ultron.evolution.models import (
+from kenning.evolution.models import (
     DEFAULT_GENE_MAX_FILES,
     DISTILLED_GENE_MAX_FILES,
     DISTILLED_ID_PREFIX,

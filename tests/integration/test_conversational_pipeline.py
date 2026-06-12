@@ -26,7 +26,7 @@ _CONVERSATIONAL = [
     # Greetings / pleasantries
     "good morning",
     "hello",
-    "hey ultron",
+    "hey kenning",
     "thanks",
     "good night",
     # Quick factual

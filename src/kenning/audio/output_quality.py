@@ -47,7 +47,7 @@ from typing import Optional
 
 import numpy as np
 
-logger = logging.getLogger("ultron.audio.output_quality")
+logger = logging.getLogger("kenning.audio.output_quality")
 
 __all__ = [
     "BlipFinding",
@@ -664,7 +664,7 @@ def get_output_watcher() -> Optional[OutputQualityWatcher]:
         if _watcher is not None:
             return _watcher
         try:
-            from ultron.config import LOGS_DIR, get_config
+            from kenning.config import LOGS_DIR, get_config
 
             cfg = getattr(getattr(get_config(), "tts", None), "output_watch", None)
             if cfg is None or not getattr(cfg, "enabled", False):

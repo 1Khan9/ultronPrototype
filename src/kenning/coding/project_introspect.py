@@ -4,17 +4,17 @@ Builds a structured ``ProjectSnapshot`` from a project directory by
 walking the file tree (depth-limited), detecting the dominant
 language(s), finding entry-point files, and -- for Python files only --
 threading per-file AST metadata in via the existing
-:mod:`ultron.coding.ast_metadata`.
+:mod:`kenning.coding.ast_metadata`.
 
 This is the **non-LLM** side of project understanding. Cost target:
 100-300 ms for a typical sandbox project (a few hundred files), no
 external service calls, no model loads. The result is consumed by:
 
-  * :class:`ultron.coding.project_supervisor.ProjectSupervisor` --
+  * :class:`kenning.coding.project_supervisor.ProjectSupervisor` --
     when deciding whether the user's reference matches an existing
     project, the snapshot's entry points + language hint are used as
     additional features alongside the digest cosine match.
-  * :class:`ultron.coding.project_digest.DigestRequest` -- when
+  * :class:`kenning.coding.project_digest.DigestRequest` -- when
     generating a project digest, the snapshot's language + entry
     points seed the prompt.
   * Enriched dispatch (Phase E) -- the snapshot's file tree summary
@@ -35,10 +35,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Mapping, Optional, Sequence
 
-from ultron.coding.ast_metadata import AstMetadata, extract_metadata_from_path
-from ultron.coding.important_files import is_important
+from kenning.coding.ast_metadata import AstMetadata, extract_metadata_from_path
+from kenning.coding.important_files import is_important
 
-logger = logging.getLogger("ultron.coding.project_introspect")
+logger = logging.getLogger("kenning.coding.project_introspect")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -227,8 +227,8 @@ class ProjectSnapshot:
         entry_points: detected entry-point file paths (absolute).
         markers: detected project-marker files (e.g. pyproject.toml).
         important_files: files matching the
-            :func:`~ultron.coding.important_files.is_important`
-            allowlist — README, linter configs, CI, ultron operational
+            :func:`~kenning.coding.important_files.is_important`
+            allowlist — README, linter configs, CI, kenning operational
             files, etc. Captured even when the file has no inbound
             references in the source graph, so downstream rankers
             (PageRank repo map in batch 2) can pin them near the top.
@@ -428,7 +428,7 @@ def install_bus_invalidator() -> Callable[[], None]:
         registration so a subsequent ``install_bus_invalidator()``
         subscribes fresh.
 
-    Fail-open: when ``ultron.bus`` is unavailable for any reason
+    Fail-open: when ``kenning.bus`` is unavailable for any reason
     (import error, mock environment), returns a no-op unsubscribe
     and logs a debug-level note. The cache still works manually via
     :func:`invalidate_snapshot_cache_for_file`.
@@ -438,7 +438,7 @@ def install_bus_invalidator() -> Callable[[], None]:
         return _BUS_UNSUBSCRIBE
 
     try:
-        from ultron.bus import CodingFileChangedEvent, subscribe
+        from kenning.bus import CodingFileChangedEvent, subscribe
     except Exception as e:                                         # noqa: BLE001
         logger.debug(
             "project_introspect: bus invalidator skipped (%s)", e,

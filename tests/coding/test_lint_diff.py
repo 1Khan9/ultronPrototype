@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.coding.lint_diff import (
+from kenning.coding.lint_diff import (
     LintDiffResult,
     LintError,
     compute_new_errors,

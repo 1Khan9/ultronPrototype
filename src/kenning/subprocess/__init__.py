@@ -1,6 +1,6 @@
 """Subprocess lifecycle helpers (zombie-killer + per-process registry).
 
-This package collects the cross-cutting subprocess discipline ultron
+This package collects the cross-cutting subprocess discipline kenning
 needs but had scattered across `coding/direct_bridge.py`, the Parakeet
 HTTP server spawn, the MCP entry script, and the gaming-mode plugin
 toggles. The headline primitive is :class:`ZombieKiller`, a periodic

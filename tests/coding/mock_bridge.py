@@ -7,7 +7,7 @@ subprocess with a worker thread that:
   * Emits :class:`TaskEvent` instances on the bridge handle (so the
     runner's TaskState is populated).
   * Calls MCP tool implementations directly on the
-    :class:`UltronMCPServer` instance (so the coordinator + verifier +
+    :class:`KenningMCPServer` instance (so the coordinator + verifier +
     audit log paths fire exactly as they do in the real flow).
 
 This bypasses the SSE wire protocol -- ``test_mcp_e2e.py`` already
@@ -45,7 +45,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Union
 
-from ultron.coding.bridge import (
+from kenning.coding.bridge import (
     CodingBridge,
     EventKind,
     EventListener,
@@ -56,13 +56,13 @@ from ultron.coding.bridge import (
     TaskResult,
     TaskState,
 )
-from ultron.coding.mcp_server import UltronMCPServer
-from ultron.coding.session import (
+from kenning.coding.mcp_server import KenningMCPServer
+from kenning.coding.session import (
     ClarificationRequest,
     CompletionClaim,
     SessionStatus,
 )
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("coding.mock_bridge")
 
@@ -196,7 +196,7 @@ class ClaudeScript:
 @dataclass
 class _ScriptContext:
     """Mutable state passed to script callbacks."""
-    server: UltronMCPServer
+    server: KenningMCPServer
     session_id: str
     project_root: Path
     handle: "_ScriptedHandle"
@@ -333,7 +333,7 @@ class _ScriptedHandle(TaskHandle):
 class ScriptedClaudeBridge(CodingBridge):
     """Mock CodingBridge that runs a :class:`ClaudeScript` in a worker
     thread, calling MCP tool implementations directly on the
-    :class:`UltronMCPServer`.
+    :class:`KenningMCPServer`.
 
     Args:
         server: the orchestrator's MCP server (must already be created;
@@ -345,7 +345,7 @@ class ScriptedClaudeBridge(CodingBridge):
 
     def __init__(
         self,
-        server: UltronMCPServer,
+        server: KenningMCPServer,
         script: ClaudeScript,
         *,
         session_id: str,

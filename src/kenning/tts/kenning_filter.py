@@ -1,14 +1,14 @@
-"""Ultron mechanical-voice DSP filter chain (runtime).
+"""Kenning mechanical-voice DSP filter chain (runtime).
 
 XTTS v2 (or any neural cloning TTS) produces clean natural speech in
-the cloned Ultron voice character. The MCU Ultron voice has an
+the cloned Kenning voice character. The MCU Kenning voice has an
 additional DSP processing layer on top -- the "robotic / mechanical
 / hollow metal cavity" character. This module is that processing
 layer, applied at synthesis output time before audio reaches the
 speaker.
 
 Architecturally this is the runtime port of the prototype that lives
-at ``ultronVoiceAudio/scripts/ultron_filter.py``. The presets are
+at ``kenningVoiceAudio/scripts/kenning_filter.py``. The presets are
 identical (v3_heavy is the user-locked production preset). The only
 runtime-specific tweak is a smaller default ``tail_silence_ms`` --
 the prototype uses 500 ms (preserves full reverb decay for offline
@@ -47,13 +47,13 @@ PresetName = Literal["v1_subtle", "v2_medium", "v3_heavy"]
 
 # ---------------------------------------------------------------------------
 # Filter chain presets (mirrors the prototype at
-# ultronVoiceAudio/scripts/ultron_filter.py exactly so A/B sounds the
+# kenningVoiceAudio/scripts/kenning_filter.py exactly so A/B sounds the
 # same between the offline tuning samples and the runtime output).
 # ---------------------------------------------------------------------------
 
 
 def _v1_subtle() -> Pedalboard:
-    """Light Ultron filter: noticeable but understated."""
+    """Light Kenning filter: noticeable but understated."""
     return Pedalboard([
         HighpassFilter(cutoff_frequency_hz=80),
         PitchShift(semitones=-0.7),
@@ -67,7 +67,7 @@ def _v1_subtle() -> Pedalboard:
 
 
 def _v2_medium() -> Pedalboard:
-    """Balanced Ultron filter: clearly mechanical, still clean."""
+    """Balanced Kenning filter: clearly mechanical, still clean."""
     return Pedalboard([
         HighpassFilter(cutoff_frequency_hz=80),
         PitchShift(semitones=-1.2),
@@ -84,11 +84,11 @@ def _v2_medium() -> Pedalboard:
 
 
 def _v3_heavy() -> Pedalboard:
-    """Full Ultron filter: pronounced robotic processing.
+    """Full Kenning filter: pronounced robotic processing.
 
     User-locked production preset (2026-05-10). Bit-identical to the
     prototype version; do not retune without re-running the offline
-    A/B (the v4 sample batch in ``ultronVoiceAudio/sanity_v4_filtered/``
+    A/B (the v4 sample batch in ``kenningVoiceAudio/sanity_v4_filtered/``
     is the ground truth).
     """
     return Pedalboard([
@@ -132,7 +132,7 @@ def apply_filter(
     preset: PresetName = "v3_heavy",
     tail_silence_ms: float = 200.0,
 ) -> np.ndarray:
-    """Apply the Ultron filter chain to ``audio``.
+    """Apply the Kenning filter chain to ``audio``.
 
     Args:
         audio: 1-D mono float32 in [-1, 1], or shape ``(N, channels)``.

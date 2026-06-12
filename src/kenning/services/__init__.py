@@ -1,4 +1,4 @@
-"""Dependency-injection primitives for ultron's service-shaped subsystems.
+"""Dependency-injection primitives for kenning's service-shaped subsystems.
 
 Pattern lineage attributed in ``THIRD_PARTY_NOTICES.md``.
 
@@ -10,7 +10,7 @@ own injector subclass that knows how to build its concrete given a
 between filesystem / S3 / Google Cloud backends by selecting which
 injector to use in ``AppServerConfig``.
 
-Ultron's port is sync (voice-first, single-process, no FastAPI on the
+Kenning's port is sync (voice-first, single-process, no FastAPI on the
 hot path), but the contract is otherwise identical:
 
 * Every service has an ``Injector[T]`` subclass implementing
@@ -26,13 +26,13 @@ hot path), but the contract is otherwise identical:
 
 Two starter injectors ship: :class:`STTEngineInjector` and
 :class:`TTSEngineInjector`. They wrap the existing
-:func:`ultron.transcription.make_stt_engine` and
-:func:`ultron.tts.make_tts_engine` factories so the migration is
+:func:`kenning.transcription.make_stt_engine` and
+:func:`kenning.tts.make_tts_engine` factories so the migration is
 purely additive -- the orchestrator's existing engine-construction
 code path is untouched until operators opt into the injectors.
 """
 
-from ultron.services.injector import (
+from kenning.services.injector import (
     Injector,
     InjectorRegistry,
     InjectorState,
@@ -43,7 +43,7 @@ from ultron.services.injector import (
     reset_injector_registry_for_testing,
     set_injector_registry,
 )
-from ultron.services.engine_injectors import (
+from kenning.services.engine_injectors import (
     STTEngineInjector,
     TTSEngineInjector,
     build_stt_engine_injector,

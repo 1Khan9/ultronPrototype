@@ -7,9 +7,9 @@ launches train.py as a subprocess so PyTorch's DataLoader spawn workers can
 re-import the proper __main__ module cleanly on Windows.
 
 Usage:
-    ..\\.venv-train\\Scripts\\python.exe run_training.py --training_config my_model.yaml --generate_clips
-    ..\\.venv-train\\Scripts\\python.exe run_training.py --training_config my_model.yaml --augment_clips
-    ..\\.venv-train\\Scripts\\python.exe run_training.py --training_config my_model.yaml --train_model
+    ..\\.venv-train\\Scripts\\python.exe run_training.py --training_config kenning_model.yaml --generate_clips
+    ..\\.venv-train\\Scripts\\python.exe run_training.py --training_config kenning_model.yaml --augment_clips
+    ..\\.venv-train\\Scripts\\python.exe run_training.py --training_config kenning_model.yaml --train_model
 """
 
 from __future__ import annotations

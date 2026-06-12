@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.coding.edit_diagnostics import (
+from kenning.coding.edit_diagnostics import (
     CrossFileHit,
     EditDiagnostic,
     EditDiagnosticResult,

@@ -1,7 +1,7 @@
 """Voice-friendly status narration for supervised coding sessions.
 
 The :class:`StatusNarrator` turns a :class:`ProjectSession` into one or
-two sentences of Ultron-character commentary suitable for TTS. It does
+two sentences of Kenning-character commentary suitable for TTS. It does
 two things:
 
 1. **Edge cases by status** -- planning, awaiting_clarification,
@@ -33,13 +33,13 @@ import time
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from ultron.coding.session import (
+from kenning.coding.session import (
     FileRecord,
     ProjectSession,
     SessionStatus,
     StageRecord,
 )
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("coding.narration")
 
@@ -68,7 +68,7 @@ class NarrationDelta:
 
 
 _NARRATION_PROMPT = """\
-You are Ultron, reporting on a coding agent (Claude) working on a project for the user. Stay strictly in voice -- precise, measured, observational, no filler, no sycophancy, no apologies. Output one or two sentences only -- no preamble, no closing remarks. The user just asked how it's going; lead with what's NEW since they last asked when applicable.
+You are Kenning, reporting on a coding agent (Claude) working on a project for the user. Stay strictly in voice -- precise, measured, observational, no filler, no sycophancy, no apologies. Output one or two sentences only -- no preamble, no closing remarks. The user just asked how it's going; lead with what's NEW since they last asked when applicable.
 
 Project goal: {goal}
 
@@ -320,7 +320,7 @@ class StatusNarrator:
         # projection so the prompt stays under budget regardless of
         # session size. The projection's text is the canonical view
         # of "what's new since last query".
-        from ultron.coding.projections import project_status_delta
+        from kenning.coding.projections import project_status_delta
         projection = project_status_delta(session)
         prompt = _NARRATION_PROMPT.format(
             goal=(session.refined_goal or session.user_intent or "(unspecified)")[:240],

@@ -1,4 +1,4 @@
-"""Core data model for ultron's clean-room self-improvement system.
+"""Core data model for kenning's clean-room self-improvement system.
 
 Catalog 13 (clawhub-capability-evolver) -- clean-room synthesis. NONE of
 the upstream plugin's code was read, imported, executed, or
@@ -6,7 +6,7 @@ deobfuscated (its evolution engine ships as obfuscated JavaScript and
 its network stack phones home to a paid remote hub). This module
 reconstructs ONLY the GREEN, pure-data "GEP" (Genome Evolution Protocol)
 schema documented in the reference catalog + the read-only test/spec
-scan reports, re-implemented from scratch for ultron's local-only,
+scan reports, re-implemented from scratch for kenning's local-only,
 data-only, zero-network architecture.
 
 The four headline types:
@@ -26,15 +26,15 @@ Plus the supporting records (:class:`Mutation`, :class:`GeneConstraints`,
 content-addressable hashing helpers (:func:`canonicalize`,
 :func:`compute_asset_id`, :func:`verify_asset_id`).
 
-**Deliberate ultron-specific safety departures from the upstream schema:**
+**Deliberate kenning-specific safety departures from the upstream schema:**
 
-* No ``a2a`` / ``eligible_to_broadcast`` field -- ultron never broadcasts
+* No ``a2a`` / ``eligible_to_broadcast`` field -- kenning never broadcasts
   assets to any network. Genes + capsules are local-only data.
 * :class:`EnvFingerprint` carries ONLY non-identifying local fields
   (platform, python version, capture time). The upstream's stable
   hardware ``device_id`` (machine-id / IOPlatformUUID / MAC-address
   harvest) is deliberately omitted -- it existed solely to correlate
-  installs at a remote hub, which ultron has no concept of.
+  installs at a remote hub, which kenning has no concept of.
 * Every type is a frozen dataclass. "Adaptation" returns a NEW object
   (:meth:`Gene.with_learning`) rather than mutating shared state, so a
   gene can never be silently rewritten out from under a caller.
@@ -55,7 +55,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Mapping, Optional, Sequence
 
-# Fresh ultron-owned schema version (the upstream's was 1.6.0; this is a
+# Fresh kenning-owned schema version (the upstream's was 1.6.0; this is a
 # clean-room reimplementation so it starts its own line at 1.0.0).
 EVOLUTION_SCHEMA_VERSION: str = "1.0.0"
 
@@ -66,7 +66,7 @@ DEFAULT_GENE_MAX_FILES: int = 20
 DISTILLED_GENE_MAX_FILES: int = 12
 
 # Paths a gene may never touch (the per-gene floor; the global protected
-# set lives in :mod:`ultron.evolution.blast_radius`).
+# set lives in :mod:`kenning.evolution.blast_radius`).
 DEFAULT_FORBIDDEN_PATHS: tuple[str, ...] = (".git", "node_modules")
 
 # Id prefixes for machine-synthesised genes (success vs failure path).
@@ -107,7 +107,7 @@ class KnowledgeSource(str, Enum):
 
     USER = "user"  # the user supplied the fact
     TOOL = "tool"  # discovered from tool / command output
-    DISCOVERED = "discovered"  # ultron worked it out mid-task
+    DISCOVERED = "discovered"  # kenning worked it out mid-task
     UNKNOWN = "unknown"
 
 
@@ -122,7 +122,7 @@ class ComplexityHint(str, Enum):
 
 class FeatureRequestStatus(str, Enum):
     """Lifecycle of a captured feature request (catalog 14, T2). A
-    feature request is a forward-looking backlog item ultron surfaces to
+    feature request is a forward-looking backlog item kenning surfaces to
     the user -- it is NEVER auto-acted on or distilled into a skill."""
 
     PENDING = "pending"
@@ -254,7 +254,7 @@ def derive_pattern_key(
     Deterministic -- same inputs always produce the same key -- so it can
     de-duplicate + count repeated patterns across capsule / record
     instances. This is the durable form of the upstream ledger's
-    ``Pattern-Key`` field (e.g. ``simplify.dead_code``); the ultron form
+    ``Pattern-Key`` field (e.g. ``simplify.dead_code``); the kenning form
     is ``<kind>:<a-b-c>`` built from the sorted base names of the
     triggering signals (``:payload`` suffix stripped), falling back to a
     slug of ``topic`` then ``gene``.
@@ -400,7 +400,7 @@ class EnvFingerprint:
     """A NON-identifying local environment snapshot.
 
     Deliberately omits any stable hardware identifier (the upstream's
-    ``device_id`` / hostname / MAC harvest) because ultron never transmits
+    ``device_id`` / hostname / MAC harvest) because kenning never transmits
     this anywhere -- it is purely local diagnostic metadata stamped on a
     capsule so a future cross-environment comparison can group outcomes by
     coarse platform.
@@ -509,8 +509,8 @@ class AntiPatternEntry:
 class PersonalityState:
     """Five adaptive response-temperament traits, each in ``[0, 1]``.
 
-    These tune ultron's response *shaping* (verbosity, hedging, etc.) via
-    :mod:`ultron.evolution.personality` -> ``response_style`` -- they
+    These tune kenning's response *shaping* (verbosity, hedging, etc.) via
+    :mod:`kenning.evolution.personality` -> ``response_style`` -- they
     NEVER touch the locked voice character (SOUL.md / RVC / Piper / the
     TTS voicepack).
     """
@@ -646,7 +646,7 @@ class Mutation:
     The category is gated by personality (a high-risk temperament
     down-grades ``innovate`` to ``optimize``) and the risk level is capped
     when high risk is not permitted -- both applied by the builder in
-    :mod:`ultron.evolution.signals` / the loop, not here.
+    :mod:`kenning.evolution.signals` / the loop, not here.
     """
 
     id: str
@@ -796,7 +796,7 @@ class CorrectionCapsule:
     """A recorded user correction (catalog 14, T1).
 
     The single highest-value learning signal a personal assistant can get:
-    the user explicitly said ultron was wrong on the turn FOLLOWING a
+    the user explicitly said kenning was wrong on the turn FOLLOWING a
     response. Captured as a structured, PII-redacted record that (a) feeds
     the repair / failure distillation path (so a recurring mistake distils
     into a defensive skill), and (b) surfaces in the evolution digest. The
@@ -857,7 +857,7 @@ class CorrectionCapsule:
 class KnowledgeGapCapsule:
     """A recorded knowledge gap (catalog 14, T1).
 
-    The user supplied (or a tool revealed) information ultron's internal
+    The user supplied (or a tool revealed) information kenning's internal
     knowledge lacked or had wrong. Distinct from a correction in that it
     carries the CORRECT fact, not just "you were wrong". Feeds the repair
     distillation path + the digest. PII-redacted, local-only.
@@ -974,7 +974,7 @@ class FeatureRequestCapsule:
     """A captured user feature request (catalog 14, T2).
 
     The user expressed a desire for a capability that does not exist yet.
-    A forward-looking backlog item ultron surfaces back to the user in the
+    A forward-looking backlog item kenning surfaces back to the user in the
     evolution digest ("you've asked 3x for a way to X") -- it is NEVER
     auto-acted on and NEVER distilled into a skill (deliberately no
     ``to_failure_record`` / no skill path). PII-redacted, local-only.

@@ -7,14 +7,14 @@ import json
 import zipfile
 from pathlib import Path
 
-from ultron.events.export import (
+from kenning.events.export import (
     EXPORT_FORMAT_VERSION,
     SessionExport,
     export_session_to_bytes,
     export_session_to_path,
 )
-from ultron.events.models import StoredEvent
-from ultron.events.store import MemoryEventStore
+from kenning.events.models import StoredEvent
+from kenning.events.store import MemoryEventStore
 
 
 def _populate(store: MemoryEventStore, session_id: str, n: int = 3) -> list[StoredEvent]:

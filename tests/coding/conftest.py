@@ -25,7 +25,7 @@ import pytest
 # production sandbox path (under tests/coding/sandbox/). The MCP server's
 # sandbox check would otherwise refuse them; this env var relaxes the
 # check just for these integration tests.
-os.environ.setdefault("ULTRON_CODING_MCP_ALLOW_ANY_ROOT", "1")
+os.environ.setdefault("KENNING_CODING_MCP_ALLOW_ANY_ROOT", "1")
 
 
 SANDBOX_DIR: Path = Path(__file__).resolve().parent / "sandbox"

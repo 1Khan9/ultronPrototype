@@ -8,7 +8,7 @@ from typing import List
 import numpy as np
 import pytest
 
-from ultron.coding.projects import (
+from kenning.coding.projects import (
     Project,
     ProjectRegistry,
     ProjectResolver,

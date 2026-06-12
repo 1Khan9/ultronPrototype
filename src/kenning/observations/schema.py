@@ -1,6 +1,6 @@
 """Canonical observation schema.
 
-One observation row per "meaningful event" anywhere in Ultron. The shape
+One observation row per "meaningful event" anywhere in Kenning. The shape
 is deliberately narrow: only fields that benefit cross-subsystem
 analysis live at the top level. Subsystem-specific detail goes in the
 ``extra`` mapping so the schema can stay stable while individual writers

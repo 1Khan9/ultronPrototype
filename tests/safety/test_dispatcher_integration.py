@@ -10,14 +10,14 @@ import asyncio
 
 import pytest
 
-from ultron.config import get_config
-from ultron.openclaw_routing.dispatcher import OpenClawDispatcher
-from ultron.openclaw_routing.intents import (
+from kenning.config import get_config
+from kenning.openclaw_routing.dispatcher import OpenClawDispatcher
+from kenning.openclaw_routing.intents import (
     FileOpIntent,
     ShellOpIntent,
 )
-from ultron.safety import set_validator
-from ultron.safety.validator import build_validator_from_config
+from kenning.safety import set_validator
+from kenning.safety.validator import build_validator_from_config
 
 
 def setup_module(_module):

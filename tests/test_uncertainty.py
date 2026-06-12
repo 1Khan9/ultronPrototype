@@ -1,6 +1,6 @@
 """Phase 5 verification tests.
 
-Pure-function tests for ``ultron.uncertainty.apply``: takes a
+Pure-function tests for ``kenning.uncertainty.apply``: takes a
 ``GateVerdict`` and the original user text, returns a possibly-upgraded
 verdict and possibly-augmented text. No LLM in the loop.
 
@@ -14,8 +14,8 @@ import os
 
 import pytest
 
-from ultron.uncertainty import apply as apply_uncertainty
-from ultron.web_search.gating import GateDecision, GateVerdict
+from kenning.uncertainty import apply as apply_uncertainty
+from kenning.web_search.gating import GateDecision, GateVerdict
 
 
 def _vmake(**overrides) -> GateVerdict:
@@ -250,7 +250,7 @@ def test_low_confidence_response_acknowledges_uncertainty():
     """With a low-confidence addendum on a question the model probably
     can't verify, the response should explicitly admit uncertainty
     rather than fabricate."""
-    from ultron.llm import LLMEngine
+    from kenning.llm import LLMEngine
 
     llm = LLMEngine(memory=None)
     v = _vmake(knowledge_confidence="low", has_temporal_dependency=False)

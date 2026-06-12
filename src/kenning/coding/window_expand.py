@@ -6,7 +6,7 @@ Direct port of SWE-Agent's
 range, scoring each candidate boundary line by how "natural" it is
 to break there. The highest-scoring line within a budget wins.
 
-For ultron the helper is used wherever a narration / display surface
+For kenning the helper is used wherever a narration / display surface
 quotes a code window:
 
 * The architect narrator (T5 Phase 2) speaks a plan that often

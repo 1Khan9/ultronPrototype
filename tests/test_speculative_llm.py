@@ -77,7 +77,7 @@ class _StubLLM:
 def _stub_orchestrator(llm=None, web_gate_present=True, ack_text="Mm."):
     """Build a partial Orchestrator wired with the Phase 3 speculation
     slots and a stub LLM."""
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
     o = object.__new__(Orchestrator)
     # Phase 2 + 3 slots.
     o._speculative_stt_lock = threading.Lock()
@@ -115,7 +115,7 @@ def _stub_orchestrator(llm=None, web_gate_present=True, ack_text="Mm."):
 def _no_search_verdict():
     """Build a minimal verdict object that satisfies the speculative-LLM
     NO_SEARCH gate condition."""
-    from ultron.web_search import GateDecision
+    from kenning.web_search import GateDecision
     return SimpleNamespace(
         decision=GateDecision.NO_SEARCH,
         confidence=0.99,
@@ -131,7 +131,7 @@ def _no_search_verdict():
 
 
 def _search_verdict():
-    from ultron.web_search import GateDecision
+    from kenning.web_search import GateDecision
     return SimpleNamespace(
         decision=GateDecision.SEARCH,
         confidence=0.99,
@@ -158,17 +158,17 @@ class TestLLMEngineHistoryDefer:
 
     @staticmethod
     def _build_engine(*, record_turn_log: list):
-        from ultron.llm import inference
+        from kenning.llm import inference
 
         e = object.__new__(inference.LLMEngine)
         e._runtime = "in_process"
         e._memory = None
         e._history = []
         e._cancel = threading.Event()
-        e._explicit_system_prompt = "you are ultron"
+        e._explicit_system_prompt = "you are kenning"
         e._persona_loader = None
-        e._static_system_prompt = "you are ultron"
-        e.system_prompt = "you are ultron"
+        e._static_system_prompt = "you are kenning"
+        e.system_prompt = "you are kenning"
         e.history_turns = 4
         e._logged_initial_persona = True
 
@@ -327,7 +327,7 @@ def test_invalidate_idempotent_with_no_state():
 
 
 def test_invalidate_defensive_on_missing_lock():
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
     o = object.__new__(Orchestrator)
     # No lock attribute.
     o._invalidate_speculative_llm()  # must not raise
@@ -425,7 +425,7 @@ def test_commit_history_is_noop_on_incomplete_speculation():
 
 
 def test_collect_defensive_on_missing_lock():
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
     o = object.__new__(Orchestrator)
     spec_iter, commit = o._collect_speculative_llm("anything")
     assert spec_iter is None
@@ -456,7 +456,7 @@ def test_reset_clears_state_and_cancels_in_flight():
 
 
 def test_reset_defensive_on_missing_lock():
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
     o = object.__new__(Orchestrator)
     o._reset_speculative_llm_state()  # must not raise
 
@@ -514,8 +514,8 @@ def test_reset_classification_also_resets_llm():
 def test_classification_kicks_off_llm_on_no_search():
     """When the rule-path verdict is NO_SEARCH, the chained
     classification thread fires the speculative LLM."""
-    from ultron.web_search.gating import GateDecision
-    from ultron.web_search import gating as gating_mod
+    from kenning.web_search.gating import GateDecision
+    from kenning.web_search import gating as gating_mod
 
     llm = _StubLLM(tokens=["weather"])
     o = _stub_orchestrator(llm=llm)
@@ -540,7 +540,7 @@ def test_classification_kicks_off_llm_on_no_search():
 
 def test_classification_skips_llm_on_search_verdict():
     """When the rule-path verdict is SEARCH, no LLM speculation fires."""
-    from ultron.web_search import gating as gating_mod
+    from kenning.web_search import gating as gating_mod
 
     llm = _StubLLM(tokens=["x"])
     o = _stub_orchestrator(llm=llm)
@@ -561,7 +561,7 @@ def test_classification_skips_llm_on_search_verdict():
 def test_classification_skips_llm_on_uncertain_verdict():
     """When classify_by_rules returns None (UNCERTAIN), no LLM
     speculation fires -- the main path will run the preflight."""
-    from ultron.web_search import gating as gating_mod
+    from kenning.web_search import gating as gating_mod
 
     llm = _StubLLM(tokens=["x"])
     o = _stub_orchestrator(llm=llm)

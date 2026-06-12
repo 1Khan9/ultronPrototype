@@ -4,23 +4,23 @@ into a structured snapshot for LLM injection.
 This is the load-bearing module for the "explain what I'm looking at"
 voice flow:
 
-1. User says "Ultron, what does this error mean?"
+1. User says "Kenning, what does this error mean?"
 2. Orchestrator calls :func:`build_screen_context` -- this module --
    to get the current screen state.
 3. The result is folded into the next LLM call as structured context
    (similar shape to RAG): foreground app, window title, monitor
    layout, UIA text snippets, optional VLM description.
-4. The LLM responds in Ultron's voice with grounded knowledge of
+4. The LLM responds in Kenning's voice with grounded knowledge of
    what's on screen.
 
 Components consulted (all fail-open at their level):
 
-- :mod:`ultron.desktop.windows` -- foreground window + visible windows
-- :mod:`ultron.desktop.monitors` -- multi-monitor layout
-- :mod:`ultron.desktop.capture` -- on-demand screen capture (PNG bytes
+- :mod:`kenning.desktop.windows` -- foreground window + visible windows
+- :mod:`kenning.desktop.monitors` -- multi-monitor layout
+- :mod:`kenning.desktop.capture` -- on-demand screen capture (PNG bytes
   for the VLM)
-- :mod:`ultron.desktop.uia` -- UIA tree text for the foreground window
-- :mod:`ultron.desktop.vlm` (Phase 6) -- moondream2 scene description
+- :mod:`kenning.desktop.uia` -- UIA tree text for the foreground window
+- :mod:`kenning.desktop.vlm` (Phase 6) -- moondream2 scene description
   when registered; ``None`` otherwise
 
 Performance: a full snapshot takes ~50-300 ms when no VLM call fires
@@ -41,15 +41,15 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Callable, Optional, Sequence
 
-from ultron.desktop.capture import Screenshot, get_screen_capture
-from ultron.desktop.monitors import Monitor, enumerate_monitors
-from ultron.desktop.uia import collect_window_text
-from ultron.desktop.windows import (
+from kenning.desktop.capture import Screenshot, get_screen_capture
+from kenning.desktop.monitors import Monitor, enumerate_monitors
+from kenning.desktop.uia import collect_window_text
+from kenning.desktop.windows import (
     WindowInfo,
     enumerate_windows,
     get_foreground_window,
 )
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.screen_context")
 
@@ -185,14 +185,14 @@ def _maybe_browser_use_state_text(max_elements: int) -> tuple[str, ...]:
     connect/connect_profile attach was done first.
     """
     try:
-        from ultron.config import get_config
+        from kenning.config import get_config
 
         if not get_config().browser_use.screen_context_fallback_enabled:
             return ()
     except Exception:  # noqa: BLE001 -- fail-open on config read
         return ()
     try:
-        from ultron.desktop.browser_use import get_browser_use_tool
+        from kenning.desktop.browser_use import get_browser_use_tool
 
         tool = get_browser_use_tool()
     except Exception:  # noqa: BLE001
@@ -277,7 +277,7 @@ def build_screen_context(
         raising.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('screen_context')
     t0 = time.time()
 
@@ -309,7 +309,7 @@ def build_screen_context(
         # existing consumers see the richer content without any
         # downstream changes.
         try:
-            from ultron.desktop.uia import (
+            from kenning.desktop.uia import (
                 extract_browser_content,
                 is_browser_window,
             )

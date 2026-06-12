@@ -2,11 +2,11 @@
 
 For most inbound events (e.g. a Telegram message from the user)
 OpenClaw handles the agent turn itself using the shared persona
-files. Ultron's voice path is not involved.
+files. Kenning's voice path is not involved.
 
 There is one exception: when an inbound message starts with a
 configured prefix (default ``[voice]``), OpenClaw should forward it
-to Ultron's orchestrator so the response is spoken aloud through the
+to Kenning's orchestrator so the response is spoken aloud through the
 voice pipeline (assumes someone is at the desk to hear it). This is
 the "voice handoff" pattern.
 
@@ -30,7 +30,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_bridge.events")
 

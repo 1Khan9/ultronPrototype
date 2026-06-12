@@ -2,7 +2,7 @@
 
 Phase 10 of the OpenClaw integration. The Memory Wiki plugin
 (`@openclaw/memory-wiki`) ships bundled with OpenClaw 2026.5.7 in
-disabled state. It complements Ultron's existing memory layers — it
+disabled state. It complements Kenning's existing memory layers — it
 is **not** a replacement for Qdrant or the workspace files. See
 [docs/memory_architecture.md](memory_architecture.md) for the
 three-layer model.
@@ -84,9 +84,9 @@ inspect output).
 
 After Gateway restart, ask the agent to author a small wiki page:
 
-Via Telegram (or `openclaw agent --agent ultron-main`):
+Via Telegram (or `openclaw agent --agent kenning-main`):
 
-> "Make a wiki page summarizing what you know about my Ultron
+> "Make a wiki page summarizing what you know about my Kenning
 > project structure based on our recent conversations."
 
 Expected: agent calls `wiki_search` to find prior content,
@@ -140,7 +140,7 @@ tools. Re-enabling is a single command + Gateway restart.
 
 - **`wiki_apply` says "permission denied"** — Phase 0 locked
   `tools.profile: messaging` + explicit `tools.deny` on
-  `ultron-main`. Wiki tools may need `tools.alsoAllow: ["wiki_*"]`
+  `kenning-main`. Wiki tools may need `tools.alsoAllow: ["wiki_*"]`
   on the agent config to bypass the messaging-profile filter.
 
 - **Wiki pages don't show up in `wiki_search`** — search uses an

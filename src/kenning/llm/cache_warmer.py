@@ -49,7 +49,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 
-logger = logging.getLogger("ultron.llm.cache_warmer")
+logger = logging.getLogger("kenning.llm.cache_warmer")
 
 
 # Catalog T9 magic number. Anthropic's TTL is 5 minutes; we ping at
@@ -149,7 +149,7 @@ class CacheWarmer:
         self._stop_event.clear()
         self._thread = threading.Thread(
             target=self._loop,
-            name="ultron-cache-warmer",
+            name="kenning-cache-warmer",
             daemon=True,
         )
         self._thread.start()

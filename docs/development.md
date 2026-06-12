@@ -1,4 +1,4 @@
-# Ultron development guide
+# Kenning development guide
 
 
 > **Currency note (2026-05-22):** this document is a historical snapshot.
@@ -87,7 +87,7 @@ Compare across runs to detect regressions.
 For per-call timing inside Python:
 
 ```python
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 import time
 logger = get_logger("debug.timing")
 
@@ -133,19 +133,19 @@ Get-Content logs/routing_decisions.jsonl -Tail 20 | ConvertFrom-Json | ft timest
 
 If an utterance is classifying wrong, the rule-based regexes are the
 first thing to look at. The classifier file is
-[src/ultron/openclaw_routing/classifier.py](../src/ultron/openclaw_routing/classifier.py);
+[src/kenning/openclaw_routing/classifier.py](../src/kenning/openclaw_routing/classifier.py);
 each category has its own regex with strong-signal alternation. Add a
 test in `tests/routing/test_classifier.py` for the offending utterance,
 verify it fails, then tighten the regex.
 
 ## Adding a new MCP tool
 
-The MCP server at [src/ultron/coding/mcp_server.py](../src/ultron/coding/mcp_server.py)
+The MCP server at [src/kenning/coding/mcp_server.py](../src/kenning/coding/mcp_server.py)
 exposes tools that Qwen can call. To add one:
 
-1. Add a method on `UltronMCPServer` with a Python signature (typed args + return type).
+1. Add a method on `KenningMCPServer` with a Python signature (typed args + return type).
 2. If the tool needs state from the session, fetch it via `self.store.get(session_id)`.
-3. **Critical:** if the tool returns session state to Qwen, use a projection (see [projections.py](../src/ultron/coding/projections.py)) — never pass raw `ProjectSession` objects to a context-budgeted caller.
+3. **Critical:** if the tool returns session state to Qwen, use a projection (see [projections.py](../src/kenning/coding/projections.py)) — never pass raw `ProjectSession` objects to a context-budgeted caller.
 4. Decorate appropriately if needed (the server auto-registers methods for the SSE transport).
 5. Add a unit test in `tests/test_mcp_server.py`.
 6. Document the tool in the appropriate place — typically [docs/architecture.md](architecture.md) under "Subsystems".
@@ -153,16 +153,16 @@ exposes tools that Qwen can call. To add one:
 ## Adding a new intent category
 
 The capability routing classifier at
-[src/ultron/openclaw_routing/classifier.py](../src/ultron/openclaw_routing/classifier.py)
+[src/kenning/openclaw_routing/classifier.py](../src/kenning/openclaw_routing/classifier.py)
 returns one of the kinds in `RoutingIntentKind`. To add a new one:
 
-1. Add an enum value to [intents.py:RoutingIntentKind](../src/ultron/openclaw_routing/intents.py).
+1. Add an enum value to [intents.py:RoutingIntentKind](../src/kenning/openclaw_routing/intents.py).
 2. Add a structured-intent dataclass if the new kind needs payload (e.g. like `BrowserIntent`).
 3. Add a regex pattern + a builder function (`_build_X_intent`) in `classifier.py`.
 4. Add a branch in `classify_routing` to fire the pattern + populate the new structured intent.
-5. Extend [`_CODING_KIND_MAP`](../src/ultron/openclaw_routing/classifier.py) only if the new kind delegates to the existing coding pipeline.
+5. Extend [`_CODING_KIND_MAP`](../src/kenning/openclaw_routing/classifier.py) only if the new kind delegates to the existing coding pipeline.
 6. Add a handler branch in
-   [voice.py:CapabilityVoiceController.handle_capability_intent](../src/ultron/coding/voice.py).
+   [voice.py:CapabilityVoiceController.handle_capability_intent](../src/kenning/coding/voice.py).
 7. Add tests:
    - 10+ utterances in `tests/routing/test_classifier.py`
    - A dispatcher test in `tests/routing/test_dispatcher.py` if it routes to OpenClaw
@@ -171,7 +171,7 @@ returns one of the kinds in `RoutingIntentKind`. To add a new one:
 ## Configuration changes
 
 1. Add the field to the appropriate sub-model in
-   [src/ultron/config.py](../src/ultron/config.py).
+   [src/kenning/config.py](../src/kenning/config.py).
    Use `Field(default=..., ge=..., le=...)` for range constraints.
 2. Add the field to [config.yaml](../config.yaml) with a comment explaining what it does and safe range.
 3. Document in [docs/configuration.md](configuration.md).
@@ -185,14 +185,14 @@ returns one of the kinds in `RoutingIntentKind`. To add a new one:
 ## Adding a new external dependency
 
 1. Define a typed exception in
-   [src/ultron/errors.py](../src/ultron/errors.py) (subclass
+   [src/kenning/errors.py](../src/kenning/errors.py) (subclass
    `DependencyUnavailableError`).
 2. Wrap the call sites: typed-error raising on failure, recovery
    description in `with_recovery(...)`, log to `errors.jsonl` via
    `get_error_log().record(...)`.
 3. If the dependency is failure-prone AND remote, add a circuit
    breaker (per the Brave / Jina pattern in
-   [src/ultron/web_search/](../src/ultron/web_search/)). In-process
+   [src/kenning/web_search/](../src/kenning/web_search/)). In-process
    dependencies don't need breakers.
 4. Add an `error_phrases.X` pool to [config.yaml](../config.yaml) for
    the user-facing voice message.
@@ -206,15 +206,15 @@ returns one of the kinds in `RoutingIntentKind`. To add a new one:
 - Paths via `pathlib`, not string concat.
 - No magic numbers in subsystem code — they go in
   [config.yaml](../config.yaml) with a comment in
-  [src/ultron/config.py](../src/ultron/config.py).
+  [src/kenning/config.py](../src/kenning/config.py).
 - Logging at INFO/WARN/ERROR/DEBUG per [docs/architecture.md](architecture.md) "Logging conventions".
 - No fire-and-forget `asyncio.create_task` without storing the reference or attaching exception handling.
 
 ## Common pitfalls
 
 - **Loading models in tests.** Don't. Use mocks. Real-model tests go in PYTEST_RUN_GPU_TESTS=1-gated files.
-- **Session state to Qwen.** Always go through a projection. Direct `ProjectSession` exposure overflows the context budget on long sessions. See [docs/configuration.md](configuration.md) §Projections + [projections.py](../src/ultron/coding/projections.py).
-- **Mutating module state for "scoping".** [coordinator.py:895](../src/ultron/coding/coordinator.py:895) sets `settings.LLM_MAX_TOKENS = ...` to scope a max-tokens override. This is a hack — refactor target. See [phase3_5_followup.md](phase3_5_followup.md) "KNOWN HAZARD".
+- **Session state to Qwen.** Always go through a projection. Direct `ProjectSession` exposure overflows the context budget on long sessions. See [docs/configuration.md](configuration.md) §Projections + [projections.py](../src/kenning/coding/projections.py).
+- **Mutating module state for "scoping".** [coordinator.py:895](../src/kenning/coding/coordinator.py:895) sets `settings.LLM_MAX_TOKENS = ...` to scope a max-tokens override. This is a hack — refactor target. See [phase3_5_followup.md](phase3_5_followup.md) "KNOWN HAZARD".
 - **Threads outliving tests.** The scripted mock bridge spawns daemon threads that try to call back into test fixtures. If you see "cannot schedule new futures after interpreter shutdown", you're calling fixtures from a thread that survived test exit. Fix: either join the thread synchronously in the test, or stub the call differently.
 - **Worktree path resolution.** When running scripts that load models, `chdir` to the main checkout first — the `.env` file and relative paths resolve from cwd. [scripts/measure_baseline_extended.py](../scripts/measure_baseline_extended.py) shows the pattern.
 

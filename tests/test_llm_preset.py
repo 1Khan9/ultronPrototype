@@ -7,7 +7,7 @@ Verifies ``LLMConfig.preset`` behaviour:
   Started Q5_K_M same day; trimmed to Q4_K_M to fit alongside the
   user's ~4.7 GB of background GPU usage).
   The abliterated model removes content-level refusals; the runtime
-  tool-call validator under ``src/ultron/safety/`` gates the actual
+  tool-call validator under ``src/kenning/safety/`` gates the actual
   capability surface. No paired draft so no speculative decoding for
   this preset.
 - ``josiefied-qwen3-8b`` resolves to the 8B variant of the same
@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.config import LLM_PRESETS, LLMConfig, load_config
+from kenning.config import LLM_PRESETS, LLMConfig, load_config
 
 
 def test_default_preset_is_josiefied_4b() -> None:
@@ -37,7 +37,7 @@ def test_default_preset_is_josiefied_4b() -> None:
     Q5_K_M for VRAM relief. Same abliterated lineage as the 8B at
     ~half the footprint. n_ctx=6144 (vs 8192 on the larger presets)
     shaves another ~150 MB off the KV cache. The runtime tool-call
-    validator (``src/ultron/safety/``) still gates the actual capability
+    validator (``src/kenning/safety/``) still gates the actual capability
     surface."""
     cfg = LLMConfig()
     assert cfg.preset == "josiefied-qwen3-4b"

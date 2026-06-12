@@ -250,7 +250,7 @@ class TopicTracker:
         """Generate a short, sortable topic id.
 
         Uses ``uuid4`` truncated to 12 hex chars -- enough entropy
-        for collision avoidance over a single Ultron lifetime, short
+        for collision avoidance over a single Kenning lifetime, short
         enough to keep payload size manageable.
         """
         return uuid.uuid4().hex[:12]

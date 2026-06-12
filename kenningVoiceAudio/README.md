@@ -1,7 +1,7 @@
-# Ultron Voice Audio — voice-pipeline replacement workshop
+# Kenning Voice Audio — voice-pipeline replacement workshop
 
 Working directory for the 2026-05-10 voice-pipeline swap that replaced
-the legacy Piper + RVC stack with **XTTS v2 streaming + a v3 Ultron
+the legacy Piper + RVC stack with **XTTS v2 streaming + a v3 Kenning
 DSP filter**. Most artifacts here are gitignored (large WAVs,
 isolated venvs, model caches, working sample directories) -- only the
 source scripts + the corpus JSON are tracked.
@@ -16,8 +16,8 @@ source scripts + the corpus JSON are tracked.
   blip removal. Used by both the bulk-generation script and the
   manual sample-cleaning pipeline. Tunable thresholds in
   `CleanupConfig`.
-- `scripts/ultron_filter.py` -- prototype of the v3 Ultron filter
-  chain (the runtime port lives at `src/ultron/tts/ultron_filter.py`
+- `scripts/kenning_filter.py` -- prototype of the v3 Kenning filter
+  chain (the runtime port lives at `src/kenning/tts/kenning_filter.py`
   in the main src tree). Bit-identical preset definitions; used for
   generating offline A/B samples that match the production runtime.
 - `scripts/generate_sanity_samples.py` -- quick 5-sample XTTS
@@ -45,7 +45,7 @@ source scripts + the corpus JSON are tracked.
 
 ```powershell
 # 1. Create the XTTS isolated venv (matches torch CUDA version of main venv)
-cd C:\STC\ultronPrototype\ultronVoiceAudio
+cd C:\STC\ultronPrototype\kenningVoiceAudio
 py -3.11 -m venv .venv-xtts
 .venv-xtts\Scripts\python.exe -m pip install --upgrade pip wheel setuptools
 .venv-xtts\Scripts\python.exe -m pip install torch==2.6.0+cu124 torchaudio==2.6.0+cu124 `
@@ -55,8 +55,8 @@ py -3.11 -m venv .venv-xtts
 .venv-xtts\Scripts\python.exe -m pip install "transformers>=4.46,<5.0"
 
 # 2. Provide the speaker reference audio
-# Place the cleaned mono Ultron reference at:
-#   ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav
+# Place the cleaned mono Kenning reference at:
+#   kenningVoiceAudio/kokoro training audio/Kenning_vocals_mono_v1.wav
 # (Moved into the "kokoro training audio" subdirectory during the
 # 2026-06-11 disk cleaning; the legacy root-level location remains
 # protection-listed but is no longer where consumers look.
@@ -71,12 +71,12 @@ cd C:\STC\ultronPrototype
 
 ## Production usage
 
-The main Ultron orchestrator picks the TTS engine via
+The main Kenning orchestrator picks the TTS engine via
 `config.yaml -> tts.engine`:
 
 - `"piper_rvc"` (default) -- legacy Piper + RVC stack.
 - `"xtts_v3"` -- this stack. The orchestrator's
-  [src/ultron/tts/xtts_v3.py](../src/ultron/tts/xtts_v3.py)
+  [src/kenning/tts/xtts_v3.py](../src/kenning/tts/xtts_v3.py)
   spawns `xtts_server.py` from this directory at startup and talks
   to it over loopback HTTP. Filter parameters live under
   `tts.xtts_v3.*` in the same config.
@@ -84,10 +84,10 @@ The main Ultron orchestrator picks the TTS engine via
 ## Deferred work: Kokoro fine-tune
 
 The bulk synthesis script (`generate_bulk_synthetic.py`) was built
-to produce ~50 minutes of Ultron-voice synthetic audio for fine-
+to produce ~50 minutes of Kenning-voice synthetic audio for fine-
 tuning Kokoro (StyleTTS2-based, ~330 MB model, native sub-300 ms
 TTFT). Kokoro fine-tune is the planned latency-recovery step once
-the rest of Ultron is tuned. Constraints discovered during
+the rest of Kenning is tuned. Constraints discovered during
 research (2026-05-10):
 
 - Kokoro has no first-party LoRA pipeline.

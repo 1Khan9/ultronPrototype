@@ -1,4 +1,4 @@
-"""Blast-radius + policy-constraint spine for ultron's self-improvement loop.
+"""Blast-radius + policy-constraint spine for kenning's self-improvement loop.
 
 Catalog 13 (clawhub-capability-evolver) clean-room synthesis. This is the
 catalog's most directly-portable safety component -- the engine that
@@ -18,11 +18,11 @@ The pieces:
   ``exceeded`` / ``critical_overrun`` (2x) / ``hard_cap_breach`` (the
   absolute ceiling: >60 files OR >20000 lines).
 * **critical-path protection** -- the Tier-3 hard wall. The loop can never
-  count a change to ``src/`` (any ultron source), the safety validator,
+  count a change to ``src/`` (any kenning source), the safety validator,
   the audit log, the evolution engine itself, the voice-baseline models,
   or any Category-K file as legitimate. There is NO self-modify escape
   hatch (the upstream had one gated by ``EVOLVE_ALLOW_SELF_MODIFY``;
-  ultron removes it).
+  kenning removes it).
 * **ethics block** -- five regexes over a gene's strategy/summary text
   catch bypass-safety / covert-monitoring / social-engineering /
   human-exploitation / conceal-actions intent.
@@ -98,7 +98,7 @@ DEFAULT_COUNTED_FILE_POLICY = CountedFilePolicy(
         ".venv/",
         "node_modules/",
         "__pycache__/",
-        "ultronVoiceAudio/",
+        "kenningVoiceAudio/",
         "htmlcov/",
         ".pytest_cache/",
         "build/",
@@ -142,14 +142,14 @@ def proposal_policy(root: str = "data/evolution/skills") -> CountedFilePolicy:
 # is no self-modify exemption.
 
 CRITICAL_PROTECTED_PREFIXES: tuple[str, ...] = (
-    "src/",  # ALL ultron source -- the loop never writes code
+    "src/",  # ALL kenning source -- the loop never writes code
     "config/",
     "scripts/",
     ".git/",
     ".github/",
     "models/",
-    "ultronvoiceaudio/",  # voice baseline workshop
-    "ultron_james_spader_mcu_6941/",  # RVC voice model
+    "kenningvoiceaudio/",  # voice baseline workshop
+    "kenning_rvc_voice/",  # RVC voice model
     "data/identity/",  # token-signing secret
     "data/observability/",
     "training/",

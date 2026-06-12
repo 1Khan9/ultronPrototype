@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.events.callbacks import (
+from kenning.events.callbacks import (
     CallbackProcessor,
     CallbackRegistry,
     CallbackResult,
@@ -18,7 +18,7 @@ from ultron.events.callbacks import (
     reset_callback_registry_for_testing,
     set_callback_registry,
 )
-from ultron.events.models import StoredEvent
+from kenning.events.models import StoredEvent
 
 
 @pytest.fixture(autouse=True)

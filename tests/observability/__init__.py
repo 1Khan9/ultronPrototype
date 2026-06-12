@@ -1,1 +1,1 @@
-"""Tests for ultron.observability.* primitives."""
+"""Tests for kenning.observability.* primitives."""

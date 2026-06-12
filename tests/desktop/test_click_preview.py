@@ -11,7 +11,7 @@ import pytest
 PIL = pytest.importorskip("PIL")
 from PIL import Image  # noqa: E402
 
-from ultron.desktop.click_preview import (
+from kenning.desktop.click_preview import (
     AUTO_PASS_RADIUS_PX,
     ConfirmationHistory,
     ConfirmedClick,

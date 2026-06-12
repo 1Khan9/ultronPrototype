@@ -2,7 +2,7 @@
 
 The factory ``make_qwen08b_draft_model`` constructs an internal class
 that closes over the fake Llama instance, so most tests patch the
-``Llama`` import via ``ultron.llm.draft_model._import_base``.
+``Llama`` import via ``kenning.llm.draft_model._import_base``.
 """
 
 from __future__ import annotations
@@ -96,7 +96,7 @@ def fake_draft_model(monkeypatch):
     fake_llama = _build_fake_llama(vocab_size=32, eos_id=0)
 
     monkeypatch.setattr(
-        "ultron.llm.draft_model._import_base",
+        "kenning.llm.draft_model._import_base",
         lambda: _patched_import_base(fake_llama),
     )
 
@@ -111,7 +111,7 @@ def fake_draft_model(monkeypatch):
 
     monkeypatch.setattr(np.ctypeslib, "as_array", _as_array)
 
-    from ultron.llm.draft_model import make_qwen08b_draft_model
+    from kenning.llm.draft_model import make_qwen08b_draft_model
 
     draft = make_qwen08b_draft_model(
         draft_model_path="/fake/qwen-0.8b.gguf",
@@ -210,7 +210,7 @@ def test_eos_stops_drafting_early(fake_draft_model):
     fake_llama._ctx.get_logits = _get_logits_eos
 
     with patch(
-        "ultron.llm.draft_model._import_base",
+        "kenning.llm.draft_model._import_base",
         lambda: _patched_import_base(fake_llama),
     ), patch(
         "numpy.ctypeslib.as_array",
@@ -218,7 +218,7 @@ def test_eos_stops_drafting_early(fake_draft_model):
             ptr._arr.reshape(shape) if shape else ptr._arr
         ) if isinstance(ptr, _PtrLike) else ptr,
     ):
-        from ultron.llm.draft_model import make_qwen08b_draft_model
+        from kenning.llm.draft_model import make_qwen08b_draft_model
         draft = make_qwen08b_draft_model(
             draft_model_path="/fake.gguf", num_pred_tokens=8, n_ctx=512,
         )
@@ -255,5 +255,5 @@ def test_draft_returns_intc_dtype(fake_draft_model):
 def test_default_draft_kind_is_none():
     """Live config should default ``draft_kind`` to ``"none"`` until
     we verify the model path is stable."""
-    from ultron.config import get_config
+    from kenning.config import get_config
     assert get_config().llm.draft_kind == "none"

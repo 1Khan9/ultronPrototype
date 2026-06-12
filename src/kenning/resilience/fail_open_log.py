@@ -1,6 +1,6 @@
 """Per-session counter for fail-open events across subsystems.
 
-Most of Ultron is fail-open by design: a reranker miss falls back to
+Most of Kenning is fail-open by design: a reranker miss falls back to
 the composite scorer, a provider chain falls through SearxNG -> Brave
 -> DDG, a supervisor exception returns a NEW-action decision, a slow
 bus subscriber logs WARN. The cumulative effect is graceful
@@ -43,7 +43,7 @@ import time
 from pathlib import Path
 from typing import Dict, Optional
 
-logger = logging.getLogger("ultron.resilience.fail_open_log")
+logger = logging.getLogger("kenning.resilience.fail_open_log")
 
 # Module-level state. Singleton by design -- the recorder is called
 # from arbitrary subsystem paths so we don't pass an instance around.

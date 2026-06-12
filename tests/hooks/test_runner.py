@@ -1,4 +1,4 @@
-"""Tests for ultron.hooks.runner."""
+"""Tests for kenning.hooks.runner."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from ultron.hooks import runner as r
-from ultron.hooks.discovery import HookScript
-from ultron.hooks.lifecycle import HookKind, HookPayload
+from kenning.hooks import runner as r
+from kenning.hooks.discovery import HookScript
+from kenning.hooks.lifecycle import HookKind, HookPayload
 
 
 def _write_py_hook(dir_: Path, name: str, body: str) -> HookScript:

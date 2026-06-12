@@ -1,4 +1,4 @@
-"""Tests for ``ultron.install.voice_baseline_verify``.
+"""Tests for ``kenning.install.voice_baseline_verify``.
 
 Validates the wired-at-startup T2 artifact-identity verification:
 
@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.install.voice_baseline_verify import (
+from kenning.install.voice_baseline_verify import (
     ArtifactVerificationOutcome,
     VerificationReport,
     VoiceBaselineArtifact,
@@ -208,9 +208,9 @@ def test_default_artifacts_resolves_project_paths(tmp_path):
     required_ids = [a.identifier for a in artifacts if a.required]
     optional_ids = [a.identifier for a in artifacts if not a.required]
     assert "voice_baseline:llm:qwen3.5-4b" in required_ids
-    assert "voice_baseline:voicepack:ultron" in required_ids
+    assert "voice_baseline:voicepack:kenning" in required_ids
     assert "voice_baseline:voicepack:kokoro_finetune" in required_ids
-    assert "voice_baseline:wake_word:ultron" in required_ids
+    assert "voice_baseline:wake_word:kenning" in required_ids
     assert "voice_baseline:llm:qwen3.5-0.8b-draft" in optional_ids
     assert "voice_baseline:smart_turn:v3" in optional_ids
 
@@ -222,7 +222,7 @@ def test_async_swallows_pin_io_error(tmp_path, monkeypatch):
     pin_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Force the pin-file append helper to raise.
-    import ultron.install.artifact_identity as ai
+    import kenning.install.artifact_identity as ai
 
     def _boom(*a, **kw):
         raise OSError("simulated IO failure")

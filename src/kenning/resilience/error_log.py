@@ -10,8 +10,8 @@ and otherwise does nothing.
 
 Usage::
 
-    from ultron.errors import BraveAPIError
-    from ultron.resilience import get_error_log
+    from kenning.errors import BraveAPIError
+    from kenning.resilience import get_error_log
 
     err = BraveAPIError("rate limited", context={"query": q})
     err.with_recovery("fell back to base knowledge with caveat")
@@ -28,10 +28,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from ultron.config import resolve_path
-from ultron.errors import UltronError
-from ultron.utils.ansi_safe import sanitize_for_log
-from ultron.utils.logging import get_logger
+from kenning.config import resolve_path
+from kenning.errors import KenningError
+from kenning.utils.ansi_safe import sanitize_for_log
+from kenning.utils.logging import get_logger
 
 logger = get_logger("resilience.error_log")
 
@@ -93,7 +93,7 @@ class ErrorLog:
         """Append one error record. Best-effort — never raises.
 
         Args:
-            error: the exception that was caught. ``UltronError``
+            error: the exception that was caught. ``KenningError``
                 subclasses contribute ``context`` and ``recovery``;
                 generic exceptions log only their message + traceback.
             dependency: short label for the failing dependency
@@ -115,7 +115,7 @@ class ErrorLog:
         if session_id:
             record["session_id"] = session_id
 
-        if isinstance(error, UltronError):
+        if isinstance(error, KenningError):
             record.update(error.to_log_dict())
         else:
             record["error_type"] = type(error).__name__

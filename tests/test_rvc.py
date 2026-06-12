@@ -1,4 +1,4 @@
-"""Tests for :class:`ultron.tts.rvc.RvcConverter`.
+"""Tests for :class:`kenning.tts.rvc.RvcConverter`.
 
 The converter wraps ``infer-rvc-python`` -- testing it end-to-end would
 need GPU + the trained weights. These tests cover the bits that don't
@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ultron.tts.rvc import RvcConverter
+from kenning.tts.rvc import RvcConverter
 
 
 def _stub_paths(tmp_path):

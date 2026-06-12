@@ -1,4 +1,4 @@
-"""Tests for ``ultron.openclaw_bridge.workspace.WorkspaceWriter``.
+"""Tests for ``kenning.openclaw_bridge.workspace.WorkspaceWriter``.
 
 Real filesystem under tmp_path. Concurrency is exercised with
 threading + a real :class:`filelock.FileLock` to verify the
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.openclaw_bridge.workspace import WorkspaceWriter, WriteResult
+from kenning.openclaw_bridge.workspace import WorkspaceWriter, WriteResult
 
 
 @pytest.fixture
@@ -36,7 +36,7 @@ def writer(workspace: Path) -> WorkspaceWriter:
 
 
 def test_writer_uses_default_workspace_when_none(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("ULTRON_OPENCLAW_WORKSPACE", str(tmp_path / "auto"))
+    monkeypatch.setenv("KENNING_OPENCLAW_WORKSPACE", str(tmp_path / "auto"))
     w = WorkspaceWriter()
     assert w.workspace_dir == tmp_path / "auto"
 

@@ -1,4 +1,4 @@
-"""Integration tests for ultron.evolution.evolution_loop -- the bounded
+"""Integration tests for kenning.evolution.evolution_loop -- the bounded
 auto-apply + auto-revert cycle. Driven with fakes; writes only to tmp_path."""
 
 from __future__ import annotations
@@ -7,24 +7,24 @@ from types import SimpleNamespace
 
 import pytest
 
-from ultron.evolution.autonomy import AutonomyMode, TieredAutonomyController
-from ultron.evolution.blast_radius import BlastComputation
-from ultron.evolution.evolution_loop import (
+from kenning.evolution.autonomy import AutonomyMode, TieredAutonomyController
+from kenning.evolution.blast_radius import BlastComputation
+from kenning.evolution.evolution_loop import (
     ApplyStatus,
     CheckpointHook,
     EvolutionLoop,
     EvolutionLoopConfig,
     EvolutionState,
 )
-from ultron.evolution.guardrails import GuardrailSample
-from ultron.evolution.models import (
+from kenning.evolution.guardrails import GuardrailSample
+from kenning.evolution.models import (
     Capsule,
     EvolutionCategory,
     Gene,
     Outcome,
     OutcomeStatus,
 )
-from ultron.evolution.skill_distiller import gene_to_skill_proposal
+from kenning.evolution.skill_distiller import gene_to_skill_proposal
 
 
 def _caps(n=10):

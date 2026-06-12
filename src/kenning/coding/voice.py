@@ -21,22 +21,22 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from config import settings
-from ultron.coding.bridge import TaskRequest
-from ultron.coding.intent import (
+from kenning.coding.bridge import TaskRequest
+from kenning.coding.intent import (
     CodingIntent,
     CodingIntentKind,
     classify as classify_intent,
     derive_project_name,
 )
-from ultron.coding.projects import (
+from kenning.coding.projects import (
     ProjectRegistry,
     ProjectResolution,
     ProjectResolver,
     ResolutionKind,
     new_sandbox_project,
 )
-from ultron.coding.runner import CodingTaskRunner
-from ultron.utils.logging import get_logger
+from kenning.coding.runner import CodingTaskRunner
+from kenning.utils.logging import get_logger
 
 logger = get_logger("coding.voice")
 
@@ -71,7 +71,7 @@ class CapabilityVoiceController:
     Renamed from ``CodingVoiceController`` in Foundation Phase 5 — the
     legacy name is preserved as a module-level alias at the bottom of
     this file for backward compatibility, so existing imports
-    ``from ultron.coding import CodingVoiceController`` keep working.
+    ``from kenning.coding import CodingVoiceController`` keep working.
 
     The controller dispatches utterances across:
       * coding intents (existing path; routes to :class:`CodingTaskRunner`)
@@ -130,7 +130,7 @@ class CapabilityVoiceController:
         # is byte-for-byte unchanged).
         self.supervisor_dispatch = supervisor_dispatch
         self.project_index = project_index
-        # B3: in-process Ultron MCP server. When set + running, each voice-
+        # B3: in-process Kenning MCP server. When set + running, each voice-
         # dispatched coding task writes a per-project ``.mcp.json`` so the
         # spawned coding subprocess connects back (request_clarification /
         # report_progress / declare_complete -> coordinator + verifier loop).
@@ -541,11 +541,11 @@ class CapabilityVoiceController:
         Failure mode = always fail-open. Supervisor crashes never
         leave the user in a half-state.
         """
-        from ultron.coding.project_supervisor import (
+        from kenning.coding.project_supervisor import (
             SupervisorAction,
             SupervisorInputs,
         )
-        from ultron.coding.supervisor_dispatch import DispatchActionKind
+        from kenning.coding.supervisor_dispatch import DispatchActionKind
 
         try:
             inputs = SupervisorInputs(
@@ -722,8 +722,8 @@ class CapabilityVoiceController:
         wire-point for SWE-Agent T7 (SubmitReviewLoop).
         """
         try:
-            from ultron.coding.bridge import EventKind
-            from ultron.coding.submit_review import detect_voice_lock_hits
+            from kenning.coding.bridge import EventKind
+            from kenning.coding.submit_review import detect_voice_lock_hits
         except Exception as e:  # noqa: BLE001
             logger.debug(
                 "submit_review listener unavailable (%s); skipping", e,
@@ -796,7 +796,7 @@ class CapabilityVoiceController:
         we just won't get a digest for it.
         """
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
             sup_cfg = get_config().coding.supervisor
         except Exception:                                           # noqa: BLE001
             return
@@ -805,7 +805,7 @@ class CapabilityVoiceController:
         if self.supervisor_dispatch is None or self.project_index is None:
             return
 
-        from ultron.coding.bridge import EventKind
+        from kenning.coding.bridge import EventKind
 
         index_ref = self.project_index
         dispatch_ref = self.supervisor_dispatch
@@ -937,7 +937,7 @@ class CapabilityVoiceController:
         project_phrase: str,
         is_new: bool,
     ) -> str:
-        """Render a short spoken confirmation in Ultron's voice.
+        """Render a short spoken confirmation in Kenning's voice.
 
         Format mirrors the V1 spec example:
             "I'll have AI coding agent <verb> on the <project> project. Going ahead."
@@ -1011,7 +1011,7 @@ class CapabilityVoiceController:
                     # Move from PLANNING -> EXECUTING so progress queries
                     # render the right status.
                     try:
-                        from ultron.coding.session import SessionStatus
+                        from kenning.coding.session import SessionStatus
                         store.transition(
                             bound_session_id, SessionStatus.EXECUTING,
                         )
@@ -1034,7 +1034,7 @@ class CapabilityVoiceController:
         # correction-loop path (runner.py) passes require_testing
         # explicitly and isn't affected.
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
             voice_require_testing = bool(
                 get_config().coding.voice_task_require_testing
             )
@@ -1067,7 +1067,7 @@ class CapabilityVoiceController:
         report is drained on the next voice-loop poll (non-blocking); LAUNCH is
         instant + detached. Fail-open."""
         try:
-            from ultron.coding.sandbox_runner import (
+            from kenning.coding.sandbox_runner import (
                 DEFAULT_RUN_TIMEOUT_S, launch_program, match_run_program,
                 run_program, summarize_run_result,
             )
@@ -1096,7 +1096,7 @@ class CapabilityVoiceController:
         # RUN: non-blocking -- execute in a daemon thread; the orchestrator
         # speaks _pending_run_report on its next poll.
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
             timeout_s = float(get_config().coding.sandbox_run_timeout_seconds)
         except Exception:                                            # noqa: BLE001
             timeout_s = DEFAULT_RUN_TIMEOUT_S
@@ -1137,7 +1137,7 @@ class CapabilityVoiceController:
         An explicit scrap/trash/revert-everything command cancels any
         running coding task and rolls every recorded edit back to its
         pre-task content via the catalog-09 batch-F pre-edit snapshots
-        (:class:`~ultron.coding.file_history.FileHistory`); files the
+        (:class:`~kenning.coding.file_history.FileHistory`); files the
         task created are deleted. Returns a :class:`VoiceResponse` when
         the strict matcher fired (including the honest "nothing to
         scrap" case), else ``None`` so ordinary utterances -- and bare
@@ -1146,7 +1146,7 @@ class CapabilityVoiceController:
         no live coding agent's state can desynchronise. Fail-open.
         """
         try:
-            from ultron.coding.scrap import (
+            from kenning.coding.scrap import (
                 ScrapRevertResult,
                 match_scrap_command,
                 revert_session_edits,
@@ -1235,7 +1235,7 @@ class CapabilityVoiceController:
         if proj is not None:
             return Path(proj.path), proj.name
         try:
-            from ultron.coding.projects import slugify_for_path
+            from kenning.coding.projects import slugify_for_path
             candidate = self.sandbox_root / slugify_for_path(hint)
             if candidate.is_dir():
                 return candidate, candidate.name
@@ -1246,7 +1246,7 @@ class CapabilityVoiceController:
     # --- B3: MCP-config wiring for voice-dispatched coding tasks -----------
 
     def _maybe_write_mcp_config(self, project_path):
-        """Write a per-project ``.mcp.json`` pointing at the live Ultron MCP
+        """Write a per-project ``.mcp.json`` pointing at the live Kenning MCP
         server so the dispatched coding subprocess can call back into it
         (request_clarification / report_progress / report_test_results /
         declare_complete). Returns the path for ``TaskRequest.mcp_config_path``
@@ -1259,7 +1259,7 @@ class CapabilityVoiceController:
         try:
             if not server.is_running():
                 return None
-            from ultron.coding.mcp_server import write_mcp_config
+            from kenning.coding.mcp_server import write_mcp_config
             return write_mcp_config(Path(project_path), server.sse_url)
         except Exception as e:                                       # noqa: BLE001
             logger.warning(
@@ -1320,7 +1320,7 @@ class CapabilityVoiceController:
             )
             sid = session.session_id
             try:
-                from ultron.coding.session import SessionStatus
+                from kenning.coding.session import SessionStatus
                 store.transition(sid, SessionStatus.EXECUTING)
             except Exception:                                        # noqa: BLE001
                 pass
@@ -1343,7 +1343,7 @@ class CapabilityVoiceController:
         None (e.g. tests that don't construct a real engine), reports
         the misconfiguration via voice rather than crashing.
         """
-        from ultron.openclaw_routing import get_routing_log
+        from kenning.openclaw_routing import get_routing_log
 
         target = None
         if routing_intent.model_switch_intent is not None:
@@ -1371,7 +1371,7 @@ class CapabilityVoiceController:
             return VoiceResponse(
                 text=(
                     "I can't switch models — my engine isn't wired to "
-                    "accept reloads. Restart Ultron with the new preset "
+                    "accept reloads. Restart Kenning with the new preset "
                     "instead."
                 ),
                 handled=True,
@@ -1416,8 +1416,8 @@ class CapabilityVoiceController:
         ``outcome == "stub"`` for unwired automation kinds) keep
         working.
         """
-        from ultron.openclaw_routing.intents import RoutingIntentKind
-        from ultron.openclaw_routing import (
+        from kenning.openclaw_routing.intents import RoutingIntentKind
+        from kenning.openclaw_routing import (
             AutomationTaskRunner,
             OpenClawDispatcher,
             get_routing_log,
@@ -1504,8 +1504,8 @@ class CapabilityVoiceController:
         failure yields a clear "no information" response rather than
         crashing the voice pipeline.
         """
-        from ultron.openclaw_routing import get_routing_log
-        from ultron.openclaw_routing.intents import SystemStatusIntent
+        from kenning.openclaw_routing import get_routing_log
+        from kenning.openclaw_routing.intents import SystemStatusIntent
 
         intent = (
             routing_intent.system_status_intent
@@ -1521,8 +1521,8 @@ class CapabilityVoiceController:
             alert_log = getattr(self.openclaw_bridge, "heartbeat_alerts", None)
         if alert_log is None:
             try:
-                from ultron.config import get_config, resolve_path
-                from ultron.openclaw_bridge.heartbeat_alerts import (
+                from kenning.config import get_config, resolve_path
+                from kenning.openclaw_bridge.heartbeat_alerts import (
                     HeartbeatAlertLog,
                 )
                 hb_cfg = get_config().heartbeat
@@ -1543,7 +1543,7 @@ class CapabilityVoiceController:
                 )
 
         try:
-            from ultron.openclaw_bridge.system_status import SystemStatusReporter
+            from kenning.openclaw_bridge.system_status import SystemStatusReporter
             reporter = SystemStatusReporter(alert_log)
             report = reporter.report(intent)
         except Exception as exc:                                # noqa: BLE001
@@ -1586,7 +1586,7 @@ class CapabilityVoiceController:
         Fail-open: missing launcher module, app-not-found, validator
         block all return a clear voice message rather than raising.
         """
-        from ultron.openclaw_routing import get_routing_log
+        from kenning.openclaw_routing import get_routing_log
 
         intent = routing_intent.app_launch_intent
         if intent is None:
@@ -1600,7 +1600,7 @@ class CapabilityVoiceController:
         # current utterance has no explicit monitor target.
         if intent.monitor_index is None and not intent.monitor_query:
             try:
-                from ultron.desktop.preferences import find_preference_for_phrase
+                from kenning.desktop.preferences import find_preference_for_phrase
 
                 prior = find_preference_for_phrase(intent.raw_text)
                 if prior is not None and prior.monitor_index is not None:
@@ -1618,7 +1618,7 @@ class CapabilityVoiceController:
                 logger.debug("preference lookup failed: %s", e)
 
         try:
-            from ultron.desktop.voice import handle_app_launch
+            from kenning.desktop.voice import handle_app_launch
 
             result = handle_app_launch(intent)
         except Exception as e:                                    # noqa: BLE001
@@ -1658,7 +1658,7 @@ class CapabilityVoiceController:
         Fail-open: snapshot build failure, missing LLM, or LLM error
         all return a clear voice message.
         """
-        from ultron.openclaw_routing import get_routing_log
+        from kenning.openclaw_routing import get_routing_log
 
         intent = routing_intent.screen_context_intent
         if intent is None:
@@ -1674,7 +1674,7 @@ class CapabilityVoiceController:
             )
 
         try:
-            from ultron.desktop.voice import handle_screen_context_query
+            from kenning.desktop.voice import handle_screen_context_query
 
             sc_result = handle_screen_context_query(intent)
         except Exception as e:                                    # noqa: BLE001
@@ -1702,7 +1702,7 @@ class CapabilityVoiceController:
             )
 
         # Compose the LLM prompt: screen context first, then the user's
-        # actual question. Ultron's system prompt + persona apply
+        # actual question. Kenning's system prompt + persona apply
         # normally on top.
         # 2026-05-14: lead with a hard length cap so the screen-context
         # answer stays a 1-2 sentence voice line instead of a 1235-char
@@ -1761,7 +1761,7 @@ class CapabilityVoiceController:
     def _handle_window_move(self, routing_intent) -> "VoiceResponse":
         """Native WINDOW_MOVE: relocate an existing window to a target
         monitor. Bypasses OpenClaw entirely."""
-        from ultron.openclaw_routing import get_routing_log
+        from kenning.openclaw_routing import get_routing_log
 
         intent = routing_intent.window_move_intent
         if intent is None:
@@ -1770,7 +1770,7 @@ class CapabilityVoiceController:
                 handled=True,
             )
         try:
-            from ultron.desktop.voice import handle_window_move
+            from kenning.desktop.voice import handle_window_move
             result = handle_window_move(intent)
         except Exception as e:                                    # noqa: BLE001
             get_routing_log().record(
@@ -1807,7 +1807,7 @@ class CapabilityVoiceController:
         via :class:`WindowCloseConfirmationIntent` and calls
         :meth:`_consume_window_close_approval` to decide.
         """
-        from ultron.openclaw_routing import get_routing_log
+        from kenning.openclaw_routing import get_routing_log
 
         intent = routing_intent.window_close_intent
         if intent is None:
@@ -1816,7 +1816,7 @@ class CapabilityVoiceController:
                 handled=True,
             )
         try:
-            from ultron.desktop.voice import handle_window_close
+            from kenning.desktop.voice import handle_window_close
             result = handle_window_close(intent)
         except Exception as e:                                    # noqa: BLE001
             get_routing_log().record(
@@ -1882,7 +1882,7 @@ class CapabilityVoiceController:
         synchronous-close path).
         """
         try:
-            from ultron.safety.two_phase_approval import (
+            from kenning.safety.two_phase_approval import (
                 ApprovalRegistry,
                 ApprovalRequest,
                 get_approval_registry,
@@ -1987,7 +1987,7 @@ class CapabilityVoiceController:
             self._clear_pending_close_approval()
             return None
 
-        from ultron.safety.two_phase_approval import ApprovalOutcome
+        from kenning.safety.two_phase_approval import ApprovalOutcome
 
         outcome = (
             ApprovalOutcome.ALLOW
@@ -2012,8 +2012,8 @@ class CapabilityVoiceController:
         """Force-close the window after voice approval. Returns the
         voice narration to speak."""
         try:
-            from ultron.openclaw_routing.intents import WindowCloseIntent
-            from ultron.desktop.voice import handle_window_close
+            from kenning.openclaw_routing.intents import WindowCloseIntent
+            from kenning.desktop.voice import handle_window_close
         except Exception as exc:                                  # noqa: BLE001
             self._logger_safe("force-close import failed: %s", exc)
             return f'I couldn\'t close "{window_query}" right now.'
@@ -2029,7 +2029,7 @@ class CapabilityVoiceController:
             # raw_text=...(force) and reading the result; if the
             # handler doesn't surface a force kwarg directly, fall
             # back to invoking close_window via the low-level API.
-            from ultron.desktop.windows import close_window
+            from kenning.desktop.windows import close_window
             result = close_window(
                 partial_title=window_query,
                 force=True,
@@ -2076,7 +2076,7 @@ class CapabilityVoiceController:
         opt-in confirmation. Fail-open.
         """
         try:
-            from ultron.safety.two_phase_approval import (
+            from kenning.safety.two_phase_approval import (
                 ApprovalOutcome,
                 ApprovalRequest,
                 get_approval_registry,
@@ -2156,7 +2156,7 @@ class CapabilityVoiceController:
             return None
         approved = (decision_text or "").lower() == "yes"
         try:
-            from ultron.safety.two_phase_approval import ApprovalOutcome
+            from kenning.safety.two_phase_approval import ApprovalOutcome
 
             registry.record_decision(
                 approval_id,
@@ -2177,7 +2177,7 @@ class CapabilityVoiceController:
     @staticmethod
     def _logger_safe(fmt: str, *args) -> None:
         try:
-            from ultron.utils.logging import get_logger
+            from kenning.utils.logging import get_logger
             get_logger("coding.voice.window_close").debug(fmt, *args)
         except Exception:                                         # noqa: BLE001
             pass
@@ -2191,10 +2191,10 @@ class CapabilityVoiceController:
         (1-2 ms). The user gets the title back in voice with no UIA
         walk, capture, or VLM cost.
         """
-        from ultron.openclaw_routing import get_routing_log
+        from kenning.openclaw_routing import get_routing_log
 
         try:
-            from ultron.desktop.windows import get_active_window_title
+            from kenning.desktop.windows import get_active_window_title
             title = get_active_window_title()
         except Exception as e:                                       # noqa: BLE001
             get_routing_log().record(
@@ -2234,12 +2234,12 @@ class CapabilityVoiceController:
     def _handle_semantic_click(self, routing_intent) -> "VoiceResponse":
         """SEMANTIC_CLICK: click a UI element by its accessible name.
 
-        Routes through :func:`ultron.desktop.element_click.click_element_by_name`
+        Routes through :func:`kenning.desktop.element_click.click_element_by_name`
         which walks the foreground UIA tree and clicks via the gated
         :class:`InputController` (click-preview VLM + foreground
         security + Cap-3 explicit-intent + rate limit all apply).
         """
-        from ultron.openclaw_routing import get_routing_log
+        from kenning.openclaw_routing import get_routing_log
 
         intent = routing_intent.semantic_click_intent
         if intent is None or not (intent.element_name or "").strip():
@@ -2252,7 +2252,7 @@ class CapabilityVoiceController:
         # missing pywinauto / missing elements / disabled targets via
         # a structured ClickResult; we surface the voice-friendly bits.
         try:
-            from ultron.desktop.element_click import click_element_by_name
+            from kenning.desktop.element_click import click_element_by_name
             result = click_element_by_name(
                 name=intent.element_name,
                 window_title=intent.window_title or None,
@@ -2349,7 +2349,7 @@ class CapabilityVoiceController:
         if llm is None:
             return None
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
 
             if not bool(
                 getattr(get_config().desktop, "deep_ui_discovery_enabled", True)
@@ -2358,12 +2358,12 @@ class CapabilityVoiceController:
         except Exception:                                            # noqa: BLE001
             pass
         try:
-            from ultron.agent_loop.deep_loops import DeepUIDiscoveryLoop
-            from ultron.desktop.element_click import (
+            from kenning.agent_loop.deep_loops import DeepUIDiscoveryLoop
+            from kenning.desktop.element_click import (
                 click_element_by_name,
                 find_elements_by_name,
             )
-            from ultron.openclaw_routing import get_routing_log
+            from kenning.openclaw_routing import get_routing_log
         except Exception:                                            # noqa: BLE001
             return None
         window_title = intent.window_title or None
@@ -2432,7 +2432,7 @@ class CapabilityVoiceController:
         through :meth:`consume_window_close_approval`. When no
         approval is pending, surfaces a neutral ack.
         """
-        from ultron.openclaw_routing import get_routing_log
+        from kenning.openclaw_routing import get_routing_log
 
         intent = routing_intent.window_close_confirmation_intent
         decision = (intent.decision if intent is not None else "").lower()
@@ -2485,7 +2485,7 @@ class CapabilityVoiceController:
         """Decompose a HYBRID_TASK utterance and dispatch its subtasks.
 
         Wiring for the fully-built but previously-unconsumed
-        :class:`HybridTaskDecomposer`. ultron holds ONE in-flight coding task
+        :class:`HybridTaskDecomposer`. kenning holds ONE in-flight coding task
         and the voice turn is synchronous, so it cannot block the turn for a
         minutes-long coding subtask and then run automation "after". The
         bounded-but-honest contract:
@@ -2502,7 +2502,7 @@ class CapabilityVoiceController:
         back to dispatching the raw utterance as a coding task.
         """
         import asyncio
-        from ultron.openclaw_routing import HybridTaskDecomposer, get_routing_log
+        from kenning.openclaw_routing import HybridTaskDecomposer, get_routing_log
 
         raw_text = getattr(routing_intent, "raw_text", "") or ""
         try:
@@ -2575,9 +2575,9 @@ class CapabilityVoiceController:
         """Classify + dispatch a single automation subtask; return its spoken
         text. Guards against re-classifying the subtask as HYBRID/CONVERSATIONAL
         (no recursion); such subtasks are surfaced as text instead of run."""
-        from ultron.openclaw_routing.intents import RoutingIntentKind
+        from kenning.openclaw_routing.intents import RoutingIntentKind
         try:
-            from ultron.openclaw_routing.classifier import classify_routing
+            from kenning.openclaw_routing.classifier import classify_routing
             sub_intent = classify_routing(description)
         except Exception as e:                                       # noqa: BLE001
             logger.debug("automation subtask classify failed: %s", e)
@@ -2602,8 +2602,8 @@ class CapabilityVoiceController:
         Lazy-imported to avoid pulling in the openclaw_routing module
         when the controller is constructed in tests that don't need it.
         """
-        from ultron.openclaw_routing.intents import RoutingIntentKind
-        from ultron.openclaw_routing import (
+        from kenning.openclaw_routing.intents import RoutingIntentKind
+        from kenning.openclaw_routing import (
             AutomationTaskRunner,
             OpenClawDispatcher,
             get_routing_log,
@@ -2630,7 +2630,7 @@ class CapabilityVoiceController:
             return self._handle_model_switch(routing_intent)
 
         # Phase 13 — system-status voice queries ("what alerts did
-        # you flag?", "what is Ultron working on?"). Read from the
+        # you flag?", "what is Kenning working on?"). Read from the
         # heartbeat alert log + active session listing on disk via
         # the bridge's SystemStatusReporter. No OpenClaw call.
         if kind == RoutingIntentKind.SYSTEM_STATUS:
@@ -2732,7 +2732,7 @@ class CapabilityVoiceController:
 #
 # Foundation Phase 5 renamed CodingVoiceController -> CapabilityVoiceController
 # because the controller now dispatches across capabilities, not just coding.
-# Existing imports `from ultron.coding import CodingVoiceController` keep
+# Existing imports `from kenning.coding import CodingVoiceController` keep
 # working via this alias. New code should prefer CapabilityVoiceController.
 # ---------------------------------------------------------------------------
 
@@ -2747,7 +2747,7 @@ CodingVoiceController = CapabilityVoiceController
 
 def _build_supervisor_llm_call(llm_engine, sup_cfg):
     """Build the LLM-call closure passed to
-    :func:`ultron.coding.project_digest.generate_digest`.
+    :func:`kenning.coding.project_digest.generate_digest`.
 
     The digest generator expects a callable that takes a prompt
     string and returns the model completion text. We wrap

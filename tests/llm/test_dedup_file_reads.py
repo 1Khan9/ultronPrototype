@@ -1,10 +1,10 @@
-"""Tests for ultron.llm.dedup_file_reads."""
+"""Tests for kenning.llm.dedup_file_reads."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from ultron.llm import dedup_file_reads as ddr
+from kenning.llm import dedup_file_reads as ddr
 
 
 def _user_with_read(call_id: str, path: str) -> dict[str, Any]:

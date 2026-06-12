@@ -6,7 +6,7 @@ from typing import Sequence
 
 import pytest
 
-from ultron.coding.edit_recovery import (
+from kenning.coding.edit_recovery import (
     DEFAULT_MISMATCH_SNIPPET_CHARS,
     EditRecoveryResult,
     EditSpec,

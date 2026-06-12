@@ -22,7 +22,7 @@ shelling out to ``taskkill`` / ``kill``.
 
 This is the canonical primitive for orchestrator shutdown, the
 Parakeet HTTP server lifecycle, future MCP transport shutdown, and
-test-harness cleanup. The existing :mod:`ultron.subprocess.zombie_killer`
+test-harness cleanup. The existing :mod:`kenning.subprocess.zombie_killer`
 uses an equivalent terminate-then-kill pattern for single processes;
 :func:`kill_process_tree` extends that discipline to recursive
 descendants.

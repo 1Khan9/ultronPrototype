@@ -28,12 +28,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional
 
-from ultron.channels import Channel, ChannelMetadata
-from ultron.config import get_config, resolve_path
-from ultron.errors import QdrantUnavailableError
-from ultron.memory.embedder import HybridEmbedder, _SparseVec
-from ultron.resilience import get_error_log
-from ultron.utils.logging import get_logger
+from kenning.channels import Channel, ChannelMetadata
+from kenning.config import get_config, resolve_path
+from kenning.errors import QdrantUnavailableError
+from kenning.memory.embedder import HybridEmbedder, _SparseVec
+from kenning.resilience import get_error_log
+from kenning.utils.logging import get_logger
 
 logger = get_logger("memory.qdrant_store")
 
@@ -131,7 +131,7 @@ class ConversationMemory:
         try:
             topic_cfg = cfg.memory.topical_chunking
             if topic_cfg.enabled:
-                from ultron.memory.topical_chunking import TopicTracker
+                from kenning.memory.topical_chunking import TopicTracker
                 self._topic_tracker = TopicTracker(
                     similarity_threshold=topic_cfg.boundary_similarity_threshold,
                     timeout_seconds=topic_cfg.idle_timeout_seconds,
@@ -149,7 +149,7 @@ class ConversationMemory:
         try:
             disc_cfg = cfg.memory.discourse_tagging
             if disc_cfg.enabled:
-                from ultron.memory.discourse import DiscourseClassifier
+                from kenning.memory.discourse import DiscourseClassifier
                 embedder_fn = None
                 if disc_cfg.use_embedding_fallback:
                     embedder_fn = self._embedder.encode_query_dense
@@ -333,7 +333,7 @@ class ConversationMemory:
         Qdrant operations never depend on the trace module being
         importable at construction time."""
         try:
-            from ultron import trace
+            from kenning import trace
             trace.tlog(logger, msg, **kwargs)
         except Exception:
             pass
@@ -441,7 +441,7 @@ class ConversationMemory:
             return ""
         if self._context_generator is None:
             try:
-                from ultron.memory.contextualizer import ContextGenerator
+                from kenning.memory.contextualizer import ContextGenerator
                 self._context_generator = ContextGenerator()
             except Exception as e:                                # noqa: BLE001
                 logger.warning(
@@ -564,7 +564,7 @@ class ConversationMemory:
 
         2026-05-19 cross-session contamination fix: the in-process cache
         loads up to ``recent_cache_size`` turns from Qdrant on startup,
-        which historically included turns from prior Ultron sessions.
+        which historically included turns from prior Kenning sessions.
         :meth:`_build_messages` fed those prior-session turns into the
         LLM as 'conversation history', producing replays of wildly off-
         topic content from old conversations (Salesforce pricing /
@@ -592,7 +592,7 @@ class ConversationMemory:
         # confirm cross-session contamination is actually being filtered
         # out (and isn't leaking through some other path).
         try:
-            from ultron import trace
+            from kenning import trace
             trace.tlog(
                 logger, "memory:recent",
                 requested=n, returned=len(out),
@@ -650,7 +650,7 @@ class ConversationMemory:
             session_ids=sorted({t.session_id for t in result}) if result else [],
         )
         try:
-            from ultron.observations import observe_retrieval
+            from kenning.observations import observe_retrieval
 
             lineage_ids = tuple(str(t.id) for t in result if t is not None)
             mem_cfg = get_config().memory
@@ -693,7 +693,7 @@ class ConversationMemory:
                 # 2026-05-22: use the process-wide singleton so we
                 # share the model with the web-search snippet ranker
                 # and avoid the ~2 s duplicate cold load.
-                from ultron.memory.reranker import get_shared_reranker
+                from kenning.memory.reranker import get_shared_reranker
                 self._reranker = get_shared_reranker()
             except Exception as e:                                 # noqa: BLE001
                 logger.warning(
@@ -853,7 +853,7 @@ class ConversationMemory:
 
         # Score each candidate with the composite (cosine + RRF +
         # recency) and apply the relevance gate.
-        from ultron.memory.ranking import (
+        from kenning.memory.ranking import (
             cosine_similarity,
             compute_recency_boost,
         )
@@ -923,7 +923,7 @@ class ConversationMemory:
         Issues one hybrid Qdrant query per category sub-query (plus the
         primary if it isn't already in the list), unions the results,
         and ranks them via the composite scorer in
-        :mod:`ultron.memory.ranking`.
+        :mod:`kenning.memory.ranking`.
 
         Args:
             primary_query: literal user utterance.
@@ -1074,7 +1074,7 @@ class ConversationMemory:
         if not merged:
             return []
 
-        from ultron.memory.ranking import (
+        from kenning.memory.ranking import (
             CandidateScore,
             RankingWeights,
             select_top_k,
@@ -1317,7 +1317,7 @@ class ConversationMemory:
 
         Same lazy-load + fail-open pattern as ``_apply_reranker``
         for memory turns. The cross-encoder model is shared via
-        ``ultron.web_search.search._get_cross_encoder`` so we don't
+        ``kenning.web_search.search._get_cross_encoder`` so we don't
         load the ~1.1 GB model twice (memory + facts + web search
         all use the same instance).
         """
@@ -1327,7 +1327,7 @@ class ConversationMemory:
             # Reuse the shared cross-encoder instance from the
             # web-search ranker module. Falls back to None when load
             # fails -- we degrade to RRF order.
-            from ultron.web_search.search import _get_cross_encoder
+            from kenning.web_search.search import _get_cross_encoder
             reranker = _get_cross_encoder()
             if reranker is None or not reranker._ensure_model():       # noqa: SLF001
                 return list(rows)[:k]

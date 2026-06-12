@@ -1,6 +1,6 @@
 """End-to-end pipeline test harness (2026-05-22 autonomous run).
 
-Exercises the full Ultron voice pipeline programmatically:
+Exercises the full Kenning voice pipeline programmatically:
     Kokoro (synthesize a user utterance as audio)
       -> Moonshine (transcribe back to text)
       -> Gate classifier (SEARCH vs NO_SEARCH)
@@ -17,7 +17,7 @@ Usage:
 Phases (each is independent; --phase=all runs everything):
     1   STT (Moonshine accuracy + latency)
     2   LLM (Qwen 3.5 4B response + TTFT + latency)
-    3   TTS (Kokoro Ultron voice synth + spectral_smooth)
+    3   TTS (Kokoro Kenning voice synth + spectral_smooth)
     4   Web search (SearXNG + readers + ranker)
     5   Memory (retrieve + rerank + ranking)
     6   Routing classifier
@@ -29,7 +29,7 @@ Phases (each is independent; --phase=all runs everything):
         code exploration / evolution / report concern / run / scrap /
         local clock) + a negative control
     10  Full conversational loops -- audio -> STT -> gate -> LLM (+ history
-        recall) -> Ultron-voice TTS, incl. a LIVE web-search turn
+        recall) -> Kenning-voice TTS, incl. a LIVE web-search turn
     11  Voice coding engineer -- REAL coding-CLI create -> sandbox run ->
         edit follow-up -> re-run (costs real API tokens)
 
@@ -49,7 +49,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # Make the project root importable when this script is invoked directly
 # (i.e., `python scripts/autonomous_e2e_harness.py`). Otherwise the
-# legacy ``from config import settings`` imports in src/ultron/* break.
+# legacy ``from config import settings`` imports in src/kenning/* break.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
@@ -127,7 +127,7 @@ def phase_stt() -> List[Scenario]:
     print("PHASE 1: STT (Moonshine)")
     print("=" * 60)
     scenarios: List[Scenario] = []
-    from ultron.transcription.moonshine_engine import MoonshineEngine
+    from kenning.transcription.moonshine_engine import MoonshineEngine
 
     # Use the same engine the orchestrator uses.
     t0 = time.monotonic()
@@ -136,9 +136,9 @@ def phase_stt() -> List[Scenario]:
     print(f"Moonshine loaded in {load_s:.2f}s, supports_streaming={engine.supports_streaming()}")
 
     # Generate test audio using Kokoro with the STOCK am_michael voice
-    # (NOT the Ultron fine-tune -- we want neutral synthesis so the
+    # (NOT the Kenning fine-tune -- we want neutral synthesis so the
     # STT test isn't biased by a specific dialect).
-    from ultron.tts.kokoro_engine import KokoroSpeech
+    from kenning.tts.kokoro_engine import KokoroSpeech
 
     t0 = time.monotonic()
     tts_for_test = KokoroSpeech(voice="am_michael", apply_spectral_smooth=False)
@@ -211,9 +211,9 @@ def phase_llm() -> List[Scenario]:
     print("PHASE 2: LLM (Qwen 3.5 4B)")
     print("=" * 60)
     scenarios: List[Scenario] = []
-    from ultron.llm.inference import LLMEngine
-    from ultron.memory.embedder import HybridEmbedder
-    from ultron.memory.qdrant_store import ConversationMemory
+    from kenning.llm.inference import LLMEngine
+    from kenning.memory.embedder import HybridEmbedder
+    from kenning.memory.qdrant_store import ConversationMemory
 
     t0 = time.monotonic()
     embedder = HybridEmbedder()
@@ -227,7 +227,7 @@ def phase_llm() -> List[Scenario]:
     # the orchestrator's voice-path generate_stream calls). Without
     # these, the harness was testing a non-production configuration
     # and reported false-positive 10+ s TTFTs on the thinking path.
-    from ultron.response_style import apply_brevity_hint as _bh
+    from kenning.response_style import apply_brevity_hint as _bh
 
     raw_prompts = [
         ("greeting", "Say hello."),
@@ -283,13 +283,13 @@ def phase_llm() -> List[Scenario]:
 
 
 def phase_tts() -> List[Scenario]:
-    """Test Kokoro Ultron voice synth."""
+    """Test Kokoro Kenning voice synth."""
     print("\n" + "=" * 60)
-    print("PHASE 3: TTS (Kokoro -- Ultron voice)")
+    print("PHASE 3: TTS (Kokoro -- Kenning voice)")
     print("=" * 60)
     scenarios: List[Scenario] = []
-    from ultron.config import get_config
-    from ultron.tts.kokoro_engine import KokoroSpeech
+    from kenning.config import get_config
+    from kenning.tts.kokoro_engine import KokoroSpeech
 
     cfg = get_config().tts.kokoro
     t0 = time.monotonic()
@@ -301,11 +301,11 @@ def phase_tts() -> List[Scenario]:
         spectral_smooth_window=cfg.spectral_smooth_window,
     )
     engine.warmup()
-    print(f"Ultron-voice Kokoro ready in {time.monotonic()-t0:.2f}s; voice={engine._voice_display}")
+    print(f"Kenning-voice Kokoro ready in {time.monotonic()-t0:.2f}s; voice={engine._voice_display}")
 
     phrases = [
         ("short", "Online."),
-        ("medium", "I am Ultron. I am here."),
+        ("medium", "I am Kenning. I am here."),
         ("technical", "Cross-encoder reranking is now active."),
         ("longer", "According to the search, the current time in France is 9:25 PM on Friday, May 22, 2026."),
     ]
@@ -346,8 +346,8 @@ def phase_web_search() -> List[Scenario]:
     print("PHASE 4: Web Search")
     print("=" * 60)
     scenarios: List[Scenario] = []
-    from ultron.web_search.provider_chain import SearchProviderChain
-    from ultron.web_search.reader_chain import ReaderChain
+    from kenning.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.reader_chain import ReaderChain
 
     t0 = time.monotonic()
     providers = SearchProviderChain()
@@ -392,8 +392,8 @@ def phase_memory() -> List[Scenario]:
     print("PHASE 5: Memory + Reranker")
     print("=" * 60)
     scenarios: List[Scenario] = []
-    from ultron.memory.embedder import HybridEmbedder
-    from ultron.memory.qdrant_store import ConversationMemory
+    from kenning.memory.embedder import HybridEmbedder
+    from kenning.memory.qdrant_store import ConversationMemory
 
     t0 = time.monotonic()
     embedder = HybridEmbedder()
@@ -431,7 +431,7 @@ def phase_routing() -> List[Scenario]:
     print("PHASE 6: Routing")
     print("=" * 60)
     scenarios: List[Scenario] = []
-    from ultron.openclaw_routing.classifier import classify_routing
+    from kenning.openclaw_routing.classifier import classify_routing
 
     tests = [
         ("greeting", "hello", "conversational"),
@@ -466,7 +466,7 @@ def phase_gate() -> List[Scenario]:
     print("PHASE 7: Web-search Gate")
     print("=" * 60)
     scenarios: List[Scenario] = []
-    from ultron.web_search.gating import classify_by_rules
+    from kenning.web_search.gating import classify_by_rules
 
     # Rule-path tests: each must EITHER match a rule OR fall through
     # (None) to the LLM preflight stage. Greetings/acks should match;
@@ -477,7 +477,7 @@ def phase_gate() -> List[Scenario]:
         ("greeting_hi", "hi", True, "NO_SEARCH"),
         ("ack_okay", "okay", True, "NO_SEARCH"),
         ("ack_thanks", "thanks", True, "NO_SEARCH"),
-        ("ultron_hello", "Ultron, hello", True, "NO_SEARCH"),
+        ("kenning_hello", "Kenning, hello", True, "NO_SEARCH"),
         ("fall_through_question", "how are you", False, None),
         # Stable-fact questions get caught by the conceptual-stem rule
         # (capital of France is stable knowledge, no search needed).
@@ -556,10 +556,10 @@ def _spoken_transcript(tts: Any, stt: Any, text: str, sc: "Scenario") -> str:
 
 def _build_spoken_pipeline() -> Tuple[Any, Any]:
     """Construct the neutral-voice Kokoro + Moonshine pair the spoken-command
-    phases share. Stock am_michael (not the Ultron fine-tune) so the STT leg
+    phases share. Stock am_michael (not the Kenning fine-tune) so the STT leg
     isn't biased by a specific timbre."""
-    from ultron.transcription.moonshine_engine import MoonshineEngine
-    from ultron.tts.kokoro_engine import KokoroSpeech
+    from kenning.transcription.moonshine_engine import MoonshineEngine
+    from kenning.tts.kokoro_engine import KokoroSpeech
 
     t0 = time.monotonic()
     stt = MoonshineEngine()
@@ -591,8 +591,8 @@ def phase_commands() -> List[Scenario]:
     print("PHASE 8: Spoken-command matrix (all routing intents)")
     print("=" * 60)
     scenarios: List[Scenario] = []
-    from ultron.openclaw_routing.classifier import classify_routing
-    from ultron.openclaw_routing.intents import RoutingIntentKind
+    from kenning.openclaw_routing.classifier import classify_routing
+    from kenning.openclaw_routing.intents import RoutingIntentKind
 
     tts, stt = _build_spoken_pipeline()
 
@@ -724,15 +724,15 @@ def phase_short_circuits() -> List[Scenario]:
     print("PHASE 9: Spoken short-circuit matchers")
     print("=" * 60)
     scenarios: List[Scenario] = []
-    from ultron import local_clock_reply
-    from ultron.coding.sandbox_runner import match_run_program
-    from ultron.coding.scrap import match_scrap_command
-    from ultron.evolution.intent import match_evolution_command
-    from ultron.feedback.report_intent import match_report_concern
-    from ultron.memory.deep_recall import match_deep_recall
-    from ultron.memory.history_recall import match_history_recall
-    from ultron.search.code_exploration import match_code_exploration
-    from ultron.web_search.deep_research import match_deep_research
+    from kenning import local_clock_reply
+    from kenning.coding.sandbox_runner import match_run_program
+    from kenning.coding.scrap import match_scrap_command
+    from kenning.evolution.intent import match_evolution_command
+    from kenning.feedback.report_intent import match_report_concern
+    from kenning.memory.deep_recall import match_deep_recall
+    from kenning.memory.history_recall import match_history_recall
+    from kenning.search.code_exploration import match_code_exploration
+    from kenning.web_search.deep_research import match_deep_research
 
     tts, stt = _build_spoken_pipeline()
 
@@ -800,7 +800,7 @@ def phase_short_circuits() -> List[Scenario]:
 def phase_full_loop() -> List[Scenario]:
     """The complete turn, end to end: synthesize the user's utterance,
     transcribe it, run the web-search gate, generate the LLM response
-    (with in-context history), and synthesize the reply in the Ultron
+    (with in-context history), and synthesize the reply in the Kenning
     voice. Covers a NO_SEARCH turn, a remember -> recall pair (the
     response must contain the remembered fact), and a live SEARCH turn
     through the real provider/reader chains."""
@@ -808,13 +808,13 @@ def phase_full_loop() -> List[Scenario]:
     print("PHASE 10: Full conversational loops")
     print("=" * 60)
     scenarios: List[Scenario] = []
-    from ultron.config import get_config
-    from ultron.llm.inference import LLMEngine
-    from ultron.memory.embedder import HybridEmbedder
-    from ultron.memory.qdrant_store import ConversationMemory
-    from ultron.response_style import apply_brevity_hint
-    from ultron.tts.kokoro_engine import KokoroSpeech
-    from ultron.web_search.gating import classify_by_rules
+    from kenning.config import get_config
+    from kenning.llm.inference import LLMEngine
+    from kenning.memory.embedder import HybridEmbedder
+    from kenning.memory.qdrant_store import ConversationMemory
+    from kenning.response_style import apply_brevity_hint
+    from kenning.tts.kokoro_engine import KokoroSpeech
+    from kenning.web_search.gating import classify_by_rules
 
     tts_in, stt = _build_spoken_pipeline()
     t0 = time.monotonic()
@@ -931,7 +931,7 @@ def phase_full_loop() -> List[Scenario]:
         input_text="What is the current weather in San Francisco?",
     )
     try:
-        from ultron.web_search.search import format_sources_for_prompt
+        from kenning.web_search.search import format_sources_for_prompt
 
         transcript = _spoken_transcript(tts_in, stt, sc.input_text, sc)
         verdict = classify_by_rules(transcript)
@@ -974,9 +974,9 @@ def _build_search_executor(llm: Any) -> Any:
     """The production-shaped WebSearchExecutor (provider chain + reader
     chain), mirroring the orchestrator's construction exactly -- the
     ``brave`` / ``jina`` params are duck-typed chain instances."""
-    from ultron.web_search.provider_chain import SearchProviderChain
-    from ultron.web_search.reader_chain import ReaderChain
-    from ultron.web_search.search import WebSearchExecutor
+    from kenning.web_search.provider_chain import SearchProviderChain
+    from kenning.web_search.reader_chain import ReaderChain
+    from kenning.web_search.search import WebSearchExecutor
 
     return WebSearchExecutor(
         brave=SearchProviderChain(), jina=ReaderChain(), llm=llm, cache=None,
@@ -1002,9 +1002,9 @@ def phase_coding() -> List[Scenario]:
     import shutil
     import uuid
 
-    from ultron.coding.bridge import TaskRequest
-    from ultron.coding.runner import CodingTaskRunner, build_default_bridge
-    from ultron.coding.sandbox_runner import run_program
+    from kenning.coding.bridge import TaskRequest
+    from kenning.coding.runner import CodingTaskRunner, build_default_bridge
+    from kenning.coding.sandbox_runner import run_program
 
     from config import settings as _settings
 

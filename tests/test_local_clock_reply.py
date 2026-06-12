@@ -12,7 +12,7 @@ from datetime import datetime
 
 import pytest
 
-from ultron.local_clock_reply import maybe_local_clock_reply
+from kenning.local_clock_reply import maybe_local_clock_reply
 
 
 _FIXED_PM = datetime(2026, 5, 19, 14, 16, 0)  # Tuesday 2:16 PM
@@ -42,8 +42,8 @@ _FIXED_MIDNIGHT = datetime(2026, 5, 19, 0, 0, 0)  # midnight
     "can you tell me the time",
     "could you give me the time",
     "what time do you have",
-    "ultron, what time is it",
-    "hey ultron, what time is it",
+    "kenning, what time is it",
+    "hey kenning, what time is it",
     "and what time is it",
     "so what time is it",
     "What's the current time?",
@@ -102,7 +102,7 @@ def test_time_on_the_hour_omits_zero_minutes():
     "tell me today's date",
     "give me the date",
     "today's date",
-    "ultron, what day is it",
+    "kenning, what day is it",
     "and what's today's date",
 ])
 def test_date_query_returns_spoken_date(utterance):

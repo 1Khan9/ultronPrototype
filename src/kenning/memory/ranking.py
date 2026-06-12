@@ -21,7 +21,7 @@ multi-pass retrieval path can apply them without holding the Qdrant
 client lock. All math is on 384-dim float vectors so latency is
 microseconds per candidate.
 
-Tunable weights live in :class:`ultron.config.MemoryRankingConfig`.
+Tunable weights live in :class:`kenning.config.MemoryRankingConfig`.
 """
 
 from __future__ import annotations

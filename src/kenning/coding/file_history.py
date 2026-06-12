@@ -1,4 +1,4 @@
-"""Multi-file undo stack for ultron-driven file edits.
+"""Multi-file undo stack for kenning-driven file edits.
 
 Adapted from SWE-Agent's
 ``tools/edit_anthropic/bin/str_replace_editor:_file_history``
@@ -11,7 +11,7 @@ the most recent snapshot off the stack.
 Differences from SWE-Agent:
 
 * **Per-session backing store.** SWE-Agent uses one global
-  registry; ultron uses :class:`SessionRegistry` keyed by session
+  registry; kenning uses :class:`SessionRegistry` keyed by session
   id so concurrent coding sessions don't fight over the same undo
   stack.
 * **Capped depth per file.** ``max_history_per_file`` (default 10)
@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from ultron.coding.session_registry import SessionRegistry, get_session_registry
+from kenning.coding.session_registry import SessionRegistry, get_session_registry
 
 logger = logging.getLogger(__name__)
 

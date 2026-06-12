@@ -18,13 +18,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
 
-from ultron.coding.coordinator import (
+from kenning.coding.coordinator import (
     AdjustmentDecision,
     ConversationCoordinator,
     DecisionPath,
     PendingUserClarification,
 )
-from ultron.coding.session import (
+from kenning.coding.session import (
     ClarificationRequest,
     SessionStatus,
     SessionStore,

@@ -18,7 +18,7 @@ from typing import List, Tuple
 import numpy as np
 import pytest
 
-from ultron.tts.precomputed_ack import (
+from kenning.tts.precomputed_ack import (
     PrecomputedAckClipCache,
     build_default_ack_clip_cache,
     collect_default_ack_phrases,

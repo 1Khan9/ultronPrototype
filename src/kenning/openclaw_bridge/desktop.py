@@ -3,7 +3,7 @@
 Thin facades over :meth:`OpenClawClient.invoke_tool` that mirror the
 shape of :class:`BrowserTool` (Phase 6) -- one wrapper class per
 plugin, one method per primitive. Each method assembles a structured
-prompt asking the OpenClaw ``ultron-main`` agent to invoke the
+prompt asking the OpenClaw ``kenning-main`` agent to invoke the
 underlying tool with specific parameters; the wrapper unpacks the
 agent response into a typed dataclass.
 
@@ -24,8 +24,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from ultron.errors import OpenClawToolError
-from ultron.utils.logging import get_logger
+from kenning.errors import OpenClawToolError
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_bridge.desktop")
 
@@ -93,7 +93,7 @@ class DesktopTool:
         self,
         client: Any,
         *,
-        agent_id: str = "ultron-main",
+        agent_id: str = "kenning-main",
         screenshot_tool: str = "desktop_screenshot",
         list_windows_tool: str = "desktop_list_windows",
         find_window_tool: str = "desktop_find_window",
@@ -112,7 +112,7 @@ class DesktopTool:
     ) -> DesktopScreenshotResult:
         """Capture a screenshot of the full screen or a named window."""
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('desktop_screenshot')
         params: Dict[str, Any] = {}
         if target:
@@ -159,7 +159,7 @@ class DesktopTool:
         timeout_s: Optional[float] = None,
     ) -> ListWindowsResult:
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('desktop_list_windows')
         try:
             result = await self.client.invoke_tool(
@@ -198,7 +198,7 @@ class DesktopTool:
         timeout_s: Optional[float] = None,
     ) -> FindWindowResult:
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('desktop_find_window')
         if not (query or "").strip():
             return FindWindowResult(
@@ -246,7 +246,7 @@ class WindowControlTool:
         self,
         client: Any,
         *,
-        agent_id: str = "ultron-main",
+        agent_id: str = "kenning-main",
         focus_tool: str = "windows_focus_window",
         click_tool: str = "windows_click_element",
         type_tool: str = "windows_type_text",

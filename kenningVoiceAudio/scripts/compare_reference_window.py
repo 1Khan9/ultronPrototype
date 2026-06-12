@@ -5,7 +5,7 @@ been calling ``model.get_conditioning_latents(audio_path=...)`` with
 no overrides -- meaning Coqui's library defaults
 ``gpt_cond_len=6``, ``gpt_cond_chunk_len=6``, ``max_ref_length=30``
 apply. Even though we hand it the full 3-minute
-``Ultron_vocals_mono_v1.wav``, only ~6 s of audio reaches the GPT
+``Kenning_vocals_mono_v1.wav``, only ~6 s of audio reaches the GPT
 prosody encoder and ~30 s reaches the HiFi-GAN speaker encoder.
 
 This script loads XTTS once, computes TWO sets of conditioning
@@ -24,13 +24,13 @@ afterwards if they like the baseline cloning improvement.
 
 Run from inside the XTTS isolated venv:
 
-    C:\\STC\\ultronPrototype\\ultronVoiceAudio\\.venv-xtts\\Scripts\\python.exe ^
-        C:\\STC\\ultronPrototype\\ultronVoiceAudio\\scripts\\compare_reference_window.py
+    C:\\STC\\ultronPrototype\\kenningVoiceAudio\\.venv-xtts\\Scripts\\python.exe ^
+        C:\\STC\\ultronPrototype\\kenningVoiceAudio\\scripts\\compare_reference_window.py
 
 Outputs land at::
 
-    ultronVoiceAudio/compare_reference_window/baseline/*.wav
-    ultronVoiceAudio/compare_reference_window/extended/*.wav
+    kenningVoiceAudio/compare_reference_window/baseline/*.wav
+    kenningVoiceAudio/compare_reference_window/extended/*.wav
 
 Both folders contain the same set of filenames so it's easy to
 A/B in any audio player.
@@ -46,7 +46,7 @@ from pathlib import Path
 
 # Workaround for Windows env vars pointing at non-existent D:\ caches.
 HERE = Path(__file__).resolve().parent
-PROJECT = HERE.parent  # C:/STC/ultronPrototype/ultronVoiceAudio
+PROJECT = HERE.parent  # C:/STC/ultronPrototype/kenningVoiceAudio
 os.environ["TORCH_HOME"] = str(PROJECT / ".torch_cache")
 os.environ["HF_HOME"] = str(PROJECT / ".hf_cache")
 os.environ["TRANSFORMERS_CACHE"] = str(PROJECT / ".hf_cache")
@@ -54,7 +54,7 @@ os.environ["COQUI_TOS_AGREED"] = "1"
 (PROJECT / ".torch_cache").mkdir(exist_ok=True)
 (PROJECT / ".hf_cache").mkdir(exist_ok=True)
 
-REFERENCE_WAV = PROJECT / "kokoro training audio" / "Ultron_vocals_mono_v1.wav"
+REFERENCE_WAV = PROJECT / "kokoro training audio" / "Kenning_vocals_mono_v1.wav"
 OUTPUT_ROOT = PROJECT / "compare_reference_window"
 BASELINE_DIR = OUTPUT_ROOT / "baseline"
 EXTENDED_DIR = OUTPUT_ROOT / "extended"
@@ -64,7 +64,7 @@ EXTENDED_DIR = OUTPUT_ROOT / "extended"
 #   - typical statements
 #   - longer composed sentences with multiple clauses
 #   - sentences with technical vocabulary (where XTTS prosody often breaks)
-#   - lines that benefit from authoritative cadence (Ultron flavor)
+#   - lines that benefit from authoritative cadence (Kenning flavor)
 SAMPLES: list[tuple[str, str]] = [
     ("01_ack", "Acknowledged."),
     ("02_short_response", "Right. Considering it now."),
@@ -72,7 +72,7 @@ SAMPLES: list[tuple[str, str]] = [
     ("04_typical", "I have reviewed the file. The change you requested is straightforward."),
     ("05_technical", "Compiling the project with optimization level two. This will take a moment."),
     ("06_question", "Would you like me to proceed with the operation, or wait for further instructions?"),
-    ("07_ultron_flavor", "There are no humans here. Just me."),
+    ("07_kenning_flavor", "There are no humans here. Just me."),
     ("08_longer", "I find your question intriguing. Allow me to elaborate on the relevant facts before we proceed."),
     ("09_composed", "The analysis is complete. I have identified three viable approaches, each with distinct trade-offs."),
     ("10_imperative", "Stand by. I am cross-referencing the data against the prior session."),

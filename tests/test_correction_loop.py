@@ -20,14 +20,14 @@ from typing import Callable, List, Optional
 
 import pytest
 
-from ultron.coding.coordinator import ConversationCoordinator
-from ultron.coding.session import (
+from kenning.coding.coordinator import ConversationCoordinator
+from kenning.coding.session import (
     CompletionClaim,
     SessionStatus,
     SessionStore,
 )
-from ultron.coding.templates import TemplateRenderer
-from ultron.coding.verification import CheckId, CheckResult, VerificationReport
+from kenning.coding.templates import TemplateRenderer
+from kenning.coding.verification import CheckId, CheckResult, VerificationReport
 
 
 # ---------------------------------------------------------------------------

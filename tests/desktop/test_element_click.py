@@ -1,4 +1,4 @@
-"""Tests for ultron.desktop.element_click (catalog 08 T3)."""
+"""Tests for kenning.desktop.element_click (catalog 08 T3)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.desktop.element_click import (
+from kenning.desktop.element_click import (
     CLICKABLE_TYPES,
     DEFAULT_MAX_ELEMENTS_PER_WINDOW,
     DEFAULT_MAX_GLOBAL_WINDOWS,
@@ -21,7 +21,7 @@ from ultron.desktop.element_click import (
     find_elements_by_name,
     find_text_in_window,
 )
-from ultron.desktop.windows import WindowInfo
+from kenning.desktop.windows import WindowInfo
 
 
 # ---------------------------------------------------------------------------
@@ -104,11 +104,11 @@ def _patch_windows_and_specs(
     spec_by_hwnd = {w.hwnd: s for w, s in pairs}
 
     monkeypatch.setattr(
-        "ultron.desktop.element_click.enumerate_windows",
+        "kenning.desktop.element_click.enumerate_windows",
         lambda **kw: list(windows),
     )
     monkeypatch.setattr(
-        "ultron.desktop.element_click._connect_to_window",
+        "kenning.desktop.element_click._connect_to_window",
         lambda hwnd: spec_by_hwnd.get(int(hwnd)),
     )
 
@@ -199,7 +199,7 @@ def test_find_elements_fail_open_on_enumerate_exception(monkeypatch):
         raise RuntimeError("enum failure")
 
     monkeypatch.setattr(
-        "ultron.desktop.element_click.enumerate_windows", _raise,
+        "kenning.desktop.element_click.enumerate_windows", _raise,
     )
     assert find_elements_by_name("Save") == []
 
@@ -353,11 +353,11 @@ def test_find_elements_respects_max_windows_when_no_title(monkeypatch):
 def test_find_elements_returns_empty_when_pywinauto_returns_none(monkeypatch):
     win = _wi()
     monkeypatch.setattr(
-        "ultron.desktop.element_click.enumerate_windows",
+        "kenning.desktop.element_click.enumerate_windows",
         lambda **kw: [win],
     )
     monkeypatch.setattr(
-        "ultron.desktop.element_click._connect_to_window",
+        "kenning.desktop.element_click._connect_to_window",
         lambda hwnd: None,
     )
     assert find_elements_by_name("OK") == []
@@ -458,7 +458,7 @@ def test_click_element_resolves_default_controller(monkeypatch):
         return c
 
     monkeypatch.setattr(
-        "ultron.desktop.input_control.get_input_controller", _get_controller,
+        "kenning.desktop.input_control.get_input_controller", _get_controller,
     )
     result = click_element_by_name("OK")
     assert result.success is True
@@ -475,7 +475,7 @@ def test_click_element_controller_resolution_failure(monkeypatch):
         raise RuntimeError("singleton broken")
 
     monkeypatch.setattr(
-        "ultron.desktop.input_control.get_input_controller", _boom,
+        "kenning.desktop.input_control.get_input_controller", _boom,
     )
     result = click_element_by_name("OK")
     assert result.success is False
@@ -528,7 +528,7 @@ def test_find_text_substring_match(monkeypatch):
     win = _wi()
     spec = _Spec([
         _Node(
-            text="Welcome to ultron",
+            text="Welcome to kenning",
             control_type="Text",
             rect=(0, 0, 200, 30),
         ),
@@ -536,7 +536,7 @@ def test_find_text_substring_match(monkeypatch):
     _patch_windows_and_specs(monkeypatch, [(win, spec)])
     matches = find_text_in_window("welcome")
     assert len(matches) == 1
-    assert matches[0].name == "Welcome to ultron"
+    assert matches[0].name == "Welcome to kenning"
     assert matches[0].center == (100, 15)
 
 
@@ -564,7 +564,7 @@ def test_find_text_returns_empty_on_enumerate_exception(monkeypatch):
         raise RuntimeError("simulated")
 
     monkeypatch.setattr(
-        "ultron.desktop.element_click.enumerate_windows", _raise,
+        "kenning.desktop.element_click.enumerate_windows", _raise,
     )
     assert find_text_in_window("x") == []
 

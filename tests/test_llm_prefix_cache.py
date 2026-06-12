@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.config import LLMConfig, UltronConfig
+from kenning.config import LLMConfig, KenningConfig
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ def test_prefix_cache_ram_bytes_round_trip():
 
 def _stub_engine_for_build_llama() -> object:
     """Build a partial LLMEngine skeleton just for _build_llama call."""
-    from ultron.llm.inference import LLMEngine
+    from kenning.llm.inference import LLMEngine
     eng = object.__new__(LLMEngine)
     eng._memory = None
     return eng
@@ -186,17 +186,17 @@ def test_build_llama_fails_open_on_set_cache_error(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Top-level UltronConfig round-trip
+# Top-level KenningConfig round-trip
 # ---------------------------------------------------------------------------
 
 
 def test_full_config_default_keeps_prefix_cache_at_zero():
-    cfg = UltronConfig()
+    cfg = KenningConfig()
     assert cfg.llm.prefix_cache_ram_bytes == 0
 
 
 def test_full_config_accepts_prefix_cache_override():
-    cfg = UltronConfig.model_validate({
+    cfg = KenningConfig.model_validate({
         "llm": {"preset": "custom", "model_path": "x.gguf",
                 "prefix_cache_ram_bytes": 2 * 1024 * 1024 * 1024},
     })

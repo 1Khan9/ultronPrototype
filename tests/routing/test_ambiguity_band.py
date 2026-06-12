@@ -1,15 +1,15 @@
-"""Tests for :mod:`ultron.openclaw_routing.ambiguity`."""
+"""Tests for :mod:`kenning.openclaw_routing.ambiguity`."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.openclaw_routing.ambiguity import (
+from kenning.openclaw_routing.ambiguity import (
     AmbiguityVerdict,
     should_clarify,
     should_clarify_from_config,
 )
-from ultron.openclaw_routing.intents import RoutingIntent, RoutingIntentKind
+from kenning.openclaw_routing.intents import RoutingIntent, RoutingIntentKind
 
 
 def _intent(
@@ -174,7 +174,7 @@ def test_should_clarify_from_config_default_is_disabled(monkeypatch) -> None:
     test pins the disabled branch via monkeypatch (test-writer
     binding rule R1).
     """
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config()
     monkeypatch.setattr(
         cfg.routing.ambiguity_band_clarification, "enabled", False,
@@ -188,7 +188,7 @@ def test_should_clarify_from_config_swallows_config_errors(monkeypatch) -> None:
     """If config.get_config raises, the helper must fail-open."""
     def _boom():
         raise RuntimeError("config gone")
-    monkeypatch.setattr("ultron.config.get_config", _boom)
+    monkeypatch.setattr("kenning.config.get_config", _boom)
     intent = _intent(confidence=0.5)
     verdict = should_clarify_from_config(intent)
     assert verdict.should_clarify is False

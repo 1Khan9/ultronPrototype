@@ -1,4 +1,4 @@
-"""Tests for ultron.desktop.ocr (catalog 08 T7 deferred)."""
+"""Tests for kenning.desktop.ocr (catalog 08 T7 deferred)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.desktop.ocr import (
+from kenning.desktop.ocr import (
     DEFAULT_LANG,
     DEFAULT_PSM,
     TESSERACT_CMD_ENV,
@@ -104,7 +104,7 @@ _TINY_PNG_BYTES = bytes.fromhex(
 def test_default_constants():
     assert DEFAULT_PSM == 6
     assert DEFAULT_LANG == "eng"
-    assert TESSERACT_CMD_ENV == "ULTRON_TESSERACT_CMD"
+    assert TESSERACT_CMD_ENV == "KENNING_TESSERACT_CMD"
 
 
 def test_ocr_result_is_frozen():
@@ -330,7 +330,7 @@ def test_ocr_screen_monitor_uses_capture_singleton_when_not_injected(monkeypatch
         image_bytes=_TINY_PNG_BYTES, width=1920, height=1080,
     )
     monkeypatch.setattr(
-        "ultron.desktop.capture.get_screen_capture", lambda: fake_cap,
+        "kenning.desktop.capture.get_screen_capture", lambda: fake_cap,
     )
     result = ocr_screen_monitor(monitor_index=0)
     assert result.success is True

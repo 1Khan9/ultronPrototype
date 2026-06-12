@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.agent_loop.loop_detection_extended import (
+from kenning.agent_loop.loop_detection_extended import (
     CRITICAL_THRESHOLD,
     DEFAULT_POLL_TOOLS,
     GLOBAL_CIRCUIT_BREAKER_THRESHOLD,

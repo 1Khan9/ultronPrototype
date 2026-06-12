@@ -14,7 +14,7 @@ from typing import List, Optional
 
 import pytest
 
-from ultron.openclaw_bridge.client import (
+from kenning.openclaw_bridge.client import (
     CliResult,
     OpenClawClient,
     PluginInfo,
@@ -26,7 +26,7 @@ from ultron.openclaw_bridge.client import (
 def client(monkeypatch):
     """Build an OpenClawClient with a mocked CLI path so init succeeds."""
     monkeypatch.setattr(
-        "ultron.openclaw_bridge.client.discover_cli",
+        "kenning.openclaw_bridge.client.discover_cli",
         lambda override=None: "/fake/openclaw",
     )
     return OpenClawClient()

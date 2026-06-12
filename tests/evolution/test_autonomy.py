@@ -1,9 +1,9 @@
-"""Tests for ultron.evolution.autonomy -- the tiered-autonomy controller +
+"""Tests for kenning.evolution.autonomy -- the tiered-autonomy controller +
 trust graduation + rollback demotion. All hermetic."""
 
 from __future__ import annotations
 
-from ultron.evolution.autonomy import (
+from kenning.evolution.autonomy import (
     AutonomyMode,
     AutonomyTier,
     TieredAutonomyController,

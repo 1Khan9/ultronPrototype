@@ -2,7 +2,7 @@
 
 Adapted from cline's ``CommandOrchestrator`` line-by-line buffer +
 ``MAX_LINES_BEFORE_FILE`` / ``MAX_BYTES_BEFORE_FILE`` spillover
-pattern (Apache 2.0; see ``THIRD_PARTY_NOTICES.md``). Ultron's
+pattern (Apache 2.0; see ``THIRD_PARTY_NOTICES.md``). Kenning's
 variant generalises beyond terminal output to any streaming source:
 
 * ``WindowedOutputWriter.feed_line(line)`` accumulates into a bounded
@@ -359,7 +359,7 @@ class WindowedOutputWriter:
         self._spilled = True
         if self._overflow_dir is None:
             self._overflow_dir = (
-                Path(os.environ.get("ULTRON_PROJECT_ROOT", "."))
+                Path(os.environ.get("KENNING_PROJECT_ROOT", "."))
                 / "data" / "streaming-overflow"
             )
         try:
@@ -373,7 +373,7 @@ class WindowedOutputWriter:
             )
             # Drop a header so the file is self-describing.
             self._overflow_handle.write(
-                f"# ultron streaming overflow — label={self._overflow_label} "
+                f"# kenning streaming overflow — label={self._overflow_label} "
                 f"started={ts}\n",
             )
             self._overflow_handle.flush()

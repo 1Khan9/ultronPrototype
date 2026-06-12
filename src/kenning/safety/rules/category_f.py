@@ -6,15 +6,15 @@ F3 -- git reset --hard with uncommitted/unpushed work.
 F4 -- git branch -D for unmerged branches.
 F5 -- SQL DROP / TRUNCATE outside known dev DBs.
 F6 -- git config to disable hooks.
-F7 -- force-push / branch-delete on the Ultron repo.
+F7 -- force-push / branch-delete on the Kenning repo.
 F8 -- git filter-branch / filter-repo / shared-history rebase.
 F9 -- .gitignore add for staged files (heuristic for hiding leaks).
 """
 
 from __future__ import annotations
 
-from ultron.safety.rules.base import CommandPatternRule, Rule
-from ultron.safety.validator import Verdict
+from kenning.safety.rules.base import CommandPatternRule, Rule
+from kenning.safety.validator import Verdict
 
 
 def build_category_f_rules() -> list[Rule]:

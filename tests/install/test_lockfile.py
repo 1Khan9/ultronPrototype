@@ -8,11 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from ultron.install.lockfile import (
+from kenning.install.lockfile import (
     LOCKFILE_NAME,
     LOCKFILE_SCHEMA_VERSION,
     ORIGIN_NAME,
-    ULTRON_STATE_DIRNAME,
+    KENNING_STATE_DIRNAME,
     FingerprintDriftReport,
     Lockfile,
     LockfileEntry,
@@ -35,15 +35,15 @@ from ultron.install.lockfile import (
 # Path resolution
 
 
-def test_workdir_lockfile_path_uses_ultron_dir(tmp_path: Path) -> None:
+def test_workdir_lockfile_path_uses_kenning_dir(tmp_path: Path) -> None:
     path = workdir_lockfile_path(tmp_path)
-    assert path == tmp_path / ULTRON_STATE_DIRNAME / LOCKFILE_NAME
+    assert path == tmp_path / KENNING_STATE_DIRNAME / LOCKFILE_NAME
 
 
-def test_skill_origin_path_uses_ultron_dir(tmp_path: Path) -> None:
+def test_skill_origin_path_uses_kenning_dir(tmp_path: Path) -> None:
     skill = tmp_path / "my-skill"
     path = skill_origin_path(skill)
-    assert path == skill / ULTRON_STATE_DIRNAME / ORIGIN_NAME
+    assert path == skill / KENNING_STATE_DIRNAME / ORIGIN_NAME
 
 
 # ---------------------------------------------------------------------------
@@ -131,13 +131,13 @@ def test_lockfile_malformed_returns_default(tmp_path: Path) -> None:
 
 def test_lockfile_write_creates_state_dir(tmp_path: Path) -> None:
     write_lockfile(tmp_path, Lockfile())
-    assert (tmp_path / ULTRON_STATE_DIRNAME).is_dir()
-    assert (tmp_path / ULTRON_STATE_DIRNAME / LOCKFILE_NAME).is_file()
+    assert (tmp_path / KENNING_STATE_DIRNAME).is_dir()
+    assert (tmp_path / KENNING_STATE_DIRNAME / LOCKFILE_NAME).is_file()
 
 
 def test_lockfile_atomic_no_partial_artifact(tmp_path: Path) -> None:
     write_lockfile(tmp_path, Lockfile(skills={"x": LockfileEntry(version="1")}))
-    state_dir = tmp_path / ULTRON_STATE_DIRNAME
+    state_dir = tmp_path / KENNING_STATE_DIRNAME
     leftover = [p for p in state_dir.iterdir() if p.name.endswith(".tmp")]
     assert leftover == []
 
@@ -230,11 +230,11 @@ def test_is_likely_text_file_accepts_plain_text(tmp_path: Path) -> None:
 
 def test_iter_text_files_skips_blocked_dirs(tmp_path: Path) -> None:
     skill = tmp_path / "s"
-    (skill / ".ultron").mkdir(parents=True)
+    (skill / ".kenning").mkdir(parents=True)
     (skill / ".git").mkdir()
     (skill / "node_modules").mkdir()
     (skill / "src").mkdir()
-    (skill / ".ultron" / "origin.json").write_text("{}")
+    (skill / ".kenning" / "origin.json").write_text("{}")
     (skill / ".git" / "HEAD").write_text("ref: refs/heads/main")
     (skill / "node_modules" / "pkg.txt").write_text("dep")
     (skill / "src" / "main.py").write_text("print('hi')")

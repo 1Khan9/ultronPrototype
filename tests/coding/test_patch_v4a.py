@@ -1,10 +1,10 @@
-"""Tests for :mod:`ultron.coding.patch_v4a`."""
+"""Tests for :mod:`kenning.coding.patch_v4a`."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.coding.patch_v4a import (
+from kenning.coding.patch_v4a import (
     BEGIN_PATCH,
     END_PATCH,
     FUZZ_EXACT,
@@ -278,7 +278,7 @@ def test_apply_multi_block_combines_changes():
 
 def test_fuzz_constants_match_catalog():
     """Catalog T17: 0 / 1 / 100 / 10000 fuzz tiers."""
-    from ultron.coding.patch_v4a import FUZZ_EOF_MISMATCH
+    from kenning.coding.patch_v4a import FUZZ_EOF_MISMATCH
 
     assert FUZZ_EXACT == 0
     assert FUZZ_RSTRIP == 1

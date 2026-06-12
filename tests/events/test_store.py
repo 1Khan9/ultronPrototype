@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from ultron.events.chain import verify_chain
-from ultron.events.models import (
+from kenning.events.chain import verify_chain
+from kenning.events.models import (
     EventKind,
     EventQuery,
     EventSortOrder,
     StoredEvent,
 )
-from ultron.events.store import (
+from kenning.events.store import (
     EventStoreError,
     JsonlEventStore,
     MemoryEventStore,

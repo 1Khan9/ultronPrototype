@@ -1,9 +1,9 @@
-"""Unit tests for ``ultron.intent.recognizer``.
+"""Unit tests for ``kenning.intent.recognizer``.
 
 Tests use a stubbed ``moonshine_voice.intent_recognizer.IntentRecognizer``
 so they run without downloading the ~300 MB Gemma-300M embedding model
 or requiring the moonshine native lib to be loaded. The contract we
-verify is the Ultron wrapper's behavior -- lazy loading, fail-open,
+verify is the Kenning wrapper's behavior -- lazy loading, fail-open,
 phrase registration, threshold semantics, and singleton state.
 """
 
@@ -16,10 +16,10 @@ from typing import List
 
 import pytest
 
-from ultron.intent.recognizer import (
+from kenning.intent.recognizer import (
     IntentMatch,
     IntentRegistration,
-    UltronIntentRecognizer,
+    KenningIntentRecognizer,
     get_intent_recognizer,
     set_intent_recognizer,
 )
@@ -110,25 +110,25 @@ def stub_moonshine(monkeypatch):
 def test_construction_does_not_load_native_handle():
     """Construction should be cheap -- no library import, no model
     download. Load happens on first use."""
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     assert r.loaded is False
     assert r.is_available is True  # optimistic until proven otherwise
 
 
 def test_threshold_defaults_to_pointeight():
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     assert r.threshold == pytest.approx(0.8)
 
 
 def test_threshold_setter_updates_value():
-    r = UltronIntentRecognizer(threshold=0.75)
+    r = KenningIntentRecognizer(threshold=0.75)
     assert r.threshold == pytest.approx(0.75)
     r.threshold = 0.9
     assert r.threshold == pytest.approx(0.9)
 
 
 def test_ensure_loaded_calls_native_factory(stub_moonshine):
-    r = UltronIntentRecognizer(variant="q8", threshold=0.7)
+    r = KenningIntentRecognizer(variant="q8", threshold=0.7)
     assert r.ensure_loaded() is True
     assert r.loaded is True
     assert len(stub_moonshine) == 1
@@ -158,14 +158,14 @@ def test_ensure_loaded_handles_missing_moonshine(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "moonshine_voice", _Broken())
 
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     assert r.ensure_loaded() is False
     assert r.is_available is False
     assert r.loaded is False
 
 
 def test_ensure_loaded_is_idempotent(stub_moonshine):
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     r.ensure_loaded()
     r.ensure_loaded()
     r.ensure_loaded()
@@ -187,7 +187,7 @@ def test_load_failure_is_cached_and_does_not_retry(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "moonshine_voice", _Broken())
 
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     r.ensure_loaded()
     r.ensure_loaded()
     r.ensure_loaded()
@@ -207,7 +207,7 @@ def test_register_before_load_is_replayed_at_load_time(stub_moonshine):
     re-registered when the handle materializes. This matches the
     orchestrator flow: register intents at startup, lazy-load on first
     utterance."""
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     r.register("engage gaming mode")
     r.register("disengage gaming mode", priority=5)
     assert r.loaded is False
@@ -222,7 +222,7 @@ def test_register_before_load_is_replayed_at_load_time(stub_moonshine):
 
 
 def test_register_after_load_pushes_through_immediately(stub_moonshine):
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     r.ensure_loaded()
     fake = stub_moonshine[0]
     fake.registered.clear()
@@ -232,7 +232,7 @@ def test_register_after_load_pushes_through_immediately(stub_moonshine):
 
 
 def test_register_empty_phrase_raises():
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     with pytest.raises(ValueError):
         r.register("")
     with pytest.raises(ValueError):
@@ -240,7 +240,7 @@ def test_register_empty_phrase_raises():
 
 
 def test_unregister_removes_phrase(stub_moonshine):
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     r.register("a")
     r.register("b")
     assert r.unregister("a") is True
@@ -249,7 +249,7 @@ def test_unregister_removes_phrase(stub_moonshine):
 
 
 def test_clear_removes_all_phrases(stub_moonshine):
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     r.register("a")
     r.register("b")
     r.ensure_loaded()
@@ -264,7 +264,7 @@ def test_clear_removes_all_phrases(stub_moonshine):
 
 
 def test_process_utterance_returns_match_above_threshold(stub_moonshine):
-    r = UltronIntentRecognizer(threshold=0.7)
+    r = KenningIntentRecognizer(threshold=0.7)
     r.register("turn on the lights")
     r.ensure_loaded()
     stub_moonshine[0]._scripted_matches = [
@@ -280,7 +280,7 @@ def test_process_utterance_returns_match_above_threshold(stub_moonshine):
 
 
 def test_process_utterance_returns_none_below_threshold(stub_moonshine):
-    r = UltronIntentRecognizer(threshold=0.85)
+    r = KenningIntentRecognizer(threshold=0.85)
     r.register("turn on the lights")
     r.ensure_loaded()
     # Below threshold -- the stub's get_closest_intents filters these out.
@@ -299,7 +299,7 @@ def test_process_utterance_fires_registered_handler(stub_moonshine):
     def _handler(canonical, utterance, similarity):
         fired.append((canonical, utterance, similarity))
 
-    r = UltronIntentRecognizer(threshold=0.7)
+    r = KenningIntentRecognizer(threshold=0.7)
     r.register("play music", handler=_handler)
     r.ensure_loaded()
     stub_moonshine[0]._scripted_matches = [_FakeMatch("play music", 0.91)]
@@ -316,7 +316,7 @@ def test_process_utterance_swallows_handler_exceptions(stub_moonshine):
     def _broken(*_args):
         raise RuntimeError("simulated handler crash")
 
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     r.register("a", handler=_broken)
     r.ensure_loaded()
     stub_moonshine[0]._scripted_matches = [_FakeMatch("a", 0.99)]
@@ -327,7 +327,7 @@ def test_process_utterance_swallows_handler_exceptions(stub_moonshine):
 
 
 def test_process_utterance_empty_input_returns_none(stub_moonshine):
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     r.register("a")
     r.ensure_loaded()
     assert r.process_utterance("") is None
@@ -337,7 +337,7 @@ def test_process_utterance_empty_input_returns_none(stub_moonshine):
 def test_process_utterance_with_no_registrations_returns_none(stub_moonshine):
     """If no phrases are registered, every utterance returns None
     (skipping the native get_closest_intents call entirely)."""
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     r.ensure_loaded()
     assert r.process_utterance("anything") is None
     # Native call should NOT have been invoked since the registry was empty.
@@ -348,7 +348,7 @@ def test_process_utterance_with_no_registrations_returns_none(stub_moonshine):
 def test_process_utterance_lazy_loads_on_first_call(stub_moonshine):
     """If never warmed up, the first process_utterance should still
     trigger the load."""
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     r.register("hello there")
     assert r.loaded is False
     stub_moonshine_setup_called = False
@@ -361,7 +361,7 @@ def test_process_utterance_lazy_loads_on_first_call(stub_moonshine):
 def test_process_utterance_fail_open_on_native_error(stub_moonshine):
     """If the native lib raises, we log and return None -- voice loop
     falls through to the LLM path."""
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     r.register("test")
     r.ensure_loaded()
 
@@ -380,7 +380,7 @@ def test_process_utterance_fail_open_on_native_error(stub_moonshine):
 
 
 def test_get_top_matches_returns_ranked_list(stub_moonshine):
-    r = UltronIntentRecognizer(threshold=0.5)
+    r = KenningIntentRecognizer(threshold=0.5)
     for phrase in ("a", "b", "c", "d", "e", "f"):
         r.register(phrase)
     r.ensure_loaded()
@@ -409,7 +409,7 @@ def test_singleton_starts_unset():
 
 
 def test_singleton_set_and_get_round_trip():
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     set_intent_recognizer(r)
     try:
         assert get_intent_recognizer() is r
@@ -425,7 +425,7 @@ def test_singleton_set_and_get_round_trip():
 def test_concurrent_ensure_loaded_only_constructs_once(stub_moonshine):
     """Multiple threads racing on ensure_loaded() must result in exactly
     one native-handle construction."""
-    r = UltronIntentRecognizer()
+    r = KenningIntentRecognizer()
     barrier = threading.Barrier(8)
     results: list[bool] = []
     lock = threading.Lock()

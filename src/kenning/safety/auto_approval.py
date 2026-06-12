@@ -1,8 +1,8 @@
 """Per-rule auto-approval matrix decoupled from binary trust dial.
 
 Adapted from cline's ``autoApprovalSettings.actions`` pattern (Apache
-2.0; see ``THIRD_PARTY_NOTICES.md``). Ultron's safety validator
-already returns a per-rule :class:`~ultron.safety.validator.Verdict`
+2.0; see ``THIRD_PARTY_NOTICES.md``). Kenning's safety validator
+already returns a per-rule :class:`~kenning.safety.validator.Verdict`
 (ALLOW / BLOCK_HARD / NEEDS_EXPLICIT_INTENT / LOG_ONLY); this module
 layers a configurable AUTO-APPROVAL MODE on top so an operator can
 say "permit reads inside the project workspace but require confirm

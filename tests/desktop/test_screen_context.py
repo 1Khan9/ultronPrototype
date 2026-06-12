@@ -1,4 +1,4 @@
-"""Tests for ultron.desktop.screen_context."""
+"""Tests for kenning.desktop.screen_context."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.desktop.capture import Screenshot
-from ultron.desktop.monitors import Monitor
-from ultron.desktop.screen_context import (
+from kenning.desktop.capture import Screenshot
+from kenning.desktop.monitors import Monitor
+from kenning.desktop.screen_context import (
     ScreenContextCache,
     ScreenContextSnapshot,
     build_screen_context,
@@ -20,7 +20,7 @@ from ultron.desktop.screen_context import (
     set_screen_context_cache,
     set_vlm_describe,
 )
-from ultron.desktop.windows import WindowInfo
+from kenning.desktop.windows import WindowInfo
 
 
 # ---------------------------------------------------------------------------
@@ -137,14 +137,14 @@ def test_render_for_llm_caps_ui_text_count():
 
 def test_build_screen_context_no_capture_no_uia(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(fg=True),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows",
+        "kenning.desktop.screen_context.enumerate_windows",
         lambda: [_win(title="Chrome", proc="chrome.exe", hwnd=2)],
     )
     snap = build_screen_context(capture=False, include_uia=False)
@@ -158,23 +158,23 @@ def test_build_screen_context_no_capture_no_uia(monkeypatch):
 
 def test_build_screen_context_with_capture(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(fg=True, mon=0),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.collect_window_text",
+        "kenning.desktop.screen_context.collect_window_text",
         lambda *a, **kw: ["UI text 1", "UI text 2"],
     )
     fake_cap = MagicMock()
     fake_cap.capture_monitor.return_value = _shot()
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_screen_capture", lambda: fake_cap,
+        "kenning.desktop.screen_context.get_screen_capture", lambda: fake_cap,
     )
     snap = build_screen_context(capture=True, include_uia=True)
     assert snap.screenshot is not None
@@ -185,21 +185,21 @@ def test_build_screen_context_with_capture(monkeypatch):
 def test_build_screen_context_handles_uia_failure(monkeypatch):
     """collect_window_text raising mustn't abort the whole snapshot."""
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(fg=True),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
 
     def boom(*a, **kw):
         raise RuntimeError("simulated UIA failure")
 
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.collect_window_text", boom,
+        "kenning.desktop.screen_context.collect_window_text", boom,
     )
     snap = build_screen_context(capture=False, include_uia=True)
     # ui_text is empty but snapshot still assembled.
@@ -209,19 +209,19 @@ def test_build_screen_context_handles_uia_failure(monkeypatch):
 
 def test_build_screen_context_handles_capture_failure(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(fg=True, mon=0),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
     fake_cap = MagicMock()
     fake_cap.capture_monitor.side_effect = RuntimeError("simulated capture failure")
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_screen_capture", lambda: fake_cap,
+        "kenning.desktop.screen_context.get_screen_capture", lambda: fake_cap,
     )
     snap = build_screen_context(capture=True, include_uia=False)
     assert snap.screenshot is None
@@ -229,17 +229,17 @@ def test_build_screen_context_handles_capture_failure(monkeypatch):
 
 def test_build_screen_context_handles_window_enum_failure(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window", lambda: None,
+        "kenning.desktop.screen_context.get_foreground_window", lambda: None,
     )
 
     def boom():
         raise RuntimeError("simulated enum failure")
 
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", boom,
+        "kenning.desktop.screen_context.enumerate_windows", boom,
     )
     snap = build_screen_context(capture=False, include_uia=False)
     assert snap.windows == ()
@@ -248,13 +248,13 @@ def test_build_screen_context_handles_window_enum_failure(monkeypatch):
 
 def test_build_screen_context_caps_window_list(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window", lambda: None,
+        "kenning.desktop.screen_context.get_foreground_window", lambda: None,
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows",
+        "kenning.desktop.screen_context.enumerate_windows",
         lambda: [_win(hwnd=i, title=f"app_{i}", proc=f"app_{i}.exe") for i in range(50)],
     )
     snap = build_screen_context(capture=False, include_uia=False, window_list_cap=5)
@@ -286,19 +286,19 @@ def test_vlm_hook_can_be_set_and_cleared():
 
 def test_build_screen_context_includes_vlm_when_enabled(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(fg=True),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
     fake_cap = MagicMock()
     fake_cap.capture_monitor.return_value = _shot()
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_screen_capture", lambda: fake_cap,
+        "kenning.desktop.screen_context.get_screen_capture", lambda: fake_cap,
     )
 
     set_vlm_describe(lambda img: "Test VLM description")
@@ -313,19 +313,19 @@ def test_build_screen_context_includes_vlm_when_enabled(monkeypatch):
 
 def test_build_screen_context_vlm_disabled_by_default(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(fg=True),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
     fake_cap = MagicMock()
     fake_cap.capture_monitor.return_value = _shot()
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_screen_capture", lambda: fake_cap,
+        "kenning.desktop.screen_context.get_screen_capture", lambda: fake_cap,
     )
     vlm_calls = []
 
@@ -376,19 +376,19 @@ def test_screenshot_without_bytes_is_idempotent():
 
 def test_build_screen_context_discards_bytes_after_vlm_by_default(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(fg=True, mon=0),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
     fake_cap = MagicMock()
     fake_cap.capture_monitor.return_value = _shot()
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_screen_capture", lambda: fake_cap,
+        "kenning.desktop.screen_context.get_screen_capture", lambda: fake_cap,
     )
 
     set_vlm_describe(lambda img: "A code editor.")
@@ -409,19 +409,19 @@ def test_build_screen_context_discards_bytes_after_vlm_by_default(monkeypatch):
 
 def test_build_screen_context_keeps_bytes_when_discard_disabled(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(fg=True),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
     fake_cap = MagicMock()
     fake_cap.capture_monitor.return_value = _shot()
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_screen_capture", lambda: fake_cap,
+        "kenning.desktop.screen_context.get_screen_capture", lambda: fake_cap,
     )
 
     set_vlm_describe(lambda img: "A code editor.")
@@ -443,19 +443,19 @@ def test_build_screen_context_no_vlm_keeps_bytes_even_with_discard_on(monkeypatc
     -- bytes should be retained so the caller can run their own analysis.
     """
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(fg=True),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
     fake_cap = MagicMock()
     fake_cap.capture_monitor.return_value = _shot()
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_screen_capture", lambda: fake_cap,
+        "kenning.desktop.screen_context.get_screen_capture", lambda: fake_cap,
     )
 
     set_vlm_describe(None)
@@ -473,19 +473,19 @@ def test_build_screen_context_vlm_failure_keeps_bytes(monkeypatch):
     don't discard bytes (the caller may retry or fall back).
     """
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(fg=True),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
     fake_cap = MagicMock()
     fake_cap.capture_monitor.return_value = _shot()
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_screen_capture", lambda: fake_cap,
+        "kenning.desktop.screen_context.get_screen_capture", lambda: fake_cap,
     )
 
     set_vlm_describe(lambda img: None)  # VLM returns no text
@@ -577,19 +577,19 @@ def test_cache_handles_none_screenshot():
 
 def test_build_screen_context_vlm_exception_handled(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(fg=True),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
     fake_cap = MagicMock()
     fake_cap.capture_monitor.return_value = _shot()
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_screen_capture", lambda: fake_cap,
+        "kenning.desktop.screen_context.get_screen_capture", lambda: fake_cap,
     )
 
     def boom(img):
@@ -678,13 +678,13 @@ def test_singleton_cache_swap():
 
 def test_capture_and_cache_stores_snapshot(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window", lambda: None,
+        "kenning.desktop.screen_context.get_foreground_window", lambda: None,
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
     set_screen_context_cache(ScreenContextCache())
     try:
@@ -732,7 +732,7 @@ def test_render_for_llm_live_produces_readable_output():
 def _browser_content(*, page_title="GitHub", headings=(), text=(), buttons=(),
                      links=(), inputs=(), images=(), truncated=False):
     """Build a minimal BrowserContent for test injection."""
-    from ultron.desktop.uia import BrowserContent
+    from kenning.desktop.uia import BrowserContent
     return BrowserContent(
         page_title=page_title,
         browser_name="chrome",
@@ -751,14 +751,14 @@ def test_browser_foreground_uses_extract_browser_content(monkeypatch):
     """When the foreground is a browser, extract_browser_content
     feeds ui_text instead of collect_window_text."""
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(title="GitHub - Chrome", proc="chrome.exe", mon=0, fg=True),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
     # Force collect_window_text to a sentinel so we'd notice if it ran.
     collect_called = []
@@ -768,11 +768,11 @@ def test_browser_foreground_uses_extract_browser_content(monkeypatch):
         return ["should not appear"]
 
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.collect_window_text", _sentinel,
+        "kenning.desktop.screen_context.collect_window_text", _sentinel,
     )
     # Browser detection returns True.
     monkeypatch.setattr(
-        "ultron.desktop.uia.is_browser_window", lambda title: True,
+        "kenning.desktop.uia.is_browser_window", lambda title: True,
     )
     # extract_browser_content returns content.
     fake_content = _browser_content(
@@ -784,7 +784,7 @@ def test_browser_foreground_uses_extract_browser_content(monkeypatch):
         inputs=(),
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.extract_browser_content",
+        "kenning.desktop.uia.extract_browser_content",
         lambda win, **kw: fake_content,
     )
 
@@ -802,24 +802,24 @@ def test_browser_foreground_falls_back_when_extract_returns_none(monkeypatch):
     """If extract_browser_content returns None, fall back to
     collect_window_text so we still get *some* ui_text."""
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(title="Mozilla Firefox", proc="firefox.exe", mon=0, fg=True),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.collect_window_text",
+        "kenning.desktop.screen_context.collect_window_text",
         lambda *a, **kw: ["fallback ui text"],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.is_browser_window", lambda title: True,
+        "kenning.desktop.uia.is_browser_window", lambda title: True,
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.extract_browser_content",
+        "kenning.desktop.uia.extract_browser_content",
         lambda win, **kw: None,
     )
     snap = build_screen_context(capture=False, include_uia=True)
@@ -828,28 +828,28 @@ def test_browser_foreground_falls_back_when_extract_returns_none(monkeypatch):
 
 def test_browser_foreground_falls_back_when_extract_raises(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(title="Brave", proc="brave.exe", mon=0, fg=True),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.collect_window_text",
+        "kenning.desktop.screen_context.collect_window_text",
         lambda *a, **kw: ["safe fallback"],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.is_browser_window", lambda title: True,
+        "kenning.desktop.uia.is_browser_window", lambda title: True,
     )
 
     def _boom(*a, **kw):
         raise RuntimeError("uia tree broken")
 
     monkeypatch.setattr(
-        "ultron.desktop.uia.extract_browser_content", _boom,
+        "kenning.desktop.uia.extract_browser_content", _boom,
     )
     snap = build_screen_context(capture=False, include_uia=True)
     assert snap.ui_text == ("safe fallback",)
@@ -859,17 +859,17 @@ def test_non_browser_foreground_uses_collect_window_text(monkeypatch):
     """Non-browser foreground still uses the legacy collect_window_text
     -- existing behaviour preserved."""
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(title="Visual Studio Code", proc="code.exe", mon=0, fg=True),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.collect_window_text",
+        "kenning.desktop.screen_context.collect_window_text",
         lambda *a, **kw: ["legacy UIA path", "still works"],
     )
     # extract_browser_content must not be called.
@@ -877,27 +877,27 @@ def test_non_browser_foreground_uses_collect_window_text(monkeypatch):
         raise AssertionError("extract_browser_content called for non-browser")
 
     monkeypatch.setattr(
-        "ultron.desktop.uia.extract_browser_content", _should_not_be_called,
+        "kenning.desktop.uia.extract_browser_content", _should_not_be_called,
     )
     snap = build_screen_context(capture=False, include_uia=True)
     assert snap.ui_text == ("legacy UIA path", "still works")
 
 
 def test_browser_links_with_urls_are_rendered(monkeypatch):
-    from ultron.desktop.uia import BrowserLink
+    from kenning.desktop.uia import BrowserLink
 
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(title="Chrome", proc="chrome.exe", mon=0, fg=True),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.is_browser_window", lambda title: True,
+        "kenning.desktop.uia.is_browser_window", lambda title: True,
     )
     content = _browser_content(
         page_title="links",
@@ -909,7 +909,7 @@ def test_browser_links_with_urls_are_rendered(monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.extract_browser_content",
+        "kenning.desktop.uia.extract_browser_content",
         lambda win, **kw: content,
     )
     snap = build_screen_context(capture=False, include_uia=True)
@@ -919,24 +919,24 @@ def test_browser_links_with_urls_are_rendered(monkeypatch):
 
 def test_browser_inputs_with_values_are_rendered(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
+        "kenning.desktop.screen_context.enumerate_monitors", lambda: [_mon()],
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.get_foreground_window",
+        "kenning.desktop.screen_context.get_foreground_window",
         lambda: _win(title="Edge", proc="msedge.exe", mon=0, fg=True),
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.enumerate_windows", lambda: [],
+        "kenning.desktop.screen_context.enumerate_windows", lambda: [],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.is_browser_window", lambda title: True,
+        "kenning.desktop.uia.is_browser_window", lambda title: True,
     )
     content = _browser_content(
         page_title="login",
         inputs=(("Email", "user@x.com"), ("Password", "")),
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.extract_browser_content",
+        "kenning.desktop.uia.extract_browser_content",
         lambda win, **kw: content,
     )
     snap = build_screen_context(capture=False, include_uia=True)
@@ -977,7 +977,7 @@ class _FakeBuTool:
 
 
 def _set_bu_fallback_enabled(monkeypatch, enabled: bool) -> None:
-    import ultron.desktop.screen_context as sc
+    import kenning.desktop.screen_context as sc
 
     class _Cfg:
         class browser_use:
@@ -986,31 +986,31 @@ def _set_bu_fallback_enabled(monkeypatch, enabled: bool) -> None:
     monkeypatch.setattr(sc, "get_config", lambda: _Cfg, raising=False)
     # screen_context imports get_config lazily inside the helper, so
     # patch the source module too.
-    import ultron.config as cfgmod
+    import kenning.config as cfgmod
 
     monkeypatch.setattr(cfgmod, "get_config", lambda: _Cfg)
 
 
 class TestBrowserUseFallbackHelper:
     def test_disabled_returns_empty(self, monkeypatch):
-        from ultron.desktop import screen_context as sc
-        import ultron.desktop.browser_use as bu
+        from kenning.desktop import screen_context as sc
+        import kenning.desktop.browser_use as bu
 
         _set_bu_fallback_enabled(monkeypatch, False)
         monkeypatch.setattr(bu, "get_browser_use_tool", lambda: _FakeBuTool())
         assert sc._maybe_browser_use_state_text(40) == ()
 
     def test_no_tool_returns_empty(self, monkeypatch):
-        from ultron.desktop import screen_context as sc
-        import ultron.desktop.browser_use as bu
+        from kenning.desktop import screen_context as sc
+        import kenning.desktop.browser_use as bu
 
         _set_bu_fallback_enabled(monkeypatch, True)
         monkeypatch.setattr(bu, "get_browser_use_tool", lambda: None)
         assert sc._maybe_browser_use_state_text(40) == ()
 
     def test_unavailable_tool_returns_empty(self, monkeypatch):
-        from ultron.desktop import screen_context as sc
-        import ultron.desktop.browser_use as bu
+        from kenning.desktop import screen_context as sc
+        import kenning.desktop.browser_use as bu
 
         _set_bu_fallback_enabled(monkeypatch, True)
         monkeypatch.setattr(
@@ -1020,8 +1020,8 @@ class TestBrowserUseFallbackHelper:
         assert sc._maybe_browser_use_state_text(40) == ()
 
     def test_empty_url_returns_empty(self, monkeypatch):
-        from ultron.desktop import screen_context as sc
-        import ultron.desktop.browser_use as bu
+        from kenning.desktop import screen_context as sc
+        import kenning.desktop.browser_use as bu
 
         _set_bu_fallback_enabled(monkeypatch, True)
         tool = _FakeBuTool(state=_FakeBuState(url=""))
@@ -1029,8 +1029,8 @@ class TestBrowserUseFallbackHelper:
         assert sc._maybe_browser_use_state_text(40) == ()
 
     def test_failed_state_returns_empty(self, monkeypatch):
-        from ultron.desktop import screen_context as sc
-        import ultron.desktop.browser_use as bu
+        from kenning.desktop import screen_context as sc
+        import kenning.desktop.browser_use as bu
 
         _set_bu_fallback_enabled(monkeypatch, True)
         tool = _FakeBuTool(state=_FakeBuState(success=False))
@@ -1038,8 +1038,8 @@ class TestBrowserUseFallbackHelper:
         assert sc._maybe_browser_use_state_text(40) == ()
 
     def test_success_folds_labelled_content(self, monkeypatch):
-        from ultron.desktop import screen_context as sc
-        import ultron.desktop.browser_use as bu
+        from kenning.desktop import screen_context as sc
+        import kenning.desktop.browser_use as bu
 
         _set_bu_fallback_enabled(monkeypatch, True)
         state = _FakeBuState(
@@ -1061,8 +1061,8 @@ class TestBrowserUseFallbackHelper:
         assert all(s.startswith("browser-use") for s in result)
 
     def test_caps_at_max_elements(self, monkeypatch):
-        from ultron.desktop import screen_context as sc
-        import ultron.desktop.browser_use as bu
+        from kenning.desktop import screen_context as sc
+        import kenning.desktop.browser_use as bu
 
         _set_bu_fallback_enabled(monkeypatch, True)
         many = tuple(_FakeBuElement(i, f"el{i}") for i in range(100))
@@ -1074,8 +1074,8 @@ class TestBrowserUseFallbackHelper:
         assert len(result) <= 10
 
     def test_tool_exception_fails_open(self, monkeypatch):
-        from ultron.desktop import screen_context as sc
-        import ultron.desktop.browser_use as bu
+        from kenning.desktop import screen_context as sc
+        import kenning.desktop.browser_use as bu
 
         _set_bu_fallback_enabled(monkeypatch, True)
 

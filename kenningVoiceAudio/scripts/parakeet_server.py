@@ -4,8 +4,8 @@ Long-lived process living in the isolated ``.venv-parakeet`` venv.
 Loads the NVIDIA Parakeet TDT model once, then serves transcription
 requests over HTTP.
 
-The Ultron orchestrator (in the main venv) talks to this server via
-:mod:`src.ultron.transcription.parakeet_engine` (the client). HTTP keeps
+The Kenning orchestrator (in the main venv) talks to this server via
+:mod:`src.kenning.transcription.parakeet_engine` (the client). HTTP keeps
 the two venvs decoupled -- the main venv stays on numpy<2.0,
 transformers 4.41.2, librosa 0.9.1 (pinned for the rest of the voice
 stack), while NeMo in this venv can use its own newer versions.
@@ -273,7 +273,7 @@ def make_app(holder: ParakeetHolder) -> FastAPI:
             if audio_array.ndim > 1:
                 audio_array = audio_array.mean(axis=1).astype("float32")
             if sr != 16000:
-                # Parakeet expects 16 kHz. The Ultron pipeline already
+                # Parakeet expects 16 kHz. The Kenning pipeline already
                 # standardises on 16 kHz so this should rarely fire.
                 logger.warning("Audio at %d Hz; expected 16000 Hz", sr)
             t0 = time.monotonic()

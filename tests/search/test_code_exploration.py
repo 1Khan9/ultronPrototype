@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.search.code_exploration import (
+from kenning.search.code_exploration import (
     CodeExplorationMatch,
     match_code_exploration,
 )

@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 import pytest
 
-from ultron.llm.inference import LLMEngine
+from kenning.llm.inference import LLMEngine
 
 
 class _StubMemory:
@@ -46,9 +46,9 @@ def _make_engine_no_load(memory) -> LLMEngine:
     eng = object.__new__(LLMEngine)
     eng._memory = memory
     eng._history = []
-    eng._explicit_system_prompt = "You are Ultron. Test prompt."
+    eng._explicit_system_prompt = "You are Kenning. Test prompt."
     eng._persona_loader = None
-    eng.system_prompt = "You are Ultron. Test prompt."
+    eng.system_prompt = "You are Kenning. Test prompt."
     eng._logged_initial_persona = True
     eng._current_intent_kind = None
     return eng
@@ -101,7 +101,7 @@ def test_intent_adaptive_off_does_not_invoke_selector(monkeypatch):
     eng, _ = _build_engine_with_history()
     eng.set_current_intent_kind("code_task")
 
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config().llm.history_compression
     monkeypatch.setattr(cfg, "intent_adaptive", False)
     monkeypatch.setattr(cfg, "enabled", True)
@@ -110,11 +110,11 @@ def test_intent_adaptive_off_does_not_invoke_selector(monkeypatch):
 
     def _spy(*args, **kwargs):
         call_log.append((args, kwargs))
-        from ultron.llm.condensers.recent import RecentCondenser
+        from kenning.llm.condensers.recent import RecentCondenser
         return RecentCondenser()
 
     monkeypatch.setattr(
-        "ultron.llm.condensers.factory.select_condenser_for_intent",
+        "kenning.llm.condensers.factory.select_condenser_for_intent",
         _spy,
     )
 
@@ -131,7 +131,7 @@ def test_intent_adaptive_on_invokes_selector_with_intent(monkeypatch):
     eng, _ = _build_engine_with_history()
     eng.set_current_intent_kind("conversational")
 
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config().llm.history_compression
     monkeypatch.setattr(cfg, "intent_adaptive", True)
     monkeypatch.setattr(cfg, "enabled", True)
@@ -140,11 +140,11 @@ def test_intent_adaptive_on_invokes_selector_with_intent(monkeypatch):
 
     def _spy(intent, **kwargs):
         seen.append(intent)
-        from ultron.llm.condensers.noop import NoOpCondenser
+        from kenning.llm.condensers.noop import NoOpCondenser
         return NoOpCondenser()
 
     monkeypatch.setattr(
-        "ultron.llm.condensers.factory.select_condenser_for_intent",
+        "kenning.llm.condensers.factory.select_condenser_for_intent",
         _spy,
     )
 
@@ -161,7 +161,7 @@ def test_intent_adaptive_on_with_none_intent_calls_selector_with_none(
     eng, _ = _build_engine_with_history()
     assert eng.get_current_intent_kind() is None
 
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config().llm.history_compression
     monkeypatch.setattr(cfg, "intent_adaptive", True)
     monkeypatch.setattr(cfg, "enabled", True)
@@ -170,11 +170,11 @@ def test_intent_adaptive_on_with_none_intent_calls_selector_with_none(
 
     def _spy(intent, **kwargs):
         seen.append(intent)
-        from ultron.llm.condensers.recent import RecentCondenser
+        from kenning.llm.condensers.recent import RecentCondenser
         return RecentCondenser()
 
     monkeypatch.setattr(
-        "ultron.llm.condensers.factory.select_condenser_for_intent",
+        "kenning.llm.condensers.factory.select_condenser_for_intent",
         _spy,
     )
 
@@ -193,7 +193,7 @@ def test_intent_adaptive_applies_condenser_output(monkeypatch):
     eng, _ = _build_engine_with_history()
     eng.set_current_intent_kind("factual")
 
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config().llm.history_compression
     monkeypatch.setattr(cfg, "intent_adaptive", True)
     monkeypatch.setattr(cfg, "enabled", True)
@@ -204,7 +204,7 @@ def test_intent_adaptive_applies_condenser_output(monkeypatch):
 
     class _OneTurnCondenser:
         def condense(self, turns_in, *, context=None):
-            from ultron.llm.condensers.base import CondenseResult
+            from kenning.llm.condensers.base import CondenseResult
             return CondenseResult(
                 turns=(("user", "CONDENSED REPLACEMENT"),),
                 dropped_turn_count=max(0, len(turns_in) - 1),
@@ -214,7 +214,7 @@ def test_intent_adaptive_applies_condenser_output(monkeypatch):
         return _OneTurnCondenser()
 
     monkeypatch.setattr(
-        "ultron.llm.condensers.factory.select_condenser_for_intent",
+        "kenning.llm.condensers.factory.select_condenser_for_intent",
         _factory,
     )
 
@@ -235,7 +235,7 @@ def test_intent_adaptive_fail_open_on_condenser_exception(monkeypatch):
     eng, _ = _build_engine_with_history()
     eng.set_current_intent_kind("coding")
 
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config().llm.history_compression
     monkeypatch.setattr(cfg, "intent_adaptive", True)
     monkeypatch.setattr(cfg, "enabled", True)
@@ -247,7 +247,7 @@ def test_intent_adaptive_fail_open_on_condenser_exception(monkeypatch):
             raise RuntimeError("simulated condenser failure")
 
     monkeypatch.setattr(
-        "ultron.llm.condensers.factory.select_condenser_for_intent",
+        "kenning.llm.condensers.factory.select_condenser_for_intent",
         lambda intent, **kw: _BoomCondenser(),
     )
 
@@ -263,7 +263,7 @@ def test_intent_adaptive_fail_open_on_factory_exception(monkeypatch):
     eng, _ = _build_engine_with_history()
     eng.set_current_intent_kind("coding")
 
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config().llm.history_compression
     monkeypatch.setattr(cfg, "intent_adaptive", True)
     monkeypatch.setattr(cfg, "enabled", True)
@@ -274,7 +274,7 @@ def test_intent_adaptive_fail_open_on_factory_exception(monkeypatch):
         raise RuntimeError("simulated factory failure")
 
     monkeypatch.setattr(
-        "ultron.llm.condensers.factory.select_condenser_for_intent",
+        "kenning.llm.condensers.factory.select_condenser_for_intent",
         _boom,
     )
 
@@ -294,7 +294,7 @@ def test_intent_adaptive_skips_result_with_error(monkeypatch):
     eng, _ = _build_engine_with_history()
     eng.set_current_intent_kind("factual")
 
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config().llm.history_compression
     monkeypatch.setattr(cfg, "intent_adaptive", True)
     monkeypatch.setattr(cfg, "enabled", True)
@@ -303,14 +303,14 @@ def test_intent_adaptive_skips_result_with_error(monkeypatch):
 
     class _ErroringCondenser:
         def condense(self, turns_in, *, context=None):
-            from ultron.llm.condensers.base import CondenseResult
+            from kenning.llm.condensers.base import CondenseResult
             return CondenseResult(
                 turns=(("user", "REPLACEMENT (but errored)"),),
                 error="non-fatal partial failure",
             )
 
     monkeypatch.setattr(
-        "ultron.llm.condensers.factory.select_condenser_for_intent",
+        "kenning.llm.condensers.factory.select_condenser_for_intent",
         lambda intent, **kw: _ErroringCondenser(),
     )
 
@@ -342,7 +342,7 @@ def test_intent_adaptive_real_recent_condenser_trims_history(monkeypatch):
     eng._logged_initial_persona = True
     eng._current_intent_kind = "factual"
 
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config().llm.history_compression
     monkeypatch.setattr(cfg, "intent_adaptive", True)
     monkeypatch.setattr(cfg, "enabled", True)

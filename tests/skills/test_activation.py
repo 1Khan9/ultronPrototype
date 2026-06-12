@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.skills.activation import (
+from kenning.skills.activation import (
     ActivationCandidate,
     ActivationContext,
     ActivationResult,

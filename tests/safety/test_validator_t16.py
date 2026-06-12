@@ -10,10 +10,10 @@ from typing import Any
 
 import pytest
 
-from ultron.safety.audit import AuditLog
-from ultron.safety.path_resolver import get_path_resolver
-from ultron.safety.policy import Policy
-from ultron.safety.validator import (
+from kenning.safety.audit import AuditLog
+from kenning.safety.path_resolver import get_path_resolver
+from kenning.safety.policy import Policy
+from kenning.safety.validator import (
     RuleContext,
     RuleResult,
     ToolCallValidator,

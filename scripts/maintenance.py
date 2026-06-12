@@ -52,7 +52,7 @@ Tasks:
       Needs neither the LLM nor Qdrant -- pure log processing. Idempotent.
 
 Most tasks need the main LLM. They share the same on-disk model file as the
-live Ultron, so VRAM contention is real -- prefer running maintenance when
+live Kenning, so VRAM contention is real -- prefer running maintenance when
 the live system isn't active.
 """
 
@@ -728,7 +728,7 @@ def run_resolve_observation_outcomes() -> int:
     correlated follow-up rows and emit a resolved outcome. Needs neither the
     LLM nor Qdrant -- pure log processing. Idempotent (already-resolved rows
     are skipped). Returns the count resolved this run."""
-    from ultron.observations import resolve_outcomes
+    from kenning.observations import resolve_outcomes
 
     summary = resolve_outcomes()
     print(f"  observations resolved: {summary.as_dict()}")
@@ -757,13 +757,13 @@ def _load_llm():
     room to finish.
     """
     settings.LLM_MAX_TOKENS = 2048
-    from ultron.llm import LLMEngine
+    from kenning.llm import LLMEngine
 
     return LLMEngine(memory=None)
 
 
 def _load_embedder():
-    from ultron.memory import HybridEmbedder
+    from kenning.memory import HybridEmbedder
 
     return HybridEmbedder(eager=True)
 

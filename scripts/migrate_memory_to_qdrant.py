@@ -86,7 +86,7 @@ def main() -> int:
         SparseVectorParams,
         VectorParams,
     )
-    from ultron.memory.embedder import HybridEmbedder
+    from kenning.memory.embedder import HybridEmbedder
 
     if args.reset and settings.MEMORY_QDRANT_PATH.exists():
         # Embedded Qdrant doesn't always release files on delete_collection;

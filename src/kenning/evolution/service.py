@@ -1,4 +1,4 @@
-"""Runtime service that drives ultron's evolution loop end-to-end.
+"""Runtime service that drives kenning's evolution loop end-to-end.
 
 Catalog 13 clean-room. This bundles the engine modules into a single
 orchestrator-facing surface so the orchestrator's own wiring stays tiny +
@@ -8,7 +8,7 @@ obviously fail-open:
   under ``data/evolution/`` (success capsules, failure records, a
   hash-chained audit ledger, the gate state, the personality profile);
 * :class:`EvolutionService` -- holds the autonomy controller + personality
-  tuner + the :class:`~ultron.evolution.evolution_loop.EvolutionLoop`,
+  tuner + the :class:`~kenning.evolution.evolution_loop.EvolutionLoop`,
   records per-turn satisfaction + success capsules, runs cycles
   single-flight (on a daemon thread for the autonomous trigger), and
   exposes the temperament hint + the periodic digest.
@@ -28,21 +28,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence
 
-from ultron.evolution.autonomy import TieredAutonomyController
-from ultron.evolution.evolution_loop import (
+from kenning.evolution.autonomy import TieredAutonomyController
+from kenning.evolution.evolution_loop import (
     ApplyStatus,
     CheckpointHook,
     EvolutionLoop,
     EvolutionLoopConfig,
     EvolutionState,
 )
-from ultron.evolution.guardrails import (
+from kenning.evolution.guardrails import (
     GuardrailBaseline,
     GuardrailSample,
     RollbackRecord,
     evaluate_guardrails,
 )
-from ultron.evolution.models import (
+from kenning.evolution.models import (
     BlastRadius,
     Capsule,
     CommandFailureSignal,
@@ -58,12 +58,12 @@ from ultron.evolution.models import (
     new_capsule_id,
     new_event_id,
 )
-from ultron.evolution.personality import (
+from kenning.evolution.personality import (
     PersonalityFeedback,
     PersonalityTuner,
     apply_temperament,
 )
-from ultron.evolution.signals import (
+from kenning.evolution.signals import (
     COSMETIC_SIGNALS,
     extract_command_failure,
     extract_correction,
@@ -72,7 +72,7 @@ from ultron.evolution.signals import (
     has_opportunity_signal,
     signal_base,
 )
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("evolution.service")
 
@@ -298,7 +298,7 @@ def _build_checkpoint(data_dir: Path, proposal_dir: Path) -> Optional[Checkpoint
     """Build a shadow-repo checkpoint over the proposal directory, or
     ``None`` (the loop falls back to delete-revert)."""
     try:
-        from ultron.checkpoints.registry import CheckpointRegistry
+        from kenning.checkpoints.registry import CheckpointRegistry
 
         registry = CheckpointRegistry(checkpoints_root=data_dir.parent / "checkpoints")
         manager = registry.get_or_create("evolution-skills", workspace_path=proposal_dir)
@@ -322,7 +322,7 @@ def _build_checkpoint(data_dir: Path, proposal_dir: Path) -> Optional[Checkpoint
 
 def _maybe_get_approval() -> Any:
     try:
-        from ultron.safety.two_phase_approval import get_approval_registry
+        from kenning.safety.two_phase_approval import get_approval_registry
 
         return get_approval_registry()
     except Exception:  # noqa: BLE001
@@ -413,7 +413,7 @@ class EvolutionService:
             sampler = guardrail_sampler
             if sampler is None and bool(getattr(ev, "guardrail_monitoring_enabled", True)):
                 try:
-                    from ultron.evolution.turn_metrics import (
+                    from kenning.evolution.turn_metrics import (
                         TurnMetricsRing,
                         build_guardrail_sampler,
                     )
@@ -840,7 +840,7 @@ class EvolutionService:
         """The VRAM probe for the post-apply sample (safe on this daemon
         thread), or ``None`` when unavailable. Fail-open."""
         try:
-            from ultron.evolution.turn_metrics import probe_vram_mb
+            from kenning.evolution.turn_metrics import probe_vram_mb
 
             return probe_vram_mb
         except Exception:  # noqa: BLE001

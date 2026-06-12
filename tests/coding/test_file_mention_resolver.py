@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.coding.file_mention_resolver`."""
+"""Tests for :mod:`kenning.coding.file_mention_resolver`."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.file_mention_resolver import (
+from kenning.coding.file_mention_resolver import (
     DEFAULT_NEVER_AUTO_ADD_BASENAMES,
     FileMention,
     resolve_mentions,
@@ -148,7 +148,7 @@ def test_provider_cache_wires_resolver(tmp_path: Path):
     """End-to-end: RepoMapProviderCache.__call__ extracts mentions
     from user_text and threads them through to RepoMap as
     mentioned_fnames."""
-    from ultron.coding.repo_map import RepoMap, RepoMapProviderCache
+    from kenning.coding.repo_map import RepoMap, RepoMapProviderCache
 
     # Seed a project with two files; one referenced by name.
     (tmp_path / "obvious_target.py").write_text("def obvious(): pass\n")

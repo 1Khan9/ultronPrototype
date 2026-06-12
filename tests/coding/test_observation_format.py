@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.coding.observation_format import (
+from kenning.coding.observation_format import (
     COMPACT_MAX_OBSERVATION_CHARS,
     DEFAULT_MAX_OBSERVATION_CHARS,
     EMPTY_OUTPUT_MESSAGE,

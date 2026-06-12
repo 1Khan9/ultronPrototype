@@ -43,7 +43,7 @@ import threading
 from typing import Any, Dict, Optional
 
 
-logger = logging.getLogger("ultron.utils.snapshot_guard")
+logger = logging.getLogger("kenning.utils.snapshot_guard")
 
 
 # A unique sentinel that callers can compare to. The opaque value is

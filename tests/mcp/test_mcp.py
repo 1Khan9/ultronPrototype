@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.mcp import (
+from kenning.mcp import (
     DEFAULT_DROP_ENV_VARS,
     DEFAULT_DROP_HTTP_HEADERS,
     HttpMcpTransportConfig,
@@ -20,7 +20,7 @@ from ultron.mcp import (
     sanitise_transport_config,
     set_mcp_server_registry,
 )
-from ultron.mcp.transport import McpTransportKind
+from kenning.mcp.transport import McpTransportKind
 
 
 @pytest.fixture(autouse=True)

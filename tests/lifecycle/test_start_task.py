@@ -7,7 +7,7 @@ from typing import AsyncIterator
 
 import pytest
 
-from ultron.lifecycle.start_task import (
+from kenning.lifecycle.start_task import (
     StartTask,
     StartTaskError,
     StartTaskRecorder,

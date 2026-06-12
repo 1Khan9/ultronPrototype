@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.skills.marketplace import (
+from kenning.skills.marketplace import (
     DEFAULT_MAX_MANIFEST_BYTES,
     DEFAULT_TRUSTED_GIT_HOSTS,
     InstallPlanEntry,
@@ -173,9 +173,9 @@ def test_load_manifest_explicit_source_object() -> None:
 
 
 def test_load_manifest_preserves_top_level_name() -> None:
-    body = '{"name": "ultron-skills-pack", "plugins": []}'
+    body = '{"name": "kenning-skills-pack", "plugins": []}'
     manifest = load_manifest_text(body)
-    assert manifest.name == "ultron-skills-pack"
+    assert manifest.name == "kenning-skills-pack"
 
 
 def test_load_manifest_enabled_by_default_flag() -> None:

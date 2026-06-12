@@ -12,7 +12,7 @@ import types
 
 import pytest
 
-from ultron.agent_loop.deep_loops import (
+from kenning.agent_loop.deep_loops import (
     DeepExplorationLoop,
     DeepGatherLoop,
     DeepGatherResult,

@@ -38,7 +38,7 @@ _MAIN = Path(r"C:\STC\ultronPrototype")
 sys.path.insert(0, str(_MAIN))
 sys.path.insert(0, str(_WORKTREE_ROOT / "src"))
 
-import ultron.config as _cfg_mod
+import kenning.config as _cfg_mod
 _cfg_mod.PROJECT_ROOT = _MAIN
 _cfg_mod.MODELS_DIR = _MAIN / "models"
 _cfg_mod.LOGS_DIR = _MAIN / "logs"
@@ -47,7 +47,7 @@ _cfg_mod.DEFAULT_CONFIG_PATH = _MAIN / "config.yaml"
 
 # Locate claude CLI
 CLAUDE_CLI = os.environ.get(
-    "ULTRON_CLAUDE_CLI",
+    "KENNING_CLAUDE_CLI",
     str(Path.home() / "AppData" / "Roaming" / "npm" / "claude.cmd"),
 )
 
@@ -308,7 +308,7 @@ Q6F_APPS = [
     ),
     (
         "todo_list",
-        "Create a complete Python application named main.py in the current directory: a Tkinter GUI TODO list app with persistence. The window should have a list widget showing items, a text entry for new items, an 'Add' button that adds the entry's text to the list, a 'Remove selected' button, and a 'Close' button that saves the list to ~/ultron_quality_todo.json before exiting. On startup, load existing items from that file if it exists. Include error handling. Top-of-file docstring. Stdlib only. Do not run the GUI.",
+        "Create a complete Python application named main.py in the current directory: a Tkinter GUI TODO list app with persistence. The window should have a list widget showing items, a text entry for new items, an 'Add' button that adds the entry's text to the list, a 'Remove selected' button, and a 'Close' button that saves the list to ~/kenning_quality_todo.json before exiting. On startup, load existing items from that file if it exists. Include error handling. Top-of-file docstring. Stdlib only. Do not run the GUI.",
         "Add",
     ),
 ]

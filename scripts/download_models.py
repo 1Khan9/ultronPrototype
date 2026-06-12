@@ -56,7 +56,7 @@ LLM_DRAFT_FILE = "Qwen3.5-0.8B-Q4_K_M.gguf"
 # Q5_K_M strikes the balance between quality and VRAM headroom on the
 # 4070 Ti (~5.85 GB on disk; ~10 GB peak voice-path stack vs 11.5 GB cap).
 # Quantised by mradermacher (community-trusted quantiser). Pairs with
-# the runtime tool-call validator under src/ultron/safety/ — the model
+# the runtime tool-call validator under src/kenning/safety/ — the model
 # is abliterated (no content-level refusals) but the validator gates
 # the actual capability surface. Retained for swap-back as of 2026-05-14.
 LLM_JOSIEFIED_REPO = "mradermacher/Josiefied-Qwen3-8B-abliterated-v1-GGUF"
@@ -89,7 +89,7 @@ LLM_GEMMA_3_4B_FILE = "gemma-3-4b-it-abliterated.Q4_K_M.gguf"
 # both the repo slug and the upload filenames (verified live
 # 2026-05-19: the unprefixed ``bartowski/gemma-3-1b-it-GGUF`` is a
 # 404). Keep both fields in sync with the preset's
-# ``draft_model_path`` in :mod:`ultron.config` -- the
+# ``draft_model_path`` in :mod:`kenning.config` -- the
 # regression-guard test in ``tests/test_llm_preset.py`` enforces this.
 LLM_GEMMA_3_1B_REPO = "bartowski/google_gemma-3-1b-it-GGUF"
 LLM_GEMMA_3_1B_FILE = "google_gemma-3-1b-it-Q4_K_M.gguf"
@@ -116,7 +116,7 @@ LLM_LLAMA_3_2_1B_FILE = "Llama-3.2-1B-Instruct-Q4_K_M.gguf"
 # but that still hit the tokenizer.json compat error on the venv's
 # tokenizers 0.19.1. ``2024-08-26`` is the older stable release that
 # predates the tokenizer.json format change. Must match the revision
-# pinned in src/ultron/desktop/vlm.py.
+# pinned in src/kenning/desktop/vlm.py.
 MOONDREAM_REPO = "vikhyatk/moondream2"
 MOONDREAM_REVISION = "2024-08-26"
 
@@ -127,7 +127,7 @@ MOONDREAM_REVISION = "2024-08-26"
 # just constructs ``KPipeline(lang_code='a')`` so the cache is warm
 # before the first user query -- otherwise the orchestrator would pay
 # the download cost on its first synth call.
-KOKORO_LANG_CODE = "a"  # American English. Match src/ultron/tts/kokoro_engine.py.
+KOKORO_LANG_CODE = "a"  # American English. Match src/kenning/tts/kokoro_engine.py.
 
 # Smart Turn V3 — semantic end-of-turn detector (BSD-2-Clause).
 # 8 MB int8 ONNX; CPU inference ~12 ms. Runs AFTER Silero detects silence
@@ -216,7 +216,7 @@ def _prefetch_kokoro() -> None:
     synth call doesn't pay the ~330 MB download cost.
 
     Also creates ``models/kokoro/`` as a sanity-gate directory --
-    :class:`ultron.tts.kokoro_engine.KokoroSpeech` checks for its
+    :class:`kenning.tts.kokoro_engine.KokoroSpeech` checks for its
     existence before letting ``KPipeline`` load (so a missing-
     directory state surfaces as a clear ``KokoroEngineLoadError``).
 
@@ -255,7 +255,7 @@ def _prefetch_moondream2() -> None:
     avoid the ``tokenizer.json``-mismatch error that comes from main
     being updated faster than the ``tokenizers`` library can keep up
     with. Must match the revision pinned in
-    :mod:`src/ultron/desktop/vlm.py`.
+    :mod:`src/kenning/desktop/vlm.py`.
     """
     try:
         from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -280,7 +280,7 @@ def _prefetch_moondream2() -> None:
 
 
 def main() -> int:
-    print("\nUltron model setup")
+    print("\nKenning model setup")
     print("-" * 40)
 
     settings.MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -414,9 +414,9 @@ def main() -> int:
     # which was a misleading and annoying log line on every download
     # script run.
     if Path(settings.WAKE_WORD_MODEL_PATH).is_file():
-        print(f"\n  ✓ Ultron wake-word found: {settings.WAKE_WORD_MODEL_PATH}\n")
+        print(f"\n  ✓ Kenning wake-word found: {settings.WAKE_WORD_MODEL_PATH}\n")
     else:
-        print("\nNote: the custom Ultron wake-word model is not auto-downloaded.")
+        print("\nNote: the custom Kenning wake-word model is not auto-downloaded.")
         print("Train your own and place at:")
         print(f"  {settings.WAKE_WORD_MODEL_PATH}")
         print("Until then, the prototype falls back to "

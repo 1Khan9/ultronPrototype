@@ -1,10 +1,10 @@
-"""Tests for ultron.agent_loop.subagent."""
+"""Tests for kenning.agent_loop.subagent."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.agent_loop import subagent as sa
+from kenning.agent_loop import subagent as sa
 
 
 # ---------------------------------------------------------------------------

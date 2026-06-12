@@ -16,7 +16,7 @@ Lifecycle:
   use into the user's HF cache (~300 MB q4) and re-used across
   sessions.
 - Module-level singleton accessible via :func:`get_intent_recognizer`
-  / :func:`set_intent_recognizer` (mirrors the :mod:`ultron.desktop.vlm`
+  / :func:`set_intent_recognizer` (mirrors the :mod:`kenning.desktop.vlm`
   pattern for cross-component access).
 
 Failure modes (all log WARN, never raise to the voice loop):
@@ -34,7 +34,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("intent.recognizer")
 
@@ -76,10 +76,10 @@ class IntentRegistration:
 # ----------------------------------------------------------------------
 
 
-class UltronIntentRecognizer:
+class KenningIntentRecognizer:
     """Engine-agnostic intent matcher.
 
-    Wraps ``moonshine_voice.IntentRecognizer`` with Ultron-friendly
+    Wraps ``moonshine_voice.IntentRecognizer`` with Kenning-friendly
     semantics:
 
     - Lazy load (no work at construction; first use triggers the
@@ -407,20 +407,20 @@ class UltronIntentRecognizer:
 
 
 # ----------------------------------------------------------------------
-# Module-level singleton (mirrors ultron.desktop.vlm pattern)
+# Module-level singleton (mirrors kenning.desktop.vlm pattern)
 # ----------------------------------------------------------------------
 
 
-_singleton: Optional[UltronIntentRecognizer] = None
+_singleton: Optional[KenningIntentRecognizer] = None
 _singleton_lock = threading.Lock()
 
 
-def get_intent_recognizer() -> Optional[UltronIntentRecognizer]:
+def get_intent_recognizer() -> Optional[KenningIntentRecognizer]:
     """Return the process-wide recognizer or None if not yet set."""
     return _singleton
 
 
-def set_intent_recognizer(r: Optional[UltronIntentRecognizer]) -> None:
+def set_intent_recognizer(r: Optional[KenningIntentRecognizer]) -> None:
     """Install (or detach) the process-wide recognizer."""
     global _singleton
     with _singleton_lock:

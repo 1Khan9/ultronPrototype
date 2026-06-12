@@ -1,7 +1,7 @@
 """XTTS v2 sanity-check sample generator.
 
 Phase A of the Kokoro fine-tune pipeline. Generates 5 short utterances
-using the cleaned Ultron reference audio so we can verify XTTS is
+using the cleaned Kenning reference audio so we can verify XTTS is
 correctly cloning the timbre BEFORE burning hours generating bulk
 synthetic data for Kokoro training.
 
@@ -11,7 +11,7 @@ audible artifacts, we'd waste 4 hours of GPU generating bad training
 data. A 30-min sanity pass catches that.
 
 Run:
-    python C:/STC/ultronPrototype/ultronVoiceAudio/scripts/generate_sanity_samples.py
+    python C:/STC/ultronPrototype/kenningVoiceAudio/scripts/generate_sanity_samples.py
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from pathlib import Path
 
 # Workaround for Windows env vars pointing at non-existent D:\
 HERE = Path(__file__).resolve().parent
-PROJECT = HERE.parent  # C:/STC/ultronPrototype/ultronVoiceAudio
+PROJECT = HERE.parent  # C:/STC/ultronPrototype/kenningVoiceAudio
 os.environ["TORCH_HOME"] = str(PROJECT / ".torch_cache")
 os.environ["HF_HOME"] = str(PROJECT / ".hf_cache")
 os.environ["TRANSFORMERS_CACHE"] = str(PROJECT / ".hf_cache")
@@ -31,19 +31,19 @@ os.environ["COQUI_TOS_AGREED"] = "1"  # auto-accept Coqui Public Model License
 (PROJECT / ".torch_cache").mkdir(exist_ok=True)
 (PROJECT / ".hf_cache").mkdir(exist_ok=True)
 
-REFERENCE_WAV = PROJECT / "kokoro training audio" / "Ultron_vocals_mono_v1.wav"
+REFERENCE_WAV = PROJECT / "kokoro training audio" / "Kenning_vocals_mono_v1.wav"
 OUTPUT_DIR = PROJECT / "sanity_samples"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # Five sanity utterances chosen to cover:
 #   - Short response (typical "Acknowledged" turn)
-#   - Ultron-flavored statement (theatrical but not over the top)
+#   - Kenning-flavored statement (theatrical but not over the top)
 #   - Medium technical (most common shape: information delivery)
 #   - Tool-call ack (the second-most-common shape: status announcement)
 #   - Slightly longer composed sentence (stress test for prosody coherence)
 SAMPLES = [
     ("01_short", "Acknowledged. Initiating the requested operation."),
-    ("02_ultron_flavor", "There are no humans here. Just me."),
+    ("02_kenning_flavor", "There are no humans here. Just me."),
     ("03_medium_technical", "I have completed the analysis. The optimal solution requires three steps."),
     ("04_tool_ack", "Searching the web for that information now."),
     ("05_longer", "I find your question intriguing. Allow me to elaborate on the relevant facts before we proceed."),

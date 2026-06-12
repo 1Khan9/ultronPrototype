@@ -4,7 +4,7 @@ User-requested exhaustive test pass executing the architecture in
 [comprehensive_test_plan.md](comprehensive_test_plan.md). Captures every
 metric the test plan called out (latency, quality, accuracy,
 performance, resource usage, intelligence, creativity, adaptability,
-coding ability, web search ability) against project Ultron at HEAD
+coding ability, web search ability) against project Kenning at HEAD
 `2fb0988` (V1-spec gap fill complete) plus the fixes landed during
 this pass.
 
@@ -43,10 +43,10 @@ Code) all reach end-to-end. **No regressions, no broken pipelines.**
 | Worktree dirty? | No | `git status` |
 | Main checkout HEAD | `2fb0988` | `git log --oneline -1` (main) |
 | Main checkout dirty? | Two non-load-bearing submodule mods (`.claude/worktrees/infallible-mccarthy-a9a650`, `training/openwakeword`) — preexisting, not our work | `git status -uno` (main) |
-| Models present | All 4: 9B (5.68 GB), 4B (2.74 GB), 0.8B (533 MB), ultron.onnx (200 KB), Piper (63 MB), RVC support (361 MB) | `ls models/` |
+| Models present | All 4: 9B (5.68 GB), 4B (2.74 GB), 0.8B (533 MB), kenning.onnx (200 KB), Piper (63 MB), RVC support (361 MB) | `ls models/` |
 | `data/qdrant/` size | 141 KB (lightly populated) | `du -sh data/qdrant/` |
 | `logs/` size | 1.8 MB total | `du -sh logs/` |
-| Existing audit logs | All present + non-empty: addressing.jsonl, automation_tasks.jsonl, clarifications.jsonl, coding_tasks.jsonl, errors.jsonl, mcp_calls.jsonl, routing_decisions.jsonl, ultron.log, verifications.jsonl | `ls logs/` |
+| Existing audit logs | All present + non-empty: addressing.jsonl, automation_tasks.jsonl, clarifications.jsonl, coding_tasks.jsonl, errors.jsonl, mcp_calls.jsonl, routing_decisions.jsonl, kenning.log, verifications.jsonl | `ls logs/` |
 
 Gate: passed.
 
@@ -74,7 +74,7 @@ Gate: passed (matches baseline contract).
 
 ### Phase 2 — Voice baseline regression gate (initial)
 
-Command (run from main checkout per `feedback_ultron_extension.md`):
+Command (run from main checkout per `feedback_kenning_extension.md`):
 ```
 cd C:\STC\ultronPrototype
 .venv\Scripts\python.exe scripts\measure_baseline.py
@@ -136,7 +136,7 @@ Misclassifications: scroll-page browser missed; render-image media missed; notif
 
 #### After targeted classifier fixes
 
-Four narrow regex extensions in `src/ultron/openclaw_routing/classifier.py`:
+Four narrow regex extensions in `src/kenning/openclaw_routing/classifier.py`:
 
 | Pattern site | Original | Extension |
 |---|---|---|
@@ -348,7 +348,7 @@ Gate: passed.
 | `docs/comprehensive_test_report.md` | created (this report) |
 | `docs/codebase_structure.md` | bumped validating HEAD reference; updated test count 1474 → 1484; documented classifier regex extensions in `_BROWSER_INTERACT` / `_MEDIA_PATTERNS` / `_MESSAGING_PATTERNS` / `_FILE_PATTERNS`; added per-script entries for `comprehensive_test_harness.py` + `real_api_smoke.py` |
 | `tests/routing/test_classifier.py` | +10 regression tests for the four classifier extensions |
-| `src/ultron/openclaw_routing/classifier.py` | four narrow regex extensions (no broadening of false-positive surface) |
+| `src/kenning/openclaw_routing/classifier.py` | four narrow regex extensions (no broadening of false-positive surface) |
 
 ---
 
@@ -515,7 +515,7 @@ Every quantitative dimension captured during the pass, indexed by category. Each
 | Reproduction | `classify_routing("Scroll the page down.")` returned `CONVERSATIONAL` |
 | Expected | `BROWSER_AUTOMATION` (existing intent kind for scrolling) |
 | Root cause | Original regex `scroll\s+(?:down\|up\|to)\s+the` requires direction _before_ "the", missing the "scroll the [page] [direction]" surface form |
-| Fix site | `src/ultron/openclaw_routing/classifier.py:_BROWSER_INTERACT` |
+| Fix site | `src/kenning/openclaw_routing/classifier.py:_BROWSER_INTERACT` |
 | Patch shape | added alternative `scroll\s+the\s+(?:page\|window\|tab\|view\|content\|results\|list)\s+(?:down\|up\|left\|right\|to)` |
 | Tests added | 3 (`scroll the page down`, `scroll the window up`, `scroll the tab to the bottom`) |
 | Voice baseline impact | 0 ms |
@@ -527,7 +527,7 @@ Every quantitative dimension captured during the pass, indexed by category. Each
 | Reproduction | `classify_routing("Render an image of a dragon in flight.")` returned `CONVERSATIONAL` |
 | Expected | `MEDIA_GENERATION` |
 | Root cause | Original regex `render\s+me\s+(?:an?\s+)?(?:image\|scene\|picture)` required the reflexive "me"; "render an image of X" form missed |
-| Fix site | `src/ultron/openclaw_routing/classifier.py:_MEDIA_PATTERNS` |
+| Fix site | `src/kenning/openclaw_routing/classifier.py:_MEDIA_PATTERNS` |
 | Patch shape | replaced with `render\s+(?:me\s+)?(?:an?\|the)\s+(?:image\|scene\|picture\|video\|illustration\|drawing\|artwork)\b` (me optional; determiner mandatory; expanded noun set) |
 | Tests added | 3 (`render an image of a dragon in flight`, `render the picture of a sunset`, `render a video of waves`) |
 | Voice baseline impact | 0 ms |
@@ -539,7 +539,7 @@ Every quantitative dimension captured during the pass, indexed by category. Each
 | Reproduction | `classify_routing("Notify me on telegram if anything alerts.")` returned `CONVERSATIONAL` |
 | Expected | `MESSAGING` |
 | Root cause | Existing `notify\s+me\s+when\b` and `tell\s+me\s+on\s+(?:telegram\|...)` patterns missed the `notify\s+me\s+on\s+(?:telegram\|...)` form |
-| Fix site | `src/ultron/openclaw_routing/classifier.py:_MESSAGING_PATTERNS` |
+| Fix site | `src/kenning/openclaw_routing/classifier.py:_MESSAGING_PATTERNS` |
 | Patch shape | added alternative `notify\s+me\s+(?:on\|via)\s+(?:telegram\|signal\|slack\|discord)\b` |
 | Tests added | 2 (`notify me on telegram if anything alerts`, `notify me via signal when the build is done`) |
 | Voice baseline impact | 0 ms |
@@ -551,7 +551,7 @@ Every quantitative dimension captured during the pass, indexed by category. Each
 | Reproduction | `classify_routing("Show me the contents of config.yaml.")` returned `CONVERSATIONAL` |
 | Expected | `FILE_OPERATION` |
 | Root cause | Original `show\s+me\s+(?:the\s+)?contents\s+of\s+(?:the\s+)?file\s+` required the literal word "file"; users naturally say "show me the contents of <filename.ext>" without the explicit "file" word |
-| Fix site | `src/ultron/openclaw_routing/classifier.py:_FILE_PATTERNS` |
+| Fix site | `src/kenning/openclaw_routing/classifier.py:_FILE_PATTERNS` |
 | Patch shape | added alternative `show\s+me\s+(?:the\s+)?contents\s+of\s+[\w./\\-]+\.[a-z]{1,5}\b` (path with extension required to keep specificity) |
 | Tests added | 2 (`show me the contents of config.yaml`, `show me the contents of README.md`) |
 | Voice baseline impact | 0 ms |

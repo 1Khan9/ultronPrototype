@@ -9,7 +9,7 @@ from __future__ import annotations
 
 
 def test_resolve_outcomes_runs_on_empty_log(tmp_path):
-    from ultron.observations import resolve_outcomes
+    from kenning.observations import resolve_outcomes
 
     log = tmp_path / "observations.jsonl"
     log.write_text("", encoding="utf-8")
@@ -19,7 +19,7 @@ def test_resolve_outcomes_runs_on_empty_log(tmp_path):
 
 
 def test_resolve_outcomes_missing_log_is_safe(tmp_path):
-    from ultron.observations import resolve_outcomes
+    from kenning.observations import resolve_outcomes
 
     # A missing log must not raise -- the maintenance task is idempotent.
     summary = resolve_outcomes(observations_path=tmp_path / "nope.jsonl")
@@ -27,7 +27,7 @@ def test_resolve_outcomes_missing_log_is_safe(tmp_path):
 
 
 def test_resolve_outcomes_summary_as_dict(tmp_path):
-    from ultron.observations import resolve_outcomes
+    from kenning.observations import resolve_outcomes
 
     log = tmp_path / "observations.jsonl"
     log.write_text("", encoding="utf-8")

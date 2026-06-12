@@ -44,7 +44,7 @@ The processors operate on a generic history shape:
     })
 
 The processors never raise on malformed items -- they preserve
-unrecognised entries unchanged. This is critical because ultron's
+unrecognised entries unchanged. This is critical because kenning's
 history items don't always carry ``message_type`` (the legacy
 :class:`LLMEngine._build_messages` path emits bare role/content
 dicts); the processors treat such items as "user" messages and
@@ -301,7 +301,7 @@ _DEFAULT_KEEP_TAGS: frozenset[str] = frozenset({"keep_output"})
 class LastNObservations:
     """Elide all but the last N observations from the LLM history.
 
-    Algorithm (verbatim from SWE-Agent, slightly adapted to ultron's
+    Algorithm (verbatim from SWE-Agent, slightly adapted to kenning's
     history shape):
 
     1. Collect the indices of every observation in ``history`` that
@@ -498,7 +498,7 @@ def build_default_processors(
     keep_for_tools: Optional[Sequence[str]] = None,
     remove_for_tools: Optional[Sequence[str]] = None,
 ) -> list[HistoryProcessor]:
-    """Build the canonical processor chain used by ultron's coding +
+    """Build the canonical processor chain used by kenning's coding +
     architect-supervisor paths.
 
     Default chain:

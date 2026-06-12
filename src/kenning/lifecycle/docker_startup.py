@@ -1,6 +1,6 @@
 """Startup helper: ensure SearxNG's Docker backend is running.
 
-SearxNG is Ultron's default first search provider, but it lives in a
+SearxNG is Kenning's default first search provider, but it lives in a
 Docker container -- if Docker Desktop is down at boot, every search
 silently falls through to Brave. This module probes SearxNG once at
 startup and, if it's unreachable, launches Docker Desktop in the
@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-logger = logging.getLogger("ultron.lifecycle.docker_startup")
+logger = logging.getLogger("kenning.lifecycle.docker_startup")
 
 __all__ = ["DockerStartupResult", "searxng_reachable", "ensure_docker_running"]
 

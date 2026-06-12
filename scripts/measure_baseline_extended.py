@@ -43,7 +43,7 @@ from typing import Any, Dict, List, Optional
 # Path setup: import code + load models from the main checkout, regardless of
 # where this script lives or where it's run from.
 #
-# Main repo's .env holds ULTRON_LLM_MODEL_PATH=models/... (relative). That path
+# Main repo's .env holds KENNING_LLM_MODEL_PATH=models/... (relative). That path
 # only resolves correctly when cwd == main repo, since python-dotenv's
 # load_dotenv() walks up from cwd to find .env. We therefore chdir to the main
 # repo BEFORE importing config.settings (which calls load_dotenv()). Output
@@ -111,7 +111,7 @@ def measure_time_to_acknowledgment() -> Dict[str, Any]:
     audio device latency (system-level, not in our control).
     """
     print("\n[lite] Measuring time-to-acknowledgment (phrase selection)...")
-    from ultron.web_search.acknowledgments import AcknowledgmentSource
+    from kenning.web_search.acknowledgments import AcknowledgmentSource
 
     src = AcknowledgmentSource()
     # Burn 8 to clear the first cycle and reach steady-state shuffle behavior.
@@ -286,7 +286,7 @@ def measure_scenario_timing() -> Dict[str, Any]:
             "Times are pytest's setup+call+teardown summed per test. Each "
             "scenario uses the scripted mock bridge (no Claude API). "
             "Variance run-to-run is dominated by Qdrant-embedded init "
-            "(loaded once per scenario via UltronMCPServer constructor)."
+            "(loaded once per scenario via KenningMCPServer constructor)."
         ),
     }
     print(
@@ -307,7 +307,7 @@ def measure_scenario_timing() -> Dict[str, Any]:
 def _make_mock_brave():
     """Subclass that bypasses BraveSearchClient.__init__ (which requires API key)
     and returns canned BraveResult rows. Pure CPU; no network."""
-    from ultron.web_search.brave import BraveResult, BraveSearchClient
+    from kenning.web_search.brave import BraveResult, BraveSearchClient
 
     class _MockBrave(BraveSearchClient):
         def __init__(self):  # type: ignore[override]
@@ -360,7 +360,7 @@ def _make_mock_brave():
 
 def _make_mock_jina():
     """Subclass that returns canned markdown without HTTP."""
-    from ultron.web_search.jina import JinaReaderClient
+    from kenning.web_search.jina import JinaReaderClient
 
     class _MockJina(JinaReaderClient):
         def __init__(self):  # type: ignore[override]
@@ -388,7 +388,7 @@ def measure_search_vram(llm) -> Dict[str, Any]:
     every run hits the full path.
     """
     print("\n[full] Measuring VRAM during search-triggering query (mocked Brave + Jina)...")
-    from ultron.web_search.search import WebSearchExecutor
+    from kenning.web_search.search import WebSearchExecutor
 
     brave = _make_mock_brave()
     jina = _make_mock_jina()
@@ -440,15 +440,15 @@ def measure_coding_session_vram() -> Dict[str, Any]:
     # The MCP server enforces that project_root lives under settings.CODING_SANDBOX_PATH
     # in production. Tests use this escape hatch to point at tmp_path. We do the
     # same here -- the measurement is about VRAM behavior, not sandbox safety.
-    _os.environ["ULTRON_CODING_MCP_ALLOW_ANY_ROOT"] = "1"
-    from ultron.coding import (
+    _os.environ["KENNING_CODING_MCP_ALLOW_ANY_ROOT"] = "1"
+    from kenning.coding import (
         CodingTaskRunner, CodingVoiceController, ProjectRegistry,
-        ProjectResolver, StatusNarrator, UltronMCPServer,
+        ProjectResolver, StatusNarrator, KenningMCPServer,
     )
-    from ultron.coding.bridge import TaskRequest
-    from ultron.coding.coordinator import ConversationCoordinator
-    from ultron.coding.session import SessionStatus
-    from ultron.coding.verification import Verifier
+    from kenning.coding.bridge import TaskRequest
+    from kenning.coding.coordinator import ConversationCoordinator
+    from kenning.coding.session import SessionStatus
+    from kenning.coding.verification import Verifier
     sys.path.insert(0, str(MAIN_REPO_PATH))
     from tests.coding.mock_bridge import ClaudeScript, ScriptedClaudeBridge
 
@@ -463,7 +463,7 @@ def measure_coding_session_vram() -> Dict[str, Any]:
         tmp_path = Path(tmp_str)
         sandbox = tmp_path / "sandbox"
         sandbox.mkdir()
-        server = UltronMCPServer(host="127.0.0.1", port=0)
+        server = KenningMCPServer(host="127.0.0.1", port=0)
         verifier = Verifier(store=server.store)
         coordinator = ConversationCoordinator(
             store=server.store, llm=_StubLLM(), verifier=verifier,
@@ -568,15 +568,15 @@ def _load_voice_stack():
     """
     print("\n[full] Loading voice stack...")
     import os as _os
-    _os.environ["ULTRON_LOG_LEVEL"] = "WARNING"
-    from ultron.utils.logging import configure_logging
+    _os.environ["KENNING_LOG_LEVEL"] = "WARNING"
+    from kenning.utils.logging import configure_logging
     configure_logging(level="WARNING")
 
     checkpoints: Dict[str, int] = {}
     checkpoints["before_load_mb"] = vram_used_mb()
     print(f"  before load: {checkpoints['before_load_mb']} MB")
 
-    from ultron.transcription import make_stt_engine
+    from kenning.transcription import make_stt_engine
     t = time.monotonic()
     stt = make_stt_engine()
     print(
@@ -585,13 +585,13 @@ def _load_voice_stack():
     )
     checkpoints["after_stt_mb"] = vram_used_mb()
 
-    from ultron.llm import LLMEngine
+    from kenning.llm import LLMEngine
     t = time.monotonic()
     llm = LLMEngine(memory=None)
     print(f"  LLM loaded in {time.monotonic() - t:.1f}s")
     checkpoints["after_llm_mb"] = vram_used_mb()
 
-    from ultron.tts import make_tts_engine
+    from kenning.tts import make_tts_engine
     t = time.monotonic()
     rvc, tts = make_tts_engine()
     print(

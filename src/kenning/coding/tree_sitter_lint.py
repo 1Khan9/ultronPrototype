@@ -5,7 +5,7 @@ Pattern lifted in spirit (not in source) from aider's
 ``THIRD_PARTY_NOTICES.md``).
 
 For any language with a vendored ``<lang>-tags.scm`` (see
-:mod:`ultron.coding.queries`), parses the file with tree-sitter and
+:mod:`kenning.coding.queries`), parses the file with tree-sitter and
 walks the AST for nodes where ``node.is_error`` is True or
 ``node.is_missing`` is True. Each such node yields a
 :class:`LintError`. The walk is bounded by node count (anti-DOS:
@@ -37,7 +37,7 @@ from typing import List, Optional, Sequence
 warnings.simplefilter("ignore", category=FutureWarning)
 
 
-logger = logging.getLogger("ultron.coding.tree_sitter_lint")
+logger = logging.getLogger("kenning.coding.tree_sitter_lint")
 
 
 # Hard cap on AST node visits. Trees deeper than this stop the walk

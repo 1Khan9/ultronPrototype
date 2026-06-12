@@ -10,18 +10,18 @@ result into a typed dataclass.
 
 | File | Role |
 |---|---|
-| `src/ultron/openclaw_bridge/browser.py` | `BrowserTool` wrapper with six primitives. Each method calls `OpenClawClient.invoke_tool("browser", {...})` with action-specific params. Result parsing is best-effort: title extraction from text, ref extraction from snapshot output, base64 decoding for screenshots. |
-| `src/ultron/openclaw_routing/dispatcher.py` | `handle_browser` rewritten — bridge-wired live path mapping `BrowserIntent.action` to the appropriate `BrowserTool` method. Falls back to stub when bridge absent OR `browser.enabled: false`. |
-| `src/ultron/config.py` | `BrowserConfig` schema (master enabled flag, snapshot mode, per-action timeouts, ack-phrase pool). |
+| `src/kenning/openclaw_bridge/browser.py` | `BrowserTool` wrapper with six primitives. Each method calls `OpenClawClient.invoke_tool("browser", {...})` with action-specific params. Result parsing is best-effort: title extraction from text, ref extraction from snapshot output, base64 decoding for screenshots. |
+| `src/kenning/openclaw_routing/dispatcher.py` | `handle_browser` rewritten — bridge-wired live path mapping `BrowserIntent.action` to the appropriate `BrowserTool` method. Falls back to stub when bridge absent OR `browser.enabled: false`. |
+| `src/kenning/config.py` | `BrowserConfig` schema (master enabled flag, snapshot mode, per-action timeouts, ack-phrase pool). |
 | `config.yaml` | `browser:` section with sensible defaults. |
-| `docs/openclaw_browser_setup.md` | OpenClaw-side setup (Playwright + Chromium), tool-deny-list adjustment for `ultron-main` to allow browser, smoke test, voice ack pattern explanation, troubleshooting + security notes. |
+| `docs/openclaw_browser_setup.md` | OpenClaw-side setup (Playwright + Chromium), tool-deny-list adjustment for `kenning-main` to allow browser, smoke test, voice ack pattern explanation, troubleshooting + security notes. |
 
 ## Key design decisions
 
 - **Each action → one agent turn.** Multi-step flows (login →
   navigate → fill form) stay on the OpenClaw side via the agent's
   reasoning, not orchestrated from Python. The wrapper is for
-  discrete operations Ultron's intent dispatch fires.
+  discrete operations Kenning's intent dispatch fires.
 
 - **Best-effort result parsing.** Free-form agent text is parsed
   with tolerant heuristics (Title: prefix, [refId] label lines,
@@ -52,7 +52,7 @@ result into a typed dataclass.
 ## Voice pipeline impact: zero
 
 Browser dispatch fires only on `BROWSER_AUTOMATION` intents (which
-the classifier produces only when the user explicitly asks Ultron
+the classifier produces only when the user explicitly asks Kenning
 to drive the browser). When fired, the call is async and runs in a
 background task; the orchestrator plays an ack phrase within ~200
 ms and returns to the listening loop. No Phase 6 code runs on the
@@ -79,7 +79,7 @@ Full sweep: **1175 passed / 15 skipped / 0 failed** (1190 collected).
   `docs/openclaw_browser_setup.md`.
 - **Tool-deny adjustment.** Phase 0 locked `tools.profile: messaging`
   + explicit `tools.deny` on every local-Qwen agent. To enable
-  browser dispatch on `ultron-main`, the user adds
+  browser dispatch on `kenning-main`, the user adds
   `tools.alsoAllow: ["browser"]` to that agent's config and
   restarts the Gateway. Documented; not auto-applied.
 
@@ -88,7 +88,7 @@ Full sweep: **1175 passed / 15 skipped / 0 failed** (1190 collected).
 Phase 7 (Cron jobs) is largely about OpenClaw-side configuration:
 
 - `openclaw cron add` for nightly maintenance + morning briefing.
-- A new Ultron MCP tool `ultron.run_maintenance(scope)` that runs
+- A new Kenning MCP tool `kenning.run_maintenance(scope)` that runs
   the existing `scripts/maintenance.py` operations.
 - Wire alerts from cron output to existing `NotificationDispatcher.notify_standing_order_output`.
 

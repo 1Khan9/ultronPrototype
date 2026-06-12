@@ -37,7 +37,7 @@ de-commented source.
 
 Gating: this is the input to Category L (rules L1-L8) which encodes
 the per-finding allow/deny policy. The scanner is pure analysis; the
-gating decision lives in :mod:`ultron.safety.rules.category_l`.
+gating decision lives in :mod:`kenning.safety.rules.category_l`.
 """
 
 from __future__ import annotations
@@ -126,16 +126,16 @@ class ScanReport:
 def canonical_code_for_finding(finding: "Finding") -> Optional[str]:
     """Return the canonical T3 reason code for ``finding`` (or None).
 
-    Lazy-imports :mod:`ultron.install.reason_codes` so the static
+    Lazy-imports :mod:`kenning.install.reason_codes` so the static
     scanner stays usable without the reason-code catalogue (the
     catalogue depends on ``FindingSeverity`` from this module; the
     helper closes the loop without re-introducing a cycle).
 
     Returns ``None`` for finding kinds not in
-    :data:`ultron.install.reason_codes.KIND_TO_CODE` — callers that
+    :data:`kenning.install.reason_codes.KIND_TO_CODE` — callers that
     require strict mapping should raise on ``None`` themselves.
     """
-    from ultron.install.reason_codes import code_for_kind
+    from kenning.install.reason_codes import code_for_kind
 
     return code_for_kind(finding.kind)
 
@@ -144,7 +144,7 @@ def canonical_codes_for_report(report: "ScanReport") -> tuple[str, ...]:
     """Return all canonical reason codes referenced by ``report.findings``.
 
     Result is deduplicated + alphabetically sorted via the
-    :mod:`ultron.install.reason_codes` ``normalize_reason_codes``
+    :mod:`kenning.install.reason_codes` ``normalize_reason_codes``
     helper, so consumers get a stable per-report code list suitable
     for audit-log enrichment.
 
@@ -152,7 +152,7 @@ def canonical_codes_for_report(report: "ScanReport") -> tuple[str, ...]:
     skipped (the underlying Finding is preserved; only the canonical
     code mapping is absent).
     """
-    from ultron.install.reason_codes import normalize_reason_codes
+    from kenning.install.reason_codes import normalize_reason_codes
 
     raw: list[str] = []
     for f in report.findings:

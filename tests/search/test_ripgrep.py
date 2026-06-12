@@ -1,4 +1,4 @@
-"""Tests for ultron.search.ripgrep."""
+"""Tests for kenning.search.ripgrep."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.search import ripgrep as rg
+from kenning.search import ripgrep as rg
 
 
 # Skip mark for tests that require an actual rg binary on PATH (or in the

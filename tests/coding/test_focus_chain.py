@@ -1,4 +1,4 @@
-"""Tests for ultron.coding.focus_chain."""
+"""Tests for kenning.coding.focus_chain."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding import focus_chain as fc
+from kenning.coding import focus_chain as fc
 
 
 # ---------------------------------------------------------------------------

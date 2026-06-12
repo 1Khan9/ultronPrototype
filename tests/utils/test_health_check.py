@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.utils.health_check` (catalog 11 T4).
+"""Tests for :mod:`kenning.utils.health_check` (catalog 11 T4).
 
 All transport is injected via ``get_fn`` -- no real network call is
 ever made (binding rule R4). Each branch (healthy, wrong status,
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.utils.health_check import (
+from kenning.utils.health_check import (
     CdpHealthResult,
     HealthCheckResult,
     cdp_health_check,

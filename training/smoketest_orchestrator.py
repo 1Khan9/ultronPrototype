@@ -9,12 +9,12 @@ import os
 
 sys.path.insert(0, r"C:\STC\ultronPrototype")
 sys.path.insert(0, r"C:\STC\ultronPrototype\src")
-os.environ["ULTRON_LOG_LEVEL"] = "INFO"
+os.environ["KENNING_LOG_LEVEL"] = "INFO"
 
-from ultron.utils.logging import configure_logging
+from kenning.utils.logging import configure_logging
 configure_logging()
 
-from ultron.pipeline import Orchestrator
+from kenning.pipeline import Orchestrator
 
 print("Constructing orchestrator…")
 orch = Orchestrator()

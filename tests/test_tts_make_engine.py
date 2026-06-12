@@ -1,4 +1,4 @@
-"""Tests for the :func:`ultron.tts.make_tts_engine` factory.
+"""Tests for the :func:`kenning.tts.make_tts_engine` factory.
 
 The factory is the canonical TTS-construction surface used by both
 ``orchestrator._load_tts_engine`` and ``scripts/measure_baseline.py``.
@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.tts import make_tts_engine
+from kenning.tts import make_tts_engine
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +62,7 @@ class _FakeRvcConverter:
 @pytest.fixture
 def patched_engines(monkeypatch):
     """Swap the real engine classes for cheap fakes."""
-    import ultron.tts as tts_module
+    import kenning.tts as tts_module
 
     _FakeKokoroSpeech.last_kwargs = None
     _FakeXttsV3Speech.constructed = 0
@@ -81,7 +81,7 @@ def _kokoro_subcfg() -> SimpleNamespace:
     real ``KokoroConfig``."""
     return SimpleNamespace(
         model_path="models/kokoro",
-        voice="ultron",
+        voice="kenning",
         device="cuda",
         speed=1.3,
         apply_runtime_filter=False,
@@ -105,7 +105,7 @@ def test_kokoro_path_returns_none_rvc(patched_engines):
     assert isinstance(tts, _FakeKokoroSpeech)
     # The factory should forward every Kokoro knob unchanged.
     kw = _FakeKokoroSpeech.last_kwargs
-    assert kw["voice"] == "ultron"
+    assert kw["voice"] == "kenning"
     assert kw["device"] == "cuda"
     assert kw["speed"] == 1.3
     assert kw["apply_trim_fade"] is True
@@ -181,7 +181,7 @@ def test_piper_rvc_path_with_rvc_load_failure_degrades(
     def _exploding_rvc():
         raise RuntimeError("simulated RVC load failure")
 
-    import ultron.tts as tts_module
+    import kenning.tts as tts_module
     monkeypatch.setattr(tts_module, "RvcConverter", _exploding_rvc)
 
     cfg = SimpleNamespace(engine="piper_rvc")
@@ -205,7 +205,7 @@ def test_factory_pulls_from_get_config_when_cfg_is_none(
     (orchestrator + measure_baseline) rely on this default behaviour."""
     fake_tts_cfg = SimpleNamespace(engine="kokoro", kokoro=_kokoro_subcfg())
     fake_root = SimpleNamespace(tts=fake_tts_cfg)
-    import ultron.config as cfg_module
+    import kenning.config as cfg_module
     monkeypatch.setattr(cfg_module, "get_config", lambda: fake_root)
 
     rvc, tts = make_tts_engine()  # no cfg argument

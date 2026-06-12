@@ -2,10 +2,10 @@
 
 Two functions guard the spoken-output path against TTS-hostile text:
 
-  * :func:`ultron.tts.xtts_v3.normalize_text_for_tts` rewrites Windows
+  * :func:`kenning.tts.xtts_v3.normalize_text_for_tts` rewrites Windows
     paths, times, units, abbreviations, etc. into spoken form before
     the synth call. Applied to every XTTS-v3 synthesis.
-  * :func:`ultron.coding.supervisor_dispatch._speakable` strips
+  * :func:`kenning.coding.supervisor_dispatch._speakable` strips
     path-prefix noise from project names so the supervisor's
     narration never says "C: backslash Users backslash...".
 
@@ -31,8 +31,8 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.coding.supervisor_dispatch import _speakable
-from ultron.tts.xtts_v3 import normalize_text_for_tts
+from kenning.coding.supervisor_dispatch import _speakable
+from kenning.tts.xtts_v3 import normalize_text_for_tts
 
 
 # ===========================================================================

@@ -1,4 +1,4 @@
-"""Tests for ultron.hooks.registry."""
+"""Tests for kenning.hooks.registry."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from ultron.hooks import registry as reg
-from ultron.hooks.discovery import HookScript
-from ultron.hooks.lifecycle import HookKind, HookOutcome, HookPayload
-from ultron.hooks.runner import HookRunner, HookRunResult
+from kenning.hooks import registry as reg
+from kenning.hooks.discovery import HookScript
+from kenning.hooks.lifecycle import HookKind, HookOutcome, HookPayload
+from kenning.hooks.runner import HookRunner, HookRunResult
 
 
 class _StubRunner:

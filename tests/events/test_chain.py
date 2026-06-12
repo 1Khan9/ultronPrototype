@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.events.chain import (
+from kenning.events.chain import (
     ChainVerificationError,
     compute_event_chain_hash,
     verify_chain,
 )
-from ultron.events.models import StoredEvent
+from kenning.events.models import StoredEvent
 
 
 def _event(session_id: str, kind: str, timestamp: float = 1.0) -> StoredEvent:

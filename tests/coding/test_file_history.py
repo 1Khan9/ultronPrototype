@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.file_history import (
+from kenning.coding.file_history import (
     DEFAULT_MAX_HISTORY_PER_FILE,
     FileHistory,
     FileHistoryEntry,
@@ -14,7 +14,7 @@ from ultron.coding.file_history import (
     UndoResult,
     get_file_history,
 )
-from ultron.coding.session_registry import (
+from kenning.coding.session_registry import (
     SessionRegistry,
     reset_session_registries_for_testing,
 )

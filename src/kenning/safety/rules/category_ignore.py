@@ -1,13 +1,13 @@
-""".ultronignore enforcement rule (Category U).
+""".kenningignore enforcement rule (Category U).
 
-Wires the :mod:`ultron.safety.ignore` controller (cline ``ClineIgnoreController``
+Wires the :mod:`kenning.safety.ignore` controller (cline ``ClineIgnoreController``
 port) into the tool-call validator. A tool call that reads OR writes a path
-matched by a ``.ultronignore`` layer (global ``~/.ultron/.ultronignore``,
+matched by a ``.kenningignore`` layer (global ``~/.kenning/.kenningignore``,
 project, or workspace) is blocked -- the canonical use is keeping secrets
 (``.env``, ``secrets/``, key material) out of reach of automated file ops AND
 of file-reading shell commands (``cat``/``Get-Content``/``grep`` ...).
 
-Default-SAFE: when no ``.ultronignore`` exists the controller matches nothing,
+Default-SAFE: when no ``.kenningignore`` exists the controller matches nothing,
 so the rule is a no-op and behaviour is unchanged. Fail-open: a controller
 error never blocks a call (the rule returns ALLOW + logs at debug). Operators
 disable it via ``config.yaml:safety.rules.U1: false``.
@@ -15,8 +15,8 @@ disable it via ``config.yaml:safety.rules.U1: false``.
 
 from __future__ import annotations
 
-from ultron.safety.rules.base import Rule
-from ultron.utils.logging import get_logger
+from kenning.safety.rules.base import Rule
+from kenning.utils.logging import get_logger
 
 logger = get_logger("safety.rules.ignore")
 
@@ -24,21 +24,21 @@ logger = get_logger("safety.rules.ignore")
 _COMMAND_ARG_KEYS = ("command", "cmd", "shell_command")
 
 
-class UltronIgnoreRule(Rule):
-    """Block tool calls touching ``.ultronignore``'d paths (read or write)."""
+class KenningIgnoreRule(Rule):
+    """Block tool calls touching ``.kenningignore``'d paths (read or write)."""
 
     rule_id = "U1"
-    description = ".ultronignore path/command block"
+    description = ".kenningignore path/command block"
     category = "U"
 
     def evaluate(self, ctx, *, policy, resolver):  # noqa: ARG002
-        from ultron.safety.validator import RuleResult, Verdict
+        from kenning.safety.validator import RuleResult, Verdict
 
         try:
-            from ultron.safety.ignore import get_ignore_controller
+            from kenning.safety.ignore import get_ignore_controller
             # Pass the active project root so the project + workspace
-            # .ultronignore layers actually resolve. Without it the controller
-            # keys on "__global__" and ONLY ~/.ultron/.ultronignore is ever
+            # .kenningignore layers actually resolve. Without it the controller
+            # keys on "__global__" and ONLY ~/.kenning/.kenningignore is ever
             # consulted -- the project/workspace layers are silently skipped.
             workspace_root = (
                 getattr(resolver, "project_root", None)
@@ -65,7 +65,7 @@ class UltronIgnoreRule(Rule):
                     rule_id=self.rule_id,
                     verdict=Verdict.BLOCK_HARD,
                     reason=(
-                        f".ultronignore blocks access to {raw} "
+                        f".kenningignore blocks access to {raw} "
                         f"(layer={getattr(verdict, 'matched_layer', '?')})"
                     ),
                     context={
@@ -90,19 +90,19 @@ class UltronIgnoreRule(Rule):
                 return RuleResult(
                     rule_id=self.rule_id,
                     verdict=Verdict.BLOCK_HARD,
-                    reason=f".ultronignore blocks command reading {denied}",
+                    reason=f".kenningignore blocks command reading {denied}",
                     context={"command": cmd[:200], "denied_path": str(denied)},
                 )
 
         return RuleResult(
             rule_id=self.rule_id, verdict=Verdict.ALLOW,
-            reason="no .ultronignore match",
+            reason="no .kenningignore match",
         )
 
 
 def build_ignore_rules() -> list:
-    """Return the Category U rule list (the .ultronignore enforcement rule)."""
-    return [UltronIgnoreRule()]
+    """Return the Category U rule list (the .kenningignore enforcement rule)."""
+    return [KenningIgnoreRule()]
 
 
-__all__ = ["UltronIgnoreRule", "build_ignore_rules"]
+__all__ = ["KenningIgnoreRule", "build_ignore_rules"]

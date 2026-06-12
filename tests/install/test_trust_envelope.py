@@ -7,12 +7,12 @@ from typing import Optional
 
 import pytest
 
-from ultron.install.reason_codes import (
+from kenning.install.reason_codes import (
     MALICIOUS_CODES,
     REASON_CODES,
     ModerationVerdict,
 )
-from ultron.install.trust_envelope import (
+from kenning.install.trust_envelope import (
     ArtifactKind,
     ModerationState,
     PackageFamily,

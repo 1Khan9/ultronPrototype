@@ -37,8 +37,8 @@ from __future__ import annotations
 import time
 from typing import List, Optional
 
-from ultron.config import get_config
-from ultron.utils.logging import get_logger
+from kenning.config import get_config
+from kenning.utils.logging import get_logger
 
 logger = get_logger("web_search.reader_chain")
 
@@ -149,17 +149,17 @@ class ReaderChain:
 
 
 def _make_trafilatura():
-    from ultron.web_search.trafilatura_reader import TrafilaturaReaderClient
+    from kenning.web_search.trafilatura_reader import TrafilaturaReaderClient
     return TrafilaturaReaderClient()
 
 
 def _make_jina():
-    from ultron.web_search.jina import JinaReaderClient
+    from kenning.web_search.jina import JinaReaderClient
     return JinaReaderClient()
 
 
 def _make_playwright():
-    from ultron.web_search.playwright_reader import PlaywrightReader
+    from kenning.web_search.playwright_reader import PlaywrightReader
     return PlaywrightReader()
 
 

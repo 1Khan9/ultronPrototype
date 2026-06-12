@@ -6,7 +6,7 @@ extraction, T5 wait-for-element/text synchronisation, T6 tab lifecycle
 management. Plus the navigation helpers (``open`` / ``back`` /
 ``scroll`` / ``close``) needed to drive the read primitives.
 
-Why a new tier on top of the existing :func:`ultron.desktop.uia.extract_browser_content`:
+Why a new tier on top of the existing :func:`kenning.desktop.uia.extract_browser_content`:
 
 * UIA walks the accessibility tree -- fast, zero-GPU, but limited to
   what Windows exposes. It cannot query CSS selectors, execute JS,
@@ -15,7 +15,7 @@ Why a new tier on top of the existing :func:`ultron.desktop.uia.extract_browser_
   Indexed elements + CSS selectors + JS eval + cookie management +
   multi-session isolation -- all the things the UIA tier cannot do.
 * Integration pattern (wired in batch 9): UIA stays the first tier in
-  :func:`ultron.desktop.screen_context.build_screen_context`;
+  :func:`kenning.desktop.screen_context.build_screen_context`;
   ``browser-use`` slots in as a second tier when the UIA tree returns
   empty/sparse results; the Moondream2 VLM remains the third tier.
 
@@ -51,7 +51,7 @@ Later batches (3-7) add YELLOW techniques (JS eval, cookies, session
 isolation, profile connect, CDP passthrough) that require Cap-3 +
 two-phase approval + static analysis gating. Batch 8 adds the
 ``BrowserSequenceRunner`` creative extension. Batch 9 wires this tier
-into :mod:`ultron.desktop.screen_context`.
+into :mod:`kenning.desktop.screen_context`.
 """
 
 from __future__ import annotations
@@ -67,19 +67,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
-from ultron.safety.path_resolver import PathResolver, get_path_resolver
-from ultron.safety.two_phase_approval import (
+from kenning.safety.path_resolver import PathResolver, get_path_resolver
+from kenning.safety.two_phase_approval import (
     ApprovalHandle,
     ApprovalRegistry,
     ApprovalRequest,
     get_approval_registry,
 )
-from ultron.safety.validator import (
+from kenning.safety.validator import (
     RuleContext,
     Verdict,
     get_validator,
 )
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.browser_use")
 
@@ -100,8 +100,8 @@ BROWSER_USE_BINARY_CANDIDATES: tuple[str, ...] = (
 
 # CREATE_NO_WINDOW on Windows suppresses the console flash that
 # otherwise pops every time the CLI subprocess spawns. Matches the
-# convention in :mod:`ultron.desktop.windows` and every subprocess
-# site in :mod:`ultron.transcription.parakeet_engine`.
+# convention in :mod:`kenning.desktop.windows` and every subprocess
+# site in :mod:`kenning.transcription.parakeet_engine`.
 _CREATE_NO_WINDOW: int = 0x08000000 if sys.platform == "win32" else 0
 
 # Default per-call subprocess wall-clock timeout. The upstream daemon
@@ -343,7 +343,7 @@ BROWSER_JS_APPROVAL_KIND: str = "browser_use_js_exec"
 
 # Reason-code label that lands in the audit log when a JS eval is
 # blocked OR approved. Mirrors the catalog 06 T3 reason-code namespace.
-BROWSER_JS_REASON_CODE: str = "ultron.suspicious.browser_js_exec_unrestricted"
+BROWSER_JS_REASON_CODE: str = "kenning.suspicious.browser_js_exec_unrestricted"
 
 # Canonical approval-request kind for cookie operations that move
 # bulk auth state (export / import / cross-origin clear). The channel
@@ -351,7 +351,7 @@ BROWSER_JS_REASON_CODE: str = "ultron.suspicious.browser_js_exec_unrestricted"
 BROWSER_COOKIES_APPROVAL_KIND: str = "browser_use_cookies_destructive"
 
 # Reason-code label for bulk cookie operations in the audit log.
-BROWSER_COOKIES_REASON_CODE: str = "ultron.suspicious.browser_cookies_unrestricted"
+BROWSER_COOKIES_REASON_CODE: str = "kenning.suspicious.browser_cookies_unrestricted"
 
 # Allowed values for the ``--same-site`` flag on ``cookies set``.
 # The upstream CLI follows the Chrome / Playwright convention.
@@ -364,7 +364,7 @@ COOKIE_SAME_SITE_VALUES: frozenset[str] = frozenset(
 # sensitive non-RED browser operation.
 BROWSER_PROFILE_APPROVAL_KIND: str = "browser_use_profile_connect"
 BROWSER_PROFILE_REASON_CODE: str = (
-    "ultron.suspicious.browser_profile_connect"
+    "kenning.suspicious.browser_profile_connect"
 )
 
 # Profile-name allowlist: Chrome profile directory names are
@@ -376,17 +376,17 @@ _PROFILE_NAME_RE = re.compile(r"^[A-Za-z0-9 ._-]{1,64}$")
 
 # T11 CDP passthrough -- approval + reason codes.
 BROWSER_CDP_APPROVAL_KIND: str = "browser_use_cdp_python"
-BROWSER_CDP_REASON_CODE: str = "ultron.suspicious.browser_cdp_exec"
+BROWSER_CDP_REASON_CODE: str = "kenning.suspicious.browser_cdp_exec"
 # Distinct (malicious-tier) reason code for a statement that touched
 # a hard-blocked CDP domain/method -- these are refused outright,
 # never even surfaced for approval.
 BROWSER_CDP_BLOCKED_REASON_CODE: str = (
-    "ultron.malicious.browser_cdp_blocked_domain"
+    "kenning.malicious.browser_cdp_blocked_domain"
 )
 
 # Fully-qualified CDP ``Domain.method`` strings that are NEVER
 # permitted, even with user approval. Each enables an attack with no
-# legitimate ultron use case:
+# legitimate kenning use case:
 #
 #   Security.setIgnoreCertificateErrors -- disables TLS verification
 #       (MITM enabler).
@@ -553,7 +553,7 @@ class BrowserBbox:
     """Bounding box for a single element. All four fields are physical
     pixels matching pyautogui's coordinate space. ``center_x`` /
     ``center_y`` are derived; callers can hand them directly to
-    :meth:`ultron.desktop.input_control.InputController.click` to
+    :meth:`kenning.desktop.input_control.InputController.click` to
     bridge protocol-level extraction with the safety-validated click
     gate stack.
     """
@@ -886,9 +886,9 @@ class BrowserScreenshotResult(BrowserUseResult):
 
     ``full_page`` mirrors the constructor arg so callers can verify
     they got what they asked for. The bytes can be handed directly to
-    :meth:`ultron.desktop.vlm.Moondream2VLM.describe` for VLM
+    :meth:`kenning.desktop.vlm.Moondream2VLM.describe` for VLM
     analysis, matching the analyze-and-discard contract that
-    :class:`ultron.desktop.sequence.DesktopSequenceRunner` uses on
+    :class:`kenning.desktop.sequence.DesktopSequenceRunner` uses on
     the desktop side (batch 8 builds the browser analog).
     """
 
@@ -909,7 +909,7 @@ class BrowserUseTool:
     The constructor is cheap: it does NOT discover or validate the
     binary, NOT spawn anything, NOT touch the network. Binary
     discovery runs lazily on the first :meth:`_invoke` call. This
-    matches the rest of :mod:`ultron.desktop` -- constructed at
+    matches the rest of :mod:`kenning.desktop` -- constructed at
     orchestrator startup, lazy-resolves expensive dependencies.
 
     Args:
@@ -921,7 +921,7 @@ class BrowserUseTool:
         session: named session for this tool's calls. ``None`` means
             "no session flag" (the upstream defaults to ``default``).
             Multi-session orchestration arrives in batch 5 via
-            :class:`ultron.desktop.browser_sessions.BrowserSessionManager`.
+            :class:`kenning.desktop.browser_sessions.BrowserSessionManager`.
         default_timeout_s: per-call subprocess wall-clock timeout when
             an explicit ``timeout_s`` argument is omitted.
         headed: when True, every ``open`` call appends ``--headed``.
@@ -2386,7 +2386,7 @@ class BrowserUseTool:
         """Catalog 11 T3 (YELLOW) -- click an element addressed by CSS
         selector; the ARIA-ref-miss fallback.
 
-        ultron's primary click path is index-based
+        kenning's primary click path is index-based
         (:meth:`click_at_index` against a prior :meth:`state` ARIA
         snapshot). When the ARIA snapshot misses an element (dynamic
         insertion, canvas overlay, shadow DOM, iframe content), this
@@ -3329,7 +3329,7 @@ class BrowserUseTool:
            A match is REFUSED OUTRIGHT -- not surfaced for approval,
            not executed -- because those methods (cert-error bypass,
            request interception, CSP bypass, debugger attach, etc.)
-           have no legitimate ultron use case.
+           have no legitimate kenning use case.
         3. **Two-phase approval** -- ALWAYS required for a cleared
            statement (no auto-pass for raw CDP). The full statement
            is recorded verbatim in the approval metadata for the
@@ -3588,10 +3588,10 @@ class BrowserUseTool:
         5. Bound stdout / stderr to ``_OUTPUT_CAP_BYTES`` so a runaway
            CLI cannot OOM the orchestrator. Larger payloads are
            truncated head + tail with an elision marker mirroring
-           :func:`ultron.coding.observation_format.truncate_observation`.
+           :func:`kenning.coding.observation_format.truncate_observation`.
         """
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('browser_use')
         binary = self.resolve_binary()
         if binary is None:
@@ -3688,7 +3688,7 @@ _tool_singleton: Optional[BrowserUseTool] = None
 def get_browser_use_tool() -> Optional[BrowserUseTool]:
     """Return the module-level singleton, or ``None`` if unset.
 
-    Matches the pattern used by :mod:`ultron.desktop.vlm` (lazy
+    Matches the pattern used by :mod:`kenning.desktop.vlm` (lazy
     construction is the orchestrator's job; readers degrade gracefully).
     """
     return _tool_singleton
@@ -3762,7 +3762,7 @@ def _build_scrubbed_env(
 def _truncate(text: str) -> str:
     """Cap large stdout / stderr payloads. Head + tail preservation
     is the readable shape; the elision marker matches
-    :func:`ultron.coding.observation_format.truncate_observation`'s
+    :func:`kenning.coding.observation_format.truncate_observation`'s
     convention so existing log viewers handle it."""
     if not text:
         return ""

@@ -17,7 +17,7 @@ Public surface:
   * :class:`CommitMessageResult` — frozen dataclass of outputs.
   * :func:`generate_commit_message` — primary entry point.
   * :data:`DEFAULT_COMMIT_SYSTEM_PROMPT` — the catalog's system prompt
-    with light ultron customisation (one-line, no body, imperative).
+    with light kenning customisation (one-line, no body, imperative).
   * :func:`strip_outer_quotes` — LLM-output sanitiser; some models
     wrap the message in quotes that need stripping.
 
@@ -40,11 +40,11 @@ from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Sequence
 
 
-logger = logging.getLogger("ultron.coding.commit_message")
+logger = logging.getLogger("kenning.coding.commit_message")
 
 
 # Catalog T15 default system prompt. Light customisation: explicit
-# "no Claude/AI attribution" rule because ultron's public-repo hygiene
+# "no Claude/AI attribution" rule because kenning's public-repo hygiene
 # forbids brand-name AI-dev trailers in commit messages (per the
 # pre-push hook). Keep the message imperative, present-tense, single-
 # line. Body is OFF by default; callers who want a body can pass a

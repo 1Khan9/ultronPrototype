@@ -1,11 +1,11 @@
 """Voice-callable handlers for desktop automation intents.
 
-This module bridges :class:`ultron.openclaw_routing.intents.RoutingIntent`
+This module bridges :class:`kenning.openclaw_routing.intents.RoutingIntent`
 (for ``APP_LAUNCH`` and ``SCREEN_CONTEXT_QUERY``) into the native
 desktop primitives:
 
-- :func:`handle_app_launch` -> :class:`ultron.desktop.launcher.AppLauncher`
-- :func:`handle_screen_context_query` -> :func:`ultron.desktop.screen_context.build_screen_context`
+- :func:`handle_app_launch` -> :class:`kenning.desktop.launcher.AppLauncher`
+- :func:`handle_screen_context_query` -> :func:`kenning.desktop.screen_context.build_screen_context`
 
 Returns plain dataclasses (not the routing layer's ``VoiceResponse``)
 so the orchestrator can adapt to either path. The orchestrator-side
@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.voice")
 
@@ -131,7 +131,7 @@ def _resolve_monitor(monitor_index: Optional[int], monitor_query: str):
     monitor"). Fails open: any pywin32 / enum failure returns ``None``.
     """
     try:
-        from ultron.desktop.monitors import enumerate_monitors, find_monitor
+        from kenning.desktop.monitors import enumerate_monitors, find_monitor
     except Exception as e:  # noqa: BLE001
         logger.debug("monitor resolve import failed: %s", e)
         return None
@@ -151,7 +151,7 @@ def _resolve_monitor(monitor_index: Optional[int], monitor_query: str):
     # have it land on their preferred screen without saying "on
     # monitor 2" every time.
     try:
-        from ultron.config import get_config
+        from kenning.config import get_config
         default_idx = getattr(
             get_config().desktop, "default_monitor_index", None,
         )
@@ -184,7 +184,7 @@ def handle_app_launch(intent) -> AppLaunchVoiceResult:
     """Dispatch an :class:`AppLaunchIntent` to the native launcher.
 
     Args:
-        intent: an :class:`ultron.openclaw_routing.intents.AppLaunchIntent`
+        intent: an :class:`kenning.openclaw_routing.intents.AppLaunchIntent`
             from the routing classifier.
     """
     app_name = (getattr(intent, "app_name", "") or "").strip()
@@ -205,7 +205,7 @@ def handle_app_launch(intent) -> AppLaunchVoiceResult:
     monitor = _resolve_monitor(monitor_index, monitor_query)
 
     try:
-        from ultron.desktop.launcher import get_app_launcher
+        from kenning.desktop.launcher import get_app_launcher
     except Exception as e:  # noqa: BLE001
         return AppLaunchVoiceResult(
             success=False,
@@ -334,7 +334,7 @@ def _record_preference_safe(
     if not user_phrase:
         return
     try:
-        from ultron.desktop.preferences import record_launch_preference
+        from kenning.desktop.preferences import record_launch_preference
 
         record_launch_preference(
             user_phrase=user_phrase,
@@ -359,12 +359,12 @@ def handle_screen_context_query(intent) -> ScreenContextVoiceResult:
 
     Builds the snapshot and returns the ``render_for_llm`` injection
     text. The orchestrator prepends this to the user's utterance on
-    the next LLM call so Ultron can answer about what's on screen.
+    the next LLM call so Kenning can answer about what's on screen.
     """
     include_vlm = bool(getattr(intent, "include_vlm", True))
 
     try:
-        from ultron.desktop.screen_context import build_screen_context
+        from kenning.desktop.screen_context import build_screen_context
     except Exception as e:  # noqa: BLE001
         return ScreenContextVoiceResult(
             success=False,
@@ -404,8 +404,8 @@ def _find_existing_window(query: str, monitor_query: str = ""):
     right monitor"). Returns the WindowInfo or None.
     """
     try:
-        from ultron.desktop.monitors import find_monitor
-        from ultron.desktop.windows import find_window
+        from kenning.desktop.monitors import find_monitor
+        from kenning.desktop.windows import find_window
     except Exception as e:  # noqa: BLE001
         logger.debug("window resolve import failed: %s", e)
         return None
@@ -460,7 +460,7 @@ def handle_window_move(intent) -> WindowMoveVoiceResult:
         )
 
     try:
-        from ultron.desktop.placement import move_window_to_monitor
+        from kenning.desktop.placement import move_window_to_monitor
         result = move_window_to_monitor(
             win.hwnd, monitor, fullscreen=fullscreen, maximize=maximize,
         )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.events.models import (
+from kenning.events.models import (
     DEFAULT_PAGE_LIMIT,
     DEFAULT_SEARCH_SORT,
     EventKind,

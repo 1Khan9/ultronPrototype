@@ -1,8 +1,8 @@
-"""Spotify control for Ultron.
+"""Spotify control for Kenning.
 
 Voice-driven playback control via the Spotify Web API:
 
-    auth.py   -- credential loading (gitignored ~/.ultron/spotify.json),
+    auth.py   -- credential loading (gitignored ~/.kenning/spotify.json),
                  OAuth authorization-code flow + refresh-token caching.
     client.py -- the Web API wrapper (play / pause / skip / search-and-
                  play / queue / volume / devices / now-playing).

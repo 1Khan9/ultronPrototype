@@ -1,4 +1,4 @@
-"""Tests for ``ultron.openclaw_bridge.mcp_tools``.
+"""Tests for ``kenning.openclaw_bridge.mcp_tools``.
 
 Each tool's impl function is testable without standing up a real
 MCP server — they're plain Python functions that read/write disk.
@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.openclaw_bridge import mcp_tools
+from kenning.openclaw_bridge import mcp_tools
 
 
 @pytest.fixture
@@ -185,12 +185,12 @@ def test_run_maintenance_subprocess_success(monkeypatch, tmp_path: Path):
     fake_payload = {"status": "ok", "summary": {"decay_stale_facts": 0}}
     fake_proc = MagicMock(returncode=0, stdout=json.dumps(fake_payload), stderr="")
     monkeypatch.setattr(
-        "ultron.openclaw_bridge.mcp_tools.subprocess.run",
+        "kenning.openclaw_bridge.mcp_tools.subprocess.run",
         lambda *a, **kw: fake_proc,
     )
     # Force the script existence check to pass (it does in normal layout).
     monkeypatch.setattr(
-        "ultron.openclaw_bridge.mcp_tools._project_root",
+        "kenning.openclaw_bridge.mcp_tools._project_root",
         lambda: tmp_path,
     )
     (tmp_path / "scripts").mkdir()
@@ -203,11 +203,11 @@ def test_run_maintenance_subprocess_success(monkeypatch, tmp_path: Path):
 def test_run_maintenance_subprocess_init_error(monkeypatch, tmp_path: Path):
     fake_proc = MagicMock(returncode=2, stdout="", stderr="qdrant unreachable")
     monkeypatch.setattr(
-        "ultron.openclaw_bridge.mcp_tools.subprocess.run",
+        "kenning.openclaw_bridge.mcp_tools.subprocess.run",
         lambda *a, **kw: fake_proc,
     )
     monkeypatch.setattr(
-        "ultron.openclaw_bridge.mcp_tools._project_root",
+        "kenning.openclaw_bridge.mcp_tools._project_root",
         lambda: tmp_path,
     )
     (tmp_path / "scripts").mkdir()
@@ -219,7 +219,7 @@ def test_run_maintenance_subprocess_init_error(monkeypatch, tmp_path: Path):
 
 def test_run_maintenance_missing_wrapper(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(
-        "ultron.openclaw_bridge.mcp_tools._project_root",
+        "kenning.openclaw_bridge.mcp_tools._project_root",
         lambda: tmp_path,
     )
     result = mcp_tools.run_maintenance_impl()

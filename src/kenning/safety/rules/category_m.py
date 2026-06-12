@@ -16,7 +16,7 @@ M12 -- Services for persistence (overlap E3).
 
 from __future__ import annotations
 
-from ultron.safety.rules.base import (
+from kenning.safety.rules.base import (
     CommandPatternRule,
     PathPatternRule,
     Rule,

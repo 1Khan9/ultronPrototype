@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from ultron.openclaw_routing.decomposer import (
+from kenning.openclaw_routing.decomposer import (
     DecompositionResult,
     HybridTaskDecomposer,
 )
@@ -181,7 +181,7 @@ def test_decomposition_disabled_in_config_uses_fallback(monkeypatch):
         {"order": 1, "type": "automation", "description": "Should be ignored"},
     ]}
     llm = _StubLLM(response=json.dumps(payload))
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config()
     monkeypatch.setattr(cfg.routing, "hybrid_task_decomposition_enabled", False)
     decomposer = HybridTaskDecomposer(llm)

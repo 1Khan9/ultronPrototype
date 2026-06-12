@@ -25,9 +25,9 @@ from typing import List
 
 import pytest
 
-os.environ.setdefault("ULTRON_CODING_MCP_ALLOW_ANY_ROOT", "1")
+os.environ.setdefault("KENNING_CODING_MCP_ALLOW_ANY_ROOT", "1")
 
-from ultron.coding.projections import (
+from kenning.coding.projections import (
     AdjustmentContextProjection,
     ClarificationContextProjection,
     CompletionContextProjection,
@@ -41,7 +41,7 @@ from ultron.coding.projections import (
     project_correction_context,
     project_status_delta,
 )
-from ultron.coding.session import (
+from kenning.coding.session import (
     AdjustmentRecord,
     ClarificationRequest,
     CompletionClaim,
@@ -303,7 +303,7 @@ def test_clarification_truncates_facts_first_when_budget_loop_engages():
     def _facts(_q): return long_facts
 
     # Reduce budget temporarily to force the loop.
-    from ultron.coding import projections as _pmod
+    from kenning.coding import projections as _pmod
     orig_budget = _pmod.ClarificationContextProjection.BUDGET_TOKENS
     _pmod.ClarificationContextProjection.BUDGET_TOKENS = 250
     try:
@@ -410,9 +410,9 @@ def test_adjustment_text_never_silently_dropped():
 def test_mcp_server_exposes_projection_tools(tmp_path: Path):
     """All 5 new MCP-side projection tools are callable and return
     ProjectionResult."""
-    from ultron.coding.mcp_server import UltronMCPServer
+    from kenning.coding.mcp_server import KenningMCPServer
 
-    server = UltronMCPServer(host="127.0.0.1", port=0)
+    server = KenningMCPServer(host="127.0.0.1", port=0)
     s = server.create_session(
         project_root=tmp_path / "p", initial_prompt="hi",
     )
@@ -452,9 +452,9 @@ def test_mcp_server_exposes_projection_tools(tmp_path: Path):
 def test_get_full_state_returns_full_session(tmp_path: Path):
     """get_full_state is the in-process Python API that returns the
     complete ProjectSession (NOT exposed to MCP/Qwen)."""
-    from ultron.coding.mcp_server import UltronMCPServer
+    from kenning.coding.mcp_server import KenningMCPServer
 
-    server = UltronMCPServer(host="127.0.0.1", port=0)
+    server = KenningMCPServer(host="127.0.0.1", port=0)
     s = server.create_session(project_root=tmp_path / "p", initial_prompt="hi")
     full = server.get_full_state(s.session_id)
     assert full is not None
@@ -465,9 +465,9 @@ def test_get_full_state_returns_full_session(tmp_path: Path):
 def test_get_session_state_emits_deprecation_warning(tmp_path: Path):
     """The legacy get_session_state still works but warns. Will be
     removed in Phase D."""
-    from ultron.coding.mcp_server import UltronMCPServer
+    from kenning.coding.mcp_server import KenningMCPServer
 
-    server = UltronMCPServer(host="127.0.0.1", port=0)
+    server = KenningMCPServer(host="127.0.0.1", port=0)
     s = server.create_session(project_root=tmp_path / "p", initial_prompt="hi")
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -534,13 +534,13 @@ def test_truncation_warning_set_when_budget_unreachable(caplog):
     (b) ERROR is logged, (c) fits_budget is False, (d) the result
     still returns rather than crashing."""
     import logging
-    from ultron.coding import projections as _pmod
+    from kenning.coding import projections as _pmod
 
     s = _small_session()
     orig = _pmod.StatusDeltaProjection.BUDGET_TOKENS
     _pmod.StatusDeltaProjection.BUDGET_TOKENS = 5  # impossible
     try:
-        with caplog.at_level(logging.ERROR, logger="ultron.coding.projections"):
+        with caplog.at_level(logging.ERROR, logger="kenning.coding.projections"):
             r = project_status_delta(s)
     finally:
         _pmod.StatusDeltaProjection.BUDGET_TOKENS = orig
@@ -562,14 +562,14 @@ def test_info_logged_when_truncations_applied_and_fits(caplog):
     """When truncations engage but the projection still fits, we log
     at INFO level so operators can see budget pressure happening."""
     import logging
-    from ultron.coding import projections as _pmod
+    from kenning.coding import projections as _pmod
 
     # Force the loop to engage: oversize options + small-ish budget.
     s = _small_session()
     orig = _pmod.ClarificationContextProjection.BUDGET_TOKENS
     _pmod.ClarificationContextProjection.BUDGET_TOKENS = 250
     try:
-        with caplog.at_level(logging.INFO, logger="ultron.coding.projections"):
+        with caplog.at_level(logging.INFO, logger="kenning.coding.projections"):
             r = project_clarification_context(
                 s, clarification_question="critical question",
                 options=[f"opt_{i}_" + "z" * 150 for i in range(8)],
@@ -597,7 +597,7 @@ def test_no_info_log_when_no_truncations_applied(caplog):
     import logging
 
     s = _small_session()
-    with caplog.at_level(logging.INFO, logger="ultron.coding.projections"):
+    with caplog.at_level(logging.INFO, logger="kenning.coding.projections"):
         r = project_status_delta(s)
     assert r.fits_budget
     assert not r.truncations_applied
@@ -610,7 +610,7 @@ def test_no_info_log_when_no_truncations_applied(caplog):
 
 def test_truncation_warning_serialized_in_as_dict():
     """The dataclass.as_dict() round-trip includes truncation_warning."""
-    from ultron.coding import projections as _pmod
+    from kenning.coding import projections as _pmod
     s = _small_session()
     orig = _pmod.StatusDeltaProjection.BUDGET_TOKENS
     _pmod.StatusDeltaProjection.BUDGET_TOKENS = 5

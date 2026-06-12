@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.coding.architect_supervisor`."""
+"""Tests for :mod:`kenning.coding.architect_supervisor`."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.architect_supervisor import (
+from kenning.coding.architect_supervisor import (
     DEFAULT_ARCHITECT_SYSTEM_PROMPT,
     ArchitectPlan,
     ArchitectRequest,
@@ -187,12 +187,12 @@ def test_no_strip_quotes_default():
 
 
 def test_supervisor_attaches_architect_plan(tmp_path: Path):
-    from ultron.coding.project_supervisor import (
+    from kenning.coding.project_supervisor import (
         ProjectSupervisor,
         SupervisorAction,
         SupervisorDecision,
     )
-    from ultron.coding.projects import ProjectRegistry
+    from kenning.coding.projects import ProjectRegistry
 
     registry = ProjectRegistry(tmp_path / "projects.json")
     captured = {"calls": 0, "last_args": None, "last_kwargs": None}
@@ -222,12 +222,12 @@ def test_supervisor_attaches_architect_plan(tmp_path: Path):
 
 
 def test_supervisor_skips_architect_for_clarify(tmp_path: Path):
-    from ultron.coding.project_supervisor import (
+    from kenning.coding.project_supervisor import (
         ProjectSupervisor,
         SupervisorAction,
         SupervisorDecision,
     )
-    from ultron.coding.projects import ProjectRegistry
+    from kenning.coding.projects import ProjectRegistry
 
     registry = ProjectRegistry(tmp_path / "projects.json")
     captured = {"calls": 0}
@@ -252,12 +252,12 @@ def test_supervisor_skips_architect_for_clarify(tmp_path: Path):
 
 
 def test_supervisor_skips_architect_when_no_path(tmp_path: Path):
-    from ultron.coding.project_supervisor import (
+    from kenning.coding.project_supervisor import (
         ProjectSupervisor,
         SupervisorAction,
         SupervisorDecision,
     )
-    from ultron.coding.projects import ProjectRegistry
+    from kenning.coding.projects import ProjectRegistry
 
     registry = ProjectRegistry(tmp_path / "projects.json")
     captured = {"calls": 0}
@@ -281,12 +281,12 @@ def test_supervisor_skips_architect_when_no_path(tmp_path: Path):
 
 
 def test_supervisor_swallows_architect_errors(tmp_path: Path):
-    from ultron.coding.project_supervisor import (
+    from kenning.coding.project_supervisor import (
         ProjectSupervisor,
         SupervisorAction,
         SupervisorDecision,
     )
-    from ultron.coding.projects import ProjectRegistry
+    from kenning.coding.projects import ProjectRegistry
 
     registry = ProjectRegistry(tmp_path / "projects.json")
 
@@ -310,12 +310,12 @@ def test_supervisor_swallows_architect_errors(tmp_path: Path):
 
 def test_supervisor_provider_without_kwarg_support(tmp_path: Path):
     """Providers that don't accept repo_map_text kwarg still work."""
-    from ultron.coding.project_supervisor import (
+    from kenning.coding.project_supervisor import (
         ProjectSupervisor,
         SupervisorAction,
         SupervisorDecision,
     )
-    from ultron.coding.projects import ProjectRegistry
+    from kenning.coding.projects import ProjectRegistry
 
     registry = ProjectRegistry(tmp_path / "projects.json")
 
@@ -337,7 +337,7 @@ def test_supervisor_provider_without_kwarg_support(tmp_path: Path):
 
 
 def test_supervisor_log_dict_excludes_architect_plan_text(tmp_path: Path):
-    from ultron.coding.project_supervisor import (
+    from kenning.coding.project_supervisor import (
         SupervisorAction,
         SupervisorDecision,
     )

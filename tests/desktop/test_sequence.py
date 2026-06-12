@@ -1,4 +1,4 @@
-"""Tests for ultron.desktop.sequence (catalog 09 T5)."""
+"""Tests for kenning.desktop.sequence (catalog 09 T5)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.desktop.sequence import (
+from kenning.desktop.sequence import (
     DesktopSequenceRunner,
     SequenceStatus,
     SequenceStep,
@@ -25,7 +25,7 @@ from ultron.desktop.sequence import (
 
 def _fake_capture(*, monitor_index=0, png_bytes=b"\x89PNG_FAKE"):
     """Return a capture stub whose capture_monitor returns a Screenshot."""
-    from ultron.desktop.capture import Screenshot
+    from kenning.desktop.capture import Screenshot
 
     class _Cap:
         captures = 0
@@ -75,7 +75,7 @@ def test_singleton_caches_and_can_be_swapped():
 
 
 def test_sequence_result_is_frozen():
-    from ultron.desktop.sequence import SequenceResult
+    from kenning.desktop.sequence import SequenceResult
     r = SequenceResult(
         task="x", status=SequenceStatus.COMPLETED, success=True,
         steps=(), screenshots=(),
@@ -207,7 +207,7 @@ def test_no_capture_wired_records_no_capture():
     runner._capture = None
     # Monkey-patching the fallback is the only way to deterministically
     # exercise this branch:
-    import ultron.desktop.capture as cap_mod
+    import kenning.desktop.capture as cap_mod
     original = cap_mod.get_screen_capture
     cap_mod.get_screen_capture = lambda: None  # type: ignore[assignment]
     try:
@@ -269,7 +269,7 @@ def test_non_step_in_list_returns_error_status():
 def test_action_returning_result_with_success_flag_is_honoured():
     cap = _fake_capture()
     runner = DesktopSequenceRunner(capture=cap)
-    from ultron.desktop.input_control import InputControlResult
+    from kenning.desktop.input_control import InputControlResult
     s1 = SequenceStep(
         description="result-shape ok",
         action=lambda: InputControlResult(success=True, action="click"),

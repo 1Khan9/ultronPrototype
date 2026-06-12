@@ -1,7 +1,7 @@
 """Moondream2 vision-language model wrapper -- CPU, on-demand.
 
 The default voice-path LLM (``josiefied-qwen3-8b``) is text-only.
-This module gives Ultron a small vision-language model so screen
+This module gives Kenning a small vision-language model so screen
 captures can be turned into structured descriptions for "explain
 what I'm looking at" flows.
 
@@ -31,7 +31,7 @@ Design:
   title, UIA text, etc.).
 
 - **No tokenization of secrets.** The PNG bytes flowing in are
-  already tainted by :func:`ultron.safety.taint.get_taint_tracker`
+  already tainted by :func:`kenning.safety.taint.get_taint_tracker`
   via the capture pipeline. The VLM output (text description) is
   NOT itself stamped as tainted -- it's a paraphrase, not the raw
   bytes -- so the model's own response about the image can flow
@@ -49,7 +49,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.vlm")
 
@@ -71,7 +71,7 @@ DEFAULT_MOONDREAM_REPO = "vikhyatk/moondream2"
 DEFAULT_MOONDREAM_REVISION = "2024-08-26"
 
 # Default prompt when the caller doesn't supply one. Intentionally
-# open-ended -- Ultron will frame the answer in its own voice via the
+# open-ended -- Kenning will frame the answer in its own voice via the
 # LLM, not parrot back the description.
 DEFAULT_DESCRIBE_PROMPT = (
     "Describe what is visible in this screenshot in 2-4 sentences. "
@@ -369,7 +369,7 @@ def set_vlm(vlm: Optional[Moondream2VLM]) -> None:
     with _vlm_lock:
         _vlm_singleton = vlm
         # Wire (or unwire) the screen_context describe hook.
-        from ultron.desktop.screen_context import set_vlm_describe
+        from kenning.desktop.screen_context import set_vlm_describe
         if vlm is None:
             set_vlm_describe(None)
         else:

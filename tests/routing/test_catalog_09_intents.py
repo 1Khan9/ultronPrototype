@@ -8,8 +8,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.openclaw_routing.classifier import classify_routing
-from ultron.openclaw_routing.intents import (
+from kenning.openclaw_routing.classifier import classify_routing
+from kenning.openclaw_routing.intents import (
     ActiveWindowQueryIntent,
     RoutingIntentKind,
     SemanticClickIntent,
@@ -51,7 +51,7 @@ def test_active_window_query_classifies(utterance):
     [
         "what's on my screen?",  # SCREEN_CONTEXT_QUERY, broader
         "explain what I'm looking at",  # SCREEN_CONTEXT_QUERY
-        "hey ultron",  # CONVERSATIONAL
+        "hey kenning",  # CONVERSATIONAL
         "open Chrome",  # APP_LAUNCH
     ],
 )
@@ -212,11 +212,11 @@ def test_yes_with_content_does_not_match_confirmation():
 
 
 def test_handle_active_window_query_returns_title(monkeypatch):
-    from ultron.coding.voice import CapabilityVoiceController
-    from ultron.openclaw_routing.intents import RoutingIntent
+    from kenning.coding.voice import CapabilityVoiceController
+    from kenning.openclaw_routing.intents import RoutingIntent
 
     monkeypatch.setattr(
-        "ultron.desktop.windows.get_active_window_title",
+        "kenning.desktop.windows.get_active_window_title",
         lambda: "Visual Studio Code",
     )
     controller = CapabilityVoiceController(
@@ -238,11 +238,11 @@ def test_handle_active_window_query_returns_title(monkeypatch):
 
 
 def test_handle_active_window_query_empty_title(monkeypatch):
-    from ultron.coding.voice import CapabilityVoiceController
-    from ultron.openclaw_routing.intents import RoutingIntent
+    from kenning.coding.voice import CapabilityVoiceController
+    from kenning.openclaw_routing.intents import RoutingIntent
 
     monkeypatch.setattr(
-        "ultron.desktop.windows.get_active_window_title",
+        "kenning.desktop.windows.get_active_window_title",
         lambda: None,
     )
     controller = CapabilityVoiceController(
@@ -262,14 +262,14 @@ def test_handle_active_window_query_empty_title(monkeypatch):
 
 
 def test_handle_active_window_query_exception(monkeypatch):
-    from ultron.coding.voice import CapabilityVoiceController
-    from ultron.openclaw_routing.intents import RoutingIntent
+    from kenning.coding.voice import CapabilityVoiceController
+    from kenning.openclaw_routing.intents import RoutingIntent
 
     def _boom():
         raise RuntimeError("pywin32 broke")
 
     monkeypatch.setattr(
-        "ultron.desktop.windows.get_active_window_title", _boom,
+        "kenning.desktop.windows.get_active_window_title", _boom,
     )
     controller = CapabilityVoiceController(
         runner=MagicMock(),
@@ -288,9 +288,9 @@ def test_handle_active_window_query_exception(monkeypatch):
 
 
 def test_handle_semantic_click_success(monkeypatch):
-    from ultron.coding.voice import CapabilityVoiceController
-    from ultron.desktop.element_click import ClickResult
-    from ultron.openclaw_routing.intents import RoutingIntent
+    from kenning.coding.voice import CapabilityVoiceController
+    from kenning.desktop.element_click import ClickResult
+    from kenning.openclaw_routing.intents import RoutingIntent
 
     fake_result = ClickResult(
         success=True,
@@ -303,7 +303,7 @@ def test_handle_semantic_click_success(monkeypatch):
         is_exact=True,
     )
     monkeypatch.setattr(
-        "ultron.desktop.element_click.click_element_by_name",
+        "kenning.desktop.element_click.click_element_by_name",
         lambda **kw: fake_result,
     )
     controller = CapabilityVoiceController(
@@ -328,9 +328,9 @@ def test_handle_semantic_click_success(monkeypatch):
 
 
 def test_handle_semantic_click_not_found(monkeypatch):
-    from ultron.coding.voice import CapabilityVoiceController
-    from ultron.desktop.element_click import ClickResult
-    from ultron.openclaw_routing.intents import RoutingIntent
+    from kenning.coding.voice import CapabilityVoiceController
+    from kenning.desktop.element_click import ClickResult
+    from kenning.openclaw_routing.intents import RoutingIntent
 
     fake_result = ClickResult(
         success=False,
@@ -344,7 +344,7 @@ def test_handle_semantic_click_not_found(monkeypatch):
         error="no candidate found",
     )
     monkeypatch.setattr(
-        "ultron.desktop.element_click.click_element_by_name",
+        "kenning.desktop.element_click.click_element_by_name",
         lambda **kw: fake_result,
     )
     controller = CapabilityVoiceController(
@@ -367,9 +367,9 @@ def test_handle_semantic_click_not_found(monkeypatch):
 
 
 def test_handle_semantic_click_safety_blocked(monkeypatch):
-    from ultron.coding.voice import CapabilityVoiceController
-    from ultron.desktop.element_click import ClickResult
-    from ultron.openclaw_routing.intents import RoutingIntent
+    from kenning.coding.voice import CapabilityVoiceController
+    from kenning.desktop.element_click import ClickResult
+    from kenning.openclaw_routing.intents import RoutingIntent
 
     fake_result = ClickResult(
         success=False,
@@ -383,7 +383,7 @@ def test_handle_semantic_click_safety_blocked(monkeypatch):
         error="safety: Cap-3 explicit intent missing",
     )
     monkeypatch.setattr(
-        "ultron.desktop.element_click.click_element_by_name",
+        "kenning.desktop.element_click.click_element_by_name",
         lambda **kw: fake_result,
     )
     controller = CapabilityVoiceController(
@@ -406,8 +406,8 @@ def test_handle_semantic_click_safety_blocked(monkeypatch):
 
 
 def test_handle_semantic_click_missing_name():
-    from ultron.coding.voice import CapabilityVoiceController
-    from ultron.openclaw_routing.intents import RoutingIntent
+    from kenning.coding.voice import CapabilityVoiceController
+    from kenning.openclaw_routing.intents import RoutingIntent
 
     controller = CapabilityVoiceController(
         runner=MagicMock(),
@@ -426,8 +426,8 @@ def test_handle_semantic_click_missing_name():
 
 
 def test_handle_window_close_confirmation_yes():
-    from ultron.coding.voice import CapabilityVoiceController
-    from ultron.openclaw_routing.intents import RoutingIntent
+    from kenning.coding.voice import CapabilityVoiceController
+    from kenning.openclaw_routing.intents import RoutingIntent
 
     controller = CapabilityVoiceController(
         runner=MagicMock(),
@@ -449,8 +449,8 @@ def test_handle_window_close_confirmation_yes():
 
 
 def test_handle_window_close_confirmation_no():
-    from ultron.coding.voice import CapabilityVoiceController
-    from ultron.openclaw_routing.intents import RoutingIntent
+    from kenning.coding.voice import CapabilityVoiceController
+    from kenning.openclaw_routing.intents import RoutingIntent
 
     controller = CapabilityVoiceController(
         runner=MagicMock(),
@@ -471,11 +471,11 @@ def test_handle_window_close_confirmation_no():
 
 
 def test_capability_dispatch_routes_active_window_query(monkeypatch):
-    from ultron.coding.voice import CapabilityVoiceController
-    from ultron.openclaw_routing.intents import RoutingIntent
+    from kenning.coding.voice import CapabilityVoiceController
+    from kenning.openclaw_routing.intents import RoutingIntent
 
     monkeypatch.setattr(
-        "ultron.desktop.windows.get_active_window_title",
+        "kenning.desktop.windows.get_active_window_title",
         lambda: "Chrome",
     )
     controller = CapabilityVoiceController(
@@ -498,9 +498,9 @@ def test_capability_dispatch_routes_active_window_query(monkeypatch):
 
 
 def test_capability_dispatch_routes_semantic_click(monkeypatch):
-    from ultron.coding.voice import CapabilityVoiceController
-    from ultron.desktop.element_click import ClickResult
-    from ultron.openclaw_routing.intents import RoutingIntent
+    from kenning.coding.voice import CapabilityVoiceController
+    from kenning.desktop.element_click import ClickResult
+    from kenning.openclaw_routing.intents import RoutingIntent
 
     fake = ClickResult(
         success=True, element_name="OK", window_title="",
@@ -508,7 +508,7 @@ def test_capability_dispatch_routes_semantic_click(monkeypatch):
         candidates=1, is_exact=True,
     )
     monkeypatch.setattr(
-        "ultron.desktop.element_click.click_element_by_name",
+        "kenning.desktop.element_click.click_element_by_name",
         lambda **kw: fake,
     )
     controller = CapabilityVoiceController(

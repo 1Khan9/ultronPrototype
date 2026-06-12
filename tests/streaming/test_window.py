@@ -1,4 +1,4 @@
-"""Tests for ultron.streaming.window."""
+"""Tests for kenning.streaming.window."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.streaming import window as w
+from kenning.streaming import window as w
 
 
 class _Clock:

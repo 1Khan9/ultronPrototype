@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from ultron.install.lockfile import (
+from kenning.install.lockfile import (
     LockfileEntry,
     read_lockfile,
     write_lockfile,
     Lockfile,
 )
-from ultron.install.pin import (
-    ULTRON_DEFAULT_PINS,
+from kenning.install.pin import (
+    KENNING_DEFAULT_PINS,
     UnpinNotPinnedError,
     is_default_pin,
     is_pinned,
@@ -204,7 +204,7 @@ def test_refuses_update_pinned(tmp_path: Path) -> None:
 
 
 def test_is_default_pin_known() -> None:
-    assert is_default_pin("voicepack:ultron")
+    assert is_default_pin("voicepack:kenning")
     assert is_default_pin("llm:qwen3.5-4b")
 
 
@@ -214,8 +214,8 @@ def test_is_default_pin_unknown() -> None:
 
 def test_materialise_default_pins_creates_all(tmp_path: Path) -> None:
     results = materialise_default_pins(tmp_path)
-    assert len(results) == len(ULTRON_DEFAULT_PINS)
-    for slug, reason in ULTRON_DEFAULT_PINS.items():
+    assert len(results) == len(KENNING_DEFAULT_PINS)
+    for slug, reason in KENNING_DEFAULT_PINS.items():
         pinned, observed = is_pinned(tmp_path, slug)
         assert pinned is True
         assert observed == reason

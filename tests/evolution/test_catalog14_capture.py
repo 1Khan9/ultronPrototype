@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.evolution.models import (
+from kenning.evolution.models import (
     CommandFailureSignal,
     ComplexityHint,
     CorrectionCapsule,
@@ -129,7 +129,7 @@ def test_invalid_enum_values_raise():
 
 
 def test_evolution_config_catalog14_defaults_on():
-    from ultron.config import EvolutionConfig
+    from kenning.config import EvolutionConfig
 
     cfg = EvolutionConfig()
     assert cfg.correction_detection_enabled is True
@@ -143,7 +143,7 @@ def test_evolution_config_catalog14_defaults_on():
 def test_evolution_config_bounds_enforced():
     from pydantic import ValidationError
 
-    from ultron.config import EvolutionConfig
+    from kenning.config import EvolutionConfig
 
     with pytest.raises(ValidationError):
         EvolutionConfig(recurrence_threshold=1)  # ge=2

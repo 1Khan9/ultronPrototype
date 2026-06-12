@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, r"C:\STC\ultronPrototype")
 sys.path.insert(0, r"C:\STC\ultronPrototype\src")
 
-from ultron.memory import ConversationMemory, HybridEmbedder
+from kenning.memory import ConversationMemory, HybridEmbedder
 
 emb = HybridEmbedder(eager=True)
 print(f"HybridEmbedder ready (dim={emb.dim})")

@@ -4,7 +4,7 @@ Backed by pywin32. Per-monitor DPI awareness is left to whatever the
 calling process declared; on this codebase the orchestrator hasn't
 called ``SetProcessDpiAwareness`` explicitly, so window coordinates
 land in legacy virtual-screen space (consistent with what
-:mod:`ultron.desktop.monitors` returns).
+:mod:`kenning.desktop.monitors` returns).
 
 Fail-open at every layer: pywin32 exceptions degrade to a
 :class:`PlacementResult` with ``success=False`` rather than raising.
@@ -18,8 +18,8 @@ from typing import Optional
 import win32con  # type: ignore[import]
 import win32gui  # type: ignore[import]
 
-from ultron.desktop.monitors import Monitor
-from ultron.utils.logging import get_logger
+from kenning.desktop.monitors import Monitor
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.placement")
 
@@ -81,7 +81,7 @@ def move_window_to_monitor(
         that the user-perceived result is guaranteed.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('window_move')
     if fullscreen and maximize:
         return PlacementResult(
@@ -143,7 +143,7 @@ def move_window_to_monitor(
 def maximize_window(hwnd: int) -> PlacementResult:
     """Maximize on whichever monitor the window currently sits."""
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('window_move')
     try:
         win32gui.ShowWindow(hwnd, win32con.SW_MAXIMIZE)
@@ -155,7 +155,7 @@ def maximize_window(hwnd: int) -> PlacementResult:
 def minimize_window(hwnd: int) -> PlacementResult:
     """Minimize the window to the taskbar."""
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('window_move')
     try:
         win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
@@ -167,7 +167,7 @@ def minimize_window(hwnd: int) -> PlacementResult:
 def restore_window(hwnd: int) -> PlacementResult:
     """Restore (un-minimize / un-maximize) the window."""
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('window_move')
     try:
         win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
@@ -187,7 +187,7 @@ def focus_window(hwnd: int) -> PlacementResult:
     call, not the user-perceived outcome.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('window_focus')
     _restore_if_minimized(hwnd)
     try:

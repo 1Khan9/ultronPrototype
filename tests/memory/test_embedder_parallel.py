@@ -15,7 +15,7 @@ from typing import List
 import numpy as np
 import pytest
 
-from ultron.memory.embedder import HybridEmbedder, _SparseVec
+from kenning.memory.embedder import HybridEmbedder, _SparseVec
 
 
 def _build_stubbed_embedder(

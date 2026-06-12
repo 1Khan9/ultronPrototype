@@ -1,4 +1,4 @@
-"""Channel abstraction for Ultron's voice pipeline (Track 6, 2026-05-19).
+"""Channel abstraction for Kenning's voice pipeline (Track 6, 2026-05-19).
 
 The orchestrator originally assumed one audio capture path (the
 hardware mic the user speaks into) and one output path (the user's
@@ -6,11 +6,11 @@ headphones). The Valorant content workflow needs a second pair:
 
 * **User channel** -- hardware mic (Focusrite) -> headphones output.
   The existing pipeline. Used for personal interactions; addressing
-  classifier decides "did the user just speak to Ultron?".
+  classifier decides "did the user just speak to Kenning?".
 
 * **Teammate channel** -- Voicemeeter loopback of game voice ->
   Voicemeeter VAIO that feeds Valorant's mic input. Used when
-  teammates address Ultron directly ("yo Ultron, push B"). The
+  teammates address Kenning directly ("yo Kenning, push B"). The
   addressing classifier runs on teammate utterances with a tighter
   confidence gate.
 
@@ -47,7 +47,7 @@ class Channel(str, enum.Enum):
 
     TEAMMATE = "teammate"
     """Voicemeeter loopback of game-voice. Teammate utterances enter
-    here; Ultron's responses on this channel go OUT through the
+    here; Kenning's responses on this channel go OUT through the
     virtual mic feeding Valorant."""
 
     SYSTEM = "system"

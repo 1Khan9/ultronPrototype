@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from ultron.pipeline.orchestrator import Orchestrator
+from kenning.pipeline.orchestrator import Orchestrator
 
 
 def _orch_with_runner(runner):

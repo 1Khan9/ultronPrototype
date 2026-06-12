@@ -19,9 +19,9 @@ A canonical client-side primitive that:
    300 ms, cap 5 s, jitter 0-300 ms, mirroring the upstream client.
 
 Generalised beyond web-search providers: the same parser + state +
-backoff shape applies to any HTTP-talking subsystem in ultron
+backoff shape applies to any HTTP-talking subsystem in kenning
 (MCP transport, future remote-LLM cascade, Jina reader, OpenClaw
-gateway), so this lives under :mod:`ultron.web_search` for
+gateway), so this lives under :mod:`kenning.web_search` for
 historical wiring proximity but its public API is provider-agnostic.
 """
 

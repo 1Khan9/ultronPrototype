@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.intent.command_registry`."""
+"""Tests for :mod:`kenning.intent.command_registry`."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.intent.command_registry import (
+from kenning.intent.command_registry import (
     Command,
     CommandRegistry,
     DEFAULT_REGISTRY,

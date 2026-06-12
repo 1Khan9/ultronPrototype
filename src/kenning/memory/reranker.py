@@ -1,6 +1,6 @@
 """Cross-encoder reranker for memory retrieval (frontier item 2).
 
-Sits between :class:`~ultron.memory.qdrant_store.ConversationMemory`'s
+Sits between :class:`~kenning.memory.qdrant_store.ConversationMemory`'s
 dense + sparse hybrid retrieval and the final top-k selection. The
 hybrid retriever pulls a wider candidate set (e.g., top-20); the
 reranker scores each ``(query, candidate.content)`` pair directly
@@ -39,12 +39,12 @@ import time
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, TYPE_CHECKING
 
-from ultron.config import get_config
-from ultron.utils.logging import get_logger
+from kenning.config import get_config
+from kenning.utils.logging import get_logger
 
 
 if TYPE_CHECKING:
-    from ultron.memory.qdrant_store import MemoryTurn
+    from kenning.memory.qdrant_store import MemoryTurn
 
 logger = get_logger("memory.reranker")
 

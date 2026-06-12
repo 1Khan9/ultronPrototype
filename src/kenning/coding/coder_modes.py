@@ -5,7 +5,7 @@ Pattern lifted in spirit (not in source) from aider's
 
 Catalog T26 is "refactor concept, not a discrete component" — aider
 ships a dozen ``XxxCoder`` classes each with its own prompt template
-+ edit format. Ultron's existing architecture has ONE coding-task
++ edit format. Kenning's existing architecture has ONE coding-task
 runner; refactoring it into a coder-per-mode hierarchy would be
 disruptive. Instead, this module ships a lightweight *descriptor
 registry*: each mode is a frozen dataclass listing its prompt-template
@@ -44,7 +44,7 @@ class EditFormat(str, Enum):
     WHOLE_FILE = "whole_file"
     # Unified diff (udiff).
     UDIFF = "udiff"
-    # V4A patch format (see ultron.coding.patch_v4a).
+    # V4A patch format (see kenning.coding.patch_v4a).
     PATCH_V4A = "patch_v4a"
     # Editor format dispatched FROM an architect plan (the editor's
     # natural format is one of the above; architect mode itself
@@ -78,7 +78,7 @@ class CoderMode:
     is_supervised: bool = False
 
 
-# Catalog T26 mode catalogue, adapted for ultron's terminology.
+# Catalog T26 mode catalogue, adapted for kenning's terminology.
 # Each entry is a single source of truth so the supervisor /
 # dispatcher / help command can consult it without re-deriving.
 CODER_MODES: Dict[str, CoderMode] = {
@@ -134,7 +134,7 @@ CODER_MODES: Dict[str, CoderMode] = {
     ),
     "help": CoderMode(
         name="help",
-        description="Answer questions about Ultron itself.",
+        description="Answer questions about Kenning itself.",
         prompt_template="help",
         edit_format=EditFormat.NONE,
         produces_edits=False,

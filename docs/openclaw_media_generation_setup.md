@@ -6,13 +6,13 @@ generation provider plugins to a **local** image / video / music
 model and delivers the result via Telegram for voice queries or
 inline for Telegram queries.
 
-The Ultron-side wiring is fully in place after Phase 12. Live media
+The Kenning-side wiring is fully in place after Phase 12. Live media
 generation requires a local image-generation backend such as
 ComfyUI to be running on the same machine.
 
 ## Project policy: only AI coding agent is paid
 
-Ultron's stack is local-or-free everywhere except the supervised
+Kenning's stack is local-or-free everywhere except the supervised
 coding subsystem (AI coding agent, paid via the Anthropic API). That
 constraint applies to media generation too:
 
@@ -42,10 +42,10 @@ with the user before adding any paid integration.
 ## ComfyUI install + integration
 
 ComfyUI is the canonical local image-generation backend. It uses
-the GPU which competes with Qwen for VRAM — Ultron's 4B preset
+the GPU which competes with Qwen for VRAM — Kenning's 4B preset
 peaks at 7913 MB on an 11.5 GB hard cap, so SDXL is too tight.
 **Stable Diffusion 1.5 with FP16 + xformers fits**; SDXL or larger
-needs you to swap Ultron to a smaller preset first.
+needs you to swap Kenning to a smaller preset first.
 
 ### 1. Install ComfyUI
 
@@ -54,7 +54,7 @@ https://github.com/comfyanonymous/ComfyUI. On Windows + your RTX
 4070 Ti, the recommended install is:
 
 ```powershell
-# In a directory of your choosing — NOT inside the Ultron repo
+# In a directory of your choosing — NOT inside the Kenning repo
 git clone https://github.com/comfyanonymous/ComfyUI.git
 cd ComfyUI
 python -m venv .venv
@@ -95,7 +95,7 @@ Update `~/.openclaw/openclaw.json`:
         // Default workflow ComfyUI runs when an image_generate
         // tool call arrives. Generate this from ComfyUI's UI by
         // designing a workflow then "Save (API Format)".
-        defaultWorkflow: "ultron-default.json"
+        defaultWorkflow: "kenning-default.json"
       }
     }
   }
@@ -118,7 +118,7 @@ install, install it via:
 
 Restart Gateway after config changes.
 
-### 4. Update Ultron's preset for the provider name
+### 4. Update Kenning's preset for the provider name
 
 Set `default_image_provider: "comfyui"` in `config.yaml` so the
 dispatcher passes the right provider slug:
@@ -132,26 +132,26 @@ media_generation:
 
 ## VRAM coordination — critical
 
-ComfyUI + SD 1.5 in fp16 with xformers takes ~3-4 GB VRAM. Ultron's
+ComfyUI + SD 1.5 in fp16 with xformers takes ~3-4 GB VRAM. Kenning's
 4B preset peak is 7913 MB. Combined: ~11 GB which is right at the
 hard cap. Realistic options:
 
-### Option A: Run ComfyUI only when Ultron is idle
+### Option A: Run ComfyUI only when Kenning is idle
 
 Use OpenClaw's heartbeat `skipWhenBusy: true` to avoid concurrent
-agent turns + image generation. Ultron's voice path stays
+agent turns + image generation. Kenning's voice path stays
 in-process; if you trigger image generation while a voice query is
 mid-flight, Qwen will queue at llama-cpp-server and the image gen
 will queue at ComfyUI. Both eventually complete, but the user
 might hear ~20 s of silence.
 
-### Option B: Swap Ultron to a smaller preset before generating
+### Option B: Swap Kenning to a smaller preset before generating
 
 ```
-"Ultron, switch to the 4B" → currently active
-"Ultron, generate an image of an astronaut on Mars"
+"Kenning, switch to the 4B" → currently active
+"Kenning, generate an image of an astronaut on Mars"
   → If VRAM tight: voice ack mentions waiting for Qwen to unload
-"Ultron, switch to the 9B"  ← only if you want 9B back later
+"Kenning, switch to the 9B"  ← only if you want 9B back later
 ```
 
 ### Option C: Skip image generation on this hardware
@@ -222,7 +222,7 @@ the orchestrator speaks via the normal completion narration loop.
 
 Local **video** and **music** generation are open research areas
 with much fewer turnkey local options than image gen. As of this
-prototype, Ultron's `video_generate` and `music_generate` tool
+prototype, Kenning's `video_generate` and `music_generate` tool
 slugs exist in the dispatcher but no canonical local provider is
 recommended. Options when you actually need these:
 
@@ -233,18 +233,18 @@ recommended. Options when you actually need these:
 
 Configure these in `models.providers.<slug>` once you've installed
 the local backend — the dispatcher already routes based on the
-intent's medium, no Ultron-side code change needed.
+intent's medium, no Kenning-side code change needed.
 
 ## Troubleshooting
 
 - **"I couldn't generate that image just now."** — provider returned
   an error. Common causes: ComfyUI not running, model checkpoint
-  missing, VRAM OOM (Ultron's Qwen + ComfyUI competing for the
+  missing, VRAM OOM (Kenning's Qwen + ComfyUI competing for the
   hard cap).
 
 - **"I'd generate that for you, but the gateway isn't connected
   yet."** — bridge not wired or `media_generation.enabled: false`.
-  Check `openclaw.enabled`, restart Ultron.
+  Check `openclaw.enabled`, restart Kenning.
 
 - **VRAM spikes when generating** — ComfyUI competes with Qwen.
   See "VRAM coordination" above. The block-and-revise validator

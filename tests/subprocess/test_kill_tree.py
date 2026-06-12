@@ -16,7 +16,7 @@ from typing import Optional
 
 import pytest
 
-from ultron.subprocess import kill_tree
+from kenning.subprocess import kill_tree
 
 
 # ----------------------------------------------------------------------

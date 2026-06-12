@@ -1,9 +1,9 @@
 """Strict voice-intent matcher for explicit deep-memory recall.
 
-Companion to :func:`ultron.web_search.deep_research.match_deep_research`,
+Companion to :func:`kenning.web_search.deep_research.match_deep_research`,
 but for the conversation-memory store instead of the web. It gates the
 orchestrator's ``_maybe_handle_deep_recall`` short-circuit, which runs a
-bounded :class:`ultron.agent_loop.deep_loops.DeepMemoryLoop` (iterative
+bounded :class:`kenning.agent_loop.deep_loops.DeepMemoryLoop` (iterative
 RAG: decompose -> retrieve -> gap-fill -> retrieve, capped by ``max_steps``)
 and synthesises an answer from the recalled turns.
 

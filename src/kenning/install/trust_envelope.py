@@ -9,7 +9,7 @@ consult before materialising bytes onto disk.
 
 The envelope is generalised beyond install-time scanning into a
 universal "should I use this subsystem right now?" decision for any
-ultron subsystem whose health is multi-source: install (the original
+kenning subsystem whose health is multi-source: install (the original
 catalog use case), web-search providers, MCP servers, memory backend,
 VLM / STT / TTS engines, and gaming-mode lifecycle transitions.
 
@@ -18,7 +18,7 @@ Three architectural pieces:
 1. **Shape (T1).** A frozen dataclass :class:`TrustEnvelope` carrying
    ``package``, ``release``, ``trust`` blocks. The ``trust`` block has
    six fields: ``scan_status`` (re-used :class:`ModerationVerdict`
-   from :mod:`ultron.install.reason_codes`), ``moderation_state``
+   from :mod:`kenning.install.reason_codes`), ``moderation_state``
    (optional :class:`ModerationState` enum -- approved / quarantined
    / revoked), ``blocked_from_download`` (the derived install gate),
    ``reasons`` (tuple of stable prefix-namespaced strings), ``pending``
@@ -74,7 +74,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Callable, Iterable, Mapping, Optional, Sequence
 
-from ultron.install.reason_codes import (
+from kenning.install.reason_codes import (
     MALICIOUS_CODES,
     ModerationVerdict,
     StatusInputs,
@@ -115,7 +115,7 @@ class ArtifactKind(str, Enum):
     """Discriminator for the source-bytes shape of a release.
 
     Extends the upstream npm-pack / legacy-zip dichotomy with the
-    ultron-specific shapes the marketplace primitive already supports
+    kenning-specific shapes the marketplace primitive already supports
     (LOCAL_PATH for development, TARBALL_URL for arbitrary HTTP fetch,
     GIT_REF for git clone-by-ref, INLINE_MARKDOWN for trigger-loaded
     skills shipped as bare .md files).
@@ -135,8 +135,8 @@ class PackageFamily(str, Enum):
     CODE_PLUGIN = "code-plugin"
     BUNDLE_PLUGIN = "bundle-plugin"
     SKILL = "skill"
-    VOICEPACK = "voicepack"  # ultron extension
-    MODEL = "model"          # ultron extension (LLM / VLM weights)
+    VOICEPACK = "voicepack"  # kenning extension
+    MODEL = "model"          # kenning extension (LLM / VLM weights)
 
 
 # Reason-code prefixes (API contracts; preserved verbatim from
@@ -235,7 +235,7 @@ class TrustSignal:
             on it".
         engine_version: scan-engine version that produced the
             verdict (mirrors :data:`MODERATION_ENGINE_VERSION` from
-            :mod:`ultron.install.reason_codes`). Optional for
+            :mod:`kenning.install.reason_codes`). Optional for
             non-scanner sources.
         evaluated_at: timestamp the envelope was assembled.
     """
@@ -674,7 +674,7 @@ def make_local_path_envelope(
     this helper composes :func:`build_trust_envelope` with the
     pieces a local-path consumer typically has on hand (the scan
     findings + an optional fingerprint for the release identity).
-    Used by :mod:`ultron.skills.marketplace` when building install
+    Used by :mod:`kenning.skills.marketplace` when building install
     plans from PATH / GIT / GIT_SUBDIR sources.
     """
     inputs = ScanInputs(

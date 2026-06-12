@@ -26,7 +26,7 @@ Surface:
 * :func:`click_dialog_button` -- find the first enabled Button with a
   matching name (case-insensitive substring by default; ``exact=True``
   switches to equality) and invoke ``click_input()``. Runs through
-  :func:`ultron.safety.validator.ToolCallValidator.check` with
+  :func:`kenning.safety.validator.ToolCallValidator.check` with
   ``tool_name="desktop.dialog.click_button"`` so Cap-3 verb-click
   rules + Cap-4 security-window guards + the explicit-intent matcher
   apply.
@@ -70,8 +70,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from ultron.desktop.windows import WindowInfo, enumerate_windows
-from ultron.utils.logging import get_logger
+from kenning.desktop.windows import WindowInfo, enumerate_windows
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.dialog_control")
 
@@ -127,7 +127,7 @@ DISMISS_BUTTONS: tuple[str, ...] = (
 )
 
 # Polling defaults match the rest of the wait-primitive family in
-# :mod:`ultron.desktop.uia` and :mod:`ultron.desktop.windows`.
+# :mod:`kenning.desktop.uia` and :mod:`kenning.desktop.windows`.
 DEFAULT_WAIT_TIMEOUT_S: float = 30.0
 DEFAULT_WAIT_INTERVAL_S: float = 0.5
 
@@ -321,7 +321,7 @@ def find_dialogs(
         raised.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('dialog_read')
     try:
         windows = enumerate_windows(
@@ -388,7 +388,7 @@ def read_dialog(
         unavailable or the connect fails.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('dialog_read')
     hwnd = _coerce_hwnd(source)
     spec = _connect_to_window(hwnd)
@@ -527,7 +527,7 @@ def _validate_dialog_action(
 ) -> object:
     """Run the runtime tool-call validator against a write action."""
     try:
-        from ultron.safety.validator import RuleContext, get_validator
+        from kenning.safety.validator import RuleContext, get_validator
 
         ctx = RuleContext(
             tool_name=f"desktop.dialog.{action}",
@@ -542,7 +542,7 @@ def _validate_dialog_action(
         return get_validator().check(ctx)
     except Exception as exc:  # noqa: BLE001
         logger.debug("dialog validator skipped: %s", exc)
-        from ultron.safety.validator import ValidatorVerdict, Verdict
+        from kenning.safety.validator import ValidatorVerdict, Verdict
         return ValidatorVerdict(
             verdict=Verdict.ALLOW, reason="validator unavailable",
         )
@@ -603,7 +603,7 @@ def click_dialog_button(
             for the action.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('dialog_click')
     name = (button_name or "").strip()
     if not name:
@@ -701,7 +701,7 @@ def type_into_dialog_field(
         user_text: forwarded to the safety validator.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('dialog_type')
     if text is None:
         return DialogActionResult(
@@ -821,7 +821,7 @@ def dismiss_dialog(
             "Apply" or "Skip" button that should be preferred.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('dialog_click')
     hwnd = _coerce_hwnd(source)
     spec = _connect_to_window(hwnd)
@@ -918,7 +918,7 @@ def wait_for_dialog(
         The first matching :class:`DialogInfo`, or None on timeout.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('dialog_read')
     if timeout_s <= 0:
         return None

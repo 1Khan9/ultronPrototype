@@ -49,7 +49,7 @@ gaming_mode:
   log_path: "logs/gaming_mode.jsonl"
 ```
 
-After flipping `enabled: true`, restart Ultron. The orchestrator builds
+After flipping `enabled: true`, restart Kenning. The orchestrator builds
 a `GamingModeManager` at startup that uses the existing OpenClaw bridge
 client to issue plugin enable/disable calls.
 
@@ -57,13 +57,13 @@ client to issue plugin enable/disable calls.
 
 | Phrase | Action |
 |---|---|
-| `"Ultron, gaming mode"` | engage |
-| `"Ultron, gaming mode on"` | engage |
+| `"Kenning, gaming mode"` | engage |
+| `"Kenning, gaming mode on"` | engage |
 | `"I'm about to play Valorant"` | engage |
 | `"I'm gonna play CS2"` | engage |
-| `"Ultron, gaming mode off"` | disengage |
+| `"Kenning, gaming mode off"` | disengage |
 | `"I'm done playing"` | disengage |
-| `"Ultron, full control restored"` | disengage |
+| `"Kenning, full control restored"` | disengage |
 | `"Are we in gaming mode?"` | status |
 
 Engage voice response: `"Shutting down desktop control. Have fun."`.

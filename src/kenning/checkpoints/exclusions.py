@@ -8,7 +8,7 @@ Two layers of exclusion compose into the shadow repo's ``.gitignore``:
    text artifacts the user might want to rewind.
 
 2. :data:`VOICE_BASELINE_PROTECTED_PATTERNS` — the LOAD-BEARING
-   ultron-specific list: voice-quality-locked files (SOUL.md, RVC
+   kenning-specific list: voice-quality-locked files (SOUL.md, RVC
    weights, Piper voice, Kokoro voicepack, LLM model file). These
    MUST be excluded so a checkpoint restore cannot accidentally
    roll the voicepack to a stale snapshot (catastrophic per the
@@ -86,7 +86,7 @@ DEFAULT_CHECKPOINT_EXCLUSIONS: tuple[str, ...] = (
     "*.onnx",
     "*.joblib",
     "*.pkl",
-    # Runtime data Ultron mutates outside the checkpointed workspace.
+    # Runtime data Kenning mutates outside the checkpointed workspace.
     "logs/",
     "data/qdrant/",
     "data/checkpoints/",
@@ -109,15 +109,15 @@ VOICE_BASELINE_PROTECTED_PATTERNS: tuple[str, ...] = (
     # The persona + voice quality files.
     "SOUL.md",
     "IDENTITY.md",
-    "ultronVoiceAudio/Ultron_vocals_mono_v1.wav",
-    "ultronVoiceAudio/Ultron_vocals_mono_v1.*",
+    "kenningVoiceAudio/Kenning_vocals_mono_v1.wav",
+    "kenningVoiceAudio/Kenning_vocals_mono_v1.*",
     # Post-disk-cleaning home of the reference WAV (moved 2026-06-11).
-    "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav",
-    "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.*",
+    "kenningVoiceAudio/kokoro training audio/Kenning_vocals_mono_v1.wav",
+    "kenningVoiceAudio/kokoro training audio/Kenning_vocals_mono_v1.*",
     # Piper baseline voice + RVC support files.
     "models/piper/**",
     "models/rvc/**",
-    "ultron_james_spader_mcu_6941/**",
+    "kenning_rvc_voice/**",
     # Kokoro fine-tune voicepack + fine-tune weights.
     "models/kokoro/**",
     # LLM GGUFs (swapping is via preset only, never via checkpoint).

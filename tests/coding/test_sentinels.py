@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ultron.coding import sentinels as S
+from kenning.coding import sentinels as S
 
 
 # ---------------------------------------------------------------------------
@@ -36,10 +36,10 @@ def test_pair_and_single_sentinels_do_not_overlap():
 
 def test_known_sentinels_present():
     # Spot-check the names the rest of the codebase imports.
-    assert S.ULTRON_SUBMIT in S.PAIR_SENTINELS
-    assert S.ULTRON_SUBMIT_DIFF in S.PAIR_SENTINELS
-    assert S.ULTRON_EXIT_FORFEIT in S.SINGLE_SENTINELS
-    assert S.ULTRON_LINT_REVERT in S.SINGLE_SENTINELS
+    assert S.KENNING_SUBMIT in S.PAIR_SENTINELS
+    assert S.KENNING_SUBMIT_DIFF in S.PAIR_SENTINELS
+    assert S.KENNING_EXIT_FORFEIT in S.SINGLE_SENTINELS
+    assert S.KENNING_LINT_REVERT in S.SINGLE_SENTINELS
 
 
 # ---------------------------------------------------------------------------
@@ -58,46 +58,46 @@ def test_observation_scan_no_match():
 
 
 def test_observation_scan_pair_marker_with_payload():
-    text = f"prefix {S.ULTRON_SUBMIT}diff body here{S.ULTRON_SUBMIT} suffix"
+    text = f"prefix {S.KENNING_SUBMIT}diff body here{S.KENNING_SUBMIT} suffix"
     matches = S.observation_scan(text)
     assert len(matches) == 1
     m = matches[0]
-    assert m.sentinel == S.ULTRON_SUBMIT
+    assert m.sentinel == S.KENNING_SUBMIT
     assert m.payload == "diff body here"
-    assert text[m.start:m.end].startswith(S.ULTRON_SUBMIT)
-    assert text[m.start:m.end].endswith(S.ULTRON_SUBMIT)
+    assert text[m.start:m.end].startswith(S.KENNING_SUBMIT)
+    assert text[m.start:m.end].endswith(S.KENNING_SUBMIT)
 
 
 def test_observation_scan_unterminated_pair_marker_treated_as_signal():
-    text = f"saw {S.ULTRON_TEST_SWEEP_PASS} but no close"
+    text = f"saw {S.KENNING_TEST_SWEEP_PASS} but no close"
     matches = S.observation_scan(text)
     assert len(matches) == 1
-    assert matches[0].sentinel == S.ULTRON_TEST_SWEEP_PASS
+    assert matches[0].sentinel == S.KENNING_TEST_SWEEP_PASS
     assert matches[0].payload == ""
 
 
 def test_observation_scan_single_fire_no_payload():
-    text = f"agent emitted {S.ULTRON_EXIT_FORFEIT} -- bail"
+    text = f"agent emitted {S.KENNING_EXIT_FORFEIT} -- bail"
     matches = S.observation_scan(text)
     assert len(matches) == 1
-    assert matches[0].sentinel == S.ULTRON_EXIT_FORFEIT
+    assert matches[0].sentinel == S.KENNING_EXIT_FORFEIT
     assert matches[0].payload is None
 
 
 def test_observation_scan_multiple_matches_in_order():
     text = (
         "first "
-        f"{S.ULTRON_LINT_REVERT}"
+        f"{S.KENNING_LINT_REVERT}"
         " then "
-        f"{S.ULTRON_EXIT_FORFEIT}"
+        f"{S.KENNING_EXIT_FORFEIT}"
         " plus "
-        f"{S.ULTRON_TEST_SWEEP_PASS}clean{S.ULTRON_TEST_SWEEP_PASS}"
+        f"{S.KENNING_TEST_SWEEP_PASS}clean{S.KENNING_TEST_SWEEP_PASS}"
     )
     matches = S.observation_scan(text)
     assert [m.sentinel for m in matches] == [
-        S.ULTRON_LINT_REVERT,
-        S.ULTRON_EXIT_FORFEIT,
-        S.ULTRON_TEST_SWEEP_PASS,
+        S.KENNING_LINT_REVERT,
+        S.KENNING_EXIT_FORFEIT,
+        S.KENNING_TEST_SWEEP_PASS,
     ]
     assert matches[-1].payload == "clean"
 
@@ -107,15 +107,15 @@ def test_observation_scan_pair_marker_preferred_over_single_at_same_pos():
     # same start as a longer pair marker; pair should win because it's
     # longer (length-ordered preference).
     payload = "diff"
-    text = f"{S.ULTRON_SUBMIT_DIFF}{payload}{S.ULTRON_SUBMIT_DIFF}"
+    text = f"{S.KENNING_SUBMIT_DIFF}{payload}{S.KENNING_SUBMIT_DIFF}"
     matches = S.observation_scan(text)
     assert len(matches) == 1
-    assert matches[0].sentinel == S.ULTRON_SUBMIT_DIFF
+    assert matches[0].sentinel == S.KENNING_SUBMIT_DIFF
     assert matches[0].payload == payload
 
 
 def test_observation_scan_pair_marker_empty_payload():
-    text = f"{S.ULTRON_TEST_SWEEP_PASS}{S.ULTRON_TEST_SWEEP_PASS}"
+    text = f"{S.KENNING_TEST_SWEEP_PASS}{S.KENNING_TEST_SWEEP_PASS}"
     matches = S.observation_scan(text)
     assert len(matches) == 1
     assert matches[0].payload == ""
@@ -123,16 +123,16 @@ def test_observation_scan_pair_marker_empty_payload():
 
 def test_observation_scan_payload_with_special_chars():
     payload = "diff with <html>tags</html> and \"quotes\" and {braces}"
-    text = f"{S.ULTRON_SUBMIT}{payload}{S.ULTRON_SUBMIT}"
+    text = f"{S.KENNING_SUBMIT}{payload}{S.KENNING_SUBMIT}"
     matches = S.observation_scan(text)
     assert matches[0].payload == payload
 
 
 def test_observation_scan_two_pair_payloads_in_sequence():
     text = (
-        f"{S.ULTRON_SUBMIT}first{S.ULTRON_SUBMIT}"
+        f"{S.KENNING_SUBMIT}first{S.KENNING_SUBMIT}"
         " gap "
-        f"{S.ULTRON_SUBMIT}second{S.ULTRON_SUBMIT}"
+        f"{S.KENNING_SUBMIT}second{S.KENNING_SUBMIT}"
     )
     matches = S.observation_scan(text)
     assert [m.payload for m in matches] == ["first", "second"]
@@ -164,21 +164,21 @@ def test_observation_scan_ignores_empty_sentinel_in_overrides():
 
 def test_first_match_returns_first_pair_marker():
     text = (
-        f"a{S.ULTRON_SUBMIT}one{S.ULTRON_SUBMIT}"
-        f"b{S.ULTRON_SUBMIT}two{S.ULTRON_SUBMIT}"
+        f"a{S.KENNING_SUBMIT}one{S.KENNING_SUBMIT}"
+        f"b{S.KENNING_SUBMIT}two{S.KENNING_SUBMIT}"
     )
-    m = S.first_match(text, sentinel=S.ULTRON_SUBMIT)
+    m = S.first_match(text, sentinel=S.KENNING_SUBMIT)
     assert m is not None
     assert m.payload == "one"
 
 
 def test_first_match_returns_none_when_missing():
-    assert S.first_match("clean output", sentinel=S.ULTRON_EXIT_FORFEIT) is None
+    assert S.first_match("clean output", sentinel=S.KENNING_EXIT_FORFEIT) is None
 
 
 def test_first_match_handles_single_sentinel():
-    text = f"some {S.ULTRON_EXIT_FORFEIT} text"
-    m = S.first_match(text, sentinel=S.ULTRON_EXIT_FORFEIT)
+    text = f"some {S.KENNING_EXIT_FORFEIT} text"
+    m = S.first_match(text, sentinel=S.KENNING_EXIT_FORFEIT)
     assert m is not None
     assert m.payload is None
 
@@ -201,20 +201,20 @@ def test_first_match_accepts_unknown_sentinel_as_single_fire():
 def test_strip_sentinels_removes_pair_marker_and_payload():
     text = (
         "before "
-        f"{S.ULTRON_SUBMIT_DIFF}---patch---{S.ULTRON_SUBMIT_DIFF}"
+        f"{S.KENNING_SUBMIT_DIFF}---patch---{S.KENNING_SUBMIT_DIFF}"
         " after"
     )
     stripped = S.strip_sentinels(text)
     assert "before " in stripped
     assert "after" in stripped
-    assert S.ULTRON_SUBMIT_DIFF not in stripped
+    assert S.KENNING_SUBMIT_DIFF not in stripped
     assert "---patch---" not in stripped
 
 
 def test_strip_sentinels_removes_single_fire():
-    text = f"hi {S.ULTRON_EXIT_FORFEIT} bye"
+    text = f"hi {S.KENNING_EXIT_FORFEIT} bye"
     stripped = S.strip_sentinels(text)
-    assert S.ULTRON_EXIT_FORFEIT not in stripped
+    assert S.KENNING_EXIT_FORFEIT not in stripped
     assert stripped.startswith("hi ")
     assert stripped.endswith(" bye")
 
@@ -231,9 +231,9 @@ def test_strip_sentinels_empty_input():
 
 def test_strip_sentinels_multiple_markers():
     text = (
-        f"{S.ULTRON_LINT_REVERT}"
+        f"{S.KENNING_LINT_REVERT}"
         " gap "
-        f"{S.ULTRON_TEST_SWEEP_PASS}ok{S.ULTRON_TEST_SWEEP_PASS}"
+        f"{S.KENNING_TEST_SWEEP_PASS}ok{S.KENNING_TEST_SWEEP_PASS}"
         " end"
     )
     stripped = S.strip_sentinels(text)

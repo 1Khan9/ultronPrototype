@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from ultron.errors import (
+from kenning.errors import (
     BraveAPIError,
     ConfigurationError,
     QdrantUnavailableError,
 )
-from ultron.resilience import ErrorLog, phrase_for, reset_phrase_cache
+from kenning.resilience import ErrorLog, phrase_for, reset_phrase_cache
 
 
 def test_record_writes_one_jsonl_line(tmp_path):
@@ -43,13 +43,13 @@ def test_record_appends_multiple_entries(tmp_path):
 def test_record_handles_generic_exception_with_message_only(tmp_path):
     log = ErrorLog(path=tmp_path / "errors.jsonl")
     log.record(
-        RuntimeError("not an UltronError"),
+        RuntimeError("not an KenningError"),
         dependency="something_else",
         include_traceback=False,
     )
     rec = json.loads((tmp_path / "errors.jsonl").read_text(encoding="utf-8").strip())
     assert rec["error_type"] == "RuntimeError"
-    assert rec["message"] == "not an UltronError"
+    assert rec["message"] == "not an KenningError"
     assert rec["recovery"] is None
 
 

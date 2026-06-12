@@ -1,4 +1,4 @@
-"""Tests for ultron.utils.retry."""
+"""Tests for kenning.utils.retry."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from ultron.utils import retry as r
+from kenning.utils import retry as r
 
 
 # ---------------------------------------------------------------------------

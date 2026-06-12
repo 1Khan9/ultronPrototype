@@ -13,8 +13,8 @@ invariants pinned here:
 
 from __future__ import annotations
 
-from ultron.safety.policy import load_policy
-from ultron.safety.validator import (
+from kenning.safety.policy import load_policy
+from kenning.safety.validator import (
     RuleContext,
     RuleResult,
     ToolCallValidator,

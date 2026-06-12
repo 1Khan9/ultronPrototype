@@ -7,7 +7,7 @@ imports must keep working unchanged.
 
 from __future__ import annotations
 
-from ultron.coding import CapabilityVoiceController, CodingVoiceController
+from kenning.coding import CapabilityVoiceController, CodingVoiceController
 
 
 def test_alias_resolves_to_same_class():
@@ -15,9 +15,9 @@ def test_alias_resolves_to_same_class():
 
 
 def test_existing_import_path_still_works():
-    """`from ultron.coding import CodingVoiceController` is still the
+    """`from kenning.coding import CodingVoiceController` is still the
     public import for legacy code."""
-    from ultron.coding import CodingVoiceController as Imported
+    from kenning.coding import CodingVoiceController as Imported
     assert Imported is CapabilityVoiceController
 
 
@@ -32,6 +32,6 @@ def test_isinstance_check_works_through_alias():
 def test_module_level_re_exports():
     """The package's __all__ must include both names so static analyzers
     flag neither as missing."""
-    import ultron.coding as coding_pkg
+    import kenning.coding as coding_pkg
     assert "CapabilityVoiceController" in coding_pkg.__all__
     assert "CodingVoiceController" in coding_pkg.__all__

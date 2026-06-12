@@ -19,7 +19,7 @@ session-scoped state via ``ctx.get_session_extension(namespace)``
 for cross-call memory (warning counters, recent-approval cache,
 per-mode toggles).
 
-Use cases ultron derives:
+Use cases kenning derives:
 
 * PII detector: rewrites email / phone / SSN tokens in tool params
   before they hit memory-write.

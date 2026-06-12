@@ -14,7 +14,7 @@ The :class:`SkillRegistry` is intentionally simple:
   precedence source wins (project > user > public). Within the same
   source, last-loaded wins (mirrors the OpenHands ``_merge_skills``).
 
-A module-level singleton accessor mirrors ``ultron.desktop.vlm``'s
+A module-level singleton accessor mirrors ``kenning.desktop.vlm``'s
 pattern. Tests use :func:`reset_skill_registry_for_testing` to drop
 the singleton between cases.
 """
@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from ultron.skills.models import (
+from kenning.skills.models import (
     KeywordTrigger,
     Skill,
     SkillMatch,
@@ -38,7 +38,7 @@ from ultron.skills.models import (
     find_matched_commands,
     find_matched_keywords,
 )
-from ultron.skills.loader import (
+from kenning.skills.loader import (
     SkillLoadStats,
     load_skills_from_directory,
 )
@@ -53,8 +53,8 @@ stale ops guidance" foot-gun the OpenHands catalog called out.
 """
 
 DEFAULT_PUBLIC_SKILLS_DIRNAME = "skills"
-DEFAULT_USER_SKILLS_DIR_NAME = ".ultron/skills"
-DEFAULT_PROJECT_SKILLS_DIRNAME = ".ultron/skills"
+DEFAULT_USER_SKILLS_DIR_NAME = ".kenning/skills"
+DEFAULT_PROJECT_SKILLS_DIRNAME = ".kenning/skills"
 
 
 @dataclass
@@ -244,7 +244,7 @@ class SkillRegistry:
         2026-05-26 (openclaw-clawhub catalog T5 wiring):
         ``mode`` filters out skills whose frontmatter ``modes`` list
         excludes the current mode. ``"standby"`` (the default) +
-        ``"gaming"`` are the two ultron modes today. A skill with no
+        ``"gaming"`` are the two kenning modes today. A skill with no
         ``modes`` declaration matches every mode (legacy
         compatibility). Useful for gaming-mode where a coding skill
         with a heavy system prompt would burn budget the user doesn't
@@ -256,7 +256,7 @@ class SkillRegistry:
 
         * ``gaming_mode`` (when ``True``, or when ``None`` and
           ``mode == "gaming"``): drops skills with any tag in
-          :data:`ultron.skills.capability_tags.GAMING_MODE_INCOMPATIBLE_TAGS`.
+          :data:`kenning.skills.capability_tags.GAMING_MODE_INCOMPATIBLE_TAGS`.
           Default ``None`` derives the flag from ``mode``.
         * ``vlm_loaded=False``: drops skills tagged
           :attr:`CapabilityTag.REQUIRES_VLM`.
@@ -385,7 +385,7 @@ def _skill_active_for_capability_tags(
     skills -- pass every check (legacy / unscoped).
 
     The filter rules mirror
-    :func:`ultron.skills.capability_tags.filter_capabilities`:
+    :func:`kenning.skills.capability_tags.filter_capabilities`:
 
     * Gaming mode drops skills tagged with anything in
       :data:`GAMING_MODE_INCOMPATIBLE_TAGS`.
@@ -406,7 +406,7 @@ def _skill_active_for_capability_tags(
         return True
 
     try:
-        from ultron.skills.capability_tags import (
+        from kenning.skills.capability_tags import (
             CapabilityTag,
             GAMING_MODE_INCOMPATIBLE_TAGS,
         )
@@ -601,7 +601,7 @@ def build_default_registry(
 
     Args:
         project_root: Project root (used to locate ``skills/`` and
-            ``.ultron/skills/``).
+            ``.kenning/skills/``).
         user_home: Override for the user home; defaults to ``Path.home()``.
         extra_project_dirs: Additional directories to scan with
             :attr:`SkillSource.PROJECT` precedence.

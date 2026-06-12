@@ -1,7 +1,7 @@
 """Streaming primitives — windowed writers, presentation scheduling, coordinators.
 
 The package collects the cross-cutting "how do we emit chunks safely
-under varying cadence + size pressure" primitives that ultron's voice
+under varying cadence + size pressure" primitives that kenning's voice
 path, web-search reader, supervisor narration, and coding-bridge
 stdout all need but had each implemented separately.
 

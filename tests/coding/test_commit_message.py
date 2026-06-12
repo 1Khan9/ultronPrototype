@@ -1,10 +1,10 @@
-"""Tests for :mod:`ultron.coding.commit_message`."""
+"""Tests for :mod:`kenning.coding.commit_message`."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.coding.commit_message import (
+from kenning.coding.commit_message import (
     CommitMessageRequest,
     CommitMessageResult,
     DEFAULT_COMMIT_SYSTEM_PROMPT,

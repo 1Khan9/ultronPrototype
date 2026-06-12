@@ -31,8 +31,8 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from ultron.errors import FilesystemError
-from ultron.resilience import get_error_log
+from kenning.errors import FilesystemError
+from kenning.resilience import get_error_log
 
 
 class SessionAuditWriter:

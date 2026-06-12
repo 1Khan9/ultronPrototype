@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.llm.inference import LLMEngine
+from kenning.llm.inference import LLMEngine
 
 
 # ---------------------------------------------------------------------------
@@ -47,10 +47,10 @@ def _make_engine_no_load(llm_response: str = "stub response") -> LLMEngine:
     eng = object.__new__(LLMEngine)
     eng._memory = None
     eng._history = []
-    eng._explicit_system_prompt = "You are Ultron persona text."
+    eng._explicit_system_prompt = "You are Kenning persona text."
     eng._persona_loader = None
-    eng._static_system_prompt = "You are Ultron persona text."
-    eng.system_prompt = "You are Ultron persona text."
+    eng._static_system_prompt = "You are Kenning persona text."
+    eng.system_prompt = "You are Kenning persona text."
     eng._logged_initial_persona = True
     eng._runtime = "in_process"
     eng._llm = _StubLlama(response_text=llm_response)
@@ -86,7 +86,7 @@ def test_generate_isolated_passes_system_prompt_not_soul():
     assert len(msgs) == 2
     assert msgs[0]["role"] == "system"
     assert msgs[0]["content"] == "You are a summarizer worker."
-    assert "Ultron persona text" not in msgs[0]["content"]
+    assert "Kenning persona text" not in msgs[0]["content"]
     assert msgs[1]["role"] == "user"
     assert msgs[1]["content"] == "Summarise."
 

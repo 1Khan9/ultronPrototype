@@ -1,4 +1,4 @@
-"""Tests for ultron.bus.service -- pub/sub semantics + race safety."""
+"""Tests for kenning.bus.service -- pub/sub semantics + race safety."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import time
 
 import pytest
 
-from ultron.bus.event import BusEvent
-from ultron.bus.service import (
+from kenning.bus.event import BusEvent
+from kenning.bus.service import (
     DEFAULT_SLOW_SUBSCRIBER_WARN_MS,
     Bus,
     get_bus,
@@ -391,7 +391,7 @@ def test_fast_subscriber_does_not_warn(
     event = BusEvent.define("test.fast", {})
     bus.subscribe(event, lambda p: None)
 
-    with caplog.at_level(logging.WARNING, logger="ultron.bus"):
+    with caplog.at_level(logging.WARNING, logger="kenning.bus"):
         bus.publish(event, {})
 
     assert bus.slow_subscriber_count() == 0
@@ -410,7 +410,7 @@ def test_slow_subscriber_warns_and_increments_counter(
 
     bus.subscribe(event, slow_cb)
 
-    with caplog.at_level(logging.WARNING, logger="ultron.bus"):
+    with caplog.at_level(logging.WARNING, logger="kenning.bus"):
         bus.publish(event, {})
 
     assert bus.slow_subscriber_count() == 1

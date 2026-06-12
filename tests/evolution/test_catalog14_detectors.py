@@ -6,8 +6,8 @@ topic helper, and the opportunity-signal recognition. Hermetic + pure.
 
 from __future__ import annotations
 
-from ultron.evolution import signals as S
-from ultron.evolution.models import (
+from kenning.evolution import signals as S
+from kenning.evolution.models import (
     CommandFailureSignal,
     CorrectionCapsule,
     FeatureRequestCapsule,

@@ -1,11 +1,11 @@
-"""Identity-preserving augmentation of Ultron_vocals_only_clean_v1.wav.
+"""Identity-preserving augmentation of Kenning_vocals_only_clean_v1.wav.
 
 Generates 12 variants that preserve voice character (no large pitch shifts, no
 heavy effects, no noise injection). Each variant adds prosodic or temporal
 variance suitable for Kokoro style-vector training data.
 
-Outputs land alongside the source in ultronVoiceAudio/ as
-Ultron_vocals_aug_<type>_<value>_v1.wav. The original is never modified.
+Outputs land alongside the source in kenningVoiceAudio/ as
+Kenning_vocals_aug_<type>_<value>_v1.wav. The original is never modified.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import soundfile as sf
 from pedalboard import HighShelfFilter, LowShelfFilter, Pedalboard, PitchShift
 
 SRC = pathlib.Path(
-    "C:/STC/ultronPrototype/ultronVoiceAudio/Ultron_vocals_only_clean_v1.wav"
+    "C:/STC/ultronPrototype/kenningVoiceAudio/Kenning_vocals_only_clean_v1.wav"
 )
 OUT_DIR = SRC.parent
 SUBTYPE = "PCM_16"
@@ -129,7 +129,7 @@ def main() -> None:
         t0 = time.perf_counter()
         out = fn(audio)
         elapsed = time.perf_counter() - t0
-        name = f"Ultron_vocals_aug_{label}_v1.wav"
+        name = f"Kenning_vocals_aug_{label}_v1.wav"
         save(name, out, sr)
         total_duration_s += len(out) / sr
         print(f"    ({elapsed:.1f}s wall)")

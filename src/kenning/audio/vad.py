@@ -16,7 +16,7 @@ from typing import Optional
 import numpy as np
 
 from config import settings
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("audio.vad")
 

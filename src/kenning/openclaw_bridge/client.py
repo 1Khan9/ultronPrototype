@@ -1,6 +1,6 @@
 """OpenClaw Gateway client (Phase 3.1).
 
-Async bridge from Ultron's orchestrator to OpenClaw, used when Ultron
+Async bridge from Kenning's orchestrator to OpenClaw, used when Kenning
 wants OpenClaw to do something — send a Telegram message, run a tool
 turn, trigger a heartbeat. Implemented with subprocess transport over
 the ``openclaw`` CLI rather than HTTP because OpenClaw 2026.5.7 doesn't
@@ -35,10 +35,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
-from ultron.errors import OpenClawAuthError, OpenClawGatewayError, OpenClawToolError
-from ultron.openclaw_bridge.lifecycle import _read_token  # token reader reused
-from ultron.subprocess.kill_tree import kill_process_tree
-from ultron.utils.logging import get_logger
+from kenning.errors import OpenClawAuthError, OpenClawGatewayError, OpenClawToolError
+from kenning.openclaw_bridge.lifecycle import _read_token  # token reader reused
+from kenning.subprocess.kill_tree import kill_process_tree
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_bridge.client")
 
@@ -57,7 +57,7 @@ _WINDOWS_DEFAULT_CLI = (
 def discover_cli(override: Optional[str] = None) -> str:
     """Resolve the ``openclaw`` CLI executable.
 
-    Order: explicit ``override`` → ``ULTRON_OPENCLAW_CLI`` env var →
+    Order: explicit ``override`` → ``KENNING_OPENCLAW_CLI`` env var →
     PATH lookup → Windows npm-global default. Raises
     :class:`OpenClawGatewayError` if none of those produce an existing
     file.
@@ -70,14 +70,14 @@ def discover_cli(override: Optional[str] = None) -> str:
             f"openclaw CLI override path does not exist: {override}",
             context={"cli_path": override},
         )
-    env = os.getenv("ULTRON_OPENCLAW_CLI")
+    env = os.getenv("KENNING_OPENCLAW_CLI")
     if env:
         p = Path(env)
         if p.exists():
             return str(p.resolve())
         # Fall through — env var was wrong, keep trying.
         logger.warning(
-            "ULTRON_OPENCLAW_CLI=%s does not exist; falling back to PATH",
+            "KENNING_OPENCLAW_CLI=%s does not exist; falling back to PATH",
             env,
         )
     found = shutil.which(_DEFAULT_CLI_NAME)
@@ -87,7 +87,7 @@ def discover_cli(override: Optional[str] = None) -> str:
         return str(_WINDOWS_DEFAULT_CLI)
     raise OpenClawGatewayError(
         "openclaw CLI not found. Install it (npm i -g openclaw) or set "
-        "ULTRON_OPENCLAW_CLI to the absolute path.",
+        "KENNING_OPENCLAW_CLI to the absolute path.",
         context={"searched_name": _DEFAULT_CLI_NAME},
     )
 
@@ -199,7 +199,7 @@ class OpenClawClient:
         *,
         default_timeout_s: float = 30.0,
         config_path: Optional[Path] = None,
-        default_agent_id: str = "ultron-main",
+        default_agent_id: str = "kenning-main",
         env: Optional[Dict[str, str]] = None,
     ) -> None:
         self._cli_path = discover_cli(cli_path)

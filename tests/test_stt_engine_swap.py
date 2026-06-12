@@ -24,7 +24,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.config import STTConfig, UltronConfig
+from kenning.config import STTConfig, KenningConfig
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ def test_stt_parakeet_model_default():
 
 
 def test_full_config_round_trip_with_explicit_whisper():
-    cfg = UltronConfig.model_validate({"stt": {"engine": "whisper"}})
+    cfg = KenningConfig.model_validate({"stt": {"engine": "whisper"}})
     assert cfg.stt.engine == "whisper"
 
 
@@ -82,8 +82,8 @@ def _patch_engines(
 ):
     """Patch both engines + NeMo availability check. Returns the
     two engine mock classes so the test can inspect calls."""
-    import ultron.transcription as factory_module
-    from ultron.transcription import parakeet_engine as parakeet_module
+    import kenning.transcription as factory_module
+    from kenning.transcription import parakeet_engine as parakeet_module
 
     monkeypatch.setattr(
         parakeet_module, "is_nemo_available", lambda: nemo_available,
@@ -128,7 +128,7 @@ def _stub_stt_cfg(**overrides):
 
 def test_factory_auto_with_nemo_available_picks_parakeet(monkeypatch):
     """``engine: auto`` + NeMo installed -> Parakeet is selected."""
-    from ultron.transcription import make_stt_engine
+    from kenning.transcription import make_stt_engine
 
     parakeet_cls, whisper_cls = _patch_engines(monkeypatch, nemo_available=True)
     cfg = _stub_stt_cfg(engine="auto")
@@ -140,7 +140,7 @@ def test_factory_auto_with_nemo_available_picks_parakeet(monkeypatch):
 
 def test_factory_auto_without_nemo_falls_back_to_whisper(monkeypatch):
     """``engine: auto`` + NeMo missing -> Whisper transparently."""
-    from ultron.transcription import make_stt_engine
+    from kenning.transcription import make_stt_engine
 
     parakeet_cls, whisper_cls = _patch_engines(monkeypatch, nemo_available=False)
     cfg = _stub_stt_cfg(engine="auto")
@@ -153,7 +153,7 @@ def test_factory_auto_without_nemo_falls_back_to_whisper(monkeypatch):
 def test_factory_auto_parakeet_load_failure_falls_back(monkeypatch):
     """``engine: auto`` + NeMo present but Parakeet construction fails
     -> Whisper fallback with a WARN log. The voice path keeps working."""
-    from ultron.transcription import make_stt_engine
+    from kenning.transcription import make_stt_engine
 
     parakeet_cls, whisper_cls = _patch_engines(
         monkeypatch,
@@ -171,7 +171,7 @@ def test_factory_explicit_parakeet_raises_when_nemo_missing(monkeypatch):
     """``engine: parakeet`` (explicit) with NeMo missing -> ImportError.
     This is intentional -- the user explicitly asked for Parakeet, so
     silently falling back would hide a misconfiguration."""
-    from ultron.transcription import make_stt_engine
+    from kenning.transcription import make_stt_engine
 
     _patch_engines(monkeypatch, nemo_available=False)
     cfg = _stub_stt_cfg(engine="parakeet")
@@ -184,7 +184,7 @@ def test_factory_explicit_parakeet_raises_when_nemo_missing(monkeypatch):
 
 def test_factory_explicit_parakeet_when_nemo_available(monkeypatch):
     """``engine: parakeet`` (explicit) with NeMo present -> Parakeet."""
-    from ultron.transcription import make_stt_engine
+    from kenning.transcription import make_stt_engine
 
     parakeet_cls, whisper_cls = _patch_engines(monkeypatch, nemo_available=True)
     cfg = _stub_stt_cfg(engine="parakeet")
@@ -197,7 +197,7 @@ def test_factory_explicit_parakeet_when_nemo_available(monkeypatch):
 def test_factory_explicit_whisper(monkeypatch):
     """``engine: whisper`` always returns Whisper, even when NeMo
     is installed (the swap-back path the user requested)."""
-    from ultron.transcription import make_stt_engine
+    from kenning.transcription import make_stt_engine
 
     parakeet_cls, whisper_cls = _patch_engines(monkeypatch, nemo_available=True)
     cfg = _stub_stt_cfg(engine="whisper")
@@ -210,7 +210,7 @@ def test_factory_explicit_whisper(monkeypatch):
 def test_factory_passes_parakeet_config(monkeypatch):
     """Custom ``parakeet_model`` / ``parakeet_device`` thread through
     to the ParakeetEngine constructor."""
-    from ultron.transcription import make_stt_engine
+    from kenning.transcription import make_stt_engine
 
     parakeet_cls, _ = _patch_engines(monkeypatch, nemo_available=True)
     cfg = _stub_stt_cfg(
@@ -233,7 +233,7 @@ def test_parakeet_engine_raises_without_nemo(monkeypatch):
     """Direct ParakeetEngine() construction without NeMo raises
     ImportError with an install hint -- so operators see the
     problem upfront rather than mid-turn."""
-    from ultron.transcription import parakeet_engine as parakeet_module
+    from kenning.transcription import parakeet_engine as parakeet_module
 
     monkeypatch.setattr(parakeet_module, "is_nemo_available", lambda: False)
     # Make sure the spawn helper doesn't accidentally run if the
@@ -250,5 +250,5 @@ def test_parakeet_engine_raises_without_nemo(monkeypatch):
 def test_is_nemo_available_returns_bool():
     """``is_nemo_available`` must be a boolean -- safe to use in
     config-time / startup-time guards."""
-    from ultron.transcription import is_nemo_available
+    from kenning.transcription import is_nemo_available
     assert isinstance(is_nemo_available(), bool)

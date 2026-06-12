@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.safety import (
+from kenning.safety import (
     Policy,
     RuleContext,
     RuleResult,
@@ -13,8 +13,8 @@ from ultron.safety import (
     load_policy,
     set_validator,
 )
-from ultron.safety.audit import AuditLog
-from ultron.safety.rules.base import (
+from kenning.safety.audit import AuditLog
+from kenning.safety.rules.base import (
     CommandPatternRule,
     PathPatternRule,
     PathSetRule,
@@ -190,9 +190,9 @@ def test_audit_written_only_for_non_allow(tmp_path):
 
 def test_noop_validator_returns_allow():
     """Get-validator before set returns a permissive no-op."""
-    from ultron.safety.validator import _NoOpValidator
+    from kenning.safety.validator import _NoOpValidator
     set_validator(None)
-    from ultron.safety import get_validator
+    from kenning.safety import get_validator
     v = get_validator()
     assert isinstance(v, _NoOpValidator)
     ctx = RuleContext(tool_name="t", arguments={}, capability="c")

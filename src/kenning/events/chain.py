@@ -1,14 +1,14 @@
 """SHA-256 hash chain helpers (T13 from the OpenHands catalog).
 
-The chain shape ports the existing ultron safety-audit hash-chain
-pattern (``src/ultron/safety/audit.py``) and generalises it to any
+The chain shape ports the existing kenning safety-audit hash-chain
+pattern (``src/kenning/safety/audit.py``) and generalises it to any
 event sequence. Per-session chain. Each event's ``chain_hash`` is
 ``sha256(prev_hash || canonical_event_json(event))``; missing
 ``prev_hash`` (first event of the session) hashes with an empty prefix.
 
 Use :func:`compute_event_chain_hash` at write time, :func:`verify_chain`
 to walk a sequence and assert integrity. A broken link surfaces the
-exact index + expected vs actual hash so ``ultron diag chain`` can
+exact index + expected vs actual hash so ``kenning diag chain`` can
 report the breakage location without re-running the whole sequence.
 """
 
@@ -18,7 +18,7 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Sequence
 
-from ultron.events.models import StoredEvent, canonical_event_json
+from kenning.events.models import StoredEvent, canonical_event_json
 
 
 class ChainVerificationError(RuntimeError):

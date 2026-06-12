@@ -1,4 +1,4 @@
-"""Tests for ``ultron.openclaw_bridge.system_status.SystemStatusReporter``."""
+"""Tests for ``kenning.openclaw_bridge.system_status.SystemStatusReporter``."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from unittest.mock import patch
 
 import pytest
 
-from ultron.openclaw_bridge.heartbeat_alerts import HeartbeatAlertLog
-from ultron.openclaw_bridge.system_status import SystemStatusReporter
-from ultron.openclaw_routing.intents import SystemStatusIntent
+from kenning.openclaw_bridge.heartbeat_alerts import HeartbeatAlertLog
+from kenning.openclaw_bridge.system_status import SystemStatusReporter
+from kenning.openclaw_routing.intents import SystemStatusIntent
 
 
 @pytest.fixture
@@ -20,7 +20,7 @@ def alert_log(tmp_path: Path) -> HeartbeatAlertLog:
 def _patch_sessions(sessions):
     """Patch the session-listing impl so the reporter sees a curated list."""
     return patch(
-        "ultron.openclaw_bridge.system_status.list_active_coding_sessions_impl",
+        "kenning.openclaw_bridge.system_status.list_active_coding_sessions_impl",
         return_value={"count": len(sessions), "sessions": sessions},
     )
 
@@ -191,7 +191,7 @@ def test_alert_log_read_failure_degrades(alert_log: HeartbeatAlertLog):
 
 def test_session_listing_failure_degrades(alert_log: HeartbeatAlertLog):
     with patch(
-        "ultron.openclaw_bridge.system_status.list_active_coding_sessions_impl",
+        "kenning.openclaw_bridge.system_status.list_active_coding_sessions_impl",
         side_effect=RuntimeError("oops"),
     ):
         r = SystemStatusReporter(alert_log)

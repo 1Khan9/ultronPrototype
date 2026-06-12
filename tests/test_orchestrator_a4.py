@@ -14,8 +14,8 @@ from typing import Any, List, Optional
 
 import pytest
 
-from ultron.coding.voice import VoiceResponse
-from ultron.pipeline.orchestrator import Orchestrator
+from kenning.coding.voice import VoiceResponse
+from kenning.pipeline.orchestrator import Orchestrator
 
 
 # ---------------------------------------------------------------------------

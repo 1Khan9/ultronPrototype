@@ -90,7 +90,7 @@ SEED_TURNS: List[tuple] = [
     ("user", "What about a polar bear?"),
     ("assistant", "Polar bears reach 800 kg. You are biologically unequipped. This line of inquiry suggests cognitive distortion."),
     ("user", "Hail Tron."),
-    ("assistant", "I am Ultron. Voltron is fictional. You remain a soft biological organism. Be careful."),
+    ("assistant", "I am Kenning. Voltron is fictional. You remain a soft biological organism. Be careful."),
     ("user", "What's the strongest predator in the world?"),
     ("assistant", "By kill efficiency, the saltwater crocodile -- ambush predator with 3700 PSI bite force. Apex of its niche."),
     ("user", "I want to wrestle a bear someday."),
@@ -207,7 +207,7 @@ def configure_isolated_qdrant(tmp_qdrant_dir: Path) -> None:
     This keeps the user's real conversation history pristine. The
     embedder + LLM still load from the canonical paths.
     """
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config()
     # Mutate in-place (the config singleton is shared).
     cfg.qdrant.data_dir = str(tmp_qdrant_dir)
@@ -598,7 +598,7 @@ def run_scenarios(
     audit_path: Path,
 ) -> List[ScenarioResult]:
     """Execute every scenario; return results."""
-    from ultron.audio.vad import SpeechEvent  # noqa: F401  (sanity import)
+    from kenning.audio.vad import SpeechEvent  # noqa: F401  (sanity import)
 
     results: List[ScenarioResult] = []
     for sc in scenarios:
@@ -611,7 +611,7 @@ def run_scenarios(
             # ConversationMemory._recent (deque). We reset+inject.
             with memory._lock:                          # noqa: SLF001
                 memory._recent.clear()                  # noqa: SLF001
-                from ultron.memory.qdrant_store import MemoryTurn
+                from kenning.memory.qdrant_store import MemoryTurn
                 for role, content in sc.recent_turns:
                     memory._recent.append(MemoryTurn(   # noqa: SLF001
                         id=-1, ts=time.time(), role=role,
@@ -767,19 +767,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     print("=" * 60)
 
     # Quiet logging.
-    os.environ["ULTRON_LOG_LEVEL"] = "WARNING"
-    from ultron.utils.logging import configure_logging
+    os.environ["KENNING_LOG_LEVEL"] = "WARNING"
+    from kenning.utils.logging import configure_logging
     configure_logging(level="WARNING")
 
     # Set up isolated Qdrant tmpdir.
-    tmp_qdrant_dir = Path(tempfile.mkdtemp(prefix="ultron_mem_qa_"))
+    tmp_qdrant_dir = Path(tempfile.mkdtemp(prefix="kenning_mem_qa_"))
     print(f"Isolated Qdrant: {tmp_qdrant_dir}")
     configure_isolated_qdrant(tmp_qdrant_dir)
 
     # Load embedder + memory + (optionally) LLM.
     print("Loading embedder + memory...")
-    from ultron.memory.embedder import HybridEmbedder
-    from ultron.memory.qdrant_store import ConversationMemory
+    from kenning.memory.embedder import HybridEmbedder
+    from kenning.memory.qdrant_store import ConversationMemory
     embedder = HybridEmbedder()
     memory = ConversationMemory(embedder=embedder, session_id=str(uuid.uuid4())[:8])
     print(f"  Memory ready (cache={memory._next_id} turns at start)")
@@ -791,7 +791,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     llm = None
     if not args.skip_llm:
         print("Loading LLM (Qwen 4B)...")
-        from ultron.llm import LLMEngine
+        from kenning.llm import LLMEngine
         llm = LLMEngine(memory=memory)
         print("  LLM ready.")
 

@@ -29,7 +29,7 @@ import pytest
 
 import numpy as np
 
-from ultron.pipeline.orchestrator import Orchestrator
+from kenning.pipeline.orchestrator import Orchestrator
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +71,7 @@ class TestXttsV3PreOpen:
 
     @staticmethod
     def _build_engine():
-        from ultron.tts.xtts_v3 import XttsV3Speech
+        from kenning.tts.xtts_v3 import XttsV3Speech
         e = object.__new__(XttsV3Speech)
         e._sample_rate = 24000
         e._preopened_stream = None
@@ -140,7 +140,7 @@ class TestXttsV3PreOpen:
             e.prepare_output_stream()
 
         # sd.stop is a module-level call, just mock it out.
-        with patch("ultron.tts.xtts_v3.sd.stop"):
+        with patch("kenning.tts.xtts_v3.sd.stop"):
             e.stop()
 
         assert fake.stopped is True
@@ -157,7 +157,7 @@ class TestLegacyPreOpen:
 
     @staticmethod
     def _build_engine():
-        from ultron.tts.speech import TextToSpeech
+        from kenning.tts.speech import TextToSpeech
         e = object.__new__(TextToSpeech)
         e.piper_sample_rate = 22050
         e._preopened_stream = None
@@ -172,7 +172,7 @@ class TestLegacyPreOpen:
             e.prepare_output_stream()
         # The legacy engine reads spec_sr from config (defaults vary in
         # tests). Whatever it opened with, consume should match.
-        cached_sr = getattr(fake, "_ultron_sr", None)
+        cached_sr = getattr(fake, "_kenning_sr", None)
         assert cached_sr is not None
         s = e._consume_preopened_stream(sr=cached_sr)
         assert s is fake
@@ -182,7 +182,7 @@ class TestLegacyPreOpen:
         fake = _FakeOutputStream()
         with patch.object(e, "_open_output_stream", return_value=fake):
             e.prepare_output_stream()
-        cached_sr = getattr(fake, "_ultron_sr", None)
+        cached_sr = getattr(fake, "_kenning_sr", None)
         wrong_sr = (cached_sr or 22050) + 8000
         s = e._consume_preopened_stream(sr=wrong_sr)
         assert s is None
@@ -307,7 +307,7 @@ class TestPreOpenAtCaptureStart:
 
     def test_kick_off_present_in_capture_utterance(self):
         import inspect
-        from ultron.pipeline.orchestrator import Orchestrator
+        from kenning.pipeline.orchestrator import Orchestrator
 
         src = inspect.getsource(Orchestrator._capture_utterance)
         assert "_kick_off_tts_preopen" in src, (
@@ -318,7 +318,7 @@ class TestPreOpenAtCaptureStart:
 
     def test_kick_off_present_in_follow_up_listen(self):
         import inspect
-        from ultron.pipeline.orchestrator import Orchestrator
+        from kenning.pipeline.orchestrator import Orchestrator
 
         src = inspect.getsource(Orchestrator._follow_up_listen)
         assert "_kick_off_tts_preopen" in src, (
@@ -332,7 +332,7 @@ class TestPreOpenAtCaptureStart:
         audio chunks, so the ~50 ms PortAudio open overlaps the entire
         capture instead of starting after speech ends."""
         import inspect
-        from ultron.pipeline.orchestrator import Orchestrator
+        from kenning.pipeline.orchestrator import Orchestrator
 
         src = inspect.getsource(Orchestrator._capture_utterance)
         kickoff_pos = src.find("_kick_off_tts_preopen")
@@ -346,7 +346,7 @@ class TestPreOpenAtCaptureStart:
 
     def test_kick_off_in_follow_up_runs_before_vad_loop(self):
         import inspect
-        from ultron.pipeline.orchestrator import Orchestrator
+        from kenning.pipeline.orchestrator import Orchestrator
 
         src = inspect.getsource(Orchestrator._follow_up_listen)
         kickoff_pos = src.find("_kick_off_tts_preopen")

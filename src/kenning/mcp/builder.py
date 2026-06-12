@@ -1,7 +1,7 @@
 """Construct + wire the MCP server registry from config (T22).
 
 Turns the operator's ``mcp.servers`` config into a live
-:class:`~ultron.mcp.registry.McpServerRegistry` with real lifecycle callables:
+:class:`~kenning.mcp.registry.McpServerRegistry` with real lifecycle callables:
 
 * a stdio ``starter`` that spawns the server child with a SANITISED
   environment (dangerous vars dropped via :func:`filter_environment`),
@@ -21,12 +21,12 @@ from __future__ import annotations
 import subprocess
 from typing import Optional
 
-from ultron.mcp.registry import (
+from kenning.mcp.registry import (
     McpServerHandle,
     McpServerRegistry,
     set_mcp_server_registry,
 )
-from ultron.mcp.transport import (
+from kenning.mcp.transport import (
     HttpMcpTransportConfig,
     McpTransportKind,
     SseMcpTransportConfig,
@@ -34,7 +34,7 @@ from ultron.mcp.transport import (
     StreamableHttpMcpTransportConfig,
     TransportConfig,
 )
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("mcp.builder")
 
@@ -103,7 +103,7 @@ def _make_stdio_starter(*, popen=subprocess.Popen):
         pid = proc.pid
         handle.metadata["process"] = proc
         try:
-            from ultron.subprocess.process_registry import get_process_registry
+            from kenning.subprocess.process_registry import get_process_registry
             get_process_registry().register(
                 f"mcp:{handle.server_id}",
                 scope_key=handle.scope_key or "mcp",
@@ -115,7 +115,7 @@ def _make_stdio_starter(*, popen=subprocess.Popen):
             logger.debug("process-registry register for MCP %s failed: %s",
                          handle.server_id, e)
         try:
-            from ultron.subprocess.zombie_killer import get_zombie_killer
+            from kenning.subprocess.zombie_killer import get_zombie_killer
             get_zombie_killer().register(
                 pid, f"mcp:{handle.server_id}", persistent=True,
             )
@@ -134,12 +134,12 @@ def _make_killer():
 
     def _killer(pid: int) -> None:
         try:
-            from ultron.subprocess.kill_tree import kill_process_tree
+            from kenning.subprocess.kill_tree import kill_process_tree
             kill_process_tree(pid)
         except Exception as e:  # noqa: BLE001
             logger.debug("kill_process_tree for MCP pid %s failed: %s", pid, e)
         try:
-            from ultron.subprocess.zombie_killer import get_zombie_killer
+            from kenning.subprocess.zombie_killer import get_zombie_killer
             get_zombie_killer().unregister(pid)
         except Exception:  # noqa: BLE001
             pass
@@ -153,7 +153,7 @@ def build_mcp_server_registry(cfg=None, *, starter=None, killer=None) -> Optiona
     Returns the registry with every configured server registered (transport
     sanitised) and the real stdio starter + ``kill_process_tree`` killer wired,
     or ``None`` when MCP is disabled (``mcp.enabled`` False) so callers no-op.
-    Sets the module singleton so :func:`~ultron.mcp.get_mcp_server_registry`
+    Sets the module singleton so :func:`~kenning.mcp.get_mcp_server_registry`
     returns it. Fail-open: a bad server spec is logged + skipped, never raising.
 
     Args:
@@ -163,7 +163,7 @@ def build_mcp_server_registry(cfg=None, *, starter=None, killer=None) -> Optiona
     """
     if cfg is None:
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
             cfg = get_config().mcp
         except Exception as e:  # noqa: BLE001
             logger.debug("mcp config unavailable: %s", e)

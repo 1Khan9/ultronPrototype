@@ -1,7 +1,7 @@
 """Starter injectors for the STT + TTS engines.
 
-These wrap the existing :func:`ultron.transcription.make_stt_engine` and
-:func:`ultron.tts.make_tts_engine` factories so the orchestrator can
+These wrap the existing :func:`kenning.transcription.make_stt_engine` and
+:func:`kenning.tts.make_tts_engine` factories so the orchestrator can
 migrate to the Injector pattern in one place without touching the
 engine construction code itself. The catalog's "gaming-mode hot-swap
 as an injector state attribute" is implemented here -- when the
@@ -20,7 +20,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from ultron.services.injector import Injector, InjectorState
+from kenning.services.injector import Injector, InjectorState
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class STTEngineInjector(Injector[Any]):
     is ``"gaming"`` the gaming factory wins; otherwise the standby
     factory is used.
 
-    Defaults call :func:`ultron.transcription.make_stt_engine` and let
+    Defaults call :func:`kenning.transcription.make_stt_engine` and let
     the live config decide which engine to construct. To force a
     specific engine regardless of config, pass an explicit factory
     that constructs the engine you want.
@@ -63,7 +63,7 @@ class STTEngineInjector(Injector[Any]):
         if self.standby_factory is not None:
             return self.standby_factory(state)
         # Default behaviour: delegate to the existing factory + live config.
-        from ultron.transcription import make_stt_engine
+        from kenning.transcription import make_stt_engine
 
         return make_stt_engine()
 
@@ -73,9 +73,9 @@ class TTSEngineInjector(Injector[Any]):
     """Resolve the TTS engine for the active state.
 
     Same shape as :class:`STTEngineInjector`: standby + gaming factory
-    callables; default falls through to :func:`ultron.tts.make_tts_engine`.
+    callables; default falls through to :func:`kenning.tts.make_tts_engine`.
 
-    Note: :func:`ultron.tts.make_tts_engine` returns ``(rvc, engine)``;
+    Note: :func:`kenning.tts.make_tts_engine` returns ``(rvc, engine)``;
     the injector preserves that shape so the orchestrator's existing
     call site is byte-identical.
     """
@@ -94,7 +94,7 @@ class TTSEngineInjector(Injector[Any]):
                 )
         if self.standby_factory is not None:
             return self.standby_factory(state)
-        from ultron.tts import make_tts_engine
+        from kenning.tts import make_tts_engine
 
         return make_tts_engine()
 

@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.bridge import EventKind, FileChangeKind, TaskRequest
-from ultron.coding.mcp_server import UltronMCPServer
-from ultron.coding.session import SessionStatus
+from kenning.coding.bridge import EventKind, FileChangeKind, TaskRequest
+from kenning.coding.mcp_server import KenningMCPServer
+from kenning.coding.session import SessionStatus
 
 from tests.coding.mock_bridge import ClaudeScript, ScriptedClaudeBridge
 
@@ -23,7 +23,7 @@ from tests.coding.mock_bridge import ClaudeScript, ScriptedClaudeBridge
 def server():
     """A bare MCP server with no SSE listener (mock bridge calls into it
     directly)."""
-    s = UltronMCPServer(host="127.0.0.1", port=0)  # port=0 means we won't start
+    s = KenningMCPServer(host="127.0.0.1", port=0)  # port=0 means we won't start
     yield s
     # No stop() call -- we never started.
 

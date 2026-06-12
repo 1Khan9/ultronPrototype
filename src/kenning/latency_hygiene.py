@@ -38,7 +38,7 @@ import threading
 import time
 from typing import Any, Callable, Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("latency_hygiene")
 

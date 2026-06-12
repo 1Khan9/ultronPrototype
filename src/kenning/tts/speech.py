@@ -7,7 +7,7 @@ main thread can interrupt mid-stream by calling :meth:`stop`.
 
 If an :class:`RvcConverter` is passed in, every synthesized sentence is run
 through it before playback. This converts Piper's neutral voice to the
-trained target (Ultron). RVC may output at a different sample rate than
+trained target (Kenning). RVC may output at a different sample rate than
 Piper, so each clip carries its own ``(pcm, sample_rate)`` pair through the
 queue.
 """
@@ -26,9 +26,9 @@ import numpy as np
 import sounddevice as sd
 
 from config import settings
-from ultron.audio.devices import describe_device, resolve_device
-from ultron.tts.rvc import RvcConverter
-from ultron.utils.logging import get_logger
+from kenning.audio.devices import describe_device, resolve_device
+from kenning.tts.rvc import RvcConverter
+from kenning.utils.logging import get_logger
 
 logger = get_logger("tts.speech")
 
@@ -120,7 +120,7 @@ class TextToSpeech:
         # cache via ``set_ack_cache`` after warmup, then ``_synthesize``
         # checks the cache before running the Piper + RVC path. Skips
         # ~313 ms of synth on cache hits.
-        from ultron.tts.precomputed_ack import PrecomputedAckClipCache
+        from kenning.tts.precomputed_ack import PrecomputedAckClipCache
         self._ack_cache: Optional[PrecomputedAckClipCache] = None
 
         # 2026-05-15 latency: pre-opened output stream slot. The
@@ -226,7 +226,7 @@ class TextToSpeech:
         same inter-sentence pause, same pre-roll silence.
         """
         self._stop_event.clear()
-        from ultron.config import get_config
+        from kenning.config import get_config
 
         try:
             tts_cfg = get_config().tts
@@ -594,13 +594,13 @@ class TextToSpeech:
             return self.rvc.convert(pcm, sr)
         except Exception as e:
             logger.warning("RVC convert failed (using raw Piper): %s", e)
-            from ultron.errors import RVCConversionError
-            from ultron.resilience import get_error_log
+            from kenning.errors import RVCConversionError
+            from kenning.resilience import get_error_log
             get_error_log().record(
                 RVCConversionError(
                     f"RVC convert failed: {e}",
                     context={"sample_rate": int(sr), "pcm_samples": int(pcm.size)},
-                    recovery="fell back to raw Piper output (no Ultron filter)",
+                    recovery="fell back to raw Piper output (no Kenning filter)",
                 ),
                 dependency="rvc",
             )
@@ -633,7 +633,7 @@ class TextToSpeech:
         """Open the PortAudio output stream proactively.
 
         2026-05-15 latency: legacy-engine sibling of
-        :meth:`ultron.tts.xtts_v3.XttsV3Speech.prepare_output_stream`.
+        :meth:`kenning.tts.xtts_v3.XttsV3Speech.prepare_output_stream`.
         The orchestrator pre-opens during STT so the ~50 ms PortAudio
         open cost overlaps with Whisper. Speculative SR matches the
         configured ``tts.speculative_stream_sample_rate`` (the Piper +
@@ -647,7 +647,7 @@ class TextToSpeech:
             if self._preopened_stream is not None:
                 return
             try:
-                from ultron.config import get_config
+                from kenning.config import get_config
                 tts_cfg = get_config().tts
                 spec_sr = int(tts_cfg.speculative_stream_sample_rate)
                 low_latency = bool(tts_cfg.output_low_latency_mode)
@@ -669,7 +669,7 @@ class TextToSpeech:
                 except Exception:
                     pass
                 # Track the SR so consume can validate.
-                stream._ultron_sr = spec_sr  # type: ignore[attr-defined]
+                stream._kenning_sr = spec_sr  # type: ignore[attr-defined]
                 self._preopened_stream = stream
                 logger.debug(
                     "TextToSpeech: output stream pre-opened (%d Hz, %s latency)",
@@ -699,7 +699,7 @@ class TextToSpeech:
             self._preopened_stream = None
         if s is None:
             return None
-        cached_sr = getattr(s, "_ultron_sr", None)
+        cached_sr = getattr(s, "_kenning_sr", None)
         if cached_sr is not None and cached_sr != sr:
             try:
                 s.stop()
@@ -761,13 +761,13 @@ class TextToSpeech:
             except Exception as e:
                 logger.warning("RVC convert failed (using raw Piper): %s", e)
                 # Late-binding imports to avoid circular bootstrap dependency.
-                from ultron.errors import RVCConversionError
-                from ultron.resilience import get_error_log
+                from kenning.errors import RVCConversionError
+                from kenning.resilience import get_error_log
                 get_error_log().record(
                     RVCConversionError(
                         f"RVC convert failed: {e}",
                         context={"sample_rate": int(sr), "pcm_samples": int(pcm.size)},
-                        recovery="fell back to raw Piper output (no Ultron filter)",
+                        recovery="fell back to raw Piper output (no Kenning filter)",
                     ),
                     dependency="rvc",
                 )
@@ -801,8 +801,8 @@ class TextToSpeech:
                         self._voice.synthesize(text, wav)
         except Exception as e:
             logger.error("Piper synth failed for %r: %s", text[:60], e)
-            from ultron.errors import PiperSynthesisError
-            from ultron.resilience import get_error_log
+            from kenning.errors import PiperSynthesisError
+            from kenning.resilience import get_error_log
             get_error_log().record(
                 PiperSynthesisError(
                     f"Piper synth failed: {e}",
@@ -837,7 +837,7 @@ class TextToSpeech:
         # speak() path too. Falls back to False when config isn't built
         # (test scenarios that bypass the loader).
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
             low_latency = get_config().tts.output_low_latency_mode
         except Exception:
             low_latency = False

@@ -1,7 +1,7 @@
 """Logging configuration.
 
 Two handlers are installed by default:
-- A rotating file handler at DEBUG, writing every event to ``logs/ultron.log``.
+- A rotating file handler at DEBUG, writing every event to ``logs/kenning.log``.
 - A console handler at the configured level, with a more compact format.
 
 Modules call :func:`get_logger` to fetch their named logger; they do not need
@@ -15,7 +15,7 @@ import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from ultron.config import get_config, resolve_path
+from kenning.config import get_config, resolve_path
 
 
 _CONFIGURED = False
@@ -29,7 +29,7 @@ def configure_logging(
 
     Args:
         level: Override for the console log level. Defaults to
-            ``config.logging.level`` (env var ``ULTRON_LOG_LEVEL`` overrides).
+            ``config.logging.level`` (env var ``KENNING_LOG_LEVEL`` overrides).
         log_file: Override for the file destination. Defaults to
             ``config.logging.file``.
     """
@@ -38,7 +38,7 @@ def configure_logging(
         return
 
     cfg = get_config().logging
-    level = (level or os.getenv("ULTRON_LOG_LEVEL") or cfg.level).upper()
+    level = (level or os.getenv("KENNING_LOG_LEVEL") or cfg.level).upper()
     log_file = log_file or resolve_path(cfg.file)
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -72,7 +72,7 @@ def configure_logging(
 
 
 def get_logger(name: str) -> logging.Logger:
-    """Return a logger namespaced under ``ultron``."""
-    if not name.startswith("ultron"):
-        name = f"ultron.{name}"
+    """Return a logger namespaced under ``kenning``."""
+    if not name.startswith("kenning"):
+        name = f"kenning.{name}"
     return logging.getLogger(name)

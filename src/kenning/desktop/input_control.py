@@ -1,6 +1,6 @@
 """Mouse + keyboard automation via ``pyautogui``.
 
-Distinct from :mod:`ultron.desktop.uia` -- this module does
+Distinct from :mod:`kenning.desktop.uia` -- this module does
 pixel-coordinate / synthetic-input control rather than semantic UIA
 clicks. Use UIA when the target is a standard UI element; use this
 module when:
@@ -40,7 +40,7 @@ from typing import Optional
 
 import pyautogui  # type: ignore[import]
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.input_control")
 
@@ -94,7 +94,7 @@ def _foreground_is_security_window() -> bool:
     refusal is logged with context for audit.
     """
     try:
-        from ultron.desktop.windows import get_foreground_window
+        from kenning.desktop.windows import get_foreground_window
         fg = get_foreground_window()
     except Exception as e:  # noqa: BLE001
         logger.debug("foreground check failed: %s", e)
@@ -129,7 +129,7 @@ def _validate_input_action(
     directly in the controller.
     """
     try:
-        from ultron.safety.validator import RuleContext, get_validator
+        from kenning.safety.validator import RuleContext, get_validator
 
         ctx = RuleContext(
             tool_name=f"desktop.input.{action}",
@@ -140,7 +140,7 @@ def _validate_input_action(
         return get_validator().check(ctx)
     except Exception as e:  # noqa: BLE001
         logger.debug("input_control validator skipped: %s", e)
-        from ultron.safety.validator import ValidatorVerdict, Verdict
+        from kenning.safety.validator import ValidatorVerdict, Verdict
         return ValidatorVerdict(
             verdict=Verdict.ALLOW, reason="validator unavailable",
         )
@@ -223,7 +223,7 @@ class InputController:
         if capture is None:
             return None
         try:
-            from ultron.desktop.click_preview import (
+            from kenning.desktop.click_preview import (
                 ConfirmationHistory,
                 PreviewDecision,
                 preview_click,
@@ -339,7 +339,7 @@ class InputController:
         or ``duration_s=0``, pyautogui's default linear motion is used.
         """
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('move_mouse')
         args = {
             "x": int(x),
@@ -389,7 +389,7 @@ class InputController:
         ``clicks=2`` performs a double click.
         """
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('click')
         if button not in ("left", "right", "middle"):
             return InputControlResult(
@@ -455,7 +455,7 @@ class InputController:
     ) -> InputControlResult:
         """Type a string at the current focus.
 
-        Use :meth:`ultron.desktop.uia.type_text_into_element` for
+        Use :meth:`kenning.desktop.uia.type_text_into_element` for
         targeting a specific UI element semantically.
 
         Catalog 09 T3 (GREEN): optional ``wpm`` kwarg overrides
@@ -471,11 +471,11 @@ class InputController:
         maps "type slowly" -> 30 WPM, "type normally" -> 60 WPM,
         "type fast" -> 120 WPM. Non-positive ``wpm`` values are
         rejected (the upstream plugin's bare division would raise
-        ``ZeroDivisionError`` -- ultron returns a structured error
+        ``ZeroDivisionError`` -- kenning returns a structured error
         instead).
         """
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('type_text')
         if not isinstance(text, str):
             return InputControlResult(
@@ -634,7 +634,7 @@ class InputController:
             :class:`InputControlResult` with action ``"drag_to"``.
         """
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('drag_to')
 
         if button not in ("left", "right", "middle"):
@@ -713,11 +713,11 @@ class InputController:
         notch). Positive scrolls up (vertical) or left (horizontal);
         negative scrolls down or right, following pyautogui's
         convention. Unlike the upstream plugin which silently falls
-        through unknown direction strings to ``hscroll``, ultron
+        through unknown direction strings to ``hscroll``, kenning
         rejects unknown values with a structured error.
         """
         # Anticheat-safe mode: hard-blocked while the user is in game.
-        from ultron.safety.anticheat import guard as _anticheat_guard
+        from kenning.safety.anticheat import guard as _anticheat_guard
         _anticheat_guard('scroll')
         if direction not in ("vertical", "horizontal"):
             return InputControlResult(

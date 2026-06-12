@@ -1,6 +1,6 @@
 """Cross-encoder reranker tests (frontier item 2, 2026-05-21).
 
-Unit-level tests for :class:`ultron.memory.reranker.CrossEncoderReranker`
+Unit-level tests for :class:`kenning.memory.reranker.CrossEncoderReranker`
 + integration touch-points on :class:`ConversationMemory._apply_reranker`.
 
 No real model download happens here -- ``sentence_transformers.CrossEncoder``
@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.config import MemoryRerankingConfig, MemoryConfig, UltronConfig
+from kenning.config import MemoryRerankingConfig, MemoryConfig, KenningConfig
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +67,7 @@ def test_memory_config_includes_reranking():
 
 
 def test_full_config_round_trip_enables_reranking():
-    cfg = UltronConfig.model_validate({
+    cfg = KenningConfig.model_validate({
         "memory": {
             "reranking": {
                 "enabled": True,
@@ -103,7 +103,7 @@ def _stub_cross_encoder_with_scores(scores):
 def test_rerank_empty_query_returns_prefix(monkeypatch):
     """Empty / whitespace-only query falls back to pre-rerank order
     (no model load, no predict call)."""
-    from ultron.memory.reranker import CrossEncoderReranker
+    from kenning.memory.reranker import CrossEncoderReranker
 
     cands = [_mock_turn(i, f"text {i}") for i in range(5)]
     rr = CrossEncoderReranker()
@@ -114,14 +114,14 @@ def test_rerank_empty_query_returns_prefix(monkeypatch):
 
 
 def test_rerank_empty_candidates_returns_empty():
-    from ultron.memory.reranker import CrossEncoderReranker
+    from kenning.memory.reranker import CrossEncoderReranker
 
     rr = CrossEncoderReranker()
     assert rr.rerank("query", [], 5) == []
 
 
 def test_rerank_top_k_zero_returns_empty():
-    from ultron.memory.reranker import CrossEncoderReranker
+    from kenning.memory.reranker import CrossEncoderReranker
 
     cands = [_mock_turn(i, f"text {i}") for i in range(5)]
     rr = CrossEncoderReranker()
@@ -130,7 +130,7 @@ def test_rerank_top_k_zero_returns_empty():
 
 def test_rerank_orders_by_score_desc(monkeypatch):
     """Highest cross-encoder score wins position 0."""
-    from ultron.memory import reranker as reranker_module
+    from kenning.memory import reranker as reranker_module
 
     cands = [
         _mock_turn(0, "irrelevant text"),
@@ -164,7 +164,7 @@ def test_rerank_orders_by_score_desc(monkeypatch):
 def test_rerank_with_scores_carries_indices(monkeypatch):
     """``rerank_with_scores`` preserves the original (pre-rerank) index
     so the caller can debug which item was bumped from where."""
-    from ultron.memory import reranker as reranker_module
+    from kenning.memory import reranker as reranker_module
 
     cands = [
         _mock_turn(10, "A"),
@@ -191,7 +191,7 @@ def test_rerank_truncates_long_content_before_predict(monkeypatch):
     full original content -- truncation is for the scoring pair only.
     Without this, augmented memory bodies (4-8 KB stitched web
     snippets) inflated retrieval to 50+ seconds on CPU."""
-    from ultron.memory import reranker as reranker_module
+    from kenning.memory import reranker as reranker_module
     cap = reranker_module.CrossEncoderReranker._PREDICT_CONTENT_CAP_CHARS
 
     huge_content = "x" * (cap * 4)  # well past the cap
@@ -224,7 +224,7 @@ def test_rerank_truncates_long_content_before_predict(monkeypatch):
 
 def test_rerank_truncates_to_top_k(monkeypatch):
     """``top_k`` smaller than candidate count drops the tail."""
-    from ultron.memory import reranker as reranker_module
+    from kenning.memory import reranker as reranker_module
 
     cands = [_mock_turn(i, f"text {i}") for i in range(5)]
     mock_ce_cls, _ = _stub_cross_encoder_with_scores([0.1, 0.9, 0.5, 0.3, 0.7])
@@ -242,7 +242,7 @@ def test_rerank_truncates_to_top_k(monkeypatch):
 def test_rerank_model_load_failure_is_fail_open(monkeypatch, caplog):
     """If CrossEncoder construction raises, the reranker logs WARN
     and returns the pre-rerank order. NEVER raises."""
-    from ultron.memory.reranker import CrossEncoderReranker
+    from kenning.memory.reranker import CrossEncoderReranker
     import sys
 
     def boom(*_a, **_kw):
@@ -260,7 +260,7 @@ def test_rerank_model_load_failure_is_fail_open(monkeypatch, caplog):
 
 def test_rerank_predict_failure_is_fail_open(monkeypatch):
     """If predict raises mid-call, return pre-rerank order."""
-    from ultron.memory.reranker import CrossEncoderReranker
+    from kenning.memory.reranker import CrossEncoderReranker
     import sys
 
     bad_ce = MagicMock()
@@ -276,7 +276,7 @@ def test_rerank_predict_failure_is_fail_open(monkeypatch):
 
 def test_rerank_lazy_load(monkeypatch):
     """Construction does NOT load the model; first ``rerank`` does."""
-    from ultron.memory import reranker as reranker_module
+    from kenning.memory import reranker as reranker_module
     import sys
 
     load_count = {"n": 0}
@@ -302,7 +302,7 @@ def test_rerank_lazy_load(monkeypatch):
 
 def test_rerank_eager_loads_at_construction(monkeypatch):
     """``eager=True`` at construction triggers an immediate load."""
-    from ultron.memory import reranker as reranker_module
+    from kenning.memory import reranker as reranker_module
     import sys
 
     load_count = {"n": 0}
@@ -328,14 +328,14 @@ def test_rerank_eager_loads_at_construction(monkeypatch):
 
 def test_apply_reranker_empty_candidates_returns_empty():
     """``_apply_reranker`` short-circuits on empty candidates."""
-    from ultron.memory.qdrant_store import ConversationMemory
+    from kenning.memory.qdrant_store import ConversationMemory
     cm = object.__new__(ConversationMemory)
     cm._reranker = None
     assert cm._apply_reranker("q", [], 5) == []
 
 
 def test_apply_reranker_top_k_zero_returns_empty():
-    from ultron.memory.qdrant_store import ConversationMemory
+    from kenning.memory.qdrant_store import ConversationMemory
     cm = object.__new__(ConversationMemory)
     cm._reranker = None
     cands = [_mock_turn(i, f"t{i}") for i in range(3)]
@@ -345,8 +345,8 @@ def test_apply_reranker_top_k_zero_returns_empty():
 def test_apply_reranker_construction_failure_is_fail_open(monkeypatch):
     """If the shared reranker factory raises, we return the pre-rerank
     order, not crash."""
-    from ultron.memory.qdrant_store import ConversationMemory
-    from ultron.memory import reranker as reranker_module
+    from kenning.memory.qdrant_store import ConversationMemory
+    from kenning.memory import reranker as reranker_module
 
     # 2026-05-22: _apply_reranker now routes through the module-level
     # ``get_shared_reranker`` singleton; patch THAT.
@@ -368,8 +368,8 @@ def test_apply_reranker_construction_failure_is_fail_open(monkeypatch):
 def test_apply_reranker_caches_instance(monkeypatch):
     """``_apply_reranker`` fetches the shared reranker once and caches
     it on ``self._reranker``."""
-    from ultron.memory.qdrant_store import ConversationMemory
-    from ultron.memory import reranker as reranker_module
+    from kenning.memory.qdrant_store import ConversationMemory
+    from kenning.memory import reranker as reranker_module
 
     construct_count = {"n": 0}
 

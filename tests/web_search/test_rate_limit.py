@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from ultron.web_search.rate_limit import (
+from kenning.web_search.rate_limit import (
     BackoffConfig,
     DEFAULT_BACKOFF_CONFIG,
     DEFAULT_BACKOFF_JITTER_SECONDS,

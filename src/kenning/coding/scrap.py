@@ -1,7 +1,7 @@
 """Voice "scrap it" -- user-initiated cancel + revert of a coding task.
 
 Production-hardening re-adjudication of finding #4 (the forfeit
-escape-hatch). The catalog-ported :mod:`ultron.coding.forfeit`
+escape-hatch). The catalog-ported :mod:`kenning.coding.forfeit`
 ``ForfeitController`` governs MODEL self-forfeit (minimum-effort gate +
 three-tier salvage); a USER saying "scrap it" is a different contract:
 an explicit instruction to abandon the work AND put the files back the
@@ -9,8 +9,8 @@ way they were. Plain "cancel" stops the task but leaves half-written
 files behind; "scrap it" stops the task and rolls the edits back.
 
 The roll-back rides the machinery that already exists end to end: the
-catalog-09 batch-F pre-edit hook in :mod:`ultron.coding.direct_bridge`
-records a :class:`~ultron.coding.file_history.FileHistory` snapshot
+catalog-09 batch-F pre-edit hook in :mod:`kenning.coding.direct_bridge`
+records a :class:`~kenning.coding.file_history.FileHistory` snapshot
 BEFORE every file edit the coding subprocess makes, and
 :meth:`FileHistory.undo_last` restores one level (deleting a file whose
 snapshot says "did not exist before"). Repeating ``undo_last`` until a
@@ -36,7 +36,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("coding.scrap")
 
@@ -47,27 +47,27 @@ MAX_UNDO_STEPS_PER_FILE: int = 64
 _SCRAP_PATTERNS: tuple[re.Pattern, ...] = (
     # "scrap it" / "scrap that" / "scrap this" / "scrap the project..."
     re.compile(
-        r"^(?:ultron[,!.\s]+)?(?:just\s+)?scrap\s+"
+        r"^(?:kenning[,!.\s]+)?(?:just\s+)?scrap\s+"
         r"(?:it|that|this|everything|"
         r"the\s+(?:project|task|app|program|code|whole\s+thing))[.!]?$",
         re.IGNORECASE,
     ),
     # "throw it away" / "throw that out"
     re.compile(
-        r"^(?:ultron[,!.\s]+)?(?:just\s+)?throw\s+(?:it|that|this)\s+"
+        r"^(?:kenning[,!.\s]+)?(?:just\s+)?throw\s+(?:it|that|this)\s+"
         r"(?:away|out)[.!]?$",
         re.IGNORECASE,
     ),
     # "trash it" / "trash the project"
     re.compile(
-        r"^(?:ultron[,!.\s]+)?(?:just\s+)?trash\s+"
+        r"^(?:kenning[,!.\s]+)?(?:just\s+)?trash\s+"
         r"(?:it|that|this|the\s+(?:project|task|app|program|code))[.!]?$",
         re.IGNORECASE,
     ),
     # "revert everything" / "undo all of that" / "undo all the changes
     # you just made"
     re.compile(
-        r"^(?:ultron[,!.\s]+)?(?:just\s+)?(?:revert|undo)\s+"
+        r"^(?:kenning[,!.\s]+)?(?:just\s+)?(?:revert|undo)\s+"
         r"(?:everything|all\s+(?:of\s+)?(?:it|that|this|the\s+changes|"
         r"those\s+changes|your\s+changes))"
         r"(?:\s+you\s+(?:just\s+)?(?:did|made|changed|wrote))?[.!]?$",
@@ -75,7 +75,7 @@ _SCRAP_PATTERNS: tuple[re.Pattern, ...] = (
     ),
     # "cancel and revert" / "cancel it and undo the changes"
     re.compile(
-        r"^(?:ultron[,!.\s]+)?cancel(?:\s+(?:it|that|the\s+task))?\s+and\s+"
+        r"^(?:kenning[,!.\s]+)?cancel(?:\s+(?:it|that|the\s+task))?\s+and\s+"
         r"(?:revert|undo)(?:\s+\S.*)?[.!]?$",
         re.IGNORECASE,
     ),
@@ -150,7 +150,7 @@ def revert_session_edits(session_id: str, *, history=None) -> ScrapRevertResult:
     had_history = False
     try:
         if history is None:
-            from ultron.coding.file_history import get_file_history
+            from kenning.coding.file_history import get_file_history
 
             history = get_file_history(session_id)
         paths = list(history.all_paths())

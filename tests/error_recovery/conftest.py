@@ -14,12 +14,12 @@ from typing import List
 
 import pytest
 
-from ultron.resilience import (
+from kenning.resilience import (
     CircuitState,
     ErrorLog,
     set_error_log,
 )
-from ultron.resilience.phrases import reset_phrase_cache
+from kenning.resilience.phrases import reset_phrase_cache
 
 
 @pytest.fixture
@@ -59,7 +59,7 @@ def _reset_phrase_cache():
 @pytest.fixture(autouse=True)
 def _reset_brave_breaker():
     """Reset the module-level Brave breaker so tests don't see stale failures."""
-    from ultron.web_search import brave as _brave_mod
+    from kenning.web_search import brave as _brave_mod
     _brave_mod._BRAVE_BREAKER.reset()
     yield
     _brave_mod._BRAVE_BREAKER.reset()
@@ -67,7 +67,7 @@ def _reset_brave_breaker():
 
 @pytest.fixture(autouse=True)
 def _reset_jina_breaker():
-    from ultron.web_search import jina as _jina_mod
+    from kenning.web_search import jina as _jina_mod
     _jina_mod._JINA_BREAKER.reset()
     yield
     _jina_mod._JINA_BREAKER.reset()

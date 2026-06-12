@@ -11,7 +11,7 @@ raw user_message in :func:`_build_messages`.
 """
 from __future__ import annotations
 
-from ultron.llm.inference import _sanitize_user_input
+from kenning.llm.inference import _sanitize_user_input
 
 
 # ---------------------------------------------------------------------------

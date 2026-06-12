@@ -6,7 +6,7 @@ import dataclasses
 import sys
 import types
 
-from ultron.utils.fairseq_compat import patch_fairseq_dataclasses
+from kenning.utils.fairseq_compat import patch_fairseq_dataclasses
 
 
 def test_patch_allows_legacy_nested_dataclass_default():

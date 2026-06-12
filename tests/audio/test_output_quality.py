@@ -1,4 +1,4 @@
-"""Tests for the TTS output-quality watcher (``ultron.audio.output_quality``).
+"""Tests for the TTS output-quality watcher (``kenning.audio.output_quality``).
 
 Hermetic: all clips are synthetic numpy waveforms; the watcher's JSONL
 sink writes to ``tmp_path``; threads are joined via ``close()`` (binding
@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ultron.audio.output_quality import (
+from kenning.audio.output_quality import (
     OutputQualityWatcher,
     analyze_clip,
     get_output_watcher,
@@ -242,7 +242,7 @@ def test_pause_between_sentences_is_not_a_dropout() -> None:
 
 
 def test_loud_runs_helper() -> None:
-    from ultron.audio.output_quality import _loud_runs
+    from kenning.audio.output_quality import _loud_runs
 
     assert _loud_runs(np.array([], dtype=bool)) == []
     assert _loud_runs(np.array([True, True, True])) == [(0, 2)]
@@ -502,7 +502,7 @@ def test_waveform_stream_disabled_writes_nothing(tmp_path: Path) -> None:
 
 
 def test_output_watch_waveform_config_defaults() -> None:
-    from ultron.config import OutputWatchConfig
+    from kenning.config import OutputWatchConfig
 
     cfg = OutputWatchConfig()
     assert cfg.waveform_enabled is True
@@ -517,7 +517,7 @@ def test_output_watch_waveform_config_defaults() -> None:
 def test_get_output_watcher_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     from types import SimpleNamespace
 
-    import ultron.config as config_mod
+    import kenning.config as config_mod
 
     # Opt back in past the session-wide conftest guard, then exercise
     # the CONFIG gate.
@@ -545,8 +545,8 @@ def test_get_output_watcher_enabled_and_cached(
 ) -> None:
     from types import SimpleNamespace
 
-    import ultron.audio.output_quality as oq
-    import ultron.config as config_mod
+    import kenning.audio.output_quality as oq
+    import kenning.config as config_mod
 
     set_output_watcher_enabled(True)
     monkeypatch.setattr(config_mod, "LOGS_DIR", tmp_path)
@@ -568,7 +568,7 @@ def test_get_output_watcher_enabled_and_cached(
 
 
 def test_output_watch_config_defaults() -> None:
-    from ultron.config import OutputWatchConfig
+    from kenning.config import OutputWatchConfig
 
     cfg = OutputWatchConfig()
     assert cfg.enabled is True

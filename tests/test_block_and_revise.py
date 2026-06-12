@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.openclaw_routing.block_and_revise import (
+from kenning.openclaw_routing.block_and_revise import (
     ToolCallValidator,
     ValidationResult,
     is_enabled,

@@ -14,7 +14,7 @@ from typing import Dict, List, Sequence
 
 import pytest
 
-from ultron.memory.discourse import (
+from kenning.memory.discourse import (
     DiscourseClassifier,
     DiscourseType,
     classify_by_rules,

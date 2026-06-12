@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ultron.spotify.auth import (
+from kenning.spotify.auth import (
     SpotifyAuth,
     SpotifyAuthError,
     SpotifyCredentials,
@@ -20,14 +20,14 @@ from ultron.spotify.auth import (
     load_credentials,
     save_refresh_token,
 )
-from ultron.spotify.client import NowPlaying, SpotifyAPIError, SpotifyClient
-from ultron.spotify.voice import (
+from kenning.spotify.client import NowPlaying, SpotifyAPIError, SpotifyClient
+from kenning.spotify.voice import (
     SpotifyCommand,
     handle_spotify_command,
     match_spotify_command,
 )
 
-from ultron.pipeline.orchestrator import Orchestrator
+from kenning.pipeline.orchestrator import Orchestrator
 
 
 class _Resp:
@@ -390,7 +390,7 @@ def _orch():
 
 
 def test_orchestrator_spotify_disabled(monkeypatch) -> None:
-    import ultron.config as config_mod
+    import kenning.config as config_mod
 
     monkeypatch.setattr(config_mod, "get_config",
                         lambda: SimpleNamespace(
@@ -401,7 +401,7 @@ def test_orchestrator_spotify_disabled(monkeypatch) -> None:
 
 
 def test_orchestrator_spotify_no_match(monkeypatch) -> None:
-    import ultron.config as config_mod
+    import kenning.config as config_mod
 
     monkeypatch.setattr(config_mod, "get_config",
                         lambda: SimpleNamespace(
@@ -411,7 +411,7 @@ def test_orchestrator_spotify_no_match(monkeypatch) -> None:
 
 
 def test_orchestrator_spotify_not_set_up(monkeypatch) -> None:
-    import ultron.config as config_mod
+    import kenning.config as config_mod
 
     monkeypatch.setattr(config_mod, "get_config",
                         lambda: SimpleNamespace(
@@ -423,7 +423,7 @@ def test_orchestrator_spotify_not_set_up(monkeypatch) -> None:
 
 
 def test_orchestrator_spotify_happy(monkeypatch) -> None:
-    import ultron.config as config_mod
+    import kenning.config as config_mod
 
     monkeypatch.setattr(config_mod, "get_config",
                         lambda: SimpleNamespace(

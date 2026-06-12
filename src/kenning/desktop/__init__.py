@@ -13,7 +13,7 @@ moondream2 VLM, MCP tool exposure for OpenClaw agents.
 
 Module shape:
 
-    src/ultron/desktop/
+    src/kenning/desktop/
     +-- monitors.py        Win32 monitor enumeration
     +-- capture.py         mss-based multi-monitor capture
     +-- windows.py         pywin32 window enumeration + foreground detection
@@ -21,20 +21,20 @@ Module shape:
 
 from __future__ import annotations
 
-from ultron.desktop.monitors import (
+from kenning.desktop.monitors import (
     Monitor,
     enumerate_monitors,
     find_monitor,
     point_to_monitor,
 )
-from ultron.desktop.capture import (
+from kenning.desktop.capture import (
     Screenshot,
     ScreenCapture,
     ScreenCaptureError,
     get_screen_capture,
     set_screen_capture,
 )
-from ultron.desktop.windows import (
+from kenning.desktop.windows import (
     CloseWindowResult,
     WindowInfo,
     close_window,
@@ -44,7 +44,7 @@ from ultron.desktop.windows import (
     find_window,
     wait_for_window,
 )
-from ultron.desktop.placement import (
+from kenning.desktop.placement import (
     PlacementResult,
     move_window_to_monitor,
     maximize_window,
@@ -55,14 +55,14 @@ from ultron.desktop.placement import (
     minimize_window_idempotent,
     restore_window_idempotent,
 )
-from ultron.desktop.launcher import (
+from kenning.desktop.launcher import (
     AppEntry,
     AppLauncher,
     LaunchResult,
     get_app_launcher,
     set_app_launcher,
 )
-from ultron.desktop.uia import (
+from kenning.desktop.uia import (
     BROWSER_NAMES,
     BrowserContent,
     BrowserLink,
@@ -79,13 +79,13 @@ from ultron.desktop.uia import (
     get_ui_element_inventory,
     wait_for_text_in_window,
 )
-from ultron.desktop.input_control import (
+from kenning.desktop.input_control import (
     InputControlResult,
     InputController,
     get_input_controller,
     set_input_controller,
 )
-from ultron.desktop.dialog_control import (
+from kenning.desktop.dialog_control import (
     DIALOG_CLASSES,
     DIALOG_CONTROL_TYPES,
     DIALOG_TITLE_KEYWORDS,
@@ -103,7 +103,7 @@ from ultron.desktop.dialog_control import (
     type_into_dialog_field,
     wait_for_dialog,
 )
-from ultron.desktop.element_click import (
+from kenning.desktop.element_click import (
     CLICKABLE_TYPES,
     ClickResult,
     TextMatch,
@@ -112,7 +112,7 @@ from ultron.desktop.element_click import (
     find_elements_by_name,
     find_text_in_window,
 )
-from ultron.desktop.screen_context import (
+from kenning.desktop.screen_context import (
     ScreenContextSnapshot,
     ScreenContextCache,
     build_screen_context,
@@ -122,7 +122,7 @@ from ultron.desktop.screen_context import (
     set_vlm_describe,
     get_vlm_describe,
 )
-from ultron.desktop.vlm import (
+from kenning.desktop.vlm import (
     Moondream2VLM,
     VLMResult,
     VLMLoadError,
@@ -130,7 +130,7 @@ from ultron.desktop.vlm import (
     get_vlm,
     set_vlm,
 )
-from ultron.desktop.voice import (
+from kenning.desktop.voice import (
     AppLaunchVoiceResult,
     ScreenContextVoiceResult,
     WindowCloseVoiceResult,

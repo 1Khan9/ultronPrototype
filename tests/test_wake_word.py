@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-from ultron.audio.wake_word import WakeWordDetector
+from kenning.audio.wake_word import WakeWordDetector
 
 
 @pytest.fixture

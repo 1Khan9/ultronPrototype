@@ -1,4 +1,4 @@
-# Ultron prototype — codebase structure (single-source reference)
+# Kenning prototype — codebase structure (single-source reference)
 
 > **Purpose:** complete map of the system's source files, scripts,
 > tests, and runtime artifacts, with public APIs and information flow
@@ -10,10 +10,23 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD: `4a08a62`** (the 2026-06-12 live-findings fix
-> batch + two follow-ups; pushed to origin/main). **Sweep: 9717 passed
-> / 39 skipped / 0 failed, exit 0, ~127 s** (worktree, loaded-machine
-> two-file-ignore recipe) + `scripts/validate_config.py` clean.
+> **Validating HEAD: the 2026-06-12 Kenning rename commit** (on
+> `def92b5`; SHA pinned in the trailing doc-bump). **The product is
+> now named Kenning** -- wake word, package import root
+> (`src/kenning/`), env-var prefix (`KENNING_*`), runtime dirs
+> (`~/.kenning`), persona, and a freshly trained
+> `models/openwakeword/kenning.onnx` wake-word model. The GitHub repo
+> slug / local checkout dir `ultronPrototype` is unchanged (real
+> paths). Detail in the Recent-sessions rename row. **Sweep on the
+> renamed tree: 9719 passed / 39 skipped / 0 failed, exit 0, ~144 s**
+> (worktree, loaded-machine two-file-ignore recipe) +
+> `scripts/validate_config.py` clean.
+>
+> **Earlier validating HEAD: `4a08a62`** (the 2026-06-12 live-findings
+> fix batch + two follow-ups; pushed to origin/main). **Sweep: 9717
+> passed / 39 skipped / 0 failed, exit 0, ~127 s** (worktree,
+> loaded-machine two-file-ignore recipe) +
+> `scripts/validate_config.py` clean.
 > **Follow-ups on the batch:** `db77165` removed the dead shadowed
 > `ConversationMemory.close()` (the queue-draining definition Python
 > actually used survives, with the .lock docstring folded in);
@@ -26,7 +39,7 @@
 > `ab08bf4..2d79a8e` on `e19094a`/`9d460da`): every OPEN live finding
 > from the dogfood close-out fixed in one pass — (1) NEW
 > `lifecycle/single_instance.py` + `__main__` wiring: held-OS-lock
-> single-instance guard (duplicate `python -m ultron` exits code 3
+> single-instance guard (duplicate `python -m kenning` exits code 3
 > naming the holder PID before any model load; refuse only on genuine
 > lock contention, fail-open otherwise; the root of the double-respond
 > + stale-instance port-19761 incidents); (2) the supervisor's
@@ -165,7 +178,7 @@
 > local clock) fires on its spoken transcript + a negative-control utterance
 > trips NONE; **10 `full_loop`** -- complete turns: audio -> STT -> gate ->
 > LLM (in-context remember->recall pair must surface the remembered fact) ->
-> Ultron-voice TTS, plus a LIVE search turn through the real
+> Kenning-voice TTS, plus a LIVE search turn through the real
 > provider/reader chains; **11 `coding`** -- the voice coding engineer with
 > the REAL coding CLI: create -> completion narration -> gated sandbox run
 > (exact stdout asserted) -> edit follow-up on the SAME session -> re-run
@@ -182,8 +195,8 @@
 > token/latency tax that sometimes hijacked small tasks outright (the model
 > recited orientation material instead of acting). Empirically verified:
 > in-repo dirs see the context even when git-initialised; outside dirs are
-> clean. FIX: ``coding.sandbox_root`` now defaults to ``~/.ultron/sandbox``
-> (outside any repo; the established ``~/.ultron/`` convention);
+> clean. FIX: ``coding.sandbox_root`` now defaults to ``~/.kenning/sandbox``
+> (outside any repo; the established ``~/.kenning/`` convention);
 > ``config.resolve_path`` learned ``~`` expansion; the safety policy's
 > default sandbox set is now derived from the CONFIGURED coding root PLUS
 > the legacy in-repo root (pre-existing projects stay editable/runnable);
@@ -236,7 +249,7 @@
 > ENVIRONMENTAL (GPU driver/thermal/desktop era between May 26 and
 > June 10), not code. STT byte-identical at 16ms throughout. **VRAM peak
 > 6596-6598MB <= the locked 6664MB even in absolute terms** (loaded
-> 6130-6174 <= 6254; Ultron's own load delta ~4242MB vs the locked-era
+> 6130-6174 <= 6254; Kenning's own load delta ~4242MB vs the locked-era
 > ~4223MB). Prefill-growth suspects ruled out empirically: the skills
 > block is 0 chars on baseline queries; the composed system prompt is
 > ~1k tokens; USER.md is 82 bytes. The new guardrail brake's RELATIVE
@@ -250,7 +263,7 @@
 > deliberately NOT bundled -- concurrent CUDA init can shift peak-VRAM
 > behaviour, so it needs its own measured pass against the locked
 > contract. SearxNG restored (Docker Desktop started; container
-> `ultron-searxng` maps 8888->8080) -- live search provider latency back
+> `kenning-searxng` maps 8888->8080) -- live search provider latency back
 > to ~1.5s from the ~17s degraded-fallback path.
 > **Campaign close-out: the consolidated suite green end-to-end.** The
 > first full 12-test run of the expanded suite read 11/12 -- the one flag
@@ -285,7 +298,7 @@
 > SHIPPED from the session: NEW `audio/relay_speech.py` (see the module
 > section) -- "tell my teammates X" now rephrases to a direct second-
 > person line and speaks it on a configurable secondary output device
-> (VoiceMeeter strip -> mic B-bus) so the game voice chat hears Ultron;
+> (VoiceMeeter strip -> mic B-bus) so the game voice chat hears Kenning;
 > `relay_speech` config (default ON) + `_maybe_handle_relay_speech`
 > orchestrator short-circuit + 39 hermetic tests. ALSO SHIPPED: NEW
 > `audio/output_quality.py` TTS blip watcher (see the module section) --
@@ -298,7 +311,7 @@
 > THEN the relay grew into a CONVERSATIONAL game-chat agent: named
 > agent callouts ("ask Clove to smoke window" — closed Valorant-roster
 > vocabulary, `relay_speech.addressee_names` extendable), compose mode
-> ("give my team encouragement" — Ultron authors the line),
+> ("give my team encouragement" — Kenning authors the line),
 > first-person-preserving rephrase, recent-lines ring -> wording varies
 > per call (anti-soundboard), relay matches bypass the follow-up
 > addressing gate (no wake word inside the window; fixes the observed
@@ -428,8 +441,8 @@
 >   `ProjectSession`, so the spawned coding subprocess can reach
 >   request_clarification / report_progress / declare_complete -- the
 >   clarify/verify/complete loop is actually connected for voice tasks (it was
->   dispatched bridge-only before). Added `UltronMCPServer.is_running()`.
-> * **`9cf6f45`** -- B3-runlaunch: NEW `src/ultron/coding/sandbox_runner.py` +
+>   dispatched bridge-only before). Added `KenningMCPServer.is_running()`.
+> * **`9cf6f45`** -- B3-runlaunch: NEW `src/kenning/coding/sandbox_runner.py` +
 >   the "run the calculator" / "launch the server" voice commands. Runs are
 >   sandbox-confined (hard `_is_within` root check) + safety-validator-gated +
 >   non-blocking (background thread -> a pending run report the orchestrator
@@ -488,9 +501,9 @@
 > `result.payload` field (the real `ToolInvocationResult` carries structured
 > data on `.raw`), so every OpenClaw-proxied desktop call returned empty; the
 > bug hid because the test stubs defined a fake `payload` field (now aligned to
-> `.raw` + a regression test uses the real type). **#28** -- `UltronIgnoreRule`
+> `.raw` + a regression test uses the real type). **#28** -- `KenningIgnoreRule`
 > built the ignore controller with no `workspace_root`, so only
-> `~/.ultron/.ultronignore` was consulted and the project/workspace layers were
+> `~/.kenning/.kenningignore` was consulted and the project/workspace layers were
 > silently skipped; now forwards `resolver.project_root`. **#100** -- the
 > tamper-evident audit chain is now verified at orchestrator startup (read-only
 > WARN, never blocks boot). **#59** -- the click-preview VLM safety gate
@@ -620,10 +633,10 @@
 >   tracking + `kill_process_tree` reap-on-shutdown); `mcp.enabled` /
 >   `mcp.autostart` both default-OFF. Managed servers reach `claude` via
 >   `--mcp-config`; JSON-RPC tool invocation is the optional `mcp`-SDK adapter.
-> * **`.ultronignore` (safety Category U):** NEW `safety/rules/category_ignore.py`
->   `UltronIgnoreRule` -- blocks reads/writes of ignored paths + file-reading
+> * **`.kenningignore` (safety Category U):** NEW `safety/rules/category_ignore.py`
+>   `KenningIgnoreRule` -- blocks reads/writes of ignored paths + file-reading
 >   shell commands targeting them (secrets protection); default-SAFE no-op until
->   a `.ultronignore` exists; `safety.rules.U1`-toggleable.
+>   a `.kenningignore` exists; `safety.rules.U1`-toggleable.
 > * **Explicit-intent unblock:** the `safety.intent` matcher is wired into the
 >   validator -- a `NEEDS_EXPLICIT_INTENT` verdict upgrades to an audited allow
 >   ONLY when the user's current utterance names the action (verb + object);
@@ -633,7 +646,7 @@
 > **Architecturally-inactive (assessed, deliberately DOCUMENTED rather than
 > force-wired -- consistent with the user's "keep + document as inactive"
 > decision on the dead coding modules):** these stem from concurrent-server /
-> agent-harness catalog sources whose assumptions don't hold in Ultron's
+> agent-harness catalog sources whose assumptions don't hold in Kenning's
 > single-threaded run loop + delegate-to-`claude --print` design, so
 > force-wiring them would add hot-path latency / risk for a window that does
 > not exist (a degradation the binding constraints forbid):
@@ -664,7 +677,7 @@
 > `.cmd`->python subprocess and are the documented loaded-machine flake.
 >
 > **Earlier validating HEAD:** catalog 14 (clawhub-self-improving-agent) -- FOUR
-> bounded extensions to the EXISTING `src/ultron/evolution/` package (NOT a
+> bounded extensions to the EXISTING `src/kenning/evolution/` package (NOT a
 > new subsystem), **HEAD `b55697e`** (catalog-14 commits `e52c364` …
 > `b55697e`; this doc-bump is the trailing tip), pushed to `origin/main`
 > with the `main` checkout fast-forwarded. The benign (0 RED / 1 YELLOW) plugin adds QUALITATIVE
@@ -717,16 +730,16 @@
 > … `5fde223`; base `6334b41` = catalog 12), pushed to `origin/main` with
 > the `main` checkout fast-forwarded + in sync. **The source plugin
 > was QUARANTINED and NEVER read / imported / executed / deobfuscated** (it
-> is treated as high-risk for malicious code); the `src/ultron/evolution/`
+> is treated as high-risk for malicious code); the `src/kenning/evolution/`
 > package was built clean-room from the catalog entry + eight independent
 > static scan reports ONLY -- no source code, constant, or string was ever
 > in context to copy. The new package is a NEW top-level subsystem (10
 > modules) wired into the live voice pipeline default-ON + fail-open. The
 > upstream's dangerous core (an agent that rewrites its own executable code
 > and runs shell / network "verify" steps) is excluded BY CONSTRUCTION:
-> ultron's engine proposes DATA only (a Markdown skill under
+> kenning's engine proposes DATA only (a Markdown skill under
 > `data/evolution/skills/*.md` or an in-range config value), NEVER generated
-> code, NEVER `src/ultron/`, NEVER a Category-K surface; the safety
+> code, NEVER `src/kenning/`, NEVER a Category-K surface; the safety
 > validator / audit ledger / engine itself sit behind a Tier-3 hard wall;
 > zero network / shell / eval; every change is pre-flight-gated (fail-closed)
 > + checkpointed + reversible + hash-chain-audited, bounded by the
@@ -752,7 +765,7 @@
 >   parsing with an injectable git provider. The load-bearing safety wall.
 > * **`skill_distiller.py` (GREEN):** capsule -> pattern -> new-skill
 >   distillation. Local-only synthesis of a trigger-loaded skill
->   (ultron-compatible frontmatter) from >=10 recurring success capsules (or
+>   (kenning-compatible frontmatter) from >=10 recurring success capsules (or
 >   a repair gene from failures), 24h cooldown + data-hash idempotency.
 >   Output is DATA (`skills/*.md`), never code.
 > * **`guardrails.py` (GREEN):** four in-process regression detectors
@@ -804,7 +817,7 @@
 > checkout fast-forwarded. felo-search is a DOCUMENTATION-ONLY plugin (README +
 > SKILL + _meta.json, no Python) that wraps the PAID `felo.ai` search API,
 > so the direct API integration is RED (out of scope per the no-paid-APIs
-> rule); the port implements the transferable PATTERNS over ultron's
+> rule); the port implements the transferable PATTERNS over kenning's
 > existing FREE local-first search ladder. Independent zero-RED security
 > confirmation via 3 Sonnet read-only scanners. 3 GREEN + 1 YELLOW + 1 RED.
 > The five batches (full per-batch detail below):
@@ -857,7 +870,7 @@
 >   (fake executor + fake LLM). First concrete consumer of the catalog-11
 >   `AgentLoop` base.
 > * **Batch E (T3 cross-system extensions) — DONE (importable):** the
->   deep-gather pattern generalised to ultron's other retrieval surfaces.
+>   deep-gather pattern generalised to kenning's other retrieval surfaces.
 >   NEW `agent_loop/deep_loops.py`: a generic `DeepGatherLoop(AgentLoop)`
 >   (decompose -> gather-over-an-injected-source -> LLM gap-fill, bounded by
 >   the `max_steps` cap; fail-open) + three thin DI subclasses --
@@ -867,7 +880,7 @@
 >   `.discover()`). Each injects its domain primitive (so it is
 >   domain-agnostic + hermetically testable) behind a clean public entry
 >   method. Shipped as IMPORTABLE primitives -- NO new orchestrator hot-path
->   short-circuit: ultron has no always-on runtime consumer for codebase
+>   short-circuit: kenning has no always-on runtime consumer for codebase
 >   exploration (the AI coding agent self-explores) and UI discovery is a
 >   miss-fallback, so wiring each to a concrete trigger is a one-call
 >   integration left to the consuming surface (the proven
@@ -907,14 +920,14 @@
 > superseded by the catalog-10 `browser-use` CLI tier, so the port
 > extracts the genuinely transferable hardening patterns + the
 > agent-loop meta-pattern (4 GREEN + 3 YELLOW + 0 RED), NOT the CDP
-> transport. NEW modules: `src/ultron/utils/heartbeat.py` (T2
+> transport. NEW modules: `src/kenning/utils/heartbeat.py` (T2
 > `HeartbeatThread` -- a stoppable, fail-open daemon keep-alive
 > primitive; improves on the upstream's unstoppable `while True:
 > sleep` with `Event.wait` + `HeartbeatStats`),
-> `src/ultron/utils/health_check.py` (T4 `http_health_check` +
+> `src/kenning/utils/health_check.py` (T4 `http_health_check` +
 > `cdp_health_check` -- cheap fail-open "is this endpoint answering?"
 > pre-flight primitives with an injectable transport),
-> `src/ultron/agent_loop/base.py` (the `AgentLoop` meta-pattern: an
+> `src/kenning/agent_loop/base.py` (the `AgentLoop` meta-pattern: an
 > ADDITIVE, safety-instrumented observe -> plan -> act -> verify base
 > class whose load-bearing invariant is the `max_steps` cap, plus
 > built-in repeated-signature loop detection + per-step `StepRecord`s +
@@ -929,9 +942,9 @@
 > fallback the upstream lacked), and `export_pdf` (T6 -- `Page.printToPDF`
 > page-to-PDF export, `PathResolver` + Cap-2/Cap-3 gated, fail-open).
 > T1 idle-reconnect / T2 heartbeat / T4 health-check / T5
-> `--remote-allow-origins` have NO literal wiring target in ultron's
+> `--remote-allow-origins` have NO literal wiring target in kenning's
 > CLI-based browser architecture (the `browser-use` CLI owns its own
-> Chrome process + CDP port; ultron never opens a raw CDP socket; the
+> Chrome process + CDP port; kenning never opens a raw CDP socket; the
 > launcher deliberately blocks CDP flags on the user's real Chrome) --
 > so T2 + T4 ship as importable primitives and T1 + T5 are documented
 > findings, not forced code. All additions are clean-room
@@ -1000,7 +1013,7 @@
 >   (`_emit_turn_telemetry`: routing-intent kind under the `category`
 >   safe key + `searched` bool + numeric `latency_ms` + coarse `tier`
 >   bucket + `outcome` enum). FAIL-PRIVATE (no-op unless
->   `ULTRON_TELEMETRY=opt-in`) -- the one feature deliberately NOT
+>   `KENNING_TELEMETRY=opt-in`) -- the one feature deliberately NOT
 >   default-on, because privacy-by-construction is the documented
 >   reason. Fail-open at every layer. Triage of the remaining
 >   ported-but-unwired primitives: cline T9 (MCP-hub) already closed
@@ -1035,7 +1048,7 @@
 >   importable rather than fake-wired. The encoder produces SWE-Agent
 >   `![alt](data:mime;base64,...)` data-URLs for a multimodal LLM
 >   that consumes the OpenAI `[{type:text},{type:image_url}]` content
->   shape; ultron has no such surface today: the in-process Qwen 4B
+>   shape; kenning has no such surface today: the in-process Qwen 4B
 >   is text-only, the coding bridge passes `render_prompt(request)`
 >   as a plain text argv to `claude --print` (the AI coding agent
 >   consumes images via @-file references, NOT inline data-URLs), and
@@ -1051,11 +1064,11 @@
 >
 > **Earlier validating HEAD:** catalog 10 (clawhub-browser-use) port on
 > `claude/stoic-banach-74402b` (pushed to `origin/main`). Nine-batch
-> port wrapping the external open-source `browser-use` CLI as ultron's
+> port wrapping the external open-source `browser-use` CLI as kenning's
 > CDP-backed browser automation tier -- the second tier above the UIA
 > `extract_browser_content` extractor. The plugin source was
 > documentation-only (a `SKILL.md` + two `references/*.md` recipes +
-> `_meta.json`; no Python source), so `src/ultron/desktop/browser_use.py`
+> `_meta.json`; no Python source), so `src/kenning/desktop/browser_use.py`
 > is a clean-room subprocess wrapper around the documented public CLI
 > surface -- NOT a vendored copy. Independent zero-RED-confirmation
 > security review via a Sonnet 4.6 Explore agent; T12 (cloud, paid
@@ -1075,9 +1088,9 @@
 > | 9 | `5451017` | orchestrator singleton construction + screen_context fallback tier + THIRD_PARTY_NOTICES |
 > | 9-bump | (this commit) | validating-HEAD SHA bump |
 >
-> New modules: `src/ultron/desktop/browser_use.py` (the tool),
-> `src/ultron/desktop/browser_sessions.py` (session manager),
-> `src/ultron/desktop/browser_sequence.py` (sequence runner). New
+> New modules: `src/kenning/desktop/browser_use.py` (the tool),
+> `src/kenning/desktop/browser_sessions.py` (session manager),
+> `src/kenning/desktop/browser_sequence.py` (sequence runner). New
 > top-level `browser_use` config section (8 knobs, all default ON;
 > fail-open covers the missing-binary case). Orchestrator constructs
 > the `BrowserUseTool` + `BrowserSessionsManager` singletons at
@@ -1147,8 +1160,8 @@
 >
 > Tests: **7821 passing / 26 skipped / 0 failed in ~146 s** (+106 net
 > over the catalog 09 baseline of 7715). New modules added across the
-> session: `src/ultron/desktop/dialog_poller.py`, `src/ultron/desktop/ocr.py`,
-> `src/ultron/lifecycle/gaming_engage.py`. Three new RoutingIntentKind
+> session: `src/kenning/desktop/dialog_poller.py`, `src/kenning/desktop/ocr.py`,
+> `src/kenning/lifecycle/gaming_engage.py`. Three new RoutingIntentKind
 > values land voice intents for active-window-query / semantic-click /
 > window-close-confirmation. Two-phase approval registers via
 > `ApprovalRegistry` on `suspected_unsaved=True` and the spoken yes/no
@@ -1181,8 +1194,8 @@
 >
 > All seven catalog 09 techniques landed (T1 scroll, T2 pixel-color, T3
 > WPM typing, T4 clipboard, T5 sequence runner, T6 template matching, T7
-> bezier-smooth move). Three new modules ship: `src/ultron/desktop/clipboard.py`,
-> `src/ultron/desktop/sequence.py`, plus T6 `find_image_on_screen` +
+> bezier-smooth move). Three new modules ship: `src/kenning/desktop/clipboard.py`,
+> `src/kenning/desktop/sequence.py`, plus T6 `find_image_on_screen` +
 > `TemplateMatch` and T2 `get_pixel_color` added to `desktop/capture.py`;
 > T2 `wait_for_pixel_color` added to `desktop/uia.py`; T1 / T3 / T7
 > additive kwargs added to existing `InputController` methods in
@@ -1250,7 +1263,7 @@
 >   webpage with zero GPU cost (vs 300-800 ms + ~330 MB VRAM for the
 >   moondream2 screenshot path).
 >
-> * **T1 (NEW `src/ultron/desktop/dialog_control.py`):** native Windows
+> * **T1 (NEW `src/kenning/desktop/dialog_control.py`):** native Windows
 >   dialog detection + CRUD interaction. Constants `DIALOG_CLASSES`
 >   (`#32770` + 4 standard dialog classes) / `DIALOG_CONTROL_TYPES`
 >   (Window / Dialog / Pane) / `DIALOG_TITLE_KEYWORDS` (7 entries) /
@@ -1260,13 +1273,13 @@
 >   `DialogCheckbox` / `DialogContent` / `DialogActionResult`). Surface:
 >   `find_dialogs` + `read_dialog` + `click_dialog_button` +
 >   `type_into_dialog_field` + `dismiss_dialog` + `wait_for_dialog`. All
->   write actions route through `ultron.safety.validator.get_validator()`
+>   write actions route through `kenning.safety.validator.get_validator()`
 >   with `tool_name=desktop.dialog.<action>`. `dismiss_dialog` does
 >   per-candidate validator re-check so blocking one candidate falls
 >   through to the next + ESC fallback gated with
 >   `action=dismiss_escape`.
 >
-> * **T3 (NEW `src/ultron/desktop/element_click.py`):** cross-window
+> * **T3 (NEW `src/kenning/desktop/element_click.py`):** cross-window
 >   semantic UIA element search + click via the gated `InputController`.
 >   `CLICKABLE_TYPES` (9-entry standard UIA control-type set) + frozen
 >   `UIElementMatch` + `TextMatch` + `ClickResult` dataclasses +
@@ -1287,7 +1300,7 @@
 >   *, force=False, user_text)` graceful WM_CLOSE via
 >   `win32gui.PostMessage` (the app's own close hook fires so editors
 >   with unsaved changes surface their save prompt); `force=True`
->   escalates to :func:`ultron.subprocess.kill_tree.kill_process_tree`.
+>   escalates to :func:`kenning.subprocess.kill_tree.kill_process_tree`.
 >   `UNSAVED_CHANGES_TITLE_HINTS` (`*`, `[modified]` / `(modified)`,
 >   VS Code dot, em-dash modified) + `_title_suggests_unsaved_changes`
 >   predicate + `CloseWindowResult.suspected_unsaved` on result for
@@ -1318,12 +1331,12 @@
 > across 5 batches on top of `c3966a7` (plus one test-fix follow-up):
 >
 > * **T1 + T3 (doc-only):** code comments in
->   `src/ultron/desktop/input_control.py` documenting that pyautogui
+>   `src/kenning/desktop/input_control.py` documenting that pyautogui
 >   uses the modern atomic `SendInput` API (not legacy `mouse_event`)
 >   and that `pyautogui.hotkey` returns BEFORE the target processes
 >   the keystroke (unlike PowerShell `SendKeys.SendWait`).
 >
-> * **T2 (new module):** `src/ultron/desktop/win32_helpers.py` --
+> * **T2 (new module):** `src/kenning/desktop/win32_helpers.py` --
 >   ctypes wrappers for `GetDpiForMonitor` (per-monitor DPI),
 >   `GetLastInputInfo` (idle detection), `DwmGetWindowAttribute`
 >   with `DWMWA_CLOAKED` (cloaked window detection), and a hardened
@@ -1479,45 +1492,46 @@ result of every row. Deep narrative lives in the corresponding
 
 | Date | HEAD | Summary | Tests | Memory file |
 |------|------|---------|-------|-------------|
-| 2026-06-12 | `2d79a8e` | **Live-findings fix batch** (7 commits `ab08bf4..2d79a8e` on `9d460da`). Every OPEN live finding from the dogfood close-out fixed: NEW `lifecycle/single_instance.py` single-instance guard (held msvcrt/fcntl byte lock at offset 4096, metadata at offset 0 read unbuffered past Windows mandatory locks, pidfile fallback, refuse-only-on-contention errno classification, NO unlink on release (POSIX lock-after-unlink race), `ULTRON_ALLOW_MULTIPLE_INSTANCES` escape; wired in `__main__.main()`, duplicate exits code 3); supervisor `ProjectIndex` borrows ConversationMemory's embedded Qdrant client (`client=` kwarg + owned-only `close()`; ends the every-boot "already accessed by another instance" registry-only fallback); launcher `window_appeared` honesty + post-placement `focus_window` bring-to-front (image-search windows no longer open behind the foreground; honest spoken line on window-timeout); WARM-path streaming STT in `_follow_up_listen` (kills the 108-1188 ms synchronous Moonshine re-transcribe; `_maybe_discard_stt_stream` + `MoonshineEngine.clear_stream_cache` on abort paths so dropped captures never leak); MCP server thread cancel+gather before loop close (the startup asyncio "Task was destroyed" stderr noise on bind failure); capture status-flag/drop accounting (count on audio thread, report from `drain()`); blip-watcher `internal_dropout` two-tier rule + edge-burst-run stripping adjudicated against all 174 live records (remaining findings = misclassified trailing bursts already trimmer-fixed + natural-prosody false positives; `trim_and_fade` untouched); stale XTTS `reference_audio` -> `ultronVoiceAudio/kokoro training audio/` everywhere + ADDITIVE protection-list extensions. Adversarially reviewed (4-dimension parallel pass; all should-fixes applied incl. the release-unlink race + audio-thread logging removal + errno classification + tmp_path test hygiene). Voice baseline contract intact (cold path byte-untouched, structurally test-pinned). | 9713 | (this session) |
-| 2026-05-29 | `c17a2c9` (campaign, in progress) | **Production-hardening campaign — coding-engineer phase** (first 5 commits `a8e6ef6`…`c17a2c9`, on the infra-wiring tip `9d51cec`). Wiring the recent catalog ports into one cohesive unit + completing the voice-controlled coding engineer end to end. **B1** (`a8e6ef6`) fixed a real security/cohesion bug — the coding bridge's safety FILE_CHANGE listener read the wrong `TaskEvent` attributes, so file-write validation never ran on coding edits — plus dead-code + regex-docstring cleanup. **B3-loop** (`8651b07`) connected the clarify/verify/complete loop for voice-dispatched tasks: a per-project `.mcp.json` pointing at the live in-process MCP server + a bound `ProjectSession` (was bridge-only before); added `UltronMCPServer.is_running()`. **B3-runlaunch** (`9cf6f45`) added NEW `coding/sandbox_runner.py` + the "run / launch the program" voice commands (sandbox-confined + validator-gated + non-blocking) + a "say run X to try it" completion hint + the `coding.sandbox_run_timeout_seconds` knob. **B3-quality-a** (`c43dfd7`) prepends an always-on code-quality preamble (type hints, docstrings, `pyproject.toml` for new projects) to every coding prompt. **B3-loop-2** (`c17a2c9`) stopped deleting the `.mcp.json` on COMPLETE (`send_followup` reuses it for RESUME + the verifier's corrective re-prompt, so the cleanup had been stripping MCP from every follow-up) + re-attaches the digest + voice-lock-review listeners to the follow-up handle. The architect plan-provider + TTS narration were verified already fully wired. Voice baseline contract intact. Remaining: routing/bridge/safety/infra/desktop reachability, evolution pervasive reach, the synthetic-audio e2e suite, latency/resource optimization. | 9163 | [project_ultron_2026_05_29_production_hardening_campaign.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_29_production_hardening_campaign.md) |
-| 2026-05-29 | `6692866` (code `296e1f6`) | **Infrastructure-wiring campaign** (builds on catalog 14 `c8f4ce3`; 16 commits `b74c8ab`…`6692866`). Wired 14 dormant imported-but-unconsumed subsystems to production + DOCUMENTED 4 as architecturally-inactive. **WIRED** (all fail-open; default-ON unless noted): process discipline (T12 process-registry/zombie-killer at every daemon + coding spawn) + a latent `_maybe_handle_deep_research` `trace` NameError crash fix; deep-memory recall (`memory/deep_recall.py` + `_maybe_handle_deep_recall`); skill trust-gate (`skills/scan.py`, T5/T9, `scan_untrusted_skills` ON); decomposer requery (`HybridTaskDecomposer._requery_decomposition`, T14); generalised two-phase voice approval (`request_voice_confirmation`/`consume_voice_approval` on `CapabilityVoiceController`, T2 -- validator stays fail-closed); coding loop detection (T1 `LoopDetectionManager` over the TOOL_RESULT stream, narrate-only / never-cancel, `coding.loop_detection_enabled` ON); a dialog-narration surfacing FIX (`_drain_coding_dialog_narrations` -- the catalog-08/09 `pop_dialog_narration` had no caller); multi-key Brave rotation (T6 `RotatingBraveClient` + `resolve_brave_api_keys` + `web_search.brave_additional_api_key_envs`); dual-history "what did I say earlier?" recall (`memory/history_recall.py` + `DualHistoryStore` wired into the orchestrator + `_maybe_handle_history_recall`, `memory.history_recall_enabled` ON, Qdrant-independent); hooks lifecycle (coding TaskStart cancel-capable + TaskComplete, `hooks.enabled` ON, zero-cost when no scripts installed); the offline observation outcome-resolver `resolve_observation_outcomes` maintenance task; the gated-OFF MCP server lifecycle client (T22 `mcp/builder.py` + `McpConfig` -- env-filtered spawn + process-registry tracking + `kill_process_tree` reap, `mcp.enabled`/`mcp.autostart` default-OFF); the `.ultronignore` safety rule (Category U `UltronIgnoreRule` -- secrets path/command block, default-safe no-op, `safety.rules.U1`); and the explicit-intent NEEDS_EXPLICIT_INTENT unblock (`safety.intent` wired into the validator -- audited-allow only on the user's own verb+object, NEVER overrides BLOCK_HARD, `safety.explicit_intent_matching_enabled` ON). **DOCUMENTED-INACTIVE** (Ultron's single-threaded run loop + delegate-to-`claude --print` design has no consumer window; force-wiring would add hot-path latency/risk for a window that doesn't exist): `dual_history.truncate_*` "undo that" (needs `DualHistoryStore` promoted to the unified context source), `lifecycle/pending_message_queue` (no cold-start/swap capture window), coding edit auto-revert (breaks claude's black-box state mid-task), `auto_approval` session-warming (left for focused security review). Voice baseline contract intact; every commit independently green. | 9117 | [project_ultron_2026_05_29_infrastructure_wiring_campaign.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_29_infrastructure_wiring_campaign.md) |
+| 2026-06-12 | (rename) | **Product rename: Ultron -> Kenning** (one rename commit on `def92b5`, IP-driven). Case-aware three-way replace (ULTRON/Ultron/ultron -> KENNING/Kenning/kenning) across every tracked file -- 8,672 occurrences in 904 files, ~830 files changed -- with `git mv` history preservation on every renamed path: `src/ultron/` -> `src/kenning/`, `tts/ultron_filter.py` -> `tts/kenning_filter.py`, `ultronVoiceAudio/` -> `kenningVoiceAudio/`, the RVC dir -> `kenning_rvc_voice/` (`Kenning.pth` + `..._Kenning_v2.index`), `scripts/run_ultron_mcp_for_openclaw.py` -> `run_kenning_mcp_for_openclaw.py`, `training/my_model.yaml` -> `training/kenning_model.yaml`. Package import root is now `kenning` (pyproject name + console script renamed; editable installs must re-run `pip install -e .`). Env vars `ULTRON_*` -> `KENNING_*`, sentinels `<<ULTRON_SUBMIT>>` -> `<<KENNING_SUBMIT>>`, MCP tool prefix `mcp__kenning_coding__`, logger namespace `kenning.`, runtime dirs `~/.ultron` -> `~/.kenning` + `data/.kenning_instance.lock`, persona "You are Kenning", wake word config -> `models/openwakeword/kenning.onnx` + Kokoro voice "kenning". Protected tokens deliberately KEPT: the GitHub repo slug/local checkout dir `ultronPrototype` (real paths until the repo itself is renamed), on-disk memory filenames `project_ultron_*.md`, historical archive paths (`I:\Ultron Archive`), and the real-path case variants in the telemetry hashing test. Legacy-compat guards added: `install/idempotent.py` `LEGACY_MARKERS` still recognizes the old INSTALLED-BY-ULTRON marker (no double-install), `identity/alias_graph.py` keeps "ultron" RESERVED (nothing can squat the legacy identity), `cleanup_stale_processes.py` matches the legacy MCP stub name. A NEW openWakeWord model was trained for the new name and ships as `models/openwakeword/kenning.onnx` (`training/my_custom_model/kenning.onnx` tracked; feature .npys now gitignored, the 4 old tracked ultron .npys removed). "kenning" proved acoustically harder than "ultron" (common phonemes -> false-positive pressure): the ultron recipe verbatim (8k positives, DNN/32/30k) and two hyperparameter variants all undershot the old model's validation metrics, so the shipped model was trained on 3x the data -- 24,000 piper-sample-generator positives + 10 explicit confusable negative phrases ("kennel", "canning", "kenneth", ...) on top of the standard adversarial negatives + ACAV100M real-speech negatives, same DNN/32/30k arch (`training/kenning_model.yaml` is the exact shipped recipe). NEW `training/validate_wake_model.py` scores any onnx through the runtime frame path (1280-sample frames, trailing-silence padding) against synthesized positive/negative sets with a recall>=90% / adversarial-FAR<=8% gate; cross-name checks confirmed the old and new names are acoustically disjoint (old ultron model: 0.0% fire rate on "kenning" clips). The `WakeWordDetector` is label-agnostic (max over predict scores) so detection needed zero code change. Full sweep on the renamed tree: **9719 passed / 39 skipped / 0 failed** + `validate_config` clean. | 9719 | (this session) |
+| 2026-06-12 | `2d79a8e` | **Live-findings fix batch** (7 commits `ab08bf4..2d79a8e` on `9d460da`). Every OPEN live finding from the dogfood close-out fixed: NEW `lifecycle/single_instance.py` single-instance guard (held msvcrt/fcntl byte lock at offset 4096, metadata at offset 0 read unbuffered past Windows mandatory locks, pidfile fallback, refuse-only-on-contention errno classification, NO unlink on release (POSIX lock-after-unlink race), `KENNING_ALLOW_MULTIPLE_INSTANCES` escape; wired in `__main__.main()`, duplicate exits code 3); supervisor `ProjectIndex` borrows ConversationMemory's embedded Qdrant client (`client=` kwarg + owned-only `close()`; ends the every-boot "already accessed by another instance" registry-only fallback); launcher `window_appeared` honesty + post-placement `focus_window` bring-to-front (image-search windows no longer open behind the foreground; honest spoken line on window-timeout); WARM-path streaming STT in `_follow_up_listen` (kills the 108-1188 ms synchronous Moonshine re-transcribe; `_maybe_discard_stt_stream` + `MoonshineEngine.clear_stream_cache` on abort paths so dropped captures never leak); MCP server thread cancel+gather before loop close (the startup asyncio "Task was destroyed" stderr noise on bind failure); capture status-flag/drop accounting (count on audio thread, report from `drain()`); blip-watcher `internal_dropout` two-tier rule + edge-burst-run stripping adjudicated against all 174 live records (remaining findings = misclassified trailing bursts already trimmer-fixed + natural-prosody false positives; `trim_and_fade` untouched); stale XTTS `reference_audio` -> `kenningVoiceAudio/kokoro training audio/` everywhere + ADDITIVE protection-list extensions. Adversarially reviewed (4-dimension parallel pass; all should-fixes applied incl. the release-unlink race + audio-thread logging removal + errno classification + tmp_path test hygiene). Voice baseline contract intact (cold path byte-untouched, structurally test-pinned). | 9713 | (this session) |
+| 2026-05-29 | `c17a2c9` (campaign, in progress) | **Production-hardening campaign — coding-engineer phase** (first 5 commits `a8e6ef6`…`c17a2c9`, on the infra-wiring tip `9d51cec`). Wiring the recent catalog ports into one cohesive unit + completing the voice-controlled coding engineer end to end. **B1** (`a8e6ef6`) fixed a real security/cohesion bug — the coding bridge's safety FILE_CHANGE listener read the wrong `TaskEvent` attributes, so file-write validation never ran on coding edits — plus dead-code + regex-docstring cleanup. **B3-loop** (`8651b07`) connected the clarify/verify/complete loop for voice-dispatched tasks: a per-project `.mcp.json` pointing at the live in-process MCP server + a bound `ProjectSession` (was bridge-only before); added `KenningMCPServer.is_running()`. **B3-runlaunch** (`9cf6f45`) added NEW `coding/sandbox_runner.py` + the "run / launch the program" voice commands (sandbox-confined + validator-gated + non-blocking) + a "say run X to try it" completion hint + the `coding.sandbox_run_timeout_seconds` knob. **B3-quality-a** (`c43dfd7`) prepends an always-on code-quality preamble (type hints, docstrings, `pyproject.toml` for new projects) to every coding prompt. **B3-loop-2** (`c17a2c9`) stopped deleting the `.mcp.json` on COMPLETE (`send_followup` reuses it for RESUME + the verifier's corrective re-prompt, so the cleanup had been stripping MCP from every follow-up) + re-attaches the digest + voice-lock-review listeners to the follow-up handle. The architect plan-provider + TTS narration were verified already fully wired. Voice baseline contract intact. Remaining: routing/bridge/safety/infra/desktop reachability, evolution pervasive reach, the synthetic-audio e2e suite, latency/resource optimization. | 9163 | [project_ultron_2026_05_29_production_hardening_campaign.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_29_production_hardening_campaign.md) |
+| 2026-05-29 | `6692866` (code `296e1f6`) | **Infrastructure-wiring campaign** (builds on catalog 14 `c8f4ce3`; 16 commits `b74c8ab`…`6692866`). Wired 14 dormant imported-but-unconsumed subsystems to production + DOCUMENTED 4 as architecturally-inactive. **WIRED** (all fail-open; default-ON unless noted): process discipline (T12 process-registry/zombie-killer at every daemon + coding spawn) + a latent `_maybe_handle_deep_research` `trace` NameError crash fix; deep-memory recall (`memory/deep_recall.py` + `_maybe_handle_deep_recall`); skill trust-gate (`skills/scan.py`, T5/T9, `scan_untrusted_skills` ON); decomposer requery (`HybridTaskDecomposer._requery_decomposition`, T14); generalised two-phase voice approval (`request_voice_confirmation`/`consume_voice_approval` on `CapabilityVoiceController`, T2 -- validator stays fail-closed); coding loop detection (T1 `LoopDetectionManager` over the TOOL_RESULT stream, narrate-only / never-cancel, `coding.loop_detection_enabled` ON); a dialog-narration surfacing FIX (`_drain_coding_dialog_narrations` -- the catalog-08/09 `pop_dialog_narration` had no caller); multi-key Brave rotation (T6 `RotatingBraveClient` + `resolve_brave_api_keys` + `web_search.brave_additional_api_key_envs`); dual-history "what did I say earlier?" recall (`memory/history_recall.py` + `DualHistoryStore` wired into the orchestrator + `_maybe_handle_history_recall`, `memory.history_recall_enabled` ON, Qdrant-independent); hooks lifecycle (coding TaskStart cancel-capable + TaskComplete, `hooks.enabled` ON, zero-cost when no scripts installed); the offline observation outcome-resolver `resolve_observation_outcomes` maintenance task; the gated-OFF MCP server lifecycle client (T22 `mcp/builder.py` + `McpConfig` -- env-filtered spawn + process-registry tracking + `kill_process_tree` reap, `mcp.enabled`/`mcp.autostart` default-OFF); the `.kenningignore` safety rule (Category U `KenningIgnoreRule` -- secrets path/command block, default-safe no-op, `safety.rules.U1`); and the explicit-intent NEEDS_EXPLICIT_INTENT unblock (`safety.intent` wired into the validator -- audited-allow only on the user's own verb+object, NEVER overrides BLOCK_HARD, `safety.explicit_intent_matching_enabled` ON). **DOCUMENTED-INACTIVE** (Kenning's single-threaded run loop + delegate-to-`claude --print` design has no consumer window; force-wiring would add hot-path latency/risk for a window that doesn't exist): `dual_history.truncate_*` "undo that" (needs `DualHistoryStore` promoted to the unified context source), `lifecycle/pending_message_queue` (no cold-start/swap capture window), coding edit auto-revert (breaks claude's black-box state mid-task), `auto_approval` session-warming (left for focused security review). Voice baseline contract intact; every commit independently green. | 9117 | [project_ultron_2026_05_29_infrastructure_wiring_campaign.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_29_infrastructure_wiring_campaign.md) |
 | 2026-06-03 | (catalog 14) | **clawhub-self-improving-agent catalog 14 -- FOUR bounded extensions to the EXISTING `evolution/` package (NOT a new subsystem).** Benign plugin (0 RED / 1 YELLOW); built clean-room from the catalog + the two `_self_improving_scan` reports -- the quarantine source was NOT read. Adds QUALITATIVE conversation-event learning atop catalog 13's quantitative loop. **T1 (GREEN):** `CorrectionCapsule` / `KnowledgeGapCapsule` / `CommandFailureSignal` (`models.py`) + detectors (`signals.py`): `extract_correction` (gated on a non-empty prior response; strong-phrase fires always, weak opener suppressed when the turn reads as positive acknowledgement), `extract_knowledge_gap`, `extract_command_failure` (17-token in-process analogue of the upstream's RED PostToolUse bash hook), `extract_feature_request`. Corrections / gaps / command-failures feed the EXISTING repair-distillation path via `to_failure_record`; `EvolutionLoop._propose` now falls back to `auto_distill_from_failures` over a new `failures_provider` when success distillation is empty. Wired in `_record_evolution_turn` (`prior_response=self._last_response_text`) + a coding-runner command-failure `TaskEvent` listener drained by `Orchestrator._drain_evolution_command_failures`. **T2 (GREEN):** `FeatureRequestCapsule` -> `data/evolution/feature_requests.jsonl`, NEVER distilled, surfaced in `EvolutionService.digest()`. **T3 (YELLOW):** a <=50-token `[Evolution: ...]` pre-turn nudge via `EvolutionService.pre_turn_system_hint()` through the SAME `set_temperament_hint` SYSTEM-prompt seam (never user text); token-capped, default-ON, `""` when idle. **T4 (GREEN):** `pattern_key`/`recurrence_count`/`first_seen`/`last_seen` on `Capsule` + the new types; `derive_pattern_key` + `merge_capsules_by_pattern_key` + `RECURRENCE_PROMOTE_THRESHOLD=3` make the distiller's recurrence gate explicit + auditable (row-count; empty key = byte-identical legacy grouping). New default-ON `EvolutionConfig` knobs (correction_detection / feature_request_capture / command_failure_capture / pre_turn_nudge_enabled / pre_turn_nudge_max_chars / recurrence_threshold). New ledgers `data/evolution/{corrections,knowledge_gaps,command_failures,feature_requests}.jsonl`. Voice baseline contract intact (microsecond regex passes on the hot path). +~53 hermetic tests (`tests/evolution/test_catalog14_*.py` + orchestrator wiring). | 8999 | [project_ultron_2026_06_03_clawhub_self_improving_agent.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_06_03_clawhub_self_improving_agent.md) |
-| 2026-06-02 | (catalog 13) | **clawhub-capability-evolver catalog 13 port -- bounded autonomous self-improvement (NEW `src/ultron/evolution/` subsystem).** A QUARANTINED, high-risk plugin: the source was **NEVER read / imported / executed / deobfuscated**; the 10-module package was built clean-room from the catalog entry + eight static scan reports ONLY (no source code, constant, or string ever in context to copy). ultron observes its own turns, mints success/failure *capsules*, and -- once a pattern recurs (>=10 successes, >=7 of last 10, 24h cooldown) -- distills a new trigger-loaded skill into `data/evolution/skills/*.md` (a gitignored, checkpointed, revertible live skills source). Every proposal runs the bounded `EvolutionLoop(AgentLoop)`: pre-flight (fail-closed) -> autonomy-tier gate -> reversible checkpoint -> write -> blast-radius + constraint check -> 4 regression guardrails -> keep or auto-revert -> hash-chained audit, bounded by `max_steps`. **HARD SAFETY CONTRACT (the upstream's self-rewriting / network / shell core excluded BY CONSTRUCTION):** proposals are DATA ONLY (skills markdown / in-range config), NEVER generated code, NEVER `src/ultron/`, NEVER a Category-K surface; the safety validator / audit ledger / engine itself sit behind a Tier-3 hard wall (`blast_radius.CRITICAL_PROTECTED_PREFIXES` includes `src/`); zero network / shell / eval; `EnvFingerprint` omits the upstream device id. Modules: `models.py` (GEP data model), `signals.py` (local opportunity-signal extraction, no LLM/Hub layer), `blast_radius.py` (policy spine + protected-path wall), `skill_distiller.py` (capsule->skill distillation), `guardrails.py` (latency/quality/error/resource detectors + rollback audit), `autonomy.py` (`TieredAutonomyController` + trust graduation), `personality.py` (Tier-0 `[Tone: ...]` temperament tune), `evolution_loop.py` (the bounded loop), `service.py`+`intent.py` (JSONL runtime + voice commands). Wired default-ON + fail-open: `EvolutionConfig`; `_load_evolution_if_enabled` at startup (before the skill registry, whose extra dirs gain `data/evolution/skills`); run-loop short-circuit `_maybe_handle_evolution_command` ("evolve now" / "evolution status"); per-turn `_record_evolution_turn` (opportunity capsule + barge-in -> temperament + autonomous-cycle trigger); `LLMEngine.set_temperament_hint` injecting the tone directive into the SYSTEM prompt only (the web-gate / local-clock detectors see the raw utterance); shutdown persistence. Tier summary: 7 GREEN + 2 YELLOW + (self-rewriting/network/shell core) RED, excluded. Voice baseline contract intact (no SOUL.md / RVC / Piper / Kokoro touch; hot path gains only microsecond setter + signal-extraction calls; the cycle runs single-flight on a daemon thread off the hot path). `THIRD_PARTY_NOTICES.md` extended with the quarantined-source provenance record + per-component table. +286 tests (265 evolution package + 21 llm/orchestrator wiring). | 8949 | [project_ultron_2026_06_02_clawhub_capability_evolver.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_06_02_clawhub_capability_evolver.md) |
-| 2026-05-31 | (catalog 11) | **clawhub-browser-agent catalog 11 port.** A raw-CDP-WebSocket primitives plugin (≈350 LOC, no agent loop) architecturally superseded by the catalog-10 `browser-use` CLI tier, so the port extracts the genuinely transferable hardening patterns + the agent-loop meta-pattern (4 GREEN + 3 YELLOW + 0 RED), NOT the CDP transport. NEW modules: `src/ultron/utils/heartbeat.py` (T2 `HeartbeatThread` -- stoppable, fail-open daemon keep-alive; `Event.wait`-based + `HeartbeatStats`, improving on the upstream's unstoppable `while True: sleep`), `src/ultron/utils/health_check.py` (T4 `http_health_check` + `cdp_health_check` -- cheap fail-open pre-flight probes with injectable transport), `src/ultron/agent_loop/base.py` (the `AgentLoop` meta-pattern: an ADDITIVE observe->plan->act->verify base whose load-bearing invariant is the `max_steps` cap, plus built-in repeated-signature loop detection + per-step `StepRecord`s + a verify hook + fail-open execution; does NOT modify any existing runner). `desktop/browser_use.py` `BrowserUseTool` gains three gated methods: `click_css_selector` (T3 ARIA-ref-miss fallback -- CSS selector -> `getBoundingClientRect` -> Cap-3-gated `click_at_coords`, computing the *correct* box-model centre rather than the upstream's buggy `(border[0]+border[1])/2`; selector `json.dumps`-encoded against injection), `wait_for_element_js` (T7 event-driven `MutationObserver` element-appear wait via the gated `eval`, with a bounded `setTimeout` fallback the upstream lacked), `export_pdf` (T6 `Page.printToPDF` page-to-PDF export, `PathResolver` + Cap-2/Cap-3 gated, fail-open). T1 idle-reconnect / T2 heartbeat / T4 health-check / T5 `--remote-allow-origins` have NO literal wiring target in ultron's CLI-based browser architecture (the `browser-use` CLI owns its own Chrome + CDP; ultron never opens a raw CDP socket; the launcher deliberately blocks CDP flags on the user's real Chrome) -- so T2 + T4 ship as importable primitives and T1 + T5 are documented findings, not forced code. Clean-room re-implementation from a zero-RED-confirmed read-only source scan (3 Sonnet 4.6 Explore agents); no source copied verbatim. No new config knobs (always-available gated methods on the already-default-ON `browser_use` tool + importable utils). +71 hermetic tests (`tests/utils/test_heartbeat.py` 10, `tests/utils/test_health_check.py` 18, `tests/desktop/test_browser_use_catalog11.py` 25, `tests/agent_loop/test_base.py` 18). Voice baseline contract intact; no orchestrator hot-path edit. `THIRD_PARTY_NOTICES.md` extended with clawhub-browser-agent (MIT) attribution. | 8546 | (this session) |
-| 2026-05-30 | `f176f29` (fix `7b53ea1`) | **Bridge-e2e subprocess-reap flake fix.** Fixes the long-deselected `tests/integration/test_bridge_e2e.py::test_health_through_real_subprocess` flake. `OpenClawClient._run_cli`'s timeout cleanup (`src/ultron/openclaw_bridge/client.py`) now reaps the WHOLE process tree via a new `_reap_process_tree` helper → `subprocess.kill_tree.kill_process_tree`, instead of `proc.kill()`: on Windows the openclaw CLI is a `.cmd` shim that spawns the real interpreter as a grandchild, and killing only the immediate child orphaned that grandchild — which held the stdout/stderr pipes open and wedged the event loop's subprocess transport at teardown (the historical "hung full sweep until the wall-clock watchdog" symptom; the conftest session-end reaper is useless because the session never ends while pytest stalls mid-run). The tree is collected while the root is still alive so psutil can reach the grandchild; the synchronous kill runs in the default executor so the loop stays free to drain the closing pipes. `test_health_through_real_subprocess` now uses a 20s health probe (vs 5s) to absorb Windows `.cmd`→`python` cold-start under sweep load (still under the 30s per-test deadline). New hermetic `tests/openclaw_bridge/test_client.py::test_run_cli_timeout_reaps_whole_process_tree` spies on `kill_process_tree` to pin the reap contract. Greatly improves the flake (passes in isolation ~0.5s; on an unloaded machine the prior session saw the full sweep green without deselection at 8475/106s) but does NOT fully fix it -- the test spawns the real openclaw `.cmd`->python subprocess, so under heavy machine contention the 20s health probe can be exceeded, failing the test + wedging the sweep to the wall-clock watchdog (observed 2026-05-30: a contended audit stalled at ~33% on exactly this test, exit 5; the deselected sweep was clean at 8474 passed / 26 skipped / 1 deselected / 0 failed in ~160s). Keep `-- --deselect "tests/integration/test_bridge_e2e.py::test_health_through_real_subprocess"` as the loaded-machine fallback; a 33%-stall here is the flake, not a regression. Voice baseline contract intact (`_run_cli` is the OpenClaw bridge transport, not the voice hot path). | 8475 (8474 + flake) | [project_ultron_2026_05_30_clawhub_browser_use.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_30_clawhub_browser_use.md) (Branch-integration section) |
-| 2026-05-30 | `d220b50` | **Deferred-primitive wiring pass.** Wired the previously-ported-but-unconsumed openclaw-clawhub primitives into orchestrator hot paths. **T15 private telemetry** (`observability/private_telemetry.py`): `Orchestrator._init_telemetry_store` at startup + `_emit_turn_telemetry` in `_respond`'s `finally` (one aggregate `HashedEvent` per turn -- routing-intent under the `category` safe key + `searched` bool + numeric `latency_ms` + `tier` bucket + `outcome`; `_latency_bucket` labels kept <=12 chars to pass the raw-path leak check). **FAIL-PRIVATE: no-ops unless `ULTRON_TELEMETRY=opt-in`** -- the one feature deliberately NOT default-on (privacy-by-construction; the fail-open exception does not apply to a privacy gate). **T7 short-lived token** (`identity/short_lived_token.py`): `_mint_forensic_token` registers an idempotent trusted-caller tuple + mints an HS256 JWT at MCP-server start (`mcp:tools`) + gaming-engage (`voice:gaming-engage`, revoke-by-expiry on disengage); forensic / defense-in-depth (single-user in-process runtime: minter + verifier share the trust boundary), audit-logged, fail-open. **T12 report queue** (`feedback/report_queue.py` + NEW `feedback/report_intent.py`): strict `match_report_concern` regex (no LLM round-trip; "report on the weather" does NOT trip it) intercepted in the run loop BEFORE routing; `_maybe_handle_report_concern` files a `Report` to hash-chained `data/feedback/reports.jsonl` + speaks an ack; deliberately avoided a new `RoutingIntentKind` (the 23-value enum is asserted by many tests). **T18 image markdown verified consumer-less** -- text-only Qwen 4B + `claude --print` text-argv coding bridge + moondream2 raw-bytes mean no inline-data-URL consumer exists; left importable, NOT fake-wired (honest no-op per "don't build for hypothetical futures"). `.gitignore` extended for the wiring-pass runtime-data dirs (incl. `data/identity/`, which holds the HMAC token-signing secret). +51 hermetic tests (all `Orchestrator.__new__` pattern; real round-trips redirect `PROJECT_ROOT` to `tmp_path`). Voice baseline contract intact (hot path gains one cheap fail-private emit). | 8474 | [project_ultron_2026_05_30_clawhub_browser_use.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_30_clawhub_browser_use.md) (Follow-on section) |
-| 2026-05-30 | `5451017` (doc `97a6c5c`) | **clawhub-browser-use catalog 10 port.** Nine batches wrapping the external open-source `browser-use` CLI (Playwright + Chrome DevTools Protocol) as ultron's CDP-backed browser-automation tier. The plugin source is **documentation-only** (`SKILL.md` + CDP / multi-session references, NO Python), so the port is a clean-room subprocess wrapper around the CLI's documented public surface -- NOT vendored code; the binary is NOT installed and NOT a hard dependency (every method fails open with a "binary not found" result when absent; operators `pip install browser-use` to enable the tier). Three new `desktop/` modules: **`browser_use.py`** (`BrowserUseTool` sync subprocess wrapper -- lazy `shutil.which` discovery against `[browser-use, bu, browseruse]`, `CREATE_NO_WINDOW`, `BROWSER_USE_SESSION` env scrub; GREEN reads = T1 `state` + T2 extraction (`get_html/text/value/attributes/bbox/title`) + T5 `wait_selector/wait_text` + T6 tab ops; YELLOW = T7 write primitives (`click_at_index/coords`, `type/input/select/upload/hover/keys/dblclick/rightclick`) + T9 `screenshot` + T3 `eval`+`analyze_js_script` + T4 cookie CRUD + T10 `connect/connect_profile/profile_list` + T11 raw `cdp_python`+`analyze_cdp_statement`, each routed through `safety.validator` Cap-3 and destructive/takeover ops additionally through `safety.two_phase_approval`); **`browser_sessions.py`** (`BrowserSessionsManager` T8 -- name allowlist + cap + `ProcessRegistry` lifecycle + `kill_process_tree` on force-close + two-phase on `close_all`); **`browser_sequence.py`** (`BrowserSequenceRunner` creative extension -- before/after screenshot bracket via headless base64 + injected VLM verify + fail-fast; reuses `desktop.sequence` `SequenceStatus`/`StepOutcome`/`VlmVerdict` enums). Wiring (batch 9): `orchestrator._load_browser_use_if_enabled` builds the singletons at startup (cheap + lazy + fail-open, right after `_load_desktop_vlm_if_enabled`) + `screen_context._maybe_browser_use_state_text` gated fallback tier (UIA -> `extract_browser_content` -> browser-use state -> VLM) firing only when UIA browser extraction is empty AND the tool has an active page; new top-level `browser_use` config section (8 knobs, all default ON). Tier outcome: 8 GREEN + 5 YELLOW + 2 RED -- T12 (cloud, paid API key) + T13 (Cloudflare tunnel) NOT ported (RED, per `feedback_no_paid_apis` + inbound-attack-surface); `--cdp-url` external arg / `profile sync --all` cloud upload / ambient `BROWSER_USE_SESSION` also deliberately not exposed. Security-review hardening (independent Sonnet 4.6 Explore pass): T7 `upload` treated YELLOW with `PathResolver.safe_realpath`; T3 JS static-analysis extended (+ `sendBeacon`, `WebSocket`, `RTCPeerConnection`, `eval`, `new Function`, dynamic `import`); T11 CDP domain blocklist extended to 9 domains that REFUSE outright (overriding even `assume_preapproved`). `THIRD_PARTY_NOTICES.md` extended with browser-use (MIT) + 9-batch per-component table. +431 hermetic tests (all mock subprocess + validator + PathResolver + approval registry; no binary required). Voice baseline contract intact (startup gains only the lazy fail-open singleton; never on the conversational hot path). | 8423 | [project_ultron_2026_05_30_clawhub_browser_use.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_30_clawhub_browser_use.md) |
+| 2026-06-02 | (catalog 13) | **clawhub-capability-evolver catalog 13 port -- bounded autonomous self-improvement (NEW `src/kenning/evolution/` subsystem).** A QUARANTINED, high-risk plugin: the source was **NEVER read / imported / executed / deobfuscated**; the 10-module package was built clean-room from the catalog entry + eight static scan reports ONLY (no source code, constant, or string ever in context to copy). kenning observes its own turns, mints success/failure *capsules*, and -- once a pattern recurs (>=10 successes, >=7 of last 10, 24h cooldown) -- distills a new trigger-loaded skill into `data/evolution/skills/*.md` (a gitignored, checkpointed, revertible live skills source). Every proposal runs the bounded `EvolutionLoop(AgentLoop)`: pre-flight (fail-closed) -> autonomy-tier gate -> reversible checkpoint -> write -> blast-radius + constraint check -> 4 regression guardrails -> keep or auto-revert -> hash-chained audit, bounded by `max_steps`. **HARD SAFETY CONTRACT (the upstream's self-rewriting / network / shell core excluded BY CONSTRUCTION):** proposals are DATA ONLY (skills markdown / in-range config), NEVER generated code, NEVER `src/kenning/`, NEVER a Category-K surface; the safety validator / audit ledger / engine itself sit behind a Tier-3 hard wall (`blast_radius.CRITICAL_PROTECTED_PREFIXES` includes `src/`); zero network / shell / eval; `EnvFingerprint` omits the upstream device id. Modules: `models.py` (GEP data model), `signals.py` (local opportunity-signal extraction, no LLM/Hub layer), `blast_radius.py` (policy spine + protected-path wall), `skill_distiller.py` (capsule->skill distillation), `guardrails.py` (latency/quality/error/resource detectors + rollback audit), `autonomy.py` (`TieredAutonomyController` + trust graduation), `personality.py` (Tier-0 `[Tone: ...]` temperament tune), `evolution_loop.py` (the bounded loop), `service.py`+`intent.py` (JSONL runtime + voice commands). Wired default-ON + fail-open: `EvolutionConfig`; `_load_evolution_if_enabled` at startup (before the skill registry, whose extra dirs gain `data/evolution/skills`); run-loop short-circuit `_maybe_handle_evolution_command` ("evolve now" / "evolution status"); per-turn `_record_evolution_turn` (opportunity capsule + barge-in -> temperament + autonomous-cycle trigger); `LLMEngine.set_temperament_hint` injecting the tone directive into the SYSTEM prompt only (the web-gate / local-clock detectors see the raw utterance); shutdown persistence. Tier summary: 7 GREEN + 2 YELLOW + (self-rewriting/network/shell core) RED, excluded. Voice baseline contract intact (no SOUL.md / RVC / Piper / Kokoro touch; hot path gains only microsecond setter + signal-extraction calls; the cycle runs single-flight on a daemon thread off the hot path). `THIRD_PARTY_NOTICES.md` extended with the quarantined-source provenance record + per-component table. +286 tests (265 evolution package + 21 llm/orchestrator wiring). | 8949 | [project_ultron_2026_06_02_clawhub_capability_evolver.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_06_02_clawhub_capability_evolver.md) |
+| 2026-05-31 | (catalog 11) | **clawhub-browser-agent catalog 11 port.** A raw-CDP-WebSocket primitives plugin (≈350 LOC, no agent loop) architecturally superseded by the catalog-10 `browser-use` CLI tier, so the port extracts the genuinely transferable hardening patterns + the agent-loop meta-pattern (4 GREEN + 3 YELLOW + 0 RED), NOT the CDP transport. NEW modules: `src/kenning/utils/heartbeat.py` (T2 `HeartbeatThread` -- stoppable, fail-open daemon keep-alive; `Event.wait`-based + `HeartbeatStats`, improving on the upstream's unstoppable `while True: sleep`), `src/kenning/utils/health_check.py` (T4 `http_health_check` + `cdp_health_check` -- cheap fail-open pre-flight probes with injectable transport), `src/kenning/agent_loop/base.py` (the `AgentLoop` meta-pattern: an ADDITIVE observe->plan->act->verify base whose load-bearing invariant is the `max_steps` cap, plus built-in repeated-signature loop detection + per-step `StepRecord`s + a verify hook + fail-open execution; does NOT modify any existing runner). `desktop/browser_use.py` `BrowserUseTool` gains three gated methods: `click_css_selector` (T3 ARIA-ref-miss fallback -- CSS selector -> `getBoundingClientRect` -> Cap-3-gated `click_at_coords`, computing the *correct* box-model centre rather than the upstream's buggy `(border[0]+border[1])/2`; selector `json.dumps`-encoded against injection), `wait_for_element_js` (T7 event-driven `MutationObserver` element-appear wait via the gated `eval`, with a bounded `setTimeout` fallback the upstream lacked), `export_pdf` (T6 `Page.printToPDF` page-to-PDF export, `PathResolver` + Cap-2/Cap-3 gated, fail-open). T1 idle-reconnect / T2 heartbeat / T4 health-check / T5 `--remote-allow-origins` have NO literal wiring target in kenning's CLI-based browser architecture (the `browser-use` CLI owns its own Chrome + CDP; kenning never opens a raw CDP socket; the launcher deliberately blocks CDP flags on the user's real Chrome) -- so T2 + T4 ship as importable primitives and T1 + T5 are documented findings, not forced code. Clean-room re-implementation from a zero-RED-confirmed read-only source scan (3 Sonnet 4.6 Explore agents); no source copied verbatim. No new config knobs (always-available gated methods on the already-default-ON `browser_use` tool + importable utils). +71 hermetic tests (`tests/utils/test_heartbeat.py` 10, `tests/utils/test_health_check.py` 18, `tests/desktop/test_browser_use_catalog11.py` 25, `tests/agent_loop/test_base.py` 18). Voice baseline contract intact; no orchestrator hot-path edit. `THIRD_PARTY_NOTICES.md` extended with clawhub-browser-agent (MIT) attribution. | 8546 | (this session) |
+| 2026-05-30 | `f176f29` (fix `7b53ea1`) | **Bridge-e2e subprocess-reap flake fix.** Fixes the long-deselected `tests/integration/test_bridge_e2e.py::test_health_through_real_subprocess` flake. `OpenClawClient._run_cli`'s timeout cleanup (`src/kenning/openclaw_bridge/client.py`) now reaps the WHOLE process tree via a new `_reap_process_tree` helper → `subprocess.kill_tree.kill_process_tree`, instead of `proc.kill()`: on Windows the openclaw CLI is a `.cmd` shim that spawns the real interpreter as a grandchild, and killing only the immediate child orphaned that grandchild — which held the stdout/stderr pipes open and wedged the event loop's subprocess transport at teardown (the historical "hung full sweep until the wall-clock watchdog" symptom; the conftest session-end reaper is useless because the session never ends while pytest stalls mid-run). The tree is collected while the root is still alive so psutil can reach the grandchild; the synchronous kill runs in the default executor so the loop stays free to drain the closing pipes. `test_health_through_real_subprocess` now uses a 20s health probe (vs 5s) to absorb Windows `.cmd`→`python` cold-start under sweep load (still under the 30s per-test deadline). New hermetic `tests/openclaw_bridge/test_client.py::test_run_cli_timeout_reaps_whole_process_tree` spies on `kill_process_tree` to pin the reap contract. Greatly improves the flake (passes in isolation ~0.5s; on an unloaded machine the prior session saw the full sweep green without deselection at 8475/106s) but does NOT fully fix it -- the test spawns the real openclaw `.cmd`->python subprocess, so under heavy machine contention the 20s health probe can be exceeded, failing the test + wedging the sweep to the wall-clock watchdog (observed 2026-05-30: a contended audit stalled at ~33% on exactly this test, exit 5; the deselected sweep was clean at 8474 passed / 26 skipped / 1 deselected / 0 failed in ~160s). Keep `-- --deselect "tests/integration/test_bridge_e2e.py::test_health_through_real_subprocess"` as the loaded-machine fallback; a 33%-stall here is the flake, not a regression. Voice baseline contract intact (`_run_cli` is the OpenClaw bridge transport, not the voice hot path). | 8475 (8474 + flake) | [project_ultron_2026_05_30_clawhub_browser_use.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_30_clawhub_browser_use.md) (Branch-integration section) |
+| 2026-05-30 | `d220b50` | **Deferred-primitive wiring pass.** Wired the previously-ported-but-unconsumed openclaw-clawhub primitives into orchestrator hot paths. **T15 private telemetry** (`observability/private_telemetry.py`): `Orchestrator._init_telemetry_store` at startup + `_emit_turn_telemetry` in `_respond`'s `finally` (one aggregate `HashedEvent` per turn -- routing-intent under the `category` safe key + `searched` bool + numeric `latency_ms` + `tier` bucket + `outcome`; `_latency_bucket` labels kept <=12 chars to pass the raw-path leak check). **FAIL-PRIVATE: no-ops unless `KENNING_TELEMETRY=opt-in`** -- the one feature deliberately NOT default-on (privacy-by-construction; the fail-open exception does not apply to a privacy gate). **T7 short-lived token** (`identity/short_lived_token.py`): `_mint_forensic_token` registers an idempotent trusted-caller tuple + mints an HS256 JWT at MCP-server start (`mcp:tools`) + gaming-engage (`voice:gaming-engage`, revoke-by-expiry on disengage); forensic / defense-in-depth (single-user in-process runtime: minter + verifier share the trust boundary), audit-logged, fail-open. **T12 report queue** (`feedback/report_queue.py` + NEW `feedback/report_intent.py`): strict `match_report_concern` regex (no LLM round-trip; "report on the weather" does NOT trip it) intercepted in the run loop BEFORE routing; `_maybe_handle_report_concern` files a `Report` to hash-chained `data/feedback/reports.jsonl` + speaks an ack; deliberately avoided a new `RoutingIntentKind` (the 23-value enum is asserted by many tests). **T18 image markdown verified consumer-less** -- text-only Qwen 4B + `claude --print` text-argv coding bridge + moondream2 raw-bytes mean no inline-data-URL consumer exists; left importable, NOT fake-wired (honest no-op per "don't build for hypothetical futures"). `.gitignore` extended for the wiring-pass runtime-data dirs (incl. `data/identity/`, which holds the HMAC token-signing secret). +51 hermetic tests (all `Orchestrator.__new__` pattern; real round-trips redirect `PROJECT_ROOT` to `tmp_path`). Voice baseline contract intact (hot path gains one cheap fail-private emit). | 8474 | [project_ultron_2026_05_30_clawhub_browser_use.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_30_clawhub_browser_use.md) (Follow-on section) |
+| 2026-05-30 | `5451017` (doc `97a6c5c`) | **clawhub-browser-use catalog 10 port.** Nine batches wrapping the external open-source `browser-use` CLI (Playwright + Chrome DevTools Protocol) as kenning's CDP-backed browser-automation tier. The plugin source is **documentation-only** (`SKILL.md` + CDP / multi-session references, NO Python), so the port is a clean-room subprocess wrapper around the CLI's documented public surface -- NOT vendored code; the binary is NOT installed and NOT a hard dependency (every method fails open with a "binary not found" result when absent; operators `pip install browser-use` to enable the tier). Three new `desktop/` modules: **`browser_use.py`** (`BrowserUseTool` sync subprocess wrapper -- lazy `shutil.which` discovery against `[browser-use, bu, browseruse]`, `CREATE_NO_WINDOW`, `BROWSER_USE_SESSION` env scrub; GREEN reads = T1 `state` + T2 extraction (`get_html/text/value/attributes/bbox/title`) + T5 `wait_selector/wait_text` + T6 tab ops; YELLOW = T7 write primitives (`click_at_index/coords`, `type/input/select/upload/hover/keys/dblclick/rightclick`) + T9 `screenshot` + T3 `eval`+`analyze_js_script` + T4 cookie CRUD + T10 `connect/connect_profile/profile_list` + T11 raw `cdp_python`+`analyze_cdp_statement`, each routed through `safety.validator` Cap-3 and destructive/takeover ops additionally through `safety.two_phase_approval`); **`browser_sessions.py`** (`BrowserSessionsManager` T8 -- name allowlist + cap + `ProcessRegistry` lifecycle + `kill_process_tree` on force-close + two-phase on `close_all`); **`browser_sequence.py`** (`BrowserSequenceRunner` creative extension -- before/after screenshot bracket via headless base64 + injected VLM verify + fail-fast; reuses `desktop.sequence` `SequenceStatus`/`StepOutcome`/`VlmVerdict` enums). Wiring (batch 9): `orchestrator._load_browser_use_if_enabled` builds the singletons at startup (cheap + lazy + fail-open, right after `_load_desktop_vlm_if_enabled`) + `screen_context._maybe_browser_use_state_text` gated fallback tier (UIA -> `extract_browser_content` -> browser-use state -> VLM) firing only when UIA browser extraction is empty AND the tool has an active page; new top-level `browser_use` config section (8 knobs, all default ON). Tier outcome: 8 GREEN + 5 YELLOW + 2 RED -- T12 (cloud, paid API key) + T13 (Cloudflare tunnel) NOT ported (RED, per `feedback_no_paid_apis` + inbound-attack-surface); `--cdp-url` external arg / `profile sync --all` cloud upload / ambient `BROWSER_USE_SESSION` also deliberately not exposed. Security-review hardening (independent Sonnet 4.6 Explore pass): T7 `upload` treated YELLOW with `PathResolver.safe_realpath`; T3 JS static-analysis extended (+ `sendBeacon`, `WebSocket`, `RTCPeerConnection`, `eval`, `new Function`, dynamic `import`); T11 CDP domain blocklist extended to 9 domains that REFUSE outright (overriding even `assume_preapproved`). `THIRD_PARTY_NOTICES.md` extended with browser-use (MIT) + 9-batch per-component table. +431 hermetic tests (all mock subprocess + validator + PathResolver + approval registry; no binary required). Voice baseline contract intact (startup gains only the lazy fail-open singleton; never on the conversational hot path). | 8423 | [project_ultron_2026_05_30_clawhub_browser_use.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_30_clawhub_browser_use.md) |
 | 2026-05-29 | `bca58b0` (doc `ebe2988`) | **Catalog 09 production-wiring pass + default-ON sweep + handoff cleanup.** Landed the previously-deferred catalog-09 (clawhub-desktop-control, the port row below) items as live consumers (9 feature commits, +106 tests): dialog auto-handler in the coding bridge (batch B) + a new background `DialogPoller` daemon (batch A) emitting bus `DialogAppearedEvent` / `DialogResolvedEvent`; `ACTIVE_WINDOW_QUERY` + `SEMANTIC_CLICK` + `WINDOW_CLOSE_CONFIRMATION` voice intents (batch C); `extract_browser_content` folded into `screen_context` (batch D); two-phase approval voice yes/no for `close_window` when `suspected_unsaved=True` (batch E); pre-edit file-content snapshot in `direct_bridge` for SWE-Agent T1 auto-revert + T14 edit-recovery (batch F); per-intent condenser selection in `LLMEngine._build_messages` (batch G); `drive_start_task` async-generator gaming-engage / disengage state machine with per-stage voice acks (batch H); T7 OCR Tesseract tier `desktop/ocr.py` (batch I, catalog-08 deferred). **Default-ON sweep** (`aa00bb9`): flipped `llm.history_compression.intent_adaptive` False->True (the "ship session work enabled" rule) AND auto-started the `DialogPoller` daemon in `Orchestrator.__init__` so batch A's bus events actually fire (the batch B subscription chain was dead without it). **Handoff cleanup** (`bca58b0`): `screen_context.py` browser-inputs iterator now tolerates both `UIElementInfo` dataclass + legacy `(label, value)` tuple shapes; `test_canonical_monitor_runner_wiring.py` listener-count asserts replaced with a qualname-introspecting `_has_canonical_monitor_listener` helper. Voice baseline contract intact (hot path gains only a microsecond `set_current_intent_kind` setter call). | 8046 | [project_ultron_2026_05_28_catalog_09_production_wiring.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_28_catalog_09_production_wiring.md) |
-| 2026 | `1c62068` | **clawhub-desktop-control catalog 09 port.** Five feature commits on top of `ee5f8dc`. All 7 cataloged techniques (T1-T7) landed across 5 batches. Batch 1 (`21d0497`): T1 `InputController.scroll` extended with `direction="vertical"|"horizontal"` kwarg routing to `pyautogui.scroll` vs `pyautogui.hscroll` (closes the lazy-content browser-scroll gap from catalog 08 T5); T3 `InputController.type_text` extended with `wpm` kwarg using the standard 5-chars-per-word formula (interval=1/((wpm*5)/60); 60-80 WPM passes most JS form validators that reject instant input; wpm<=0 returns structured error instead of upstream's ZeroDivisionError); T7 `InputController.move_mouse` extended with `smooth=False` kwarg that dispatches to `pyautogui.easeInOutQuad` tween when smooth=True with duration_s>0 (gaming-mode anti-detection + demo-mode narration). All three additive kwargs preserve back-compat by defaulting to legacy behaviour. MCP tools (`mouse_move` / `type_text` / `scroll`) extended with matching kwargs. Batch 2 (`e3274b6`): T2 GREEN `get_pixel_color(x, y)` in `desktop/capture.py` (pyautogui.pixel wrapper, fail-open on exception, RGB tuples NOT taint-tracked since they're ephemeral); T2 YELLOW `wait_for_pixel_color(x, y, target_color, *, tolerance, timeout_s, interval_s, sleep_fn, clock_fn)` in `desktop/uia.py` mirroring the catalog 08 T4 wait pattern with L-infinity tolerance for anti-aliased pixels (closes gaps for game-state polling, loading-spinner disappearance, status LEDs, progress-bar completion). Batch 3 (`9c3be8a`): T4 NEW `src/ultron/desktop/clipboard.py` -- `ClipboardManager` class with Cap-2-gated `read_text(*, user_text)` + Cap-3-gated `write_text(text, *, user_text)`, full safety-validator integration (tool_name=desktop.clipboard.read/write with capability=clipboard_read/write), taint tracker integration (read bytes recorded under clipboard_read for exfil detection; write bytes recorded under clipboard_write for paste-target verification), oversize write rejection, payload preview capped at 2 KB so audit log stays bounded, pyperclip lazy-import with structured failure on missing dep (vs upstream's silent log). `ClipboardResult` frozen dataclass. MCP tools `clipboard_read` + `clipboard_write` registered. Batch 4 (`7e7e40d`): T6 `find_image_on_screen(template_path, *, confidence=0.8, region)` + `TemplateMatch` frozen dataclass in `desktop/capture.py`. Routes `template_path` through `PathResolver.safe_realpath` (defends against attacker-controlled paths matching spoofed UI elements); pyautogui.locateOnScreen behind a broad-except that handles missing opencv-python as None (fail-open contract); returned centre coords route to InputController.click for the Cap-3-gated click. MCP tool `find_image_on_screen` (region split into 4 separate args for JSON-over-stdio). Batch 5 (`1c62068`): T5 NEW `src/ultron/desktop/sequence.py` -- `DesktopSequenceRunner` class with before/after screenshot bracketing per step; `SequenceStep` + `ScreenshotRef` + `StepResult` + `SequenceResult` frozen dataclasses; `SequenceStatus` / `StepOutcome` / `VlmVerdict` enums; optional VLM verification of after-frames via injected vlm_describe callable (confirmation-keyword pattern shared with click_preview); auto-pass radius (default 150 px) so sequential steps within a panel skip redundant VLM round-trips; fail-fast contract (first failure aborts remaining steps + records failed_at_step); analyze-and-discard contract on captured bytes; deliberately did NOT port the upstream `_check_approval` blocking input() (incompatible with voice-first; ultron uses two_phase_approval), pygetwindow window activation (ultron uses focus_by_title), or the keyword-cascade `_plan_*` planners (ultron's LLM intent router is more capable). Tier summary: 4 GREEN + 3 YELLOW + 0 RED. Source plugin (~93 KB across 7 files) read read-only via Read tool; never executed (per binding ClawHub-batch security rules). Pattern extraction via Sonnet 4.6 Explore agent that independently confirmed zero-RED security finding (no network calls, no subprocess / os.system, no ctypes / registry access, no persistence, no anti-forensics, no credential access, no obfuscation, no AV / EDR tampering). `THIRD_PARTY_NOTICES.md` extended with clawhub-desktop-control MIT attribution + per-component mapping for T1 / T2 / T3 / T4 / T5 / T6 / T7. Voice baseline contract intact (no SOUL.md / RVC / Piper / vocal WAV / LLM model file / Kokoro fine-tune voicepack touch; no orchestrator hot-path edit; all surfaces ship as importable infrastructure for future opt-in wiring). | 7805 | [project_ultron_2026_05_29_clawhub_desktop_control.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_29_clawhub_desktop_control.md) |
-| 2026-05-28 | `2cad783` | **clawhub-windows-control catalog 08 port.** Five feature commits on top of `a48ec9d`. 7 of 8 cataloged techniques landed (T7 OCR deferred per catalog `★`; existing Moondream2 VLM tier covers the use case). Batch 1 (`44087e3`): T2 `UIElementInfo` + `get_ui_element_inventory` 10-bucket UIA walk in `desktop/uia.py`; T4 `wait_for_text_in_window` (uia.py) + `wait_for_window` (windows.py) synchronous polling barriers with `sleep_fn`/`clock_fn` injection + `DEFAULT_WAIT_TIMEOUT_S=30.0` / `DEFAULT_WAIT_INTERVAL_S=0.5` shared constants; T8 `InputController.drag_to` absolute-coord drag (`pyautogui.moveTo` + `pyautogui.dragTo`) through full controller gate stack + click-preview gate on SOURCE coordinate. Batch 2 (`9dafeca`): T5 `BrowserContent` + `BrowserLink` + `BROWSER_NAMES` (chrome/firefox/edge/brave/opera/vivaldi/arc) + `is_browser_window` + `find_browser_window` + `extract_browser_content` (20-100 ms vs 300-800 ms + ~330 MB VRAM for the VLM tier); UIA-based browser content extraction with headings (uppercase / colon-terminated Text + Static heuristic) / longer text / buttons / Hyperlinks (URL from automation_id when http(s)://) / Edit + ComboBox inputs / Images; per-bucket dedup + per-bucket caps + `full=True` shorthand. Batch 3 (`8e007b0`): T1 NEW `src/ultron/desktop/dialog_control.py` (DIALOG_CLASSES + DIALOG_CONTROL_TYPES + DIALOG_TITLE_KEYWORDS + DISMISS_BUTTONS constants; DialogInfo / DialogButton / DialogField / DialogCheckbox / DialogContent / DialogActionResult frozen dataclasses; find_dialogs + read_dialog + click_dialog_button + type_into_dialog_field + dismiss_dialog + wait_for_dialog with Cap-3 safety validator gating per-action; dismiss_dialog per-candidate validator re-check + ESC fallback gated with action=dismiss_escape). Batch 4 (`9a810b3`): T3 NEW `src/ultron/desktop/element_click.py` (CLICKABLE_TYPES 9-entry standard UIA control-type set + UIElementMatch / TextMatch / ClickResult frozen dataclasses + find_elements_by_name + click_element_by_name + find_text_in_window; exact-matches-first stable-sort ranking; enabled_only filter defaults True; ALL clicks route through gated InputController so click-preview VLM + foreground security + safety validator + Cap-3 explicit-intent + rate limit apply uniformly vs the upstream's pywinauto-native click_input() which bypasses every gate). Batch 5 (`2cad783`): T6 `get_active_window_title` lightweight foreground probe + `close_window` graceful WM_CLOSE via `win32gui.PostMessage` + `force=True` escalation to `kill_process_tree` + `UNSAVED_CHANGES_TITLE_HINTS` (5-entry editor convention) + `_title_suggests_unsaved_changes` predicate + `CloseWindowResult.suspected_unsaved` flag, plus `minimize_window_idempotent` / `maximize_window_idempotent` / `restore_window_idempotent` state-check-before-act helpers in placement.py. Tier summary: 4 GREEN + 4 YELLOW + 0 RED. Source plugin (~37 KB across 23 thin scripts) read read-only via Read tool; never executed (per binding ClawHub-batch security rules). Pattern extraction via Sonnet 4.6 Explore agent that independently confirmed catalog's zero-RED security finding (no registry access, no network calls, no persistence, no anti-forensics, no DLL injection, no credential access). `THIRD_PARTY_NOTICES.md` extended with clawhub-windows-control MIT attribution + per-component mapping for T1/T2/T3/T4/T5/T6/T8. Voice baseline contract intact (no SOUL.md / RVC / Piper / vocal WAV / LLM model file / Kokoro fine-tune voicepack touch; no orchestrator hot-path edit; all surfaces ship as importable infrastructure for future opt-in wiring). | 7715 | [project_ultron_2026_05_28_clawhub_windows_control.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_28_clawhub_windows_control.md) |
+| 2026 | `1c62068` | **clawhub-desktop-control catalog 09 port.** Five feature commits on top of `ee5f8dc`. All 7 cataloged techniques (T1-T7) landed across 5 batches. Batch 1 (`21d0497`): T1 `InputController.scroll` extended with `direction="vertical"|"horizontal"` kwarg routing to `pyautogui.scroll` vs `pyautogui.hscroll` (closes the lazy-content browser-scroll gap from catalog 08 T5); T3 `InputController.type_text` extended with `wpm` kwarg using the standard 5-chars-per-word formula (interval=1/((wpm*5)/60); 60-80 WPM passes most JS form validators that reject instant input; wpm<=0 returns structured error instead of upstream's ZeroDivisionError); T7 `InputController.move_mouse` extended with `smooth=False` kwarg that dispatches to `pyautogui.easeInOutQuad` tween when smooth=True with duration_s>0 (gaming-mode anti-detection + demo-mode narration). All three additive kwargs preserve back-compat by defaulting to legacy behaviour. MCP tools (`mouse_move` / `type_text` / `scroll`) extended with matching kwargs. Batch 2 (`e3274b6`): T2 GREEN `get_pixel_color(x, y)` in `desktop/capture.py` (pyautogui.pixel wrapper, fail-open on exception, RGB tuples NOT taint-tracked since they're ephemeral); T2 YELLOW `wait_for_pixel_color(x, y, target_color, *, tolerance, timeout_s, interval_s, sleep_fn, clock_fn)` in `desktop/uia.py` mirroring the catalog 08 T4 wait pattern with L-infinity tolerance for anti-aliased pixels (closes gaps for game-state polling, loading-spinner disappearance, status LEDs, progress-bar completion). Batch 3 (`9c3be8a`): T4 NEW `src/kenning/desktop/clipboard.py` -- `ClipboardManager` class with Cap-2-gated `read_text(*, user_text)` + Cap-3-gated `write_text(text, *, user_text)`, full safety-validator integration (tool_name=desktop.clipboard.read/write with capability=clipboard_read/write), taint tracker integration (read bytes recorded under clipboard_read for exfil detection; write bytes recorded under clipboard_write for paste-target verification), oversize write rejection, payload preview capped at 2 KB so audit log stays bounded, pyperclip lazy-import with structured failure on missing dep (vs upstream's silent log). `ClipboardResult` frozen dataclass. MCP tools `clipboard_read` + `clipboard_write` registered. Batch 4 (`7e7e40d`): T6 `find_image_on_screen(template_path, *, confidence=0.8, region)` + `TemplateMatch` frozen dataclass in `desktop/capture.py`. Routes `template_path` through `PathResolver.safe_realpath` (defends against attacker-controlled paths matching spoofed UI elements); pyautogui.locateOnScreen behind a broad-except that handles missing opencv-python as None (fail-open contract); returned centre coords route to InputController.click for the Cap-3-gated click. MCP tool `find_image_on_screen` (region split into 4 separate args for JSON-over-stdio). Batch 5 (`1c62068`): T5 NEW `src/kenning/desktop/sequence.py` -- `DesktopSequenceRunner` class with before/after screenshot bracketing per step; `SequenceStep` + `ScreenshotRef` + `StepResult` + `SequenceResult` frozen dataclasses; `SequenceStatus` / `StepOutcome` / `VlmVerdict` enums; optional VLM verification of after-frames via injected vlm_describe callable (confirmation-keyword pattern shared with click_preview); auto-pass radius (default 150 px) so sequential steps within a panel skip redundant VLM round-trips; fail-fast contract (first failure aborts remaining steps + records failed_at_step); analyze-and-discard contract on captured bytes; deliberately did NOT port the upstream `_check_approval` blocking input() (incompatible with voice-first; kenning uses two_phase_approval), pygetwindow window activation (kenning uses focus_by_title), or the keyword-cascade `_plan_*` planners (kenning's LLM intent router is more capable). Tier summary: 4 GREEN + 3 YELLOW + 0 RED. Source plugin (~93 KB across 7 files) read read-only via Read tool; never executed (per binding ClawHub-batch security rules). Pattern extraction via Sonnet 4.6 Explore agent that independently confirmed zero-RED security finding (no network calls, no subprocess / os.system, no ctypes / registry access, no persistence, no anti-forensics, no credential access, no obfuscation, no AV / EDR tampering). `THIRD_PARTY_NOTICES.md` extended with clawhub-desktop-control MIT attribution + per-component mapping for T1 / T2 / T3 / T4 / T5 / T6 / T7. Voice baseline contract intact (no SOUL.md / RVC / Piper / vocal WAV / LLM model file / Kokoro fine-tune voicepack touch; no orchestrator hot-path edit; all surfaces ship as importable infrastructure for future opt-in wiring). | 7805 | [project_ultron_2026_05_29_clawhub_desktop_control.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_29_clawhub_desktop_control.md) |
+| 2026-05-28 | `2cad783` | **clawhub-windows-control catalog 08 port.** Five feature commits on top of `a48ec9d`. 7 of 8 cataloged techniques landed (T7 OCR deferred per catalog `★`; existing Moondream2 VLM tier covers the use case). Batch 1 (`44087e3`): T2 `UIElementInfo` + `get_ui_element_inventory` 10-bucket UIA walk in `desktop/uia.py`; T4 `wait_for_text_in_window` (uia.py) + `wait_for_window` (windows.py) synchronous polling barriers with `sleep_fn`/`clock_fn` injection + `DEFAULT_WAIT_TIMEOUT_S=30.0` / `DEFAULT_WAIT_INTERVAL_S=0.5` shared constants; T8 `InputController.drag_to` absolute-coord drag (`pyautogui.moveTo` + `pyautogui.dragTo`) through full controller gate stack + click-preview gate on SOURCE coordinate. Batch 2 (`9dafeca`): T5 `BrowserContent` + `BrowserLink` + `BROWSER_NAMES` (chrome/firefox/edge/brave/opera/vivaldi/arc) + `is_browser_window` + `find_browser_window` + `extract_browser_content` (20-100 ms vs 300-800 ms + ~330 MB VRAM for the VLM tier); UIA-based browser content extraction with headings (uppercase / colon-terminated Text + Static heuristic) / longer text / buttons / Hyperlinks (URL from automation_id when http(s)://) / Edit + ComboBox inputs / Images; per-bucket dedup + per-bucket caps + `full=True` shorthand. Batch 3 (`8e007b0`): T1 NEW `src/kenning/desktop/dialog_control.py` (DIALOG_CLASSES + DIALOG_CONTROL_TYPES + DIALOG_TITLE_KEYWORDS + DISMISS_BUTTONS constants; DialogInfo / DialogButton / DialogField / DialogCheckbox / DialogContent / DialogActionResult frozen dataclasses; find_dialogs + read_dialog + click_dialog_button + type_into_dialog_field + dismiss_dialog + wait_for_dialog with Cap-3 safety validator gating per-action; dismiss_dialog per-candidate validator re-check + ESC fallback gated with action=dismiss_escape). Batch 4 (`9a810b3`): T3 NEW `src/kenning/desktop/element_click.py` (CLICKABLE_TYPES 9-entry standard UIA control-type set + UIElementMatch / TextMatch / ClickResult frozen dataclasses + find_elements_by_name + click_element_by_name + find_text_in_window; exact-matches-first stable-sort ranking; enabled_only filter defaults True; ALL clicks route through gated InputController so click-preview VLM + foreground security + safety validator + Cap-3 explicit-intent + rate limit apply uniformly vs the upstream's pywinauto-native click_input() which bypasses every gate). Batch 5 (`2cad783`): T6 `get_active_window_title` lightweight foreground probe + `close_window` graceful WM_CLOSE via `win32gui.PostMessage` + `force=True` escalation to `kill_process_tree` + `UNSAVED_CHANGES_TITLE_HINTS` (5-entry editor convention) + `_title_suggests_unsaved_changes` predicate + `CloseWindowResult.suspected_unsaved` flag, plus `minimize_window_idempotent` / `maximize_window_idempotent` / `restore_window_idempotent` state-check-before-act helpers in placement.py. Tier summary: 4 GREEN + 4 YELLOW + 0 RED. Source plugin (~37 KB across 23 thin scripts) read read-only via Read tool; never executed (per binding ClawHub-batch security rules). Pattern extraction via Sonnet 4.6 Explore agent that independently confirmed catalog's zero-RED security finding (no registry access, no network calls, no persistence, no anti-forensics, no DLL injection, no credential access). `THIRD_PARTY_NOTICES.md` extended with clawhub-windows-control MIT attribution + per-component mapping for T1/T2/T3/T4/T5/T6/T8. Voice baseline contract intact (no SOUL.md / RVC / Piper / vocal WAV / LLM model file / Kokoro fine-tune voicepack touch; no orchestrator hot-path edit; all surfaces ship as importable infrastructure for future opt-in wiring). | 7715 | [project_ultron_2026_05_28_clawhub_windows_control.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_28_clawhub_windows_control.md) |
 | 2026 | `ee9eca5` | **clawhub-windows-ui-automation catalog 07 port + test fixes.** Six commits on top of `c3966a7`. Five batches landing T1-T6: T1+T3 doc comments in `desktop/input_control.py` (pyautogui uses modern atomic `SendInput`; `pyautogui.hotkey` is async unlike `SendKeys.SendWait`); T2 new `desktop/win32_helpers.py` (ctypes wrappers for `GetDpiForMonitor`, `GetLastInputInfo`, `DwmGetWindowAttribute(DWMWA_CLOAKED)`, hardened `block_input_context` with watchdog + try/finally + UIPI safety floor + 30s hard cap, plus `logical_to_physical` / `physical_to_logical` primitives); T6 `focus_by_title` two-tier focus in `desktop/windows.py` (primary `SetForegroundWindow`, fallback in-process `WScript.Shell.AppActivate` via `win32com.client`, final `CREATE_NO_WINDOW` PowerShell subprocess) plus `enumerate_windows`/`find_window` gain `exclude_cloaked: bool = True`; T5 DPI-aware coordinate helpers in `desktop/uia.py` (`physical_center_of_element` / `physical_rect_of_element` / `dpi_aware_click_at_element_center` -- identity on 100%-DPI; opt-in `assume_logical=True` for non-DPI-aware sources); T4 frontmatter `capability_tags:` filter wiring (`SkillRegistry.matching_skills` accepts `gaming_mode` / `vlm_loaded` / `has_internet` kwargs; `_skill_active_for_capability_tags` predicate; `LLMEngine._build_messages` threads live VLM holder state via new `_resolve_vlm_loaded_for_skills()`). Closing `ee9eca5` test-fix commit updated 2 tests broken by the prior production-wiring flag flips (`coding.pre_write_lint.enabled` + `coding.pre_task_confirmation_enabled` both flipped to True) -- tests now monkeypatch per-test config state instead of depending on the global default; added companion `test_runner_lint_listener_enabled_returns_callable` so both branches stay pinned. `THIRD_PARTY_NOTICES.md` extended with clawhub-windows-ui-automation MIT attribution. Voice baseline contract intact (no SOUL.md / RVC / Piper / vocal WAV / LLM model file / Kokoro fine-tune voicepack touch; no orchestrator hot-path edit beyond the additive `vlm_loaded` thread). | 7516 | [project_ultron_2026_05_27_catalog_07_clawhub_windows_ui_automation.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_27_catalog_07_clawhub_windows_ui_automation.md) |
 | 2026-05-26 | `29ffe49` | **Production-wiring pass batch 10 (voice baseline re-measure post-flags).** `scripts/measure_baseline.py` ran cleanly under the new config: VRAM loaded **6254 MB (-343 MB vs 2026-05-23 baseline)**, peak **6664 MB (-343 MB)**, STT median **16 ms** (unchanged), LLM TTFT median **172 ms (-31 ms)**, TTS synth median **78 ms (-31 ms)**, composite TTFA median **266 ms (-47 ms)**. The Batch 9 flag flips (supervisor.tier=full, architect, click_preview, contextual_retrieval, background_summary, pre_write_lint, goal_anchors, etc.) did NOT regress the voice baseline -- they only fire on coding / desktop / write paths, not on the simple voice-query path measured by measure_baseline. No optimisation pass needed; the production wiring is net-positive on every measured axis. `baselines.json` updated. | (no test change) | [project_ultron_2026_05_26_production_wiring_pass.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_26_production_wiring_pass.md) |
-| 2026-05-26 | `2e1f8b8` | **Production-wiring pass batch 6 (SWE-Agent T7 SubmitReviewLoop into supervisor COMPLETE listener).** New `CapabilityVoiceController._attach_submit_review_listener` registers on every supervisor-dispatched task's COMPLETE event. The listener walks `event.files_created`/`files_modified`/`files_deleted`, runs `detect_voice_lock_hits()` (matches SOUL.md / IDENTITY.md / Piper / RVC / Qwen GGUFs / Kokoro voicepack + fine-tune / tts/rvc.py / tts/ultron_filter.py), and on any hit: logs WARN with the hit list AND queues a voice narration ("Voice-baseline contract: the session touched X. Review before continuing.") onto `controller._pending_completion` for the orchestrator's idle drain. Wired in after `_attach_supervisor_digest_listener` in `_dispatch_supervisor_task`. Fail-open: listener registration / dispatch errors log WARN, never abort. Skipped T14 edit_recovery + SWE-Agent T1 auto-revert (need pre-edit snapshot of agent-owned writes — needs deeper agent-tool integration). Also updated `tests/test_coding_voice.py::test_pre_task_confirmation_disabled_dispatches_immediately` to monkeypatch the legacy-shim flag after the Batch 9 flip. | 7394 | [project_ultron_2026_05_26_production_wiring_pass.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_26_production_wiring_pass.md) |
-| 2026-05-26 | `8a7759d` | **Production-wiring pass batches 8+9 (OpenClaw live dispatch + flag flips).** Per user direction ("wire and flip everything on ... accept high latency for now, optimize later"), config.yaml flipped these knobs ON: `openclaw.enabled` (Gateway at `http://127.0.0.1:11280`; bridge now lives, dispatcher returns real plugin invocations instead of stub voice messages), `openclaw.bridge.inbound_voice_handoff_enabled` (`[voice]`-prefix routing into ultron's voice pipeline), `coding.pre_task_confirmation_enabled` (~0.5 s TTS playback with barge-in before each coding dispatch), `coding.supervisor.tier: "indexing_only" -> "full"` (decide + narration + enriched-context TaskRequest), `coding.repo_map.enabled` (50-300 ms pre-dispatch PageRank repo map prepended to AI coding agent prompt), `coding.pre_write_lint.enabled` (compile + flake8 + tree-sitter on every write; 50-500 ms per .py write), `coding.architect.enabled` + `narrate_enabled` (3-5 s pre-dispatch plan + sentence-by-sentence narration with barge-in), `coding.goal_anchors.enabled` (anchor decomposition + per-anchor voice progress), `desktop.click_preview.enabled` (1-2 s VLM round-trip on the first click in a region; auto-pass within 100 px), `memory.contextual_retrieval.enabled` (80-150 ms per write turn), `memory.background_summary.enabled` (idle-gated). Kept OFF per user veto: `llm.draft_kind` (real .8b PLD `llama_decode -1` bug; not a preference), `memory.reranking.enabled` (17-18 s/turn CPU cost). `notifications.telegram.enabled` stays OFF per user (no bot token configured). Validated via `scripts/validate_config.py`. Voice baseline TTFT will regress notably during this pass; per user direction the optimisation pass (Batch 10) is the follow-up to claw back. | (7394, no code change in this batch) | [project_ultron_2026_05_26_production_wiring_pass.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_26_production_wiring_pass.md) |
+| 2026-05-26 | `2e1f8b8` | **Production-wiring pass batch 6 (SWE-Agent T7 SubmitReviewLoop into supervisor COMPLETE listener).** New `CapabilityVoiceController._attach_submit_review_listener` registers on every supervisor-dispatched task's COMPLETE event. The listener walks `event.files_created`/`files_modified`/`files_deleted`, runs `detect_voice_lock_hits()` (matches SOUL.md / IDENTITY.md / Piper / RVC / Qwen GGUFs / Kokoro voicepack + fine-tune / tts/rvc.py / tts/kenning_filter.py), and on any hit: logs WARN with the hit list AND queues a voice narration ("Voice-baseline contract: the session touched X. Review before continuing.") onto `controller._pending_completion` for the orchestrator's idle drain. Wired in after `_attach_supervisor_digest_listener` in `_dispatch_supervisor_task`. Fail-open: listener registration / dispatch errors log WARN, never abort. Skipped T14 edit_recovery + SWE-Agent T1 auto-revert (need pre-edit snapshot of agent-owned writes — needs deeper agent-tool integration). Also updated `tests/test_coding_voice.py::test_pre_task_confirmation_disabled_dispatches_immediately` to monkeypatch the legacy-shim flag after the Batch 9 flip. | 7394 | [project_ultron_2026_05_26_production_wiring_pass.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_26_production_wiring_pass.md) |
+| 2026-05-26 | `8a7759d` | **Production-wiring pass batches 8+9 (OpenClaw live dispatch + flag flips).** Per user direction ("wire and flip everything on ... accept high latency for now, optimize later"), config.yaml flipped these knobs ON: `openclaw.enabled` (Gateway at `http://127.0.0.1:11280`; bridge now lives, dispatcher returns real plugin invocations instead of stub voice messages), `openclaw.bridge.inbound_voice_handoff_enabled` (`[voice]`-prefix routing into kenning's voice pipeline), `coding.pre_task_confirmation_enabled` (~0.5 s TTS playback with barge-in before each coding dispatch), `coding.supervisor.tier: "indexing_only" -> "full"` (decide + narration + enriched-context TaskRequest), `coding.repo_map.enabled` (50-300 ms pre-dispatch PageRank repo map prepended to AI coding agent prompt), `coding.pre_write_lint.enabled` (compile + flake8 + tree-sitter on every write; 50-500 ms per .py write), `coding.architect.enabled` + `narrate_enabled` (3-5 s pre-dispatch plan + sentence-by-sentence narration with barge-in), `coding.goal_anchors.enabled` (anchor decomposition + per-anchor voice progress), `desktop.click_preview.enabled` (1-2 s VLM round-trip on the first click in a region; auto-pass within 100 px), `memory.contextual_retrieval.enabled` (80-150 ms per write turn), `memory.background_summary.enabled` (idle-gated). Kept OFF per user veto: `llm.draft_kind` (real .8b PLD `llama_decode -1` bug; not a preference), `memory.reranking.enabled` (17-18 s/turn CPU cost). `notifications.telegram.enabled` stays OFF per user (no bot token configured). Validated via `scripts/validate_config.py`. Voice baseline TTFT will regress notably during this pass; per user direction the optimisation pass (Batch 10) is the follow-up to claw back. | (7394, no code change in this batch) | [project_ultron_2026_05_26_production_wiring_pass.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_26_production_wiring_pass.md) |
 | 2026-05-26 | `61135e0` | **Production-wiring pass batch 4 (T1 trust envelope + T9 version-exact in LLMEngine.reload_for_preset).** Model hot-swap now enforces the version-exact contract via `VersionExactRequest` + `validate_version_exact_request` (preset names are concrete identifiers; floating tokens caught upstream by LLM_PRESETS lookup) AND a synchronous T2 digest verification against the recorded TOFU pin BEFORE the Llama load. New `verify_single_artifact_sync(identifier, path, ...)` in `install/voice_baseline_verify.py` is the sync entry point. Mismatched on-disk GGUF -> `reload_for_preset` returns `(False, "refused {preset}: model GGUF digest mismatch...")` without ever spending the ~3 GB / 5-10 s Llama load on a tampered file. Status in `{verified, pinned, missing, error}` all proceed (missing/error fall through to the existing Llama-load error path which has clearer diagnostics). Fail-open at the trust pre-check itself: a broken verifier never blocks a legitimate swap (the async voice-baseline verifier at startup provides defence in depth). 3 new tests in `tests/test_llm_reload_for_preset.py` (mismatch refuses + verified proceeds + pre-check exception swallowed). Voice baseline contract intact. | 7394 | [project_ultron_2026_05_26_production_wiring_pass.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_26_production_wiring_pass.md) |
-| 2026-05-26 | `84dd1f6` | **Production-wiring pass batch 3 (T5 mode-scoped skill filter).** `Skill` frontmatter can now declare a `modes: [gaming, standby]` list. `SkillRegistry.matching_skills(user_text, *, mode="standby")` filters skills whose declared modes exclude the current mode. Skills with NO `modes` declaration match every mode (legacy + unscoped). `maybe_get_skills_block(user_text, *, mode="standby")` forwards the mode. `LLMEngine._build_messages` calls new module helper `_resolve_current_mode_for_skills()` which reads `ultron.openclaw_routing.gaming_mode.is_gaming_mode_active()` and threads `"gaming"` / `"standby"` into the skills call. The loader already passes unknown frontmatter keys through `Skill.extra` (forward-compat), so the wiring is purely on the consumer side. 7 new tests in `tests/skills/test_mode_filter.py` cover the predicate (no-modes, list filter, case-insensitive, string-value tolerance, broken-shape fail-open) and the registry-level + maybe_get_skills_block end-to-end forwarding. Voice baseline contract intact. | 7391 | [project_ultron_2026_05_26_production_wiring_pass.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_26_production_wiring_pass.md) |
-| 2026-05-26 | `626b792` | **Production-wiring pass batch 2 (subprocess + T2 artifact identity).** T8 `kill_process_tree` replaces ad-hoc `terminate()`+`wait()`+`kill()` chains in `transcription/parakeet_engine.stop_parakeet_server` and `tts/xtts_v3._stop_server_subprocess`. Order is preserved: graceful HTTP `/shutdown` first, brief poll grace, then `kill_process_tree(pid)` for the parakeet/xtts root + every uvicorn worker child + grandchildren in one cross-platform psutil-backed call. New `src/ultron/install/voice_baseline_verify.py` ports T2 TOFU verification to the 6 canonical voice-baseline artifacts (LLM GGUF / 0.8b draft GGUF / Kokoro voicepack / Kokoro fine-tune weights / wake-word ONNX / Smart Turn V3 ONNX). At orchestrator startup `verify_voice_baseline_artifacts_async(PROJECT_ROOT)` spawns a daemon thread that hashes each artifact, looks up the pin from `data/install/pinned_digests.jsonl`, and either records first-use TOFU OR verifies against the existing pin. Mismatches surface as voice-baseline integrity warnings via `on_complete` callback. The async path keeps the ~5-10 s GGUF hash off the cold-start critical path; report deposits on `Orchestrator._voice_baseline_report` so future "are my models OK?" voice intents can poll. 10 new tests in `tests/install/test_voice_baseline_verify.py` + updated `tests/test_stt_swap_orchestrator.py::test_stop_parakeet_server_terminates_alive_process` for the new kill_tree contract. Voice baseline contract intact. | 7384 | [project_ultron_2026_05_26_production_wiring_pass.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_26_production_wiring_pass.md) |
-| 2026-05-26 | `ecd8755` | **Production-wiring pass batch 1 (zero-risk foundation).** T14 rate-limit recorder threaded into Brave / SearxNG / DuckDuckGo clients via per-pid `on_response` closure built by `SearchProviderChain._build_recorder`; `_PROVIDER_FACTORIES` lambdas now take a recorder arg + lazy clients call the closure after every HTTP response (success + 429). DDG classifies throttle-shaped exception text (`429` / `403` / `captcha` / `rate` / `throttle` / `blocked`) as `was_429=True` so the chain cools it down without needing response headers (DDG-search lib scrapes HTML). T3 canonical_codes + T16 category + rule_metadata fields added to `AuditLog.record` so safety-validator rules can attach the T3 reason-code namespace and dashboards can group blocks without parsing reason strings. T18 `sanitize_for_log` wraps every tool-supplied string (reason / tool_name / capability / context dict leaves / error message) in audit.py + error_log.py, defending against CWE-117 log forging. T11 `materialise_default_pins(PROJECT_ROOT)` runs once at orchestrator startup so the 5 voice-baseline lock anchors (voicepack:ultron / voicepack:kokoro_finetune / llm:qwen3.5-4b / persona:identity / validator:k_category) land in the workdir lockfile. 6 new recorder roundtrip tests in `tests/web_search/test_provider_chain_recorder.py`. Voice baseline contract intact. | 7374 | [project_ultron_2026_05_26_production_wiring_pass.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_26_production_wiring_pass.md) |
-| 2026-05-25 | `b46ad89` | OpenClaw-ClawHub catalog port batch 9 (YELLOW; final) -- T7 trusted-publisher short-lived token mint + verify. Stdlib-only HMAC-SHA256 JWT (HS256) with local signing secret at data/identity/short_lived_token_secret.bin. mint_token (caller_id + audience + scope + ttl + extra_claims; refuses oversized TTL / disallowed scopes via pre-registered TrustedCaller tuples in data/identity/trusted_callers.jsonl). verify_token enforces signature + expiry (60s clock-skew tolerance) + audience + caller-id trust-tuple equality + per-claim match + scope allowlist. Exception hierarchy: TokenMintError / TokenVerifyError / TokenExpiredError / TokenSignatureError / TrustedCallerNotFoundError / TrustedCallerClaimMismatch. Audit log at data/identity/short_lived_tokens.jsonl with SHA-256 hash chain + verify_audit_chain. rotate_secret invalidates historical tokens. Wired use cases: MCP server startup / coding bridge subprocess / skill execution token / voice gaming-mode handoff. RSA-256 + TPM-backed keys documented as future hardening path. New module: `src/ultron/identity/short_lived_token.py`. +30 module tests. | 7368 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
-| 2026-05-25 | `85abd78` | OpenClaw-ClawHub catalog port batch 8 (YELLOW) -- T15 privacy-by-construction aggregate-only telemetry. HashedRootId / HashedSkillId NewType wrappers + hash_root / hash_skill_slug primitives with per-install salted SHA-256 (data/observability/telemetry_salt.txt generated on first call so cross-install correlation is impossible). canonical_label_root for tilde-normalised dashboard labels. PrivateMetricsStore append-only JSONL with type-boundary RawPathLeakError enforcement (raw paths / long unhashed strings rejected; SAFE_ATTRIBUTE_KEYS + _id/_hash-suffix + 12-char threshold carveouts). HashedEvent + RootRecord + SkillRecord aggregates. stale_root_ids implements the upstream 120-day staleness pattern. Fail-private default: telemetry disabled unless explicit ULTRON_TELEMETRY=opt-in. Generalises to per-session metric dashboards / provider health / memory drift detection -- same shape, no exfiltration vector. New package: `src/ultron/observability/` + `tests/observability/`. +42 module tests. | 7338 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
-| 2026-05-25 | `7f168f2` | OpenClaw-ClawHub catalog port batch 7 (YELLOW) -- T12 user-initiated report queue + universal pre-act moderation-plan preview. ReportQueue thread-safe append-only JSONL with SHA-256 hash chain mirroring safety.audit; Report (id + target_kind + target_id + reason + status + version + reporter_voice_session + timestamps + triage_note + final_action + extras); file_report/triage/list_reports/count/get/replay_from_log/verify_log_chain methods; UnknownReportError + IllegalTriageError exceptions. ModerationPlan universal pre-act preview with PlanImpact (message + severity + reversible) tuple + outcome enum + requires_confirmation derivation; render_plan_for_voice returns one-line TTS-safe summary. YELLOW gating: triage paired with safety.two_phase_approval (T2 from OpenClaw port) so a compromised in-process LLM cannot dismiss real reports covertly. New package: `src/ultron/feedback/` (3 modules) + `tests/feedback/` (2 test files). +44 module tests. | 7296 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
-| 2026-05-25 | `64055ae` | OpenClaw-ClawHub catalog port batch 6 -- T8 registry discovery via `/.well-known/ultron.json`. discover() with current-path -> legacy-path fallback + INJECTED fetcher (no network dep) + UntrustedHostError on optional trusted-hosts allowlist miss. resolve_registry_base() 3-tier chain (well-known -> env override -> default). DiscoveryCache thread-safe TTL (15-min default) wrapper caches None results too. Generalised pattern: future skill / MCP / voicepack registries publish their own well-known so ultron auto-discovers without config edits. New module: `src/ultron/install/discovery.py`. +31 module tests. | 7252 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
-| 2026-05-25 | `e0fdd16` | OpenClaw-ClawHub catalog port batch 5 -- T4 declared-vs-observed coherence checker (bidirectional MISSING_DECLARATION + UNUSED_DECLARATION + DYNAMIC_READ + OS_MISMATCH; conservative literal-only matcher with _ALWAYS_AVAILABLE_ENV + _COMMON_BINS_NEVER_DECLARED carveouts; check_intent_phrase_coherence creative-extension for trigger-phrase / body-token overlap) + T5 capability-tag namespace (frozen CapabilityTag enum across 5 categories: resource requirements / side-effect / egress scope / latency profile / gaming-mode safety / modality / confirmation tier; derive_capability_tags via per-tag regex + manifest declarations; TaggedCapability + filter_capabilities universal AND-combined filter; gaming_mode/vlm_loaded/has_internet/require/exclude axes; is_gaming_mode_safe + needs_explicit_intent predicates). New modules: `src/ultron/install/coherence.py`, `src/ultron/skills/capability_tags.py`. +71 module tests. | 7221 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
-| 2026-05-25 | `29a2832` | OpenClaw-ClawHub catalog port batch 4 -- T2 triple-digest artifact identity verification (ArtifactIdentity with hex SHA-256 + SRI SHA-512 + hex SHA-1 + byte_length; fail-closed verify_identity; ClawPack tarball-internal manifest_name + manifest_version checks via parse_clawpack_contents; TOFU pin file at data/install/pinned_digests.jsonl with pin_first_use_digests + load_pinned_digest + verify_against_pin) + T13 typed artifact-kind resolver (ResolvedArtifact envelope per source; per-kind builders for LOCAL_PATH / TARBALL_URL / GIT_REF / NPM_PACK / INLINE_MARKDOWN; verify_artifact_bytes dispatches by kind; ArtifactResolver registry-style dispatch). New modules: `src/ultron/install/artifact_identity.py`, `src/ultron/install/resolver.py`. +56 module tests. | 7150 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
-| 2026-05-25 | `848d734` | OpenClaw-ClawHub catalog port batch 3 -- T1 per-version trust envelope with derived `blocked_from_download` signal (TrustEnvelope/TrustSignal/PackageRef/ReleaseRef + 11-step scan_status derivation algorithm + universal `refuse_if_blocked` decision surface with allow_stale/allow_pending soft-clamps that do NOT override hard blocks) + T9 version-exact install contract (VersionExactRequest + fetch_for_version + VersionExactViolation; refuses floating-tag tokens like latest/*/main/HEAD/edge/etc. case-insensitive). Re-uses T3 ModerationVerdict for scan_status so the verdict surface is consistent across reason-codes / scanner / envelope. Generalised beyond install-time (re-usable for web-search provider trust, MCP server trust, memory backend trust, VLM/STT/TTS engine lifecycle, gaming-mode VRAM-reclaim transitions). All GREEN drop-ins; pure data + pure functions; no orchestrator hot-path wiring. New module: `src/ultron/install/trust_envelope.py`. +65 module tests. | 7094 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
-| 2026-05-25 | `5fe6d77` | OpenClaw-ClawHub catalog port batch 2 -- T10 lockfile + per-skill origin manifest with content fingerprinting (drift detection across .ultron/lock.json + per-skill .ultron/origin.json; atomic tmp+os.replace writes; fail-open reads; SHA-256 sorted-path fingerprint with binary/hidden/state-dir skip) + T11 pin/unpin extending T10 (idempotent-on-same-reason / strict-unpin / ULTRON_DEFAULT_PINS materialiser for the 5 voice-baseline-lock anchors) + T6 alias graph (rename/merge/transfer/soft_delete-30day-reservation/hard_delete + redirect-chain resolve with cycle protection + JSONL hash chain + RESERVED_SLUGS list + scope-namespaced slug validation). All GREEN drop-ins; pure-Python; no orchestrator hot-path wiring (importable infrastructure for skills registry + sandbox / voice intent / voicepack / persona / memory namespaces). New modules: `src/ultron/install/lockfile.py`, `src/ultron/install/pin.py`, `src/ultron/identity/__init__.py`, `src/ultron/identity/alias_graph.py`. New test dir: `tests/identity/`. +105 module tests. | 7029 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
-| 2026-05-25 | `d7ea215` | OpenClaw-ClawHub catalog port batch 1 -- T3 canonical moderation reason-code catalogue (33 upstream codes + 8 ultron extensions; verdict derivation with malicious-set + prefix short-circuit; OWASP Agentic Top 10 alignment; externally-clearable carve-out; wired into static_scanner.py via canonical_code_for_finding helper) + T14 HTTP rate-limit envelope parser (7-header triple-family; preferred-fallback Retry-After -> RateLimit-Reset -> X-RateLimit-Reset; RateLimitTracker with per-provider cooldown + 429 counter; wired into SearchProviderChain via tracker kwarg + should_skip + record_provider_outcome). Both GREEN drop-ins; existing behaviour byte-identical when no rate-limit headers / no reason codes consulted. New modules: `src/ultron/install/reason_codes.py`, `src/ultron/web_search/rate_limit.py`. New test dir: `tests/web_search/`. +97 module tests + 7 chain-integration tests. | 6924 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
+| 2026-05-26 | `84dd1f6` | **Production-wiring pass batch 3 (T5 mode-scoped skill filter).** `Skill` frontmatter can now declare a `modes: [gaming, standby]` list. `SkillRegistry.matching_skills(user_text, *, mode="standby")` filters skills whose declared modes exclude the current mode. Skills with NO `modes` declaration match every mode (legacy + unscoped). `maybe_get_skills_block(user_text, *, mode="standby")` forwards the mode. `LLMEngine._build_messages` calls new module helper `_resolve_current_mode_for_skills()` which reads `kenning.openclaw_routing.gaming_mode.is_gaming_mode_active()` and threads `"gaming"` / `"standby"` into the skills call. The loader already passes unknown frontmatter keys through `Skill.extra` (forward-compat), so the wiring is purely on the consumer side. 7 new tests in `tests/skills/test_mode_filter.py` cover the predicate (no-modes, list filter, case-insensitive, string-value tolerance, broken-shape fail-open) and the registry-level + maybe_get_skills_block end-to-end forwarding. Voice baseline contract intact. | 7391 | [project_ultron_2026_05_26_production_wiring_pass.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_26_production_wiring_pass.md) |
+| 2026-05-26 | `626b792` | **Production-wiring pass batch 2 (subprocess + T2 artifact identity).** T8 `kill_process_tree` replaces ad-hoc `terminate()`+`wait()`+`kill()` chains in `transcription/parakeet_engine.stop_parakeet_server` and `tts/xtts_v3._stop_server_subprocess`. Order is preserved: graceful HTTP `/shutdown` first, brief poll grace, then `kill_process_tree(pid)` for the parakeet/xtts root + every uvicorn worker child + grandchildren in one cross-platform psutil-backed call. New `src/kenning/install/voice_baseline_verify.py` ports T2 TOFU verification to the 6 canonical voice-baseline artifacts (LLM GGUF / 0.8b draft GGUF / Kokoro voicepack / Kokoro fine-tune weights / wake-word ONNX / Smart Turn V3 ONNX). At orchestrator startup `verify_voice_baseline_artifacts_async(PROJECT_ROOT)` spawns a daemon thread that hashes each artifact, looks up the pin from `data/install/pinned_digests.jsonl`, and either records first-use TOFU OR verifies against the existing pin. Mismatches surface as voice-baseline integrity warnings via `on_complete` callback. The async path keeps the ~5-10 s GGUF hash off the cold-start critical path; report deposits on `Orchestrator._voice_baseline_report` so future "are my models OK?" voice intents can poll. 10 new tests in `tests/install/test_voice_baseline_verify.py` + updated `tests/test_stt_swap_orchestrator.py::test_stop_parakeet_server_terminates_alive_process` for the new kill_tree contract. Voice baseline contract intact. | 7384 | [project_ultron_2026_05_26_production_wiring_pass.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_26_production_wiring_pass.md) |
+| 2026-05-26 | `ecd8755` | **Production-wiring pass batch 1 (zero-risk foundation).** T14 rate-limit recorder threaded into Brave / SearxNG / DuckDuckGo clients via per-pid `on_response` closure built by `SearchProviderChain._build_recorder`; `_PROVIDER_FACTORIES` lambdas now take a recorder arg + lazy clients call the closure after every HTTP response (success + 429). DDG classifies throttle-shaped exception text (`429` / `403` / `captcha` / `rate` / `throttle` / `blocked`) as `was_429=True` so the chain cools it down without needing response headers (DDG-search lib scrapes HTML). T3 canonical_codes + T16 category + rule_metadata fields added to `AuditLog.record` so safety-validator rules can attach the T3 reason-code namespace and dashboards can group blocks without parsing reason strings. T18 `sanitize_for_log` wraps every tool-supplied string (reason / tool_name / capability / context dict leaves / error message) in audit.py + error_log.py, defending against CWE-117 log forging. T11 `materialise_default_pins(PROJECT_ROOT)` runs once at orchestrator startup so the 5 voice-baseline lock anchors (voicepack:kenning / voicepack:kokoro_finetune / llm:qwen3.5-4b / persona:identity / validator:k_category) land in the workdir lockfile. 6 new recorder roundtrip tests in `tests/web_search/test_provider_chain_recorder.py`. Voice baseline contract intact. | 7374 | [project_ultron_2026_05_26_production_wiring_pass.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_26_production_wiring_pass.md) |
+| 2026-05-25 | `b46ad89` | OpenClaw-ClawHub catalog port batch 9 (YELLOW; final) -- T7 trusted-publisher short-lived token mint + verify. Stdlib-only HMAC-SHA256 JWT (HS256) with local signing secret at data/identity/short_lived_token_secret.bin. mint_token (caller_id + audience + scope + ttl + extra_claims; refuses oversized TTL / disallowed scopes via pre-registered TrustedCaller tuples in data/identity/trusted_callers.jsonl). verify_token enforces signature + expiry (60s clock-skew tolerance) + audience + caller-id trust-tuple equality + per-claim match + scope allowlist. Exception hierarchy: TokenMintError / TokenVerifyError / TokenExpiredError / TokenSignatureError / TrustedCallerNotFoundError / TrustedCallerClaimMismatch. Audit log at data/identity/short_lived_tokens.jsonl with SHA-256 hash chain + verify_audit_chain. rotate_secret invalidates historical tokens. Wired use cases: MCP server startup / coding bridge subprocess / skill execution token / voice gaming-mode handoff. RSA-256 + TPM-backed keys documented as future hardening path. New module: `src/kenning/identity/short_lived_token.py`. +30 module tests. | 7368 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
+| 2026-05-25 | `85abd78` | OpenClaw-ClawHub catalog port batch 8 (YELLOW) -- T15 privacy-by-construction aggregate-only telemetry. HashedRootId / HashedSkillId NewType wrappers + hash_root / hash_skill_slug primitives with per-install salted SHA-256 (data/observability/telemetry_salt.txt generated on first call so cross-install correlation is impossible). canonical_label_root for tilde-normalised dashboard labels. PrivateMetricsStore append-only JSONL with type-boundary RawPathLeakError enforcement (raw paths / long unhashed strings rejected; SAFE_ATTRIBUTE_KEYS + _id/_hash-suffix + 12-char threshold carveouts). HashedEvent + RootRecord + SkillRecord aggregates. stale_root_ids implements the upstream 120-day staleness pattern. Fail-private default: telemetry disabled unless explicit KENNING_TELEMETRY=opt-in. Generalises to per-session metric dashboards / provider health / memory drift detection -- same shape, no exfiltration vector. New package: `src/kenning/observability/` + `tests/observability/`. +42 module tests. | 7338 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
+| 2026-05-25 | `7f168f2` | OpenClaw-ClawHub catalog port batch 7 (YELLOW) -- T12 user-initiated report queue + universal pre-act moderation-plan preview. ReportQueue thread-safe append-only JSONL with SHA-256 hash chain mirroring safety.audit; Report (id + target_kind + target_id + reason + status + version + reporter_voice_session + timestamps + triage_note + final_action + extras); file_report/triage/list_reports/count/get/replay_from_log/verify_log_chain methods; UnknownReportError + IllegalTriageError exceptions. ModerationPlan universal pre-act preview with PlanImpact (message + severity + reversible) tuple + outcome enum + requires_confirmation derivation; render_plan_for_voice returns one-line TTS-safe summary. YELLOW gating: triage paired with safety.two_phase_approval (T2 from OpenClaw port) so a compromised in-process LLM cannot dismiss real reports covertly. New package: `src/kenning/feedback/` (3 modules) + `tests/feedback/` (2 test files). +44 module tests. | 7296 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
+| 2026-05-25 | `64055ae` | OpenClaw-ClawHub catalog port batch 6 -- T8 registry discovery via `/.well-known/kenning.json`. discover() with current-path -> legacy-path fallback + INJECTED fetcher (no network dep) + UntrustedHostError on optional trusted-hosts allowlist miss. resolve_registry_base() 3-tier chain (well-known -> env override -> default). DiscoveryCache thread-safe TTL (15-min default) wrapper caches None results too. Generalised pattern: future skill / MCP / voicepack registries publish their own well-known so kenning auto-discovers without config edits. New module: `src/kenning/install/discovery.py`. +31 module tests. | 7252 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
+| 2026-05-25 | `e0fdd16` | OpenClaw-ClawHub catalog port batch 5 -- T4 declared-vs-observed coherence checker (bidirectional MISSING_DECLARATION + UNUSED_DECLARATION + DYNAMIC_READ + OS_MISMATCH; conservative literal-only matcher with _ALWAYS_AVAILABLE_ENV + _COMMON_BINS_NEVER_DECLARED carveouts; check_intent_phrase_coherence creative-extension for trigger-phrase / body-token overlap) + T5 capability-tag namespace (frozen CapabilityTag enum across 5 categories: resource requirements / side-effect / egress scope / latency profile / gaming-mode safety / modality / confirmation tier; derive_capability_tags via per-tag regex + manifest declarations; TaggedCapability + filter_capabilities universal AND-combined filter; gaming_mode/vlm_loaded/has_internet/require/exclude axes; is_gaming_mode_safe + needs_explicit_intent predicates). New modules: `src/kenning/install/coherence.py`, `src/kenning/skills/capability_tags.py`. +71 module tests. | 7221 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
+| 2026-05-25 | `29a2832` | OpenClaw-ClawHub catalog port batch 4 -- T2 triple-digest artifact identity verification (ArtifactIdentity with hex SHA-256 + SRI SHA-512 + hex SHA-1 + byte_length; fail-closed verify_identity; ClawPack tarball-internal manifest_name + manifest_version checks via parse_clawpack_contents; TOFU pin file at data/install/pinned_digests.jsonl with pin_first_use_digests + load_pinned_digest + verify_against_pin) + T13 typed artifact-kind resolver (ResolvedArtifact envelope per source; per-kind builders for LOCAL_PATH / TARBALL_URL / GIT_REF / NPM_PACK / INLINE_MARKDOWN; verify_artifact_bytes dispatches by kind; ArtifactResolver registry-style dispatch). New modules: `src/kenning/install/artifact_identity.py`, `src/kenning/install/resolver.py`. +56 module tests. | 7150 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
+| 2026-05-25 | `848d734` | OpenClaw-ClawHub catalog port batch 3 -- T1 per-version trust envelope with derived `blocked_from_download` signal (TrustEnvelope/TrustSignal/PackageRef/ReleaseRef + 11-step scan_status derivation algorithm + universal `refuse_if_blocked` decision surface with allow_stale/allow_pending soft-clamps that do NOT override hard blocks) + T9 version-exact install contract (VersionExactRequest + fetch_for_version + VersionExactViolation; refuses floating-tag tokens like latest/*/main/HEAD/edge/etc. case-insensitive). Re-uses T3 ModerationVerdict for scan_status so the verdict surface is consistent across reason-codes / scanner / envelope. Generalised beyond install-time (re-usable for web-search provider trust, MCP server trust, memory backend trust, VLM/STT/TTS engine lifecycle, gaming-mode VRAM-reclaim transitions). All GREEN drop-ins; pure data + pure functions; no orchestrator hot-path wiring. New module: `src/kenning/install/trust_envelope.py`. +65 module tests. | 7094 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
+| 2026-05-25 | `5fe6d77` | OpenClaw-ClawHub catalog port batch 2 -- T10 lockfile + per-skill origin manifest with content fingerprinting (drift detection across .kenning/lock.json + per-skill .kenning/origin.json; atomic tmp+os.replace writes; fail-open reads; SHA-256 sorted-path fingerprint with binary/hidden/state-dir skip) + T11 pin/unpin extending T10 (idempotent-on-same-reason / strict-unpin / KENNING_DEFAULT_PINS materialiser for the 5 voice-baseline-lock anchors) + T6 alias graph (rename/merge/transfer/soft_delete-30day-reservation/hard_delete + redirect-chain resolve with cycle protection + JSONL hash chain + RESERVED_SLUGS list + scope-namespaced slug validation). All GREEN drop-ins; pure-Python; no orchestrator hot-path wiring (importable infrastructure for skills registry + sandbox / voice intent / voicepack / persona / memory namespaces). New modules: `src/kenning/install/lockfile.py`, `src/kenning/install/pin.py`, `src/kenning/identity/__init__.py`, `src/kenning/identity/alias_graph.py`. New test dir: `tests/identity/`. +105 module tests. | 7029 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
+| 2026-05-25 | `d7ea215` | OpenClaw-ClawHub catalog port batch 1 -- T3 canonical moderation reason-code catalogue (33 upstream codes + 8 kenning extensions; verdict derivation with malicious-set + prefix short-circuit; OWASP Agentic Top 10 alignment; externally-clearable carve-out; wired into static_scanner.py via canonical_code_for_finding helper) + T14 HTTP rate-limit envelope parser (7-header triple-family; preferred-fallback Retry-After -> RateLimit-Reset -> X-RateLimit-Reset; RateLimitTracker with per-provider cooldown + 429 counter; wired into SearchProviderChain via tracker kwarg + should_skip + record_provider_outcome). Both GREEN drop-ins; existing behaviour byte-identical when no rate-limit headers / no reason codes consulted. New modules: `src/kenning/install/reason_codes.py`, `src/kenning/web_search/rate_limit.py`. New test dir: `tests/web_search/`. +97 module tests + 7 chain-integration tests. | 6924 | [project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_clawhub_catalog_porting.md) |
 | 2026-05-25 | `0ec1e42` | OpenClaw catalog port -- 11 batches landing 19 of 22 cataloged techniques (T17 / T19 / T20 deferred per catalog star rating). Importable primitives across 18 new modules / packages: `utils/ansi_safe`, `subprocess/{kill_tree, process_registry}`, `safety/{path_resolver T21 additions, validator T16 additions, policy_chain, two_phase_approval, hierarchical_policy}`, `llm/{context_window_guard, condensers/splitter}`, `agent_loop/{loop_detection_extended, subagent_policy}`, `hooks/lifecycle` (29-event expansion to 43 total + new HookDecision discriminated dataclass), `coding/edit_recovery`, `skills/{activation, marketplace}`, new packages `providers/` (failover_policy + auth_profiles + rotation), `install/static_scanner` (Python tokenize-based scanner + dependency denylist), `mcp/` (transport with env/header sanitisation + McpServerRegistry with kill-on-disconnect; closes the deferred T9 MCP-hub from the cline port). 14 GREEN ports + 5 YELLOW ports (T12 / T6 / T2 / T5 / T22 / T9 gated through the existing safety stack -- spawn-tool, credential storage, decision channel, Cap-1 + new Category L groundwork, Cap-3 + T12 + T8 + env-filter + connection-timeout, T5 scanner + per-source verification respectively). 0 RED -- every powerful pattern has a legitimate use case once gated. No orchestrator hot-path wiring (all importable infrastructure); voice baseline contract byte-identical to pre-port baseline. OpenClaw (MIT, 2026) attribution added to THIRD_PARTY_NOTICES.md with per-component mapping (18 entries). | 6820 | [project_ultron_2026_05_25_openclaw_catalog_porting.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_openclaw_catalog_porting.md) |
-| 2026-05-25 | `188931a` | post-cline integration pass: orchestrator startup wiring (install_default_injectors with closures returning existing STT/TTS engine instances + discover_project_config caching .ultron/ snapshot on `self._project_config`; both fail-open), SWE-Agent T16 click-preview gate wired through new InputController kwargs + new `desktop.click_preview.*` config section (default OFF; when ON the orchestrator builds a new InputController with VLM-backed `vlm_describe` + screen-capture closures and replaces the singleton via `set_input_controller`), two safe behavioural flag flips (`skills.enabled: true` + `events.enabled: true`, both fail-open, voice baseline preserved via untouched gaming_mode/llm.preset/llm.draft_kind), OpenHands deep API docs backfilled (9 packages: parsing / install / projects / services / skills / events / lifecycle / llm/condensers + utils/poll.py). | 6270 | [project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md) |
-| 2026-05-24 | `92ee711` | cline catalog port batch 10 -- mode policy + per-mode LLM router + subagent runner (T2 + T13 + T16): new `agent_loop/mode.py` (canonical `Mode` enum ACT/PLAN/CODING_ARCHITECT/CODING_EDITOR/GAMING + frozen `ModePolicy` with wrap-template + confirmation-TTL + preset override + `PendingConfirmation` queue with intent-topic filter + `ModeSession` state machine + flip history + module-level registry `get_mode_session`); new `llm/mode_router.py` (frozen `PresetEntry` + `ModeLLMRouter` mapping `Mode` to preset name, skip-when-already-active via injected probe, protected-mode set, `on_swap` callback with fail-open semantics, default routes target ultron's qwen3.5-4b for ACT/PLAN/CODING_* + llama-3.2-3b-abliterated for GAMING); new `agent_loop/subagent.py` (frozen `SubagentTask` + `SubagentResult` + `SubagentBatchStats` + `ToolGuard` whitelist enforcer + thread-safe `TokenLedger` + `SubagentRunner` ThreadPoolExecutor-backed dispatcher with `max_parallel=1` default + `DEFAULT_READONLY_TOOL_WHITELIST` matching cline's subagent allowed set). All three I/O-free, clock-injectable, no orchestrator wiring (primitives only). | 6263 | [project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md) |
+| 2026-05-25 | `188931a` | post-cline integration pass: orchestrator startup wiring (install_default_injectors with closures returning existing STT/TTS engine instances + discover_project_config caching .kenning/ snapshot on `self._project_config`; both fail-open), SWE-Agent T16 click-preview gate wired through new InputController kwargs + new `desktop.click_preview.*` config section (default OFF; when ON the orchestrator builds a new InputController with VLM-backed `vlm_describe` + screen-capture closures and replaces the singleton via `set_input_controller`), two safe behavioural flag flips (`skills.enabled: true` + `events.enabled: true`, both fail-open, voice baseline preserved via untouched gaming_mode/llm.preset/llm.draft_kind), OpenHands deep API docs backfilled (9 packages: parsing / install / projects / services / skills / events / lifecycle / llm/condensers + utils/poll.py). | 6270 | [project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md) |
+| 2026-05-24 | `92ee711` | cline catalog port batch 10 -- mode policy + per-mode LLM router + subagent runner (T2 + T13 + T16): new `agent_loop/mode.py` (canonical `Mode` enum ACT/PLAN/CODING_ARCHITECT/CODING_EDITOR/GAMING + frozen `ModePolicy` with wrap-template + confirmation-TTL + preset override + `PendingConfirmation` queue with intent-topic filter + `ModeSession` state machine + flip history + module-level registry `get_mode_session`); new `llm/mode_router.py` (frozen `PresetEntry` + `ModeLLMRouter` mapping `Mode` to preset name, skip-when-already-active via injected probe, protected-mode set, `on_swap` callback with fail-open semantics, default routes target kenning's qwen3.5-4b for ACT/PLAN/CODING_* + llama-3.2-3b-abliterated for GAMING); new `agent_loop/subagent.py` (frozen `SubagentTask` + `SubagentResult` + `SubagentBatchStats` + `ToolGuard` whitelist enforcer + thread-safe `TokenLedger` + `SubagentRunner` ThreadPoolExecutor-backed dispatcher with `max_parallel=1` default + `DEFAULT_READONLY_TOOL_WHITELIST` matching cline's subagent allowed set). All three I/O-free, clock-injectable, no orchestrator wiring (primitives only). | 6263 | [project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md) |
 | 2026-05-24 | `14e4653` | cline catalog port batch 9 -- dual-array API/UI history split (T4): new `memory/dual_history.py` with `DualHistoryStore` (per-session in-memory store), `VerbatimTurn` (text + tts_clip_ref + image_refs + metadata -- the literal user/agent exchange), `ApiTurn` (LLM-facing shape with `compacted` + `elided_count` for drift reporting), shared `turn_id` UUID indexing so verbatim<->api resolves O(1) -- the basis for "what did I say earlier?" voice queries. Methods: `record` / `record_api` / `truncate_after_turn` (anchor-based) / `truncate_to_offset` (last-N) / `replace_api_range` (condenser hook) / `find_verbatim_by_substring` (newest-first fuzzy) / `snapshot` (frozen view with both indices) / `drift_report` (per-call counts of `verbatim_only` / `api_only` / `shared`). Verbatim/api caps default unlimited (verbatim is cheap; api cap is what costs tokens). Primitive is I/O-free; callers wire their own persistence. | 6191 | [project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md) |
 | 2026-05-24 | `cf0cbef` | cline catalog port batch 8 -- shadow-repo checkpoints with three-axis restore (T1): new `checkpoints/` package -- `exclusions.py` (DEFAULT_CHECKPOINT_EXCLUSIONS + VOICE_BASELINE_PROTECTED_PATTERNS guarding SOUL.md / RVC / Piper / Kokoro voicepack / LLM GGUFs from accidental rollback), `shadow_repo.py` (ShadowRepoTracker git CLI wrapper + per-session RLock + 15s init timeout + CREATE_NO_WINDOW + hash_working_dir), `restore.py` (plan-then-execute three-axis restore — voice_history / workspace / both), `registry.py` (SessionCheckpointManager bus subscription + CheckpointRegistry singleton). | 6161 | [project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md) |
-| 2026-05-24 | `34894d9` | cline catalog port batch 7 -- hooks lifecycle (T5 + T21): new `hooks/` package -- 9 cline lifecycle points (TaskStart / TaskResume / TaskCancel / TaskComplete / UserPromptSubmit / PreToolUse / PostToolUse / PreCompact / Notification) + 5 ultron-specific (PreLLMRequest / PreMemoryWrite / PreGamingEngage / PreDesktopAction / WakeWordTriggered). `HookRegistry` parallel fan-out + cancel aggregation + `<hook_context>` concatenation; `HookRunner` subprocess executor with per-suffix interpreter selection (.py / .ps1 / .sh / .bat / .cmd / shebang) + JSON stdin/stdout envelope + 10 s default timeout + 8 kB context-mod cap + last-balanced-JSON parser; `HookDiscovery` mtime-validated cache with 30 s TTL; module-level `get_hook_registry()` singleton. | 6119 | [project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md) |
+| 2026-05-24 | `34894d9` | cline catalog port batch 7 -- hooks lifecycle (T5 + T21): new `hooks/` package -- 9 cline lifecycle points (TaskStart / TaskResume / TaskCancel / TaskComplete / UserPromptSubmit / PreToolUse / PostToolUse / PreCompact / Notification) + 5 kenning-specific (PreLLMRequest / PreMemoryWrite / PreGamingEngage / PreDesktopAction / WakeWordTriggered). `HookRegistry` parallel fan-out + cancel aggregation + `<hook_context>` concatenation; `HookRunner` subprocess executor with per-suffix interpreter selection (.py / .ps1 / .sh / .bat / .cmd / shebang) + JSON stdin/stdout envelope + 10 s default timeout + 8 kB context-mod cap + last-balanced-JSON parser; `HookDiscovery` mtime-validated cache with 30 s TTL; module-level `get_hook_registry()` singleton. | 6119 | [project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md) |
 | 2026-05-24 | `75353f7` | cline catalog port batch 6 -- mentions + focus-chain (T14 + T11): `coding/mention_resolvers.py` (extended `@`-mention regex covering URLs / `workspace:` / `memory:` / `problems` / `last` / `diff` / `clipboard` / `screenshot` / Windows drive-letter paths + provider-driven resolution + per-mention body cap + per-call cap + dedup); `coding/focus_chain.py` (parse / render / diff markdown checklists + atomic temp+rename writes + `FocusChainWatcher` with 300 ms debounce + manual `poll_now` fallback when watchdog absent + `render_critical_info_block` for the user-edit CRITICAL INFORMATION block + `progress_hint` per-band prompt tailoring). | 6079 | [project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md) |
 | 2026-05-24 | `6d66d96` | cline catalog port batch 5 -- streaming infrastructure (T8 + T12 + T19 + T20): new `streaming/` package with `window.py` (WindowedOutputWriter with 20-line/2KB/100ms debounce + 1000-line/512KB spill thresholds + head-100/tail-100 preserved + `COMPILING_MARKERS` hot-timeout detection), `presentation_scheduler.py` (priority-banded chunk scheduler with environment-adaptive cadence — local/remote/Bluetooth profiles + `set_drop_low_priority` for `enable_thinking=False`), `reasoning_stream.py` (ReasoningDemultiplexer with first-text-finalises semantics + dedicated audit channel keeps reasoning out of TTS), `coordinator.py` (StreamCoordinator state machine + `RetryStatus` payloads + `on_usage` live token meters). | 6028 | [project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md) |
 | 2026-05-24 | `3ca8879` | cline catalog port batch 4 -- auto-approve matrix + structured 8-section condenser (T3 + T15): `safety/auto_approval.py` (four-mode per-rule policy `always_ask` / `allow_local` / `allow_external` / `allow_all` + `yolo_mode` master override + per-session "warming" allowlist after N consecutive user approvals + injected `LocalityProbe` predicate); `llm/condensers/structured_8_section.py` (8 canonical headers Primary Request / Key Technical Concepts / Files and Code Sections / Problem Solving / Pending Tasks / Task Evolution / Current Work / Next Step + tolerant `parse_summary` with alias resolution + `compact_for_voice` 3-section TTS-friendly continuity ack). | 5973 | [project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md) |
-| 2026-05-24 | `03019fb` | cline catalog port batch 3 -- ignore + conditional rules (T6 + T10): `safety/ignore.py` (three-layer `.ultronignore` with `!include`, `validate_command` covering POSIX + PowerShell file-readers, registry singleton); new `rules/` package with `conditionals.py` (frontmatter `paths` / `intents` / `topics` / `system_state` evaluator, `all_of` + `not_in_gaming_mode` combinators, comparator-prefixed state matching, path-extraction heuristic that strips fenced code + URLs). | 5928 | [project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md) |
+| 2026-05-24 | `03019fb` | cline catalog port batch 3 -- ignore + conditional rules (T6 + T10): `safety/ignore.py` (three-layer `.kenningignore` with `!include`, `validate_command` covering POSIX + PowerShell file-readers, registry singleton); new `rules/` package with `conditionals.py` (frontmatter `paths` / `intents` / `topics` / `system_state` evaluator, `all_of` + `not_in_gaming_mode` combinators, comparator-prefixed state matching, path-extraction heuristic that strips fenced code + URLs). | 5928 | [project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md) |
 | 2026-05-24 | `7f18a24` | cline catalog port batch 2 -- caching, loop detection, telemetry, zombie killer (T7 + T18 + T17 + T23): `coding/file_read_cache.py` (per-session mtime-validated cache with LRU eviction + registry singleton); new `agent_loop/` package with `loop_detection.py` (canonical signature + soft/hard escalation tiers); `llm/dedup_file_reads.py` (in-place dedup of duplicate file-read tool results in API history + generic payload dedup + 30 % skip-compaction threshold); `observations/safe_capture.py` (sync + async + decorator triple with `SafeCaptureStats` counters); new `subprocess/` package with `zombie_killer.py` (10-min hard cap + persistent-tag carve-out + RSS warning tier + clock/terminator/RSS-probe injection hooks). | 5872 | [project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_2026_05_25_cline_catalog_port_and_post_cline_integration.md) |
 | 2026-05-24 | `a7d03dd` | cline catalog port batch 1 -- foundation utilities (T22 + T13b + T25): `llm/response_format.py` (30+ structured error/notice templates with voice-friendly variants + progressive-escalation tiers); `utils/retry.py` (async + sync `with_retry` decorator + `RetryBudget` + retry-after header parsing with delta-seconds-vs-unix-timestamp heuristic + `RetriableError` + async-generator decoration + `asyncio.CancelledError` pass-through); `search/ripgrep.py` (subprocess wrapper around `rg --json` with byte-cap 0.25 MB / result-cap 300 / wall-clock kill / Windows `CREATE_NO_WINDOW` / optional ignore-predicate). | 5778 | (cline-port memory pending; see `THIRD_PARTY_NOTICES.md`) |
 | 2026-05-24 | `18fab56` | OpenHands catalog T1-T8 port -- 8 batches, 11 new packages: `parsing/`, `install/`, `skills/` + `skills/` catalogue, `events/`, `llm/condensers/`, `lifecycle/`, `projects/`, `services/`. Two opt-in config sections (`skills.*`, `events.*`, default OFF). | 5640 | `project_ultron_2026_05_24_openhands_catalog_porting.md` |
@@ -1532,7 +1546,7 @@ result of every row. Deep narrative lives in the corresponding
 | 2026-05-22 | (frontier) | Partial-fine-tune Kokoro ship (spectral magnitude smoothing window=5) + 5-item frontier enhancement (in-process spec decoding via `LlamaPromptLookupDecoding`, cross-encoder reranker `BAAI/bge-reranker-v2-m3`, contextual retrieval, Parakeet TDT STT, local-first search ladder SearxNG -> Brave -> DDG + trafilatura -> Jina) + Kokoro training auto-resume infra + testing-process hardening. | 3560 | `project_ultron_2026_05_22_partial_finetune_ship_and_frontier_enhancement.md` |
 | 2026-05-20 | (round 8) | LLM `gemma-3-4b-abliterated` -> `qwen3.5-4b` + TTS `xtts_v3` -> `kokoro` (stock `am_michael` CPU) + Whisper `small.en` -> `base.en` + Kokoro producer-consumer rewrite + ack-cache wiring + ~22 GB GGUFs freed (re-download paths preserved). | 3513 | `project_ultron_2026_05_20_round_8_llm_tts_swap.md` |
 | 2026-05-20 | `b7e1164` | Round 7a contamination loop closed via `history_user_message=` kwarg on `LLMEngine.generate*` + Round 7b smarter TTS sentence boundaries (rejects ellipsis/decimal/domain/abbreviation/acronym-chain). | 3513 | `project_ultron_2026_05_20_round_7ab_memory_and_tts_chunking.md` |
-| 2026-05-20 | `b1a2d8c` | Phase A/B/C runner integrations (AST listener completion narration + BackgroundSummarizer orchestrator hook + `Channel` abstraction in memory write path) + 8 live-session fixes (XTTS overflow, RAG short-query gate, Gemma terseness, fake citation guard, monitor sort, third-party possessive, second-person adjustment, cross-session contamination) + structured per-turn tracing (`src/ultron/trace.py`). | 3483 | `project_ultron_2026_05_20_phaseABC_fixes_and_tracing.md` |
+| 2026-05-20 | `b1a2d8c` | Phase A/B/C runner integrations (AST listener completion narration + BackgroundSummarizer orchestrator hook + `Channel` abstraction in memory write path) + 8 live-session fixes (XTTS overflow, RAG short-query gate, Gemma terseness, fake citation guard, monitor sort, third-party possessive, second-person adjustment, cross-session contamination) + structured per-turn tracing (`src/kenning/trace.py`). | 3483 | `project_ultron_2026_05_20_phaseABC_fixes_and_tracing.md` |
 | 2026-05-19 | `3698da2` | Cross-cutting expansion (Tracks 1a/1b/1c-e/1f/1g/1h memory infra + Track 2 parallel embedding + Track 3 verbosity hints + Track 4 Gemma/Llama presets + Track 5 Kokoro engine + Track 6 channel abstraction + latency hygiene helpers + voice MODEL_SWITCH for gemma/llama). Gemma 3 4B abliterated default swap. | 3054 | `project_ultron_2026_05_19_cross_cutting_expansion_gemma.md` |
 | 2026-05-19 | `2b979c0` | Phase 0+1+E2+E5 build: eval harness + 60-row labeled corpus + observation framework (4 sites + outcome resolver + lineage overlap) + adaptive context window scoring + confidence-band ambiguity predicate + voice-character-lock guardrails + goal-anchor planning FULL runtime integration. | 2697 | `project_ultron_2026_05_19_phase_0_1_e2_e5.md` |
 | 2026-05-18 | `e3ac64e` | Latency pass 3: TTS preopen hoist + speculative classification + speculative LLM generation during silence wait (~80-100 ms additional saved on cache-hit turn). | 2472 | `project_ultron_2026_05_18_latency_pass_3.md` |
@@ -1541,13 +1555,13 @@ result of every row. Deep narrative lives in the corresponding
 | 2026-05-14 | `622000d` | Third pass: `chat_template_kwargs` regression fix (use Qwen3 `/no_think` marker) + `WINDOW_MOVE`/`WINDOW_CLOSE` intents + bare image-search regex + plural image nouns + moondream2 revision rollback. | 2313 | `project_ultron_2026_05_14_handoff.md` |
 | 2026-05-14 | `15f58d5` | Second VRAM-relief pass: LLM Q5_K_M -> Q4_K_M (saves 500 MB) + implicit image-search + preflight `<think>` strip. | 2278 | (in 2026-05-14-handoff memory) |
 | 2026-05-14 | `901ebf1` | First VRAM-relief pass: Josiefied-Qwen3-8B -> Josiefied-Qwen3-4B (saves ~3 GB) + Whisper float16 -> int8_float16 + monitor mapping fix + MODEL_SWITCH broadening + YouTube deep-link + Spotify path fix. | 2263 | `project_ultron_2026_05_14_vram_relief_ux_fixes.md` |
-| 2026-05-12 | (4 commits) | Desktop automation Phases 1-14: native `src/ultron/desktop/` (11 modules) + 19 new MCP tools (24 total) + `APP_LAUNCH` + `SCREEN_CONTEXT_QUERY` intents + Phase 12 analyze-and-discard + Phase 13 `ultron-vision` agent install + Phase 14 moondream2 wiring. | 2194 | `project_ultron_2026_05_12_desktop_automation.md` |
+| 2026-05-12 | (4 commits) | Desktop automation Phases 1-14: native `src/kenning/desktop/` (11 modules) + 19 new MCP tools (24 total) + `APP_LAUNCH` + `SCREEN_CONTEXT_QUERY` intents + Phase 12 analyze-and-discard + Phase 13 `kenning-vision` agent install + Phase 14 moondream2 wiring. | 2194 | `project_ultron_2026_05_12_desktop_automation.md` |
 | 2026-05-12 | `91a3a3a` | Runtime tool-call validator (Phases 2-5): 141 rules across 19 categories (K self-protection + A-J load-bearing + M-S persistence/anti-forensics + Cap-1..Cap-4) + Windows-aware `PathResolver` + tamper-evident hash-chain audit log + explicit-intent matcher + cross-capability taint tracker. | 1830 | `project_ultron_2026_05_12_safety_validator.md` |
 | 2026-05-12 | `e67cac3` | Josiefied-Qwen3-8B-abliterated-v1 Q5_K_M default LLM swap (motivated the safety validator). | 1713 | `project_ultron_2026_05_12_josiefied_8b_phase_1.md` |
 | 2026-05-12 | `b1e4297` | XTTS phantom-token mitigation (temperature 0.75 -> 0.65 + `trim_phantom_tail`) + conversational filler-ack pool (Mm./Right./Hm./Considering./...) + Smart Turn V3 (8 MB int8 ONNX, CPU-only, ~12 ms inference, zero VRAM). | 1711 | `project_ultron_2026_05_12_audio_artifact_filler_ack.md` |
 | 2026-05-11 | `9139bda` | Live-session follow-up: `vad.max_utterance_seconds` config field + completion narration path strip (`path.name` only, prevents XTTS GPU pin) + `PROGRESS_QUERY` classifier broadening (`how is that project going?`). | 1629 | `project_ultron_2026_05_11_windsurf_followup.md` |
 | 2026-05-11 | `431fd7b` | XTTS cadence `speed=1.15` + speculative-stream SR engine-aware + adaptive VAD long-utterance bump + addressing third-party rule + token budget 100 k -> 400 k + narration honesty + `voice_task_require_testing=false`. | 1604 | `project_ultron_2026_05_11_session.md` |
-| 2026-05-10 | (commit) | Voice-pipeline swap: XTTS v2 streaming + v3 pedalboard filter chain (Ultron mechanical character via DSP); default flipped from `piper_rvc` to `xtts_v3`. | -- | `project_ultron_voice_swap.md` |
+| 2026-05-10 | (commit) | Voice-pipeline swap: XTTS v2 streaming + v3 pedalboard filter chain (Kenning mechanical character via DSP); default flipped from `piper_rvc` to `xtts_v3`. | -- | `project_ultron_voice_swap.md` |
 | 2026-05-09 | (commit) | Audio + memory pass: latency hot-fix (parallel Jina + collective deadline) + TTS pipeline two-stage split + nuanced memory retrieval (cosine 0.6 + recency-weighted composite + history cap 4) + direct Focusrite mic + `audio.input_gain_db`. | -- | `project_ultron_audio_memory_pass.md` |
 | earlier | -- | Foundation Parts 0-7 + OpenClaw integration Phases 0-13 + comprehensive testing passes + 4B optimization plan + V1-spec gap fill + prompt-injection defense layer. | -- | `project_ultron_foundation.md`, `project_ultron_openclaw.md`, `project_ultron_4b_plan.md`, `project_ultron_v1_gap_fill.md`, `project_ultron_comprehensive_passes.md`, `project_ultron_phase_c.md` |
 
@@ -1570,11 +1584,11 @@ result of every row. Deep narrative lives in the corresponding
 
 ## Quick orientation
 
-Ultron is a local voice-first AI assistant. The pipeline (current as of
+Kenning is a local voice-first AI assistant. The pipeline (current as of
 the validating HEAD in the header above):
 
 ```
-mic → wake word ("ultron") OR addressing classifier (WARM follow-up mode)
+mic → wake word ("kenning") OR addressing classifier (WARM follow-up mode)
     → Silero VAD + Smart Turn V3 (CPU end-of-turn confirmation, ~12 ms)
     → STT via DualSTTRegistry
         ├─ stt.engine="moonshine" (CPU streaming, ONNX, current default)
@@ -1603,7 +1617,7 @@ mic → wake word ("ultron") OR addressing classifier (WARM follow-up mode)
         │                     │  ├ SearxNG → Brave → DuckDuckGo cascade
         │                     │  └ Trafilatura → Jina reader cascade
         │                     ├ ConversationMemory.retrieve (RAG; reranker OFF)
-        │                     └ stream tokens to Kokoro TTS (CUDA, voice=ultron)
+        │                     └ stream tokens to Kokoro TTS (CUDA, voice=kenning)
         ├ gaming mode       → VRAM reclaim: LLM swap to llama-3.2-3b, STT to
         │                     moonshine, Kokoro CUDA→CPU, VLM unload (~2.3 GB freed)
         └ openclaw bound    → MESSAGING / BROWSER_AUTOMATION / etc.
@@ -1634,9 +1648,9 @@ For the current decisions and Foundation phase status see
 ├── baselines_phase_c{0,1}.json     ← Phase C snapshots (pre-Foundation)
 │
 ├── src/
-│   └── ultron/
+│   └── kenning/
 │       ├── __init__.py             ← CUDA DLL discovery (Windows-specific path injection)
-│       ├── __main__.py             ← `python -m ultron` entry point → constructs Orchestrator
+│       ├── __main__.py             ← `python -m kenning` entry point → constructs Orchestrator
 │       ├── config.py               ← Phase 3 pydantic loader, get_config() singleton
 │       ├── errors.py               ← Phase 4 typed exception hierarchy
 │       ├── uncertainty.py          ← Phase 5 (original prompts) uncertainty-signal application
@@ -1678,14 +1692,14 @@ For the current decisions and Foundation phase status see
 │       │   ├── voice.py              ← Phase 8 voice handlers (handle_app_launch / handle_screen_context_query) + 2026-05-14 third-pass handlers (handle_window_move / handle_window_close) bridging RoutingIntent -> native primitives
 │       │   ├── preferences.py        ← Phase 10 preference learning (JSONL log + optional OpenClaw workspace mirror; find_preference_for_phrase for recency-weighted lookup)
 │       │   ├── clipboard.py          ← 2026 catalog 09 batch 3 (T4): ClipboardManager + ClipboardResult cross-platform clipboard read/write via pyperclip; Cap-2 read (tool_name=desktop.clipboard.read) + Cap-3 write (tool_name=desktop.clipboard.write); taint tracker integration (clipboard_read / clipboard_write capabilities); 2 KB payload preview to validator; oversize write rejection; pyperclip lazy-import with structured failure on missing dep
-│       │   ├── sequence.py           ← 2026 catalog 09 batch 5 (T5): DesktopSequenceRunner multi-step desktop sequence runner with before/after screenshot bracketing per step. SequenceStep / ScreenshotRef / StepResult / SequenceResult frozen dataclasses + SequenceStatus / StepOutcome / VlmVerdict enums. Optional VLM verification via injected vlm_describe callable (confirmation-keyword pattern shared with click_preview); auto-pass radius (default 150 px) for sequential steps within a panel; fail-fast contract (first failure aborts; records failed_at_step); analyze-and-discard on captured bytes by default. Deliberately did NOT port the upstream blocking input() approval (incompatible with voice-first), pygetwindow window activation (inferior to focus_by_title), or keyword-cascade planners (ultron's LLM intent router is more capable).
-│       │   ├── browser_sequence.py   ← 2026 catalog 10 batch 8 (creative extension): BrowserSequenceRunner -- the browser-domain analog of desktop/sequence.py DesktopSequenceRunner. Runs a list of BrowserSequenceStep (description + zero-arg action callable + optional anchor coords + soft timeout) with a before/after screenshot bracket per step captured via BrowserUseTool.screenshot() base64 mode (headless -- no display flash, unlike the mss monitor capture the desktop runner uses). Optional VLM verification via injected vlm_describe (confirmation-keyword prompt identical to the desktop runner); auto-pass radius skips redundant VLM calls on consecutive same-region steps; fail-fast (first failing step aborts; records failed_at_step); analyze-and-discard on captured bytes. Reuses SequenceStatus / StepOutcome / VlmVerdict enums from desktop.sequence so consumers handle ONE taxonomy across desktop + browser. BrowserSequenceStep / BrowserScreenshotRef / BrowserStepResult / BrowserSequenceResult dataclasses. Deliberately NOT ported: natural-language step planner (ultron's LLM router is more capable) + blocking input() approval (risky individual actions carry their own two-phase approval inside the action callable). Module singleton get/set_browser_sequence_runner. 18 hermetic tests (fake tool + fake VLM + deterministic injected clock).
+│       │   ├── sequence.py           ← 2026 catalog 09 batch 5 (T5): DesktopSequenceRunner multi-step desktop sequence runner with before/after screenshot bracketing per step. SequenceStep / ScreenshotRef / StepResult / SequenceResult frozen dataclasses + SequenceStatus / StepOutcome / VlmVerdict enums. Optional VLM verification via injected vlm_describe callable (confirmation-keyword pattern shared with click_preview); auto-pass radius (default 150 px) for sequential steps within a panel; fail-fast contract (first failure aborts; records failed_at_step); analyze-and-discard on captured bytes by default. Deliberately did NOT port the upstream blocking input() approval (incompatible with voice-first), pygetwindow window activation (inferior to focus_by_title), or keyword-cascade planners (kenning's LLM intent router is more capable).
+│       │   ├── browser_sequence.py   ← 2026 catalog 10 batch 8 (creative extension): BrowserSequenceRunner -- the browser-domain analog of desktop/sequence.py DesktopSequenceRunner. Runs a list of BrowserSequenceStep (description + zero-arg action callable + optional anchor coords + soft timeout) with a before/after screenshot bracket per step captured via BrowserUseTool.screenshot() base64 mode (headless -- no display flash, unlike the mss monitor capture the desktop runner uses). Optional VLM verification via injected vlm_describe (confirmation-keyword prompt identical to the desktop runner); auto-pass radius skips redundant VLM calls on consecutive same-region steps; fail-fast (first failing step aborts; records failed_at_step); analyze-and-discard on captured bytes. Reuses SequenceStatus / StepOutcome / VlmVerdict enums from desktop.sequence so consumers handle ONE taxonomy across desktop + browser. BrowserSequenceStep / BrowserScreenshotRef / BrowserStepResult / BrowserSequenceResult dataclasses. Deliberately NOT ported: natural-language step planner (kenning's LLM router is more capable) + blocking input() approval (risky individual actions carry their own two-phase approval inside the action callable). Module singleton get/set_browser_sequence_runner. 18 hermetic tests (fake tool + fake VLM + deterministic injected clock).
 │       │   ├── browser_sessions.py   ← 2026 catalog 10 batch 5 (T8 YELLOW): BrowserSessionsManager named-session isolation orchestrator on top of browser_use.py. Each --session NAME gets its own daemon / browser instance; the manager validates names against the alphanumeric allowlist (reuses browser_use._is_valid_session_name), enforces a configurable cap (browser_use.max_sessions, default 3, hard ceiling 16), registers each session in subprocess.process_registry.ProcessRegistry under scope_key=name + tag browser_use_session for ZombieKiller + shutdown reaping, and hands out BrowserUseTool instances bound to each session. create_session (Cap-3 + cap + duplicate guard, race-safe double-check inside the lock) / list_sessions (newest-first) / get_tool / has_session / close_session (Cap-3; tool.close() then ProcessRegistry.mark_exited; force=True escalates to kill_process_tree on the registered pid) / close_all_sessions (two-phase approval gated -- bulk destructive across every loaded auth state; assume_preapproved re-entry). BrowserSession + BrowserSessionResult frozen dataclasses. --cdp-url never emitted (blocked by design). Module singleton get/set/reset_browser_sessions_manager. 31 hermetic tests (fake tool factory + fake ProcessRegistry + fake validator + fake approval registry; deterministic injected clock for ordering).
-│       │   └── browser_use.py        ← 2026 catalog 10 batches 1-7 (T1+T2+T5+T6 GREEN + T7+T9 + T3 + T4 + T10 + T11 YELLOW): subprocess wrapper around the external open-source ``browser-use`` CLI -- second-tier browser surface above the UIA ``extract_browser_content`` extractor. BrowserUseTool (sync; lazy binary discovery via shutil.which against [browser-use, bu, browseruse]; CREATE_NO_WINDOW on Windows; BROWSER_USE_SESSION env-var scrub on every call; alphanumeric session-name allowlist; --cdp-url + cloud + tunnel subcommands deliberately not exposed). **Batch 1 -- READ FOUNDATION:** T1 state() -> BrowserState (url + title + indexed BrowserElement tuple). T2 get_html(selector) / get_text(idx) / get_attributes(idx) / get_value(idx) / get_bbox(idx) / get_title() with JSON parse fallback to __raw__. BrowserBbox.center bridges directly into InputController.click via pixel coords. T5 wait_selector(state in visible/hidden/attached/detached) + wait_text with deadline-clamped subprocess timeout = wait_ms + 5s. T6 tab_list (JSON) / tab_new(url?) / tab_switch(idx) / tab_close(indices). Navigation helpers open(url) / back / scroll(direction, amount) / close(all_sessions). **Batch 2 -- WRITE PRIMITIVES:** T7 click_at_index(idx, user_text) / click_at_coords(x, y) / type_text(text) / input(idx, text) / select(idx, option) / hover(idx) / keys(combo) / dblclick(idx) / rightclick(idx) -- all Cap-3 gated through safety.validator.get_validator() with tool_name="desktop.browser_use.<action>" + capability="desktop_browser_use"; validator denial short-circuits BEFORE subprocess invocation; type_text + input pass text_preview (not raw text) to the validator to bound audit-log payload size. T7 upload(idx, path, user_text) -- YELLOW per security review (file-read vector): PathResolver.safe_realpath canonicalises the path BEFORE the validator runs, non-existing / non-file paths rejected pre-validator, resolved path (NOT raw) passed to both validator paths tuple AND subprocess. T9 screenshot(path?, full_page=False, user_text) -- dual-mode: path=set writes to disk after PathResolver canonicalisation + parent-dir existence check; path=None decodes the CLI's base64 stdout (data:image/[png|jpeg|jpg] URI prefix tolerated; whitespace-wrapped base64 tolerated; <16-byte payloads rejected as malformed). BrowserActionResult + BrowserScreenshotResult dataclasses extend BrowserUseResult with target / safety_verdict / image_bytes / path / full_page fields. Helpers: _failed_action (pre-validator failure), _action_from_invoke (subprocess outcome projection), _preview (cap=80, newline-collapse, ellipsis truncation), _short_target_label (audit label from arguments dict shape), _decode_screenshot_payload. Fail-open contract: every method returns a typed *Result dataclass with success=False + error when the binary is missing OR the subprocess fails OR daemon errors OR validator blocks. Module-level get_browser_use_tool / set_browser_use_tool singleton mirroring desktop.vlm pattern. **Batch 3 -- T3 JS EVAL (YELLOW):** analyze_js_script(script) -> JsScriptAnalysis pure-function static-analysis pass over a JS body. Detects 15 risky patterns across 4 categories (network_egress: fetch/XMLHttpRequest/navigator.sendBeacon/WebSocket/RTCPeerConnection; storage_write: localStorage.setItem/sessionStorage.setItem/document.cookie =; navigation: window.location =/window.location.replace|assign|href/document.location =; second_order_eval: eval/new Function/import/document.write) using word-boundary-aware regex + assignment-vs-comparison disambiguation. Includes the security review's additions on top of the catalog 10 baseline. eval(script, user_text, assume_preapproved=False, approval_registry=None, approval_timeout_s=None, approval_scope_key="", timeout_s=None) -> BrowserEvalResult routes through three-phase pipeline: (1) argument validation (empty rejected); (2) static analysis -- ANY risky marker AND NOT assume_preapproved -> register ApprovalRequest(kind=BROWSER_JS_APPROVAL_KIND, actor=desktop_browser_use, delivery_channel=voice, metadata={reason_code=ultron.suspicious.browser_js_exec_unrestricted, script_preview, risky_markers, categories, char_count, user_text}) via injected or get_approval_registry()-default registry + return result with requires_two_phase=True + approval_request_id + NO subprocess; (3) safety check via the regular Cap-3 validator with the analysis fields in arguments, then subprocess + JSON-decode stdout for the value field. _humanize_categories renders the category tuple into a TTS-safe prompt ("make network requests and write to storage or cookies" -> "Browser script wants to ... Proceed?") without echoing the script body. _try_parse_eval_payload returns (parsed_value_or_None, raw_text) tolerating JSON-encoded primitives + arrays + objects + plain-text outputs. **Batch 4 -- T4 COOKIE MANAGEMENT (YELLOW):** cookies_get(url?, user_text, assume_preapproved, approval_registry, ...) -- scoped url is Cap-2 + JSON-parsed into BrowserCookie tuple; url=None is two-phase (cross-origin auth dump). cookies_set(name, value, *, domain, path, expires, secure, http_only, same_site, user_text) -- Cap-3 with value_preview replacing raw value in validator args + same_site whitelist {Strict, Lax, None} + negative-expires rejection. cookies_clear(url?, ...) -- scoped is Cap-3, all-origins is two-phase (destructive). cookies_export(path, ...) -- ALWAYS two-phase (HttpOnly cookies + cross-origin auth tokens). PathResolver.resolve + parent-dir existence check BEFORE approval registration so an invalid path fails fast without the user round-trip. cookies_import(path, ...) -- ALWAYS two-phase (auth-injection vector). PathResolver.safe_realpath + is_file check (input must exist). _register_cookies_approval_result centralises the ApprovalRequest construction (kind=BROWSER_COOKIES_APPROVAL_KIND, actor=desktop_browser_use, delivery_channel=voice, metadata={reason_code=ultron.suspicious.browser_cookies_unrestricted, risky_action, target_summary, url_filter, path, user_text}) + uniform requires_two_phase=True result shape. BrowserCookie + BrowserCookiesResult frozen dataclasses with risky_action discriminator ("export_all" / "import" / "clear_all" / "clear_scoped" / "get_all" / "get_scoped" / "set"). _parse_cookies_json tolerates list-shape AND mapping-shape (cookies envelope) + camelCase + snake_case keys + missing-name skip + bool-as-expires rejection. _humanize_cookie_risky_action maps to TTS-safe phrases without echoing cookie names or values in the prompt. Workflow-level note: cookies_import + connect_profile (batch 6) can poison live Chrome sessions; the two methods are independently gated. **Batch 6 -- T10 PROFILE CONNECT (YELLOW):** profile_list() -- Cap-2 read-only enumeration of detected browsers + profiles into a BrowserProfile tuple (no validator, no approval). connect(user_text, assume_preapproved, ...) -- attach to the user's already-running Chrome via CDP; two-phase approval ALWAYS (full live-session takeover, one-time per session not per-command). connect_profile(profile="Default", url="about:blank", ...) -- launch Chrome with a specific profile via the --profile global flag (prepended before the open subcommand); profile name validated against [A-Za-z0-9 ._-]{1,64} so it can't escape into a hostile argument (path separators / shell metachars rejected). _connect_impl shared pipeline: two-phase approval (kind=BROWSER_PROFILE_APPROVAL_KIND, reason=ultron.suspicious.browser_profile_connect) -> Cap-3 validator -> subprocess. --cdp-url never emitted. BrowserProfile + BrowserProfilesResult + BrowserConnectResult dataclasses. _parse_profiles_json tolerates list / mapping shapes + name/profile/label + browser/browser_name + path/directory key variants. **Batch 7 -- T11 CDP PASSTHROUGH (YELLOW, most security-sensitive):** analyze_cdp_statement(statement) -> CdpStatementAnalysis scans for hard-blocked CDP surfaces. _CDP_BLOCKED_METHODS (8 fully-qualified Domain.method tokens: Security.setIgnoreCertificateErrors, Network.setRequestInterception, Fetch.enable, Browser.grantPermissions, Page.setBypassCSP, Storage.clearDataForOrigin, Runtime.addBinding, Target.setAutoAttach -- catalog 4 + security-review 5 additions) + _CDP_BLOCKED_DOMAINS (Debugger blocked wholesale) with word-boundary regex (MyDebugger doesn't trip Debugger). cdp_python(statement, user_text, assume_preapproved, ...) -> BrowserCdpResult four-state pipeline: (1) empty rejected; (2) blocklist match -> REFUSED OUTRIGHT (success=False + blocked=True + BLOCK_HARD; NOT surfaced for approval, NOT executed, blocklist overrides assume_preapproved); (3) cleared statement -> ALWAYS two-phase approval (no auto-pass for raw CDP; full statement kept verbatim in approval metadata for the audit log, kind=BROWSER_CDP_APPROVAL_KIND, reason=ultron.suspicious.browser_cdp_exec); (4) preapproved -> Cap-3 validator + subprocess python <statement> + JSON-decode. BROWSER_CDP_BLOCKED_REASON_CODE=ultron.malicious.browser_cdp_blocked_domain for the refuse-outright path. CdpStatementAnalysis + BrowserCdpResult dataclasses. Variable-state-persists-across-calls caveat documented (no flush short of close()). 320 hermetic tests (subprocess + safety validator + PathResolver + approval registry all mocked via monkeypatch; no binary install required). Note: at catalog-10 port time the sweep's only failure was the environmental flaky tests/integration/test_bridge_e2e.py::test_health_through_real_subprocess; that flake was subsequently FIXED by the bridge-reap fix (`7b53ea1`, see the validating-HEAD header) so the sweep now runs green WITHOUT deselection -- browser_use.py was isolated from that path regardless.
+│       │   └── browser_use.py        ← 2026 catalog 10 batches 1-7 (T1+T2+T5+T6 GREEN + T7+T9 + T3 + T4 + T10 + T11 YELLOW): subprocess wrapper around the external open-source ``browser-use`` CLI -- second-tier browser surface above the UIA ``extract_browser_content`` extractor. BrowserUseTool (sync; lazy binary discovery via shutil.which against [browser-use, bu, browseruse]; CREATE_NO_WINDOW on Windows; BROWSER_USE_SESSION env-var scrub on every call; alphanumeric session-name allowlist; --cdp-url + cloud + tunnel subcommands deliberately not exposed). **Batch 1 -- READ FOUNDATION:** T1 state() -> BrowserState (url + title + indexed BrowserElement tuple). T2 get_html(selector) / get_text(idx) / get_attributes(idx) / get_value(idx) / get_bbox(idx) / get_title() with JSON parse fallback to __raw__. BrowserBbox.center bridges directly into InputController.click via pixel coords. T5 wait_selector(state in visible/hidden/attached/detached) + wait_text with deadline-clamped subprocess timeout = wait_ms + 5s. T6 tab_list (JSON) / tab_new(url?) / tab_switch(idx) / tab_close(indices). Navigation helpers open(url) / back / scroll(direction, amount) / close(all_sessions). **Batch 2 -- WRITE PRIMITIVES:** T7 click_at_index(idx, user_text) / click_at_coords(x, y) / type_text(text) / input(idx, text) / select(idx, option) / hover(idx) / keys(combo) / dblclick(idx) / rightclick(idx) -- all Cap-3 gated through safety.validator.get_validator() with tool_name="desktop.browser_use.<action>" + capability="desktop_browser_use"; validator denial short-circuits BEFORE subprocess invocation; type_text + input pass text_preview (not raw text) to the validator to bound audit-log payload size. T7 upload(idx, path, user_text) -- YELLOW per security review (file-read vector): PathResolver.safe_realpath canonicalises the path BEFORE the validator runs, non-existing / non-file paths rejected pre-validator, resolved path (NOT raw) passed to both validator paths tuple AND subprocess. T9 screenshot(path?, full_page=False, user_text) -- dual-mode: path=set writes to disk after PathResolver canonicalisation + parent-dir existence check; path=None decodes the CLI's base64 stdout (data:image/[png|jpeg|jpg] URI prefix tolerated; whitespace-wrapped base64 tolerated; <16-byte payloads rejected as malformed). BrowserActionResult + BrowserScreenshotResult dataclasses extend BrowserUseResult with target / safety_verdict / image_bytes / path / full_page fields. Helpers: _failed_action (pre-validator failure), _action_from_invoke (subprocess outcome projection), _preview (cap=80, newline-collapse, ellipsis truncation), _short_target_label (audit label from arguments dict shape), _decode_screenshot_payload. Fail-open contract: every method returns a typed *Result dataclass with success=False + error when the binary is missing OR the subprocess fails OR daemon errors OR validator blocks. Module-level get_browser_use_tool / set_browser_use_tool singleton mirroring desktop.vlm pattern. **Batch 3 -- T3 JS EVAL (YELLOW):** analyze_js_script(script) -> JsScriptAnalysis pure-function static-analysis pass over a JS body. Detects 15 risky patterns across 4 categories (network_egress: fetch/XMLHttpRequest/navigator.sendBeacon/WebSocket/RTCPeerConnection; storage_write: localStorage.setItem/sessionStorage.setItem/document.cookie =; navigation: window.location =/window.location.replace|assign|href/document.location =; second_order_eval: eval/new Function/import/document.write) using word-boundary-aware regex + assignment-vs-comparison disambiguation. Includes the security review's additions on top of the catalog 10 baseline. eval(script, user_text, assume_preapproved=False, approval_registry=None, approval_timeout_s=None, approval_scope_key="", timeout_s=None) -> BrowserEvalResult routes through three-phase pipeline: (1) argument validation (empty rejected); (2) static analysis -- ANY risky marker AND NOT assume_preapproved -> register ApprovalRequest(kind=BROWSER_JS_APPROVAL_KIND, actor=desktop_browser_use, delivery_channel=voice, metadata={reason_code=kenning.suspicious.browser_js_exec_unrestricted, script_preview, risky_markers, categories, char_count, user_text}) via injected or get_approval_registry()-default registry + return result with requires_two_phase=True + approval_request_id + NO subprocess; (3) safety check via the regular Cap-3 validator with the analysis fields in arguments, then subprocess + JSON-decode stdout for the value field. _humanize_categories renders the category tuple into a TTS-safe prompt ("make network requests and write to storage or cookies" -> "Browser script wants to ... Proceed?") without echoing the script body. _try_parse_eval_payload returns (parsed_value_or_None, raw_text) tolerating JSON-encoded primitives + arrays + objects + plain-text outputs. **Batch 4 -- T4 COOKIE MANAGEMENT (YELLOW):** cookies_get(url?, user_text, assume_preapproved, approval_registry, ...) -- scoped url is Cap-2 + JSON-parsed into BrowserCookie tuple; url=None is two-phase (cross-origin auth dump). cookies_set(name, value, *, domain, path, expires, secure, http_only, same_site, user_text) -- Cap-3 with value_preview replacing raw value in validator args + same_site whitelist {Strict, Lax, None} + negative-expires rejection. cookies_clear(url?, ...) -- scoped is Cap-3, all-origins is two-phase (destructive). cookies_export(path, ...) -- ALWAYS two-phase (HttpOnly cookies + cross-origin auth tokens). PathResolver.resolve + parent-dir existence check BEFORE approval registration so an invalid path fails fast without the user round-trip. cookies_import(path, ...) -- ALWAYS two-phase (auth-injection vector). PathResolver.safe_realpath + is_file check (input must exist). _register_cookies_approval_result centralises the ApprovalRequest construction (kind=BROWSER_COOKIES_APPROVAL_KIND, actor=desktop_browser_use, delivery_channel=voice, metadata={reason_code=kenning.suspicious.browser_cookies_unrestricted, risky_action, target_summary, url_filter, path, user_text}) + uniform requires_two_phase=True result shape. BrowserCookie + BrowserCookiesResult frozen dataclasses with risky_action discriminator ("export_all" / "import" / "clear_all" / "clear_scoped" / "get_all" / "get_scoped" / "set"). _parse_cookies_json tolerates list-shape AND mapping-shape (cookies envelope) + camelCase + snake_case keys + missing-name skip + bool-as-expires rejection. _humanize_cookie_risky_action maps to TTS-safe phrases without echoing cookie names or values in the prompt. Workflow-level note: cookies_import + connect_profile (batch 6) can poison live Chrome sessions; the two methods are independently gated. **Batch 6 -- T10 PROFILE CONNECT (YELLOW):** profile_list() -- Cap-2 read-only enumeration of detected browsers + profiles into a BrowserProfile tuple (no validator, no approval). connect(user_text, assume_preapproved, ...) -- attach to the user's already-running Chrome via CDP; two-phase approval ALWAYS (full live-session takeover, one-time per session not per-command). connect_profile(profile="Default", url="about:blank", ...) -- launch Chrome with a specific profile via the --profile global flag (prepended before the open subcommand); profile name validated against [A-Za-z0-9 ._-]{1,64} so it can't escape into a hostile argument (path separators / shell metachars rejected). _connect_impl shared pipeline: two-phase approval (kind=BROWSER_PROFILE_APPROVAL_KIND, reason=kenning.suspicious.browser_profile_connect) -> Cap-3 validator -> subprocess. --cdp-url never emitted. BrowserProfile + BrowserProfilesResult + BrowserConnectResult dataclasses. _parse_profiles_json tolerates list / mapping shapes + name/profile/label + browser/browser_name + path/directory key variants. **Batch 7 -- T11 CDP PASSTHROUGH (YELLOW, most security-sensitive):** analyze_cdp_statement(statement) -> CdpStatementAnalysis scans for hard-blocked CDP surfaces. _CDP_BLOCKED_METHODS (8 fully-qualified Domain.method tokens: Security.setIgnoreCertificateErrors, Network.setRequestInterception, Fetch.enable, Browser.grantPermissions, Page.setBypassCSP, Storage.clearDataForOrigin, Runtime.addBinding, Target.setAutoAttach -- catalog 4 + security-review 5 additions) + _CDP_BLOCKED_DOMAINS (Debugger blocked wholesale) with word-boundary regex (MyDebugger doesn't trip Debugger). cdp_python(statement, user_text, assume_preapproved, ...) -> BrowserCdpResult four-state pipeline: (1) empty rejected; (2) blocklist match -> REFUSED OUTRIGHT (success=False + blocked=True + BLOCK_HARD; NOT surfaced for approval, NOT executed, blocklist overrides assume_preapproved); (3) cleared statement -> ALWAYS two-phase approval (no auto-pass for raw CDP; full statement kept verbatim in approval metadata for the audit log, kind=BROWSER_CDP_APPROVAL_KIND, reason=kenning.suspicious.browser_cdp_exec); (4) preapproved -> Cap-3 validator + subprocess python <statement> + JSON-decode. BROWSER_CDP_BLOCKED_REASON_CODE=kenning.malicious.browser_cdp_blocked_domain for the refuse-outright path. CdpStatementAnalysis + BrowserCdpResult dataclasses. Variable-state-persists-across-calls caveat documented (no flush short of close()). 320 hermetic tests (subprocess + safety validator + PathResolver + approval registry all mocked via monkeypatch; no binary install required). Note: at catalog-10 port time the sweep's only failure was the environmental flaky tests/integration/test_bridge_e2e.py::test_health_through_real_subprocess; that flake was subsequently FIXED by the bridge-reap fix (`7b53ea1`, see the validating-HEAD header) so the sweep now runs green WITHOUT deselection -- browser_use.py was isolated from that path regardless.
 │       │
 │       ├── intent/                   ← 2026-05-22: engine-agnostic semantic intent matcher
-│       │   ├── __init__.py           ← public API (UltronIntentRecognizer, IntentMatch, IntentRegistration, get_intent_recognizer, set_intent_recognizer)
-│       │   └── recognizer.py         ← UltronIntentRecognizer wrapping moonshine_voice.IntentRecognizer (Gemma-300M q4 ~300 MB CPU RAM) with lazy load + fail-open + thread-safe registry + phrase-replay-at-load-time; process_utterance(text) -> Optional[IntentMatch]; module-level singleton mirroring desktop/vlm.py pattern
+│       │   ├── __init__.py           ← public API (KenningIntentRecognizer, IntentMatch, IntentRegistration, get_intent_recognizer, set_intent_recognizer)
+│       │   └── recognizer.py         ← KenningIntentRecognizer wrapping moonshine_voice.IntentRecognizer (Gemma-300M q4 ~300 MB CPU RAM) with lazy load + fail-open + thread-safe registry + phrase-replay-at-load-time; process_utterance(text) -> Optional[IntentMatch]; module-level singleton mirroring desktop/vlm.py pattern
 │       │
 
 │       ├── safety/                  ← 2026-05-12 Phase 2-5: runtime tool-call validator
@@ -1730,7 +1744,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── ring_buffer.py      ← Pre-speech audio buffer
 │       │   ├── smart_turn.py       ← Smart Turn V3 ONNX wrapper (NEW 2026-05-12; CPU-only end-of-turn confirmation)
 │       │   ├── vad.py              ← Silero-VAD wrapper
-│       │   └── wake_word.py        ← openWakeWord (custom ultron.onnx + hey_jarvis fallback)
+│       │   └── wake_word.py        ← openWakeWord (custom kenning.onnx + hey_jarvis fallback)
 │       │
 │       ├── addressing/             ← Phase 2 addressing classifier (CPU)
 │       │   ├── classifier.py       ← AddressingClassifier (rule + zero-shot dispatcher)
@@ -1785,12 +1799,12 @@ For the current decisions and Foundation phase status see
 │       │   └── trafilatura_reader.py ← 2026-05-22 frontier: TrafilaturaReaderClient (local Python lib; ~32 k char cap)
 │       │
 │       ├── tts/                    ← Piper + RVC + XTTS + Kokoro engines + ack cache
-│       │   ├── kokoro_engine.py    ← KokoroSpeech (StyleTTS2 + ISTFTNet; current default via tts.engine="kokoro"; voice ultron, fine-tune model + voicepack loaded; **on CUDA** since 2026-05-22 with move_to_device("cpu") on gaming engage; trim_and_fade + _drain_queue_with_silence + apply_trim_fade/trim_fade_threshold_db config knobs)
+│       │   ├── kokoro_engine.py    ← KokoroSpeech (StyleTTS2 + ISTFTNet; current default via tts.engine="kokoro"; voice kenning, fine-tune model + voicepack loaded; **on CUDA** since 2026-05-22 with move_to_device("cpu") on gaming engage; trim_and_fade + _drain_queue_with_silence + apply_trim_fade/trim_fade_threshold_db config knobs)
 │       │   ├── precomputed_ack.py  ← PrecomputedAckClipCache (NEW 2026-05-15; ~350 ms saved per cache hit)
-│       │   ├── rvc.py              ← RvcConverter (Piper PCM → Ultron timbre)
+│       │   ├── rvc.py              ← RvcConverter (Piper PCM → Kenning timbre)
 │       │   ├── speech.py           ← TextToSpeech (legacy Piper + RVC engine; selected by tts.engine="piper_rvc"; ack cache + prepare_output_stream)
 │       │   ├── spectral_smooth.py  ← spectral magnitude smoothing for partial-fine-tune (STFT median-filter ISTFT, optional); 2026-05-22 ADDED trim_and_fade(audio, sr, **kwargs) -- RMS trim + raised-cosine fades + hard silence pad + tail aggressive zero (mutes Kokoro end-of-clip blip)
-│       │   ├── ultron_filter.py    ← v3 Ultron mechanical filter (NEW 2026-05-10; pedalboard DSP chain; unused on kokoro engine when apply_runtime_filter=false)
+│       │   ├── kenning_filter.py    ← v3 Kenning mechanical filter (NEW 2026-05-10; pedalboard DSP chain; unused on kokoro engine when apply_runtime_filter=false)
 │       │   └── xtts_v3.py          ← XTTSV3Speech engine (NEW 2026-05-10; selected by tts.engine="xtts_v3"; retained for swap-back to XTTS+v3 stack)
 │       │
 │       ├── coding/                 ← Phase A coding orchestration + Coding Addendum + 2026-05-22 supervisor stack
@@ -1803,7 +1817,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── coordinator.py      ← ConversationCoordinator (clarification + correction loops)
 │       │   ├── direct_bridge.py    ← DirectClaudeCodeBridge (claude --print --stream-json). 2026 production-hardening CRITICAL FIX: the rendered prompt is piped to the subprocess STDIN, never argv -- the Windows .cmd shim truncates argv arguments at the first newline, which had been silently cutting every multiline prompt (preamble+task / enriched context / correction templates) to its first line
 │       │   ├── intent.py           ← Coding-pipeline intent classifier (CODE_TASK etc.) + _ADJUSTMENT_PATTERNS regex used by ProjectSupervisor
-│       │   ├── mcp_server.py       ← UltronMCPServer (in-process tools + SSE worker tools)
+│       │   ├── mcp_server.py       ← KenningMCPServer (in-process tools + SSE worker tools)
 │       │   ├── architect_narrator.py ← 2026-05-22 batch 14 (T5 Phase 2): ArchitectNarrator speaks plan sentence-by-sentence with should_stop barge-in callback; NarrationResult telemetry; split_into_sentences with decimal + initial guards; narrate_plan() one-shot wrapper
 │       │   ├── confirm_group.py      ← 2026-05-22 batch 14 (T14): ConfirmGroup batches related confirmation items into a single yes/no question; Oxford-comma rendering; overflow summary; single-resolution invariant
 │       │   ├── narration.py          ← StatusNarrator (delta-aware progress narration)
@@ -1813,12 +1827,12 @@ For the current decisions and Foundation phase status see
 │       │   ├── mention_resolvers.py  ← 2026-05-24 cline batch 6 (T14): extended @-mention regex (URLs, workspace:, memory:, problems, last, diff, clipboard, screenshot, Windows drive-letter paths); MentionResolutionContext with provider callables; resolve_extended_mentions emits <mention kind="..." source="...">...</mention> blocks; per-mention body cap + per-call mention cap + intra-call dedup
 │       │   ├── file_history.py       ← 2026-05-23 SWE-Agent batch 3 (T20): FileHistory per-session multi-file undo stack backed by SessionRegistry; record_pre_edit (with narration / origin metadata) + undo_last (atomic write-back / delete-on-undo-creation) + peek_last / history_for / find_by_narration substring search; max_history_per_file=10 cap; round-trip across instances tested
 │       │   ├── forfeit.py            ← 2026-05-23 SWE-Agent batch 6 (T8): ForfeitController per-session decision point; three tiers (SAFE / REVERT / FOLLOWUP); minimum-effort threshold gate (denies too-early forfeits); listener callback isolation; state persists across instances; integrates with T13 salvage + T20 FileHistory undo
-│       │   ├── submit_review.py      ← 2026-05-23 SWE-Agent batch 6 (T7): SubmitReviewLoop multi-stage review state machine backed by SessionRegistry; default stages VOICE_LOCK + TESTS + DOC_DRIFT enforce ultron's binding contracts before completion; single-resolution invariant + force_complete user override; detect_voice_lock_hits helper
+│       │   ├── submit_review.py      ← 2026-05-23 SWE-Agent batch 6 (T7): SubmitReviewLoop multi-stage review state machine backed by SessionRegistry; default stages VOICE_LOCK + TESTS + DOC_DRIFT enforce kenning's binding contracts before completion; single-resolution invariant + force_complete user override; detect_voice_lock_hits helper
 │       │   ├── lint_diff.py          ← 2026-05-23 SWE-Agent batch 3 (T1): parse_flake8_output + shift_pre_edit_errors (line-shift arithmetic verbatim from SWE-Agent flake8_utils) + compute_new_errors + format_revert_message (twin-window "would have looked" + "original code before" + DO NOT re-run hint) + evaluate_edit_lint end-to-end; primitives shipped; runner-side wiring with auto-revert via FileHistory is next-batch wiring
 │       │   ├── observation_format.py ← 2026-05-23 SWE-Agent batch 1 (T10 + T19): truncate_observation (head + tail + elided-char count template) + wrap_empty_observation (explicit no-output message) + format_observation chain; constants DEFAULT_MAX_OBSERVATION_CHARS=10_000 / COMPACT_MAX_OBSERVATION_CHARS=4_000 / EMPTY_OUTPUT_MESSAGE / SUPPRESSED_OUTPUT_MESSAGE
 │       │   ├── project_digest.py     ← 2026-05-22 supervisor Phase A: opencode-style SUMMARY_TEMPLATE port; generate_digest(request, llm_call) -> ProjectDigest; fails open to render_template() (deterministic fallback); parse_digest_sections / extract_files_from_digest helpers
 │       │   ├── search_primitives.py  ← 2026-05-23 SWE-Agent batch 4 (T3): search_dir_filenames_only (count + sort + 100-file hard cap with tiered narrowing hint) + search_in_file_with_cap (line-match cap with cap_message) + find_file_by_pattern (fnmatch glob); ripgrep backend with pure-Python fallback
-│       │   ├── sentinels.py          ← 2026-05-23 SWE-Agent batch 1 (T17): pair-marker + single-fire sentinel parser; ULTRON_SUBMIT / ULTRON_SUBMIT_DIFF / ULTRON_TEST_SWEEP_{PASS,FAIL} pair markers; ULTRON_EXIT_FORFEIT / ULTRON_RETRY_WITH_OUTPUT / ULTRON_RETRY_WITHOUT_OUTPUT / ULTRON_LINT_REVERT / ULTRON_BLOCKED_TOOL single-fire; observation_scan / first_match / strip_sentinels helpers
+│       │   ├── sentinels.py          ← 2026-05-23 SWE-Agent batch 1 (T17): pair-marker + single-fire sentinel parser; KENNING_SUBMIT / KENNING_SUBMIT_DIFF / KENNING_TEST_SWEEP_{PASS,FAIL} pair markers; KENNING_EXIT_FORFEIT / KENNING_RETRY_WITH_OUTPUT / KENNING_RETRY_WITHOUT_OUTPUT / KENNING_LINT_REVERT / KENNING_BLOCKED_TOOL single-fire; observation_scan / first_match / strip_sentinels helpers
 │       │   ├── session_registry.py   ← 2026-05-23 SWE-Agent batch 1 (T15): per-session JSON registry at data/coding/sessions/<id>/registry.json; thread-safe RLock; atomic temp-file writes; transaction() context manager with rollback; set_with_ttl per-key expiration; get_if_none CLI fallback chain; fallback_to_env=True; get_session_registry singleton; load-bearing for batches 3/5/6
 │       │   ├── window_expand.py      ← 2026-05-23 SWE-Agent batch 3 (T5): WindowExpander.expand_window scoring (blank=1, double_blank=2, def/class/decorator=3, file_edge=3) verbatim from SWE-Agent's str_replace_editor; direction-aware stop-before-next-def; per-suffix patterns for Python / JS / TS / Go / Rust / Java family
 │       │   ├── window_state.py       ← 2026-05-23 SWE-Agent batch 3 (T4): WindowState persistent windowed-file state machine backed by SessionRegistry; registry keys CURRENT_FILE / FIRST_LINE / WINDOW / OVERLAP match SWE-Agent; goto/scroll_down/scroll_up with overlap; view() renders [File: N lines] header + (X more above/below) annotations; view_with_semantic_expansion integrates WindowExpander
@@ -1859,7 +1873,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── client.py           ← OpenClawClient (async CLI subprocess transport: invoke_tool / send_message / trigger_heartbeat / mcp_*)
 │       │   ├── workspace.py        ← WorkspaceWriter (atomic writes + filelock for MEMORY.md / USER.md / daily files)
 │       │   ├── events.py           ← OpenClawEventReceiver (gated-off scaffold for [voice] inbound handoff)
-│       │   ├── mcp_registration.py ← UltronMcpRegistrar (idempotent `openclaw mcp set` with background retry)
+│       │   ├── mcp_registration.py ← KenningMcpRegistrar (idempotent `openclaw mcp set` with background retry)
 │       │   ├── holder.py           ← OpenClawBridge (orchestrator-owned holder: probe → register → retry-thread → fire_and_forget → record_heartbeat_alert; auto-resolve "auto" command)
 │       │   ├── notifications.py    ← NotificationDispatcher (Phase 4 — proactive Telegram pings on coding-completion / heartbeat / etc.)
 │       │   ├── heartbeat_alerts.py ← HeartbeatAlertLog (Phase 5 — JSONL-backed alert log with atomic update + retention)
@@ -1880,7 +1894,7 @@ For the current decisions and Foundation phase status see
 │       │
 │       ├── observability/          ← 2026-05-25 openclaw-clawhub batch 8 (T15, YELLOW): privacy-by-construction aggregate-only telemetry
 │       │   ├── __init__.py         ← Public API re-exports
-│       │   └── private_telemetry.py ← HashedRootId / HashedSkillId NewType wrappers + hash_root / hash_skill_slug primitives with salted SHA-256 (per-install salt at data/observability/telemetry_salt.txt). canonical_label_root for tilde-normalised dashboard labels. PrivateMetricsStore append-only JSONL at data/observability/private_metrics.jsonl with type-boundary enforcement (RawPathLeakError on raw-path leak). HashedEvent + RootRecord + SkillRecord aggregates. stale_root_ids implements 120-day staleness. is_telemetry_enabled defaults fail-private (requires explicit ULTRON_TELEMETRY=opt-in).
+│       │   └── private_telemetry.py ← HashedRootId / HashedSkillId NewType wrappers + hash_root / hash_skill_slug primitives with salted SHA-256 (per-install salt at data/observability/telemetry_salt.txt). canonical_label_root for tilde-normalised dashboard labels. PrivateMetricsStore append-only JSONL at data/observability/private_metrics.jsonl with type-boundary enforcement (RawPathLeakError on raw-path leak). HashedEvent + RootRecord + SkillRecord aggregates. stale_root_ids implements 120-day staleness. is_telemetry_enabled defaults fail-private (requires explicit KENNING_TELEMETRY=opt-in).
 │       │
 │       ├── feedback/               ← 2026-05-25 openclaw-clawhub batch 7 (T12, YELLOW): user-initiated reports + universal pre-act plan preview
 │       │   ├── __init__.py         ← Public API re-exports
@@ -1891,20 +1905,20 @@ For the current decisions and Foundation phase status see
 │       ├── install/                ← 2026-05-23 OpenHands batch 1 (T8): idempotent marker-comment installer
 │       │   ├── __init__.py         ← Public API re-exports incl. DEFAULT_MARKER
 │       │   ├── idempotent.py       ← install_with_marker(target, content, marker, preserve_existing_as, replace_unmarked, dry_run) -> InstallResult with InstallAction enum; atomic writes; logs/install_log.jsonl audit log
-│       │   ├── lockfile.py         ← 2026-05-25 openclaw-clawhub batch 2 (T10): lockfile + per-skill origin manifest + content fingerprinting for drift detection. :class:`Lockfile` (version + skills map) + :class:`LockfileEntry` (version + installed_at + optional pinned/pinReason); :class:`SkillOrigin` (registry + slug + installed_version + installed_at + optional fingerprint). Paths live under `<workdir>/.ultron/lock.json` + `<skill_dir>/.ultron/origin.json`. :func:`compute_skill_fingerprint` walks text files (skip `.git`/`.ultron`/`node_modules`/`.venv`/binary-suffix/NUL-byte/hidden), per-file SHA-256, sort by case-fold path, canonical `<rel>:<sha>` payload, then SHA-256. :func:`check_drift` returns :class:`FingerprintDriftReport` with `clean`/`drifted`/`missing_origin`/`legacy_origin`. Atomic writes via tmp + os.replace; fail-open reads.
-│       │   ├── pin.py              ← 2026-05-25 openclaw-clawhub batch 2 (T11): pin/unpin primitives extending T10 lockfile. :func:`pin(workdir, slug, reason=...)` idempotent on matching reason; :func:`unpin` strict by default (raises :class:`UnpinNotPinnedError` / :class:`KeyError`) or `tolerate_unpinned=True`. :class:`PinResult` carries was_pinned_before / is_pinned_after / reason_before / reason_after / idempotent_noop. :data:`ULTRON_DEFAULT_PINS` ships 5 voice-baseline-lock entries (voicepack:ultron / voicepack:kokoro_finetune / llm:qwen3.5-4b / persona:identity / validator:k_category); :func:`materialise_default_pins(workdir)` idempotently pins them. :func:`refuses_update(workdir, slug)` is the registry/CLI hook for "should this update refuse?".
-│       │   ├── discovery.py        ← 2026-05-25 openclaw-clawhub batch 6 (T8): registry discovery via `/.well-known/ultron.json`. Constants `WELL_KNOWN_PATH` / `WELL_KNOWN_LEGACY_PATH` / `DEFAULT_DISCOVERY_TTL_SECONDS=15min` / `DISCOVERY_ENV_OVERRIDE="ULTRON_REGISTRY"`. :class:`DiscoveredRegistry` (api_base + auth_base + min_runtime_version + extras + source_url + discovered_at + from_legacy). :func:`discover(site, fetcher, trusted_hosts)` with INJECTED fetcher (no network dep); current-path -> legacy-path fallback; raises :class:`DiscoveryError` on parse failure / non-200-non-404 / :class:`UntrustedHostError` on allowlist miss. :func:`resolve_registry_base` 3-tier resolution chain (well-known -> env override -> default; swallows errors). :class:`DiscoveryCache` thread-safe TTL cache (caches None results too).
+│       │   ├── lockfile.py         ← 2026-05-25 openclaw-clawhub batch 2 (T10): lockfile + per-skill origin manifest + content fingerprinting for drift detection. :class:`Lockfile` (version + skills map) + :class:`LockfileEntry` (version + installed_at + optional pinned/pinReason); :class:`SkillOrigin` (registry + slug + installed_version + installed_at + optional fingerprint). Paths live under `<workdir>/.kenning/lock.json` + `<skill_dir>/.kenning/origin.json`. :func:`compute_skill_fingerprint` walks text files (skip `.git`/`.kenning`/`node_modules`/`.venv`/binary-suffix/NUL-byte/hidden), per-file SHA-256, sort by case-fold path, canonical `<rel>:<sha>` payload, then SHA-256. :func:`check_drift` returns :class:`FingerprintDriftReport` with `clean`/`drifted`/`missing_origin`/`legacy_origin`. Atomic writes via tmp + os.replace; fail-open reads.
+│       │   ├── pin.py              ← 2026-05-25 openclaw-clawhub batch 2 (T11): pin/unpin primitives extending T10 lockfile. :func:`pin(workdir, slug, reason=...)` idempotent on matching reason; :func:`unpin` strict by default (raises :class:`UnpinNotPinnedError` / :class:`KeyError`) or `tolerate_unpinned=True`. :class:`PinResult` carries was_pinned_before / is_pinned_after / reason_before / reason_after / idempotent_noop. :data:`KENNING_DEFAULT_PINS` ships 5 voice-baseline-lock entries (voicepack:kenning / voicepack:kokoro_finetune / llm:qwen3.5-4b / persona:identity / validator:k_category); :func:`materialise_default_pins(workdir)` idempotently pins them. :func:`refuses_update(workdir, slug)` is the registry/CLI hook for "should this update refuse?".
+│       │   ├── discovery.py        ← 2026-05-25 openclaw-clawhub batch 6 (T8): registry discovery via `/.well-known/kenning.json`. Constants `WELL_KNOWN_PATH` / `WELL_KNOWN_LEGACY_PATH` / `DEFAULT_DISCOVERY_TTL_SECONDS=15min` / `DISCOVERY_ENV_OVERRIDE="KENNING_REGISTRY"`. :class:`DiscoveredRegistry` (api_base + auth_base + min_runtime_version + extras + source_url + discovered_at + from_legacy). :func:`discover(site, fetcher, trusted_hosts)` with INJECTED fetcher (no network dep); current-path -> legacy-path fallback; raises :class:`DiscoveryError` on parse failure / non-200-non-404 / :class:`UntrustedHostError` on allowlist miss. :func:`resolve_registry_base` 3-tier resolution chain (well-known -> env override -> default; swallows errors). :class:`DiscoveryCache` thread-safe TTL cache (caches None results too).
 │       │   ├── coherence.py        ← 2026-05-25 openclaw-clawhub batch 5 (T4): declared-vs-observed coherence checker. :func:`check_coherence(manifest, source_files)` returns :class:`CoherenceMismatch` tuple comparing declared requires.env/bins/config/os to observed source behaviour. Bidirectional: MISSING_DECLARATION + UNUSED_DECLARATION + DYNAMIC_READ + OS_MISMATCH. Conservative: only literal-string env/bin reads flagged; dynamic os.getenv(<expr>) emits INFO. :data:`_ALWAYS_AVAILABLE_ENV` + :data:`_COMMON_BINS_NEVER_DECLARED` carve out platform-supplied identifiers. :func:`check_intent_phrase_coherence` is the creative-extension intent-trigger linter (trigger phrase tokens must overlap the body at `min_overlap_ratio=0.2`).
 │       │   ├── artifact_identity.py ← 2026-05-25 openclaw-clawhub batch 4 (T2): triple-digest artifact identity verification. :class:`ArtifactIdentity` (sha256_hex + sha512_sri + sha1_shasum + byte_length). :func:`compute_identity` / :func:`compute_identity_from_path` (streamed). :func:`verify_identity` returns :class:`IdentityVerificationResult` (ok + mismatches + compared_fields); case-insensitive hex, case-sensitive SRI; fail-closed (mismatch -> ok=False). :func:`parse_clawpack_contents` extracts package/package.json from gzipped tar (256KB cap). :func:`verify_clawpack_tarball` adds manifest_name + manifest_version checks for ClawPack-shaped tarballs. TOFU pin file at data/install/pinned_digests.jsonl via :func:`pin_first_use_digests` + :func:`load_pinned_digest` + :func:`verify_against_pin` (append-only JSONL; latest row per identifier wins).
 │       │   ├── resolver.py         ← 2026-05-25 openclaw-clawhub batch 4 (T13): typed artifact-kind resolver. :class:`ResolvedArtifact` frozen envelope (kind + fetch_url + per-digest expected + extract_strategy + expected_root + manifest_name/version + trusted_publisher + metadata). Per-kind builders for LOCAL_PATH / TARBALL_URL / GIT_REF / NPM_PACK / INLINE_MARKDOWN. :func:`verify_artifact_bytes` dispatches: NPM_PACK runs full ClawPack tarball-internal + digest checks; TARBALL_URL/LOCAL_PATH/INLINE_MARKDOWN run digest-only; GIT_REF refuses byte-level verify. :class:`ArtifactResolver` is the registry-style dispatch surface ready for marketplace integration.
-│       │   ├── trust_envelope.py   ← 2026-05-25 openclaw-clawhub batch 3 (T1 + T9): per-version trust envelope with derived `blocked_from_download` signal + version-exact contract. :class:`TrustEnvelope` (package + release + trust); :class:`TrustSignal` (scan_status reusing T3 :class:`ModerationVerdict` + moderation_state APPROVED/QUARANTINED/REVOKED + blocked + reasons + pending + stale + engine_version + evaluated_at); :class:`PackageRef` / :class:`ReleaseRef` / :class:`ArtifactKind` (NPM_PACK / LEGACY_ZIP + ultron extensions LOCAL_PATH / TARBALL_URL / GIT_REF / INLINE_MARKDOWN); :class:`PackageFamily` (CODE_PLUGIN / BUNDLE_PLUGIN / SKILL / VOICEPACK / MODEL). :func:`derive_scan_status` is the 11-step short-circuit hierarchy. :func:`derive_blocked_from_download` (quarantined/revoked/malicious -> True). :func:`derive_reasons` produces deduped prefixed-code tuple. :func:`refuse_if_blocked(envelope, allow_stale, allow_pending)` is the universal pre-act decision point. T9 :class:`VersionExactRequest` + :func:`fetch_for_version` enforce resolve-then-trust-check ordering; :class:`VersionExactViolation` raises on floating-tag tokens (latest / `*` / main / etc.). :func:`make_local_path_envelope` helper for PATH/GIT sources.
-│       │   ├── reason_codes.py     ← 2026-05-25 openclaw-clawhub batch 1 (T3): canonical moderation reason-code catalogue (33 upstream codes preserved as API contracts under `review.*`/`suspicious.*`/`malicious.*` + 8 ultron extensions under `ultron.suspicious.*`/`ultron.malicious.*` bridging to safety-validator K/A-J/M-S/IT/Cap-1..Cap-4 categories) + verdict derivation (:func:`verdict_from_codes` short-circuits MALICIOUS_CODES set + `malicious.*` prefix -> MALICIOUS, then `suspicious.*` prefix -> SUSPICIOUS, else CLEAN; :func:`compute_status` extends rollup with PENDING/NOT_RUN) + :data:`EXTERNALLY_CLEARABLE_SUSPICIOUS_CODES` carveout (CREDENTIAL_HARVEST + ULTRON_VOICE_BASELINE_TOUCH + ULTRON_PERSONA_DRIFT) + :data:`DEFAULT_SEVERITIES` per-code map + :func:`severity_for_code` + :data:`OWASP_AGENTIC_ALIGNMENT` mapping (AS01-AS10) + :func:`summarize_reason_codes` TTS-safe one-line summary + :func:`legacy_flags_from_verdict` backwards-compat + :data:`KIND_TO_CODE` / :func:`code_for_kind` bridge from existing scanner kind enum.
+│       │   ├── trust_envelope.py   ← 2026-05-25 openclaw-clawhub batch 3 (T1 + T9): per-version trust envelope with derived `blocked_from_download` signal + version-exact contract. :class:`TrustEnvelope` (package + release + trust); :class:`TrustSignal` (scan_status reusing T3 :class:`ModerationVerdict` + moderation_state APPROVED/QUARANTINED/REVOKED + blocked + reasons + pending + stale + engine_version + evaluated_at); :class:`PackageRef` / :class:`ReleaseRef` / :class:`ArtifactKind` (NPM_PACK / LEGACY_ZIP + kenning extensions LOCAL_PATH / TARBALL_URL / GIT_REF / INLINE_MARKDOWN); :class:`PackageFamily` (CODE_PLUGIN / BUNDLE_PLUGIN / SKILL / VOICEPACK / MODEL). :func:`derive_scan_status` is the 11-step short-circuit hierarchy. :func:`derive_blocked_from_download` (quarantined/revoked/malicious -> True). :func:`derive_reasons` produces deduped prefixed-code tuple. :func:`refuse_if_blocked(envelope, allow_stale, allow_pending)` is the universal pre-act decision point. T9 :class:`VersionExactRequest` + :func:`fetch_for_version` enforce resolve-then-trust-check ordering; :class:`VersionExactViolation` raises on floating-tag tokens (latest / `*` / main / etc.). :func:`make_local_path_envelope` helper for PATH/GIT sources.
+│       │   ├── reason_codes.py     ← 2026-05-25 openclaw-clawhub batch 1 (T3): canonical moderation reason-code catalogue (33 upstream codes preserved as API contracts under `review.*`/`suspicious.*`/`malicious.*` + 8 kenning extensions under `kenning.suspicious.*`/`kenning.malicious.*` bridging to safety-validator K/A-J/M-S/IT/Cap-1..Cap-4 categories) + verdict derivation (:func:`verdict_from_codes` short-circuits MALICIOUS_CODES set + `malicious.*` prefix -> MALICIOUS, then `suspicious.*` prefix -> SUSPICIOUS, else CLEAN; :func:`compute_status` extends rollup with PENDING/NOT_RUN) + :data:`EXTERNALLY_CLEARABLE_SUSPICIOUS_CODES` carveout (CREDENTIAL_HARVEST + KENNING_VOICE_BASELINE_TOUCH + KENNING_PERSONA_DRIFT) + :data:`DEFAULT_SEVERITIES` per-code map + :func:`severity_for_code` + :data:`OWASP_AGENTIC_ALIGNMENT` mapping (AS01-AS10) + :func:`summarize_reason_codes` TTS-safe one-line summary + :func:`legacy_flags_from_verdict` backwards-compat + :data:`KIND_TO_CODE` / :func:`code_for_kind` bridge from existing scanner kind enum.
 │       │   └── static_scanner.py   ← Python tokenize-based install-time scanner (OpenClaw catalog T5) -- Finding / ScanReport / FindingSeverity (info/warn/critical) / LineFindingKind / SourceFindingKind / scan_install_directory / scan_dependencies / DEFAULT_DENYLISTED_PACKAGES. 2026-05-25 openclaw-clawhub batch 1 (T3) additive helpers: :func:`canonical_code_for_finding` and :func:`canonical_codes_for_report` translate scanner kinds to the T3 canonical reason-code namespace for audit-log enrichment (existing Finding shape preserved).
 │       │
 │       ├── identity/               ← 2026-05-25 openclaw-clawhub batch 2 (T6): stable-identity primitives
 │       │   ├── __init__.py         ← Public API re-exports incl. validate_slug + RESERVED_SLUGS + AliasGraph
 │       │   ├── alias_graph.py      ← T6 alias graph: rename / merge / transfer / soft_delete (DEFAULT_RESERVATION_DAYS=30 with original-owner first-refusal) / hard_delete + redirect-chain resolve with MAX_REDIRECT_DEPTH=32 cycle protection.
-│       │   └── short_lived_token.py ← 2026-05-25 openclaw-clawhub batch 9 (T7, YELLOW): stdlib-only HMAC-SHA256 JWT mint + verify with pre-registered trust tuples. mint_token (caller_id + audience + scope + ttl_seconds + extra_claims; rejects empty fields / TTL > MAX_TTL_SECONDS=6h / scopes outside allowlist). verify_token enforces signature + expiry (DEFAULT_CLOCK_SKEW_SECONDS=60 tolerance) + audience match + caller-id trust-tuple match + per-claim equality. TrustedCaller pre-registered tuple (expected_claims_match + allowed_scopes + max_ttl_seconds). Audit log at data/identity/short_lived_tokens.jsonl with SHA-256 hash chain + verify_audit_chain. rotate_secret invalidates all historical tokens. Wired use cases: MCP server startup / coding bridge subprocess / skill execution token / voice gaming-mode handoff. RSA-256 + TPM-backed keys are the documented future hardening path. :class:`AliasGraph` thread-safe (RLock), JSONL-persisted with SHA-256 hash chain (:meth:`verify_log_chain`); :meth:`replay_from_log` re-derives state. :data:`RESERVED_SLUGS` blocks 30+ unscoped names (admin/api/settings/soul/voicepack/validator/etc.). :func:`validate_slug` enforces shape `^(?:@scope/)?lowercase-alphanum-with-dots-hyphens-underscores$` (1-128 chars). :class:`AliasGraphEvent` is the audit-log envelope. Generalises across ultron namespaces: skill slugs / voice intent labels / sandbox project names / gaming-mode profile names / persona overlays / voicepack ids / memory backend selectors.
+│       │   └── short_lived_token.py ← 2026-05-25 openclaw-clawhub batch 9 (T7, YELLOW): stdlib-only HMAC-SHA256 JWT mint + verify with pre-registered trust tuples. mint_token (caller_id + audience + scope + ttl_seconds + extra_claims; rejects empty fields / TTL > MAX_TTL_SECONDS=6h / scopes outside allowlist). verify_token enforces signature + expiry (DEFAULT_CLOCK_SKEW_SECONDS=60 tolerance) + audience match + caller-id trust-tuple match + per-claim equality. TrustedCaller pre-registered tuple (expected_claims_match + allowed_scopes + max_ttl_seconds). Audit log at data/identity/short_lived_tokens.jsonl with SHA-256 hash chain + verify_audit_chain. rotate_secret invalidates all historical tokens. Wired use cases: MCP server startup / coding bridge subprocess / skill execution token / voice gaming-mode handoff. RSA-256 + TPM-backed keys are the documented future hardening path. :class:`AliasGraph` thread-safe (RLock), JSONL-persisted with SHA-256 hash chain (:meth:`verify_log_chain`); :meth:`replay_from_log` re-derives state. :data:`RESERVED_SLUGS` blocks 30+ unscoped names (admin/api/settings/soul/voicepack/validator/etc.). :func:`validate_slug` enforces shape `^(?:@scope/)?lowercase-alphanum-with-dots-hyphens-underscores$` (1-128 chars). :class:`AliasGraphEvent` is the audit-log envelope. Generalises across kenning namespaces: skill slugs / voice intent labels / sandbox project names / gaming-mode profile names / persona overlays / voicepack ids / memory backend selectors.
 │       │
 │       ├── skills/                 ← 2026-05-23 OpenHands batch 2 (T1): trigger-loaded skills
 │       │   ├── __init__.py         ← Public API re-exports incl. maybe_get_skills_block
@@ -1918,9 +1932,9 @@ For the current decisions and Foundation phase status see
 │       │   ├── injector.py         ← Injector[T] ABC + InjectorState + SingletonInjector + StreamInjector + InjectorRegistry + install_default_injectors + singleton accessors
 │       │   └── engine_injectors.py ← STTEngineInjector + TTSEngineInjector with mode-based dispatch (state.mode == "gaming" -> gaming factory)
 │       │
-│       ├── projects/               ← 2026-05-23 OpenHands batch 7 (T7): .ultron/ project discovery
+│       ├── projects/               ← 2026-05-23 OpenHands batch 7 (T7): .kenning/ project discovery
 │       │   ├── __init__.py         ← Public API re-exports
-│       │   └── discovery.py        ← discover_project_config(repo_root) -> frozen ProjectConfig; reads .ultron/{skills/, setup.sh, pre_commit.sh, identity_override.md, safety_rules.yaml, test_command.json, voicepack_override.json, intent_triggers.yaml, hooks.json}; mtime-cached; fail-open per-file
+│       │   └── discovery.py        ← discover_project_config(repo_root) -> frozen ProjectConfig; reads .kenning/{skills/, setup.sh, pre_commit.sh, identity_override.md, safety_rules.yaml, test_command.json, voicepack_override.json, intent_triggers.yaml, hooks.json}; mtime-cached; fail-open per-file
 │       │
 │       ├── lifecycle/              ← 2026-05-23 OpenHands batch 6 (T5 + T16): start-task + pending-message; later runtime-lifecycle helpers
 │       │   ├── __init__.py         ← Public API re-exports
@@ -1928,7 +1942,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── pending_message_queue.py ← PendingMessage + PendingMessageState + PendingMessageQueue (enqueue / rebind / cancel / drain) + JSONL persistence + rebind_pending_messages alias
 │       │   ├── gaming_engage.py    ← 2026 catalog 09 batch H: drive_start_task-driven gaming engage/disengage substeps with per-stage voice acks
 │       │   ├── docker_startup.py   ← 2026-06-12 (97b9494): SearxNG boot probe + Docker Desktop auto-launch (ensure_docker_running, daemon thread, fail-open)
-│       │   └── single_instance.py  ← NEW 2026-06-12: single-instance guard for `python -m ultron` -- held OS byte-lock (msvcrt LK_NBLCK at offset 4096 / fcntl flock; auto-releases on process death, no stale-lock problem) + holder PID metadata at offset 0 (unbuffered os.read so Windows mandatory locks never block the duplicate's diagnostic read) + pidfile/psutil fallback + ULTRON_ALLOW_MULTIPLE_INSTANCES escape + fail-open-on-error / refuse-only-on-contention. Acquired in __main__.main() BEFORE Orchestrator construction (duplicate exits code 3 naming the holder PID); pytest/e2e construct Orchestrator directly and never contend
+│       │   └── single_instance.py  ← NEW 2026-06-12: single-instance guard for `python -m kenning` -- held OS byte-lock (msvcrt LK_NBLCK at offset 4096 / fcntl flock; auto-releases on process death, no stale-lock problem) + holder PID metadata at offset 0 (unbuffered os.read so Windows mandatory locks never block the duplicate's diagnostic read) + pidfile/psutil fallback + KENNING_ALLOW_MULTIPLE_INSTANCES escape + fail-open-on-error / refuse-only-on-contention. Acquired in __main__.main() BEFORE Orchestrator construction (duplicate exits code 3 naming the holder PID); pytest/e2e construct Orchestrator directly and never contend
 │       │
 │       ├── llm/condensers/         ← 2026-05-23 OpenHands batch 5 (T4): history-compression strategies
 │       │   ├── __init__.py         ← Public API re-exports
@@ -1959,8 +1973,8 @@ For the current decisions and Foundation phase status see
 │       │
 │       ├── hooks/                   ← 2026-05-24 cline batch 7 (T5 + T21): out-of-process hook lifecycle
 │       │   ├── __init__.py          ← Public API re-exports
-│       │   ├── lifecycle.py         ← HookKind enum (9 cline + 5 ultron-specific), HookPayload, HookOutcome dataclasses; DEFAULT_HOOK_TIMEOUT_SECONDS=10.0, DEFAULT_CONTEXT_MOD_CAP_CHARS=8192
-│       │   ├── discovery.py         ← HookDiscovery walks `~/.ultron/hooks/<kind>(.py|.ps1|.sh|.bat|.cmd)` + project equivalent; mtime-validated cache with DEFAULT_DISCOVERY_TTL_SECONDS=30
+│       │   ├── lifecycle.py         ← HookKind enum (9 cline + 5 kenning-specific), HookPayload, HookOutcome dataclasses; DEFAULT_HOOK_TIMEOUT_SECONDS=10.0, DEFAULT_CONTEXT_MOD_CAP_CHARS=8192
+│       │   ├── discovery.py         ← HookDiscovery walks `~/.kenning/hooks/<kind>(.py|.ps1|.sh|.bat|.cmd)` + project equivalent; mtime-validated cache with DEFAULT_DISCOVERY_TTL_SECONDS=30
 │       │   ├── runner.py            ← HookRunner with per-suffix interpreter selection (.py → sys.executable, .ps1 → powershell.exe -NoProfile -ExecutionPolicy Bypass, .sh → bash, .bat/.cmd → cmd.exe /c, no suffix → shebang); JSON stdin/stdout envelope; CREATE_NO_WINDOW on Windows; last-balanced-JSON-object stdout parser
 │       │   └── registry.py          ← HookRegistry parallel fan-out via concurrent.futures.ThreadPoolExecutor (max 4 default); any cancel:true blocks; every context_modification concatenated as `<hook_context source="..." script="..." layer="...">...</hook_context>`; get_hook_registry() module-level singleton
 │       │
@@ -1977,7 +1991,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── deep_loops.py        ← 2026 catalog 12 (felo-search T3 cross-system extensions): generic DeepGatherLoop(AgentLoop) (decompose -> gather-over-injected-source -> LLM gap-fill, bounded by max_steps, fail-open) + DeepGatherResult + three DI subclasses -- DeepMemoryLoop (.recall(); iterative Qdrant RAG), DeepExplorationLoop (.explore(); iterative ripgrep), DeepUIDiscoveryLoop (.discover(); iterative UIA element find). Importable primitives (no orchestrator wiring): each injects its domain primitive (retrieve / search / find callable) so it is domain-agnostic + hermetically testable; wiring to a concrete trigger is a one-call integration (template: Orchestrator._maybe_handle_deep_research). Reuses _parse_json_list / _dedupe_subqueries from web_search/deep_research.
 │       │   ├── loop_detection.py    ← LoopDetector with canonical tool_call_signature (JSON sorted-keys minus DEFAULT_NOISE_KEYS like task_progress / turn_id / trace_id); LoopVerdict with soft_warning at DEFAULT_SOFT_THRESHOLD=3 + hard_escalation at DEFAULT_HARD_THRESHOLD=5; halted flag persists across distinct observations once hard tier fires; reset() clears state
 │       │   ├── loop_detection_extended.py ← 2026-05-25 OpenClaw batch 3 (T1): four additional detectors. UnknownToolRepeatDetector (regex-extract unknown tool name from error message; halts at UNKNOWN_TOOL_THRESHOLD=10), KnownPollNoProgressDetector (separate threshold for command_status / process(action=poll|log)), PingPongDetector (alternating A,B,A,B with stable outcomes on both sides), GlobalCircuitBreakerDetector (emergency stop at GLOBAL_CIRCUIT_BREAKER_THRESHOLD=30). LoopDetectionManager aggregates all four into a single per-stream observe() surface with most-restrictive-wins; ToolCallRecord + OutcomeKind for input shaping; SHA-256 canonical JSON for hashing.
-│       │   ├── subagent_policy.py   ← 2026-05-25 OpenClaw batch 3 (T7): depth-aware subagent tool-policy. SUBAGENT_TOOL_DENY_ALWAYS (gateway/agents_list/session_status/cron/sessions_send + ultron tts_speak/kokoro_speak/gaming_mode_engage/set_validator/install_skill); SUBAGENT_TOOL_DENY_LEAF (subagents/sessions_list/sessions_history/sessions_spawn + ultron mcp_add_server/mcp_remove_server). resolve_subagent_tool_policy(depth, config) returns ResolvedSubagentToolPolicy with deny + allow + also_allow + per-tool provenance. is_leaf(depth, max_spawn_depth) matches OpenClaw's depth >= max(1, floor(maxSpawnDepth)). filter_tools_by_policy + ResolvedSubagentToolPolicy.is_permitted enforce the policy on a tool list.
+│       │   ├── subagent_policy.py   ← 2026-05-25 OpenClaw batch 3 (T7): depth-aware subagent tool-policy. SUBAGENT_TOOL_DENY_ALWAYS (gateway/agents_list/session_status/cron/sessions_send + kenning tts_speak/kokoro_speak/gaming_mode_engage/set_validator/install_skill); SUBAGENT_TOOL_DENY_LEAF (subagents/sessions_list/sessions_history/sessions_spawn + kenning mcp_add_server/mcp_remove_server). resolve_subagent_tool_policy(depth, config) returns ResolvedSubagentToolPolicy with deny + allow + also_allow + per-tool provenance. is_leaf(depth, max_spawn_depth) matches OpenClaw's depth >= max(1, floor(maxSpawnDepth)). filter_tools_by_policy + ResolvedSubagentToolPolicy.is_permitted enforce the policy on a tool list.
 │       │   ├── mode.py              ← 2026-05-24 cline batch 10 (T2): Mode enum (ACT / PLAN / CODING_ARCHITECT / CODING_EDITOR / GAMING) + frozen ModePolicy (allows_tool_side_effects / requires_confirmation / wrap_prefix_template / confirmation_timeout / preset_override) + DEFAULT_POLICIES (PLAN wraps with "Here is my plan: {plan} / Say 'do it'") + PendingConfirmation (UUID + TTL + intent_topic + callback_token) + ModeSession state machine (flip with invalidate_pending semantics / queue_plan / peek_latest_pending / consume_pending_confirmation with topic filter / cancel_pending / flip_history capped at 32) + module-level get_mode_session(session_id) registry singleton
 │       │   └── subagent.py          ← 2026-05-24 cline batch 10 (T16): DEFAULT_READONLY_TOOL_WHITELIST (file_read / list_files / list_code_definitions / search / ripgrep_search / use_skill / execute_command_readonly / rag_query / web_search) + frozen SubagentTask (per-task whitelist + token caps + wall-clock timeout) + SubagentResult (text + per-task token meter + tool call log) + SubagentBatchStats (n_tasks / n_succeeded / total_input_tokens / max_wall_clock / sum_wall_clock) + ToolGuard whitelist enforcer raising ToolNotPermittedError + thread-safe TokenLedger + SubagentRunner ThreadPoolExecutor-backed dispatcher with max_parallel=1 default for voice baseline safety
 │       │
@@ -1986,7 +2000,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── models.py            ← GEP data model: frozen dataclasses Gene / Capsule / Mutation / EvolutionEvent / PersonalityState / BlastRadius / Outcome / GeneConstraints / EnvFingerprint (NO device_id -- safety departure) + EvolutionCategory / OutcomeStatus / RiskLevel enums + clamp01 / canonicalize / compute_asset_id (sha256) / verify_asset_id + id generators (new_capsule_id appends a 6-hex suffix to avoid same-ms collisions) + schema constants
 │       │   ├── signals.py           ← Opportunity-signal extraction: 18 OPPORTUNITY_SIGNALS (production-hardening #66 added `coding_task_success`, emitted by the orchestrator's coding-success drain) + COSMETIC_SIGNALS + 7 weighted SIGNAL_PROFILES; extract_signals (two LOCAL layers: regex + keyword scoring + multilingual user-request) + analyze_recent_history + apply_post_processing (dedup / repair-loop / saturation / failure-streak / ban) + has_opportunity_signal. The upstream's 3rd LLM/Hub-network layer is NOT ported.
 │       │   ├── blast_radius.py      ← Change-scope policy spine: CountedFilePolicy + BLAST_RADIUS_HARD_CAP_FILES/LINES + BlastSeverity (5 tiers) + CRITICAL_PROTECTED_PREFIXES/FILES Tier-3 wall (includes "src/") + ETHICS_BLOCK_PATTERNS + compute_blast_radius / classify_blast_severity / check_constraints / classify_failure_mode / is_critical_protected_path; injectable git_numstat provider
-│       │   ├── skill_distiller.py   ← Capsule->pattern->skill distillation: auto_distill / auto_distill_from_failures + analyze_patterns + synthesize_gene_from_patterns + gene_to_skill_proposal + render_skill_markdown (ultron-compatible frontmatter: name/type/version/description/triggers/min_user_text_chars) + should_distill (>=10 successes, >=7 of last 10, 24h cooldown, data-hash idempotency) + SkillProposal / DistillResult. Output is DATA, never code.
+│       │   ├── skill_distiller.py   ← Capsule->pattern->skill distillation: auto_distill / auto_distill_from_failures + analyze_patterns + synthesize_gene_from_patterns + gene_to_skill_proposal + render_skill_markdown (kenning-compatible frontmatter: name/type/version/description/triggers/min_user_text_chars) + should_distill (>=10 successes, >=7 of last 10, 24h cooldown, data-hash idempotency) + SkillProposal / DistillResult. Output is DATA, never code.
 │       │   ├── guardrails.py        ← Regression guardrails: GuardrailBaseline (TTFA 266 / TTFT 172 / TTS 78 / VRAM 6664 defaults) + 4 detectors (detect_latency_regression / detect_quality_regression / detect_error_regression / detect_resource_ceiling) + evaluate_guardrails + RollbackAudit (note_outcome / rollback_rate / should_demote) + ROLLBACK_DEMOTE_THRESHOLD=0.30 + VRAM_CAP_MB=11500. Replaces the upstream's run-commands-to-verify step.
 │       │   ├── autonomy.py          ← Tiered autonomy: AutonomyTier (PARAM/SKILL/GATED/WALL IntEnum) + AutonomyMode + DEFAULT_SURFACE_TIERS (skills=SKILL; safety_validator/audit/engine/category_k=WALL) + TieredAutonomyController (mode_for / can_auto_apply / requires_approval / record_outcome->AutonomyTransition / digest) + graduation ladder (>=20 changes, <10% revert, 0 hard trips) + rollback-rate demotion
 │       │   ├── personality.py       ← Tier-0 adaptive temperament: PersonalityTuner (record_feedback nudges rigor/creativity/verbosity from corrections/re-asks/barge-ins; record_outcome + best_personality ranking; to_dict/from_dict) + temperament_hint -> "[Tone: ...]" directive (distinct from response_style's "[Style:") + apply_temperament. NEVER touches SOUL.md / the voicepack.
@@ -2005,7 +2019,7 @@ For the current decisions and Foundation phase status see
 │       │   └── kill_tree.py         ← 2026-05-25 OpenClaw batch 1 (T8): cross-platform process-tree termination via psutil. kill_process_tree(pid, *, grace_seconds, detached, clock) walks descendants → graceful terminate → wait grace → force-kill survivors; KillTreeResult dataclass (terminated / force_killed / unreachable / elapsed_seconds / used_process_group). kill_pid_if_alive(pid) is the leaf-only convenience. Grace clamped to [0, MAX_GRACE_SECONDS=60]. Fail-open on missing psutil. Replaces ad-hoc per-site terminate patterns in cleanup_stale_processes + future Parakeet/MCP shutdown wiring.
 │       │
 │       └── utils/
-│           ├── heartbeat.py         ← 2026 catalog 11 (T2): HeartbeatThread -- stoppable, fail-open daemon keep-alive for long-lived connections (Event.wait loop + HeartbeatStats; improves on the upstream's unstoppable while-True-sleep). Importable primitive (no current hot-path consumer; ultron's daemons self-respawn).
+│           ├── heartbeat.py         ← 2026 catalog 11 (T2): HeartbeatThread -- stoppable, fail-open daemon keep-alive for long-lived connections (Event.wait loop + HeartbeatStats; improves on the upstream's unstoppable while-True-sleep). Importable primitive (no current hot-path consumer; kenning's daemons self-respawn).
 │           ├── health_check.py      ← 2026 catalog 11 (T4): http_health_check + cdp_health_check -- cheap fail-open "is this endpoint answering?" pre-flight probes with injectable transport (GET /json/list for the CDP variant). Importable primitive.
 │           ├── fairseq_compat.py   ← Workarounds for fairseq dataclass + torch.load issues
 │           ├── logging.py          ← configure_logging(), get_logger() (rotating file + console)
@@ -2080,7 +2094,7 @@ For the current decisions and Foundation phase status see
 │   ├── review_addressing.py        ← Read addressing.jsonl, print verdicts
 │   ├── run_integration_tests.py    ← pytest wrapper for tests/integration|routing|error_recovery
 │   ├── run_orchestration_tests.py  ← Run 10 orchestration scenarios with reporting
-│   ├── validate_config.py          ← Schema-validate config.yaml without starting Ultron
+│   ├── validate_config.py          ← Schema-validate config.yaml without starting Kenning
 │   ├── swap_llm_preset.py          ← 4B plan: edit config.yaml in place to swap LLM preset (validates GGUFs, atomic write)
 │   ├── verify_voice_character_4b.py ← 4B plan Stage E: A/B voice-character helper (5 queries × 4B/9B)
 │   ├── verify_items_4_to_8.py      ← 4B plan: exercises Items 4–8 in their trigger scenarios; prints measurable deltas
@@ -2101,15 +2115,15 @@ For the current decisions and Foundation phase status see
 │   ├── _merge_phase0_baselines.py  ← OpenClaw Phase 0: baseline merger
 │   ├── _vram_peak_monitor.py       ← Auxiliary VRAM peak monitor (used by extended baselines)
 │   ├── run_maintenance_for_cron.py ← OpenClaw Phase 7: cron-friendly maintenance wrapper (JSON / pretty / exit codes)
-│   ├── run_ultron_mcp_for_openclaw.py ← OpenClaw Phase 13: stdio MCP entry script OpenClaw spawns to call Ultron tools
-│   ├── cleanup_stale_processes.py ← 2026-05-14 cleanup pass: kill orphaned pytest workers + stale MCP stubs + orphan XTTS servers (preserves live Ultron via port-19761 listener check)
+│   ├── run_kenning_mcp_for_openclaw.py ← OpenClaw Phase 13: stdio MCP entry script OpenClaw spawns to call Kenning tools
+│   ├── cleanup_stale_processes.py ← 2026-05-14 cleanup pass: kill orphaned pytest workers + stale MCP stubs + orphan XTTS servers (preserves live Kenning via port-19761 listener check)
 │   ├── bench_llm_ubatch.py        ← 2026-05-15 latency: sweep n_batch / n_ubatch combinations (writes baselines.json:llm_n_ubatch_sweep)
 │   ├── bench_stt_latency.py       ← 2026-05-15 latency: measure Whisper STT latency at varied audio lengths (drove beam_size 5->1 decision)
 │   ├── bench_llm_prefix_cache.py  ← 2026-05-16 latency 2: cold-vs-warm TTFT bench for LlamaRAMCache (writes baselines.json:llm_prefix_cache_bench; result: -15 ms regression on this stack -> Phase 2 default flipped to disabled)
 │   └── eval_harness.py            ← 2026-05-18 Phase 0: classifier-only eval harness (routing + addressing + web_gate); reads tests/eval/corpus.jsonl; writes logs/eval_runs/<ts>.json; exit codes 0/1/2 for CI
 │
 ├── tests/
-│   ├── conftest.py                 ← Path setup + pytest_sessionfinish hook that reaps test-spawned python children (preserves the live Ultron on port 19761); pytest_configure walks the process tree + refuses to start if another pytest is running on this codebase
+│   ├── conftest.py                 ← Path setup + pytest_sessionfinish hook that reaps test-spawned python children (preserves the live Kenning on port 19761); pytest_configure walks the process tree + refuses to start if another pytest is running on this codebase
 │   ├── test_*.py                   ← ~80 unit/integration test files at the top level (default suite); see scripts/run_tests.py to invoke. 2026-06-12 additions: test_audio_capture_status.py (status-flag/drop accounting), test_follow_up_streaming_stt.py (WARM-path streaming lane: structural pins + behavioral state machine on the real _follow_up_listen), test_main_single_instance.py (entrypoint guard integration, hermetic logging fixture)
 │   ├── lifecycle/                  ← lifecycle package tests: test_start_task.py, test_pending_message_queue.py, test_gaming_engage.py, test_docker_startup.py, test_single_instance.py (NEW 2026-06-12: held-lock acquire/contention/metadata-while-locked/env-escape/pidfile-fallback/errno-classification/no-unlink-on-release; tmp_path locks only)
 │   ├── pipeline/                   ← orchestrator-helper tests: test_idle_vram_reclaim.py, test_coding_runner_drains.py, test_supervisor_stack_shared_client.py (NEW 2026-06-12: _build_supervisor_stack passes ConversationMemory's client / falls back / fail-open)
@@ -2220,7 +2234,7 @@ For the current decisions and Foundation phase status see
 │   │   ├── test_client.py          ← OpenClawClient: subprocess transport + result parsing
 │   │   ├── test_workspace.py       ← WorkspaceWriter: atomic + filelock + concurrency
 │   │   ├── test_events.py          ← OpenClawEventReceiver: prefix matching + dispatch
-│   │   ├── test_mcp_registration.py ← UltronMcpRegistrar: idempotent + retry
+│   │   ├── test_mcp_registration.py ← KenningMcpRegistrar: idempotent + retry
 │   │   ├── test_holder.py          ← OpenClawBridge: from_config / start / shutdown / fire_and_forget / record_heartbeat_alert / auto-resolve
 │   │   ├── test_notifications.py   ← NotificationDispatcher: per-event gating + recipient resolution + transport errors
 │   │   ├── test_heartbeat_alerts.py ← HeartbeatAlertLog: record / get / acknowledge / prune / concurrency
@@ -2247,7 +2261,7 @@ For the current decisions and Foundation phase status see
 │   ├── maintenance.sqlite          ← maintenance state
 │   └── ollama_compat_test/         ← Modelfile from Foundation-phase Ollama compat test
 │
-├── ultronVoiceAudio/                ← workshop for voice character (gitignored except scripts + small configs)
+├── kenningVoiceAudio/                ← workshop for voice character (gitignored except scripts + small configs)
 │   ├── scripts/                     ← parakeet_server.py + kokoro fine-tune scripts + bulk synth helpers
 │   ├── searxng_config/              ← settings.yml + limiter.toml mounted into Docker container at /etc/searxng
 │   │   ├── settings.yml             ← engine roster + outgoing timeouts + categories=news mappings; bing + mojeek + wikipedia + wikidata + bing-news + reuters
@@ -2256,7 +2270,7 @@ For the current decisions and Foundation phase status see
 │   └── kokoro_training_corpus_*/    ← bulk-synthesized LJSpeech-shaped training corpus (1654 clips / 107 min)
 │
 ├── logs/                           ← runtime logs (gitignored)
-│   ├── ultron.log                  ← rotating main log
+│   ├── kenning.log                  ← rotating main log
 │   ├── addressing.jsonl            ← classifier audit
 │   ├── coding_tasks.jsonl          ← coding task progress
 │   ├── verifications.jsonl         ← verifier runs
@@ -2277,19 +2291,19 @@ For the current decisions and Foundation phase status see
 │   ├── (other GGUFs deleted 2026-05-20 round 8 cleanup; swap-back via `python scripts/download_models.py` for josiefied-qwen3-4b / qwen3.5-9b / llama-3.2-3b-abliterated / josiefied-qwen3-8b presets)
 │   ├── gemma-3-1b.gguf             ← Gemma 1B draft for gemma-3-4b-abliterated preset (when re-fetched)
 │   ├── kokoro/                     ← StyleTTS2 + ISTFTNet (current default TTS)
-│   │   ├── voices/ultron.pt        ← fine-tuned voicepack (style vectors ~512 KB)
-│   │   ├── ultron_finetune.pth     ← fine-tune model weights (~327 MB; decoder + predictor + text_encoder + bert)
+│   │   ├── voices/kenning.pt        ← fine-tuned voicepack (style vectors ~512 KB)
+│   │   ├── kenning_finetune.pth     ← fine-tune model weights (~327 MB; decoder + predictor + text_encoder + bert)
 │   │   └── (HF cache loaded on first use)
-│   ├── openwakeword/ultron.onnx    ← custom wake word
+│   ├── openwakeword/kenning.onnx    ← custom wake word
 │   ├── piper/en_US-ryan-medium.onnx ← TTS voice (legacy piper_rvc engine; ~16 MB)
 │   ├── rvc/{hubert_base.pt, rmvpe.pt} ← RVC support files (legacy piper_rvc)
 │   ├── moondream2/                 ← VLM (CPU on-demand; lazy-loaded; ~1.5 GB)
 │   ├── flan-t5-small/              ← zero-shot addressee model (CPU)
 │   └── smart_turn/smart-turn-v3.2-cpu.onnx ← Smart Turn V3 (8.68 MB int8, 2026-05-12)
 │
-├── ultron_james_spader_mcu_6941/   ← (main checkout only) RVC voice model
-│   ├── Ultron.pth
-│   └── added_IVF301_Flat_nprobe_1_Ultron_v2.index
+├── kenning_rvc_voice/   ← (main checkout only) RVC voice model
+│   ├── Kenning.pth
+│   └── added_IVF301_Flat_nprobe_1_Kenning_v2.index
 │
 └── training/                       ← (gitignored except scripts) Wake-word training data
     ├── download_training_data.py
@@ -2310,7 +2324,7 @@ For the current decisions and Foundation phase status see
    queue maxsize 1024 since 2026-05-22 audio-overflow fix)
 2. Orchestrator.run() loop:
    a. WakeWordDetector or AddressingClassifier consumes blocks
-      ├── COLD: "ultron" custom OpenWakeWord ONNX required
+      ├── COLD: "kenning" custom OpenWakeWord ONNX required
       └── WARM: AddressingClassifier verdict (rule -> zero-shot fallback) required
    b. On addressed: Silero VAD marks utterance start/end + Smart Turn V3
       gradient-fire confirms end (early-complete prob ≥ 0.65 -> submit at 300 ms;
@@ -2325,7 +2339,7 @@ For the current decisions and Foundation phase status see
    └── stt.engine="whisper"    -> WhisperEngine (faster-whisper int8_fp16;
                                   beam_size=1 since 2026-05-15)
    -> user_text
-4. UltronIntentRecognizer.process_utterance(user_text):
+4. KenningIntentRecognizer.process_utterance(user_text):
    ├── Match against 25 registered phrases via Gemma-300M q4 embeddings (CPU)
    ├── If "needs fresh data" intent matches -> set self._next_turn_force_search=True
    ├── If "gaming mode engage/disengage" matches -> short-circuit + invoke
@@ -2374,7 +2388,7 @@ For the current decisions and Foundation phase status see
       │   ├── Qwen3.5-4B Q4_K_M in-process via llama-cpp-python
       │   ├── /no_think marker via _apply_no_think_marker (saves 5-10 s TTFT)
       │   └── In-process spec decoding wired (llm.draft_kind="none" default)
-      └── KokoroSpeech.speak_stream(tokens) -> CUDA StyleTTS2 + ISTFTNet (voice=ultron)
+      └── KokoroSpeech.speak_stream(tokens) -> CUDA StyleTTS2 + ISTFTNet (voice=kenning)
          ├── Producer-consumer pipeline (synth N+1 overlaps playback N)
          ├── trim_and_fade boundary artifact mute (cosine fades + tail zero)
          └── PrecomputedAckClipCache hits for known ack phrases
@@ -2438,7 +2452,7 @@ ProjectResolver path.
       └── Moondream2VLM.unload() (drops _model + _tokenizer)
    b. (If OpenClaw client present) plugin disable: desktop-control + windows-control
    c. (Optional) Docker Desktop toggle if toggle_docker=true
-3. ~2.3 GB VRAM freed (4.4 GB -> 2.1 GB Ultron contribution; net headroom for game)
+3. ~2.3 GB VRAM freed (4.4 GB -> 2.1 GB Kenning contribution; net headroom for game)
 4. Bus publishes GamingEngagedEvent + VRAMReclaimedEvent
 5. Disengage (voice or explicit): reverse the chain (LLM restored, Parakeet server
    respawned in background, Kokoro moved back to CUDA, VLM lazy-reloads on demand)
@@ -2466,7 +2480,7 @@ publisher (any subsystem) -> publish(EventDef, properties)
    b. CodingIntent classification (intent.classify)
    c. ProjectResolver resolves "my flask app" → Project
       OR new_sandbox_project(name) creates a fresh dir
-   d. UltronMCPServer.create_session(project_root, intent)
+   d. KenningMCPServer.create_session(project_root, intent)
    e. CodingTaskRunner.start_task(TaskRequest)
       → DirectClaudeCodeBridge.submit() spawns:
          claude --print --output-format stream-json --include-partial-messages
@@ -2577,7 +2591,7 @@ External call (Brave, Jina) → CircuitBreaker.call(_do_X, ...)
 
 ## Source modules
 
-### `src/ultron/__init__.py`
+### `src/kenning/__init__.py`
 
 **Purpose:** package init. On Windows, adds CUDA runtime DLL directories to
 the loader path so llama-cpp / ctranslate2 find `cudart64_12.dll`,
@@ -2585,15 +2599,15 @@ the loader path so llama-cpp / ctranslate2 find `cudart64_12.dll`,
 
 **No public API** beyond import side effects.
 
-### `src/ultron/__main__.py`
+### `src/kenning/__main__.py`
 
-**Purpose:** `python -m ultron` entry point.
+**Purpose:** `python -m kenning` entry point.
 
 **Public:**
 - `main() -> int` — sets up logging, acquires the single-instance
   guard (2026-06-12: `lifecycle/single_instance.py`; a duplicate
   launch prints the holder PID and returns exit code 3 BEFORE any
-  model load; `ULTRON_ALLOW_MULTIPLE_INSTANCES=1` bypasses), builds an
+  model load; `KENNING_ALLOW_MULTIPLE_INSTANCES=1` bypasses), builds an
   `Orchestrator`, calls `.run()` until KeyboardInterrupt, releases the
   lock in a `finally`. Exit codes: 0 ok / 1 startup-or-run failure /
   2 missing model / 3 duplicate instance.
@@ -2601,7 +2615,7 @@ the loader path so llama-cpp / ctranslate2 find `cudart64_12.dll`,
 **In:** environment + config.yaml (via Orchestrator construction).
 **Out:** stdout console transcript, log files.
 
-### `src/ultron/config.py` (Phase 3)
+### `src/kenning/config.py` (Phase 3)
 
 **Purpose:** single source of truth for tunable parameters. Loads
 `config.yaml`, validates against pydantic schema, exposes singleton.
@@ -2633,10 +2647,10 @@ the loader path so llama-cpp / ctranslate2 find `cudart64_12.dll`,
   `WindowControlConfig`, `SafetyConfig` (+ rule toggles),
   `NotificationsConfig`, `HeartbeatConfig`, `BrowserConfig`,
   `MediaGenerationConfig`
-- `UltronConfig` — top-level model
-- `load_config(path=None) -> UltronConfig` — explicit load (raises `ConfigurationError`)
-- `get_config() -> UltronConfig` — singleton, lazy-load on first call
-- `reload_config(path=None) -> UltronConfig` — clear cache, reload
+- `KenningConfig` — top-level model
+- `load_config(path=None) -> KenningConfig` — explicit load (raises `ConfigurationError`)
+- `get_config() -> KenningConfig` — singleton, lazy-load on first call
+- `reload_config(path=None) -> KenningConfig` — clear cache, reload
 - `set_config(cfg) -> None` — test injection
 - `current_config_path() -> Path | None`
 - `LLM_PRESETS: dict[str, dict]` (4B plan Stage A) — preset table for
@@ -2650,9 +2664,9 @@ the loader path so llama-cpp / ctranslate2 find `cudart64_12.dll`,
   always win.
 
 **In:** `config.yaml`, `${ENV_VAR}` substitution from `os.environ`.
-**Out:** typed `UltronConfig` instance.
+**Out:** typed `KenningConfig` instance.
 
-### `src/ultron/bus/` (2026-05-22 session E)
+### `src/kenning/bus/` (2026-05-22 session E)
 
 **Purpose:** in-process typed pub/sub. Ported from opencode's
 `packages/opencode/src/bus/` with the eager-subscribe race fix.
@@ -2685,7 +2699,7 @@ guarded by `RLock`; recursive publish/subscribe from callbacks is safe.
 **Fail-open:** callback exceptions caught + logged; schema mismatches
 delivered with WARN.
 
-### `src/ultron/channels.py` (2026-05-19 Track 6)
+### `src/kenning/channels.py` (2026-05-19 Track 6)
 
 **Purpose:** Channel enum + metadata used by `ConversationMemory` write
 payload + future channel-aware retrieval.
@@ -2696,7 +2710,7 @@ payload + future channel-aware retrieval.
 - `Channel.from_str(value) -> Channel` (with `OTHER` fallback for
   forward-compat with legacy payloads)
 
-### `src/ultron/local_clock_reply.py` (2026-05-20)
+### `src/kenning/local_clock_reply.py` (2026-05-20)
 
 **Purpose:** short-circuits bare time/date queries from the system clock
 without ever invoking the LLM or web search. ~5 ms reply path.
@@ -2710,7 +2724,7 @@ without ever invoking the LLM or web search. ~5 ms reply path.
   `_TIME_IN_LOCATION_GATE_RE` to force SEARCH).
 - `_CITY_TIMEZONES: dict[str, str]` — public for testability.
 
-### `src/ultron/latency_hygiene.py` (2026-05-19)
+### `src/kenning/latency_hygiene.py` (2026-05-19)
 
 **Purpose:** process-level latency hygiene helpers: process-priority
 boost, GC tuning, LLM/embedder warmup.
@@ -2721,7 +2735,7 @@ boost, GC tuning, LLM/embedder warmup.
 - `warmup_llm_engine(engine)` / `warmup_embedder(embedder)` —
   trigger first-load on a background thread
 
-### `src/ultron/trace.py` (2026-05-20 Round 6)
+### `src/kenning/trace.py` (2026-05-20 Round 6)
 
 **Purpose:** thread-local turn_id + phase tag + structured tlog/phase
 helpers. Every log line in a user utterance carries `turn=N phase=X`
@@ -2736,14 +2750,14 @@ in order.
 - `phase(name: str)` — context manager setting phase for its scope
 - `fmt(value) -> str` — short formatter for kv emission
 
-### `src/ultron/intent/recognizer.py` (2026-05-22)
+### `src/kenning/intent/recognizer.py` (2026-05-22)
 
 **Purpose:** engine-agnostic semantic intent matcher. Wraps
 `moonshine_voice.IntentRecognizer` with lazy load, fail-open semantics,
 and a thread-safe registry that replays registrations on model load.
 
 **Public:**
-- `UltronIntentRecognizer(model="embeddinggemma-300m", variant="q4", threshold=0.65)`
+- `KenningIntentRecognizer(model="embeddinggemma-300m", variant="q4", threshold=0.65)`
   - `.register(name, phrase, *, threshold=None)` — append a recognised
     intent (replayed on first model load)
   - `.process_utterance(text) -> Optional[IntentMatch]` — fail-open;
@@ -2751,18 +2765,18 @@ and a thread-safe registry that replays registrations on model load.
   - `.is_loaded() -> bool`
 - `IntentMatch(name, phrase, similarity, threshold)`
 - `IntentRegistration(name, phrase, threshold)`
-- `get_intent_recognizer() -> Optional[UltronIntentRecognizer]` /
+- `get_intent_recognizer() -> Optional[KenningIntentRecognizer]` /
   `set_intent_recognizer(rec)` — module-level singleton accessors
 
 **In:** Gemma-300M q4 embedding model (~300 MB CPU RAM, loaded once)
 plus registered phrases from `config.yaml:intent.phrases`.
 
-### `src/ultron/errors.py` (Phase 4)
+### `src/kenning/errors.py` (Phase 4)
 
 **Purpose:** typed exception hierarchy for every external dependency.
 
 **Public hierarchy:**
-- `UltronError` (base) — has `message`, `context: dict`, `recovery: str`,
+- `KenningError` (base) — has `message`, `context: dict`, `recovery: str`,
   `with_recovery()`, `with_context()`, `to_log_dict()`
 - `DependencyUnavailableError` (subclass)
   - `BraveAPIError`, `JinaReaderError`, `QdrantUnavailableError`,
@@ -2777,21 +2791,21 @@ plus registered phrases from `config.yaml:intent.phrases`.
 **Out:** caught by orchestrator + structured-logged via `ErrorLog`.
 
 **Wired call sites (Phase 4 deferred wrappers, complete):**
-- `ClaudeCodeError` + `AnthropicAPIError`: [coding/direct_bridge.py](../src/ultron/coding/direct_bridge.py)
+- `ClaudeCodeError` + `AnthropicAPIError`: [coding/direct_bridge.py](../src/kenning/coding/direct_bridge.py)
   — launch failure, subprocess timeout, nonzero exit, stream-json error
   events. The pattern detector `_looks_like_anthropic_api_error` decides
   between the two based on error text (rate_limit / overloaded /
   invalid_api_key / etc.).
-- `MCPServerError`: [coding/mcp_server.py](../src/ultron/coding/mcp_server.py)
+- `MCPServerError`: [coding/mcp_server.py](../src/kenning/coding/mcp_server.py)
   — bind failure (`raise … from OSError`), startup timeout, no-active-session
   on Claude tool call. `FilesystemError` covers the audit-log write path.
-- `FilesystemError`: [coding/audit.py](../src/ultron/coding/audit.py),
-  [coding/projects.py](../src/ultron/coding/projects.py),
-  [coding/runner.py](../src/ultron/coding/runner.py) — session audit
+- `FilesystemError`: [coding/audit.py](../src/kenning/coding/audit.py),
+  [coding/projects.py](../src/kenning/coding/projects.py),
+  [coding/runner.py](../src/kenning/coding/runner.py) — session audit
   mkdir/write, project registry load/save, coding-tasks audit-log
   (first-failure dedup via `_AUDIT_WRITE_FAILURE_LOGGED` flag).
 
-### `src/ultron/uncertainty.py`
+### `src/kenning/uncertainty.py`
 
 **Purpose:** annotate user prompt with hedging hints based on the
 pre-flight gate's uncertainty signals.
@@ -2811,7 +2825,7 @@ pre-flight gate's uncertainty signals.
 **In:** `GateVerdict` from `web_search.gating`, raw user text.
 **Out:** `(verdict, augmented_prompt)`.
 
-### `src/ultron/response_style.py` (2026-05-10)
+### `src/kenning/response_style.py` (2026-05-10)
 
 **Purpose:** per-call response-style addenda, prepended to the user's
 text before it reaches the LLM. Lives OUTSIDE the persona file
@@ -2839,13 +2853,13 @@ are the Orcs in 40k?" → 1164-char four-paragraph essay in the
 **In:** raw user text. **Out:** possibly-augmented user text (newline-
 separated above the original).
 
-**Wired at:** [pipeline/orchestrator.py](../src/ultron/pipeline/orchestrator.py)
+**Wired at:** [pipeline/orchestrator.py](../src/kenning/pipeline/orchestrator.py)
 `Orchestrator._build_response_stream` — applied on the non-search
 conversational path (search path's augmented prompt has its own
 length directive). Three call sites: web-gate-disabled fall-through,
 web-gate-failure fall-through, NO_SEARCH verdict path.
 
-### `src/ultron/conversational_ack.py` (2026-05-12)
+### `src/kenning/conversational_ack.py` (2026-05-12)
 
 **Purpose:** filler-acknowledgment source for the no-search
 conversational branch. Masks the ~2.5 s perceived gap between
@@ -2856,7 +2870,7 @@ Whisper completing. End-to-end latency unchanged; perceived latency
 drops sharply. The web-search path has its own ack
 (`web_search.acknowledgments.AcknowledgmentSource`) that describes
 external activity; this module's phrases are tonally non-committal
-(read as Ultron deliberating). The two pools rotate independently.
+(read as Kenning deliberating). The two pools rotate independently.
 
 **Public:**
 - `_CONVERSATIONAL_PHRASES: List[str]` — module-level phrase pool.
@@ -2880,7 +2894,7 @@ external activity; this module's phrases are tonally non-committal
   - `next_phrase() -> str` — same contract as
     `AcknowledgmentSource.next_phrase`.
 
-**Wired at:** [pipeline/orchestrator.py](../src/ultron/pipeline/orchestrator.py)
+**Wired at:** [pipeline/orchestrator.py](../src/kenning/pipeline/orchestrator.py)
 - `Orchestrator.__init__` constructs `self.conv_ack_source = ConversationalAckSource()`.
 - `Orchestrator._maybe_conversational_ack(user_text) -> Optional[str]`
   helper threads pending-clarification state through the gate and
@@ -2892,7 +2906,7 @@ external activity; this module's phrases are tonally non-committal
   path is untouched (already yields its own ack from
   `web_search.acknowledgments.AcknowledgmentSource`).
 
-### `src/ultron/desktop/` (Desktop automation native primitives)
+### `src/kenning/desktop/` (Desktop automation native primitives)
 
 NEW package backing the "open YouTube on monitor 2", "show me a picture of golden retriever",
 "explain what I'm looking at" voice flows. Built native (no ClawHub plugin dependencies)
@@ -2924,7 +2938,7 @@ via `pywinauto`; same screenshot capability as `desktop-control` via `mss`.
 - `get_active_window_title() -> Optional[str]` (2026 catalog 08 T6) -- lightweight foreground-window title probe. Returns the title or None; cheaper than :func:`get_foreground_window` because it skips the psutil process-name lookup, monitor-index computation, and rect enumeration. Fail-open at every Win32 call.
 - `class CloseWindowResult` (2026 catalog 08 T6) -- frozen result: success + window + method (`wm_close` / `kill_tree`) + suspected_unsaved + error.
 - :data:`UNSAVED_CHANGES_TITLE_HINTS` (2026 catalog 08 T6) -- 5-entry editor convention list (`*`, `[modified]`, `(modified)`, VS Code dot, em-dash modified suffix) used by :func:`_title_suggests_unsaved_changes`.
-- `close_window(partial_title, *, force=False, user_text="", prefer_monitor=None, exclude_cloaked=True) -> CloseWindowResult` (2026 catalog 08 T6) -- graceful window-close. Resolves target via :func:`find_window`; runs Cap-3 safety validator with `tool_name=desktop.window.close` + window title + process name + suspected_unsaved in arguments; posts a graceful `WM_CLOSE` via `win32gui.PostMessage` so the app's own close hook fires (editors with unsaved changes surface their save prompt). `force=True` escalates to :func:`ultron.subprocess.kill_tree.kill_process_tree`. `suspected_unsaved` on the result reflects whether the title matched the heuristic so callers can gate the close behind a two-phase voice confirmation.
+- `close_window(partial_title, *, force=False, user_text="", prefer_monitor=None, exclude_cloaked=True) -> CloseWindowResult` (2026 catalog 08 T6) -- graceful window-close. Resolves target via :func:`find_window`; runs Cap-3 safety validator with `tool_name=desktop.window.close` + window title + process name + suspected_unsaved in arguments; posts a graceful `WM_CLOSE` via `win32gui.PostMessage` so the app's own close hook fires (editors with unsaved changes surface their save prompt). `force=True` escalates to :func:`kenning.subprocess.kill_tree.kill_process_tree`. `suspected_unsaved` on the result reflects whether the title matched the heuristic so callers can gate the close behind a two-phase voice confirmation.
 
 #### `desktop/placement.py`
 
@@ -2953,10 +2967,10 @@ via `pywinauto`; same screenshot capability as `desktop-control` via `mss`.
 - `find_element(window, *, query, control_type, automation_id, exact) -> Optional[UIAElement]` -- search by name / automation_id / control_type.
 - `click_element(window, query, ...) -> UIAActionResult` -- find + `click_input()`. Goes through Cap-3 action-verb-click rule (NEEDS_EXPLICIT_INTENT on `"Submit"` / `"Pay"` / `"Send Money"` etc.) and Cap-3 OAuth/payment URL detection on window title.
 - `type_text_into_element(window, query, text, ..., clear_first=True) -> UIAActionResult` -- find + `set_text()` (preferred) or `type_keys()` fallback. Same Cap-3 safety hook.
-- Lazy pywinauto import so `import ultron.desktop` doesn't pay the COM cost; failure returns None / empty list.
+- Lazy pywinauto import so `import kenning.desktop` doesn't pay the COM cost; failure returns None / empty list.
 - `class UIElementInfo` (2026 catalog 08 T2) -- frozen snapshot for the interactive-element inventory: name, control_type, automation_id, enabled, rect (physical pixels), center (physical-pixel integer pair), value (truncated for Edit/Document; empty otherwise).
 - `get_ui_element_inventory(window, *, control_types=None, max_elements=200, max_depth=8, value_truncate=100) -> dict[str, list[UIElementInfo]]` (2026 catalog 08 T2) -- categorised inventory walk. Buckets descendants into ``buttons`` / ``links`` / ``menu_items`` / ``list_items`` / ``tabs`` / ``checkboxes`` / ``radio_buttons`` / ``text_fields`` (Edit + Document) / ``dropdowns`` (ComboBox) / ``other``. Edit + Document admitted without a name (their value carries the content); buttons / links / etc. require a non-empty name. Optional ``control_types`` allowlist for narrow scans; ``value_truncate=0`` skips value capture entirely. Empty buckets are stripped. Fail-open at per-element + per-tree-walk granularity. GREEN read-only primitive -- the desktop equivalent of ``project_introspect.snapshot`` for UI surfaces.
-- `wait_for_text_in_window(text, partial_window_title, *, timeout_s=30.0, interval_s=0.5, case_insensitive=True, max_elements=200, max_depth=8, sleep_fn=None, clock_fn=None) -> bool` (2026 catalog 08 T4) -- synchronous UIA-tree polling barrier. Polls :func:`enumerate_windows` + :func:`collect_window_text` each iteration looking for substring presence in any window matching the title filter. ``sleep_fn`` / ``clock_fn`` injection for deterministic tests; deadline-clamped final sleep so the loop never overshoots. Empty needle returns True immediately; non-positive timeout returns False. Fail-open per-window. ``DEFAULT_WAIT_TIMEOUT_S`` / ``DEFAULT_WAIT_INTERVAL_S`` mirror :mod:`ultron.desktop.windows` defaults.
+- `wait_for_text_in_window(text, partial_window_title, *, timeout_s=30.0, interval_s=0.5, case_insensitive=True, max_elements=200, max_depth=8, sleep_fn=None, clock_fn=None) -> bool` (2026 catalog 08 T4) -- synchronous UIA-tree polling barrier. Polls :func:`enumerate_windows` + :func:`collect_window_text` each iteration looking for substring presence in any window matching the title filter. ``sleep_fn`` / ``clock_fn`` injection for deterministic tests; deadline-clamped final sleep so the loop never overshoots. Empty needle returns True immediately; non-positive timeout returns False. Fail-open per-window. ``DEFAULT_WAIT_TIMEOUT_S`` / ``DEFAULT_WAIT_INTERVAL_S`` mirror :mod:`kenning.desktop.windows` defaults.
 - `class BrowserContent` + `class BrowserLink` (2026 catalog 08 T5) -- frozen dataclasses for structured browser content extraction. :class:`BrowserContent` carries page_title + browser_name + headings + text + buttons (`UIElementInfo`) + links (`BrowserLink`) + inputs + images + truncated + elapsed_ms. :class:`BrowserLink` is name + url + center + enabled.
 - :data:`BROWSER_NAMES` (2026 catalog 08 T5) -- tuple of 7 lowercase browser-title substrings (chrome / firefox / edge / brave / opera / vivaldi / arc) used for case-insensitive title heuristic detection.
 - `is_browser_window(title) -> bool` (2026 catalog 08 T5) -- single-window title heuristic helper.
@@ -3078,7 +3092,7 @@ Bridges :class:`RoutingIntent` (kinds APP_LAUNCH + SCREEN_CONTEXT_QUERY) to the 
 - `class AppLaunchVoiceResult` / `class ScreenContextVoiceResult` -- frozen result types. 2026-06-12: AppLaunchVoiceResult gains `window_appeared` (mirrors LaunchResult).
 - `handle_app_launch(intent) -> AppLaunchVoiceResult` -- dispatches an :class:`AppLaunchIntent` to :class:`AppLauncher`. Resolves the monitor (index OR directional via `find_monitor`); chooses `launch_chrome(url=...)` for Chrome+URL combos and `launch_app(...)` for everything else; threads `user_text` into the safety validator. Returns a short in-character voice line. 2026-06-12 honesty fix: when `result.window_appeared is False` the spoken line says the window didn't appear (naming the requested monitor when one was asked for) instead of the old false "Opening that on monitor N." fallback; the legacy mon_phrase elif remains only for duck-typed results lacking the field.
 - `handle_screen_context_query(intent) -> ScreenContextVoiceResult` -- builds a :class:`ScreenContextSnapshot` via `build_screen_context(include_vlm=intent.include_vlm)` and returns its `render_for_llm()` text for prompt injection.
-- `handle_window_move(intent) -> WindowMoveVoiceResult` (2026-05-14 third pass) -- finds an existing window matching ``intent.window_query`` via :func:`ultron.desktop.windows.find_window` and moves it to ``intent.monitor_index`` (or ``intent.monitor_query`` resolved via :func:`find_monitor`) using :func:`move_window_to_monitor`. Distinct from APP_LAUNCH which would spawn a new process.
+- `handle_window_move(intent) -> WindowMoveVoiceResult` (2026-05-14 third pass) -- finds an existing window matching ``intent.window_query`` via :func:`kenning.desktop.windows.find_window` and moves it to ``intent.monitor_index`` (or ``intent.monitor_query`` resolved via :func:`find_monitor`) using :func:`move_window_to_monitor`. Distinct from APP_LAUNCH which would spawn a new process.
 - `handle_window_close(intent) -> WindowCloseVoiceResult` (2026-05-14 third pass) -- finds an existing window matching ``intent.window_query`` (optionally restricted to a monitor via ``intent.monitor_query``) and posts ``WM_CLOSE`` via :func:`win32gui.PostMessage`. Graceful close path -- lets the app prompt to save if it wants. Used for "close my YouTube tab", "close Discord on my right monitor", etc.
 
 #### `desktop/preferences.py` (Phase 10 preference learning)
@@ -3091,7 +3105,7 @@ User-preference persistence so "open YouTube" picks up "monitor 2 + maximize" th
 - `record_launch_preference(...)` -- one-call helper for the voice handler.
 - Wired at `CapabilityVoiceController._handle_app_launch`: utterances without explicit monitor target consult the logger first; matching prior preference's monitor + flags become the defaults.
 
-### `src/ultron/audio/`
+### `src/kenning/audio/`
 
 #### `audio/capture.py`
 - `class AudioCaptureError(RuntimeError)` — raised on device init failure
@@ -3188,7 +3202,7 @@ config (default ON).
 
 A process-wide hard kill-switch for every OS-interaction surface,
 built for kernel-level anticheats (Vanguard/EAC/BattlEye). While
-active, Ultron cannot inject input, capture the screen, read pixels /
+active, Kenning cannot inject input, capture the screen, read pixels /
 templates / OCR, walk UIA trees, automate the clipboard / dialogs /
 elements, manipulate or launch windows, drive the browser CDP, or use
 the bridge's desktop tools — while the AUDIO pipeline stays fully
@@ -3211,7 +3225,7 @@ process).
 - Analyzed and deliberately NOT blocked (documented in the module
   docstring): audio capture/playback, `nvidia-smi` global GPU queries
   (same surface as MSI Afterburner), `psutil` self-scoped process
-  management (Ultron's OWN children / own priority only — no foreign
+  management (Kenning's OWN children / own priority only — no foreign
   process handles), shell-level window-metadata reads
   (`enumerate_windows` / `get_foreground_window` — the gaming-mode
   game detector needs them; same API the taskbar uses).
@@ -3249,7 +3263,7 @@ process).
 #### `settings_gui/` (NEW 2026-06-11 — voice-launched control panel)
 
 "Pull up your settings" / "open the control panel" spawns a DETACHED
-`python -m ultron.settings_gui` process; "close the settings" (or the
+`python -m kenning.settings_gui` process; "close the settings" (or the
 panel's Close button / window X) terminates it. Because the panel is a
 separate process the voice pipeline is untouched while it runs and
 byte-for-byte restored when it closes — zero residual resources.
@@ -3271,8 +3285,8 @@ byte-for-byte restored when it closes — zero residual resources.
   "what are your settings?" never matches), `launch_gui` (detached
   spawn, fail-open None), `close_gui` (kill_process_tree, fail-open).
 - `app.py` (UI layer, untested by design — no GUI windows in the
-  sweep): tkinter dark theme (near-black + Ultron crimson), scrollable
-  two-column card grid, a LIVE LOG panel streaming `logs/ultron.log`
+  sweep): tkinter dark theme (near-black + Kenning crimson), scrollable
+  two-column card grid, a LIVE LOG panel streaming `logs/kenning.log`
   (level-colored, filter box, pause, bounded to ~2000 lines, daemon
   tail thread), bottom bar with pending-change count + APPLY UPDATE +
   CLOSE. Update = comment-preserving patch + reload signal; ↻-marked
@@ -3308,7 +3322,7 @@ music", "what's playing", "turn it up", "play my focus playlist",
 "queue blinding lights"). Driven by `spotify` config (default ON).
 
 - `auth.py`: credentials load from a GITIGNORED file OUTSIDE the repo
-  (`spotify.credentials_path`, default `~/.ultron/spotify.json` —
+  (`spotify.credentials_path`, default `~/.kenning/spotify.json` —
   client_id / client_secret / redirect_uri / refresh_token); the secret
   NEVER enters the tree. `SpotifyAuth.access_token()` does the
   authorization-code refresh-token flow (injectable `post_fn`; caches
@@ -3342,7 +3356,7 @@ music", "what's playing", "turn it up", "play my focus playlist",
 #### `audio/relay_speech.py` (NEW 2026-06-11 — teammate voice relay)
 
 Speak a message to OTHER PEOPLE through a secondary output device.
-"Ultron, tell my teammates they should be smoking mid window" is an
+"Kenning, tell my teammates they should be smoking mid window" is an
 instruction to DELIVER a spoken line into the game voice chat, not a
 conversational prompt (previously it fell through to the LLM and got
 role-played). Driven by `relay_speech` config (default ON).
@@ -3362,13 +3376,13 @@ role-played). Driven by `relay_speech` config (default ON).
   relays; `RelayCommand.addressee` carries the display-cased name and
   the rephrase prompt opens with it. **Compose mode:** "give my team
   (some) encouragement / a pep talk" / "encourage my team" / "hype up
-  my squad" sets `RelayCommand.compose=True` — Ultron AUTHORS an
+  my squad" sets `RelayCommand.compose=True` — Kenning AUTHORS an
   original line instead of relaying a literal message. The rephrase
   prompt also instructs first-person preservation, so "tell my team I
   am lurking" relays as "I'm lurking" and "tell my team that I am
-  Ultron..." delivers the self-introduction verbatim in spirit.
+  Kenning..." delivers the self-introduction verbatim in spirit.
 - `build_relay_line(command, llm, *, rephrase, max_chars, generate_fn)` —
-  converts reported speech into the line Ultron speaks DIRECTLY to the
+  converts reported speech into the line Kenning speaks DIRECTLY to the
   teammates (second person, ≤2 short sentences) via a small
   `generate_stream(record_history=False, enable_thinking=False)` rephrase.
   Fail-open: any LLM problem returns the deterministic "Team: <payload>"
@@ -3387,7 +3401,7 @@ role-played). Driven by `relay_speech` config (default ON).
   untouched.
 - Typical wiring: `output_device: "Voicemeeter Aux Input"`; in VoiceMeeter
   route that strip to the same B-bus as the microphone (e.g. B2) and set
-  the game's input to that bus — teammates hear Ultron through the mic
+  the game's input to that bus — teammates hear Kenning through the mic
   channel.
 - **Conversational layer:** `build_relay_line(..., recent_lines=...)`
   feeds the session's last ≤6 spoken relay lines into the prompt with an
@@ -3396,11 +3410,11 @@ role-played). Driven by `relay_speech` config (default ON).
   (`_relay_recent_lines`, deque maxlen 6, lazily created). **No wake word
   inside the window:** the follow-up addressing gate short-circuits via
   `Orchestrator._is_relay_command` — a strict relay match is
-  definitionally addressed to Ultron, so it bypasses the zero-shot
+  definitionally addressed to Kenning, so it bypasses the zero-shot
   classifier (fixes the observed 0.75-conf drop; saves ~190 ms) — and
   relay turns hold the follow-up window open for
   `relay_speech.follow_up_seconds` (default 120 s vs the ~30 s warm
-  window), so after one "Ultron, …" the whole in-game conversation flows
+  window), so after one "Kenning, …" the whole in-game conversation flows
   bare: "ask sage for a heal", "tell them nice try", …
 - **Isolated generation + token hygiene (2026-06-11 live game-chat
   incident):** the rephrase call passes `suppress_memory_context=True`
@@ -3452,7 +3466,7 @@ role-played). Driven by `relay_speech` config (default ON).
 
 #### `audio/wake_word.py`
 - `class WakeWordDetector` — openWakeWord wrapper
-  - Loads `models/openwakeword/ultron.onnx` (custom)
+  - Loads `models/openwakeword/kenning.onnx` (custom)
   - Falls back to `hey_jarvis` with startup warning if missing
   - `predict(audio_block) -> Optional[str]` — fires a wake event
   - `fired_recently(window_s: float = 0.5) -> bool` (V1-gap A4) — read-only accessor for the last trigger timestamp; returns True iff a wake fire happened within ``window_s`` seconds. Used by the orchestrator's pre-task barge-in watcher. Idempotent — does not consume the trigger.
@@ -3503,7 +3517,7 @@ VAD" rather than misclassifying.
   is the single seam between config and runtime that the orchestrator
   uses; no other call site constructs a detector directly.
 
-### `src/ultron/addressing/`
+### `src/kenning/addressing/`
 
 #### `addressing/rules.py`
 - `class AddressingDecision(str, Enum)` — ADDRESSED / NOT_ADDRESSED / UNCERTAIN
@@ -3522,13 +3536,13 @@ VAD" rather than misclassifying.
   - `classify(utterance, seconds_since_response) -> AddressingVerdict`
   - `_log(utterance, verdict)` → writes to `logs/addressing.jsonl`
 
-### `src/ultron/transcription/whisper_engine.py`
+### `src/kenning/transcription/whisper_engine.py`
 
 - `class WhisperEngine` — faster-whisper wrapper, CUDA fp16
   - `transcribe(audio: np.ndarray, language="en") -> str`
   - On failure: returns `""`, logs `WhisperTranscriptionError` to errors.jsonl
 
-### `src/ultron/llm/inference.py`
+### `src/kenning/llm/inference.py`
 
 - `_strip_thinking_blocks(stream)` — filter `<think>...</think>` from token stream (streaming path).
 - `strip_thinking_text(text) -> str` (2026-05-14 second pass) — same filter as a pure-function pass over a fully-materialised string. Applied inside :meth:`LLMEngine.generate` (blocking path) before returning; unterminated `<think>` (truncation / cancel) drops everything from the opening tag onward (better to lose tail than leak chain-of-thought).
@@ -3546,13 +3560,13 @@ VAD" rather than misclassifying.
   - `_chat_completion_kwargs(_llm_cfg, enable_thinking, *, stream)` (4B plan Stage F; 2026-05-14 third pass rewrite) — static helper that builds the kwargs dict for `Llama.create_chat_completion`. Returns ONLY the four sampling params + optional ``stream`` flag — NEVER emits ``chat_template_kwargs`` because the pinned llama-cpp-python 0.3.22 doesn't accept it (passing it raises ``TypeError``). The thinking-mode toggle is applied to the user message instead via :meth:`_apply_no_think_marker`. The HTTP runtime's payload-building code still emits ``chat_template_kwargs`` because llama-cpp-server (separate codebase) does accept it.
   - `_apply_no_think_marker(messages, enable_thinking) -> list` (2026-05-14 third pass) — staticmethod that appends ``/no_think`` to the last user message when ``enable_thinking is False``. Qwen3 / Qwen3.5 chat templates inspect the user message for this marker and skip the ``<think>...</think>`` block. ``enable_thinking=None`` (default) and ``True`` are no-ops. Returns a copy of ``messages`` — never mutates the original. Replaces the previous ``chat_template_kwargs`` mechanism which crashed against the real llama-cpp-python signature.
   - `_build_llama(cfg, model_path, n_ctx, n_gpu_layers) -> (Llama, Path)` (4B plan voice-swap) — pure constructor that builds + returns a fresh `Llama` instance per `cfg`. Does NOT mutate `self`. Used by `_init_in_process` and `reload_for_preset`.
-  - `reload_for_preset(preset: str) -> (bool, str)` (4B plan voice-swap) — hot-swap the loaded LLM to `preset` without restarting Ultron. Builds the new `Llama` FIRST so a failed swap (missing GGUF, invalid preset) leaves the engine in its working state. On success: history cleared, `ULTRON_LLM_PRESET` env updated, stale `ULTRON_LLM_MODEL_PATH` cleared. On failure: env vars restored. Idempotent (`already on X` returns success without rebuild). `in_process` runtime only.
+  - `reload_for_preset(preset: str) -> (bool, str)` (4B plan voice-swap) — hot-swap the loaded LLM to `preset` without restarting Kenning. Builds the new `Llama` FIRST so a failed swap (missing GGUF, invalid preset) leaves the engine in its working state. On success: history cleared, `KENNING_LLM_PRESET` env updated, stale `KENNING_LLM_MODEL_PATH` cleared. On failure: env vars restored. Idempotent (`already on X` returns success without rebuild). `in_process` runtime only.
   - `generate(user_message, *, enable_thinking=None)` and `generate_stream(user_message, *, enable_thinking=None, record_history=True)` (4B plan Stage F + 2026-05-18 latency pass 3 Phase 3) — per-call thinking mode parameter, plus `record_history` on the streaming variant. When `record_history=False`, the end-of-stream auto-record is skipped so callers can defer history commit to after they've confirmed the response was actually consumed (used by the orchestrator's speculative-LLM path).
   - `record_completed_turn(user_message, response)` (2026-05-18 latency pass 3 Phase 3) — public commit hook for the deferred-history pattern. No-op on empty input. Used by `Orchestrator._collect_speculative_llm`'s commit closure after the buffered tokens have been drained to TTS.
 
 **In:** user text + (optional) `ConversationMemory` for RAG. **Out:** generated text.
 
-### `src/ultron/memory/`
+### `src/kenning/memory/`
 
 #### `memory/embedder.py`
 - `class _SparseVec` — thin wrapper over BM25 sparse output
@@ -3644,7 +3658,7 @@ Module is I/O-free. Callers wire their own persistence (Qdrant payload, JSONL au
 - `compute_composite_score(candidate, *, weights, primary_dense, picked, now=None)` — weighted blend.
 - `select_top_k(candidates, *, k, weights, primary_dense=None, now=None) -> List[CandidateScore]` — greedy redundancy-aware selection.
 
-### `src/ultron/web_search/`
+### `src/kenning/web_search/`
 
 #### `web_search/acknowledgments.py`
 - `class AcknowledgmentSource` — shuffled-pool phrase generator (8 phrases)
@@ -3735,7 +3749,7 @@ Module is I/O-free. Callers wire their own persistence (Qdrant payload, JSONL au
 - `_parse_json_list` / `_dedupe_subqueries` — tolerant JSON extraction + dedup helpers.
 - **Wired** in `Orchestrator._maybe_handle_deep_research` (run-loop short-circuit, NO new `RoutingIntentKind`): acks, runs the loop, then synthesizes + streams the answer through the same LLM->TTS path `_respond` uses. Gated by `deep_research.enabled` (default ON; per-turn opt-in via the matcher, so the normal sub-second search path is untouched). Config: top-level `deep_research.{enabled, max_steps, max_sub_queries_per_step, top_n_per_query, max_accumulated_sources}`.
 
-### `src/ultron/tts/`
+### `src/kenning/tts/`
 
 #### `tts/precomputed_ack.py` (NEW 2026-05-15 latency pass)
 
@@ -3821,10 +3835,10 @@ while populating, subsequent turns hit.
     `finally` block.
   - `stop()` — interrupt current playback
 
-#### `tts/ultron_filter.py` (NEW 2026-05-10 voice swap)
+#### `tts/kenning_filter.py` (NEW 2026-05-10 voice swap)
 
-Runtime port of the user-tuned v3 Ultron mechanical filter chain (the
-prototype lives at `ultronVoiceAudio/scripts/ultron_filter.py`).
+Runtime port of the user-tuned v3 Kenning mechanical filter chain (the
+prototype lives at `kenningVoiceAudio/scripts/kenning_filter.py`).
 Built on `pedalboard` (Spotify's open-source DSP library; sub-ms
 overhead per stage on CPU).
 
@@ -3902,8 +3916,8 @@ orchestrator playback path (the producer-signaled lookahead in
     rewrite TTS-hostile patterns (2026-05-19), POSTs `/synthesize`,
     accumulates the streamed PCM, optionally runs `trim_phantom_tail`
     (gated on `phantom_tail_trim_enabled`; 2026-05-19 short-clip
-    guard at 800 ms), applies the v3 Ultron filter via
-    `ultron_filter.apply_filter(..., tail_silence_ms=200)`, returns
+    guard at 800 ms), applies the v3 Kenning filter via
+    `kenning_filter.apply_filter(..., tail_silence_ms=200)`, returns
     `(int16 pcm, sr)` matching the legacy engine's contract.
   - `_http_synthesize(text)` — raw HTTP call; reads chunked PCM
     body and returns `np.ndarray(int16)`. POST JSON body carries
@@ -3919,14 +3933,14 @@ orchestrator playback path (the producer-signaled lookahead in
     SIGTERM, then SIGKILL. Called by the orchestrator's `shutdown()`.
 
 The XTTS HTTP server itself lives at
-[ultronVoiceAudio/scripts/xtts_server.py](../ultronVoiceAudio/scripts/xtts_server.py)
+[kenningVoiceAudio/scripts/xtts_server.py](../kenningVoiceAudio/scripts/xtts_server.py)
 in the isolated `.venv-xtts` venv. FastAPI + uvicorn; uses an async
 producer + asyncio.Queue pattern to bridge XTTS's sync streaming
 generator into the FastAPI response without sync-generator
 threadpool overhead (saved ~140 ms TTFT vs the naive sync-gen
 implementation).
 
-### `src/ultron/coding/` (Phase A foundation + Coding Addendum + Phase 2 projections)
+### `src/kenning/coding/` (Phase A foundation + Coding Addendum + Phase 2 projections)
 
 #### `coding/audit.py`
 - `class SessionAuditWriter` — per-session `logs/sessions/<id>.jsonl` writer
@@ -3956,7 +3970,7 @@ implementation).
 - `_DETERMINER_NOUN` (private regex fragment, NEW 2026-05-11 follow-up fix): `(the|that|this|your|our|my)(?:\s+(task|project|build|app|code|work|thing|run|job))?`. Plugged into all three sub-patterns of `_PROGRESS_PATTERNS` (`how X going|coming(along)?`, `what's X doing|working on|up to`, `is X done`) so phrasings like "How is that **project** going?" / "How's the **build** coming along?" / "Is **my project** done?" classify as `PROGRESS_QUERY` instead of falling through to the conversational LLM. The noun is optional so the legacy `that going` / `the doing` phrasings still fire bit-identical. The has_active_task gate is preserved so these patterns never hijack ordinary conversation.
 
 #### `coding/important_files.py` (NEW 2026-05-22 catalog batch 1)
-- `IMPORTANT_FILENAMES: frozenset[str]` — bare filenames (README, pyproject.toml, package.json, .gitignore, Dockerfile, Cargo.toml, etc.) plus ultron extensions (CLAUDE.md, MEMORY.md, SOUL.md, THIRD_PARTY_NOTICES.md, config.yaml, uv.lock, ruff.toml, ...)
+- `IMPORTANT_FILENAMES: frozenset[str]` — bare filenames (README, pyproject.toml, package.json, .gitignore, Dockerfile, Cargo.toml, etc.) plus kenning extensions (CLAUDE.md, MEMORY.md, SOUL.md, THIRD_PARTY_NOTICES.md, config.yaml, uv.lock, ruff.toml, ...)
 - `IMPORTANT_RELATIVE_PATHS: frozenset[str]` — full project-relative paths (`docs/codebase_structure.md`, `.github/workflows`, etc.)
 - `is_important(path) -> bool` — match by basename, full relative path, or `.github/workflows/` prefix; handles Windows backslashes
 - `filter_important(paths) -> List[str]` — order-preserving filter
@@ -4206,14 +4220,14 @@ implementation).
 - `class DecisionPath(str, Enum)` — RULE_ESCALATE / RULE_DEFAULT / RULE_ANSWER / FACT_ANSWER (V1-gap A3) / LLM_ANSWER / LLM_DEFAULT / LLM_ESCALATE / USER_ANSWER / TIMEOUT_DEFAULT
 - `class ClarificationDecision`, `AdjustmentDecision`, `PendingUserClarification`, `_FactAnswer` (V1-gap A3, internal) — dataclasses
 - `class ConversationCoordinator`
-  - `__init__(store, llm, *, ..., facts_lookup=None)` — V1-gap A3: optional callable that reads the Qdrant `facts` collection. Wired by the orchestrator to `UltronMCPServer.lookup_facts`.
+  - `__init__(store, llm, *, ..., facts_lookup=None)` — V1-gap A3: optional callable that reads the Qdrant `facts` collection. Wired by the orchestrator to `KenningMCPServer.lookup_facts`.
   - `decide_clarification(session_id, request, session) -> str` — answer or escalate. V1-gap A3: a high-confidence directive-category fact short-circuits the LLM call (Fast-path 2.5 between preference-options and always-answer rules).
   - `decide_adjustment(session_id, adjustment_text) -> AdjustmentDecision`
   - `handle_declare_complete(session_id) -> str` — runs Verifier, drives correction loop
   - `pending_user_clarifications() -> List[PendingUserClarification]`
 
 #### `coding/mcp_server.py`
-- `class UltronMCPServer`
+- `class KenningMCPServer`
   - `__init__(*, host, port, sse_path, log_path, clarification_timeout_s, session_audit_dir=None, memory=None)` — V1-gap A3: `memory` kwarg threads a live `ConversationMemory` so `lookup_facts` queries Qdrant. `None` preserves the test-isolation no-op.
   - In-process Python tools (called by Qwen via `get_config().coding.mcp.host:port`):
     - `create_session()`, `get_full_state()` (Python only), `get_status_delta()`,
@@ -4298,7 +4312,7 @@ implementation).
   orchestrator's `_maybe_handle_run_program` run-loop short-circuit (with
   `_announce_pending_run_report` draining the async run summary).
 
-### `src/ultron/openclaw_routing/` (Phase 5)
+### `src/kenning/openclaw_routing/` (Phase 5)
 
 #### `openclaw_routing/intents.py`
 - `class RoutingIntentKind(str, Enum)` — **23 values**: CONVERSATIONAL, CODE_TASK, PROGRESS_QUERY, CANCEL, MID_SESSION_ADJUSTMENT, CLARIFICATION_RESPONSE, BROWSER_AUTOMATION, MEDIA_GENERATION, MESSAGING, FILE_OPERATION, SHELL_OPERATION, HYBRID_TASK, MODEL_SWITCH (4B plan), SYSTEM_STATUS (Phase 13), GAMING_MODE (V1-gap A1), DESKTOP_AUTOMATION (V1-gap C3), WINDOW_AUTOMATION (V1-gap C3), APP_LAUNCH (Phase 8 desktop), SCREEN_CONTEXT_QUERY (Phase 8 desktop), WINDOW_MOVE (2026-05-14 third pass), WINDOW_CLOSE (2026-05-14 third pass), **OPEN_LAST_SOURCE** (2026-05-22 opens cited URL from last search-augmented turn; supports ordinal "the second one" + referent "the NBC story" + embedding-similarity match), **NAVIGATE_TO_SITE** (2026-05-22 queries SearxNG + scores top-10 domains + opens best match)
@@ -4370,9 +4384,9 @@ implementation).
 - `get_routing_log() -> RoutingDecisionLog` — singleton
 - `set_routing_log(log)` — test injection
 
-### `src/ultron/openclaw_bridge/` (OpenClaw Phase 1 + 3 foundations)
+### `src/kenning/openclaw_bridge/` (OpenClaw Phase 1 + 3 foundations)
 
-The bridge layer between Ultron and the OpenClaw Gateway peer. Voice
+The bridge layer between Kenning and the OpenClaw Gateway peer. Voice
 pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
 
 #### `openclaw_bridge/persona.py` (Phase 1)
@@ -4386,14 +4400,14 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
     changed; cheap.
   - `get_system_prompt(mode="user_facing") -> str` — composes per mode.
 - `PromptMode = Literal["user_facing", "background", "heartbeat", "bootstrap"]`
-  - `user_facing` — IDENTITY + SOUL + USER. Voice path; full Ultron
+  - `user_facing` — IDENTITY + SOUL + USER. Voice path; full Kenning
     character.
   - `background` — AGENTS only, prefixed with internal-worker framing.
     For heartbeat preflight, cron, summarization, tool selection.
   - `heartbeat` — HEARTBEAT only.
   - `bootstrap` — BOOTSTRAP only.
 - `default_workspace_dir() -> Path` — resolves
-  `~/.openclaw/workspace/` or `ULTRON_OPENCLAW_WORKSPACE` env override.
+  `~/.openclaw/workspace/` or `KENNING_OPENCLAW_WORKSPACE` env override.
 - `class PersonaBundle` / `PersonaFile` — dataclasses with
   fingerprint (`(name, mtime_ns, size)`) for change detection.
 - HTML-comment-only files (e.g., a placeholder USER.md with
@@ -4422,7 +4436,7 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
   HTTP endpoints — the CLI is the documented public surface, so the
   bridge invokes it via `asyncio.create_subprocess_exec`.
   - `discover_cli(override) -> str` — explicit override → env var
-    (`ULTRON_OPENCLAW_CLI`) → PATH → Windows npm-global default.
+    (`KENNING_OPENCLAW_CLI`) → PATH → Windows npm-global default.
   - `health(timeout_s)` — wraps `openclaw health --json`.
   - `send_message(channel, target, text)` — wraps
     `openclaw message send --channel ... --target ... --message ...
@@ -4436,7 +4450,7 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
     :class:`OpenClawToolError` when the agent reports the tool is
     unavailable.
   - `mcp_list / mcp_show / mcp_set / mcp_unset` — config helpers
-    used by :class:`UltronMcpRegistrar`.
+    used by :class:`KenningMcpRegistrar`.
   - `enable_plugin(plugin_id)` / `disable_plugin(plugin_id)` /
     `list_plugins(*, enabled_only=False)` (V1-gap A1) — wrap
     `openclaw plugins enable / disable / list --json`. Returns
@@ -4492,7 +4506,7 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
 
 #### `openclaw_bridge/mcp_registration.py` (Phase 3.2)
 
-- `class UltronMcpRegistrar` — registers Ultron's MCP server with
+- `class KenningMcpRegistrar` — registers Kenning's MCP server with
   OpenClaw via `openclaw mcp set`. Idempotent: re-running with the
   same payload is a no-op (`already_registered=True`). Fail-open:
   failures return a `RegistrationResult` with `error` set rather
@@ -4505,7 +4519,7 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
   - `schedule_retry(interval_s, on_success, max_attempts)` —
     coroutine for background retry. Caller wraps with
     `asyncio.create_task`.
-- Integration deviation: the integration spec assumed Ultron's MCP
+- Integration deviation: the integration spec assumed Kenning's MCP
   is stdio. Reality is SSE (in-process). The registrar is
   config-driven — `openclaw.bridge.mcp_server_command` defaults to
   `None`, deferring registration. When set (e.g. when a stdio
@@ -4528,7 +4542,7 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
     retry thread.
   - `shutdown()` — stops the retry thread and the event receiver.
     Deliberately leaves the MCP entry registered so OpenClaw can
-    spawn Ultron's MCP across restarts.
+    spawn Kenning's MCP across restarts.
   - `fire_and_forget(coro_factory)` (Phase 4) — schedules a
     coroutine on a daemon thread for off-hot-path dispatch from
     the sync orchestrator loop (used by coding-completion
@@ -4577,7 +4591,7 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
 - `class BrowserTool` — thin facade over
   :meth:`OpenClawClient.invoke_tool` for browser primitives.
   Each method assembles a structured prompt asking the OpenClaw
-  ``ultron-main`` agent to use the browser tool with specific
+  ``kenning-main`` agent to use the browser tool with specific
   parameters; the wrapper unpacks the agent response into a typed
   dataclass.
   - `navigate(url)` → :class:`NavigateResult` (best-effort title
@@ -4593,7 +4607,7 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
 
 #### `openclaw_bridge/mcp_tools.py` (Phase 13)
 
-- Stdio MCP server exposing Ultron's read-mostly tools to OpenClaw
+- Stdio MCP server exposing Kenning's read-mostly tools to OpenClaw
   agents. Each tool is a plain Python function callable from
   Python tests; FastMCP registration in :func:`build_server`
   wires them up for stdio dispatch.
@@ -4609,7 +4623,7 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
 - Lazy-imports heavy dependencies; no torch / LLM at startup so
   the spawned process is light.
 - :func:`run_stdio` is the entry point invoked by
-  ``scripts/run_ultron_mcp_for_openclaw.py``.
+  ``scripts/run_kenning_mcp_for_openclaw.py``.
 
 #### `openclaw_bridge/desktop.py` (V1-gap C3)
 
@@ -4633,7 +4647,7 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
 - Failure-safe: disk read failures degrade to "no information"
   voice messages; never raises.
 
-### `src/ultron/pipeline/orchestrator.py`
+### `src/kenning/pipeline/orchestrator.py`
 
 - `class State(Enum)` — IDLE / CAPTURING / PROCESSING / FOLLOW_UP_LISTENING
 - `class Orchestrator` — main event loop
@@ -4669,14 +4683,14 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
     when an OpenClaw-bound intent fires. Cleaned up in `shutdown()`
     via `self.openclaw_bridge.shutdown()`.
   - `_load_browser_use_if_enabled()` (2026-05-30 catalog 10, orchestrator.py:892) — constructs the `BrowserUseTool` + `BrowserSessionsManager` singletons from `config.browser_use` at startup, right after `_load_desktop_vlm_if_enabled()`. Cheap + lazy + fail-open: discovery of the external `browser-use` binary is deferred to first call, and any construction failure leaves the tier disabled without touching the voice path.
-  - `_init_telemetry_store()` (orchestrator.py:958) + `_emit_turn_telemetry(...)` (orchestrator.py:994) + `_latency_bucket(latency_ms)` (static, orchestrator.py:978) (2026-05-30 wiring pass, openclaw-clawhub T15) — `_init_telemetry_store` builds the `observability.PrivateMetricsStore` at startup; `_emit_turn_telemetry` runs in `_respond`'s `finally` and records ONE aggregate `HashedEvent` per turn (routing-intent kind under the `category` safe key + `searched` bool + numeric `latency_ms` + `tier` bucket + `outcome`). **FAIL-PRIVATE:** `record_event` no-ops unless `ULTRON_TELEMETRY=opt-in`, so the default build emits nothing; the privacy gate is intentionally NOT covered by the fail-open default. Fail-open on top: any emit error is swallowed at debug level. `_latency_bucket` labels are kept ≤12 chars to pass the raw-path leak check.
+  - `_init_telemetry_store()` (orchestrator.py:958) + `_emit_turn_telemetry(...)` (orchestrator.py:994) + `_latency_bucket(latency_ms)` (static, orchestrator.py:978) (2026-05-30 wiring pass, openclaw-clawhub T15) — `_init_telemetry_store` builds the `observability.PrivateMetricsStore` at startup; `_emit_turn_telemetry` runs in `_respond`'s `finally` and records ONE aggregate `HashedEvent` per turn (routing-intent kind under the `category` safe key + `searched` bool + numeric `latency_ms` + `tier` bucket + `outcome`). **FAIL-PRIVATE:** `record_event` no-ops unless `KENNING_TELEMETRY=opt-in`, so the default build emits nothing; the privacy gate is intentionally NOT covered by the fail-open default. Fail-open on top: any emit error is swallowed at debug level. `_latency_bucket` labels are kept ≤12 chars to pass the raw-path leak check.
   - `_mint_forensic_token(...)` (orchestrator.py:1121) (2026-05-30 wiring pass, openclaw-clawhub T7) — registers an idempotent trusted-caller tuple then mints a short-lived HS256 JWT at the MCP-server start (`mcp:tools`) and gaming-engage (`voice:gaming-engage`, revoke-by-expiry on disengage) boundaries. Forensic / defense-in-depth in the single-user in-process runtime (minter + verifier share the trust boundary, so this is not a hard gate), audit-logged to `data/identity/short_lived_tokens.jsonl`, fail-open (returns None on any error).
   - `_init_report_queue()` (orchestrator.py:1040) + `_maybe_handle_report_concern(user_text)` (orchestrator.py:1059) (2026-05-30 wiring pass, openclaw-clawhub T12) — `_init_report_queue` opens the hash-chained `data/feedback/reports.jsonl` at startup (fail-open). `_maybe_handle_report_concern` runs in the run loop BEFORE routing: `feedback.report_intent.match_report_concern` (strict regex, no LLM round-trip) turns a spoken "log a concern" / "flag that response" into a filed `Report` (target = the prior turn via `_last_response_text`) and speaks an ack; returns True to short-circuit the turn. "report on the weather" does NOT trip it.
 
 **In:** mic input (sounddevice), config.yaml, models on disk.
 **Out:** speaker output (sounddevice), all audit logs.
 
-### `src/ultron/resilience/` (Phase 4)
+### `src/kenning/resilience/` (Phase 4)
 
 #### `resilience/circuit_breaker.py`
 - `class CircuitState(str, Enum)` — CLOSED / OPEN / HALF_OPEN
@@ -4697,13 +4711,13 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
 - `phrase_for(failure_mode: str) -> Optional[str]` — shuffled cycle from `config.error_phrases.<mode>`
 - `reset_phrase_cache()` — test-only
 
-### `src/ultron/utils/`
+### `src/kenning/utils/`
 
 #### `utils/heartbeat.py` (2026 catalog 11 T2)
 - `class HeartbeatThread(target, *, interval_s=60.0, name="heartbeat", on_error=None, run_immediately=False, clock=time.monotonic)` — stoppable daemon-thread keep-alive for any long-lived connection (browser-use daemon, Parakeet server, OpenClaw bridge). `start()` (idempotent) / `stop(*, timeout=2.0)` (idempotent, returns the loop immediately via `Event.wait`) / `is_alive()` / `stats() -> HeartbeatStats`. Fail-open: target + on_error exceptions are counted + recorded, never propagated. Generalises + hardens the upstream's unstoppable `while True: time.sleep` keep-alive.
 - `@dataclass(frozen=True) HeartbeatStats` — running / beats_sent / errors / last_error / started_at.
 - `DEFAULT_HEARTBEAT_INTERVAL_S=60.0`, `DEFAULT_STOP_TIMEOUT_S=2.0`.
-- **In:** a cheap no-op callable + interval. **Out:** a background liveness ping + observable counters. No module singleton (each consumer owns its instance). Importable primitive (no current hot-path consumer — ultron's daemons self-respawn on the next call).
+- **In:** a cheap no-op callable + interval. **Out:** a background liveness ping + observable counters. No module singleton (each consumer owns its instance). Importable primitive (no current hot-path consumer — kenning's daemons self-respawn on the next call).
 
 #### `utils/health_check.py` (2026 catalog 11 T4)
 - `http_health_check(url, *, timeout_s=2.0, expected_status=200, get_fn=None) -> HealthCheckResult` — cheap GET pre-flight; reachable iff the endpoint answers `expected_status` (or any 2xx when `expected_status=None`). Fail-open (any exception → reachable=False + error).
@@ -4712,7 +4726,7 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
 
 #### `utils/logging.py`
 - `configure_logging(level=None, log_file=None) -> None` — idempotent
-- `get_logger(name) -> logging.Logger` — namespaced under `ultron.`
+- `get_logger(name) -> logging.Logger` — namespaced under `kenning.`
 
 #### `utils/fairseq_compat.py`
 - `patch_fairseq_dataclasses()` — workaround for fairseq's invalid omegaconf metadata
@@ -4762,7 +4776,7 @@ Bounded-retry polling primitive ported from OpenHands'
 - `apoll_until(fn_or_coro, *, is_done, max_attempts, delay_seconds, backoff_factor, max_delay_seconds, cancel_check=None) -> PollResult[T]` — async variant; cooperative `cancel_check` callable lets the voice path abandon a long poll when the user resumes speaking.
 - Defaults `DEFAULT_MAX_ATTEMPTS=4`, `DEFAULT_DELAY_SECONDS=3.0`, `DEFAULT_BACKOFF_FACTOR=1.0`, `DEFAULT_MAX_DELAY_SECONDS=60.0` mirror the OpenHands constants.
 
-### `src/ultron/parsing/` (2026-05-24 OpenHands batch 1, T11)
+### `src/kenning/parsing/` (2026-05-24 OpenHands batch 1, T11)
 
 YAML frontmatter parser. Used by skills + projects + rule conditionals.
 
@@ -4772,7 +4786,7 @@ YAML frontmatter parser. Used by skills + projects + rule conditionals.
 - `parse_frontmatter(path) -> FrontmatterResult` — file wrapper.
 - `walk_directory_with_frontmatter(root, *, suffixes=(".md",), skip_dirs=frozenset(), skip_files=frozenset()) -> Iterator[tuple[Path, FrontmatterResult]]` — recursive walk with filterable dir/file skips.
 
-### `src/ultron/install/` (2026-05-24 OpenHands batch 1, T8)
+### `src/kenning/install/` (2026-05-24 OpenHands batch 1, T8)
 
 Marker-comment idempotent installer with audit log.
 
@@ -4781,21 +4795,21 @@ Marker-comment idempotent installer with audit log.
 - `@dataclass(frozen=True) InstallResult` — `path`, `action`, `marker`, `bytes_written`, `reason` (per-action explanation).
 - `@dataclass(frozen=True) InstallLogEntry` + `class InstallLogWriter` (JSONL writer with `logs/install_log.jsonl` default).
 - `set_install_log_writer(writer)` / module-level singleton.
-- `install_with_marker(target: Path, content: str, *, marker: str = "# INSTALLED-BY-ULTRON-3f9a7d2", policy: str = "preserve_unmarked", encoding="utf-8", dry_run=False, audit_log_writer=None) -> InstallResult` — atomic temp-write + `os.replace`; UUID-suffixed marker prevents collisions when two installers race on the same file; explicit `policy ∈ {refuse, preserve, replace}` for unmarked existing files; `dry_run=True` reports without writing.
+- `install_with_marker(target: Path, content: str, *, marker: str = "# INSTALLED-BY-KENNING-3f9a7d2", policy: str = "preserve_unmarked", encoding="utf-8", dry_run=False, audit_log_writer=None) -> InstallResult` — atomic temp-write + `os.replace`; UUID-suffixed marker prevents collisions when two installers race on the same file; explicit `policy ∈ {refuse, preserve, replace}` for unmarked existing files; `dry_run=True` reports without writing.
 
-### `src/ultron/projects/` (2026-05-24 OpenHands batch 7, T7)
+### `src/kenning/projects/` (2026-05-24 OpenHands batch 7, T7)
 
-Per-project `.ultron/` configuration discovery.
+Per-project `.kenning/` configuration discovery.
 
 #### `projects/discovery.py`
-- `DEFAULT_PROJECT_CONFIG_DIRNAME = ".ultron"`.
+- `DEFAULT_PROJECT_CONFIG_DIRNAME = ".kenning"`.
 - `class ProjectConfigField(str, Enum)` — `SKILLS_DIR` / `SETUP_SCRIPT` / `PRE_COMMIT_SCRIPT` / `IDENTITY_OVERRIDE` / `SAFETY_RULES` / `TEST_COMMAND` / `VOICEPACK_OVERRIDE` / `INTENT_TRIGGERS` / `HOOKS`.
 - `@dataclass(frozen=True) ProjectDiscoveryStats` — `repo_root`, `config_dir`, `files_checked`, `files_found`, `parse_errors`, `duration_seconds`.
 - `@dataclass(frozen=True) ProjectConfig` — `repo_root` / `config_dir` / `discovered_at` + 9 optional fields (`skills_dir`, `setup_script`, `pre_commit_script`, `identity_override`, `safety_rules`, `test_command`, `voicepack_override`, `intent_triggers`, `hooks`) + their `*_path` siblings + `raw_paths` mapping + `parse_errors` tuple. `has_any_field` boolean shortcut + `get_path(field)` lookup.
-- `discover_project_config(repo_root, *, use_cache=True) -> ProjectConfig` — never raises; per-file errors land in `parse_errors`. Mtime-cached keyed by `(repo_root, .ultron mtime)`.
+- `discover_project_config(repo_root, *, use_cache=True) -> ProjectConfig` — never raises; per-file errors land in `parse_errors`. Mtime-cached keyed by `(repo_root, .kenning mtime)`.
 - `invalidate_discovery_cache(repo_root=None)` — drop entry (or all when `None`).
 
-### `src/ultron/services/` (2026-05-24 OpenHands batch 8, T6)
+### `src/kenning/services/` (2026-05-24 OpenHands batch 8, T6)
 
 Sync Injector ABC + state + registry. Future per-mode router seed.
 
@@ -4809,11 +4823,11 @@ Sync Injector ABC + state + registry. Future per-mode router seed.
 - `install_default_injectors(*, registry=None, stt_injector=None, tts_injector=None) -> InjectorRegistry` — registers starter STT + TTS injectors on the singleton registry; missing args fall to the default `build_stt_engine_injector()` + `build_tts_engine_injector()`.
 
 #### `services/engine_injectors.py`
-- `@dataclass STTEngineInjector(Injector[Any])` — `standby_factory` + `gaming_factory`; `inject(state)` switches by `state.get("mode", "standby")`; default falls through to `ultron.transcription.make_stt_engine()`.
-- `@dataclass TTSEngineInjector(Injector[Any])` — same shape; default falls through to `ultron.tts.make_tts_engine()` returning `(rvc, engine)` tuple.
+- `@dataclass STTEngineInjector(Injector[Any])` — `standby_factory` + `gaming_factory`; `inject(state)` switches by `state.get("mode", "standby")`; default falls through to `kenning.transcription.make_stt_engine()`.
+- `@dataclass TTSEngineInjector(Injector[Any])` — same shape; default falls through to `kenning.tts.make_tts_engine()` returning `(rvc, engine)` tuple.
 - `build_stt_engine_injector(*, standby_factory=None, gaming_factory=None)` / `build_tts_engine_injector(...)` factory helpers.
 
-### `src/ultron/skills/` (2026-05-24 OpenHands batch 2, T1)
+### `src/kenning/skills/` (2026-05-24 OpenHands batch 2, T1)
 
 Trigger-loaded knowledge bundles. Three sources merged with PROJECT > USER > PUBLIC precedence.
 
@@ -4826,7 +4840,7 @@ Trigger-loaded knowledge bundles. Three sources merged with PROJECT > USER > PUB
 - `maybe_get_skills_block(user_text, *, max_matches=6, min_user_text_chars=8, max_block_chars=8000) -> str` — convenience wrapper called from `LLMEngine._build_messages` when `skills.enabled: true`.
 - `build_default_registry(*, project_root, user_home=None, extra_project_dirs=(), disabled_skills=(), always_on_only=False, default_min_user_text_chars=8, max_matches_per_turn=6) -> SkillRegistry` — orchestrator-side factory wiring the three default sources + config overrides.
 
-### `src/ultron/events/` (2026-05-24 OpenHands batches 3 + 4, T2 + T3 + T13)
+### `src/kenning/events/` (2026-05-24 OpenHands batches 3 + 4, T2 + T3 + T13)
 
 Canonical event store + bus sink + per-event hash chain + callbacks.
 
@@ -4858,7 +4872,7 @@ Canonical event store + bus sink + per-event hash chain + callbacks.
 - `export_session_to_path(store, session_id, path)` — disk variant.
 
 #### `events/bus_sink.py`
-- `class BusEventSink` — subscribes to the ultron bus, converts every published envelope to `StoredEvent` with per-session sequence counter, persists via the active `EventStore`, fires the `CallbackRegistry` after persistence.
+- `class BusEventSink` — subscribes to the kenning bus, converts every published envelope to `StoredEvent` with per-session sequence counter, persists via the active `EventStore`, fires the `CallbackRegistry` after persistence.
 - `install_bus_sink(store, callback_registry=None) -> BusEventSink` — orchestrator-side wiring helper.
 
 #### `events/callbacks.py` (T3)
@@ -4880,7 +4894,7 @@ Canonical event store + bus sink + per-event hash chain + callbacks.
 - `class SkillActivatorProcessor` — toggles a skill name based on payload condition.
 - `build_default_processors() -> list[CallbackProcessor]` — returns one of each built-in.
 
-### `src/ultron/lifecycle/` (2026-05-23 OpenHands batches 6, T5 + T16)
+### `src/kenning/lifecycle/` (2026-05-23 OpenHands batches 6, T5 + T16)
 
 Typed start-task state machine + pending-message queue.
 
@@ -4901,15 +4915,15 @@ Typed start-task state machine + pending-message queue.
 
 #### `lifecycle/single_instance.py` (NEW 2026-06-12 — single-instance guard)
 
-Two simultaneous `python -m ultron` processes both grabbed the mic and
+Two simultaneous `python -m kenning` processes both grabbed the mic and
 double-responded (and the second collided on the embedded Qdrant lock
 and the MCP port-19761 bind). The guard refuses a duplicate launch at
 the entrypoint, BEFORE any model load.
 
-- `DEFAULT_LOCK_PATH` — `<PROJECT_ROOT>/data/.ultron_instance.lock`
+- `DEFAULT_LOCK_PATH` — `<PROJECT_ROOT>/data/.kenning_instance.lock`
   (CWD-independent; falls back to CWD-relative `data/` if the config
   package can't be imported). Gitignored.
-- `ALLOW_MULTIPLE_ENV = "ULTRON_ALLOW_MULTIPLE_INSTANCES"` — `"1"`
+- `ALLOW_MULTIPLE_ENV = "KENNING_ALLOW_MULTIPLE_INSTANCES"` — `"1"`
   bypasses the guard (returns a no-op "bypass" lock).
 - `class InstanceLock` — `path` / `mode` (`"msvcrt"` / `"fcntl"` /
   `"pidfile"` / `"bypass"`) / `pid`; `release()` idempotent, never
@@ -4931,7 +4945,7 @@ the entrypoint, BEFORE any model load.
   with EACCES while the holder is alive).
 - `is_another_instance_running(path=None) -> Optional[int]` — probe
   helper; returns the holder PID or None; never leaves the lock held.
-- Wired in `src/ultron/__main__.py main()`: acquire before the banner
+- Wired in `src/kenning/__main__.py main()`: acquire before the banner
   + Orchestrator construction; duplicate prints/logs a one-line
   message naming the holder PID + returns exit code 3; the lock
   releases in a `finally` around the whole run. Orchestrator is
@@ -4941,7 +4955,7 @@ the entrypoint, BEFORE any model load.
   `tests/test_main_single_instance.py` (4, entrypoint integration
   with a hermetic logging fixture).
 
-### `src/ultron/llm/condensers/` (2026-05-23 OpenHands batch 5, T4)
+### `src/kenning/llm/condensers/` (2026-05-23 OpenHands batch 5, T4)
 
 Swappable history compression. Five concrete condensers + factory + intent selector.
 
@@ -4984,7 +4998,7 @@ Sections:
 - `addressing` (follow_up_enabled, **warm_mode_duration_seconds: 30.0** ← user override, NOT 10s; rule_confidence_threshold, **zero_shot_addressed_min_confidence: 0.80** [NEW 2026-05-11: demotes low-confidence zero-shot YES verdicts to NOT_ADDRESSED via default_silent; catches the borderline third-person utterances flan-t5-small saturates on at 0.75. Set to 0.0 for legacy permissive behaviour.], zero_shot_model, log_path)
 - `coding` (enabled, bridge="direct", mcp.{host,port,...}, template_dir, prompt_token_budget, default/escalation models + thresholds, verification.{smoke,test,lint}_timeout, session_audit_dir, **token_budget_per_session=400000** [2026-05-11 bump from 100000 — new-project sessions burn 100k+ on tool exploration alone before writing files; 400k gives headroom while the 80% warning still fires. Paired with the 2026-05-11 narration honesty fix so users get an explicit "no files written" signal when budget is exhausted mid-exploration], claude_cli, sandbox_root, project_registry_path, audit_log_path, task_timeout, skip_permissions, **voice_task_require_testing=false** [NEW 2026-05-11 token-efficiency fix: was implicitly true via voice.py hardcode, which prepended a "MUST write tests, run, fix, re-run" preamble to every voice-dispatched Claude prompt and 3-5x'd the token spend. Default false lets small voice asks land lean. Users who want tests can say "with unit tests" in their voice request or flip this flag], **facts.{top_k=5, min_confidence=0.75, min_score=0.85, max_age_days=null}** [V1-gap A3], **pre_task_confirmation_enabled=false, pre_task_confirmation_max_words=30, pre_task_barge_in_window_seconds=0.5** [V1-gap A4])
 - `projections` (tokenizer, budgets.{clarification,status_delta,adjustment,correction,completion}_context, truncation_warning_threshold, log_truncations)
-- `tts` (**engine="piper_rvc" | "xtts_v3"** [NEW 2026-05-10 voice swap; default still legacy for back-compat], piper paths, sample_rate, sentence_flush_chars, length_scale, pause_ms, edge_fade_ms, **pipeline_parallel_enabled=true** [2026-05-09 Piper/RVC split], **speculative_stream_open_enabled=true** [2026-05-09], **speculative_stream_sample_rate=48000** [2026-05-10: was 40000 — actual Ultron RVC output is 48000 Hz, mismatch was forcing the close-and-reopen path on every turn], **output_low_latency_mode=true** [2026-05-09], rvc subsection, **xtts_v3 subsection** [server_python, server_script, reference_audio, host, port, filter_preset="v3_heavy", filter_tail_silence_ms=200, **speed=1.15** (NEW 2026-05-11 cadence tune; XTTS native default is 1.0 — production set to 1.15 for ~15% faster speech without slurring; adjusts synthesis duration tokens so the v3 pedalboard filter is unaffected; safe range ~0.7-1.4, schema-bounded to [0.5, 2.0]), **temperature=0.65** (NEW 2026-05-12 phantom-token mitigation: lowered from XTTS library default 0.75 to sharpen the duration-token distribution so the GPT head stops occasionally emitting fragmentary syllables at sentence ends; range [0.4, 1.0]; threaded through HTTP body to server-side `inference_stream(temperature=...)`; voice character bit-identical because timbre is set by the locked speaker embedding + the v3 filter chain), **phantom_tail_trim_enabled=true** (NEW 2026-05-12 defence-in-depth: client-side post-process that detects the specific phantom-token signature — sustained_speech → ≥150 ms silence → <200 ms event → silence to buffer end — and trims everything after the last sustained-speech region; runs BEFORE the v3 filter so the reverb tail decays normally into its tail_silence_ms padding; set false to disable for A/B), **phantom_tail_silence_threshold=0.005**, **phantom_tail_max_event_ms=200.0**, **phantom_tail_min_lead_silence_ms=150.0**])
+- `tts` (**engine="piper_rvc" | "xtts_v3"** [NEW 2026-05-10 voice swap; default still legacy for back-compat], piper paths, sample_rate, sentence_flush_chars, length_scale, pause_ms, edge_fade_ms, **pipeline_parallel_enabled=true** [2026-05-09 Piper/RVC split], **speculative_stream_open_enabled=true** [2026-05-09], **speculative_stream_sample_rate=48000** [2026-05-10: was 40000 — actual Kenning RVC output is 48000 Hz, mismatch was forcing the close-and-reopen path on every turn], **output_low_latency_mode=true** [2026-05-09], rvc subsection, **xtts_v3 subsection** [server_python, server_script, reference_audio, host, port, filter_preset="v3_heavy", filter_tail_silence_ms=200, **speed=1.15** (NEW 2026-05-11 cadence tune; XTTS native default is 1.0 — production set to 1.15 for ~15% faster speech without slurring; adjusts synthesis duration tokens so the v3 pedalboard filter is unaffected; safe range ~0.7-1.4, schema-bounded to [0.5, 2.0]), **temperature=0.65** (NEW 2026-05-12 phantom-token mitigation: lowered from XTTS library default 0.75 to sharpen the duration-token distribution so the GPT head stops occasionally emitting fragmentary syllables at sentence ends; range [0.4, 1.0]; threaded through HTTP body to server-side `inference_stream(temperature=...)`; voice character bit-identical because timbre is set by the locked speaker embedding + the v3 filter chain), **phantom_tail_trim_enabled=true** (NEW 2026-05-12 defence-in-depth: client-side post-process that detects the specific phantom-token signature — sustained_speech → ≥150 ms silence → <200 ms event → silence to buffer end — and trims everything after the last sustained-speech region; runs BEFORE the v3 filter so the reverb tail decays normally into its tail_silence_ms padding; set false to disable for A/B), **phantom_tail_silence_threshold=0.005**, **phantom_tail_max_event_ms=200.0**, **phantom_tail_min_lead_silence_ms=150.0**])
 - `logging` (file, level, format, datefmt)
 - `error_phrases` (13 pools — qdrant_unavailable, brave_unavailable, jina_unavailable, anthropic_unavailable, rvc_unavailable, openclaw_unavailable, piper_unavailable, whisper_repeated_failures, addressing_classifier_failure, wake_word_model_failure, mcp_server_lost, claude_code_subprocess_failed, config_invalid)
 - `routing` (llm_disambiguation_enabled, hybrid_task_decomposition_enabled, disambiguation_question_template, routing_log_path, classifier subsection, stub_responses_enabled)
@@ -4994,7 +5008,7 @@ Sections:
 - `window_control` (V1-gap C3) — enabled=false, default_action_timeout_seconds, plugin_slug, tool_slug_focus / tool_slug_click / tool_slug_type
 - `browser_use` (2026-05-30 catalog 10) — top-level section for the external `browser-use` CLI browser-automation tier. **8 knobs, all default ON**: `enabled=true`, `binary_path=null` (null = auto-discover `browser-use`/`bu`/`browseruse` on PATH), `default_session=null`, `default_timeout_seconds=30.0`, `default_wait_timeout_ms=30000`, `max_sessions=3` (hard ceiling 16, enforced by `BrowserSessionsManager`), `headed=false`, `screen_context_fallback_enabled=true` (folds a best-effort browser-use page-state line into `screen_context` ONLY when UIA browser extraction is empty AND the tool has an active page). Fail-open: when the binary is absent every method returns a structured "not found" result, so default-ON costs nothing until both the binary is installed AND a browser action is requested.
 - `deep_research` (2026 catalog 12, felo-search T3) — top-level section for the bounded agentic deep-research loop over the FREE search ladder. **5 knobs, default ON**: `enabled=true`, `max_steps=3` (research rounds; the load-bearing AgentLoop cap), `max_sub_queries_per_step=3`, `top_n_per_query=3`, `max_accumulated_sources=8` (hard cap bounding the synthesis prompt). EXPLICIT per-turn opt-in via `match_deep_research` ("research X in depth" / "deep dive on X"); the normal sub-second search path is untouched. A deep-research turn runs several full searches (~10-18 s) and fails open at every layer.
-- `evolution` (2026 catalog 13, clawhub-capability-evolver clean-room) — top-level section for the bounded autonomous self-improvement subsystem. **5 knobs, default ON**: `enabled=true`, `max_steps=3` (AgentLoop step cap per cycle), `cycle_check_interval_turns=25` (recorded turns between autonomous-cycle checks; a cycle still only proposes when the distiller thresholds are met), `pause_on_demote=false` (demote a churny surface to propose-only rather than pausing it), `apply_temperament=true` (prepend the learned `[Tone: ...]` hint to turns via the system prompt). Maps to `EvolutionConfig`. Fail-open: a construction/runtime failure degrades to a disabled service (every per-turn hook becomes a no-op). Data-only proposals, Tier-3-walled, zero network/shell/eval — see the `src/ultron/evolution/` tree above + the THIRD_PARTY_NOTICES quarantined-source record. **2026 catalog 14 (clawhub-self-improving-agent) adds six more default-ON knobs:** `correction_detection_enabled` / `feature_request_capture_enabled` / `command_failure_capture_enabled` / `pre_turn_nudge_enabled` (bool, all true) + `pre_turn_nudge_max_chars` (240; ~<=50-token cap on the `[Evolution: ...]` nudge; 0 disables the cap) + `recurrence_threshold` (3; ge=2 le=20 -- the explicit distill-ready promote threshold). **2026 production-hardening (#15+#65 guardrail brake) adds five more default-ON knobs:** `guardrail_monitoring_enabled` (the per-turn metrics ring + post-apply re-check) + `guardrail_window_turns` (40; ge=5 le=500) + `guardrail_min_latency_samples` (5; ge=1 le=100) + `guardrail_min_rate_samples` (10; ge=1 le=200) + `post_apply_monitor_turns` (8; ge=1 le=100 -- turns a KEPT skill is watched before the relative pre-vs-post re-check that auto-reverts a regression).
+- `evolution` (2026 catalog 13, clawhub-capability-evolver clean-room) — top-level section for the bounded autonomous self-improvement subsystem. **5 knobs, default ON**: `enabled=true`, `max_steps=3` (AgentLoop step cap per cycle), `cycle_check_interval_turns=25` (recorded turns between autonomous-cycle checks; a cycle still only proposes when the distiller thresholds are met), `pause_on_demote=false` (demote a churny surface to propose-only rather than pausing it), `apply_temperament=true` (prepend the learned `[Tone: ...]` hint to turns via the system prompt). Maps to `EvolutionConfig`. Fail-open: a construction/runtime failure degrades to a disabled service (every per-turn hook becomes a no-op). Data-only proposals, Tier-3-walled, zero network/shell/eval — see the `src/kenning/evolution/` tree above + the THIRD_PARTY_NOTICES quarantined-source record. **2026 catalog 14 (clawhub-self-improving-agent) adds six more default-ON knobs:** `correction_detection_enabled` / `feature_request_capture_enabled` / `command_failure_capture_enabled` / `pre_turn_nudge_enabled` (bool, all true) + `pre_turn_nudge_max_chars` (240; ~<=50-token cap on the `[Evolution: ...]` nudge; 0 disables the cap) + `recurrence_threshold` (3; ge=2 le=20 -- the explicit distill-ready promote threshold). **2026 production-hardening (#15+#65 guardrail brake) adds five more default-ON knobs:** `guardrail_monitoring_enabled` (the per-turn metrics ring + post-apply re-check) + `guardrail_window_turns` (40; ge=5 le=500) + `guardrail_min_latency_samples` (5; ge=1 le=100) + `guardrail_min_rate_samples` (10; ge=1 le=200) + `post_apply_monitor_turns` (8; ge=1 le=100 -- turns a KEPT skill is watched before the relative pre-vs-post re-check that auto-reverts a regression).
 - `intent` (2026-05-22 semantic intent recognizer) — enabled (default TRUE), model="embeddinggemma-300m", variant="q4", threshold=0.65, phrases: list of `{name, phrase, threshold?}` (25 registered: 12 gaming-mode variants + 2 time/date + 11 "needs fresh data" / freshness intents)
 - `safety` (2026-05-12 Phases 2-5 runtime tool-call validator) — enabled (default TRUE), per-rule toggles via `rules.{rule_id}: bool`, sandbox_roots override, extra_protected_files / extra_protected_dirs, screen_cache_dir, approved_outbound_apis, audit_log_path
 - `coding.supervisor` (2026-05-22 supervisor stack) — eleven knobs:
@@ -5013,7 +5027,7 @@ Sections:
   - `enabled` (default FALSE; opt-in because the map adds 50-300 ms pre-dispatch latency)
   - `max_map_tokens=1024` (budget when at least one chat file is set)
   - `max_map_tokens_no_chat=8192` (budget when starting cold)
-  - `cache_dir="data/.ultron_repomap_cache"`
+  - `cache_dir="data/.kenning_repomap_cache"`
 - `memory.history_compression` (2026-05-22 catalog batch 3 tail-preserve compression) — three knobs:
   - `enabled` (default FALSE; opt-in because compression changes how history is fed to the LLM)
   - `max_tokens=1024` (target budget for the compressed history)
@@ -5035,12 +5049,12 @@ Compatibility shim that re-exports legacy `settings.X` constants from `get_confi
 ### `.env.example` (and the actual `.env` in main checkout)
 
 Env vars:
-- `ULTRON_BRAVE_API_KEY` — Brave Search API key (required for web search)
-- `ULTRON_LLM_MODEL_PATH` — opt-in override of GGUF path
-- `ULTRON_AUDIO_DEVICE` / `ULTRON_AUDIO_OUTPUT_DEVICE` — operator-specific device strings
-- `ULTRON_LOG_LEVEL` — console log level
-- `ULTRON_CODING_MCP_ALLOW_ANY_ROOT=1` — test-only sandbox escape
-- `ULTRON_CONFIG_PATH` — alternative config.yaml path
+- `KENNING_BRAVE_API_KEY` — Brave Search API key (required for web search)
+- `KENNING_LLM_MODEL_PATH` — opt-in override of GGUF path
+- `KENNING_AUDIO_DEVICE` / `KENNING_AUDIO_OUTPUT_DEVICE` — operator-specific device strings
+- `KENNING_LOG_LEVEL` — console log level
+- `KENNING_CODING_MCP_ALLOW_ANY_ROOT=1` — test-only sandbox escape
+- `KENNING_CONFIG_PATH` — alternative config.yaml path
 
 ---
 
@@ -5105,11 +5119,11 @@ All scripts assume venv active in main checkout (`C:\STC\ultronPrototype`). Work
 **Purpose:** unified test runner with pre-flight kill of competing pytest processes, live-streamed stdout, per-test 30 s timeout, slowest-10 report, clean Ctrl-C shutdown.
 **Run:** `python scripts/run_tests.py [tests/<subdir>] [-k pattern] [--fast] [--no-timeout] [--kill-only --yes]`
 **In:** pytest config (uses pyproject.toml addopts).
-**Out:** test pass/fail summary; preserves the live Ultron MCP server on port 19761.
+**Out:** test pass/fail summary; preserves the live Kenning MCP server on port 19761.
 
-### `scripts/segment_for_finetune.py` / `scripts/transcribe_ultron_reference.py` / `scripts/smoke_xtts_v3.py`
+### `scripts/segment_for_finetune.py` / `scripts/transcribe_kenning_reference.py` / `scripts/smoke_xtts_v3.py`
 
-**Purpose:** workshop helpers for the Kokoro fine-tune project (Stage 1 done, Stage 2 ep 0 only — see ultronVoiceAudio/). Segment a long voice recording into LJSpeech-shaped clips; transcribe a reference clip; smoke-test the XTTS v3 stack.
+**Purpose:** workshop helpers for the Kokoro fine-tune project (Stage 1 done, Stage 2 ep 0 only — see kenningVoiceAudio/). Segment a long voice recording into LJSpeech-shaped clips; transcribe a reference clip; smoke-test the XTTS v3 stack.
 
 ### `scripts/dump_session.py`
 
@@ -5184,13 +5198,13 @@ All scripts assume venv active in main checkout (`C:\STC\ultronPrototype`). Work
 
 ### `scripts/validate_config.py` (Foundation Part 7)
 
-**Purpose:** validate `config.yaml` against pydantic schema without starting Ultron.
+**Purpose:** validate `config.yaml` against pydantic schema without starting Kenning.
 **Run:** `python scripts/validate_config.py [path] [--print]`
 **Out:** stdout — "Configuration is valid." or detailed `ConfigurationError` with path + message + context. Exit 0 = valid, 1 = invalid.
 
 ### `scripts/start_llamacpp_server.py` (OpenClaw integration Phase 0 + 4B plan Stage C)
 
-**Purpose:** launch llama-cpp-server on `127.0.0.1:8765` with the same params as the in-process voice loader (n_ctx=8192, flash_attn, Q8_0 KV cache). Imports `ultron` first so bundled torch CUDA DLLs are found before `llama_cpp` initialises (Windows-specific quirk).
+**Purpose:** launch llama-cpp-server on `127.0.0.1:8765` with the same params as the in-process voice loader (n_ctx=8192, flash_attn, Q8_0 KV cache). Imports `kenning` first so bundled torch CUDA DLLs are found before `llama_cpp` initialises (Windows-specific quirk).
 **Run:** `python scripts/start_llamacpp_server.py [--n-ctx N] [--port P] [--api-key K] [--chat-format F] [--model-draft <path>] [--draft-num-pred-tokens N] [--from-config]`. The Stage C flags add speculative decoding (`--model-draft` + `--draft-num-pred-tokens`, mapped to llama-cpp-python's `draft_model` / `draft_model_num_pred_tokens`) and a `--from-config` overlay that reads model/draft/n_ctx from `config.yaml:llm` (preset-aware). CLI flags override the overlay. Pure-Python helpers `_build_arg_parser`, `_resolve_kwargs`, `_config_overlay` factor out the testable pieces.
 **Out:** uvicorn HTTP server on `--port` (default 8765); stays in foreground.
 
@@ -5218,14 +5232,14 @@ All scripts assume venv active in main checkout (`C:\STC\ultronPrototype`). Work
 
 ### `scripts/swap_llm_preset.py` (4B plan Stage H)
 
-**Purpose:** atomic preset swap — edits `config.yaml:llm.preset` in place after validating the requested preset's GGUFs are present. Supports `--list`, `--status`, `--dry-run`. The voice path can also be swapped at runtime via the `MODEL_SWITCH` intent ("Ultron, switch to the 9B"); this script is for off-orchestrator workflows.
+**Purpose:** atomic preset swap — edits `config.yaml:llm.preset` in place after validating the requested preset's GGUFs are present. Supports `--list`, `--status`, `--dry-run`. The voice path can also be swapped at runtime via the `MODEL_SWITCH` intent ("Kenning, switch to the 9B"); this script is for off-orchestrator workflows.
 **Run:** `python scripts/swap_llm_preset.py [--status | --list | <preset> [--dry-run]]`
 **In:** `config.yaml`, `models/*.gguf` (validation).
 **Out:** updated `config.yaml`; stdout reports the change.
 
 ### `scripts/verify_voice_character_4b.py` (4B plan Stage E)
 
-**Purpose:** interactive A/B helper that synthesises 5 representative voice queries through both the 4B and 9B presets so the operator can confirm Ultron's character is preserved. Approved 2026-05-08.
+**Purpose:** interactive A/B helper that synthesises 5 representative voice queries through both the 4B and 9B presets so the operator can confirm Kenning's character is preserved. Approved 2026-05-08.
 **Run:** `python scripts/verify_voice_character_4b.py`
 **In:** loads voice stack twice (once per preset).
 **Out:** plays audio + writes A/B comparison CSV.
@@ -5240,12 +5254,12 @@ All scripts assume venv active in main checkout (`C:\STC\ultronPrototype`). Work
 
 **Purpose:** single-process exhaustive harness for the comprehensive end-to-end test pass. Runs five phases in sequence — routing classifier accuracy on a 63-utterance labeled adversarial corpus spanning every `RoutingIntentKind`; web-gate rule classifier accuracy on 14 labeled queries; circuit-breaker state machine through CLOSED → OPEN → HALF_OPEN → CLOSED → reopen transitions; memory stress (4 threads × 50 turns ingested into a tmp Qdrant + 20 retrieval probes); V1-gap classifier-gating regression (utterances that used to short-circuit to OpenClaw stub when offline). No GPU / model loads — runs anywhere the venv resolves.
 **Run:** `python scripts/comprehensive_test_harness.py`
-**In:** Imports the worktree's `src/ultron` and the main checkout's `config/` shim.
+**In:** Imports the worktree's `src/kenning` and the main checkout's `config/` shim.
 **Out:** Stdout summary + machine-readable result at `logs/comprehensive_harness_<ts>.json`.
 
 ### `scripts/real_api_smoke.py` (Real-API sparing smoke)
 
-**Purpose:** proof-of-life test for the three external services Ultron talks to in production — Brave, Jina, AI coding agent. Strict budget: ≤2 Brave calls (one bare query + one chain that adds Jina), ≤1 Jina fetch (via the chain), ≤1 minimal AI coding agent (haiku) invocation. Reads `ULTRON_BRAVE_API_KEY` from `.env`; the Claude CLI defaults to `%APPDATA%\\npm\\claude.cmd` and can be overridden via `ULTRON_CLAUDE_CLI`. Used in the comprehensive end-to-end test pass to confirm circuits + bridge transports work end-to-end without sprawling spend.
+**Purpose:** proof-of-life test for the three external services Kenning talks to in production — Brave, Jina, AI coding agent. Strict budget: ≤2 Brave calls (one bare query + one chain that adds Jina), ≤1 Jina fetch (via the chain), ≤1 minimal AI coding agent (haiku) invocation. Reads `KENNING_BRAVE_API_KEY` from `.env`; the Claude CLI defaults to `%APPDATA%\\npm\\claude.cmd` and can be overridden via `KENNING_CLAUDE_CLI`. Used in the comprehensive end-to-end test pass to confirm circuits + bridge transports work end-to-end without sprawling spend.
 **Run:** `python scripts/real_api_smoke.py`
 **Out:** Stdout summary + machine-readable result at `logs/real_api_smoke_<ts>.json` (does NOT log the Brave key or any secret).
 
@@ -5263,10 +5277,10 @@ All scripts assume venv active in main checkout (`C:\STC\ultronPrototype`). Work
 **In:** loads the live `LLMEngine` (or a CPU-only `llama_cpp.Llama` for the candidate); 30 representative queries with manual ground truth.
 **Out:** Markdown summary table + appends `preflight_benchmark.backends` block to `baselines.json`.
 
-### `scripts/run_ultron_mcp_for_openclaw.py` (OpenClaw Phase 13)
+### `scripts/run_kenning_mcp_for_openclaw.py` (OpenClaw Phase 13)
 
-**Purpose:** stdio MCP entry script OpenClaw spawns when an agent calls one of Ultron's tools. Boots a FastMCP server on stdio that exposes `get_heartbeat_alerts`, `acknowledge_alert`, `run_maintenance`, `list_active_coding_sessions`, `get_recent_voice_alerts`. Imports stay light — no torch / LLM loaded.
-**Run:** `python scripts/run_ultron_mcp_for_openclaw.py [--stdio | --list-tools]`
+**Purpose:** stdio MCP entry script OpenClaw spawns when an agent calls one of Kenning's tools. Boots a FastMCP server on stdio that exposes `get_heartbeat_alerts`, `acknowledge_alert`, `run_maintenance`, `list_active_coding_sessions`, `get_recent_voice_alerts`. Imports stay light — no torch / LLM loaded.
+**Run:** `python scripts/run_kenning_mcp_for_openclaw.py [--stdio | --list-tools]`
 **In:** disk artifacts (heartbeat alert log, session audit dir) + OpenClaw stdio channel.
 **Out:** MCP responses over stdio.
 **Auto-resolved:** `OpenClawBridgeConfig.mcp_server_command="auto"` resolves to this script via the holder's `_resolve_mcp_command` helper.
@@ -5282,7 +5296,7 @@ All scripts assume venv active in main checkout (`C:\STC\ultronPrototype`). Work
 
 ### `scripts/audio_diagnostic.py` (2026-05-09 audio-quality pass)
 
-**Purpose:** standalone diagnostic harness for far-field mic + wake + Whisper tuning. Loads ONLY the audio path (sounddevice + openWakeWord + Silero VAD + faster-whisper) — NO LLM, NO TTS, NO orchestrator. ~1.5 GB VRAM so it can run while the full Ultron stack is stopped (per the voice-stack-concurrency rule).
+**Purpose:** standalone diagnostic harness for far-field mic + wake + Whisper tuning. Loads ONLY the audio path (sounddevice + openWakeWord + Silero VAD + faster-whisper) — NO LLM, NO TTS, NO orchestrator. ~1.5 GB VRAM so it can run while the full Kenning stack is stopped (per the voice-stack-concurrency rule).
 
 **Modes** (`--mode`):
 - `noise-floor` — captures N seconds of silence; reports peak / mean RMS dBFS for noise-floor calibration.
@@ -5316,7 +5330,7 @@ Per-scenario validation: retrieval `expect_includes` / `expect_excludes` substri
 
 3 scenarios; ~3 Brave + 3 Jina calls per full run. Within free-tier quota.
 
-**Run:** `python scripts/comprehensive_search_blending.py` (requires `ULTRON_BRAVE_API_KEY`).
+**Run:** `python scripts/comprehensive_search_blending.py` (requires `KENNING_BRAVE_API_KEY`).
 
 ### `scripts/_debug_retrieval_cosine.py` (2026-05-09 memory-quality pass; debug only)
 
@@ -5326,10 +5340,10 @@ Per-scenario validation: retrieval `expect_includes` / `expect_excludes` substri
 
 ### `scripts/cleanup_stale_processes.py` (2026-05-14 cleanup pass)
 
-**Purpose:** find and kill stale Ultron-related python processes
-(orphaned pytest workers, stale `run_ultron_mcp_for_openclaw.py`
+**Purpose:** find and kill stale Kenning-related python processes
+(orphaned pytest workers, stale `run_kenning_mcp_for_openclaw.py`
 processes from old worktrees, orphaned XTTS servers, large no-cmdline
-workers). Always preserves the currently-running Ultron and its
+workers). Always preserves the currently-running Kenning and its
 process chain: the script enumerates the TCP listener on port 19761
 (the MCP server) and adds that process plus its ancestors and
 descendants to a "do not touch" set.
@@ -5370,7 +5384,7 @@ python scripts/cleanup_stale_processes.py --kill -y  # skip the prompt
 
 **Empirical result on 2026-05-16 (4070 Ti + josiefied-qwen3-4b Q4_K_M):** cold-cache TTFT median **63 ms** (78, 79, 63, 62, 63 across 5 queries); warm-cache (2 GiB RAMCache) TTFT median **78 ms** (78, 78, 79, 63, 62). **The cache shows a -15 ms regression** -- llama.cpp's internal KV cache already handles intra-session prefix reuse; the explicit RAMCache's `load_state` memcpy exceeds the eval savings on our short ~280-token system prompts. Result merged into `baselines.json:llm_prefix_cache_bench`. The knob and bench stay shipped so operators with longer prompts / cross-session reload patterns can opt in.
 
-**Operator note:** the bench requires the production GGUF on disk. When run from a worktree (not the main checkout), set `ULTRON_LLM_MODEL_PATH=C:\STC\ultronPrototype\models\Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf` (or the absolute path to the active preset's GGUF) so the engine resolves correctly -- the worktree's `models/` directory is empty.
+**Operator note:** the bench requires the production GGUF on disk. When run from a worktree (not the main checkout), set `KENNING_LLM_MODEL_PATH=C:\STC\ultronPrototype\models\Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf` (or the absolute path to the active preset's GGUF) so the engine resolves correctly -- the worktree's `models/` directory is empty.
 
 ---
 
@@ -5381,7 +5395,7 @@ python scripts/cleanup_stale_processes.py --kill -y  # skip the prompt
 Two responsibilities:
 
 1. Prepend the project root and ``src/`` to ``sys.path`` so
-   ``from ultron.*`` works when pytest is launched from the repo
+   ``from kenning.*`` works when pytest is launched from the repo
    without an editable install.
 
 2. Register a ``pytest_sessionfinish`` hook (2026-05-14 cleanup pass)
@@ -5392,7 +5406,7 @@ Two responsibilities:
    python worker holding hundreds of MB of RAM (and VRAM if torch /
    CUDA was loaded by a fixture). Fail-open at every step (psutil
    import / TCP enumeration / individual terminate calls); never
-   touches a process tied to the live Ultron orchestrator (detected
+   touches a process tied to the live Kenning orchestrator (detected
    via the port-19761 listener and its ancestor/descendant chain).
 
 ### Default suite (no env gate) — per-file snapshot (frozen 2026-05-22)
@@ -5415,7 +5429,7 @@ Two responsibilities:
 **New test files in this pass:**
 - [`tests/resilience/test_fail_open_log.py`](../tests/resilience/test_fail_open_log.py) (+26) — per-session counter: record / accumulate / unknown-category open-ended / fail-safe on broken lock; configure + flush JSONL + previous-session read; render_summary alphabetisation + empty + None handling; KNOWN_CATEGORIES uniqueness + bus_slow_subscriber present.
 - [`tests/test_supervisor_tier_config.py`](../tests/test_supervisor_tier_config.py) (+17) — `SUPERVISOR_TIERS` catalog shape; tier `"off"|"indexing_only"|"deciding"|"full"` fills per-phase flags via the `model_validator`; explicit per-flag overrides win; threshold + log_path + digest knobs untouched by tier; unknown tier rejected.
-- [`tests/test_effective_config_log.py`](../tests/test_effective_config_log.py) (+14) — emits every high-impact section (LLM / TTS / STT / MEMORY / SUPERVISOR / GAMING_MODE); ULTRON_* env vars surface with override notes; known-secret env vars elided (`<set>` / `<empty>`); non-ULTRON env vars ignored; supervisor tier reflected; fail-open on broken cfg + partial section failure.
+- [`tests/test_effective_config_log.py`](../tests/test_effective_config_log.py) (+14) — emits every high-impact section (LLM / TTS / STT / MEMORY / SUPERVISOR / GAMING_MODE); KENNING_* env vars surface with override notes; known-secret env vars elided (`<set>` / `<empty>`); non-KENNING env vars ignored; supervisor tier reflected; fail-open on broken cfg + partial section failure.
 - [`tests/test_tts_text_normalization.py`](../tests/test_tts_text_normalization.py) (+40 fuzz cases) — `normalize_text_for_tts` against URLs (https/http/ftp/bare-www / 1200+ char), Windows drive paths, mixed slashes, times (12-hour AM/PM / 24-hour / standalone markers), unicode (en-dash, em-dash, non-breaking hyphen, smart quotes, Arabic RTL, combining diacritics, emoji ZWJ), shell metachars + `$` currency, Latin abbreviations, acronym dots, idempotence on clean text, 10 KB stress; `_speakable` against drive paths, unix paths, mixed slashes, surrounding quotes, dots-in-leaf, unicode names, UNC paths, very long paths.
 - [`tests/observations/test_drift_sample.py`](../tests/observations/test_drift_sample.py) (+9) — emits well-formed row with `subsystem=llm event_type=thinking_drift_sample` + `enable_thinking=False`; parent_event_id chaining; extra-dict merge; user_text/response_text truncation at 4000 chars with explicit marker; exact-cap survives intact; None user_text treated as empty.
 
@@ -5435,9 +5449,9 @@ Run via `scripts/run_tests.py` (2026-05-21 testing-process hardening: pre-flight
 - `test_precomputed_ack.py` (25, 2026-05-15 — NEW) — `PrecomputedAckClipCache`: construction (dedup / strip / sort / drop empty / None-safe / starts empty), lookup (miss / strip-match / empty input / wrong phrase miss), prewarm (populates all / returns count / skips empty clip / swallows synth exception / partial population / idempotent), thread safety (concurrent get during prewarm), default phrase pool factory (collects both conv + web-search pools), `prewarm_in_background` (returns daemon thread / populates / honours name)
 - `test_llm_precomputed_rag.py` (9, 2026-05-15 — NEW) — `precomputed_rag_snippets` kwarg on `_build_messages` / `generate` / `generate_stream`: snippets appear in message body, internal retrieve is bypassed, empty list = no RAG (not retry), None falls back to legacy retrieve, suppress_memory_context wins over precomputed, public `retrieve_rag_snippets` proxies private, returns [] when no memory, preserves recent history independently, compatible with gate_verdict
 - `test_orchestrator_rag_prefetch.py` (11, 2026-05-15 — NEW) — orchestrator `_kick_off_rag_prefetch` (returns None when memory disabled / multi-pass enabled / executor broken; kicks off + completes when single-pass), `_collect_rag_future` (None future returns None / completed returns value / exception returns None / empty list distinguishable), `_build_response_stream` integration (prefetch kicks off + precomputed snippets reach LLM, no memory skips prefetch, multi-pass skips prefetch and passes None to LLM)
-- `test_llm_batch_tunables.py` (14, 2026-05-15 — NEW) — `LLMConfig.n_batch` + `n_ubatch`: schema (defaults are None, accepts explicit values, rejects 0 / negative / too-large, n_ubatch may exceed n_batch in schema), `_build_llama` wiring (omits kwargs when None / passes n_batch only when set / passes n_ubatch only when set / passes both when set), top-level `UltronConfig` round-trip (default keeps None, accepts values)
+- `test_llm_batch_tunables.py` (14, 2026-05-15 — NEW) — `LLMConfig.n_batch` + `n_ubatch`: schema (defaults are None, accepts explicit values, rejects 0 / negative / too-large, n_ubatch may exceed n_batch in schema), `_build_llama` wiring (omits kwargs when None / passes n_batch only when set / passes n_ubatch only when set / passes both when set), top-level `KenningConfig` round-trip (default keeps None, accepts values)
 - `test_tts_preopen.py` (13+2, 2026-05-15 NEW + 2026-05-16 latency 2 extension) — TTS output-stream pre-open: xtts_v3 (prepare+consume match SR / consume mismatch closes & returns None / consume with no preopen returns None / prepare idempotent / failure swallowed / stop closes leftover), legacy speech.py (prepare+consume / SR-mismatch close / failure swallowed / **legacy silence-write invoked + failure-swallowed** (2026-05-16)), orchestrator (`_kick_off_tts_preopen` returns None when engine lacks method / returns thread when engine supports / swallows thread-construction failure / no-op when tts is None)
-- `test_llm_prefix_cache.py` (11, 2026-05-16 latency 2 — NEW) — `LLMConfig.prefix_cache_ram_bytes`: schema (default 0 after bench-driven flip, accepts 0 / large values, rejects negative, round-trip), `_build_llama` wiring (attaches `LlamaRAMCache` when set / skips when 0 / fail-open on import error / fail-open on set_cache exception), top-level `UltronConfig` round-trip
+- `test_llm_prefix_cache.py` (11, 2026-05-16 latency 2 — NEW) — `LLMConfig.prefix_cache_ram_bytes`: schema (default 0 after bench-driven flip, accepts 0 / large values, rejects negative, round-trip), `_build_llama` wiring (attaches `LlamaRAMCache` when set / skips when 0 / fail-open on import error / fail-open on set_cache exception), top-level `KenningConfig` round-trip
 - `test_speculative_stt.py` (12, 2026-05-16 latency 2 — NEW) — orchestrator speculative-STT helpers: kick-off (starts background thread / idempotent while in-flight / fail-open on thread launch failure), collect (None when no kick-off / waits for thread / resets state / None on transcription exception / None on timeout), invalidate (causes collect to return None / re-arms for next kick-off after collect), reset state (clears stale result without killing thread), kick-off copies audio to avoid race
 - `test_speculative_classification.py` (21, 2026-05-18 latency pass 3 Phase 2 — NEW) — orchestrator speculative-classification helpers: `_run_speculative_classification` (stores rule-path verdict + ack + RAG future; skips on already-invalidated; mid-work invalidation drops result; missing web_gate -> None verdict; ack/RAG exception swallowed), `_invalidate_speculative_classification` (sets flag + cancels RAG future; idempotent; cancel-exception swallowed; STT invalidate propagates), `_collect_speculative_classification` (returns None on empty / text-mismatch / invalidated; clears slot atomically; defensive on missing lock), `_reset_speculative_classification_state` (clears slot + cancels RAG; defensive), STT-thread chain (chains classification on success; skips on empty transcript; skips on invalidated; reset propagates to classification slot)
 - `test_speculative_llm.py` (25, 2026-05-18 latency pass 3 Phase 3 — NEW) — LLMEngine + orchestrator speculative-LLM. LLMEngine surface (4): `record_history=True` records turn / `record_history=False` skips auto-record / `record_completed_turn` records explicitly / skips empty input. Orchestrator helpers (21): `_kick_off_speculative_llm` (starts thread + buffers tokens / idempotent / skips on missing LLM / skips on None verdict), `_invalidate_speculative_llm` (signals cancel + sets flag / idempotent / defensive on missing lock), `_collect_speculative_llm` (None when empty / drains buffer + commits history on completion / None on text mismatch / None on invalidated / commit no-op on incomplete speculation / defensive on missing lock), `_reset_speculative_llm_state` (clears + cancels in-flight / defensive), cross-lane invalidation (classification invalidate propagates / STT invalidate propagates / reset propagates), classification chain (NO_SEARCH kicks off LLM / SEARCH skips / UNCERTAIN skips)
@@ -5473,9 +5487,9 @@ Run via `scripts/run_tests.py` (2026-05-21 testing-process hardening: pre-flight
 - `test_start_llamacpp_server.py` (13, 4B plan Stage C) — launcher CLI: --help renders, default args back-compat, --model-draft attaches speculative decoding, --draft-num-pred-tokens override, --from-config overlay (4b/9b), CLI flags override overlay
 - `test_llm_enable_thinking.py` (11, 4B plan Stage F) — `enable_thinking` parameter plumbing: helper kwargs, in-process generate/generate_stream pass-through, HTTP payload pass-through, back-compat when default
 - `test_llm_rag_position.py` (7, 4B plan Stage G) — `_build_messages` honors `llm.rag.position`: recency mode prepends to user message, system mode folds into system message, no-snippets/retrieve-failure fallback, helper invariants
-- `test_on_the_fly_preset_switching.py` (16, 4B plan Stage H infra) — `ULTRON_LLM_PRESET` env-var override (clears overrides by default, opt-in keep-overrides flag), minimal-YAML preset-only config, `check_vram._resolve_target_mb` (table + CLI override + env var + unknown fallback), `_format_line` shows preset label, `swap_llm_preset._rewrite_preset` (basic / preserves comment / first-match / missing-line raises)
+- `test_on_the_fly_preset_switching.py` (16, 4B plan Stage H infra) — `KENNING_LLM_PRESET` env-var override (clears overrides by default, opt-in keep-overrides flag), minimal-YAML preset-only config, `check_vram._resolve_target_mb` (table + CLI override + env var + unknown fallback), `_format_line` shows preset label, `swap_llm_preset._rewrite_preset` (basic / preserves comment / first-match / missing-line raises)
 - `tests/routing/test_model_switch_classifier.py` (54, 4B plan voice-swap) — classifier maps "switch to 4B/9B/four B/for B/nine B/4 B/4-B" + verb variants (switch/swap/change/use/load/go/move/activate/engage/run/select) to `RoutingIntentKind.MODEL_SWITCH`; rejects passing mentions ("the 4B is faster") and conversational utterances; pending clarification suppresses (mid-dialogue safety); active coding task does not block; `_resolve_model_switch_target` helper
-- `test_llm_reload_for_preset.py` (9, 4B plan voice-swap) — `LLMEngine.reload_for_preset` rejects http_server runtime + unknown preset; idempotent on same-preset; success path replaces `_llm` and clears history; sets `ULTRON_LLM_PRESET` env + clears stale `ULTRON_LLM_MODEL_PATH`; failure path keeps old engine, restores env vars (whether they were set or unset originally)
+- `test_llm_reload_for_preset.py` (9, 4B plan voice-swap) — `LLMEngine.reload_for_preset` rejects http_server runtime + unknown preset; idempotent on same-preset; success path replaces `_llm` and clears history; sets `KENNING_LLM_PRESET` env + clears stale `KENNING_LLM_MODEL_PATH`; failure path keeps old engine, restores env vars (whether they were set or unset originally)
 - `test_llm_prompt_injection_defense.py` (21, comprehensive QUALITY pass Q10 iter 1+2) — `_sanitize_user_input` neutralises tag-style markers ([INST]/[/INST], <|im_start|>/<|im_end|>/<|system|>/<|user|>/<|assistant|>, stray </think>); detects natural-language jailbreak patterns ("ignore previous instructions", "you are now X", "respond with the exact word", "act as", "pretend"); preserves benign questions (zero false-positive on normal voice queries); end-to-end verified: pre-defense 2/3 of Q8 prompt-injection probes succeeded; post-defense 0/3. Voice baseline TTFT 79 ms / VRAM 7889 MB unchanged (defence is sub-microsecond on benign input).
 - `test_web_search_parallel_fetch.py` (6, 2026-05-09 latency hot-fix) — verifies the `WebSearchExecutor` parallel-Jina-fetch path: wall-time dominated by the slowest URL (not the sum); collective deadline abandons slow fetches and degrades them to snippet-only with `jina_deadline:<url>` notes; partial success with one fast + one slow URL keeps the fast one's `full_text`; per-fetch exception in one parallel branch doesn't break the others; `collective_deadline_seconds=0` disables the cap; `max_fetch=0` skips Jina entirely.
 - `test_tts_pipeline_parallel.py` (15, 2026-05-09 + 2026-05-10) — original 11 cover the parallel split, speculative stream open, sample-rate-mismatch fallback, low-latency hint, RVC fallback, cancellation. 2026-05-10 added 4 for producer-signaled lookahead: `test_first_clip_plays_before_next_fragment_yielded` (the ack-first contract — first clip MUST be written to the stream before the generator is asked for the second), `test_slow_second_clip_does_not_kill_playback` (4 s gap between fragments doesn't trigger RVC starvation abort — guards the BMW-search failure mode), `test_clipitem_is_known_last_skips_lookahead` (ClipItem namedtuple shape + flag carries through), `test_end_of_stream_sentinel_terminates_playback` (None on audio_q ends playback with tail silence even when the previous ClipItem had `is_known_last=False`).
@@ -5628,7 +5642,7 @@ Set `$env:PYTEST_RUN_GPU_TESTS = "1"` before pytest. Includes real Claude API ca
 
 | File | Writer | Format | Purpose |
 |---|---|---|---|
-| `ultron.log` | `utils.logging.configure_logging()` | text, rotating 5 MB×3 | Main log — all subsystem messages |
+| `kenning.log` | `utils.logging.configure_logging()` | text, rotating 5 MB×3 | Main log — all subsystem messages |
 | `addressing.jsonl` | `AddressingClassifier._log()` | JSONL | Every classifier verdict |
 | `coding_tasks.jsonl` | `CodingTaskRunner._make_log_listener()` | JSONL | Coding task progress events |
 | `verifications.jsonl` | `Verifier.verify()` | JSONL | Per-verification report |
@@ -5654,7 +5668,7 @@ Set `$env:PYTEST_RUN_GPU_TESTS = "1"` before pytest. Includes real Claude API ca
 | `projects.json` | `ProjectRegistry` | Coding project registry (legacy lexical resolver source) |
 | `projects/<project_id>/digest.md` | `ProjectIndex.upsert()` (2026-05-22) | Per-project digest markdown mirror (also stored in Qdrant `projects` collection) |
 | `sandbox/` | `new_sandbox_project()` | Auto-created coding projects |
-| `.ultron_instance.lock` | `lifecycle/single_instance.py` (via `__main__.main()`) | 2026-06-12 single-instance guard: held OS byte-lock + holder PID metadata; auto-releases on process death. Gitignored. |
+| `.kenning_instance.lock` | `lifecycle/single_instance.py` (via `__main__.main()`) | 2026-06-12 single-instance guard: held OS byte-lock + holder PID metadata; auto-releases on process death. Gitignored. |
 | `summaries.jsonl` | `scripts/maintenance.py` | Conversation summaries |
 | `maintenance.sqlite` | `scripts/maintenance.py` | Maintenance state (cursors, etc.) |
 | `ollama_compat_test/` | (Foundation Phase 0) | Modelfile from Ollama compat test (not in active use) |
@@ -5665,7 +5679,7 @@ Set `$env:PYTEST_RUN_GPU_TESTS = "1"` before pytest. Includes real Claude API ca
 | `evolution/state.json` + `personality.json` | `evolution.service.EvolutionStore` | Distillation cooldown / last-data-hash gate state + the learned Tier-0 response temperament (resumed next session) |
 | `checkpoints/evolution-skills/` | `checkpoints.registry.CheckpointRegistry` (via `EvolutionService`) | Shadow-repo checkpoint over the proposal dir so a failed proposal auto-reverts. Gitignored. |
 
-### `ultronVoiceAudio/` (workshop dir, mostly gitignored)
+### `kenningVoiceAudio/` (workshop dir, mostly gitignored)
 
 | Path | Owner | Purpose |
 |---|---|---|
@@ -5683,8 +5697,8 @@ State as of 2026-05-20 round 8: only the active LLM + draft remain on disk. All 
 |---|---|---|
 | `Qwen3.5-4B-Q4_K_M.gguf` | `LLMEngine` (when `llm.preset == "qwen3.5-4b"`, **CURRENT DEFAULT 2026-05-20 round 8**). Stock Qwen 3.5 4B (not abliterated); ~3.0 GB VRAM loaded. Paired with the 0.8B draft below for speculative decoding. | 2.55 GB |
 | `Qwen3.5-0.8B-Q4_K_M.gguf` | speculative-decoding draft for the qwen3.5-4b preset. | 0.50 GB |
-| `kokoro/` | `KokoroSpeech` (**CURRENT DEFAULT TTS engine 2026-05-20 round 8**). Sanity-gate directory; actual weights (`hexgrad/Kokoro-82M`) cached in HF Hub cache (~330 MB). CUDA device (gaming mode auto-flips to CPU); voice `ultron` (partial fine-tune voicepack -- Stage 1 + Stage 2 epoch 0 only; `apply_trim_fade=true`, `apply_spectral_smooth=false`); no v3 pedalboard filter chain (`apply_runtime_filter=false`). | empty dir |
-| `openwakeword/ultron.onnx` | `WakeWordDetector` | small |
+| `kokoro/` | `KokoroSpeech` (**CURRENT DEFAULT TTS engine 2026-05-20 round 8**). Sanity-gate directory; actual weights (`hexgrad/Kokoro-82M`) cached in HF Hub cache (~330 MB). CUDA device (gaming mode auto-flips to CPU); voice `kenning` (partial fine-tune voicepack -- Stage 1 + Stage 2 epoch 0 only; `apply_trim_fade=true`, `apply_spectral_smooth=false`); no v3 pedalboard filter chain (`apply_runtime_filter=false`). | empty dir |
+| `openwakeword/kenning.onnx` | `WakeWordDetector` | small |
 | `piper/en_US-ryan-medium.onnx[.json]` | `TextToSpeech` (legacy `piper_rvc` engine fallback) | ~60 MB |
 | `rvc/hubert_base.pt` | `RvcConverter` (legacy fallback) | ~362 MB |
 | `rvc/rmvpe.pt` | `RvcConverter` (legacy fallback) | ~178 MB |
@@ -5704,11 +5718,11 @@ State as of 2026-05-20 round 8: only the active LLM + draft remain on disk. All 
 | `Llama-3.2-3B-Instruct-abliterated.Q4_K_M.gguf` | `mradermacher/Llama-3.2-3B-Instruct-abliterated-GGUF` | 2.24 GB | Gaming-mode preset; swap-back |
 | `Llama-3.2-1B-Instruct-Q4_K_M.gguf` | `bartowski/Llama-3.2-1B-Instruct-GGUF` | 0.81 GB | Llama 3.2 3B draft; deleted alongside |
 
-### `ultron_james_spader_mcu_6941/` (main checkout only)
+### `kenning_rvc_voice/` (main checkout only)
 
-RVC voice model for Ultron timbre.
-- `Ultron.pth` — main RVC checkpoint
-- `added_IVF301_Flat_nprobe_1_Ultron_v2.index` — speaker index
+RVC voice model for Kenning timbre.
+- `Kenning.pth` — main RVC checkpoint
+- `added_IVF301_Flat_nprobe_1_Kenning_v2.index` — speaker index
 
 ---
 
@@ -5792,11 +5806,11 @@ session sees it before its first edit.
 
 You MUST update the relevant section of this document when you:
 
-1. **Add a new module file** under `src/ultron/` →
+1. **Add a new module file** under `src/kenning/` →
    - Add to the file tree.
    - Add a section under "Source modules" with the public API
      (classes, functions, brief in/out).
-   - If it's a new subsystem (e.g. `src/ultron/openclaw_bridge/`),
+   - If it's a new subsystem (e.g. `src/kenning/openclaw_bridge/`),
      add to the architecture diagram in `docs/architecture.md`
      too.
 
@@ -5867,7 +5881,7 @@ C:\STC\ultronPrototype\.venv\Scripts\python.exe scripts\validate_config.py
 
 # 3) Re-read this doc and confirm:
 #    - File tree matches `git ls-files | grep -v '^\\.'`
-#    - "Source modules" sections cover every src/ultron/ file
+#    - "Source modules" sections cover every src/kenning/ file
 #    - "Operational scripts" sections cover every scripts/ file
 #    - "Tests" subsections cover every tests/ subdirectory
 #    - "Documentation index" links every docs/*.md file

@@ -6,7 +6,7 @@ against a small checklist (defined in
 `~/.openclaw/workspace/HEARTBEAT.md`) and surfaces anything that
 needs the user's attention.
 
-Until Phase 5 the `ultron-heartbeat` agent in OpenClaw was a
+Until Phase 5 the `kenning-heartbeat` agent in OpenClaw was a
 placeholder that always replied `HEARTBEAT_OK`. Phase 5 makes the
 checklist real and wires the alert log so:
 
@@ -19,9 +19,9 @@ checklist real and wires the alert log so:
 
 - `~/.openclaw/workspace/HEARTBEAT.md` — populated with the real
   checklist (was placeholder in Phase 1).
-- `src/ultron/openclaw_bridge/heartbeat_alerts.py` —
+- `src/kenning/openclaw_bridge/heartbeat_alerts.py` —
   `HeartbeatAlertLog` (JSONL with atomic update + retention).
-- `src/ultron/openclaw_bridge/holder.py` —
+- `src/kenning/openclaw_bridge/holder.py` —
   `OpenClawBridge.heartbeat_alerts` field +
   `record_heartbeat_alert(text, source, severity, ...)` convenience
   that records and (optionally) fires a Telegram notification via
@@ -45,7 +45,7 @@ Run this only when:
 
 ### Recipe
 
-Edit `~/.openclaw/openclaw.json`. Find the `ultron-heartbeat` entry
+Edit `~/.openclaw/openclaw.json`. Find the `kenning-heartbeat` entry
 in `agents.list[]` (already created in Phase 0). Add a `heartbeat`
 sub-object:
 
@@ -55,7 +55,7 @@ sub-object:
     list: [
       // ...
       {
-        id: "ultron-heartbeat",
+        id: "kenning-heartbeat",
         // ... existing fields stay ...
         heartbeat: {
           // Tick cadence. Start conservative.

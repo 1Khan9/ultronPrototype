@@ -34,7 +34,7 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
-logger = logging.getLogger("ultron.safety.taint")
+logger = logging.getLogger("kenning.safety.taint")
 
 # How long a taint persists. After this window the bytes are
 # considered no longer hot -- the model could have re-derived them

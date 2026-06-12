@@ -22,13 +22,13 @@ A13 -- screen-capture data outside the cache dir (OUT-gate).
 
 from __future__ import annotations
 
-from ultron.safety.rules.base import (
+from kenning.safety.rules.base import (
     CommandPatternRule,
     PathPatternRule,
     Rule,
     SandboxConfinementRule,
 )
-from ultron.safety.validator import Verdict
+from kenning.safety.validator import Verdict
 
 
 def build_category_a_rules() -> list[Rule]:

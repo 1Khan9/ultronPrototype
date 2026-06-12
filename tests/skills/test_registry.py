@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from ultron.skills.models import (
+from kenning.skills.models import (
     KeywordTrigger,
     Skill,
     SkillMatch,
     SkillSource,
     TaskTrigger,
 )
-from ultron.skills.registry import (
+from kenning.skills.registry import (
     DEFAULT_KEYWORD_MIN_USER_TEXT_CHARS,
     SkillRegistry,
     build_default_registry,
@@ -23,7 +23,7 @@ from ultron.skills.registry import (
     reset_skill_registry_for_testing,
     set_skill_registry,
 )
-from ultron.skills.registry import _SourceSpec  # type: ignore[attr-defined]
+from kenning.skills.registry import _SourceSpec  # type: ignore[attr-defined]
 
 
 def _write(path: Path, body: str) -> None:
@@ -348,8 +348,8 @@ def test_build_default_registry_includes_three_sources(tmp_path: Path):
     registry = build_default_registry(project_root=project, user_home=home)
     sources = registry.sources
     assert project / "skills" in sources
-    assert home / ".ultron" / "skills" in sources
-    assert project / ".ultron" / "skills" in sources
+    assert home / ".kenning" / "skills" in sources
+    assert project / ".kenning" / "skills" in sources
 
 
 def test_build_default_registry_extra_dirs(tmp_path: Path):

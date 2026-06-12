@@ -22,12 +22,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ultron.openclaw_bridge import (
+from kenning.openclaw_bridge import (
     OpenClawBridge,
     OpenClawClient,
     SendMessageResult,
 )
-from ultron.openclaw_bridge.mcp_registration import RegistrationResult
+from kenning.openclaw_bridge.mcp_registration import RegistrationResult
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +116,7 @@ def _make_cfg(
     bridge = SimpleNamespace(
         cli_path=cli_path,
         cli_timeout_seconds=5.0,
-        mcp_server_name="ultron-mcp-test",
+        mcp_server_name="kenning-mcp-test",
         mcp_server_command=mcp_command,
         mcp_server_args=[],
         retry_registration_interval_seconds=0.05,
@@ -134,7 +134,7 @@ def _make_cfg(
         health_check_timeout_seconds=5.0,
         health_check_interval_seconds=60.0,
         fail_open=True,
-        required_agent_id="ultron-main",
+        required_agent_id="kenning-main",
         bridge=bridge,
     )
 
@@ -186,12 +186,12 @@ async def test_mcp_set_show_unset_round_trip(
     client = OpenClawClient(cli_path=str(stub_cli_wrapper), default_timeout_s=5.0)
     # set succeeds
     assert await client.mcp_set(
-        "ultron-mcp", "some-cmd", args=["--stdio"], env={},
+        "kenning-mcp", "some-cmd", args=["--stdio"], env={},
     ) is True
     # show returns None (stub treats it as not configured)
-    assert await client.mcp_show("ultron-mcp") is None
+    assert await client.mcp_show("kenning-mcp") is None
     # unset succeeds
-    assert await client.mcp_unset("ultron-mcp") is True
+    assert await client.mcp_unset("kenning-mcp") is True
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +234,7 @@ def test_bridge_reachable_path_runs_register(
     bridge.lifecycle.is_reachable = MagicMock(return_value=True)             # type: ignore[method-assign]
 
     register_mock = AsyncMock(
-        return_value=RegistrationResult(registered=True, name="ultron-mcp-test"),
+        return_value=RegistrationResult(registered=True, name="kenning-mcp-test"),
     )
     assert bridge.registrar is not None
     bridge.registrar.register = register_mock                                # type: ignore[assignment]

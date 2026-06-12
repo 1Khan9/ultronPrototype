@@ -1,6 +1,6 @@
 # Memory architecture
 
-Phase 10 of the OpenClaw integration. Ultron uses three memory layers,
+Phase 10 of the OpenClaw integration. Kenning uses three memory layers,
 each with a specific role. They complement each other — none replaces
 another.
 
@@ -27,7 +27,7 @@ another.
 │ - MEMORY.md  (curated long-term notes; rarely changes)          │
 │ - memory/YYYY-MM-DD.md  (daily journal-style notes)             │
 │ - Plain Markdown, human-readable, git-friendly.                 │
-│ - Read by both Ultron (PersonaLoader) and OpenClaw agents.      │
+│ - Read by both Kenning (PersonaLoader) and OpenClaw agents.      │
 │ - Written by maintenance + dreaming sweep + standing orders.    │
 └─────────────────────────────────────────────────────────────────┘
                                 │
@@ -147,5 +147,5 @@ translates to a clear voice message.
   IDENTITY.md / etc. into a database. They're git-friendly and
   human-readable for a reason.
 - **Memory Wiki stays opt-in.** The plugin enables a useful
-  feature, not a foundational layer. Ultron should function
+  feature, not a foundational layer. Kenning should function
   identically whether the wiki is enabled or not.

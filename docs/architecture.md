@@ -1,4 +1,4 @@
-# Ultron architecture
+# Kenning architecture
 
 
 > **Currency note (2026-05-22):** this document is a historical snapshot.
@@ -39,7 +39,7 @@ VRAM budget: peak ~10.4 GB observed under load (voice stack: Qwen + Whisper + RV
               ▼                 ▼                 ▼
        ┌─────────────┐    ┌──────────────┐  ┌────────────┐
        │ openWakeWord│    │   Silero VAD  │  │ Addressing │  WARM mode follow-up
-       │ "ultron"    │    │   start/end   │  │ classifier │  (rule-based + flan-t5-small CPU)
+       │ "kenning"    │    │   start/end   │  │ classifier │  (rule-based + flan-t5-small CPU)
        └──────┬──────┘    └──────┬───────┘  └─────┬──────┘
               │ wake fires       │ end-of-speech   │ NOT_ADDRESSED → drop
               ▼                  │                 ▼ ADDRESSED → continue
@@ -126,28 +126,28 @@ VRAM budget: peak ~10.4 GB observed under load (voice stack: Qwen + Whisper + RV
 
 | Subsystem | Module | Single source of truth (config.yaml) |
 |---|---|---|
-| Audio capture | [src/ultron/audio/](../src/ultron/audio/) | `audio:` |
-| VAD | [src/ultron/audio/vad.py](../src/ultron/audio/vad.py) | `vad:` |
-| Wake word | [src/ultron/audio/wake_word.py](../src/ultron/audio/wake_word.py) | `wake_word:` |
-| Addressing classifier | [src/ultron/addressing/](../src/ultron/addressing/) | `addressing:` |
-| Whisper STT | [src/ultron/transcription/whisper_engine.py](../src/ultron/transcription/whisper_engine.py) | `stt:` |
-| LLM (llama-cpp-python) | [src/ultron/llm/inference.py](../src/ultron/llm/inference.py) | `llm:` |
-| Embeddings (FastEmbed) | [src/ultron/memory/embedder.py](../src/ultron/memory/embedder.py) | `embeddings:` |
-| Qdrant memory | [src/ultron/memory/qdrant_store.py](../src/ultron/memory/qdrant_store.py) | `qdrant:` + `memory:` |
-| Web search | [src/ultron/web_search/](../src/ultron/web_search/) | `web_search:` |
-| Uncertainty signals | [src/ultron/uncertainty.py](../src/ultron/uncertainty.py) | (no config; output of preflight gate) |
-| TTS (Piper) | [src/ultron/tts/speech.py](../src/ultron/tts/speech.py) | `tts:` |
-| RVC voice conversion | [src/ultron/tts/rvc.py](../src/ultron/tts/rvc.py) | `tts.rvc:` |
-| Coding orchestration (Phase A + Coding Addendum) | [src/ultron/coding/](../src/ultron/coding/) | `coding:` |
-| Context projections (Phase C / Foundation Part 2) | [src/ultron/coding/projections.py](../src/ultron/coding/projections.py) | `projections:` |
-| Capability routing (Foundation Part 5) | [src/ultron/openclaw_routing/](../src/ultron/openclaw_routing/) | `routing:` + `openclaw:` |
-| Errors + circuit breakers (Foundation Part 4) | [src/ultron/errors.py](../src/ultron/errors.py), [src/ultron/resilience/](../src/ultron/resilience/) | `error_phrases:` |
-| Logging | [src/ultron/utils/logging.py](../src/ultron/utils/logging.py) | `logging:` |
-| Orchestrator (main loop) | [src/ultron/pipeline/orchestrator.py](../src/ultron/pipeline/orchestrator.py) | n/a (composition root) |
+| Audio capture | [src/kenning/audio/](../src/kenning/audio/) | `audio:` |
+| VAD | [src/kenning/audio/vad.py](../src/kenning/audio/vad.py) | `vad:` |
+| Wake word | [src/kenning/audio/wake_word.py](../src/kenning/audio/wake_word.py) | `wake_word:` |
+| Addressing classifier | [src/kenning/addressing/](../src/kenning/addressing/) | `addressing:` |
+| Whisper STT | [src/kenning/transcription/whisper_engine.py](../src/kenning/transcription/whisper_engine.py) | `stt:` |
+| LLM (llama-cpp-python) | [src/kenning/llm/inference.py](../src/kenning/llm/inference.py) | `llm:` |
+| Embeddings (FastEmbed) | [src/kenning/memory/embedder.py](../src/kenning/memory/embedder.py) | `embeddings:` |
+| Qdrant memory | [src/kenning/memory/qdrant_store.py](../src/kenning/memory/qdrant_store.py) | `qdrant:` + `memory:` |
+| Web search | [src/kenning/web_search/](../src/kenning/web_search/) | `web_search:` |
+| Uncertainty signals | [src/kenning/uncertainty.py](../src/kenning/uncertainty.py) | (no config; output of preflight gate) |
+| TTS (Piper) | [src/kenning/tts/speech.py](../src/kenning/tts/speech.py) | `tts:` |
+| RVC voice conversion | [src/kenning/tts/rvc.py](../src/kenning/tts/rvc.py) | `tts.rvc:` |
+| Coding orchestration (Phase A + Coding Addendum) | [src/kenning/coding/](../src/kenning/coding/) | `coding:` |
+| Context projections (Phase C / Foundation Part 2) | [src/kenning/coding/projections.py](../src/kenning/coding/projections.py) | `projections:` |
+| Capability routing (Foundation Part 5) | [src/kenning/openclaw_routing/](../src/kenning/openclaw_routing/) | `routing:` + `openclaw:` |
+| Errors + circuit breakers (Foundation Part 4) | [src/kenning/errors.py](../src/kenning/errors.py), [src/kenning/resilience/](../src/kenning/resilience/) | `error_phrases:` |
+| Logging | [src/kenning/utils/logging.py](../src/kenning/utils/logging.py) | `logging:` |
+| Orchestrator (main loop) | [src/kenning/pipeline/orchestrator.py](../src/kenning/pipeline/orchestrator.py) | n/a (composition root) |
 
 ## Configuration
 
-Single source of truth: [config.yaml](../config.yaml) at the project root. Loaded + validated by [src/ultron/config.py](../src/ultron/config.py) (pydantic schema with `extra="forbid"`).
+Single source of truth: [config.yaml](../config.yaml) at the project root. Loaded + validated by [src/kenning/config.py](../src/kenning/config.py) (pydantic schema with `extra="forbid"`).
 
 A thin compatibility shim at [config/settings.py](../config/settings.py) re-exports legacy `settings.X` constants from `get_config()`. Subsystem migration to direct `get_config()` reads is partial; remaining work is tracked in [docs/phase3_5_followup.md](phase3_5_followup.md).
 
@@ -162,7 +162,7 @@ Full config reference: [docs/configuration.md](configuration.md).
   README.md
   pyproject.toml
 
-  src/ultron/              ← source
+  src/kenning/              ← source
     audio/  addressing/  coding/  llm/  memory/
     pipeline/  tts/  transcription/  utils/
     web_search/  openclaw_routing/  resilience/
@@ -172,11 +172,11 @@ Full config reference: [docs/configuration.md](configuration.md).
 
   models/                  ← all loaded models (NOT in worktrees; only in main checkout)
     Qwen3.5-9B-Q4_K_M.gguf      ← LLM
-    openwakeword/ultron.onnx    ← custom wake word
+    openwakeword/kenning.onnx    ← custom wake word
     piper/en_US-ryan-medium.onnx ← TTS voice
     rvc/{hubert_base.pt,rmvpe.pt} ← RVC support files
-  ultron_james_spader_mcu_6941/ ← RVC voice model
-    Ultron.pth, added_IVF301_…_Ultron_v2.index
+  kenning_rvc_voice/ ← RVC voice model
+    Kenning.pth, added_IVF301_…_Kenning_v2.index
 
   data/
     qdrant/                ← embedded Qdrant store (3 collections)
@@ -187,7 +187,7 @@ Full config reference: [docs/configuration.md](configuration.md).
     maintenance.sqlite     ← maintenance state
 
   logs/
-    ultron.log             ← main log (rotating)
+    kenning.log             ← main log (rotating)
     addressing.jsonl       ← classifier audit
     coding_tasks.jsonl     ← coding task progress
     verifications.jsonl    ← verifier runs
@@ -224,7 +224,7 @@ Numbers from [baselines.json](../baselines.json) → `phase_foundation_start.lat
 
 ## Logging conventions
 
-- **DEBUG** — diagnostic detail (token counts, per-call timings, internal state). Off by default; enable via `ULTRON_LOG_LEVEL=DEBUG`.
+- **DEBUG** — diagnostic detail (token counts, per-call timings, internal state). Off by default; enable via `KENNING_LOG_LEVEL=DEBUG`.
 - **INFO** — normal operation (component init, query received, response sent, projection truncations applied).
 - **WARN** — unexpected but handled (Brave returned 429, Jina timed out, RVC failed → fell back to Piper, projection landed near budget cap).
 - **ERROR** — unhandled failure or recovery required (LLM model missing, Qdrant search failed, projection over budget after exhaustive trim).
@@ -235,7 +235,7 @@ Every external dependency has a typed exception class. See [docs/error_handling.
 
 ## Capability routing (Phase 5)
 
-The `classify_routing` layer ([src/ultron/openclaw_routing/classifier.py](../src/ultron/openclaw_routing/classifier.py)) classifies utterances into 12 kinds and dispatches via `CapabilityVoiceController.handle_capability_intent`. OpenClaw-bound kinds (browser / media / messaging / file / shell / hybrid) currently return in-character stub messages because the OpenClaw Gateway integration prompt hasn't run yet. Conversational utterances pass through; coding utterances delegate to the existing `CodingTaskRunner`.
+The `classify_routing` layer ([src/kenning/openclaw_routing/classifier.py](../src/kenning/openclaw_routing/classifier.py)) classifies utterances into 12 kinds and dispatches via `CapabilityVoiceController.handle_capability_intent`. OpenClaw-bound kinds (browser / media / messaging / file / shell / hybrid) currently return in-character stub messages because the OpenClaw Gateway integration prompt hasn't run yet. Conversational utterances pass through; coding utterances delegate to the existing `CodingTaskRunner`.
 
 See [docs/routing.md](routing.md) for the full architecture.
 
@@ -250,6 +250,6 @@ The Foundation phase (Parts 0-7) added or consolidated:
 | 2 | Verified the context projection refactor at HEAD `4ecc7ec`; added `truncation_warning` field + INFO/ERROR logging via `_finalize_projection` |
 | 3 | Unified config.yaml + pydantic loader + per-subsystem migration (partial — see [phase3_5_followup.md](phase3_5_followup.md)) |
 | 4 | Typed error hierarchy + circuit breakers + `logs/errors.jsonl` + voice-character error phrases + 52 error-recovery tests |
-| 5 | Capability routing layer (`ultron.openclaw_routing`) + `CapabilityVoiceController` rename with backward-compat alias + 148 routing tests |
+| 5 | Capability routing layer (`kenning.openclaw_routing`) + `CapabilityVoiceController` rename with backward-compat alias + 148 routing tests |
 | 6 | Orchestrator wired to call `classify_routing` + 83 integration tests + [tests/integration/mocks.md](../tests/integration/mocks.md) + [tests/integration/performance.json](../tests/integration/performance.json) |
 | 7 | Code-quality sweep, 4 new operational scripts, this doc + operations.md + development.md, README refresh |

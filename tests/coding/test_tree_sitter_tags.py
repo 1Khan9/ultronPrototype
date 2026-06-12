@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.coding.tree_sitter_tags`."""
+"""Tests for :mod:`kenning.coding.tree_sitter_tags`."""
 
 from __future__ import annotations
 
@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.tree_sitter_tags import (
+from kenning.coding.tree_sitter_tags import (
     Tag,
     extract_tags,
     extract_tags_for_files,
     supported_languages,
 )
-from ultron.utils.mtime_cache import MtimeCache
+from kenning.utils.mtime_cache import MtimeCache
 
 
 PY_SAMPLE = """\

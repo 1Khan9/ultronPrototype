@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.channels import Channel, ChannelMetadata
+from kenning.channels import Channel, ChannelMetadata
 
 
 # ---------------------------------------------------------------------------

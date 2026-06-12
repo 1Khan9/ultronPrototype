@@ -6,7 +6,7 @@ import textwrap
 
 import pytest
 
-from ultron.install.coherence import (
+from kenning.install.coherence import (
     CoherenceMismatch,
     CoherenceMismatchKind,
     CoherenceSeverity,

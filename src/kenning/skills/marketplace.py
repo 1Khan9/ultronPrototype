@@ -1,7 +1,7 @@
 """Skills marketplace: manifest + source discrimination + install pipeline (T9).
 
 T9 (OpenClaw catalog port; see ``THIRD_PARTY_NOTICES.md``). Lets a
-user point ultron at a community skills pack via one of five source
+user point kenning at a community skills pack via one of five source
 shapes:
 
 * :class:`SourceKind.PATH` — local directory (development).

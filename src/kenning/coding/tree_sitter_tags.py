@@ -3,7 +3,7 @@
 Pattern lifted in spirit from aider's ``repomap.get_tags_raw`` (Apache
 2.0; see ``THIRD_PARTY_NOTICES.md``). This module is the structural
 half of what aider's repo map needs to operate. The PageRank ranking
-itself lives in :mod:`ultron.coding.repo_map` (batch 2).
+itself lives in :mod:`kenning.coding.repo_map` (batch 2).
 
 Pipeline per source file:
 
@@ -15,14 +15,14 @@ Pipeline per source file:
   3. Read the source bytes.
   4. Parse to an AST.
   5. Run the vendored ``<lang>-tags.scm`` query (see
-     :mod:`ultron.coding.queries`).
+     :mod:`kenning.coding.queries`).
   6. Walk captures: ``@name.definition.<kind>`` → ``Tag(kind="def")``,
      ``@name.reference.<kind>`` → ``Tag(kind="ref")``.
   7. If the query produced ``def`` captures but no ``ref`` captures
      (true for C/C++ tags-only queries), lex with ``pygments`` and
      emit ``Token.Name`` tokens as refs. Loose but useful.
 
-Cache: optional :class:`~ultron.utils.mtime_cache.MtimeCache`. When
+Cache: optional :class:`~kenning.utils.mtime_cache.MtimeCache`. When
 provided, parses are skipped if the file's mtime matches the cache
 entry's mtime. The cache value is a list of ``Tag`` tuples; mtime
 mismatch (file edited) forces a re-parse.
@@ -49,11 +49,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Iterable, List, NamedTuple, Optional
 
-from ultron.coding.queries import get_query_path
-from ultron.utils.mtime_cache import MtimeCache
+from kenning.coding.queries import get_query_path
+from kenning.utils.mtime_cache import MtimeCache
 
 
-logger = logging.getLogger("ultron.coding.tree_sitter_tags")
+logger = logging.getLogger("kenning.coding.tree_sitter_tags")
 
 
 # tree_sitter has a FutureWarning at import time we don't care about.

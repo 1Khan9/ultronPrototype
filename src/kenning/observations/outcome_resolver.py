@@ -54,7 +54,7 @@ from typing import Iterable, List, Mapping, Optional, Sequence
 from .schema import Observation
 from .writer import ObservationWriter, emit_observation, get_observation_writer
 
-LOGGER = logging.getLogger("ultron.observations.resolver")
+LOGGER = logging.getLogger("kenning.observations.resolver")
 
 DEFAULT_OBSERVATIONS_PATH = Path("data") / "observations.jsonl"
 DEFAULT_WINDOW_SECONDS = 30.0

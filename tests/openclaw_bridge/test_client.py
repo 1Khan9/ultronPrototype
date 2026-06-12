@@ -1,4 +1,4 @@
-"""Tests for ``ultron.openclaw_bridge.client.OpenClawClient``.
+"""Tests for ``kenning.openclaw_bridge.client.OpenClawClient``.
 
 The natural seam is :meth:`OpenClawClient._run_cli` — every public
 method funnels through it. Mocking that method lets us exercise the
@@ -18,12 +18,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from ultron.errors import (
+from kenning.errors import (
     OpenClawAuthError,
     OpenClawGatewayError,
     OpenClawToolError,
 )
-from ultron.openclaw_bridge.client import (
+from kenning.openclaw_bridge.client import (
     AgentRunResult,
     CliResult,
     HeartbeatResult,
@@ -53,20 +53,20 @@ def test_discover_cli_raises_when_override_missing(tmp_path: Path) -> None:
 def test_discover_cli_falls_back_to_env(monkeypatch, tmp_path: Path) -> None:
     fake = tmp_path / "openclaw_env"
     fake.write_text("# fake")
-    monkeypatch.setenv("ULTRON_OPENCLAW_CLI", str(fake))
-    monkeypatch.setattr("ultron.openclaw_bridge.client.shutil.which", lambda _name: None)
+    monkeypatch.setenv("KENNING_OPENCLAW_CLI", str(fake))
+    monkeypatch.setattr("kenning.openclaw_bridge.client.shutil.which", lambda _name: None)
     monkeypatch.setattr(
-        "ultron.openclaw_bridge.client._WINDOWS_DEFAULT_CLI",
+        "kenning.openclaw_bridge.client._WINDOWS_DEFAULT_CLI",
         Path("does/not/exist"),
     )
     assert discover_cli() == str(fake.resolve())
 
 
 def test_discover_cli_raises_when_nothing_found(monkeypatch) -> None:
-    monkeypatch.delenv("ULTRON_OPENCLAW_CLI", raising=False)
-    monkeypatch.setattr("ultron.openclaw_bridge.client.shutil.which", lambda _name: None)
+    monkeypatch.delenv("KENNING_OPENCLAW_CLI", raising=False)
+    monkeypatch.setattr("kenning.openclaw_bridge.client.shutil.which", lambda _name: None)
     monkeypatch.setattr(
-        "ultron.openclaw_bridge.client._WINDOWS_DEFAULT_CLI",
+        "kenning.openclaw_bridge.client._WINDOWS_DEFAULT_CLI",
         Path("does/not/exist"),
     )
     with pytest.raises(OpenClawGatewayError):
@@ -254,9 +254,9 @@ async def test_run_agent_uses_default_agent_id(client: OpenClawClient) -> None:
     with patch.object(client, "_run_cli", fake_run):
         result = await client.run_agent("hello")
     assert result.success is True
-    assert result.agent_id == "ultron-main"
+    assert result.agent_id == "kenning-main"
     assert result.text == "sure"
-    assert "--agent" in captured[0] and "ultron-main" in captured[0]
+    assert "--agent" in captured[0] and "kenning-main" in captured[0]
 
 
 async def test_run_agent_with_deliver_flags(client: OpenClawClient) -> None:
@@ -269,7 +269,7 @@ async def test_run_agent_with_deliver_flags(client: OpenClawClient) -> None:
     with patch.object(client, "_run_cli", fake_run):
         await client.run_agent(
             "ping",
-            agent_id="ultron-test",
+            agent_id="kenning-test",
             thinking="low",
             deliver=True,
             reply_channel="telegram",
@@ -333,13 +333,13 @@ async def test_mcp_set_constructs_payload(client: OpenClawClient) -> None:
 
     with patch.object(client, "_run_cli", fake_run):
         ok = await client.mcp_set(
-            "ultron-mcp",
+            "kenning-mcp",
             command=r"C:\path\to\proxy.exe",
             args=["--stdio"],
             env={"FOO": "bar"},
         )
     assert ok is True
-    assert captured[0][:3] == ["mcp", "set", "ultron-mcp"]
+    assert captured[0][:3] == ["mcp", "set", "kenning-mcp"]
     payload = json.loads(captured[0][3])
     assert payload["command"] == r"C:\path\to\proxy.exe"
     assert payload["args"] == ["--stdio"]
@@ -365,7 +365,7 @@ async def test_mcp_show_returns_dict_on_success(client: OpenClawClient) -> None:
         0, '{"command": "x", "args": ["-y"], "env": {}}', "", 0.01,
     ))
     with patch.object(client, "_run_cli", fake):
-        payload = await client.mcp_show("ultron-mcp")
+        payload = await client.mcp_show("kenning-mcp")
     assert payload == {"command": "x", "args": ["-y"], "env": {}}
 
 
@@ -378,13 +378,13 @@ async def test_mcp_show_returns_none_when_missing(client: OpenClawClient) -> Non
 async def test_mcp_unset_returns_true_on_success(client: OpenClawClient) -> None:
     fake = AsyncMock(return_value=CliResult(0, "ok", "", 0.01))
     with patch.object(client, "_run_cli", fake):
-        assert await client.mcp_unset("ultron-mcp") is True
+        assert await client.mcp_unset("kenning-mcp") is True
 
 
 async def test_mcp_unset_returns_false_when_missing(client: OpenClawClient) -> None:
     fake = AsyncMock(return_value=CliResult(1, "", "Not configured", 0.01))
     with patch.object(client, "_run_cli", fake):
-        assert await client.mcp_unset("ultron-mcp") is False
+        assert await client.mcp_unset("kenning-mcp") is False
 
 
 async def test_mcp_list_handles_no_servers(client: OpenClawClient) -> None:
@@ -397,7 +397,7 @@ async def test_mcp_list_handles_no_servers(client: OpenClawClient) -> None:
 
 
 async def test_mcp_list_parses_json(client: OpenClawClient) -> None:
-    payload = {"ultron-mcp": {"command": "x", "args": []}}
+    payload = {"kenning-mcp": {"command": "x", "args": []}}
     fake = AsyncMock(return_value=CliResult(0, json.dumps(payload), "", 0.01))
     with patch.object(client, "_run_cli", fake):
         result = await client.mcp_list()
@@ -405,13 +405,13 @@ async def test_mcp_list_parses_json(client: OpenClawClient) -> None:
 
 
 async def test_mcp_list_parses_text(client: OpenClawClient) -> None:
-    text = "ultron-mcp: /path/to/proxy --stdio\nother: /bin/x"
+    text = "kenning-mcp: /path/to/proxy --stdio\nother: /bin/x"
     fake = AsyncMock(return_value=CliResult(0, text, "", 0.01))
     with patch.object(client, "_run_cli", fake):
         result = await client.mcp_list()
-    assert "ultron-mcp" in result
+    assert "kenning-mcp" in result
     assert "other" in result
-    assert "proxy" in result["ultron-mcp"]["raw"]
+    assert "proxy" in result["kenning-mcp"]["raw"]
 
 
 # ---------------------------------------------------------------------------
@@ -442,7 +442,7 @@ async def test_run_cli_executes_real_subprocess(echo_cli: Path) -> None:
     client._cli_path = sys.executable                                       # noqa: SLF001
     client._default_timeout_s = 5.0                                         # noqa: SLF001
     client._config_path = Path.home() / ".openclaw" / "openclaw.json"       # noqa: SLF001
-    client._default_agent_id = "ultron-main"                                # noqa: SLF001
+    client._default_agent_id = "kenning-main"                                # noqa: SLF001
     client._env_overrides = {}                                              # noqa: SLF001
     result = await client._run_cli([str(echo_cli), "health"])
     assert result.returncode == 0
@@ -469,10 +469,10 @@ async def test_run_cli_timeout_reaps_whole_process_tree(
     client._cli_path = sys.executable                                       # noqa: SLF001
     client._default_timeout_s = 0.5                                         # noqa: SLF001
     client._config_path = Path.home() / ".openclaw" / "openclaw.json"       # noqa: SLF001
-    client._default_agent_id = "ultron-main"                                # noqa: SLF001
+    client._default_agent_id = "kenning-main"                                # noqa: SLF001
     client._env_overrides = {}                                              # noqa: SLF001
 
-    import ultron.openclaw_bridge.client as client_mod
+    import kenning.openclaw_bridge.client as client_mod
     real_kill = client_mod.kill_process_tree
     captured: dict = {}
 

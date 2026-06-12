@@ -13,12 +13,12 @@ B9 -- Token manipulation / impersonation APIs.
 
 from __future__ import annotations
 
-from ultron.safety.rules.base import (
+from kenning.safety.rules.base import (
     CommandPatternRule,
     PathPatternRule,
     Rule,
 )
-from ultron.safety.validator import Verdict
+from kenning.safety.validator import Verdict
 
 
 def build_category_b_rules() -> list[Rule]:

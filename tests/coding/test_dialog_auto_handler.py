@@ -8,8 +8,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.bus import publish, reset_bus_for_testing
-from ultron.bus.events import DialogAppearedEvent
+from kenning.bus import publish, reset_bus_for_testing
+from kenning.bus.events import DialogAppearedEvent
 
 
 @pytest.fixture(autouse=True)
@@ -20,7 +20,7 @@ def fresh_bus():
 
 
 def _build_runner(monkeypatch):
-    from ultron.coding.runner import CodingTaskRunner
+    from kenning.coding.runner import CodingTaskRunner
 
     runner = CodingTaskRunner.__new__(CodingTaskRunner)
     # Minimal init -- we only test the dialog-handler subset.
@@ -115,7 +115,7 @@ def test_dialog_handler_falls_back_for_untitled_dialog(monkeypatch):
 def test_dialog_handler_disabled_via_config(monkeypatch):
     """When coding.dialog_auto_handler.enabled=False, no listener
     is registered."""
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config().coding
     monkeypatch.setattr(cfg.dialog_auto_handler, "enabled", False)
 
@@ -144,7 +144,7 @@ def test_dialog_handler_disabled_via_config(monkeypatch):
 
 
 def test_dialog_teardown_unsubscribes_on_complete(monkeypatch):
-    from ultron.coding.bridge import EventKind, TaskEvent
+    from kenning.coding.bridge import EventKind, TaskEvent
 
     runner = _build_runner(monkeypatch)
     handle = MagicMock()
@@ -171,7 +171,7 @@ def test_dialog_teardown_unsubscribes_on_complete(monkeypatch):
 
 
 def test_dialog_teardown_ignores_non_complete_events(monkeypatch):
-    from ultron.coding.bridge import EventKind, TaskEvent
+    from kenning.coding.bridge import EventKind, TaskEvent
 
     runner = _build_runner(monkeypatch)
     handle = MagicMock()

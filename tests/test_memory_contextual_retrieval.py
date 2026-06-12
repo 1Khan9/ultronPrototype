@@ -23,10 +23,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.config import (
+from kenning.config import (
     MemoryContextualRetrievalConfig,
     MemoryConfig,
-    UltronConfig,
+    KenningConfig,
 )
 
 
@@ -62,7 +62,7 @@ def test_memory_config_includes_contextual_retrieval():
 
 
 def test_full_config_round_trip_enables_contextual_retrieval():
-    cfg = UltronConfig.model_validate({
+    cfg = KenningConfig.model_validate({
         "memory": {
             "contextual_retrieval": {
                 "enabled": True,
@@ -121,13 +121,13 @@ def _stub_existing_model(monkeypatch, tmp_path):
     # Use a config override so ContextGenerator picks our temp path
     # via its normal resolution chain.
     monkeypatch.setattr(
-        "ultron.memory.contextualizer.ContextGenerator._resolve_path",
+        "kenning.memory.contextualizer.ContextGenerator._resolve_path",
         staticmethod(lambda p: fake_gguf),
     )
 
 
 def test_context_generator_empty_content_returns_empty():
-    from ultron.memory.contextualizer import ContextGenerator
+    from kenning.memory.contextualizer import ContextGenerator
     cg = ContextGenerator(model_path="nonexistent.gguf")
     assert cg.generate_context("") == ""
     assert cg.generate_context("   ") == ""
@@ -136,7 +136,7 @@ def test_context_generator_empty_content_returns_empty():
 def test_context_generator_missing_model_returns_empty(tmp_path):
     """Passing a path that doesn't exist on disk -> empty context,
     no Llama load attempt."""
-    from ultron.memory.contextualizer import ContextGenerator
+    from kenning.memory.contextualizer import ContextGenerator
     missing = tmp_path / "definitely_missing.gguf"
     # Note: NOT touching it; it should not exist.
     assert not missing.exists()
@@ -147,7 +147,7 @@ def test_context_generator_missing_model_returns_empty(tmp_path):
 def test_context_generator_basic_generation(monkeypatch, tmp_path):
     _stub_existing_model(monkeypatch, tmp_path)
     fake = _install_fake_llama(monkeypatch, completion_text="apples and oranges")
-    from ultron.memory.contextualizer import ContextGenerator
+    from kenning.memory.contextualizer import ContextGenerator
     cg = ContextGenerator(model_path="draft.gguf")
     result = cg.generate_context("What about apples?", role="user")
     assert result == "apples and oranges"
@@ -160,7 +160,7 @@ def test_context_generator_basic_generation(monkeypatch, tmp_path):
 def test_context_generator_strips_quotes(monkeypatch, tmp_path):
     _stub_existing_model(monkeypatch, tmp_path)
     _install_fake_llama(monkeypatch, completion_text="\"apples and oranges\"")
-    from ultron.memory.contextualizer import ContextGenerator
+    from kenning.memory.contextualizer import ContextGenerator
     cg = ContextGenerator(model_path="draft.gguf")
     result = cg.generate_context("anything", role="user")
     # Surrounding quotes stripped
@@ -170,7 +170,7 @@ def test_context_generator_strips_quotes(monkeypatch, tmp_path):
 def test_context_generator_strips_topic_prefix(monkeypatch, tmp_path):
     _stub_existing_model(monkeypatch, tmp_path)
     _install_fake_llama(monkeypatch, completion_text="Topic: apples and oranges")
-    from ultron.memory.contextualizer import ContextGenerator
+    from kenning.memory.contextualizer import ContextGenerator
     cg = ContextGenerator(model_path="draft.gguf")
     result = cg.generate_context("anything", role="user")
     assert result == "apples and oranges"
@@ -187,7 +187,7 @@ def test_context_generator_inference_failure_returns_empty(monkeypatch, tmp_path
             raise RuntimeError("simulated inference failure")
 
     monkeypatch.setattr("llama_cpp.Llama", lambda *a, **kw: BoomLlama())
-    from ultron.memory.contextualizer import ContextGenerator
+    from kenning.memory.contextualizer import ContextGenerator
     cg = ContextGenerator(model_path="draft.gguf")
     # Must not raise.
     assert cg.generate_context("anything", role="user") == ""
@@ -200,7 +200,7 @@ def test_context_generator_load_failure_returns_empty(monkeypatch, tmp_path):
         raise RuntimeError("simulated load failure")
 
     monkeypatch.setattr("llama_cpp.Llama", boom)
-    from ultron.memory.contextualizer import ContextGenerator
+    from kenning.memory.contextualizer import ContextGenerator
     cg = ContextGenerator(model_path="draft.gguf")
     assert cg.generate_context("anything", role="user") == ""
     # Second call should NOT re-attempt the load.
@@ -222,7 +222,7 @@ def test_context_generator_lazy_load(monkeypatch, tmp_path):
             pass
 
     monkeypatch.setattr("llama_cpp.Llama", LazyLlama)
-    from ultron.memory.contextualizer import ContextGenerator
+    from kenning.memory.contextualizer import ContextGenerator
     cg = ContextGenerator(model_path="draft.gguf")
     assert load_count["n"] == 0
     cg.generate_context("x", role="user")
@@ -246,7 +246,7 @@ def test_context_generator_eager_loads_at_construction(monkeypatch, tmp_path):
             pass
 
     monkeypatch.setattr("llama_cpp.Llama", LazyLlama)
-    from ultron.memory.contextualizer import ContextGenerator
+    from kenning.memory.contextualizer import ContextGenerator
     ContextGenerator(model_path="draft.gguf", eager=True)
     assert load_count["n"] == 1
 
@@ -257,7 +257,7 @@ def test_context_generator_eager_loads_at_construction(monkeypatch, tmp_path):
 
 
 def _stub_memory_for_generate_context():
-    from ultron.memory.qdrant_store import ConversationMemory
+    from kenning.memory.qdrant_store import ConversationMemory
     cm = object.__new__(ConversationMemory)
     cm._context_generator = None
     return cm
@@ -270,8 +270,8 @@ def _stub_turn(content: str = "hello world", role: str = "user", turn_id: int = 
 def test_generate_context_disabled_returns_empty(monkeypatch):
     """When the flag is OFF, no context is generated and no
     ContextGenerator is constructed."""
-    from ultron.memory.qdrant_store import ConversationMemory
-    from ultron.memory import contextualizer
+    from kenning.memory.qdrant_store import ConversationMemory
+    from kenning.memory import contextualizer
 
     construct_count = {"n": 0}
 
@@ -293,8 +293,8 @@ def test_generate_context_disabled_returns_empty(monkeypatch):
 def test_generate_context_enabled_calls_generator(monkeypatch):
     """When enabled, the generator is constructed once and called
     per-turn."""
-    from ultron.memory.qdrant_store import ConversationMemory
-    from ultron.memory import contextualizer
+    from kenning.memory.qdrant_store import ConversationMemory
+    from kenning.memory import contextualizer
 
     construct_count = {"n": 0}
     call_count = {"n": 0}
@@ -310,7 +310,7 @@ def test_generate_context_enabled_calls_generator(monkeypatch):
     monkeypatch.setattr(contextualizer, "ContextGenerator", FakeCG)
 
     # Flip the flag via a config override.
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config()
     monkeypatch.setattr(cfg.memory.contextual_retrieval, "enabled", True)
 
@@ -326,15 +326,15 @@ def test_generate_context_enabled_calls_generator(monkeypatch):
 def test_generate_context_construct_failure_is_fail_open(monkeypatch):
     """If ContextGenerator construction raises, return empty (don't
     crash the writer thread)."""
-    from ultron.memory.qdrant_store import ConversationMemory
-    from ultron.memory import contextualizer
+    from kenning.memory.qdrant_store import ConversationMemory
+    from kenning.memory import contextualizer
 
     def boom(*_a, **_kw):
         raise RuntimeError("simulated construct failure")
 
     monkeypatch.setattr(contextualizer, "ContextGenerator", boom)
 
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config()
     monkeypatch.setattr(cfg.memory.contextual_retrieval, "enabled", True)
 
@@ -345,8 +345,8 @@ def test_generate_context_construct_failure_is_fail_open(monkeypatch):
 
 def test_generate_context_runtime_failure_is_fail_open(monkeypatch):
     """If generate_context raises mid-call, return empty."""
-    from ultron.memory.qdrant_store import ConversationMemory
-    from ultron.memory import contextualizer
+    from kenning.memory.qdrant_store import ConversationMemory
+    from kenning.memory import contextualizer
 
     class BoomCG:
         def __init__(self, *_a, **_kw):
@@ -357,7 +357,7 @@ def test_generate_context_runtime_failure_is_fail_open(monkeypatch):
 
     monkeypatch.setattr(contextualizer, "ContextGenerator", BoomCG)
 
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config()
     monkeypatch.setattr(cfg.memory.contextual_retrieval, "enabled", True)
 

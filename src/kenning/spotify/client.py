@@ -1,7 +1,7 @@
 """Spotify Web API client -- playback control + search.
 
 Thin wrapper over the REST API. Every call attaches a fresh access
-token from :class:`~ultron.spotify.auth.SpotifyAuth` and goes through an
+token from :class:`~kenning.spotify.auth.SpotifyAuth` and goes through an
 injectable ``request_fn`` (matches ``requests.request``) so unit tests
 never hit the network. Methods return small result objects / plain
 dicts; the voice layer turns those into spoken lines.
@@ -18,9 +18,9 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-from ultron.spotify.auth import SpotifyAuth, SpotifyAuthError
+from kenning.spotify.auth import SpotifyAuth, SpotifyAuthError
 
-logger = logging.getLogger("ultron.spotify.client")
+logger = logging.getLogger("kenning.spotify.client")
 
 __all__ = ["SpotifyClient", "SpotifyAPIError", "NowPlaying", "Device"]
 

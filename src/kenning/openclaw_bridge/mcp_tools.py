@@ -1,13 +1,13 @@
-"""Stdio MCP server exposing Ultron's data to OpenClaw agents.
+"""Stdio MCP server exposing Kenning's data to OpenClaw agents.
 
 OpenClaw 2026.5.7's ``mcp set`` accepts a stdio command + args. Each
-agent run that needs an Ultron tool spawns this script as a fresh
+agent run that needs an Kenning tool spawns this script as a fresh
 process; the script reads from on-disk artifacts (heartbeat alert
 log, session audit logs, maintenance subprocess) and returns
 results over the MCP stdio protocol.
 
-This is intentionally separate from :class:`UltronMCPServer` (in
-``ultron.coding.mcp_server``) which serves the AI coding agent
+This is intentionally separate from :class:`KenningMCPServer` (in
+``kenning.coding.mcp_server``) which serves the AI coding agent
 subprocess via SSE and lives in the orchestrator process. Sharing
 that server across both consumers would require a stdio→SSE proxy
 shim; running a small dedicated stdio server is simpler and keeps
@@ -90,7 +90,7 @@ from typing import Any, Dict, List, Optional
 def _project_root() -> Path:
     """Resolve the project root from this module's location.
 
-    The stdio entry script (``scripts/run_ultron_mcp_for_openclaw.py``)
+    The stdio entry script (``scripts/run_kenning_mcp_for_openclaw.py``)
     sets PROJECT_ROOT before importing this module, so the layout
     discovery is straightforward."""
     return Path(__file__).resolve().parent.parent.parent.parent
@@ -111,7 +111,7 @@ def _load_alert_log_path() -> Path:
     """Discover the heartbeat alert log path from config.yaml.
 
     Falls back to the canonical default if config can't be read.
-    Doing the discovery without importing :mod:`ultron.config`
+    Doing the discovery without importing :mod:`kenning.config`
     keeps cold-start light — config loading would pull in pydantic
     and traverse the full schema.
     """
@@ -137,7 +137,7 @@ def _load_session_audit_dir() -> Path:
     Currently hard-coded to ``logs/sessions`` — the path comes from
     ``settings.CODING_SESSION_AUDIT_DIR`` which lives in the legacy
     config shim. Reading that shim from a stdio process would pull
-    the full ultron package; instead we use the well-known default."""
+    the full kenning package; instead we use the well-known default."""
     return _resolve_path("logs/sessions")
 
 
@@ -148,7 +148,7 @@ def _load_session_audit_dir() -> Path:
 
 def _alert_log():
     """Lazy-import the alert log (avoids loading until needed)."""
-    from ultron.openclaw_bridge.heartbeat_alerts import HeartbeatAlertLog  # noqa: E501
+    from kenning.openclaw_bridge.heartbeat_alerts import HeartbeatAlertLog  # noqa: E501
     return HeartbeatAlertLog(_load_alert_log_path(), retention_days=30)
 
 
@@ -357,7 +357,7 @@ def get_recent_voice_alerts_impl(*, limit: int = 5) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Desktop automation tool implementations (Phase 7)
 #
-# Every function lazy-imports ultron.desktop so cold start of the MCP
+# Every function lazy-imports kenning.desktop so cold start of the MCP
 # server stays light on the heartbeat / coding / maintenance paths.
 # pywin32 / mss / pywinauto / transformers all load on first desktop
 # tool call only.
@@ -372,7 +372,7 @@ def enumerate_monitors_impl() -> Dict[str, Any]:
     pywin32 is unavailable.
     """
     try:
-        from ultron.desktop.monitors import enumerate_monitors
+        from kenning.desktop.monitors import enumerate_monitors
     except Exception as e:                                       # noqa: BLE001
         return {"count": 0, "monitors": [], "error": f"import failed: {e}"}
     mons = enumerate_monitors()
@@ -399,7 +399,7 @@ def list_windows_impl(
 ) -> Dict[str, Any]:
     """List visible top-level windows. ``limit`` caps the response."""
     try:
-        from ultron.desktop.windows import enumerate_windows
+        from kenning.desktop.windows import enumerate_windows
     except Exception as e:                                       # noqa: BLE001
         return {"count": 0, "windows": [], "error": f"import failed: {e}"}
     wins = enumerate_windows(
@@ -446,9 +446,9 @@ def take_screenshot_impl(
     Optional[str]}``.
     """
     try:
-        from ultron.desktop.capture import get_screen_capture
-        from ultron.desktop.monitors import enumerate_monitors
-        from ultron.desktop.windows import get_foreground_window
+        from kenning.desktop.capture import get_screen_capture
+        from kenning.desktop.monitors import enumerate_monitors
+        from kenning.desktop.windows import get_foreground_window
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
 
@@ -489,7 +489,7 @@ def take_screenshot_impl(
 
     if include_description:
         try:
-            from ultron.desktop.vlm import get_vlm
+            from kenning.desktop.vlm import get_vlm
         except Exception as e:                                   # noqa: BLE001
             payload["description_error"] = f"VLM import failed: {e}"
         else:
@@ -529,8 +529,8 @@ def describe_screen_impl(
     # used the default prompt).
     if prompt:
         try:
-            from ultron.desktop.capture import get_screen_capture
-            from ultron.desktop.vlm import get_vlm
+            from kenning.desktop.capture import get_screen_capture
+            from kenning.desktop.vlm import get_vlm
         except Exception as e:                                   # noqa: BLE001
             payload["description_error"] = f"VLM import failed: {e}"
             return payload
@@ -568,7 +568,7 @@ def get_screen_context_impl(
     screenshot image bytes (use ``take_screenshot`` for that).
     """
     try:
-        from ultron.desktop.screen_context import build_screen_context
+        from kenning.desktop.screen_context import build_screen_context
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
 
@@ -617,7 +617,7 @@ def _resolve_monitor(monitor_index: Optional[int]):
     if monitor_index is None:
         return None, None
     try:
-        from ultron.desktop.monitors import enumerate_monitors
+        from kenning.desktop.monitors import enumerate_monitors
     except Exception as e:                                       # noqa: BLE001
         return None, {"success": False, "error": f"import failed: {e}"}
     mons = enumerate_monitors()
@@ -653,7 +653,7 @@ def launch_app_impl(
     if err is not None:
         return err
     try:
-        from ultron.desktop.launcher import get_app_launcher
+        from kenning.desktop.launcher import get_app_launcher
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
     launcher = get_app_launcher()
@@ -693,7 +693,7 @@ def launch_chrome_url_impl(
     if err is not None:
         return err
     try:
-        from ultron.desktop.launcher import get_app_launcher
+        from kenning.desktop.launcher import get_app_launcher
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
     size = None
@@ -730,7 +730,7 @@ def open_image_search_impl(
     if err is not None:
         return err
     try:
-        from ultron.desktop.launcher import get_app_launcher
+        from kenning.desktop.launcher import get_app_launcher
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
     launcher = get_app_launcher()
@@ -758,7 +758,7 @@ def move_window_to_monitor_impl(
     """Move an existing window to a target monitor.
 
     ``window_query`` is a substring match on title or process name
-    (same semantics as :func:`ultron.desktop.windows.find_window`).
+    (same semantics as :func:`kenning.desktop.windows.find_window`).
     """
     if not window_query or not isinstance(window_query, str):
         return {"success": False, "error": "window_query is required"}
@@ -768,8 +768,8 @@ def move_window_to_monitor_impl(
     if mon is None:
         return {"success": False, "error": "monitor_index is required"}
     try:
-        from ultron.desktop.placement import move_window_to_monitor
-        from ultron.desktop.windows import find_window
+        from kenning.desktop.placement import move_window_to_monitor
+        from kenning.desktop.windows import find_window
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
     win = find_window(window_query)
@@ -796,8 +796,8 @@ def focus_window_impl(*, window_query: str) -> Dict[str, Any]:
     if not window_query or not isinstance(window_query, str):
         return {"success": False, "error": "window_query is required"}
     try:
-        from ultron.desktop.placement import focus_window
-        from ultron.desktop.windows import find_window
+        from kenning.desktop.placement import focus_window
+        from kenning.desktop.windows import find_window
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
     win = find_window(window_query)
@@ -834,10 +834,10 @@ def window_action_impl(
                      f"expected maximize/minimize/restore",
         }
     try:
-        from ultron.desktop.placement import (
+        from kenning.desktop.placement import (
             maximize_window, minimize_window, restore_window,
         )
-        from ultron.desktop.windows import find_window
+        from kenning.desktop.windows import find_window
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
     win = find_window(window_query)
@@ -881,8 +881,8 @@ def click_uia_impl(
     if not element_query or not isinstance(element_query, str):
         return {"success": False, "error": "element_query is required"}
     try:
-        from ultron.desktop.uia import click_element
-        from ultron.desktop.windows import find_window
+        from kenning.desktop.uia import click_element
+        from kenning.desktop.windows import find_window
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
     win = find_window(window_query)
@@ -925,8 +925,8 @@ def type_into_uia_impl(
     if not isinstance(text, str):
         return {"success": False, "error": "text must be a string"}
     try:
-        from ultron.desktop.uia import type_text_into_element
-        from ultron.desktop.windows import find_window
+        from kenning.desktop.uia import type_text_into_element
+        from kenning.desktop.windows import find_window
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
     win = find_window(window_query)
@@ -959,8 +959,8 @@ def get_window_text_impl(*, window_query: str) -> Dict[str, Any]:
     if not window_query or not isinstance(window_query, str):
         return {"success": False, "error": "window_query is required"}
     try:
-        from ultron.desktop.uia import collect_window_text
-        from ultron.desktop.windows import find_window
+        from kenning.desktop.uia import collect_window_text
+        from kenning.desktop.windows import find_window
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
     win = find_window(window_query)
@@ -991,7 +991,7 @@ def mouse_click_impl(
     When ``x``/``y`` are null, clicks at current cursor location.
     """
     try:
-        from ultron.desktop.input_control import get_input_controller
+        from kenning.desktop.input_control import get_input_controller
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
     ctrl = get_input_controller()
@@ -1021,7 +1021,7 @@ def mouse_move_impl(
     than a linear path.
     """
     try:
-        from ultron.desktop.input_control import get_input_controller
+        from kenning.desktop.input_control import get_input_controller
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
     ctrl = get_input_controller()
@@ -1052,7 +1052,7 @@ def type_text_impl(
     reject ``interval_s=0`` instant input.
     """
     try:
-        from ultron.desktop.input_control import get_input_controller
+        from kenning.desktop.input_control import get_input_controller
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
     ctrl = get_input_controller()
@@ -1080,7 +1080,7 @@ def press_hotkey_impl(
     if not keys or not isinstance(keys, list):
         return {"success": False, "error": "keys must be a non-empty list"}
     try:
-        from ultron.desktop.input_control import get_input_controller
+        from kenning.desktop.input_control import get_input_controller
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
     ctrl = get_input_controller()
@@ -1109,7 +1109,7 @@ def scroll_impl(
     to load lazy content.
     """
     try:
-        from ultron.desktop.input_control import get_input_controller
+        from kenning.desktop.input_control import get_input_controller
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
     ctrl = get_input_controller()
@@ -1145,7 +1145,7 @@ def find_image_on_screen_impl(
     full-screen scan.
     """
     try:
-        from ultron.desktop.capture import find_image_on_screen
+        from kenning.desktop.capture import find_image_on_screen
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
 
@@ -1205,7 +1205,7 @@ def clipboard_read_impl(
     call carrying these exact bytes trips the exfil check.
     """
     try:
-        from ultron.desktop.clipboard import get_clipboard_manager
+        from kenning.desktop.clipboard import get_clipboard_manager
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
     mgr = get_clipboard_manager()
@@ -1237,7 +1237,7 @@ def clipboard_write_impl(
     if not isinstance(text, str):
         return {"success": False, "error": "text must be string"}
     try:
-        from ultron.desktop.clipboard import get_clipboard_manager
+        from kenning.desktop.clipboard import get_clipboard_manager
     except Exception as e:                                       # noqa: BLE001
         return {"success": False, "error": f"import failed: {e}"}
     mgr = get_clipboard_manager()
@@ -1289,7 +1289,7 @@ def build_server():
     """
     from mcp.server.fastmcp import FastMCP                    # local import
 
-    mcp = FastMCP(name="ultron-mcp", log_level="WARNING")
+    mcp = FastMCP(name="kenning-mcp", log_level="WARNING")
 
     @mcp.tool(
         name="get_heartbeat_alerts",
@@ -1322,7 +1322,7 @@ def build_server():
     @mcp.tool(
         name="run_maintenance",
         description=(
-            "Run Ultron's memory maintenance pipeline. Pass `scope` "
+            "Run Kenning's memory maintenance pipeline. Pass `scope` "
             "as a list of task names, or omit for all tasks. Long-"
             "running (minutes) — caller should not await."
         ),
@@ -1777,7 +1777,7 @@ def run_stdio() -> None:
     """Entry point: bring up the MCP server in stdio mode.
 
     Caller is the stdio entry script
-    (``scripts/run_ultron_mcp_for_openclaw.py``). Blocks until
+    (``scripts/run_kenning_mcp_for_openclaw.py``). Blocks until
     OpenClaw's spawned client closes the channel.
     """
     import asyncio

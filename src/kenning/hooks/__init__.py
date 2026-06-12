@@ -2,9 +2,9 @@
 
 Adapted from cline's ``src/core/hooks/`` family (Apache 2.0; see
 ``THIRD_PARTY_NOTICES.md``). Hooks live under
-``~/.ultron/hooks/<HookName>`` (global) and
-``<project_root>/.ultron/hooks/<HookName>`` (project) as shebanged
-executable files; ultron's variant additionally accepts ``<HookName>.py``
+``~/.kenning/hooks/<HookName>`` (global) and
+``<project_root>/.kenning/hooks/<HookName>`` (project) as shebanged
+executable files; kenning's variant additionally accepts ``<HookName>.py``
 and ``<HookName>.ps1`` extensions so Windows users can drop scripts
 without setting executable bits.
 

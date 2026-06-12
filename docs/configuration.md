@@ -1,4 +1,4 @@
-# Ultron configuration reference
+# Kenning configuration reference
 
 
 > **Currency note (2026-05-22):** this document is a historical snapshot.
@@ -11,13 +11,13 @@
 > identities and per-knob defaults have evolved.
 
 Single source of truth: [config.yaml](../config.yaml) at the project root.
-Loader + schema: [src/ultron/config.py](../src/ultron/config.py).
+Loader + schema: [src/kenning/config.py](../src/kenning/config.py).
 Discovery doc (one-time): [config_discovery.md](config_discovery.md).
 
 ## Reading config
 
 ```python
-from ultron.config import get_config
+from kenning.config import get_config
 
 cfg = get_config()
 if cfg.web_search.enabled:
@@ -33,7 +33,7 @@ All path values in config.yaml are interpreted relative to the project
 root unless absolute. Use `resolve_path()` to convert:
 
 ```python
-from ultron.config import get_config, resolve_path
+from kenning.config import get_config, resolve_path
 
 p = resolve_path(get_config().llm.model_path)  # absolute Path
 ```
@@ -57,16 +57,16 @@ coding:
 
 | Function | Purpose |
 |---|---|
-| `get_config() -> UltronConfig` | Singleton accessor. Auto-loads on first call. |
-| `load_config(path=None) -> UltronConfig` | Force-load from explicit path or `ULTRON_CONFIG_PATH` env var. Caches. |
-| `reload_config(path=None) -> UltronConfig` | Clear cache and reload. Some sections need a process restart. |
+| `get_config() -> KenningConfig` | Singleton accessor. Auto-loads on first call. |
+| `load_config(path=None) -> KenningConfig` | Force-load from explicit path or `KENNING_CONFIG_PATH` env var. Caches. |
+| `reload_config(path=None) -> KenningConfig` | Clear cache and reload. Some sections need a process restart. |
 | `set_config(cfg)` | Test-only: inject a pre-built config. |
 | `current_config_path() -> Path \| None` | Path the singleton was loaded from. |
 | `resolve_path(p) -> Path` | Convert a config-file path to an absolute Path under PROJECT_ROOT. |
 
 ## Validation
 
-`UltronConfig` (and every sub-model) uses `extra="forbid"` — unknown
+`KenningConfig` (and every sub-model) uses `extra="forbid"` — unknown
 keys fail validation at startup with a path-aware error. Many fields
 have range constraints (`Field(ge=..., le=...)`); violations are
 reported with the offending value.
@@ -74,8 +74,8 @@ reported with the offending value.
 To run with all schema defaults (no file), construct in Python:
 
 ```python
-from ultron.config import UltronConfig, set_config
-set_config(UltronConfig())
+from kenning.config import KenningConfig, set_config
+set_config(KenningConfig())
 ```
 
 This is for tests only — production always reads a file.
@@ -94,10 +94,10 @@ new home. Below is the section-level overview with tuning notes.
 | `channels` | 1 | Mono. Stereo isn't supported by the wake-word path. |
 | `blocksize` | 512 | 32 ms at 16 kHz. Smaller = lower latency, higher CPU. |
 | `dtype` | "float32" | sounddevice constraint. |
-| `input_device` | null | `null` = system default. Override per-host via env var `ULTRON_AUDIO_DEVICE` (substring match on device name). |
-| `output_device` | null | Same; env var `ULTRON_AUDIO_OUTPUT_DEVICE`. |
-| `barge_in_enabled` | true | Wake-word fires during TTS playback to interrupt Ultron mid-sentence. |
-| `barge_in_grace_seconds` | 0.5 | Initial deaf period after TTS starts so Ultron's own onset doesn't self-trigger. |
+| `input_device` | null | `null` = system default. Override per-host via env var `KENNING_AUDIO_DEVICE` (substring match on device name). |
+| `output_device` | null | Same; env var `KENNING_AUDIO_OUTPUT_DEVICE`. |
+| `barge_in_enabled` | true | Wake-word fires during TTS playback to interrupt Kenning mid-sentence. |
+| `barge_in_grace_seconds` | 0.5 | Initial deaf period after TTS starts so Kenning's own onset doesn't self-trigger. |
 | `ring_buffer_seconds` | 0.5 | Pre-speech audio kept so VAD-detected utterances don't clip the leading word. |
 
 ### `vad` — voice activity detection
@@ -113,10 +113,10 @@ new home. Below is the section-level overview with tuning notes.
 
 | Key | Default | Tuning notes |
 |---|---|---|
-| `name` | "ultron" | The trigger word (info only — model selection comes from `model_path`). |
-| `model_path` | "models/openwakeword/ultron.onnx" | Custom-trained Ultron ONNX. |
+| `name` | "kenning" | The trigger word (info only — model selection comes from `model_path`). |
+| `model_path` | "models/openwakeword/kenning.onnx" | Custom-trained Kenning ONNX. |
 | `fallback_model` | "hey_jarvis" | Used (with startup warning) if custom model missing. One of openWakeWord's pretrained set. |
-| `threshold` | 0.5 | Detection confidence cutoff. Raise toward 0.7 if Ultron's own voice keeps re-triggering. |
+| `threshold` | 0.5 | Detection confidence cutoff. Raise toward 0.7 if Kenning's own voice keeps re-triggering. |
 | `cooldown_seconds` | 1.5 | Debounce window — same wake event won't fire twice. |
 
 ### `stt` — Whisper
@@ -136,8 +136,8 @@ new home. Below is the section-level overview with tuning notes.
 | Key | Default | Tuning notes |
 |---|---|---|
 | `provider` | "llama_cpp" | Pinned. See [feedback_llm_runtime_decision.md](<ai-memory-dir>\feedback_llm_runtime_decision.md). |
-| `preset` | "qwen3.5-9b" | One of `"qwen3.5-9b" \| "qwen3.5-4b" \| "custom"`. The preset auto-fills `model_path`, `n_ctx`, and `draft_model_path` *only when those keys are absent from the YAML* — explicit user values always win. **Override at runtime via `ULTRON_LLM_PRESET=...`** (clears YAML overrides too unless `ULTRON_LLM_PRESET_KEEP_OVERRIDES=1`). Use `"custom"` to disable auto-resolution. See [src/ultron/config.py:LLM_PRESETS](../src/ultron/config.py), [scripts/swap_llm_preset.py](../scripts/swap_llm_preset.py), and [docs/4b_optimization_plan.md](4b_optimization_plan.md). |
-| `model_path` | "models/Qwen3.5-9B-Q4_K_M.gguf" | Env override: `ULTRON_LLM_MODEL_PATH`. With non-`"custom"` preset, omitting this key inherits from the preset. |
+| `preset` | "qwen3.5-9b" | One of `"qwen3.5-9b" \| "qwen3.5-4b" \| "custom"`. The preset auto-fills `model_path`, `n_ctx`, and `draft_model_path` *only when those keys are absent from the YAML* — explicit user values always win. **Override at runtime via `KENNING_LLM_PRESET=...`** (clears YAML overrides too unless `KENNING_LLM_PRESET_KEEP_OVERRIDES=1`). Use `"custom"` to disable auto-resolution. See [src/kenning/config.py:LLM_PRESETS](../src/kenning/config.py), [scripts/swap_llm_preset.py](../scripts/swap_llm_preset.py), and [docs/4b_optimization_plan.md](4b_optimization_plan.md). |
+| `model_path` | "models/Qwen3.5-9B-Q4_K_M.gguf" | Env override: `KENNING_LLM_MODEL_PATH`. With non-`"custom"` preset, omitting this key inherits from the preset. |
 | `draft_model_path` | null | Optional speculative-decoding draft GGUF. Set by the `qwen3.5-4b` preset to `"models/Qwen3.5-0.8B-Q4_K_M.gguf"`. Wired into `scripts/start_llamacpp_server.py` in Stage C of the 4B plan. |
 | `n_ctx` | 8192 | Context length. Larger costs proportional KV cache; this is the budgeted size. The `qwen3.5-4b` preset bumps this to 16384. |
 | `gpu_layers` | -1 | -1 = all layers on GPU. Reduce (e.g. 30) to spill to CPU on small VRAM. |
@@ -148,7 +148,7 @@ new home. Below is the section-level overview with tuning notes.
 | `history_turns` | 6 | Legacy fallback for when memory is disabled — recent-turn count to keep in context. |
 | `flash_attn` | true | Required for non-F16 KV cache. |
 | `kv_cache_type` | 8 | `8` = GGML_TYPE_Q8_0 (~½ VRAM vs F16); `1` = F16. |
-| `system_prompt` | (Ultron persona) | Multi-line block scalar. Edit to retune voice. |
+| `system_prompt` | (Kenning persona) | Multi-line block scalar. Edit to retune voice. |
 | `rag.position` | `"recency"` | One of `"system" \| "recency"`. Where retrieved Qdrant memories land in the LLM context. `"recency"` (Stage G default) prepends them to the user message — strongest-attention zone, +10–20% recall on the 4B. `"system"` folds them into the leading system message (legacy / rollback). |
 
 ### `embeddings`
@@ -185,7 +185,7 @@ new home. Below is the section-level overview with tuning notes.
 | Key | Default | Notes |
 |---|---|---|
 | `enabled` | true | Master switch. |
-| `brave_api_key_env` | "ULTRON_BRAVE_API_KEY" | Env var name to read for the Brave key. Key value stays in env, never in config. |
+| `brave_api_key_env` | "KENNING_BRAVE_API_KEY" | Env var name to read for the Brave key. Key value stays in env, never in config. |
 | `brave.endpoint` | (Brave URL) | |
 | `brave.count` | 5 | Results per query. |
 | `brave.timeout_seconds` | 8.0 | |
@@ -201,8 +201,8 @@ new home. Below is the section-level overview with tuning notes.
 
 | Key | Default | Notes |
 |---|---|---|
-| `follow_up_enabled` | true | After Ultron speaks, listen for follow-up without requiring wake word. |
-| `warm_mode_duration_seconds` | **30.0** | **Differs from the Foundation prompt's 10s example** — user override per [feedback_ultron_extension.md](<ai-memory-dir>\feedback_ultron_extension.md). Don't re-tighten without asking. |
+| `follow_up_enabled` | true | After Kenning speaks, listen for follow-up without requiring wake word. |
+| `warm_mode_duration_seconds` | **30.0** | **Differs from the Foundation prompt's 10s example** — user override per [feedback_kenning_extension.md](<ai-memory-dir>\feedback_kenning_extension.md). Don't re-tighten without asking. |
 | `default_uncertain_to_not_addressed` | true | Default-silent when classifier is uncertain. |
 | `rule_confidence_threshold` | 0.8 | Rule verdicts above this short-circuit zero-shot. |
 | `zero_shot_model` | "google/flan-t5-small" | CPU-only; ~300 MB. |
@@ -229,7 +229,7 @@ Top-level: `enabled`, `bridge` ("direct" runs AI coding agent as a subprocess; a
 | (root) | `token_budget_per_session` | 100000 | When 80 % crosses, warn user; at 100 % halt. |
 | (root) | `token_warning_threshold` | 0.8 | |
 | (root) | `progress_timeout_seconds` | 300 | Stall warning if no events from Claude for this long. |
-| (root) | `claude_cli` | "${USERPROFILE}/AppData/Roaming/npm/claude.cmd" | Override via `ULTRON_CLAUDE_CLI` env. |
+| (root) | `claude_cli` | "${USERPROFILE}/AppData/Roaming/npm/claude.cmd" | Override via `KENNING_CLAUDE_CLI` env. |
 | (root) | `sandbox_root` | "data/sandbox" | New projects under this; existing projects can live anywhere via the registry. |
 | (root) | `project_registry_path` | "data/projects.json" | |
 | (root) | `audit_log_path` | "logs/coding_tasks.jsonl" | |
@@ -259,7 +259,7 @@ Top-level: `enabled`, `bridge` ("direct" runs AI coding agent as a subprocess; a
 | `piper_length_scale` | 1.15 | Legacy `piper_rvc` engine only; >1 = slower / more deliberate. |
 | `pause_ms` | 180 | Silence at sentence boundaries (all engines). Currently set to 50 in config.yaml for snappy cadence. |
 | `edge_fade_ms` | 4 | Short fade at clip edges to prevent clicks. |
-| `rvc.enabled` | true | Voice conversion (Piper → Ultron). |
+| `rvc.enabled` | true | Voice conversion (Piper → Kenning). |
 | `rvc.device` | "cuda:0" | RVC inference device. |
 | `rvc.pitch_shift` | -2 | Semitones; lower = deeper. |
 | `rvc.index_rate` | 0.66 | 0–1; higher = stricter match to trained timbre. |
@@ -272,8 +272,8 @@ Top-level: `enabled`, `bridge` ("direct" runs AI coding agent as a subprocess; a
 
 | Key | Default | Notes |
 |---|---|---|
-| `file` | "logs/ultron.log" | Rotating handler at DEBUG. |
-| `level` | "INFO" | Console handler level. Override via `ULTRON_LOG_LEVEL`. |
+| `file` | "logs/kenning.log" | Rotating handler at DEBUG. |
+| `level` | "INFO" | Console handler level. Override via `KENNING_LOG_LEVEL`. |
 | `format` / `datefmt` | (standard) | |
 
 ## Hot reload
@@ -302,12 +302,12 @@ shim is a transitional artifact, not a parallel source of truth.
 
 | Subsystem | Direct `get_config()` | Through shim | Notes |
 |---|---|---|---|
-| logging | ✓ | | [src/ultron/utils/logging.py](../src/ultron/utils/logging.py) |
-| addressing | ✓ | | [src/ultron/pipeline/orchestrator.py](../src/ultron/pipeline/orchestrator.py) construction site + [scripts/review_addressing.py](../scripts/review_addressing.py) |
-| web_search | ✓ | | [src/ultron/web_search/{brave,jina,search,cache}.py](../src/ultron/web_search) |
-| llm | ✓ | | [src/ultron/llm/inference.py](../src/ultron/llm/inference.py) |
-| embeddings + memory + qdrant | ✓ | | [src/ultron/memory/{embedder,qdrant_store}.py](../src/ultron/memory) |
-| projections | ✓ | | [src/ultron/coding/projections.py](../src/ultron/coding/projections.py) (config wired into `_finalize_projection`) |
+| logging | ✓ | | [src/kenning/utils/logging.py](../src/kenning/utils/logging.py) |
+| addressing | ✓ | | [src/kenning/pipeline/orchestrator.py](../src/kenning/pipeline/orchestrator.py) construction site + [scripts/review_addressing.py](../scripts/review_addressing.py) |
+| web_search | ✓ | | [src/kenning/web_search/{brave,jina,search,cache}.py](../src/kenning/web_search) |
+| llm | ✓ | | [src/kenning/llm/inference.py](../src/kenning/llm/inference.py) |
+| embeddings + memory + qdrant | ✓ | | [src/kenning/memory/{embedder,qdrant_store}.py](../src/kenning/memory) |
+| projections | ✓ | | [src/kenning/coding/projections.py](../src/kenning/coding/projections.py) (config wired into `_finalize_projection`) |
 | audio + VAD | | ✓ | Through shim. |
 | wake_word | | ✓ | Through shim. |
 | stt (Whisper) | | ✓ | Through shim. |

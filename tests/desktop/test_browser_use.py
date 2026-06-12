@@ -24,7 +24,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.desktop import browser_use as bu
+from kenning.desktop import browser_use as bu
 
 
 # ---------------------------------------------------------------------------
@@ -1168,7 +1168,7 @@ class _FakeValidator:
     """
 
     def __init__(self) -> None:
-        from ultron.safety.validator import ValidatorVerdict, Verdict
+        from kenning.safety.validator import ValidatorVerdict, Verdict
 
         self.contexts: list = []
         self._allow_verdict = ValidatorVerdict(
@@ -1188,7 +1188,7 @@ class _FakeValidator:
         return self.next_verdict
 
     def block(self, *, message: str = "blocked by test") -> None:
-        from ultron.safety.validator import ValidatorVerdict, Verdict
+        from kenning.safety.validator import ValidatorVerdict, Verdict
 
         self.next_verdict = ValidatorVerdict(
             verdict=Verdict.BLOCK_HARD,
@@ -1198,7 +1198,7 @@ class _FakeValidator:
         )
 
     def needs_explicit_intent(self, *, message: str = "needs intent") -> None:
-        from ultron.safety.validator import ValidatorVerdict, Verdict
+        from kenning.safety.validator import ValidatorVerdict, Verdict
 
         self.next_verdict = ValidatorVerdict(
             verdict=Verdict.NEEDS_EXPLICIT_INTENT,
@@ -1304,7 +1304,7 @@ class TestSafetyCheck:
         tool: bu.BrowserUseTool,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from ultron.safety.validator import ValidatorVerdict, Verdict
+        from kenning.safety.validator import ValidatorVerdict, Verdict
 
         fake_validator.next_verdict = ValidatorVerdict(
             verdict=Verdict.LOG_ONLY, reason="log it"
@@ -2239,7 +2239,7 @@ class _FakeApprovalRegistry:
     """
 
     def __init__(self) -> None:
-        from ultron.safety.two_phase_approval import ApprovalHandle
+        from kenning.safety.two_phase_approval import ApprovalHandle
 
         self.registrations: list = []
         self._next_id = 0
@@ -2249,7 +2249,7 @@ class _FakeApprovalRegistry:
         self._pre_resolved = decision
 
     def register(self, request: Any) -> Any:
-        from ultron.safety.two_phase_approval import ApprovalHandle
+        from kenning.safety.two_phase_approval import ApprovalHandle
 
         self.registrations.append(request)
         self._next_id += 1

@@ -1,6 +1,6 @@
 """Tests for the guardrail-brake instrumentation (#15 + #65).
 
-Covers :mod:`ultron.evolution.turn_metrics`: the per-turn metrics ring
+Covers :mod:`kenning.evolution.turn_metrics`: the per-turn metrics ring
 (recording, window bounding, monotonic totals, since-marker slicing),
 the sampler's minimum-sample floors (a field without enough data stays
 ``None`` so its guardrail is skipped), and the fail-open ``nvidia-smi``
@@ -14,9 +14,9 @@ from typing import Any, Optional
 
 import pytest
 
-import ultron.evolution.turn_metrics as tm
-from ultron.evolution.guardrails import GuardrailSample
-from ultron.evolution.turn_metrics import (
+import kenning.evolution.turn_metrics as tm
+from kenning.evolution.guardrails import GuardrailSample
+from kenning.evolution.turn_metrics import (
     TurnMetricsRing,
     build_guardrail_sampler,
     probe_vram_mb,

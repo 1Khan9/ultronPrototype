@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.observations.lineage_overlap`."""
+"""Tests for :mod:`kenning.observations.lineage_overlap`."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.observations import (
+from kenning.observations import (
     LineageOverlap,
     ObservationWriter,
     compute_lineage_overlap,

@@ -2,7 +2,7 @@
 
 Covers:
 
-- _handle_app_launch: dispatch to ultron.desktop.voice + record routing
+- _handle_app_launch: dispatch to kenning.desktop.voice + record routing
   outcome + use preferences for default placement.
 - _handle_screen_context_query: capture + LLM call + voice response.
 """
@@ -13,8 +13,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.coding.voice import CapabilityVoiceController, VoiceResponse
-from ultron.openclaw_routing.intents import (
+from kenning.coding.voice import CapabilityVoiceController, VoiceResponse
+from kenning.openclaw_routing.intents import (
     AppLaunchIntent,
     RoutingIntent,
     RoutingIntentKind,
@@ -88,7 +88,7 @@ def test_handle_app_launch_missing_intent_returns_voice_error(tmp_path):
 
 
 def test_handle_app_launch_dispatches_to_voice_handler(monkeypatch, tmp_path):
-    from ultron.desktop.voice import AppLaunchVoiceResult
+    from kenning.desktop.voice import AppLaunchVoiceResult
 
     captured = []
 
@@ -103,7 +103,7 @@ def test_handle_app_launch_dispatches_to_voice_handler(monkeypatch, tmp_path):
         )
 
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_app_launch", fake_handler,
+        "kenning.desktop.voice.handle_app_launch", fake_handler,
     )
     controller = _build_controller(tmp_path=tmp_path)
     intent = AppLaunchIntent(
@@ -122,10 +122,10 @@ def test_handle_app_launch_dispatches_to_voice_handler(monkeypatch, tmp_path):
 
 
 def test_handle_app_launch_failure_returns_voice_message(monkeypatch, tmp_path):
-    from ultron.desktop.voice import AppLaunchVoiceResult
+    from kenning.desktop.voice import AppLaunchVoiceResult
 
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_app_launch",
+        "kenning.desktop.voice.handle_app_launch",
         lambda intent: AppLaunchVoiceResult(
             success=False,
             voice_message="I couldn't open chrome. Chrome is not installed on this system",
@@ -146,7 +146,7 @@ def test_handle_app_launch_exception_fails_open(monkeypatch, tmp_path):
     def boom(intent):
         raise RuntimeError("simulated desktop module failure")
 
-    monkeypatch.setattr("ultron.desktop.voice.handle_app_launch", boom)
+    monkeypatch.setattr("kenning.desktop.voice.handle_app_launch", boom)
     controller = _build_controller(tmp_path=tmp_path)
     intent = AppLaunchIntent(app_name="chrome", raw_text="open chrome")
     response = controller._handle_app_launch(
@@ -160,8 +160,8 @@ def test_handle_app_launch_uses_preference_default_monitor(monkeypatch, tmp_path
     """When the utterance has no explicit monitor target AND there's a
     matching prior preference, the prior monitor should be used.
     """
-    from ultron.desktop.preferences import DesktopPreference
-    from ultron.desktop.voice import AppLaunchVoiceResult
+    from kenning.desktop.preferences import DesktopPreference
+    from kenning.desktop.voice import AppLaunchVoiceResult
 
     prior = DesktopPreference(
         user_phrase="open chrome",
@@ -172,7 +172,7 @@ def test_handle_app_launch_uses_preference_default_monitor(monkeypatch, tmp_path
         timestamp=1234567890.0,
     )
     monkeypatch.setattr(
-        "ultron.desktop.preferences.find_preference_for_phrase",
+        "kenning.desktop.preferences.find_preference_for_phrase",
         lambda *a, **kw: prior,
     )
     captured = []
@@ -185,7 +185,7 @@ def test_handle_app_launch_uses_preference_default_monitor(monkeypatch, tmp_path
         )
 
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_app_launch", fake_handler,
+        "kenning.desktop.voice.handle_app_launch", fake_handler,
     )
     controller = _build_controller(tmp_path=tmp_path)
     intent = AppLaunchIntent(app_name="chrome", raw_text="open chrome")
@@ -198,8 +198,8 @@ def test_handle_app_launch_uses_preference_default_monitor(monkeypatch, tmp_path
 def test_handle_app_launch_explicit_monitor_overrides_preference(monkeypatch, tmp_path):
     """When the utterance has an explicit monitor target, ignore the
     prior preference's monitor."""
-    from ultron.desktop.preferences import DesktopPreference
-    from ultron.desktop.voice import AppLaunchVoiceResult
+    from kenning.desktop.preferences import DesktopPreference
+    from kenning.desktop.voice import AppLaunchVoiceResult
 
     prior = DesktopPreference(
         user_phrase="open chrome",
@@ -215,7 +215,7 @@ def test_handle_app_launch_explicit_monitor_overrides_preference(monkeypatch, tm
         return prior
 
     monkeypatch.setattr(
-        "ultron.desktop.preferences.find_preference_for_phrase", find_pref,
+        "kenning.desktop.preferences.find_preference_for_phrase", find_pref,
     )
     captured = []
 
@@ -227,7 +227,7 @@ def test_handle_app_launch_explicit_monitor_overrides_preference(monkeypatch, tm
         )
 
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_app_launch", fake_handler,
+        "kenning.desktop.voice.handle_app_launch", fake_handler,
     )
     controller = _build_controller(tmp_path=tmp_path)
     intent = AppLaunchIntent(
@@ -272,7 +272,7 @@ def test_handle_screen_context_no_llm_returns_voice_error(tmp_path):
 
 
 def test_handle_screen_context_happy_path(monkeypatch, tmp_path):
-    from ultron.desktop.voice import ScreenContextVoiceResult
+    from kenning.desktop.voice import ScreenContextVoiceResult
 
     captured_prompts = []
     captured_kwargs = []
@@ -286,7 +286,7 @@ def test_handle_screen_context_happy_path(monkeypatch, tmp_path):
         )
 
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_screen_context_query", fake_handle,
+        "kenning.desktop.voice.handle_screen_context_query", fake_handle,
     )
     fake_llm = MagicMock()
 
@@ -323,10 +323,10 @@ def test_handle_screen_context_happy_path(monkeypatch, tmp_path):
 
 
 def test_handle_screen_context_snapshot_failure(monkeypatch, tmp_path):
-    from ultron.desktop.voice import ScreenContextVoiceResult
+    from kenning.desktop.voice import ScreenContextVoiceResult
 
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_screen_context_query",
+        "kenning.desktop.voice.handle_screen_context_query",
         lambda intent: ScreenContextVoiceResult(
             success=False, error="capture failed",
         ),
@@ -345,10 +345,10 @@ def test_handle_screen_context_snapshot_failure(monkeypatch, tmp_path):
 
 
 def test_handle_screen_context_llm_exception_fails_open(monkeypatch, tmp_path):
-    from ultron.desktop.voice import ScreenContextVoiceResult
+    from kenning.desktop.voice import ScreenContextVoiceResult
 
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_screen_context_query",
+        "kenning.desktop.voice.handle_screen_context_query",
         lambda intent: ScreenContextVoiceResult(
             success=True,
             injection_text="[Visual context]",
@@ -374,17 +374,17 @@ def test_handle_screen_context_llm_exception_fails_open(monkeypatch, tmp_path):
 
 
 def test_capability_dispatch_routes_app_launch_to_native(monkeypatch, tmp_path):
-    from ultron.desktop.voice import AppLaunchVoiceResult
+    from kenning.desktop.voice import AppLaunchVoiceResult
 
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_app_launch",
+        "kenning.desktop.voice.handle_app_launch",
         lambda intent: AppLaunchVoiceResult(
             success=True, voice_message="ok", app_name="chrome",
         ),
     )
     # The handler also calls find_preference_for_phrase; mock to None.
     monkeypatch.setattr(
-        "ultron.desktop.preferences.find_preference_for_phrase",
+        "kenning.desktop.preferences.find_preference_for_phrase",
         lambda *a, **kw: None,
     )
     controller = _build_controller(tmp_path=tmp_path)
@@ -399,10 +399,10 @@ def test_capability_dispatch_routes_app_launch_to_native(monkeypatch, tmp_path):
 
 
 def test_capability_dispatch_routes_screen_context_to_native(monkeypatch, tmp_path):
-    from ultron.desktop.voice import ScreenContextVoiceResult
+    from kenning.desktop.voice import ScreenContextVoiceResult
 
     monkeypatch.setattr(
-        "ultron.desktop.voice.handle_screen_context_query",
+        "kenning.desktop.voice.handle_screen_context_query",
         lambda intent: ScreenContextVoiceResult(
             success=True,
             injection_text="[Visual]",

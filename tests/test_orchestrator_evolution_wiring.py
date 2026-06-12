@@ -1,7 +1,7 @@
 """Tests for the catalog-13 evolution wiring in the orchestrator.
 
 Orchestrator.__new__ pattern; no voice stack. The real construction
-round-trip redirects ultron.config.PROJECT_ROOT to tmp_path so nothing
+round-trip redirects kenning.config.PROJECT_ROOT to tmp_path so nothing
 touches the repo data/ dir (binding rule R9).
 
 Covers:
@@ -23,7 +23,7 @@ import pytest
 # Import at module load (before any monkeypatch of get_config) so the
 # transitive ``config.settings`` module -- which reads get_config().audio
 # at import time -- loads against the REAL config, not a per-test stub.
-from ultron.pipeline.orchestrator import Orchestrator
+from kenning.pipeline.orchestrator import Orchestrator
 
 
 def _bare_orchestrator() -> Any:
@@ -90,7 +90,7 @@ class _FakeEvolution:
 
 class TestLoadEvolution:
     def test_disabled_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import ultron.config as cfgmod
+        import kenning.config as cfgmod
 
         cfg = SimpleNamespace(evolution=SimpleNamespace(enabled=False))
         monkeypatch.setattr(cfgmod, "get_config", lambda: cfg)
@@ -98,7 +98,7 @@ class TestLoadEvolution:
         assert o._load_evolution_if_enabled() is None
 
     def test_missing_section_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import ultron.config as cfgmod
+        import kenning.config as cfgmod
 
         monkeypatch.setattr(cfgmod, "get_config", lambda: SimpleNamespace())
         o = _bare_orchestrator()
@@ -107,12 +107,12 @@ class TestLoadEvolution:
     def test_enabled_real_round_trip(
         self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import ultron.config as cfgmod
-        from ultron.config import UltronConfig
-        from ultron.evolution.service import EvolutionService
+        import kenning.config as cfgmod
+        from kenning.config import KenningConfig
+        from kenning.evolution.service import EvolutionService
 
         monkeypatch.setattr(cfgmod, "PROJECT_ROOT", tmp_path)
-        monkeypatch.setattr(cfgmod, "get_config", lambda: UltronConfig())
+        monkeypatch.setattr(cfgmod, "get_config", lambda: KenningConfig())
         o = _bare_orchestrator()
         svc = o._load_evolution_if_enabled()
         assert isinstance(svc, EvolutionService)
@@ -244,7 +244,7 @@ class TestRecordEvolutionTurn:
         """#16: the recent multi-turn transcript (from _dual_history) is passed
         to extract_signals as recent_session_transcript so the history-aware
         detectors can fire -- not just the current single utterance."""
-        import ultron.evolution.signals as sigmod
+        import kenning.evolution.signals as sigmod
 
         captured: dict = {}
 
@@ -274,7 +274,7 @@ class TestRecordEvolutionTurn:
     ) -> None:
         """No _dual_history on the orchestrator -> empty transcript, turn still
         recorded (fail-open)."""
-        import ultron.evolution.signals as sigmod
+        import kenning.evolution.signals as sigmod
 
         captured: dict = {}
         monkeypatch.setattr(
@@ -297,7 +297,7 @@ class TestConsumeLastBargeIn:
         assert o._consume_last_barge_in() is False
 
     def test_missing_attr_defaults_false(self) -> None:
-        from ultron.pipeline.orchestrator import Orchestrator
+        from kenning.pipeline.orchestrator import Orchestrator
 
         o = Orchestrator.__new__(Orchestrator)
         # No _last_turn_barged_in set at all -> defaults to False.
@@ -480,7 +480,7 @@ class TestDrainEvolutionNarrations:
 
 class TestPopLastTtft:
     def test_pop_returns_and_clears(self) -> None:
-        from ultron.llm.inference import LLMEngine
+        from kenning.llm.inference import LLMEngine
 
         engine = LLMEngine.__new__(LLMEngine)
         engine._last_ttft_ms = 172.5
@@ -488,7 +488,7 @@ class TestPopLastTtft:
         assert engine.pop_last_ttft_ms() is None
 
     def test_pop_before_any_stream_is_none(self) -> None:
-        from ultron.llm.inference import LLMEngine
+        from kenning.llm.inference import LLMEngine
 
         engine = LLMEngine.__new__(LLMEngine)
         assert engine.pop_last_ttft_ms() is None

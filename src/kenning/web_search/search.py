@@ -37,11 +37,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-from ultron.config import get_config
-from ultron.utils.logging import get_logger
-from ultron.web_search.brave import SearchResult, BraveSearchClient
-from ultron.web_search.cache import WebResultsCache
-from ultron.web_search.jina import JinaReaderClient
+from kenning.config import get_config
+from kenning.utils.logging import get_logger
+from kenning.web_search.brave import SearchResult, BraveSearchClient
+from kenning.web_search.cache import WebResultsCache
+from kenning.web_search.jina import JinaReaderClient
 
 logger = get_logger("web_search.search")
 
@@ -206,7 +206,7 @@ def _get_cross_encoder():
         # Previously each constructed its own ``CrossEncoderReranker``,
         # causing two ~2 s cold loads (~4 s of duplicate startup) on
         # any turn that did both a memory retrieve AND a web search.
-        from ultron.memory.reranker import get_shared_reranker
+        from kenning.memory.reranker import get_shared_reranker
         _CROSS_ENCODER_CACHE = get_shared_reranker()
         return _CROSS_ENCODER_CACHE
     except Exception as e:                                             # noqa: BLE001
@@ -461,7 +461,7 @@ class WebSearchExecutor:
         # zero-cost; the opt-in LLM path adds one short call on this
         # already-network-bound SEARCH turn).
         try:
-            from ultron.web_search.query_rewrite import maybe_reformulate_queries
+            from kenning.web_search.query_rewrite import maybe_reformulate_queries
             reformulated = maybe_reformulate_queries(
                 user_query, raw_queries, llm=self.llm,
             )
@@ -698,7 +698,7 @@ def format_sources_for_prompt(
             body = body[:max_chars_per_source] + "\n[truncated]"
         # Best-effort compression: never break the search path.
         try:
-            from ultron.llm.compression import maybe_compress
+            from kenning.llm.compression import maybe_compress
             body = maybe_compress(body, surface="web")
         except Exception:
             pass

@@ -2,8 +2,8 @@
 (catalog 09 batch H wiring).
 
 Replaces the prior synchronous ``_engage_extra`` / ``_disengage_extra``
-callbacks in :mod:`ultron.pipeline.orchestrator` with an async-generator
-that yields :class:`~ultron.lifecycle.start_task.StartTask` snapshots at
+callbacks in :mod:`kenning.pipeline.orchestrator` with an async-generator
+that yields :class:`~kenning.lifecycle.start_task.StartTask` snapshots at
 each substep. Driven by :func:`drive_start_task`, the orchestrator
 receives a per-stage callback so it can speak a short voice ack between
 substeps (e.g. "Stopping Parakeet... swapping language model...").
@@ -23,7 +23,7 @@ import logging
 import threading
 from typing import Any, AsyncIterator, Callable, Optional
 
-from ultron.lifecycle.start_task import (
+from kenning.lifecycle.start_task import (
     StartTask,
     StartTaskStatus,
     create_start_task,
@@ -127,7 +127,7 @@ async def gaming_engage_iterator(
         deps.llm, "reload_for_preset",
     ):
         try:
-            from ultron.config import get_config
+            from kenning.config import get_config
 
             current_preset = get_config().llm.preset
             if current_preset != deps.gaming_llm_preset:

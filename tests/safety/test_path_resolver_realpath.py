@@ -12,7 +12,7 @@ import sys
 
 import pytest
 
-from ultron.safety.path_resolver import PathResolver
+from kenning.safety.path_resolver import PathResolver
 
 
 @pytest.fixture

@@ -1,4 +1,4 @@
-"""Phase 1: UltronMCPServer lifecycle + Qwen-side tools + live SSE roundtrip.
+"""Phase 1: KenningMCPServer lifecycle + Qwen-side tools + live SSE roundtrip.
 
 Three test groups:
 
@@ -9,7 +9,7 @@ Three test groups:
     tool, validates the responses. No real AI coding agent subprocess --
     that's covered by the e2e test in Phase 1f.
 
-Tests pin ``ULTRON_CODING_MCP_ALLOW_ANY_ROOT=1`` so they can use tmp_path
+Tests pin ``KENNING_CODING_MCP_ALLOW_ANY_ROOT=1`` so they can use tmp_path
 as the project_root without the sandbox check kicking in.
 """
 
@@ -26,14 +26,14 @@ from typing import Any
 
 import pytest
 
-os.environ["ULTRON_CODING_MCP_ALLOW_ANY_ROOT"] = "1"
+os.environ["KENNING_CODING_MCP_ALLOW_ANY_ROOT"] = "1"
 
-from ultron.coding.mcp_server import (  # noqa: E402
-    UltronMCPServer,
+from kenning.coding.mcp_server import (  # noqa: E402
+    KenningMCPServer,
     remove_mcp_config,
     write_mcp_config,
 )
-from ultron.coding.session import (  # noqa: E402
+from kenning.coding.session import (  # noqa: E402
     ClarificationRequest,
     ProjectSession,
     SessionStatus,
@@ -56,7 +56,7 @@ def _free_port() -> int:
 def test_server_constructs_without_starting(tmp_path: Path):
     """Importing + constructing must not bind the socket. The runner can
     delay start() until the orchestrator main loop actually runs."""
-    server = UltronMCPServer(
+    server = KenningMCPServer(
         host="127.0.0.1",
         port=_free_port(),
         log_path=tmp_path / "mcp.jsonl",
@@ -65,7 +65,7 @@ def test_server_constructs_without_starting(tmp_path: Path):
 
 
 def test_server_start_and_stop(tmp_path: Path):
-    server = UltronMCPServer(
+    server = KenningMCPServer(
         host="127.0.0.1",
         port=_free_port(),
         log_path=tmp_path / "mcp.jsonl",
@@ -93,7 +93,7 @@ def test_server_start_and_stop(tmp_path: Path):
 
 
 def test_server_double_start_is_idempotent(tmp_path: Path):
-    server = UltronMCPServer(
+    server = KenningMCPServer(
         host="127.0.0.1",
         port=_free_port(),
         log_path=tmp_path / "mcp.jsonl",
@@ -111,8 +111,8 @@ def test_server_double_start_is_idempotent(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
-def _server(tmp_path: Path) -> UltronMCPServer:
-    return UltronMCPServer(
+def _server(tmp_path: Path) -> KenningMCPServer:
+    return KenningMCPServer(
         host="127.0.0.1",
         port=_free_port(),
         log_path=tmp_path / "mcp.jsonl",
@@ -199,7 +199,7 @@ def test_lookup_facts_audit_entry_marks_no_memory(tmp_path: Path):
     """The no-memory branch logs ``source=no_memory_wired`` so we can grep
     audit traces for stub fires."""
     log_path = tmp_path / "mcp.jsonl"
-    server = UltronMCPServer(
+    server = KenningMCPServer(
         host="127.0.0.1",
         port=_free_port(),
         log_path=log_path,
@@ -226,7 +226,7 @@ def test_lookup_facts_calls_memory_search_facts(tmp_path: Path):
                 "min_confidence": min_confidence,
                 "max_age_days": max_age_days,
             })
-            from ultron.memory.qdrant_store import FactRow
+            from kenning.memory.qdrant_store import FactRow
             return [
                 FactRow(
                     fact="user prefers FastAPI",
@@ -240,7 +240,7 @@ def test_lookup_facts_calls_memory_search_facts(tmp_path: Path):
             ]
 
     stub = _StubMemory()
-    server = UltronMCPServer(
+    server = KenningMCPServer(
         host="127.0.0.1",
         port=_free_port(),
         log_path=tmp_path / "mcp.jsonl",
@@ -263,7 +263,7 @@ def test_lookup_facts_swallows_search_facts_exception(tmp_path: Path):
         def search_facts(self, *args, **kwargs):
             raise RuntimeError("simulated qdrant failure")
 
-    server = UltronMCPServer(
+    server = KenningMCPServer(
         host="127.0.0.1",
         port=_free_port(),
         log_path=tmp_path / "mcp.jsonl",
@@ -284,7 +284,7 @@ def test_lookup_facts_overrides_threshold_kwargs(tmp_path: Path):
             return []
 
     cap = _CapturingMemory()
-    server = UltronMCPServer(
+    server = KenningMCPServer(
         host="127.0.0.1",
         port=_free_port(),
         log_path=tmp_path / "mcp.jsonl",
@@ -325,8 +325,8 @@ def test_write_and_remove_mcp_config(tmp_path: Path):
     assert target == project / ".mcp.json"
     assert target.is_file()
     config = json.loads(target.read_text(encoding="utf-8"))
-    assert "ultron_coding" in config["mcpServers"]
-    assert config["mcpServers"]["ultron_coding"]["url"] == "http://127.0.0.1:99999/sse"
+    assert "kenning_coding" in config["mcpServers"]
+    assert config["mcpServers"]["kenning_coding"]["url"] == "http://127.0.0.1:99999/sse"
     remove_mcp_config(project)
     assert not target.exists()
 

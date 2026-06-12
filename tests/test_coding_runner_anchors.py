@@ -15,8 +15,8 @@ from typing import Iterator, List, Optional
 
 import pytest
 
-from ultron.coding.anchors import AnchorPlan, GoalAnchor
-from ultron.coding.bridge import (
+from kenning.coding.anchors import AnchorPlan, GoalAnchor
+from kenning.coding.bridge import (
     CodingBridge,
     EventKind,
     EventListener,
@@ -26,9 +26,9 @@ from ultron.coding.bridge import (
     TaskResult,
     TaskState,
 )
-from ultron.coding.runner import CodingTaskRunner
-from ultron.config import (
-    UltronConfig,
+from kenning.coding.runner import CodingTaskRunner
+from kenning.config import (
+    KenningConfig,
     get_config,
     reload_config,
     set_config,
@@ -109,7 +109,7 @@ def _usage_event(*, total_tokens: int) -> TaskEvent:
 
 @pytest.fixture
 def goal_anchors_enabled() -> Iterator[None]:
-    """Install a fresh UltronConfig with goal_anchors enabled."""
+    """Install a fresh KenningConfig with goal_anchors enabled."""
     previous = get_config()
     cfg = previous.model_copy(deep=True)
     cfg.coding.goal_anchors.enabled = True

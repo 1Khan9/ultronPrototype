@@ -1,4 +1,4 @@
-"""Tests for ``ultron.openclaw_bridge.holder.OpenClawBridge``.
+"""Tests for ``kenning.openclaw_bridge.holder.OpenClawBridge``.
 
 The holder is the orchestrator's entry point to the bridge. Tests
 cover construction (with and without a discoverable CLI), startup
@@ -17,8 +17,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ultron.openclaw_bridge.holder import OpenClawBridge
-from ultron.openclaw_bridge.mcp_registration import RegistrationResult
+from kenning.openclaw_bridge.holder import OpenClawBridge
+from kenning.openclaw_bridge.mcp_registration import RegistrationResult
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +37,7 @@ def _make_cfg(
     bridge = SimpleNamespace(
         cli_path=cli_path,
         cli_timeout_seconds=30.0,
-        mcp_server_name="ultron-mcp",
+        mcp_server_name="kenning-mcp",
         mcp_server_command=mcp_command,
         mcp_server_args=[],
         retry_registration_interval_seconds=0.05,
@@ -55,7 +55,7 @@ def _make_cfg(
         health_check_timeout_seconds=30.0,
         health_check_interval_seconds=60.0,
         fail_open=True,
-        required_agent_id="ultron-main",
+        required_agent_id="kenning-main",
         bridge=bridge,
     )
 
@@ -138,7 +138,7 @@ def test_start_calls_register_when_reachable(
     # Force lifecycle.is_reachable -> True; force register -> success.
     bridge.lifecycle.is_reachable = MagicMock(return_value=True)             # type: ignore[method-assign]
     register_mock = AsyncMock(
-        return_value=RegistrationResult(registered=True, name="ultron-mcp"),
+        return_value=RegistrationResult(registered=True, name="kenning-mcp"),
     )
     bridge.registrar.register = register_mock                                # type: ignore[assignment]
 
@@ -166,7 +166,7 @@ def test_start_schedules_retry_when_unreachable(
     # and exits cleanly on shutdown.
     bridge.registrar.register = AsyncMock(                                   # type: ignore[assignment]
         return_value=RegistrationResult(
-            registered=False, name="ultron-mcp", error="down",
+            registered=False, name="kenning-mcp", error="down",
         ),
     )
 
@@ -242,7 +242,7 @@ def test_bridge_includes_notifications_dispatcher(
 def test_bridge_notifications_uses_provided_config(
     fake_cli: Path, tmp_path: Path,
 ) -> None:
-    from ultron.config import (
+    from kenning.config import (
         NotificationsConfig,
         TelegramNotificationsConfig,
         TelegramNotifyOnConfig,
@@ -315,7 +315,7 @@ def test_fire_and_forget_swallows_exceptions(
 def test_bridge_includes_heartbeat_alert_log(
     fake_cli: Path, tmp_path: Path,
 ) -> None:
-    from ultron.config import HeartbeatConfig
+    from kenning.config import HeartbeatConfig
 
     cfg = _make_cfg(cli_path=str(fake_cli), workspace=str(tmp_path / "ws"))
     hb_cfg = HeartbeatConfig(alert_log_path=str(tmp_path / "h.jsonl"))
@@ -328,7 +328,7 @@ def test_bridge_includes_heartbeat_alert_log(
 def test_record_heartbeat_alert_writes_to_log(
     fake_cli: Path, tmp_path: Path,
 ) -> None:
-    from ultron.config import HeartbeatConfig
+    from kenning.config import HeartbeatConfig
 
     cfg = _make_cfg(cli_path=str(fake_cli), workspace=str(tmp_path / "ws"))
     hb_cfg = HeartbeatConfig(
@@ -353,7 +353,7 @@ def test_record_heartbeat_alert_fires_notification_when_enabled(
     bridge schedules a Telegram dispatch via fire_and_forget. We
     verify the dispatcher's notify method was invoked."""
     import threading
-    from ultron.config import (
+    from kenning.config import (
         HeartbeatConfig,
         NotificationsConfig,
         TelegramNotificationsConfig,
@@ -386,7 +386,7 @@ def test_record_heartbeat_alert_fires_notification_when_enabled(
     async def fake_notify(text: str):
         captured.append(text)
         notified.set()
-        from ultron.openclaw_bridge.notifications import NotificationResult
+        from kenning.openclaw_bridge.notifications import NotificationResult
         return NotificationResult(sent=True, channel="telegram", target="42")
 
     bridge.notifications.notify_heartbeat_alert = fake_notify  # type: ignore[assignment]
@@ -399,7 +399,7 @@ def test_record_heartbeat_alert_fires_notification_when_enabled(
 def test_record_heartbeat_alert_no_notify_when_flag_off(
     fake_cli: Path, tmp_path: Path,
 ) -> None:
-    from ultron.config import HeartbeatConfig
+    from kenning.config import HeartbeatConfig
 
     cfg = _make_cfg(cli_path=str(fake_cli), workspace=str(tmp_path / "ws"))
     hb_cfg = HeartbeatConfig(
@@ -412,7 +412,7 @@ def test_record_heartbeat_alert_no_notify_when_flag_off(
 
     async def fake_notify(text: str):
         notify_calls.append(text)
-        from ultron.openclaw_bridge.notifications import NotificationResult
+        from kenning.openclaw_bridge.notifications import NotificationResult
         return NotificationResult(sent=True, channel="telegram", target="x")
 
     bridge.notifications.notify_heartbeat_alert = fake_notify  # type: ignore[assignment]
@@ -455,7 +455,7 @@ def test_resolve_mcp_command_auto_finds_canonical() -> None:
     # First arg is the entry script path.
     assert args
     entry = args[0]
-    assert entry.endswith("run_ultron_mcp_for_openclaw.py")
+    assert entry.endswith("run_kenning_mcp_for_openclaw.py")
     assert Path(entry).exists()
     assert "--stdio" in args
 
@@ -464,9 +464,9 @@ def test_resolve_mcp_command_auto_falls_back_when_script_missing(monkeypatch) ->
     """If the entry script doesn't exist (unusual layout), auto
     returns (None, []) so the registrar disables itself."""
     fake_root = Path("/nonexistent/place")
-    import ultron.openclaw_bridge.holder as holder_mod
+    import kenning.openclaw_bridge.holder as holder_mod
     monkeypatch.setattr(
-        "ultron.config.PROJECT_ROOT", fake_root,
+        "kenning.config.PROJECT_ROOT", fake_root,
     )
     cmd, args = holder_mod.OpenClawBridge._resolve_mcp_command("auto", [])
     assert cmd is None

@@ -1,10 +1,10 @@
-"""Tests for ultron.checkpoints.restore."""
+"""Tests for kenning.checkpoints.restore."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.checkpoints import restore as rt
+from kenning.checkpoints import restore as rt
 
 
 class TestPlanRestore:

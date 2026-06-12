@@ -11,12 +11,12 @@ Usage:
     python scripts/swap_llm_preset.py --list           # show presets + paths
     python scripts/swap_llm_preset.py --status         # show current preset
 
-Note: the env var ``ULTRON_LLM_PRESET`` is an even faster path that
+Note: the env var ``KENNING_LLM_PRESET`` is an even faster path that
 doesn't touch the file at all — set it in your shell before running
-``python -m ultron``.
+``python -m kenning``.
 
-This script does NOT restart Ultron. After swapping, restart any
-running ``python -m ultron`` and ``scripts/start_llamacpp_server.py``
+This script does NOT restart Kenning. After swapping, restart any
+running ``python -m kenning`` and ``scripts/start_llamacpp_server.py``
 processes to pick up the new model. Hot-swap inside a running process
 is not supported (the GGUF is loaded into VRAM at startup).
 """
@@ -28,7 +28,7 @@ import re
 import sys
 from pathlib import Path
 
-# Make ``ultron`` importable when running from any cwd.
+# Make ``kenning`` importable when running from any cwd.
 _HERE = Path(__file__).resolve().parent.parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
@@ -39,15 +39,15 @@ if str(_HERE / "src") not in sys.path:
 def _config_path() -> Path:
     """Find config.yaml — env override or default location."""
     import os
-    env = os.environ.get("ULTRON_CONFIG_PATH")
+    env = os.environ.get("KENNING_CONFIG_PATH")
     if env:
         return Path(env)
     return _HERE / "config.yaml"
 
 
 def _list_presets() -> int:
-    from ultron.config import LLM_PRESETS
-    print("Available presets (from src/ultron/config.py:LLM_PRESETS):\n")
+    from kenning.config import LLM_PRESETS
+    print("Available presets (from src/kenning/config.py:LLM_PRESETS):\n")
     for name, fields in LLM_PRESETS.items():
         print(f"  {name}")
         for k, v in fields.items():
@@ -58,7 +58,7 @@ def _list_presets() -> int:
 
 
 def _show_status() -> int:
-    from ultron.config import get_config, current_config_path
+    from kenning.config import get_config, current_config_path
     cfg = get_config()
     print(f"config: {current_config_path()}")
     print(f"preset: {cfg.llm.preset}")
@@ -70,7 +70,7 @@ def _show_status() -> int:
 
 def _validate_preset_files(preset: str) -> int:
     """Confirm the GGUFs the preset points at exist on disk."""
-    from ultron.config import LLM_PRESETS, resolve_path
+    from kenning.config import LLM_PRESETS, resolve_path
     if preset == "custom":
         print(
             f"preset 'custom': skipping path validation (you manage "
@@ -165,7 +165,7 @@ def _swap(preset: str, *, dry_run: bool) -> int:
     tmp = cfg_path.with_suffix(".yaml.tmp")
     tmp.write_text(new_text, encoding="utf-8")
     # Re-validate the new file before committing the swap.
-    from ultron.config import load_config
+    from kenning.config import load_config
     try:
         load_config(tmp)
     except Exception as e:
@@ -176,7 +176,7 @@ def _swap(preset: str, *, dry_run: bool) -> int:
 
     print(f"  wrote {cfg_path}")
     print(
-        f"\nNext: restart any running `python -m ultron` and "
+        f"\nNext: restart any running `python -m kenning` and "
         f"`scripts/start_llamacpp_server.py` processes to pick up "
         f"the new model. The swap does NOT hot-reload."
     )

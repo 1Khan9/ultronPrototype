@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from ultron.evolution.service import EvolutionService
+from kenning.evolution.service import EvolutionService
 
 
 def _cfg(**kw):

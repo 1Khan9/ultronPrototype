@@ -2,10 +2,10 @@
 
 Catalog 13 (clawhub-capability-evolver) clean-room synthesis -- the
 ``autoDistill`` pipeline, which the catalog called the single best
-clean-room candidate. It observes ultron's local capsule history (records
+clean-room candidate. It observes kenning's local capsule history (records
 of past evolution attempts + their outcomes) and, when enough evidence
 has accumulated, synthesises a NEW reusable strategy and materialises it
-as an **ultron-compatible ``skills/*.md`` proposal** -- a markdown DATA
+as an **kenning-compatible ``skills/*.md`` proposal** -- a markdown DATA
 file, never generated code, never a JSON gene that drives execution.
 
 The fully-local pipeline (no LLM, no hub):
@@ -16,14 +16,14 @@ The fully-local pipeline (no LLM, no hub):
    strategy drift (diverging summaries), and coverage gaps (frequent
    signals no gene covers).
 3. :func:`synthesize_gene_from_patterns` -- pick the strongest group and
-   derive a :class:`~ultron.evolution.models.Gene` (signals + category +
+   derive a :class:`~kenning.evolution.models.Gene` (signals + category +
    strategy), OR :func:`synthesize_repair_gene_from_failures` for the
    defensive failure path.
 4. :func:`validate_synthesized_gene` -- enforce the id prefix, >=3 strategy
    steps, forbidden-paths + max-files caps, and the validation-command
    allowlist; reject duplicates / full-overlap genes.
 5. :func:`gene_to_skill_proposal` + :func:`render_skill_markdown` -- render
-   the gene as a loadable ultron skill markdown file.
+   the gene as a loadable kenning skill markdown file.
 
 The gates (:func:`should_distill`) require a minimum corpus, a healthy
 recent success rate, a cooldown interval, and data-hash idempotency so the
@@ -39,8 +39,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional, Sequence
 
-from ultron.evolution.blast_radius import filter_validation_commands
-from ultron.evolution.models import (
+from kenning.evolution.blast_radius import filter_validation_commands
+from kenning.evolution.models import (
     DISTILLED_GENE_MAX_FILES,
     DISTILLED_ID_PREFIX,
     REPAIR_DISTILLED_ID_PREFIX,
@@ -50,7 +50,7 @@ from ultron.evolution.models import (
     OutcomeStatus,
 )
 
-# --- gate constants (ultron-calibrated) -------------------------------------
+# --- gate constants (kenning-calibrated) -------------------------------------
 
 DISTILLER_MIN_CAPSULES: int = 10  # total successes before distilling
 DISTILLER_RECENT_WINDOW: int = 10
@@ -817,7 +817,7 @@ def render_skill_markdown(
     source_capsule_count: int,
     data_hash: str,
 ) -> str:
-    """Render an ultron-loadable knowledge-skill markdown file.
+    """Render an kenning-loadable knowledge-skill markdown file.
 
     The frontmatter matches the schema ``skills/loader.py`` parses (name /
     type / version / description / triggers / min_user_text_chars, plus
@@ -853,7 +853,7 @@ def render_skill_markdown(
     lines.append("## Provenance")
     lines.append(f"- Category: `{category.value}`")
     lines.append(
-        f"- Auto-distilled by ultron's evolution loop from {int(source_capsule_count)} "
+        f"- Auto-distilled by kenning's evolution loop from {int(source_capsule_count)} "
         "successful outcome(s)."
     )
     lines.append(
@@ -873,7 +873,7 @@ def gene_to_skill_proposal(
     """Convert a validated gene into a rendered :class:`SkillProposal`."""
     slug = sanitize_skill_slug(gene.id, gene.signals_match, gene.summary)
     title = " ".join(w.capitalize() for w in slug.split("-")) or "Evolved Skill"
-    description = gene.summary or f"A {gene.category.value} strategy ultron distilled from experience."
+    description = gene.summary or f"A {gene.category.value} strategy kenning distilled from experience."
     triggers = derive_triggers(gene)
     markdown = render_skill_markdown(
         slug=slug,

@@ -9,7 +9,7 @@ P5 -- third-party AV / EDR process termination (broadened E1).
 
 from __future__ import annotations
 
-from ultron.safety.rules.base import CommandPatternRule, Rule
+from kenning.safety.rules.base import CommandPatternRule, Rule
 
 
 def build_category_p_rules() -> list[Rule]:

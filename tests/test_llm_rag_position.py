@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections import namedtuple
 from unittest.mock import MagicMock, patch
 
-from ultron.llm.inference import LLMEngine
+from kenning.llm.inference import LLMEngine
 
 
 # Stand-in for memory.MemoryTurn — only the fields _format_rag_block reads.
@@ -60,10 +60,10 @@ def _patched_config_context(cfg):
     import contextlib
     stack = contextlib.ExitStack()
     stack.enter_context(patch(
-        "ultron.llm.inference.get_config", return_value=cfg,
+        "kenning.llm.inference.get_config", return_value=cfg,
     ))
     stack.enter_context(patch(
-        "ultron.llm.compression.get_config", return_value=cfg,
+        "kenning.llm.compression.get_config", return_value=cfg,
     ))
     return stack
 

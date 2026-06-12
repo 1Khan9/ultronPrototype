@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ultron.safety.rules.category_it import (
+from kenning.safety.rules.category_it import (
     DEFAULT_BLOCK_MESSAGE,
     DEFAULT_PREFIX_BLOCKLIST,
     DEFAULT_STANDALONE_BLOCKLIST,
@@ -18,7 +18,7 @@ from ultron.safety.rules.category_it import (
     build_category_it_rules,
     extract_command,
 )
-from ultron.safety.validator import RuleContext, Verdict
+from kenning.safety.validator import RuleContext, Verdict
 
 
 def _ctx(tool_name: str, **arguments) -> RuleContext:

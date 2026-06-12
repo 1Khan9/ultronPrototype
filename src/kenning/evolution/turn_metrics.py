@@ -2,19 +2,19 @@
 
 Production-hardening campaign (#15 + #65): the evolution loop's four
 regression guardrails previously received the all-``None``
-:class:`~ultron.evolution.guardrails.GuardrailSample` from the
+:class:`~kenning.evolution.guardrails.GuardrailSample` from the
 ``from_config`` default sampler, so the auto-revert brake could never
 trip -- the live self-improvement loop was effectively brakeless. This
 module is the instrumentation half of the fix:
 
 * :class:`TurnMetricsRing` -- a small, thread-safe, bounded ring the
   orchestrator feeds once per turn (LLM time-to-first-token + an error
-  flag) and the :class:`~ultron.evolution.service.EvolutionService`
+  flag) and the :class:`~kenning.evolution.service.EvolutionService`
   feeds with per-turn quality signals (corrections / re-asks /
   barge-ins).
 * :func:`build_guardrail_sampler` -- converts the ring into the
   ``Callable[[], GuardrailSample]`` contract
-  :class:`~ultron.evolution.evolution_loop.EvolutionLoop` expects.
+  :class:`~kenning.evolution.evolution_loop.EvolutionLoop` expects.
   Median over the window with minimum-sample floors, so a single
   outlier (or an empty ring at startup) never trips a guardrail
   spuriously: a field without enough data stays ``None``, which SKIPS
@@ -47,8 +47,8 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Callable, Deque, Optional, Tuple
 
-from ultron.evolution.guardrails import GuardrailSample
-from ultron.utils.logging import get_logger
+from kenning.evolution.guardrails import GuardrailSample
+from kenning.utils.logging import get_logger
 
 logger = get_logger("evolution.turn_metrics")
 

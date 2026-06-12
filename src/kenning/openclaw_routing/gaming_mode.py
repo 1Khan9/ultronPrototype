@@ -42,7 +42,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_routing.gaming_mode")
 
@@ -191,7 +191,7 @@ class GamingModeManager:
         gaming mode goes off. The enable direction is fail-safe (a
         kernel-anticheat game must never launch unprotected)."""
         try:
-            from ultron.safety.anticheat import set_anticheat_active
+            from kenning.safety.anticheat import set_anticheat_active
 
             set_anticheat_active(
                 active,

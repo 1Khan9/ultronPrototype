@@ -1,4 +1,4 @@
-"""Tests for ``ultron.trace`` -- structured per-turn logging helpers."""
+"""Tests for ``kenning.trace`` -- structured per-turn logging helpers."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from ultron import trace
+from kenning import trace
 
 
 @pytest.fixture(autouse=True)
@@ -194,33 +194,33 @@ def test_fmt_escapes_newlines_in_strings():
 
 
 def test_tlog_emits_at_info(caplog):
-    log = logging.getLogger("ultron.test.tlog")
+    log = logging.getLogger("kenning.test.tlog")
     log.setLevel(logging.INFO)
     trace.set_turn(7)
-    with caplog.at_level(logging.INFO, logger="ultron.test.tlog"):
+    with caplog.at_level(logging.INFO, logger="kenning.test.tlog"):
         trace.tlog(log, "hello", chars=5)
-    msgs = [r.message for r in caplog.records if r.name == "ultron.test.tlog"]
+    msgs = [r.message for r in caplog.records if r.name == "kenning.test.tlog"]
     assert any("turn=7" in m and "hello" in m and "chars=5" in m for m in msgs)
 
 
 def test_tlog_respects_level_gating(caplog):
-    log = logging.getLogger("ultron.test.tlog.gating")
+    log = logging.getLogger("kenning.test.tlog.gating")
     log.setLevel(logging.WARNING)
-    with caplog.at_level(logging.WARNING, logger="ultron.test.tlog.gating"):
+    with caplog.at_level(logging.WARNING, logger="kenning.test.tlog.gating"):
         # INFO is below the logger's threshold -> no record emitted.
         trace.tlog(log, "skip me", level=logging.INFO)
         trace.tlog(log, "see me", level=logging.WARNING)
-    msgs = [r.message for r in caplog.records if r.name == "ultron.test.tlog.gating"]
+    msgs = [r.message for r in caplog.records if r.name == "kenning.test.tlog.gating"]
     assert not any("skip me" in m for m in msgs)
     assert any("see me" in m for m in msgs)
 
 
 def test_tlog_with_no_turn_no_phase(caplog):
-    log = logging.getLogger("ultron.test.tlog.empty")
+    log = logging.getLogger("kenning.test.tlog.empty")
     log.setLevel(logging.INFO)
-    with caplog.at_level(logging.INFO, logger="ultron.test.tlog.empty"):
+    with caplog.at_level(logging.INFO, logger="kenning.test.tlog.empty"):
         trace.tlog(log, "bare msg")
-    msgs = [r.message for r in caplog.records if r.name == "ultron.test.tlog.empty"]
+    msgs = [r.message for r in caplog.records if r.name == "kenning.test.tlog.empty"]
     assert any(m == "bare msg" for m in msgs)
 
 
@@ -243,12 +243,12 @@ def test_phase_context_restores_none_when_no_prior():
 
 
 def test_phase_context_logs_start_and_end(caplog):
-    log = logging.getLogger("ultron.test.phase")
+    log = logging.getLogger("kenning.test.phase")
     log.setLevel(logging.INFO)
-    with caplog.at_level(logging.INFO, logger="ultron.test.phase"):
+    with caplog.at_level(logging.INFO, logger="kenning.test.phase"):
         with trace.phase("step", log=log, foo="bar"):
             time.sleep(0.01)
-    msgs = [r.message for r in caplog.records if r.name == "ultron.test.phase"]
+    msgs = [r.message for r in caplog.records if r.name == "kenning.test.phase"]
     # Start line: phase=step + msg "step:start" + foo='bar'
     start_lines = [m for m in msgs if "step:start" in m]
     end_lines = [m for m in msgs if "step:end" in m]
@@ -265,13 +265,13 @@ def test_phase_context_logs_start_and_end(caplog):
 
 
 def test_phase_context_extra_dict_appended_to_end_line(caplog):
-    log = logging.getLogger("ultron.test.phase.extra")
+    log = logging.getLogger("kenning.test.phase.extra")
     log.setLevel(logging.INFO)
-    with caplog.at_level(logging.INFO, logger="ultron.test.phase.extra"):
+    with caplog.at_level(logging.INFO, logger="kenning.test.phase.extra"):
         with trace.phase("op", log=log) as ctx:
             ctx["result"] = "ok"
             ctx["count"] = 7
-    msgs = [r.message for r in caplog.records if r.name == "ultron.test.phase.extra"]
+    msgs = [r.message for r in caplog.records if r.name == "kenning.test.phase.extra"]
     end_lines = [m for m in msgs if "op:end" in m]
     assert len(end_lines) == 1
     assert "result='ok'" in end_lines[0]
@@ -288,13 +288,13 @@ def test_phase_context_swallows_no_log_quietly():
 
 
 def test_phase_context_logs_end_even_on_exception(caplog):
-    log = logging.getLogger("ultron.test.phase.exc")
+    log = logging.getLogger("kenning.test.phase.exc")
     log.setLevel(logging.INFO)
-    with caplog.at_level(logging.INFO, logger="ultron.test.phase.exc"):
+    with caplog.at_level(logging.INFO, logger="kenning.test.phase.exc"):
         with pytest.raises(ValueError):
             with trace.phase("op", log=log):
                 raise ValueError("boom")
-    msgs = [r.message for r in caplog.records if r.name == "ultron.test.phase.exc"]
+    msgs = [r.message for r in caplog.records if r.name == "kenning.test.phase.exc"]
     assert any("op:start" in m for m in msgs)
     assert any("op:end" in m for m in msgs)
     # Phase should be cleared after exception.

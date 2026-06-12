@@ -8,7 +8,7 @@ This module records those alerts locally so:
 1. A voice query like "what alerts did you flag?" can pull recent
    entries from the log.
 2. The agent itself can read the log on the next tick (via the
-   Ultron MCP tool ``ultron.get_heartbeat_alerts``) to avoid
+   Kenning MCP tool ``kenning.get_heartbeat_alerts``) to avoid
    re-surfacing already-acknowledged items.
 3. Auditing — every alert has a timestamp, source, severity, and
    acknowledgment state.
@@ -34,7 +34,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_bridge.heartbeat_alerts")
 
@@ -45,7 +45,7 @@ class HeartbeatAlert:
 
     Attributes:
         alert_id: stable UUID4 hex; used by ``acknowledge``.
-        text: the alert message body, in Ultron's voice.
+        text: the alert message body, in Kenning's voice.
         source: free-form tag identifying which checklist item raised
             the alert (e.g. ``"coding-queue"``, ``"disk"``,
             ``"addressing-anomaly"``).

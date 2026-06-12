@@ -7,7 +7,7 @@ routes through. Instead of a flat "blocked" / "executed" voice
 line, the user (or operator) sees:
 
 * The **subject** the action targets ("@user/example-skill",
-  "turn 42 of the current session", "voicepack ultron").
+  "turn 42 of the current session", "voicepack kenning").
 * The **outcome** the action produces ("hide from skill registry",
   "regenerate", "remove from memory").
 * An ordered list of concrete **impacts** ("Will mark 3 future
@@ -16,7 +16,7 @@ line, the user (or operator) sees:
 * A **requires_confirmation** flag + the **confirm_prompt**
   voice will speak ("Allow once? Say 'yes' or 'no'").
 
-The plan flows through :mod:`ultron.safety.two_phase_approval`
+The plan flows through :mod:`kenning.safety.two_phase_approval`
 (T2 from the OpenClaw port) so the user explicitly confirms
 before the action lands. The audit-log row (when one is recorded)
 references the plan id so reviewers can replay both the
@@ -55,7 +55,7 @@ class PlanOutcome(str, Enum):
     """High-level outcome class of a moderation plan.
 
     Mirrors the upstream marketplace's outcome enum extended with
-    ultron-specific destructive actions.
+    kenning-specific destructive actions.
     """
 
     NONE = "none"            # preview-only / no state change
@@ -94,7 +94,7 @@ class ModerationPlan:
         plan_id: short identifier (UUID4 hex; first 12 chars by
             default) used for audit-log cross-reference.
         subject: human-readable description of the target
-            ("voicepack:ultron", "@user/example-skill").
+            ("voicepack:kenning", "@user/example-skill").
         outcome: :class:`PlanOutcome`.
         impacts: ordered tuple of :class:`PlanImpact`.
         requires_confirmation: True iff the action should NOT

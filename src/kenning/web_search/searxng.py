@@ -25,7 +25,7 @@ The default endpoint is ``http://localhost:8888`` and the JSON API
 lives at ``/search?q=...&format=json``. Both are configurable via
 ``web_search.searxng.*`` in ``config.yaml``.
 
-Result shape matches :class:`ultron.web_search.brave.SearchResult` so
+Result shape matches :class:`kenning.web_search.brave.SearchResult` so
 the rest of the search pipeline doesn't need to know which provider
 served the query.
 
@@ -49,11 +49,11 @@ import time
 from dataclasses import dataclass
 from typing import Callable, List, Mapping, Optional
 
-from ultron.config import get_config
-from ultron.errors import BraveAPIError
-from ultron.resilience import CircuitBreaker, CircuitOpenError, get_error_log
-from ultron.utils.logging import get_logger
-from ultron.web_search.brave import SearchResult
+from kenning.config import get_config
+from kenning.errors import BraveAPIError
+from kenning.resilience import CircuitBreaker, CircuitOpenError, get_error_log
+from kenning.utils.logging import get_logger
+from kenning.web_search.brave import SearchResult
 
 logger = get_logger("web_search.searxng")
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.identity.alias_graph import (
+from kenning.identity.alias_graph import (
     DEFAULT_RESERVATION_DAYS,
     MAX_REDIRECT_DEPTH,
     RESERVED_SLUGS,
@@ -92,7 +92,7 @@ def test_validate_slug_allows_reserved_when_scoped() -> None:
     assert validate_slug("@bob/admin") == "@bob/admin"
 
 
-def test_validate_slug_rejects_ultron_keyword_unscoped() -> None:
+def test_validate_slug_rejects_kenning_keyword_unscoped() -> None:
     for keyword in ("soul", "validator", "voicepack"):
         with pytest.raises(SlugReservedError):
             validate_slug(keyword)
@@ -149,7 +149,7 @@ def test_resolve_detects_redirect_cycle(tmp_path: Path) -> None:
     g.register("b", owner="x")
     # Manually inject a cycle via direct entry mutation.
     with g._lock:                                                           # noqa: SLF001
-        from ultron.identity.alias_graph import AliasGraphEntry as E
+        from kenning.identity.alias_graph import AliasGraphEntry as E
         g._entries["a"] = E(canonical="a", redirect_target="b")             # noqa: SLF001
         g._entries["b"] = E(canonical="b", redirect_target="a")             # noqa: SLF001
     with pytest.raises(AliasResolveError):

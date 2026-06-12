@@ -1,23 +1,23 @@
 """Provider auth-profile + rotation + failover-reason taxonomy (T6).
 
 T6 (OpenClaw catalog port; see ``THIRD_PARTY_NOTICES.md``). The three
-interlocking primitives that let ultron's STT / TTS / web-search /
+interlocking primitives that let kenning's STT / TTS / web-search /
 reader / future LLM-cascade chains rotate between providers with
 cooldown memory and a typed failover-reason taxonomy:
 
-* :mod:`ultron.providers.failover_policy` — :class:`FailoverReason`
+* :mod:`kenning.providers.failover_policy` — :class:`FailoverReason`
   enum + per-reason probe / transient-slot policy table.
-* :mod:`ultron.providers.auth_profiles` — :class:`AuthProfile`
+* :mod:`kenning.providers.auth_profiles` — :class:`AuthProfile`
   state (credential + failure counter + cooldown timestamp), the
   :class:`AuthProfileStore` registry, and the failure-recording
   helpers.
-* :mod:`ultron.providers.rotation` — round-robin + cooldown-aware
+* :mod:`kenning.providers.rotation` — round-robin + cooldown-aware
   key rotation; the ``execute_with_rotation`` driver mirroring
   OpenClaw's ``executeWithApiKeyRotation``.
 
 Generalises beyond LLM API keys to ANY chain where one provider
 might fail transiently AND a fallback exists. Each provider chain
-in ultron consumes the same primitives:
+in kenning consumes the same primitives:
 
 * STT (Parakeet primary -> Moonshine gaming).
 * TTS (Kokoro CUDA -> Kokoro CPU -> Piper emergency).

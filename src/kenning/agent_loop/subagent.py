@@ -1,7 +1,7 @@
 """Subagent runner: read-only parallel research with token-meter rollup.
 
 Adapted from cline's ``SubagentRunner`` pattern (Apache 2.0; see
-``THIRD_PARTY_NOTICES.md``). Ultron's variant runs N callables in
+``THIRD_PARTY_NOTICES.md``). Kenning's variant runs N callables in
 parallel with per-subagent token budgets, an enforced read-only tool
 whitelist, and a rolled-up :class:`SubagentBatchStats` so the parent
 caller can attribute aggregate cost back to the originating turn.
@@ -48,7 +48,7 @@ from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
 
 #: Default read-only tool whitelist. Matches cline's subagent allowed
-#: tool set translated into ultron's tool-name conventions.
+#: tool set translated into kenning's tool-name conventions.
 DEFAULT_READONLY_TOOL_WHITELIST: frozenset[str] = frozenset({
     "file_read",
     "list_files",
@@ -308,7 +308,7 @@ class SubagentRunner:
             return (), SubagentBatchStats()
         n_workers = min(self._max_parallel, len(tasks))
         results_by_index: dict[int, SubagentResult] = {}
-        with ThreadPoolExecutor(max_workers=n_workers, thread_name_prefix="ultron-subagent") as pool:
+        with ThreadPoolExecutor(max_workers=n_workers, thread_name_prefix="kenning-subagent") as pool:
             future_to_index = {
                 pool.submit(self._run_one, task): idx
                 for idx, task in enumerate(tasks)

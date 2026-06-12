@@ -1,10 +1,10 @@
-"""Tests for ultron.streaming.reasoning_stream."""
+"""Tests for kenning.streaming.reasoning_stream."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.streaming import reasoning_stream as rs
+from kenning.streaming import reasoning_stream as rs
 
 
 class _Clock:

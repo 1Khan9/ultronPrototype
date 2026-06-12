@@ -12,8 +12,8 @@ from typing import Any, Optional
 
 import pytest
 
-from ultron.desktop import browser_sequence as bseq
-from ultron.desktop.sequence import SequenceStatus, StepOutcome, VlmVerdict
+from kenning.desktop import browser_sequence as bseq
+from kenning.desktop.sequence import SequenceStatus, StepOutcome, VlmVerdict
 
 
 # ---------------------------------------------------------------------------

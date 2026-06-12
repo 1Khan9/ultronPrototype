@@ -58,7 +58,7 @@ When you add or change a standing-order program:
 4. **Test the trigger** before relying on the schedule:
    - For cron: `openclaw cron run <name>`.
    - For heartbeat-triggered: `openclaw system event --text "..." --mode now`.
-   - For on-demand voice: ask Ultron the relevant query through
+   - For on-demand voice: ask Kenning the relevant query through
      the live voice path or Telegram.
 5. **Update this file's program registry** with the new entry.
 
@@ -79,7 +79,7 @@ disable, also stop the matching cron entry:
 
 ## On-demand "what's running" query
 
-The user can ask "what is Ultron working on?" or "what standing
+The user can ask "what is Kenning working on?" or "what standing
 orders are active?" via voice or Telegram. The classifier should
 route this to a query handler that:
 
@@ -99,7 +99,7 @@ lands or when there's a concrete need.
 
 ## Why programs live in AGENTS.md, not Python
 
-- **Readable by both Ultron's voice path and OpenClaw's agent
+- **Readable by both Kenning's voice path and OpenClaw's agent
   side.** The same file is loaded by `PersonaLoader` (in
   `background` mode) and by the OpenClaw agent runtime.
 - **Editable by the user.** No re-deploy needed to change a

@@ -4,7 +4,7 @@ T6 (OpenClaw catalog port; see ``THIRD_PARTY_NOTICES.md``). The
 public function :func:`execute_with_rotation` mirrors OpenClaw's
 ``executeWithApiKeyRotation``: a nested loop with rate-limit-rotates
 + transient-retry-same-key semantics, augmented with the failover
-taxonomy from :mod:`ultron.providers.failover_policy`.
+taxonomy from :mod:`kenning.providers.failover_policy`.
 
 Algorithm:
 

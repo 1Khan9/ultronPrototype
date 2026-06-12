@@ -57,7 +57,7 @@ from enum import Enum
 from typing import Iterable, List, Optional, Sequence, Tuple
 
 
-logger = logging.getLogger("ultron.coding.edit_matcher")
+logger = logging.getLogger("kenning.coding.edit_matcher")
 
 
 # Catalog parameter — how many context lines to show on either side
@@ -410,7 +410,7 @@ def _try_relative_indent(
 ) -> Optional[str]:
     """Strategy 5: convert to relative-indent space and re-run.
 
-    Uses :class:`ultron.utils.relative_indent.RelativeIndenter`. After
+    Uses :class:`kenning.utils.relative_indent.RelativeIndenter`. After
     the relative-indent transform, two blocks that differ only in
     overall indentation produce IDENTICAL text — so the inner
     strategies have a much better chance to match.
@@ -420,7 +420,7 @@ def _try_relative_indent(
     indenter raises in that pathological case).
     """
     try:
-        from ultron.utils.relative_indent import RelativeIndenter
+        from kenning.utils.relative_indent import RelativeIndenter
     except ImportError:
         return None
     try:

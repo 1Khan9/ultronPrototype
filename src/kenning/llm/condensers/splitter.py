@@ -11,7 +11,7 @@ without it, a token-share split can land in the middle of an
 ``assistant.tool_use{id: X}`` <-> ``tool_result{tool_use_id: X}`` pair,
 producing a dangling tool_use_id error on the next LLM call.
 
-Supplements the existing ultron condensers (``RecentCondenser`` /
+Supplements the existing kenning condensers (``RecentCondenser`` /
 ``LLMSummarizingCondenser`` / etc.) — those decide WHICH messages to
 keep; this splitter decides HOW to chop the kept set into
 summarisation-friendly chunks.
@@ -88,7 +88,7 @@ class Message:
 
     Generic shape (role + content) plus the optional ``tool_calls`` /
     ``tool_use_id`` / ``stop_reason`` fields that let the splitter
-    recognise dangling tool-call pairs. Ultron's condenser callers
+    recognise dangling tool-call pairs. Kenning's condenser callers
     already shape their messages this way; this dataclass formalises
     the contract.
 

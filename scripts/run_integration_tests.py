@@ -24,7 +24,7 @@ INTEGRATION_DIRS = [
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="Run Ultron integration test suite.",
+        description="Run Kenning integration test suite.",
     )
     parser.add_argument(
         "--gpu", action="store_true",

@@ -1,7 +1,7 @@
 """Tests for the desktop-automation tools in mcp_tools.py (Phase 7).
 
 These cover the impl functions (not the FastMCP registration shim).
-Each test mocks the underlying ultron.desktop primitives to avoid
+Each test mocks the underlying kenning.desktop primitives to avoid
 spawning processes, capturing real screens, or loading the VLM.
 """
 
@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.openclaw_bridge.mcp_tools import (
+from kenning.openclaw_bridge.mcp_tools import (
     click_uia_impl,
     clipboard_read_impl,
     clipboard_write_impl,
@@ -43,7 +43,7 @@ from ultron.openclaw_bridge.mcp_tools import (
 
 
 def test_enumerate_monitors_returns_count_and_list(monkeypatch):
-    from ultron.desktop.monitors import Monitor
+    from kenning.desktop.monitors import Monitor
 
     fakes = [
         Monitor(
@@ -60,7 +60,7 @@ def test_enumerate_monitors_returns_count_and_list(monkeypatch):
         ),
     ]
     monkeypatch.setattr(
-        "ultron.desktop.monitors.enumerate_monitors", lambda: fakes,
+        "kenning.desktop.monitors.enumerate_monitors", lambda: fakes,
     )
     out = enumerate_monitors_impl()
     assert out["count"] == 2
@@ -74,7 +74,7 @@ def test_enumerate_monitors_returns_empty_on_import_failure(monkeypatch):
     real_import = builtins.__import__
 
     def fail_on_monitors(name, *args, **kwargs):
-        if name == "ultron.desktop.monitors":
+        if name == "kenning.desktop.monitors":
             raise ImportError("simulated import failure")
         return real_import(name, *args, **kwargs)
 
@@ -90,7 +90,7 @@ def test_enumerate_monitors_returns_empty_on_import_failure(monkeypatch):
 
 
 def test_list_windows_caps_and_serialises(monkeypatch):
-    from ultron.desktop.windows import WindowInfo
+    from kenning.desktop.windows import WindowInfo
 
     wins = [
         WindowInfo(
@@ -102,7 +102,7 @@ def test_list_windows_caps_and_serialises(monkeypatch):
         for i in range(50)
     ]
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows",
+        "kenning.desktop.windows.enumerate_windows",
         lambda **kw: wins,
     )
     out = list_windows_impl(limit=5)
@@ -113,7 +113,7 @@ def test_list_windows_caps_and_serialises(monkeypatch):
 
 
 def test_list_windows_no_limit_returns_all(monkeypatch):
-    from ultron.desktop.windows import WindowInfo
+    from kenning.desktop.windows import WindowInfo
 
     wins = [
         WindowInfo(
@@ -124,7 +124,7 @@ def test_list_windows_no_limit_returns_all(monkeypatch):
         for i in range(3)
     ]
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows",
+        "kenning.desktop.windows.enumerate_windows",
         lambda **kw: wins,
     )
     out = list_windows_impl(limit=0)
@@ -138,9 +138,9 @@ def test_list_windows_no_limit_returns_all(monkeypatch):
 
 def _patch_capture_pipeline(monkeypatch, *, has_fg=True, capture_ok=True):
     """Common monkey-patching for the capture pipeline."""
-    from ultron.desktop.capture import Screenshot
-    from ultron.desktop.monitors import Monitor
-    from ultron.desktop.windows import WindowInfo
+    from kenning.desktop.capture import Screenshot
+    from kenning.desktop.monitors import Monitor
+    from kenning.desktop.windows import WindowInfo
 
     fake_mon = Monitor(
         index=0, name="D0", x=0, y=0, width=1920, height=1080,
@@ -148,7 +148,7 @@ def _patch_capture_pipeline(monkeypatch, *, has_fg=True, capture_ok=True):
         is_primary=True,
     )
     monkeypatch.setattr(
-        "ultron.desktop.monitors.enumerate_monitors", lambda: [fake_mon],
+        "kenning.desktop.monitors.enumerate_monitors", lambda: [fake_mon],
     )
     fake_fg = (
         WindowInfo(
@@ -159,7 +159,7 @@ def _patch_capture_pipeline(monkeypatch, *, has_fg=True, capture_ok=True):
         if has_fg else None
     )
     monkeypatch.setattr(
-        "ultron.desktop.windows.get_foreground_window", lambda: fake_fg,
+        "kenning.desktop.windows.get_foreground_window", lambda: fake_fg,
     )
     fake_cap = MagicMock()
     if capture_ok:
@@ -171,7 +171,7 @@ def _patch_capture_pipeline(monkeypatch, *, has_fg=True, capture_ok=True):
     else:
         fake_cap.capture_monitor.return_value = None
     monkeypatch.setattr(
-        "ultron.desktop.capture.get_screen_capture", lambda: fake_cap,
+        "kenning.desktop.capture.get_screen_capture", lambda: fake_cap,
     )
 
 
@@ -203,10 +203,10 @@ def test_take_screenshot_defaults_to_foreground_monitor(monkeypatch):
 
 def test_take_screenshot_no_monitors_returns_failure(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.monitors.enumerate_monitors", lambda: [],
+        "kenning.desktop.monitors.enumerate_monitors", lambda: [],
     )
     monkeypatch.setattr(
-        "ultron.desktop.windows.get_foreground_window", lambda: None,
+        "kenning.desktop.windows.get_foreground_window", lambda: None,
     )
     out = take_screenshot_impl(monitor_index=0)
     assert out["success"] is False
@@ -230,7 +230,7 @@ def test_take_screenshot_capture_fails_returns_failure(monkeypatch):
 def test_take_screenshot_with_description_vlm_unset(monkeypatch):
     _patch_capture_pipeline(monkeypatch)
     monkeypatch.setattr(
-        "ultron.desktop.vlm.get_vlm", lambda: None,
+        "kenning.desktop.vlm.get_vlm", lambda: None,
     )
     out = take_screenshot_impl(
         monitor_index=0, include_image=False, include_description=True,
@@ -241,13 +241,13 @@ def test_take_screenshot_with_description_vlm_unset(monkeypatch):
 
 def test_take_screenshot_with_description_vlm_succeeds(monkeypatch):
     _patch_capture_pipeline(monkeypatch)
-    from ultron.desktop.vlm import VLMResult
+    from kenning.desktop.vlm import VLMResult
 
     fake_vlm = MagicMock()
     fake_vlm.describe.return_value = VLMResult(
         success=True, description="A code editor.", elapsed_ms=120.0,
     )
-    monkeypatch.setattr("ultron.desktop.vlm.get_vlm", lambda: fake_vlm)
+    monkeypatch.setattr("kenning.desktop.vlm.get_vlm", lambda: fake_vlm)
     out = take_screenshot_impl(
         monitor_index=0, include_image=False, include_description=True,
     )
@@ -263,13 +263,13 @@ def test_take_screenshot_with_description_vlm_succeeds(monkeypatch):
 
 def test_describe_screen_returns_text_only(monkeypatch):
     _patch_capture_pipeline(monkeypatch)
-    from ultron.desktop.vlm import VLMResult
+    from kenning.desktop.vlm import VLMResult
 
     fake_vlm = MagicMock()
     fake_vlm.describe.return_value = VLMResult(
         success=True, description="cursor editor", elapsed_ms=200.0,
     )
-    monkeypatch.setattr("ultron.desktop.vlm.get_vlm", lambda: fake_vlm)
+    monkeypatch.setattr("kenning.desktop.vlm.get_vlm", lambda: fake_vlm)
     out = describe_screen_impl(monitor_index=0)
     assert out["success"] is True
     assert "image_base64" not in out
@@ -278,13 +278,13 @@ def test_describe_screen_returns_text_only(monkeypatch):
 
 def test_describe_screen_custom_prompt_recaptures(monkeypatch):
     _patch_capture_pipeline(monkeypatch)
-    from ultron.desktop.vlm import VLMResult
+    from kenning.desktop.vlm import VLMResult
 
     fake_vlm = MagicMock()
     fake_vlm.describe.return_value = VLMResult(
         success=True, description="answer to custom", elapsed_ms=100.0,
     )
-    monkeypatch.setattr("ultron.desktop.vlm.get_vlm", lambda: fake_vlm)
+    monkeypatch.setattr("kenning.desktop.vlm.get_vlm", lambda: fake_vlm)
     out = describe_screen_impl(
         monitor_index=0, prompt="What is the error message?",
     )
@@ -300,9 +300,9 @@ def test_describe_screen_custom_prompt_recaptures(monkeypatch):
 
 
 def test_get_screen_context_assembles_payload(monkeypatch):
-    from ultron.desktop.monitors import Monitor
-    from ultron.desktop.screen_context import ScreenContextSnapshot
-    from ultron.desktop.windows import WindowInfo
+    from kenning.desktop.monitors import Monitor
+    from kenning.desktop.screen_context import ScreenContextSnapshot
+    from kenning.desktop.windows import WindowInfo
 
     fake_mon = Monitor(
         index=0, name="D0", x=0, y=0, width=1920, height=1080,
@@ -323,7 +323,7 @@ def test_get_screen_context_assembles_payload(monkeypatch):
         elapsed_ms=10.0,
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.build_screen_context",
+        "kenning.desktop.screen_context.build_screen_context",
         lambda **kw: snap,
     )
     out = get_screen_context_impl(include_vlm=False)
@@ -336,7 +336,7 @@ def test_get_screen_context_assembles_payload(monkeypatch):
 
 
 def test_get_screen_context_no_foreground(monkeypatch):
-    from ultron.desktop.screen_context import ScreenContextSnapshot
+    from kenning.desktop.screen_context import ScreenContextSnapshot
 
     snap = ScreenContextSnapshot(
         timestamp=0.0, monitors=(), foreground=None,
@@ -344,7 +344,7 @@ def test_get_screen_context_no_foreground(monkeypatch):
         screenshot=None, vlm_description=None, elapsed_ms=0.0,
     )
     monkeypatch.setattr(
-        "ultron.desktop.screen_context.build_screen_context",
+        "kenning.desktop.screen_context.build_screen_context",
         lambda **kw: snap,
     )
     out = get_screen_context_impl()
@@ -363,14 +363,14 @@ def _stub_launcher(monkeypatch, *, result):
     fake.launch_chrome.return_value = result
     fake.open_image_search.return_value = result
     monkeypatch.setattr(
-        "ultron.desktop.launcher.get_app_launcher", lambda: fake,
+        "kenning.desktop.launcher.get_app_launcher", lambda: fake,
     )
     return fake
 
 
 def _mk_launch_result(success=True, app_name="chrome", error=None):
     from pathlib import Path
-    from ultron.desktop.launcher import LaunchResult
+    from kenning.desktop.launcher import LaunchResult
     return LaunchResult(
         success=success, app_name=app_name,
         exe_path=Path("C:/ghost/chrome.exe"),
@@ -390,7 +390,7 @@ def test_launch_app_empty_name_returns_failure():
 
 def test_launch_app_invalid_monitor_index(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.monitors.enumerate_monitors", lambda: [],
+        "kenning.desktop.monitors.enumerate_monitors", lambda: [],
     )
     out = launch_app_impl(app_name="chrome", monitor_index=99)
     assert out["success"] is False
@@ -398,9 +398,9 @@ def test_launch_app_invalid_monitor_index(monkeypatch):
 
 
 def test_launch_app_happy_path(monkeypatch):
-    from ultron.desktop.monitors import Monitor
+    from kenning.desktop.monitors import Monitor
     monkeypatch.setattr(
-        "ultron.desktop.monitors.enumerate_monitors",
+        "kenning.desktop.monitors.enumerate_monitors",
         lambda: [
             Monitor(
                 index=0, name="D0", x=0, y=0, width=1920, height=1080,
@@ -464,9 +464,9 @@ def test_move_window_empty_query_returns_failure():
 
 
 def test_move_window_no_match_returns_failure(monkeypatch):
-    from ultron.desktop.monitors import Monitor
+    from kenning.desktop.monitors import Monitor
     monkeypatch.setattr(
-        "ultron.desktop.monitors.enumerate_monitors",
+        "kenning.desktop.monitors.enumerate_monitors",
         lambda: [
             Monitor(
                 index=0, name="D0", x=0, y=0, width=1920, height=1080,
@@ -476,7 +476,7 @@ def test_move_window_no_match_returns_failure(monkeypatch):
         ],
     )
     monkeypatch.setattr(
-        "ultron.desktop.windows.find_window", lambda *a, **kw: None,
+        "kenning.desktop.windows.find_window", lambda *a, **kw: None,
     )
     out = move_window_to_monitor_impl(
         window_query="nonexistent", monitor_index=0,
@@ -486,12 +486,12 @@ def test_move_window_no_match_returns_failure(monkeypatch):
 
 
 def test_move_window_happy_path(monkeypatch):
-    from ultron.desktop.monitors import Monitor
-    from ultron.desktop.placement import PlacementResult
-    from ultron.desktop.windows import WindowInfo
+    from kenning.desktop.monitors import Monitor
+    from kenning.desktop.placement import PlacementResult
+    from kenning.desktop.windows import WindowInfo
 
     monkeypatch.setattr(
-        "ultron.desktop.monitors.enumerate_monitors",
+        "kenning.desktop.monitors.enumerate_monitors",
         lambda: [
             Monitor(
                 index=0, name="D0", x=0, y=0, width=1920, height=1080,
@@ -512,7 +512,7 @@ def test_move_window_happy_path(monkeypatch):
         is_minimized=False, is_foreground=False,
     )
     monkeypatch.setattr(
-        "ultron.desktop.windows.find_window", lambda *a, **kw: fake_win,
+        "kenning.desktop.windows.find_window", lambda *a, **kw: fake_win,
     )
     calls = []
 
@@ -523,7 +523,7 @@ def test_move_window_happy_path(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "ultron.desktop.placement.move_window_to_monitor", fake_move,
+        "kenning.desktop.placement.move_window_to_monitor", fake_move,
     )
     out = move_window_to_monitor_impl(
         window_query="chrome", monitor_index=1, maximize=True,
@@ -541,7 +541,7 @@ def test_move_window_happy_path(monkeypatch):
 
 
 def _fake_win(hwnd=42, title="Chrome", proc="chrome.exe", mon=0):
-    from ultron.desktop.windows import WindowInfo
+    from kenning.desktop.windows import WindowInfo
     return WindowInfo(
         hwnd=hwnd, title=title, class_name="C", process_name=proc,
         pid=1, rect=(0, 0, 800, 600), monitor_index=mon,
@@ -551,7 +551,7 @@ def _fake_win(hwnd=42, title="Chrome", proc="chrome.exe", mon=0):
 
 def test_focus_window_no_match(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.windows.find_window", lambda *a, **kw: None,
+        "kenning.desktop.windows.find_window", lambda *a, **kw: None,
     )
     out = focus_window_impl(window_query="nonexistent")
     assert out["success"] is False
@@ -559,13 +559,13 @@ def test_focus_window_no_match(monkeypatch):
 
 
 def test_focus_window_happy_path(monkeypatch):
-    from ultron.desktop.placement import PlacementResult
+    from kenning.desktop.placement import PlacementResult
     monkeypatch.setattr(
-        "ultron.desktop.windows.find_window",
+        "kenning.desktop.windows.find_window",
         lambda *a, **kw: _fake_win(),
     )
     monkeypatch.setattr(
-        "ultron.desktop.placement.focus_window",
+        "kenning.desktop.placement.focus_window",
         lambda hwnd: PlacementResult(success=True, hwnd=hwnd),
     )
     out = focus_window_impl(window_query="chrome")
@@ -585,22 +585,22 @@ def test_window_action_empty_query():
 
 
 def test_window_action_maximize_happy_path(monkeypatch):
-    from ultron.desktop.placement import PlacementResult
+    from kenning.desktop.placement import PlacementResult
     monkeypatch.setattr(
-        "ultron.desktop.windows.find_window",
+        "kenning.desktop.windows.find_window",
         lambda *a, **kw: _fake_win(),
     )
     called = []
     monkeypatch.setattr(
-        "ultron.desktop.placement.maximize_window",
+        "kenning.desktop.placement.maximize_window",
         lambda h: called.append(("maximize", h)) or PlacementResult(success=True, hwnd=h),
     )
     monkeypatch.setattr(
-        "ultron.desktop.placement.minimize_window",
+        "kenning.desktop.placement.minimize_window",
         lambda h: called.append(("minimize", h)) or PlacementResult(success=True, hwnd=h),
     )
     monkeypatch.setattr(
-        "ultron.desktop.placement.restore_window",
+        "kenning.desktop.placement.restore_window",
         lambda h: called.append(("restore", h)) or PlacementResult(success=True, hwnd=h),
     )
     out = window_action_impl(window_query="chrome", action="maximize")
@@ -610,13 +610,13 @@ def test_window_action_maximize_happy_path(monkeypatch):
 
 
 def test_window_action_minimize_dispatches(monkeypatch):
-    from ultron.desktop.placement import PlacementResult
+    from kenning.desktop.placement import PlacementResult
     monkeypatch.setattr(
-        "ultron.desktop.windows.find_window",
+        "kenning.desktop.windows.find_window",
         lambda *a, **kw: _fake_win(),
     )
     monkeypatch.setattr(
-        "ultron.desktop.placement.minimize_window",
+        "kenning.desktop.placement.minimize_window",
         lambda h: PlacementResult(success=True, hwnd=h),
     )
     out = window_action_impl(window_query="chrome", action="minimize")
@@ -636,7 +636,7 @@ def test_click_uia_empty_args():
 
 def test_click_uia_window_not_found(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.windows.find_window", lambda *a, **kw: None,
+        "kenning.desktop.windows.find_window", lambda *a, **kw: None,
     )
     out = click_uia_impl(window_query="ghost", element_query="Submit")
     assert out["success"] is False
@@ -644,9 +644,9 @@ def test_click_uia_window_not_found(monkeypatch):
 
 
 def test_click_uia_happy_path(monkeypatch):
-    from ultron.desktop.uia import UIAActionResult
+    from kenning.desktop.uia import UIAActionResult
     monkeypatch.setattr(
-        "ultron.desktop.windows.find_window",
+        "kenning.desktop.windows.find_window",
         lambda *a, **kw: _fake_win(),
     )
     captured = []
@@ -656,7 +656,7 @@ def test_click_uia_happy_path(monkeypatch):
         return UIAActionResult(success=True, element_name=query)
 
     monkeypatch.setattr(
-        "ultron.desktop.uia.click_element", fake_click,
+        "kenning.desktop.uia.click_element", fake_click,
     )
     out = click_uia_impl(
         window_query="chrome",
@@ -682,9 +682,9 @@ def test_type_into_uia_empty_args():
 
 
 def test_type_into_uia_happy_path(monkeypatch):
-    from ultron.desktop.uia import UIAActionResult
+    from kenning.desktop.uia import UIAActionResult
     monkeypatch.setattr(
-        "ultron.desktop.windows.find_window",
+        "kenning.desktop.windows.find_window",
         lambda *a, **kw: _fake_win(),
     )
     captured = []
@@ -694,7 +694,7 @@ def test_type_into_uia_happy_path(monkeypatch):
         return UIAActionResult(success=True, element_name=query)
 
     monkeypatch.setattr(
-        "ultron.desktop.uia.type_text_into_element", fake_type,
+        "kenning.desktop.uia.type_text_into_element", fake_type,
     )
     out = type_into_uia_impl(
         window_query="chrome",
@@ -708,11 +708,11 @@ def test_type_into_uia_happy_path(monkeypatch):
 
 def test_get_window_text_happy_path(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.windows.find_window",
+        "kenning.desktop.windows.find_window",
         lambda *a, **kw: _fake_win(),
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.collect_window_text",
+        "kenning.desktop.uia.collect_window_text",
         lambda *a, **kw: ["File", "Edit", "View"],
     )
     out = get_window_text_impl(window_query="chrome")
@@ -723,7 +723,7 @@ def test_get_window_text_happy_path(monkeypatch):
 
 def test_get_window_text_no_match(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.windows.find_window", lambda *a, **kw: None,
+        "kenning.desktop.windows.find_window", lambda *a, **kw: None,
     )
     out = get_window_text_impl(window_query="ghost")
     assert out["success"] is False
@@ -738,13 +738,13 @@ def _patch_input_controller(monkeypatch, *, result_kwargs):
     """Inject a fake input controller whose methods all return the given
     InputControlResult-shaped dict.
     """
-    from ultron.desktop.input_control import InputControlResult
+    from kenning.desktop.input_control import InputControlResult
 
     fake = MagicMock()
     for method in ("click", "move_mouse", "type_text", "press_hotkey", "scroll"):
         getattr(fake, method).return_value = InputControlResult(**result_kwargs)
     monkeypatch.setattr(
-        "ultron.desktop.input_control.get_input_controller", lambda: fake,
+        "kenning.desktop.input_control.get_input_controller", lambda: fake,
     )
     return fake
 
@@ -895,13 +895,13 @@ def test_mouse_move_impl_default_smooth_is_false(monkeypatch):
 
 
 def _patch_clipboard_manager(monkeypatch, *, result_kwargs):
-    from ultron.desktop.clipboard import ClipboardResult
+    from kenning.desktop.clipboard import ClipboardResult
 
     fake = MagicMock()
     fake.read_text.return_value = ClipboardResult(**result_kwargs)
     fake.write_text.return_value = ClipboardResult(**result_kwargs)
     monkeypatch.setattr(
-        "ultron.desktop.clipboard.get_clipboard_manager", lambda: fake,
+        "kenning.desktop.clipboard.get_clipboard_manager", lambda: fake,
     )
     return fake
 
@@ -978,7 +978,7 @@ def test_clipboard_write_impl_failure_propagates(monkeypatch):
 
 
 def test_find_image_on_screen_impl_returns_match_payload(monkeypatch):
-    from ultron.desktop.capture import TemplateMatch
+    from kenning.desktop.capture import TemplateMatch
 
     def _fake(template_path, **kw):
         return TemplateMatch(
@@ -987,7 +987,7 @@ def test_find_image_on_screen_impl_returns_match_payload(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "ultron.desktop.capture.find_image_on_screen", _fake,
+        "kenning.desktop.capture.find_image_on_screen", _fake,
     )
     out = find_image_on_screen_impl(template_path="ok.png")
     assert out["success"] is True
@@ -1000,7 +1000,7 @@ def test_find_image_on_screen_impl_returns_match_payload(monkeypatch):
 
 def test_find_image_on_screen_impl_none_match_returns_failure(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.capture.find_image_on_screen",
+        "kenning.desktop.capture.find_image_on_screen",
         lambda template_path, **kw: None,
     )
     out = find_image_on_screen_impl(template_path="missing.png")
@@ -1016,7 +1016,7 @@ def test_find_image_on_screen_impl_region_forwarded(monkeypatch):
         return None
 
     monkeypatch.setattr(
-        "ultron.desktop.capture.find_image_on_screen", _fake,
+        "kenning.desktop.capture.find_image_on_screen", _fake,
     )
     find_image_on_screen_impl(
         template_path="ok.png",
@@ -1034,7 +1034,7 @@ def test_find_image_on_screen_impl_partial_region_rejected(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "ultron.desktop.capture.find_image_on_screen",
+        "kenning.desktop.capture.find_image_on_screen",
         _should_not_be_called,
     )
     out = find_image_on_screen_impl(

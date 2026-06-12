@@ -16,7 +16,7 @@ import pytest
 
 
 def _bare_orchestrator() -> Any:
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
 
     o = Orchestrator.__new__(Orchestrator)
     o._metrics_store = None
@@ -43,7 +43,7 @@ class _FakeStore:
 
 class TestLatencyBucket:
     def test_buckets(self) -> None:
-        from ultron.pipeline.orchestrator import Orchestrator
+        from kenning.pipeline.orchestrator import Orchestrator
 
         assert Orchestrator._latency_bucket(0) == "fast"
         assert Orchestrator._latency_bucket(499) == "fast"
@@ -57,7 +57,7 @@ class TestLatencyBucket:
     def test_labels_are_leak_safe(self) -> None:
         # Every bucket label must be <= 12 chars so it passes the
         # telemetry raw-path leak check without a safe-key carve-out.
-        from ultron.pipeline.orchestrator import Orchestrator
+        from kenning.pipeline.orchestrator import Orchestrator
 
         for ms in (0, 600, 2000, 9000):
             assert len(Orchestrator._latency_bucket(ms)) <= 12
@@ -70,14 +70,14 @@ class TestLatencyBucket:
 
 class TestInitTelemetryStore:
     def test_returns_store(self) -> None:
-        from ultron.observability.private_telemetry import PrivateMetricsStore
+        from kenning.observability.private_telemetry import PrivateMetricsStore
 
         o = _bare_orchestrator()
         store = o._init_telemetry_store()
         assert isinstance(store, PrivateMetricsStore)
 
     def test_fail_open_on_import_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import ultron.observability.private_telemetry as pt
+        import kenning.observability.private_telemetry as pt
 
         o = _bare_orchestrator()
 
@@ -102,7 +102,7 @@ class TestEmitTurnTelemetry:
         o._emit_turn_telemetry("conversational", time.monotonic(), errored=False)
 
     def test_emits_event_with_leak_safe_attributes(self) -> None:
-        from ultron.observability.private_telemetry import _is_safe_attribute
+        from kenning.observability.private_telemetry import _is_safe_attribute
 
         o = _bare_orchestrator()
         store = _FakeStore()
@@ -158,7 +158,7 @@ class TestEmitTurnTelemetry:
     ) -> None:
         # End-to-end through the REAL store: with telemetry disabled
         # (default), record_event no-ops; with opt-in, it writes.
-        from ultron.observability.private_telemetry import (
+        from kenning.observability.private_telemetry import (
             PrivateMetricsStore,
             TELEMETRY_ENABLE_ENV,
         )

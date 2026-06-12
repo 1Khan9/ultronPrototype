@@ -5,7 +5,7 @@ search loop. Apache 2.0 attribution lives in ``THIRD_PARTY_NOTICES.md``.
 
 Given a ranked list of items plus a function that renders the first
 ``k`` of them to text, find the largest ``k`` such that the rendered
-text's token count fits inside ``max_tokens``. Useful anywhere ultron
+text's token count fits inside ``max_tokens``. Useful anywhere kenning
 packs ranked items into an LLM prompt: repo-map symbols, RAG snippets,
 recent-turn history, search results.
 

@@ -4,7 +4,7 @@ Three engines are wired:
 
 - :class:`KokoroSpeech` — StyleTTS2 + ISTFTNet (2026-05-20 swap).
   Current production default (``tts.engine: kokoro``). CUDA or CPU;
-  the fine-tuned Ultron voice loads from ``models/kokoro/voices/ultron.pt``.
+  the fine-tuned Kenning voice loads from ``models/kokoro/voices/kenning.pt``.
 - :class:`XttsV3Speech` — XTTS v2 streaming + v3 filter (legacy
   high-quality option). Selected when ``tts.engine: xtts_v3``.
 - :class:`TextToSpeech` — Piper + optional RVC (long-standing
@@ -19,14 +19,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional, Tuple, Union
 
-from ultron.tts.rvc import RvcConverter
-from ultron.tts.speech import TextToSpeech
-from ultron.tts.kokoro_engine import KokoroSpeech
-from ultron.tts.xtts_v3 import XttsV3Speech
-from ultron.utils.logging import get_logger
+from kenning.tts.rvc import RvcConverter
+from kenning.tts.speech import TextToSpeech
+from kenning.tts.kokoro_engine import KokoroSpeech
+from kenning.tts.xtts_v3 import XttsV3Speech
+from kenning.utils.logging import get_logger
 
 if TYPE_CHECKING:
-    from ultron.config import TTSConfig
+    from kenning.config import TTSConfig
 
 logger = get_logger("tts.factory")
 
@@ -41,7 +41,7 @@ def _load_rvc_if_enabled() -> Optional[RvcConverter]:
     disk. Returns ``None`` otherwise (the caller falls back to plain Piper).
 
     Replicates the legacy orchestrator helper so the factory is self-
-    contained — pulled out of :mod:`ultron.pipeline.orchestrator` during the
+    contained — pulled out of :mod:`kenning.pipeline.orchestrator` during the
     2026-05-22 measurement-script audit so ``scripts/measure_baseline.py``
     can build the same TTS engine without depending on the orchestrator.
     """
@@ -80,7 +80,7 @@ def make_tts_engine(
     Raises:
         RuntimeError: when ``tts.engine`` is set to an unknown value.
     """
-    from ultron.config import get_config, resolve_path
+    from kenning.config import get_config, resolve_path
 
     if cfg is None:
         cfg = get_config().tts

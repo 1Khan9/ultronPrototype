@@ -1,7 +1,7 @@
 # OpenClaw Phase 4 close-out — Telegram channel
 
-Telegram bot is the first remote channel for Ultron. Phase 4 lands
-the Ultron-side wiring (notification dispatcher, live MESSAGING
+Telegram bot is the first remote channel for Kenning. Phase 4 lands
+the Kenning-side wiring (notification dispatcher, live MESSAGING
 dispatch through the bridge, config schema, docs). Live verification
 requires a one-time user setup on the OpenClaw side (BotFather +
 `openclaw channels add`).
@@ -11,12 +11,12 @@ requires a one-time user setup on the OpenClaw side (BotFather +
 | File | Role |
 |---|---|
 | `docs/openclaw_telegram_setup.md` | Full bot-creation procedure (BotFather walkthrough), token handling, `openclaw configure`/`channels add` recipe, smoke test checklist, security + rotation notes. |
-| `src/ultron/openclaw_bridge/notifications.py` | `NotificationDispatcher` — fire-and-forget proactive Telegram pings on coding-task completion / clarification / heartbeat / standing orders / async search. Per-event opt-ins; fail-open at every step. |
-| `src/ultron/openclaw_bridge/holder.py` | `OpenClawBridge.notifications` field; `fire_and_forget(coro_factory)` helper for off-hot-path dispatch from the sync orchestrator loop. `from_config(openclaw_cfg, notifications_cfg=None)` accepts the new config. |
-| `src/ultron/openclaw_routing/dispatcher.py` | `OpenClawDispatcher.handle_messaging` now calls `bridge.client.send_message` when a bridge is wired. Falls through to the existing stub voice message when the bridge is absent. Recipient resolution: explicit `intent.recipient` → `notifications.telegram.user_id_env` → `fallback_user_id` → clear voice error. |
-| `src/ultron/coding/voice.py` | `CapabilityVoiceController` accepts an `openclaw_bridge` kwarg and threads it into the dispatcher when constructing the on-demand `AutomationTaskRunner`. |
-| `src/ultron/pipeline/orchestrator.py` | `_announce_coding_completion_if_pending()` and `_announce_pending_clarifications()` now fire-and-forget a Telegram notification after the voice narration plays. Bridge is constructed before `coding_voice` so the controller can pass the bridge handle through. |
-| `src/ultron/config.py` | `NotificationsConfig` + `TelegramNotificationsConfig` + `TelegramNotifyOnConfig`. Hung off the top-level `UltronConfig.notifications`. |
+| `src/kenning/openclaw_bridge/notifications.py` | `NotificationDispatcher` — fire-and-forget proactive Telegram pings on coding-task completion / clarification / heartbeat / standing orders / async search. Per-event opt-ins; fail-open at every step. |
+| `src/kenning/openclaw_bridge/holder.py` | `OpenClawBridge.notifications` field; `fire_and_forget(coro_factory)` helper for off-hot-path dispatch from the sync orchestrator loop. `from_config(openclaw_cfg, notifications_cfg=None)` accepts the new config. |
+| `src/kenning/openclaw_routing/dispatcher.py` | `OpenClawDispatcher.handle_messaging` now calls `bridge.client.send_message` when a bridge is wired. Falls through to the existing stub voice message when the bridge is absent. Recipient resolution: explicit `intent.recipient` → `notifications.telegram.user_id_env` → `fallback_user_id` → clear voice error. |
+| `src/kenning/coding/voice.py` | `CapabilityVoiceController` accepts an `openclaw_bridge` kwarg and threads it into the dispatcher when constructing the on-demand `AutomationTaskRunner`. |
+| `src/kenning/pipeline/orchestrator.py` | `_announce_coding_completion_if_pending()` and `_announce_pending_clarifications()` now fire-and-forget a Telegram notification after the voice narration plays. Bridge is constructed before `coding_voice` so the controller can pass the bridge handle through. |
+| `src/kenning/config.py` | `NotificationsConfig` + `TelegramNotificationsConfig` + `TelegramNotifyOnConfig`. Hung off the top-level `KenningConfig.notifications`. |
 | `config.yaml` | `notifications:` section with master `enabled: false` (default-off until the user sets up the bot), per-event opt-in flags, env-var-based recipient resolution. |
 
 ## Defaults & posture
@@ -90,7 +90,7 @@ heartbeat alerts ride the same `notify_heartbeat_alert` path. The
 `OpenClawClient.trigger_heartbeat` method is already in place from
 Phase 3. Phase 5 adds the OpenClaw-side `agents[].heartbeat` config
 block, populates `HEARTBEAT.md` with the actual checklist, and
-adds an Ultron MCP tool for querying recent alerts (so a voice
+adds an Kenning MCP tool for querying recent alerts (so a voice
 "what alerts did you flag?" works).
 
 No Phase 4 work blocks Phase 5.

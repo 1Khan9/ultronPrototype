@@ -20,7 +20,7 @@ Fail-open semantics:
   registration fails, schedules a daemon-thread retry loop.
 - :meth:`shutdown` stops the retry thread and the event receiver.
   We deliberately do NOT unregister the MCP entry — leaving it lets
-  OpenClaw spawn Ultron's MCP on demand across Ultron restarts.
+  OpenClaw spawn Kenning's MCP on demand across Kenning restarts.
 """
 
 from __future__ import annotations
@@ -31,22 +31,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from ultron.errors import OpenClawGatewayError
-from ultron.openclaw_bridge.client import OpenClawClient
-from ultron.openclaw_bridge.events import OpenClawEventReceiver
-from ultron.openclaw_bridge.heartbeat_alerts import (
+from kenning.errors import OpenClawGatewayError
+from kenning.openclaw_bridge.client import OpenClawClient
+from kenning.openclaw_bridge.events import OpenClawEventReceiver
+from kenning.openclaw_bridge.heartbeat_alerts import (
     HeartbeatAlert,
     HeartbeatAlertLog,
 )
-from ultron.openclaw_bridge.lifecycle import OpenClawLifecycle
-from ultron.openclaw_bridge.mcp_registration import (
+from kenning.openclaw_bridge.lifecycle import OpenClawLifecycle
+from kenning.openclaw_bridge.mcp_registration import (
     RegistrationResult,
-    UltronMcpRegistrar,
+    KenningMcpRegistrar,
 )
-from ultron.openclaw_bridge.notifications import NotificationDispatcher
-from ultron.openclaw_bridge.persona import default_workspace_dir
-from ultron.openclaw_bridge.workspace import WorkspaceWriter
-from ultron.utils.logging import get_logger
+from kenning.openclaw_bridge.notifications import NotificationDispatcher
+from kenning.openclaw_bridge.persona import default_workspace_dir
+from kenning.openclaw_bridge.workspace import WorkspaceWriter
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_bridge.holder")
 
@@ -64,7 +64,7 @@ class OpenClawBridge:
     client: Optional[OpenClawClient]                 # None when CLI cannot be discovered
     workspace: WorkspaceWriter
     events: OpenClawEventReceiver
-    registrar: Optional[UltronMcpRegistrar]          # None when client is None or registration disabled
+    registrar: Optional[KenningMcpRegistrar]          # None when client is None or registration disabled
     notifications: NotificationDispatcher            # Phase 4 — proactive Telegram pings
     heartbeat_alerts: HeartbeatAlertLog              # Phase 5 — local alert log
 
@@ -105,10 +105,10 @@ class OpenClawBridge:
             return None
         bridge_cfg = openclaw_cfg.bridge
         if notifications_cfg is None:
-            from ultron.config import NotificationsConfig
+            from kenning.config import NotificationsConfig
             notifications_cfg = NotificationsConfig()
         if heartbeat_cfg is None:
-            from ultron.config import HeartbeatConfig
+            from kenning.config import HeartbeatConfig
             heartbeat_cfg = HeartbeatConfig()
 
         # Lifecycle — never raises; uses HTTP probe to existing canvas path.
@@ -122,7 +122,7 @@ class OpenClawBridge:
             client = OpenClawClient(
                 cli_path=bridge_cfg.cli_path,
                 default_timeout_s=bridge_cfg.cli_timeout_seconds,
-                default_agent_id=openclaw_cfg.required_agent_id or "ultron-main",
+                default_agent_id=openclaw_cfg.required_agent_id or "kenning-main",
             )
         except OpenClawGatewayError as e:
             logger.warning(
@@ -154,14 +154,14 @@ class OpenClawBridge:
         # MCP registrar — conditional on (client present) AND
         # (mcp_server_command set). The "auto" sentinel resolves to
         # the canonical stdio entry script so out-of-the-box the
-        # registrar registers Ultron's MCP without operator action.
-        registrar: Optional[UltronMcpRegistrar] = None
+        # registrar registers Kenning's MCP without operator action.
+        registrar: Optional[KenningMcpRegistrar] = None
         if client is not None:
             command, args = cls._resolve_mcp_command(
                 bridge_cfg.mcp_server_command,
                 list(bridge_cfg.mcp_server_args),
             )
-            registrar = UltronMcpRegistrar(
+            registrar = KenningMcpRegistrar(
                 client,
                 name=bridge_cfg.mcp_server_name,
                 command=command,
@@ -180,7 +180,7 @@ class OpenClawBridge:
         # Heartbeat alert log (Phase 5). Path resolves against the
         # project root for relative values. The log is created lazily
         # on first record.
-        from ultron.config import resolve_path
+        from kenning.config import resolve_path
         alert_log = HeartbeatAlertLog(
             resolve_path(heartbeat_cfg.alert_log_path),
             retention_days=heartbeat_cfg.alert_retention_days,
@@ -271,7 +271,7 @@ class OpenClawBridge:
         """Stop the retry thread and the event receiver. Idempotent.
 
         We keep the MCP registration in place so OpenClaw can re-spawn
-        Ultron's MCP across restarts; explicit unregistration is the
+        Kenning's MCP across restarts; explicit unregistration is the
         caller's job (e.g. uninstall script)."""
         self._stop_event.set()
         if self._retry_thread is not None and self._retry_thread.is_alive():
@@ -303,7 +303,7 @@ class OpenClawBridge:
         Telegram failures are swallowed inside the dispatcher.
 
         Phase 5 entry point. Called by the OpenClaw-side heartbeat
-        agent via the (future) MCP tool, or directly by Ultron-side
+        agent via the (future) MCP tool, or directly by Kenning-side
         diagnostics that want to surface something to the user.
         """
         alert = self.heartbeat_alerts.record(
@@ -431,7 +431,7 @@ class OpenClawBridge:
         if configured is None:
             return None, []
         if configured == "auto":
-            from ultron.config import PROJECT_ROOT
+            from kenning.config import PROJECT_ROOT
             # The .venv Python that OpenClaw should spawn.
             venv_python = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
             if not venv_python.exists():
@@ -439,7 +439,7 @@ class OpenClawBridge:
                 # Windows, but support reproducible installs elsewhere).
                 venv_python = PROJECT_ROOT / ".venv" / "bin" / "python"
             entry = (
-                PROJECT_ROOT / "scripts" / "run_ultron_mcp_for_openclaw.py"
+                PROJECT_ROOT / "scripts" / "run_kenning_mcp_for_openclaw.py"
             )
             if not entry.exists():
                 logger.warning(

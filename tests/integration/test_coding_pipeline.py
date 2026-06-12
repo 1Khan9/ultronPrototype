@@ -15,8 +15,8 @@ import pytest
 
 from tests.integration.conftest import dispatch_utterance
 from tests.coding.mock_bridge import ClaudeScript, ScriptedClaudeBridge
-from ultron.coding.bridge import TaskRequest
-from ultron.coding.session import SessionStatus
+from kenning.coding.bridge import TaskRequest
+from kenning.coding.session import SessionStatus
 
 
 def _bridge_with_script(cap_stack, session_id, script):

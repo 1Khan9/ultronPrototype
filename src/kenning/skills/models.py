@@ -42,7 +42,7 @@ class SkillSource(str, Enum):
     """Where the skill was loaded from.
 
     Mirrors the OpenHands public / user / project distinction
-    (organisation is intentionally skipped -- ultron is single-user).
+    (organisation is intentionally skipped -- kenning is single-user).
     Source priority for later-wins dedup: PUBLIC < USER < PROJECT.
     """
 
@@ -143,7 +143,7 @@ class Skill:
         source: Where the skill was loaded from (informs dedup).
         type: Semantic class.
         description: Optional human-readable summary surfaced in
-            ``ultron diag skills``.
+            ``kenning diag skills``.
         path: Source file path (informational; not used by matching).
         version: Optional version string from frontmatter.
         extra: Any additional frontmatter keys not consumed above

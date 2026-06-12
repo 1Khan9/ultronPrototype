@@ -13,9 +13,9 @@ from typing import Optional
 import numpy as np
 
 from config import settings
-from ultron.errors import WhisperTranscriptionError
-from ultron.resilience import get_error_log
-from ultron.utils.logging import get_logger
+from kenning.errors import WhisperTranscriptionError
+from kenning.resilience import get_error_log
+from kenning.utils.logging import get_logger
 
 logger = get_logger("transcription.whisper")
 

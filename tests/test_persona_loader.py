@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.openclaw_bridge.persona import (
+from kenning.openclaw_bridge.persona import (
     PersonaBundle,
     PersonaFile,
     PersonaLoader,
@@ -45,12 +45,12 @@ def workspace(tmp_path) -> Path:
 
 
 def test_default_workspace_dir_uses_env_var(monkeypatch, tmp_path):
-    monkeypatch.setenv("ULTRON_OPENCLAW_WORKSPACE", str(tmp_path / "custom"))
+    monkeypatch.setenv("KENNING_OPENCLAW_WORKSPACE", str(tmp_path / "custom"))
     assert default_workspace_dir() == tmp_path / "custom"
 
 
 def test_default_workspace_dir_falls_back_to_home(monkeypatch):
-    monkeypatch.delenv("ULTRON_OPENCLAW_WORKSPACE", raising=False)
+    monkeypatch.delenv("KENNING_OPENCLAW_WORKSPACE", raising=False)
     expected = Path.home() / ".openclaw" / "workspace"
     assert default_workspace_dir() == expected
 

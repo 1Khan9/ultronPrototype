@@ -1,4 +1,4 @@
-"""Validate ``config.yaml`` against the pydantic schema without starting Ultron.
+"""Validate ``config.yaml`` against the pydantic schema without starting Kenning.
 
 Exits 0 if the config loads cleanly; non-zero with a clear error message
 otherwise. Useful for CI / pre-commit + for confirming a hand-edit of
@@ -17,7 +17,7 @@ import json
 import sys
 from pathlib import Path
 
-# Make ultron.* importable when this script is run from the worktree.
+# Make kenning.* importable when this script is run from the worktree.
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "src"))
@@ -28,7 +28,7 @@ def main(argv=None) -> int:
     parser.add_argument(
         "path", nargs="?", type=Path, default=None,
         help="path to config.yaml (default: ./config.yaml or "
-             "$ULTRON_CONFIG_PATH)",
+             "$KENNING_CONFIG_PATH)",
     )
     parser.add_argument(
         "--print", dest="print_resolved", action="store_true",
@@ -38,10 +38,10 @@ def main(argv=None) -> int:
 
     # Lazy imports so a config-only error doesn't pull in heavy deps.
     try:
-        from ultron.config import load_config
-        from ultron.errors import ConfigurationError
+        from kenning.config import load_config
+        from kenning.errors import ConfigurationError
     except ImportError as e:
-        print(f"failed to import ultron.config: {e}", file=sys.stderr)
+        print(f"failed to import kenning.config: {e}", file=sys.stderr)
         print("Run from the project root with the venv active.", file=sys.stderr)
         return 1
 

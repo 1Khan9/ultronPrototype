@@ -6,7 +6,7 @@ from typing import Any, Mapping, Sequence
 
 import pytest
 
-from ultron.llm.requery import (
+from kenning.llm.requery import (
     DEFAULT_MAX_REQUERIES,
     RequeryAttempt,
     RequeryLoop,

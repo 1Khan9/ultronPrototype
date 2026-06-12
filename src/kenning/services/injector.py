@@ -266,7 +266,7 @@ def install_default_injectors(
     :func:`build_tts_engine_injector`. Returns the active registry.
     """
 
-    from ultron.services.engine_injectors import (
+    from kenning.services.engine_injectors import (
         build_stt_engine_injector,
         build_tts_engine_injector,
     )

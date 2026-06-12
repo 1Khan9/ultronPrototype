@@ -1,4 +1,4 @@
-"""Tests for ultron.desktop.monitors."""
+"""Tests for kenning.desktop.monitors."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from ultron.desktop.monitors import (
+from kenning.desktop.monitors import (
     Monitor,
     enumerate_monitors,
     find_monitor,
@@ -75,7 +75,7 @@ def _fake_monitors() -> list[Monitor]:
 def fake_monitors(monkeypatch):
     fakes = _fake_monitors()
     monkeypatch.setattr(
-        "ultron.desktop.monitors.enumerate_monitors", lambda: fakes,
+        "kenning.desktop.monitors.enumerate_monitors", lambda: fakes,
     )
     return fakes
 
@@ -137,7 +137,7 @@ def test_find_monitor_main_is_center_not_win32_primary(monkeypatch):
         ),
     ]
     monkeypatch.setattr(
-        "ultron.desktop.monitors.enumerate_monitors", lambda: fakes,
+        "kenning.desktop.monitors.enumerate_monitors", lambda: fakes,
     )
     # "primary" still maps to Win32 primary (right).
     assert find_monitor("primary").name == "\\\\.\\DISPLAY2"
@@ -162,7 +162,7 @@ def test_find_monitor_main_single_monitor(monkeypatch):
         ),
     ]
     monkeypatch.setattr(
-        "ultron.desktop.monitors.enumerate_monitors", lambda: fakes,
+        "kenning.desktop.monitors.enumerate_monitors", lambda: fakes,
     )
     assert find_monitor("main").index == 0
     assert find_monitor("center").index == 0
@@ -185,7 +185,7 @@ def test_find_monitor_main_two_monitor_falls_back_left(monkeypatch):
         ),
     ]
     monkeypatch.setattr(
-        "ultron.desktop.monitors.enumerate_monitors", lambda: fakes,
+        "kenning.desktop.monitors.enumerate_monitors", lambda: fakes,
     )
     assert find_monitor("main").name == "\\\\.\\DISPLAY2"  # leftmost
 
@@ -228,7 +228,7 @@ def test_find_monitor_unknown(fake_monitors):
 
 def test_find_monitor_empty_list(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.monitors.enumerate_monitors", lambda: [],
+        "kenning.desktop.monitors.enumerate_monitors", lambda: [],
     )
     assert find_monitor(0) is None
     assert find_monitor("primary") is None

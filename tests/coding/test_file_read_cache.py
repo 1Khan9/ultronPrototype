@@ -1,4 +1,4 @@
-"""Tests for ultron.coding.file_read_cache."""
+"""Tests for kenning.coding.file_read_cache."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding import file_read_cache as frc
+from kenning.coding import file_read_cache as frc
 
 
 @pytest.fixture(autouse=True)

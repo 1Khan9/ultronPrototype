@@ -1,6 +1,6 @@
 """Tests for the B3 run/launch-on-command feature.
 
-Covers ``src/ultron/coding/sandbox_runner.py`` (matcher, entry-point
+Covers ``src/kenning/coding/sandbox_runner.py`` (matcher, entry-point
 resolution, sandbox-confined run/launch with injected process primitives,
 voice summary) and the ``CapabilityVoiceController.maybe_handle_run_program``
 handler (non-blocking background run + instant launch + fall-through on an
@@ -13,11 +13,11 @@ import subprocess
 import time
 from pathlib import Path
 
-from ultron.coding import sandbox_runner as sr
-from ultron.coding.bridge import CodingBridge, TaskRequest
-from ultron.coding.projects import Project, ProjectRegistry, ProjectResolver
-from ultron.coding.runner import CodingTaskRunner
-from ultron.coding.voice import CodingVoiceController
+from kenning.coding import sandbox_runner as sr
+from kenning.coding.bridge import CodingBridge, TaskRequest
+from kenning.coding.projects import Project, ProjectRegistry, ProjectResolver
+from kenning.coding.runner import CodingTaskRunner
+from kenning.coding.voice import CodingVoiceController
 
 
 # --------------------------------------------------------------------------

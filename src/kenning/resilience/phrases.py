@@ -11,7 +11,7 @@ sites for the same failure share state (no two-in-a-row across them).
 
 Usage::
 
-    from ultron.resilience.phrases import phrase_for
+    from kenning.resilience.phrases import phrase_for
 
     msg = phrase_for("brave_unavailable")
     if msg:
@@ -27,8 +27,8 @@ import random
 import threading
 from typing import Dict, List, Optional
 
-from ultron.config import get_config
-from ultron.utils.logging import get_logger
+from kenning.config import get_config
+from kenning.utils.logging import get_logger
 
 logger = get_logger("resilience.phrases")
 

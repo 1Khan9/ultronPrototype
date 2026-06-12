@@ -4,7 +4,7 @@ Adds a thread-local ``turn_id`` (per-utterance) and ``phase`` (which
 stage of the pipeline) so every log line written via the helpers
 below carries a ``turn=N phase=X`` prefix. The user can then::
 
-    grep "turn=42" logs/ultron.log
+    grep "turn=42" logs/kenning.log
 
 and see the complete lifecycle of a single user utterance: wake
 detect, capture, VAD, STT, addressing, routing, gate, memory
@@ -28,7 +28,7 @@ Design notes:
 
 The helpers are deliberately small: most of the value comes from
 *consistent placement* of log lines at every decision point in the
-pipeline. The :mod:`ultron.trace` helpers just keep the format
+pipeline. The :mod:`kenning.trace` helpers just keep the format
 uniform so the resulting log is grep-able and scannable.
 """
 

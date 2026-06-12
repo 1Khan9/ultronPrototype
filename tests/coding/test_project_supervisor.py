@@ -1,4 +1,4 @@
-"""Tests for ultron.coding.project_supervisor."""
+"""Tests for kenning.coding.project_supervisor."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ from typing import List, Optional
 
 import pytest
 
-from ultron.coding.intent import CodingIntent, CodingIntentKind
-from ultron.coding.project_digest import DigestRequest, ProjectDigest, parse_digest_sections, render_template
-from ultron.coding.project_index import (
+from kenning.coding.intent import CodingIntent, CodingIntentKind
+from kenning.coding.project_digest import DigestRequest, ProjectDigest, parse_digest_sections, render_template
+from kenning.coding.project_index import (
     ProjectIndex,
     ProjectIndexEntry,
     ProjectMatch,
 )
-from ultron.coding.project_supervisor import (
+from kenning.coding.project_supervisor import (
     ProjectSupervisor,
     SupervisorAction,
     SupervisorCandidate,
@@ -23,7 +23,7 @@ from ultron.coding.project_supervisor import (
     SupervisorInputs,
     _merge_candidates,
 )
-from ultron.coding.projects import (
+from kenning.coding.projects import (
     Project,
     ProjectRegistry,
     ProjectResolution,
@@ -367,7 +367,7 @@ def test_merge_candidates_respects_cap() -> None:
 
 
 def test_decide_publishes_bus_event(empty_registry) -> None:
-    from ultron.bus import SupervisorDecidedEvent, reset_bus_for_testing
+    from kenning.bus import SupervisorDecidedEvent, reset_bus_for_testing
 
     bus = reset_bus_for_testing()
     received = []

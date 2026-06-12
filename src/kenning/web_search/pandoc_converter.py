@@ -20,7 +20,7 @@ degrade to "skip the conversion, return None":
      errors) → None.
 
 Callers should pre-slim the HTML via
-:func:`ultron.web_search.slimdown_html.slimdown_html` before passing
+:func:`kenning.web_search.slimdown_html.slimdown_html` before passing
 it here. That cuts pandoc's wall time significantly on landing-page
 content.
 
@@ -38,7 +38,7 @@ import logging
 from typing import Optional
 
 
-logger = logging.getLogger("ultron.web_search.pandoc_converter")
+logger = logging.getLogger("kenning.web_search.pandoc_converter")
 
 
 # Pandoc args matching aider's:

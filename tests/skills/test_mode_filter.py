@@ -13,13 +13,13 @@ from pathlib import Path
 
 import pytest
 
-from ultron.skills.models import (
+from kenning.skills.models import (
     KeywordTrigger,
     Skill,
     SkillSource,
     SkillType,
 )
-from ultron.skills.registry import (
+from kenning.skills.registry import (
     SkillRegistry,
     _skill_active_in_mode,
     format_skills_block,

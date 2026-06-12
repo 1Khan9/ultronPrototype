@@ -1,4 +1,4 @@
-"""Tests for ultron.subprocess.zombie_killer."""
+"""Tests for kenning.subprocess.zombie_killer."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Optional
 
 import pytest
 
-from ultron.subprocess import zombie_killer as zk
+from kenning.subprocess import zombie_killer as zk
 
 
 class _FakeClock:

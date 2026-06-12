@@ -20,7 +20,7 @@ that window rather than raising up to the caller.
   on inactive virtual desktops, hidden by UWP suspend, or offscreened
   by a compositor trick -- ``IsWindowVisible`` returns True for them,
   but the user can't see or interact with them. The new flag bridges
-  to :func:`ultron.desktop.win32_helpers.is_window_cloaked`.
+  to :func:`kenning.desktop.win32_helpers.is_window_cloaked`.
 
 * :func:`focus_by_title` provides a title-substring focus with a
   primary ``SetForegroundWindow`` path and an AppActivate fallback for
@@ -43,8 +43,8 @@ import win32con  # type: ignore[import]
 import win32gui  # type: ignore[import]
 import win32process  # type: ignore[import]
 
-from ultron.desktop.monitors import Monitor, enumerate_monitors
-from ultron.utils.logging import get_logger
+from kenning.desktop.monitors import Monitor, enumerate_monitors
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.windows")
 
@@ -216,7 +216,7 @@ def enumerate_windows(
             # ctypes setup) only happens when the cloak filter is
             # actually consulted.
             try:
-                from ultron.desktop.win32_helpers import is_window_cloaked
+                from kenning.desktop.win32_helpers import is_window_cloaked
                 cloaked = is_window_cloaked(int(hwnd))
             except Exception:  # noqa: BLE001
                 cloaked = None
@@ -479,7 +479,7 @@ def focus_by_title(
         :class:`FocusResult` describing which method succeeded.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('window_focus')
 
     title = (partial_title or "").strip()
@@ -549,7 +549,7 @@ def focus_by_title(
 
 # Defaults mirror the upstream clawhub-windows-control ``wait_for_window``
 # script: 30 s total timeout, 500 ms poll interval. The two-tuple of
-# constants matches the equivalents in :mod:`ultron.desktop.uia` so the
+# constants matches the equivalents in :mod:`kenning.desktop.uia` so the
 # wait family has consistent defaults across the desktop surface.
 DEFAULT_WAIT_TIMEOUT_S: float = 30.0
 DEFAULT_WAIT_INTERVAL_S: float = 0.5
@@ -715,7 +715,7 @@ def _validate_close_window(
     """Run the runtime tool-call validator against a close-window action."""
 
     try:
-        from ultron.safety.validator import RuleContext, get_validator
+        from kenning.safety.validator import RuleContext, get_validator
 
         ctx = RuleContext(
             tool_name="desktop.window.close",
@@ -731,7 +731,7 @@ def _validate_close_window(
         return get_validator().check(ctx)
     except Exception as exc:  # noqa: BLE001
         logger.debug("close_window validator skipped: %s", exc)
-        from ultron.safety.validator import ValidatorVerdict, Verdict
+        from kenning.safety.validator import ValidatorVerdict, Verdict
         return ValidatorVerdict(
             verdict=Verdict.ALLOW, reason="validator unavailable",
         )
@@ -755,7 +755,7 @@ def _force_kill_window_process(window: WindowInfo) -> tuple[bool, str]:
     if pid <= 0:
         return False, "no pid recorded for window"
     try:
-        from ultron.subprocess.kill_tree import kill_process_tree
+        from kenning.subprocess.kill_tree import kill_process_tree
     except Exception as exc:  # noqa: BLE001
         return False, f"kill_process_tree unavailable: {exc}"
     try:
@@ -784,8 +784,8 @@ def close_window(
     :func:`win32gui.PostMessage` -- this triggers the app's own close
     hook, so apps with unsaved changes will prompt the user. The
     "force" path falls through to
-    :func:`ultron.subprocess.kill_tree.kill_process_tree` which is the
-    same primitive ultron uses for Parakeet / XTTS shutdown.
+    :func:`kenning.subprocess.kill_tree.kill_process_tree` which is the
+    same primitive kenning uses for Parakeet / XTTS shutdown.
 
     Args:
         partial_title: case-insensitive substring match against the
@@ -807,7 +807,7 @@ def close_window(
         behind a two-phase voice confirmation.
     """
     # Anticheat-safe mode: hard-blocked while the user is in game.
-    from ultron.safety.anticheat import guard as _anticheat_guard
+    from kenning.safety.anticheat import guard as _anticheat_guard
     _anticheat_guard('window_close')
 
     title = (partial_title or "").strip()

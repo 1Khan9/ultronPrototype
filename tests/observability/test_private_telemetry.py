@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.observability.private_telemetry import (
+from kenning.observability.private_telemetry import (
     DEFAULT_STALE_DAYS,
     HashedEvent,
     HashedRootId,
@@ -55,8 +55,8 @@ def test_telemetry_enabled_with_opt_in_token() -> None:
 
 
 def test_telemetry_disabled_when_disable_legacy_set() -> None:
-    """Even the legacy ULTRON_DISABLE_TELEMETRY=1 leaves telemetry off."""
-    assert not is_telemetry_enabled({"ULTRON_DISABLE_TELEMETRY": "1"})
+    """Even the legacy KENNING_DISABLE_TELEMETRY=1 leaves telemetry off."""
+    assert not is_telemetry_enabled({"KENNING_DISABLE_TELEMETRY": "1"})
 
 
 # ---------------------------------------------------------------------------

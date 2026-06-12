@@ -1,25 +1,25 @@
-"""Tests for ultron.evolution.blast_radius -- the policy spine.
+"""Tests for kenning.evolution.blast_radius -- the policy spine.
 All hermetic: pure functions + an injected git runner (no real git)."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.evolution import blast_radius as B
-from ultron.evolution.models import Gene, GeneConstraints
+from kenning.evolution import blast_radius as B
+from kenning.evolution.models import Gene, GeneConstraints
 
 
 # --- path normalisation + classification ------------------------------------
 
 
 def test_normalize_rel_path():
-    assert B.normalize_rel_path("./src\\ultron\\x.py") == "src/ultron/x.py"
+    assert B.normalize_rel_path("./src\\kenning\\x.py") == "src/kenning/x.py"
     assert B.normalize_rel_path("/data//evolution/") == "data/evolution/"
     assert B.normalize_rel_path("SRC/Foo.PY") == "src/foo.py"
 
 
 def test_default_policy_counts_source_excludes_data():
-    assert B.is_constraint_counted_path("src/ultron/foo.py") is True
+    assert B.is_constraint_counted_path("src/kenning/foo.py") is True
     assert B.is_constraint_counted_path("docs/readme.md") is True
     assert B.is_constraint_counted_path("data/x.json") is False
     assert B.is_constraint_counted_path("logs/run.log") is False
@@ -31,7 +31,7 @@ def test_proposal_policy_counts_only_under_root():
     pol = B.proposal_policy()
     assert B.is_constraint_counted_path("data/evolution/skills/new.md", pol) is True
     assert B.is_constraint_counted_path("docs/new.md", pol) is False
-    assert B.is_constraint_counted_path("src/ultron/x.py", pol) is False
+    assert B.is_constraint_counted_path("src/kenning/x.py", pol) is False
 
 
 def test_is_forbidden_path():
@@ -41,8 +41,8 @@ def test_is_forbidden_path():
 
 
 def test_is_critical_protected_path():
-    assert B.is_critical_protected_path("src/ultron/safety/validator.py") is True
-    assert B.is_critical_protected_path("src/ultron/evolution/evolution_loop.py") is True
+    assert B.is_critical_protected_path("src/kenning/safety/validator.py") is True
+    assert B.is_critical_protected_path("src/kenning/evolution/evolution_loop.py") is True
     assert B.is_critical_protected_path("config.yaml") is True
     assert B.is_critical_protected_path("SOUL.md") is True
     assert B.is_critical_protected_path("logs/safety_audit.jsonl") is True
@@ -201,7 +201,7 @@ def test_check_constraints_max_files_exceeded():
 
 def test_check_constraints_critical_path():
     res = B.check_constraints(
-        gene=_gene(), blast=_blast(files=1, all_changed=("src/ultron/foo.py",))
+        gene=_gene(), blast=_blast(files=1, all_changed=("src/kenning/foo.py",))
     )
     assert res.ok is False
     assert any(v.startswith("critical_path_modified") for v in res.violations)
@@ -301,7 +301,7 @@ def test_git_numstat_injected_runner():
 def test_compute_blast_radius_injected_runner():
     def fake_run(args):
         if args and args[0] == "diff":
-            return "2\t1\tsrc/ultron/x.py\n9\t9\tlogs/y.log\n"
+            return "2\t1\tsrc/kenning/x.py\n9\t9\tlogs/y.log\n"
         return ""
 
     blast = B.compute_blast_radius("/repo", run=fake_run)

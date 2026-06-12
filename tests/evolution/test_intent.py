@@ -1,10 +1,10 @@
-"""Tests for ultron.evolution.intent -- the strict voice-command matcher."""
+"""Tests for kenning.evolution.intent -- the strict voice-command matcher."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.evolution.intent import EvolutionCommandKind, match_evolution_command
+from kenning.evolution.intent import EvolutionCommandKind, match_evolution_command
 
 
 @pytest.mark.parametrize(

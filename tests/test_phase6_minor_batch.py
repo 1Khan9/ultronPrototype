@@ -23,7 +23,7 @@ _REPO = Path(__file__).resolve().parent.parent
 
 
 def test_normalise_search_query_canonicalises_token_set():
-    from ultron.web_search.search import _normalise_search_query
+    from kenning.web_search.search import _normalise_search_query
 
     a = _normalise_search_query("Tampa weather today")
     b = _normalise_search_query("today's weather in Tampa")
@@ -31,13 +31,13 @@ def test_normalise_search_query_canonicalises_token_set():
 
 
 def test_normalise_search_query_handles_empty():
-    from ultron.web_search.search import _normalise_search_query
+    from kenning.web_search.search import _normalise_search_query
     assert _normalise_search_query("") == ""
     assert _normalise_search_query("    ") == ""
 
 
 def test_dedupe_queries_preserves_first_seen_order():
-    from ultron.web_search.search import _dedupe_queries
+    from kenning.web_search.search import _dedupe_queries
 
     out = _dedupe_queries([
         "Tampa weather today",
@@ -55,7 +55,7 @@ def test_dedupe_queries_preserves_first_seen_order():
 
 
 def test_dedupe_queries_drops_blanks():
-    from ultron.web_search.search import _dedupe_queries
+    from kenning.web_search.search import _dedupe_queries
     assert _dedupe_queries(["", "   ", "x"]) == ["x"]
 
 
@@ -65,13 +65,13 @@ def test_dedupe_queries_drops_blanks():
 
 
 def test_render_inline_marker_bracket_default():
-    from ultron.web_search.search import _render_inline_marker
+    from kenning.web_search.search import _render_inline_marker
     assert _render_inline_marker(1, fmt="bracket") == "[1]"
     assert _render_inline_marker(7, fmt="bracket") == "[7]"
 
 
 def test_render_inline_marker_superscript():
-    from ultron.web_search.search import _render_inline_marker
+    from kenning.web_search.search import _render_inline_marker
     assert _render_inline_marker(1, fmt="superscript") == "¹"
     assert _render_inline_marker(2, fmt="superscript") == "²"
     assert _render_inline_marker(10, fmt="superscript") == "¹⁰"
@@ -79,13 +79,13 @@ def test_render_inline_marker_superscript():
 
 
 def test_render_inline_marker_unknown_format_falls_back_to_bracket():
-    from ultron.web_search.search import _render_inline_marker
+    from kenning.web_search.search import _render_inline_marker
     assert _render_inline_marker(5, fmt="not-a-real-format") == "[5]"
 
 
 def test_format_sources_for_prompt_uses_superscript_by_default():
     """Default-ON: V1-spec Part 4.4 wording (Unicode superscripts)."""
-    from ultron.web_search.search import SearchSource, format_sources_for_prompt
+    from kenning.web_search.search import SearchSource, format_sources_for_prompt
 
     sources = [SearchSource(
         url="https://example.com/a", title="Anthropic", snippet="snip",
@@ -97,7 +97,7 @@ def test_format_sources_for_prompt_uses_superscript_by_default():
 
 def test_format_sources_for_prompt_uses_bracket_when_configured(monkeypatch):
     """Operator opt-out for ASCII-only consumers."""
-    from ultron.web_search import search as search_mod
+    from kenning.web_search import search as search_mod
 
     sources = [search_mod.SearchSource(
         url="https://example.com/a", title="A", snippet="snip",
@@ -117,7 +117,7 @@ def test_format_sources_for_prompt_uses_bracket_when_configured(monkeypatch):
 
 
 def test_brave_default_count_is_5():
-    from ultron.config import BraveConfig
+    from kenning.config import BraveConfig
     assert BraveConfig().count == 5
 
 
@@ -129,7 +129,7 @@ def test_brave_default_count_is_5():
 def test_project_dataclass_has_v1_spec_fields():
     """V1 spec Part 6.2 listed: name, aliases, path, language,
     description, last_accessed."""
-    from ultron.coding.projects import Project
+    from kenning.coding.projects import Project
     import time
 
     p = Project(
@@ -145,7 +145,7 @@ def test_project_dataclass_has_v1_spec_fields():
 
 
 def test_project_from_dict_loads_v1_fields_from_legacy_payload():
-    from ultron.coding.projects import Project
+    from kenning.coding.projects import Project
 
     p = Project.from_dict({
         "name": "old-project",

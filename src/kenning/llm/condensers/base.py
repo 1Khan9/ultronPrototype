@@ -1,7 +1,7 @@
 """Condenser ABC + shared types + token-count helpers.
 
 A :class:`Turn` is a thin ``(role, content)`` value type matching the
-existing ``ultron.llm.inference.Turn`` shape. Sticking with the same
+existing ``kenning.llm.inference.Turn`` shape. Sticking with the same
 tuple-shaped record means call sites can pass their existing history
 list to a condenser without copying.
 
@@ -30,8 +30,8 @@ from typing import Any, Iterable, Sequence
 logger = logging.getLogger(__name__)
 
 
-# The ultron history representation is a plain ``(role, content)`` tuple
-# (see ``ultron.llm.inference.Turn``). We mirror that here so condensers
+# The kenning history representation is a plain ``(role, content)`` tuple
+# (see ``kenning.llm.inference.Turn``). We mirror that here so condensers
 # can be slotted into ``_build_messages`` without a value-type rewrite.
 Turn = tuple[str, str]
 
@@ -111,7 +111,7 @@ def turn_text(turn: Turn) -> str:
 def char_count_tokens_for_turns(turns: Iterable[Turn]) -> int:
     """Cheap char-based token estimate (~4 chars/token English heuristic).
 
-    Matches the :func:`ultron.utils.token_budget.char_count_tokens` shape
+    Matches the :func:`kenning.utils.token_budget.char_count_tokens` shape
     so the condensers can share the same budgeting primitive used by
     the repo-map and snippet packing code.
     """

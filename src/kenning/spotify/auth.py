@@ -1,7 +1,7 @@
 """Spotify OAuth: credential loading + authorization-code flow + refresh.
 
 Credentials live in a gitignored JSON file OUTSIDE the repo (default
-``~/.ultron/spotify.json``) -- never tracked. Playback control needs the
+``~/.kenning/spotify.json``) -- never tracked. Playback control needs the
 authorization-code grant (a one-time browser consent that yields a
 long-lived refresh token, persisted back to the same file); from then
 on :meth:`SpotifyAuth.access_token` silently refreshes short-lived
@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-logger = logging.getLogger("ultron.spotify.auth")
+logger = logging.getLogger("kenning.spotify.auth")
 
 __all__ = [
     "SpotifyCredentials",
@@ -126,7 +126,7 @@ def build_authorize_url(
     creds: SpotifyCredentials,
     *,
     scopes: tuple[str, ...] = DEFAULT_SCOPES,
-    state: str = "ultron",
+    state: str = "kenning",
 ) -> str:
     """Build the consent URL the user opens once in a browser."""
     params = {

@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from ultron.safety.two_phase_approval import (
+from kenning.safety.two_phase_approval import (
     ApprovalDecision,
     ApprovalHandle,
     ApprovalOutcome,

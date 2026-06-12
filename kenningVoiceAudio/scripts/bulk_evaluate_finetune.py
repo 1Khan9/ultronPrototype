@@ -14,17 +14,17 @@ before committing to using this as the Kokoro fine-tune training corpus
 
 Runs inside the XTTS isolated venv::
 
-    C:\\STC\\ultronPrototype\\ultronVoiceAudio\\.venv-xtts\\Scripts\\python.exe ^
-        C:\\STC\\ultronPrototype\\ultronVoiceAudio\\scripts\\bulk_evaluate_finetune.py ^
+    C:\\STC\\ultronPrototype\\kenningVoiceAudio\\.venv-xtts\\Scripts\\python.exe ^
+        C:\\STC\\ultronPrototype\\kenningVoiceAudio\\scripts\\bulk_evaluate_finetune.py ^
             --checkpoint <path-to-best_model_102.pth>
 
 Output structure::
 
-    ultronVoiceAudio/bulk_eval/<run_name>/
+    kenningVoiceAudio/bulk_eval/<run_name>/
       manifest.json
       short_response/0001.wav ...
       medium_technical/0001.wav ...
-      theatrical_ultron/0001.wav ...
+      theatrical_kenning/0001.wav ...
       ...
 """
 
@@ -42,13 +42,13 @@ from typing import Optional
 
 
 HERE = Path(__file__).resolve().parent
-PROJECT = HERE.parent  # ultronVoiceAudio
+PROJECT = HERE.parent  # kenningVoiceAudio
 os.environ.setdefault("TORCH_HOME", str(PROJECT / ".torch_cache"))
 os.environ.setdefault("HF_HOME", str(PROJECT / ".hf_cache"))
 os.environ.setdefault("TRANSFORMERS_CACHE", str(PROJECT / ".hf_cache"))
 os.environ.setdefault("COQUI_TOS_AGREED", "1")
 
-REFERENCE_WAV = PROJECT / "kokoro training audio" / "Ultron_vocals_mono_v1.wav"
+REFERENCE_WAV = PROJECT / "kokoro training audio" / "Kenning_vocals_mono_v1.wav"
 CORPUS_JSON = PROJECT / "scripts" / "corpus.json"
 OUTPUT_ROOT = PROJECT / "bulk_eval"
 
@@ -73,7 +73,7 @@ def _trim_phantom_tail(audio_f32, sample_rate, *,
                        window_ms=20.0,
                        min_clip_duration_ms=800.0):
     """Detect + trim the XTTS phantom-token tail (port of the
-    production helper at src/ultron/tts/xtts_v3.py:trim_phantom_tail).
+    production helper at src/kenning/tts/xtts_v3.py:trim_phantom_tail).
 
     Pattern (walking RMS from end backward):
         sustained_speech -> silence(>=min_lead_silence_ms) ->
@@ -356,7 +356,7 @@ def _spectral_smooth(audio, sr, n_fft=2048, hop=512, median_window_frames=3):
 
 def _build_filter_chain(pitch_shift_semitones: float):
     """Construct the v2custom chain. Pulled inline so the script is
-    self-contained -- ultron_filter.py preset definitions don't
+    self-contained -- kenning_filter.py preset definitions don't
     expose a chorus + 0.16-wet-reverb variant yet."""
     from pedalboard import (
         Pedalboard, HighpassFilter, PitchShift, Compressor, LowShelfFilter,

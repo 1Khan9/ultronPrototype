@@ -1,4 +1,4 @@
-# Ultron operations
+# Kenning operations
 
 
 > **Currency note (2026-05-22):** this document is a historical snapshot.
@@ -18,7 +18,7 @@ Day-to-day running, monitoring, recovery, maintenance.
 # from the main checkout
 cd C:\STC\ultronPrototype
 .venv\Scripts\activate
-python -m ultron
+python -m kenning
 ```
 
 First boot from cold: ~60 s as Whisper + LLM + RVC + Piper load. Subsequent starts are faster (OS file cache holds the GGUF).
@@ -26,11 +26,11 @@ First boot from cold: ~60 s as Whisper + LLM + RVC + Piper load. Subsequent star
 Expected console output on a clean boot:
 
 ```
-Ultron is listening. Say 'ultron' to wake.
+Kenning is listening. Say 'kenning' to wake.
 [CAPTURING]
 [PROCESSING]
   you: <transcribed text>
-  ultron: <response>
+  kenning: <response>
   (still listening for ~30 s — keep talking or stay silent to drop back to wake-word mode)
 ```
 
@@ -40,29 +40,29 @@ Set in `.env` at the project root:
 
 ```ini
 # Required for web search (Phase 4 integration)
-ULTRON_BRAVE_API_KEY=brv-XXXXXXXXXXXXXXXXXXXXXXXX
+KENNING_BRAVE_API_KEY=brv-XXXXXXXXXXXXXXXXXXXXXXXX
 
 # Optional — opt-in overrides
-ULTRON_LLM_MODEL_PATH=models/Qwen3.5-9B-Q4_K_M.gguf
-ULTRON_AUDIO_DEVICE=Yeti
-ULTRON_AUDIO_OUTPUT_DEVICE=Schiit
-ULTRON_LOG_LEVEL=INFO
+KENNING_LLM_MODEL_PATH=models/Qwen3.5-9B-Q4_K_M.gguf
+KENNING_AUDIO_DEVICE=Yeti
+KENNING_AUDIO_OUTPUT_DEVICE=Schiit
+KENNING_LOG_LEVEL=INFO
 ```
 
 The Brave key is read by name (`web_search.brave_api_key_env` in
-config.yaml — defaults to `ULTRON_BRAVE_API_KEY`). The key value never
+config.yaml — defaults to `KENNING_BRAVE_API_KEY`). The key value never
 appears in config files or logs.
 
 ## Monitoring
 
 ### Live log
 
-`logs/ultron.log` — rotating handler at DEBUG, console handler at the
+`logs/kenning.log` — rotating handler at DEBUG, console handler at the
 configured level.
 
 ```powershell
 # Tail live
-Get-Content logs/ultron.log -Wait -Tail 30
+Get-Content logs/kenning.log -Wait -Tail 30
 ```
 
 ### Audit logs (one JSON object per line)
@@ -125,7 +125,7 @@ python scripts/review_addressing.py --misses    # likely false negatives
 
 Configured path doesn't exist on disk. Either:
 - `python scripts/download_models.py` to fetch the canonical Qwen3.5-9B Q4_K_M GGUF.
-- Or set `ULTRON_LLM_MODEL_PATH` (or edit `config.yaml`'s `llm.model_path`) to a valid GGUF.
+- Or set `KENNING_LLM_MODEL_PATH` (or edit `config.yaml`'s `llm.model_path`) to a valid GGUF.
 
 ### "Whisper crashes with cuBLAS / cuDNN errors"
 
@@ -136,11 +136,11 @@ add the install dir to PATH or copy `cublas64_12.dll` and
 
 ### "Wake word detection is offline"
 
-`models/openwakeword/ultron.onnx` is missing. The fallback to
+`models/openwakeword/kenning.onnx` is missing. The fallback to
 `hey_jarvis` triggers automatically with a startup warning. To get
-true `ultron` detection, train via openWakeWord's automatic training
+true `kenning` detection, train via openWakeWord's automatic training
 notebook and place the resulting ONNX at
-`models/openwakeword/ultron.onnx`.
+`models/openwakeword/kenning.onnx`.
 
 ### "Memory's not responding right now"
 
@@ -149,7 +149,7 @@ pipeline keeps working from base knowledge; conversation memory just
 isn't available for retrieval.
 
 Recovery:
-1. Stop Ultron.
+1. Stop Kenning.
 2. Back up `data/qdrant/` (just in case).
 3. Re-run `python scripts/migrate_memory_to_qdrant.py` to rebuild
    collections from `data/memory.jsonl`.
@@ -162,7 +162,7 @@ limiter is throttling. Check:
 
 ```powershell
 # Confirm key is set
-echo $env:ULTRON_BRAVE_API_KEY
+echo $env:KENNING_BRAVE_API_KEY
 
 # Recent Brave-related errors
 Get-Content logs/errors.jsonl | ConvertFrom-Json | Where-Object dependency -eq brave_api | Select-Object -Last 5
@@ -174,14 +174,14 @@ successful probe.
 ### "Anthropic's API isn't responding"
 
 Coding session paused. Check Anthropic API status; check the
-`ULTRON_CLAUDE_CLI` path resolves. The session goes to PAUSED state;
+`KENNING_CLAUDE_CLI` path resolves. The session goes to PAUSED state;
 user can retry or abandon.
 
 ### Voice conversion is offline
 
 RVC failed to convert (CUDA OOM, model corruption). Pipeline falls back
 to neutral Piper voice automatically. To re-enable RVC after fixing the
-underlying cause: restart Ultron.
+underlying cause: restart Kenning.
 
 ## Maintenance
 
@@ -208,7 +208,7 @@ Critical data:
 - `data/memory.jsonl` — legacy turn log (rebuilds Qdrant if needed)
 - `config.yaml` + `.env` — system configuration
 
-Models in `models/` and the RVC voice in `ultron_james_spader_mcu_6941/`
+Models in `models/` and the RVC voice in `kenning_rvc_voice/`
 are large (~6 GB) but reproducible — re-run `scripts/download_models.py`
 or recopy the RVC voice from its source.
 
@@ -216,7 +216,7 @@ or recopy the RVC voice from its source.
 # Simple compressed backup
 $ts = Get-Date -Format "yyyyMMdd-HHmm"
 Compress-Archive -Path data\qdrant, data\projects.json, data\memory.jsonl, config.yaml `
-                 -DestinationPath ".backups\ultron-$ts.zip"
+                 -DestinationPath ".backups\kenning-$ts.zip"
 ```
 
 ## Updating
@@ -225,7 +225,7 @@ Compress-Archive -Path data\qdrant, data\projects.json, data\memory.jsonl, confi
 git pull
 pip install -e .   # if pyproject.toml changed
 pytest tests/ -q   # smoke-check 600+ unit/integration tests still pass
-python -m ultron   # back to live
+python -m kenning   # back to live
 ```
 
 If a `pull` introduces config schema changes, the loader fails loud at
@@ -257,12 +257,12 @@ final summary.
 
 The most useful knobs in `config.yaml`:
 
-- `audio.barge_in_grace_seconds` — raise if Ultron self-triggers on
+- `audio.barge_in_grace_seconds` — raise if Kenning self-triggers on
   her own onset; lower if she feels unresponsive to interruption.
 - `vad.min_silence_duration_ms` — tightens turn-taking; reduces the
-  pause needed before Ultron starts responding.
+  pause needed before Kenning starts responding.
 - `wake_word.threshold` — raise toward 0.7 if false positives are
-  frequent; lower toward 0.4 if Ultron misses wake calls.
+  frequent; lower toward 0.4 if Kenning misses wake calls.
 - `addressing.warm_mode_duration_seconds` — currently 30 s. Reduce to
   10-15 if follow-up window feels long.
 - `tts.piper_length_scale` — main "talks too fast / slurred" lever.

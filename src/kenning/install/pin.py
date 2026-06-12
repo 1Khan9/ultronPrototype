@@ -18,7 +18,7 @@ already pinned with the same reason; otherwise updates the reason).
 The ``unpin`` operation is strict (rejects already-unpinned entries
 so callers get an explicit error rather than silent no-op).
 
-A small ULTRON_DEFAULT_PINS list mirrors the voice-baseline lock:
+A small KENNING_DEFAULT_PINS list mirrors the voice-baseline lock:
 attempting to install or update entries in that list with no
 explicit pin entry materialises the pin on demand so the catalog's
 ship-default behaviour matches the binding voice-baseline contract.
@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Optional
 
-from ultron.install.lockfile import (
+from kenning.install.lockfile import (
     Lockfile,
     LockfileEntry,
     read_lockfile,
@@ -69,17 +69,17 @@ class PinResult:
     idempotent_noop: bool
 
 
-#: Ultron's default-pinned resources. Each entry's reason is the
+#: Kenning's default-pinned resources. Each entry's reason is the
 #: contract sentence shown in ``list_pinned`` output + voice
 #: narration. Materialised on demand by :func:`materialise_default_pins`.
-ULTRON_DEFAULT_PINS: Mapping[str, str] = {
-    "voicepack:ultron": (
+KENNING_DEFAULT_PINS: Mapping[str, str] = {
+    "voicepack:kenning": (
         "Voice character anchor (SOUL.md/RVC/Piper/Kokoro voicepack);"
         " do not auto-update without an explicit voice unpin."
     ),
     "voicepack:kokoro_finetune": (
         "Kokoro fine-tune weights anchor; do not auto-update without"
-        " explicit voice unpin (would break Ultron mechanical voice character)."
+        " explicit voice unpin (would break Kenning mechanical voice character)."
     ),
     "llm:qwen3.5-4b": (
         "Voice-path latency anchor (TTFT contract);"
@@ -257,12 +257,12 @@ def unpin(workdir: Path, slug: str, *, tolerate_unpinned: bool = False) -> PinRe
 
 
 def is_default_pin(slug: str) -> bool:
-    """Return True iff ``slug`` is in :data:`ULTRON_DEFAULT_PINS`."""
-    return slug in ULTRON_DEFAULT_PINS
+    """Return True iff ``slug`` is in :data:`KENNING_DEFAULT_PINS`."""
+    return slug in KENNING_DEFAULT_PINS
 
 
 def materialise_default_pins(workdir: Path) -> tuple[PinResult, ...]:
-    """Ensure every :data:`ULTRON_DEFAULT_PINS` entry is pinned.
+    """Ensure every :data:`KENNING_DEFAULT_PINS` entry is pinned.
 
     Walks the default-pin list and calls :func:`pin` for each slug
     not already pinned in the workdir lockfile. Returns one
@@ -270,7 +270,7 @@ def materialise_default_pins(workdir: Path) -> tuple[PinResult, ...]:
     invocations (every result will be ``idempotent_noop=True``).
     """
     results: list[PinResult] = []
-    for slug, reason in ULTRON_DEFAULT_PINS.items():
+    for slug, reason in KENNING_DEFAULT_PINS.items():
         results.append(pin(workdir, slug, reason=reason))
     return tuple(results)
 
@@ -303,7 +303,7 @@ class UnpinNotPinnedError(RuntimeError):
 __all__ = [
     "PinResult",
     "UnpinNotPinnedError",
-    "ULTRON_DEFAULT_PINS",
+    "KENNING_DEFAULT_PINS",
     "is_pinned",
     "list_pinned",
     "pin",

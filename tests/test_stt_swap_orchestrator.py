@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.transcription import DualSTTRegistry
+from kenning.transcription import DualSTTRegistry
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ class _MinimalOrchestrator:
 
     # Borrow the real implementation by duck-typing.
     def swap_stt_engine(self, name: str) -> bool:
-        from ultron.utils.logging import get_logger
+        from kenning.utils.logging import get_logger
         logger = get_logger("test")
         registry = self._stt_registry
         if registry is None:
@@ -122,7 +122,7 @@ def test_swap_without_registry_returns_false():
 
 
 def test_stop_parakeet_server_when_not_running_returns_false(monkeypatch):
-    from ultron.transcription import parakeet_engine as pe_mod
+    from kenning.transcription import parakeet_engine as pe_mod
     monkeypatch.setattr(pe_mod, "_SERVER_PROCESS", None)
     assert pe_mod.stop_parakeet_server() is False
 
@@ -136,7 +136,7 @@ def test_stop_parakeet_server_terminates_alive_process(monkeypatch):
     forks + NeMo helper threads get cleaned up in one cross-platform
     call.
     """
-    from ultron.transcription import parakeet_engine as pe_mod
+    from kenning.transcription import parakeet_engine as pe_mod
 
     proc = MagicMock(name="server_proc")
     proc.poll.return_value = None  # alive throughout
@@ -161,7 +161,7 @@ def test_stop_parakeet_server_terminates_alive_process(monkeypatch):
             unreachable = ()
         return _Result()
 
-    import ultron.subprocess.kill_tree as kt_mod
+    import kenning.subprocess.kill_tree as kt_mod
     monkeypatch.setattr(kt_mod, "kill_process_tree", _fake_kill_tree)
 
     assert pe_mod.stop_parakeet_server(timeout_seconds=1.0) is True
@@ -174,7 +174,7 @@ def test_stop_parakeet_server_terminates_alive_process(monkeypatch):
 
 
 def test_is_parakeet_server_running_reflects_subprocess_state(monkeypatch):
-    from ultron.transcription import parakeet_engine as pe_mod
+    from kenning.transcription import parakeet_engine as pe_mod
 
     monkeypatch.setattr(pe_mod, "_SERVER_PROCESS", None)
     assert pe_mod.is_parakeet_server_running() is False

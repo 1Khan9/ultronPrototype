@@ -10,7 +10,7 @@ N6 -- detours / inline hooks into other processes.
 
 from __future__ import annotations
 
-from ultron.safety.rules.base import CommandPatternRule, Rule
+from kenning.safety.rules.base import CommandPatternRule, Rule
 
 
 def build_category_n_rules() -> list[Rule]:

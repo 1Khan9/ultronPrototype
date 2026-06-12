@@ -22,8 +22,8 @@ from typing import List, Optional
 import numpy as np
 import pytest
 
-from ultron.audio.vad import SpeechEvent
-from ultron.pipeline.orchestrator import Orchestrator, _FU_TIMEOUT, _FU_WAKE
+from kenning.audio.vad import SpeechEvent
+from kenning.pipeline.orchestrator import Orchestrator, _FU_TIMEOUT, _FU_WAKE
 
 
 # ---------------------------------------------------------------------------

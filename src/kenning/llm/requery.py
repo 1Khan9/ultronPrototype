@@ -12,7 +12,7 @@ original BROKEN exchange is NOT added to the permanent history;
 only the corrected version is. From the model's perspective the
 broken attempt never happened.
 
-For ultron the helper is used wherever an in-process LLM call
+For kenning the helper is used wherever an in-process LLM call
 produces output that needs structured re-parsing:
 
 * The web-search gate's preflight JSON output (when the LLM

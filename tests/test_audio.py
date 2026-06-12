@@ -11,7 +11,7 @@ import os
 import numpy as np
 import pytest
 
-from ultron.audio.ring_buffer import RingBuffer
+from kenning.audio.ring_buffer import RingBuffer
 
 
 # ---- RingBuffer (pure, no I/O) -------------------------------------------
@@ -107,7 +107,7 @@ def test_ring_buffer_cold_warm_slices_share_same_buffer():
 
 
 def test_resolve_device_matches_name_substring(monkeypatch):
-    from ultron.audio import devices
+    from kenning.audio import devices
 
     fake_devices = [
         {"name": "Voicemeeter Out B2", "max_input_channels": 8, "max_output_channels": 0},
@@ -127,7 +127,7 @@ def test_resolve_device_matches_name_substring(monkeypatch):
 
 
 def test_resolve_device_rejects_wrong_direction(monkeypatch):
-    from ultron.audio import devices
+    from kenning.audio import devices
 
     fake_devices = [
         {"name": "Microphone", "max_input_channels": 1, "max_output_channels": 0},
@@ -145,7 +145,7 @@ def test_resolve_device_rejects_wrong_direction(monkeypatch):
 
 
 def test_resolve_device_uses_default_index(monkeypatch):
-    from ultron.audio import devices
+    from kenning.audio import devices
 
     class FakeDefaultPair:
         def __getitem__(self, index):
@@ -179,7 +179,7 @@ def test_resolve_device_uses_default_index(monkeypatch):
     reason="set PYTEST_RUN_MIC_TESTS=1 to enable mic tests",
 )
 def test_audio_capture_produces_chunks():
-    from ultron.audio.capture import AudioCapture
+    from kenning.audio.capture import AudioCapture
 
     with AudioCapture(blocksize=512) as mic:
         chunk = mic.get_chunk(timeout=2.0)
@@ -197,7 +197,7 @@ def test_audio_config_blocksize_default_is_256():
     consumer queue latency. Silero VAD's internal window is 512
     samples regardless -- it buffers two 256-sample chunks for one
     decision -- so VAD timing is unchanged."""
-    from ultron.config import AudioConfig
+    from kenning.config import AudioConfig
     cfg = AudioConfig()
     assert cfg.blocksize == 256
     # Verify the duration math: 256 samples / 16000 Hz = 16 ms.
@@ -211,7 +211,7 @@ def _make_vad_without_loading_silero(monkeypatch, min_silence_ms: int = 500):
     """Construct a VoiceActivityDetector with the Silero load patched
     out -- lets us test the silence-window math without needing the
     real model on disk."""
-    from ultron.audio import vad as _vad
+    from kenning.audio import vad as _vad
     monkeypatch.setattr(
         _vad.VoiceActivityDetector,
         "_load_model",
@@ -265,7 +265,7 @@ def test_vad_max_utterance_seconds_default_is_thirty():
     without unbounded runaway. 30 s was chosen because the live-session
     cut-off happened at 15 s, and we want ~2x to absorb similarly
     detailed asks while still bounding pathological captures."""
-    from ultron.config import VADConfig
+    from kenning.config import VADConfig
     assert VADConfig().max_utterance_seconds == 30.0
 
 
@@ -273,7 +273,7 @@ def test_vad_max_utterance_seconds_too_small_rejected():
     """Below 5 s isn't a useful ceiling (typical complete-sentence ask
     is 3-8 s; 5 s minimum keeps the schema honest)."""
     from pydantic import ValidationError
-    from ultron.config import VADConfig
+    from kenning.config import VADConfig
     with pytest.raises(ValidationError):
         VADConfig(max_utterance_seconds=3.0)
 
@@ -282,6 +282,6 @@ def test_vad_max_utterance_seconds_too_large_rejected():
     """Above 120 s is unbounded by any practical voice-prompt standard;
     catches typos (e.g. ``1200`` thinking it's milliseconds)."""
     from pydantic import ValidationError
-    from ultron.config import VADConfig
+    from kenning.config import VADConfig
     with pytest.raises(ValidationError):
         VADConfig(max_utterance_seconds=200.0)

@@ -1,4 +1,4 @@
-"""Tests for ultron.desktop.dialog_control (catalog 08 T1)."""
+"""Tests for kenning.desktop.dialog_control (catalog 08 T1)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.desktop.dialog_control import (
+from kenning.desktop.dialog_control import (
     DEFAULT_WAIT_INTERVAL_S,
     DEFAULT_WAIT_TIMEOUT_S,
     DIALOG_CLASSES,
@@ -30,7 +30,7 @@ from ultron.desktop.dialog_control import (
     type_into_dialog_field,
     wait_for_dialog,
 )
-from ultron.desktop.windows import WindowInfo
+from kenning.desktop.windows import WindowInfo
 
 
 # ---------------------------------------------------------------------------
@@ -151,16 +151,16 @@ def _make_spec(title: str = "Save As", descendants: Optional[list[_DialogNode]] 
 
 def _patch_connect(monkeypatch, spec: Optional[object]) -> None:
     monkeypatch.setattr(
-        "ultron.desktop.dialog_control._connect_to_window",
+        "kenning.desktop.dialog_control._connect_to_window",
         lambda hwnd: spec,
     )
 
 
 def _patch_validator_allow(monkeypatch) -> None:
-    from ultron.safety.validator import ValidatorVerdict, Verdict
+    from kenning.safety.validator import ValidatorVerdict, Verdict
 
     monkeypatch.setattr(
-        "ultron.safety.validator.get_validator",
+        "kenning.safety.validator.get_validator",
         lambda: type(
             "V", (), {"check": lambda self, ctx: ValidatorVerdict(
                 verdict=Verdict.ALLOW, reason="ok",
@@ -170,14 +170,14 @@ def _patch_validator_allow(monkeypatch) -> None:
 
 
 def _patch_validator_block(monkeypatch, reason: str = "blocked") -> None:
-    from ultron.safety.validator import ValidatorVerdict, Verdict
+    from kenning.safety.validator import ValidatorVerdict, Verdict
 
     blocked = ValidatorVerdict(
         verdict=Verdict.BLOCK_HARD, reason=reason,
         triggered_rule_id="test_block", user_message="refused",
     )
     monkeypatch.setattr(
-        "ultron.safety.validator.get_validator",
+        "kenning.safety.validator.get_validator",
         lambda: type("V", (), {"check": lambda self, ctx: blocked})(),
     )
 
@@ -313,7 +313,7 @@ def test_matches_dialog_none_for_regular_window():
 
 def test_find_dialogs_returns_empty_when_no_dialogs(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.dialog_control.enumerate_windows",
+        "kenning.desktop.dialog_control.enumerate_windows",
         lambda **kw: [
             _wi(hwnd=1, class_name="Chrome_WidgetWin_1", title="Browser"),
         ],
@@ -324,7 +324,7 @@ def test_find_dialogs_returns_empty_when_no_dialogs(monkeypatch):
 def test_find_dialogs_matches_standard_dialog_class(monkeypatch):
     target = _wi(hwnd=99, class_name="#32770", title="Save As")
     monkeypatch.setattr(
-        "ultron.desktop.dialog_control.enumerate_windows",
+        "kenning.desktop.dialog_control.enumerate_windows",
         lambda **kw: [target],
     )
     dialogs = find_dialogs()
@@ -336,7 +336,7 @@ def test_find_dialogs_matches_standard_dialog_class(monkeypatch):
 def test_find_dialogs_matches_title_keyword(monkeypatch):
     target = _wi(hwnd=99, class_name="CustomDialog", title="Confirm Delete")
     monkeypatch.setattr(
-        "ultron.desktop.dialog_control.enumerate_windows",
+        "kenning.desktop.dialog_control.enumerate_windows",
         lambda **kw: [target],
     )
     dialogs = find_dialogs()
@@ -348,7 +348,7 @@ def test_find_dialogs_respects_title_filter(monkeypatch):
     save_dialog = _wi(hwnd=1, class_name="#32770", title="Save As")
     open_dialog = _wi(hwnd=2, class_name="#32770", title="Open File")
     monkeypatch.setattr(
-        "ultron.desktop.dialog_control.enumerate_windows",
+        "kenning.desktop.dialog_control.enumerate_windows",
         lambda **kw: [save_dialog, open_dialog],
     )
     dialogs = find_dialogs(partial_title_filter="save")
@@ -361,7 +361,7 @@ def test_find_dialogs_fail_open_on_enumerate_exception(monkeypatch):
         raise RuntimeError("simulated enum failure")
 
     monkeypatch.setattr(
-        "ultron.desktop.dialog_control.enumerate_windows", _raise,
+        "kenning.desktop.dialog_control.enumerate_windows", _raise,
     )
     assert find_dialogs() == []
 
@@ -787,7 +787,7 @@ def test_dismiss_dialog_preferred_buttons_overrides_default_order(monkeypatch):
 def test_dismiss_dialog_skips_validator_blocked_candidate(monkeypatch):
     """If the validator blocks a specific candidate (e.g. Pay), we fall
     through to the next candidate rather than aborting."""
-    from ultron.safety.validator import ValidatorVerdict, Verdict
+    from kenning.safety.validator import ValidatorVerdict, Verdict
 
     pay = _DialogNode(text="Pay", control_type="Button")
     ok = _DialogNode(text="OK", control_type="Button")
@@ -804,7 +804,7 @@ def test_dismiss_dialog_skips_validator_blocked_candidate(monkeypatch):
         return ValidatorVerdict(verdict=Verdict.ALLOW, reason="ok")
 
     monkeypatch.setattr(
-        "ultron.safety.validator.get_validator",
+        "kenning.safety.validator.get_validator",
         lambda: type("V", (), {"check": _check})(),
     )
     # Use preferred buttons so "Pay" gets considered before "OK".
@@ -848,7 +848,7 @@ def test_wait_for_dialog_returns_none_on_zero_timeout(monkeypatch):
         return []
 
     monkeypatch.setattr(
-        "ultron.desktop.dialog_control.find_dialogs", _no_call,
+        "kenning.desktop.dialog_control.find_dialogs", _no_call,
     )
     assert wait_for_dialog(timeout_s=0.0) is None
     assert consulted[0] == 0
@@ -859,7 +859,7 @@ def test_wait_for_dialog_found_on_first_poll(monkeypatch):
         window=_wi(hwnd=42), class_name="#32770", matched_by="class",
     )
     monkeypatch.setattr(
-        "ultron.desktop.dialog_control.find_dialogs",
+        "kenning.desktop.dialog_control.find_dialogs",
         lambda **kw: [target],
     )
     slept: list[float] = []
@@ -883,7 +883,7 @@ def test_wait_for_dialog_appears_on_third_poll(monkeypatch):
         return [target] if calls[0] >= 3 else []
 
     monkeypatch.setattr(
-        "ultron.desktop.dialog_control.find_dialogs", _appear,
+        "kenning.desktop.dialog_control.find_dialogs", _appear,
     )
     clock = _FakeClock()
 
@@ -901,7 +901,7 @@ def test_wait_for_dialog_appears_on_third_poll(monkeypatch):
 
 def test_wait_for_dialog_returns_none_on_timeout(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.dialog_control.find_dialogs",
+        "kenning.desktop.dialog_control.find_dialogs",
         lambda **kw: [],
     )
     clock = _FakeClock()
@@ -930,7 +930,7 @@ def test_wait_for_dialog_passes_title_filter(monkeypatch):
         )]
 
     monkeypatch.setattr(
-        "ultron.desktop.dialog_control.find_dialogs", _capture,
+        "kenning.desktop.dialog_control.find_dialogs", _capture,
     )
     wait_for_dialog(
         partial_title="save",
@@ -949,7 +949,7 @@ def test_wait_for_dialog_fail_open_on_find_exception(monkeypatch):
         raise RuntimeError("simulated find_dialogs failure")
 
     monkeypatch.setattr(
-        "ultron.desktop.dialog_control.find_dialogs", _raise,
+        "kenning.desktop.dialog_control.find_dialogs", _raise,
     )
     clock = _FakeClock()
 

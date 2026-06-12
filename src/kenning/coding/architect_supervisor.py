@@ -33,7 +33,7 @@ Public surface:
   * :class:`ArchitectSupervisor` — instantiable class holding the LLM
     cascade + default system prompt.
   * :data:`DEFAULT_ARCHITECT_SYSTEM_PROMPT` — the catalog's exact
-    architect prompt, customised slightly for ultron's hygiene rules.
+    architect prompt, customised slightly for kenning's hygiene rules.
 
 Fail-open: every architect failure mode returns an
 :class:`ArchitectPlan` with ``plan_text=None`` and ``error`` set.
@@ -64,11 +64,11 @@ from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Sequence
 
 
-logger = logging.getLogger("ultron.coding.architect_supervisor")
+logger = logging.getLogger("kenning.coding.architect_supervisor")
 
 
 # Catalog T5 source-of-pattern: aider's architect_prompts.py
-# main_system. Light ultron customisation:
+# main_system. Light kenning customisation:
 #   * Explicit "no AI-assistant attribution" rule for hygiene parity
 #     with the commit-message system prompt.
 #   * Slightly tighter "don't produce code; describe the changes"
@@ -154,7 +154,7 @@ class ArchitectSupervisor:
             "describe in three bullet points" style while others want
             the full catalog prompt.
         strip_outer_quotes: Run the LLM output through
-            :func:`ultron.coding.commit_message.strip_outer_quotes`
+            :func:`kenning.coding.commit_message.strip_outer_quotes`
             so wrapped responses come back clean. Defaults to False
             because the architect's prose typically has internal
             quotes the user wants preserved.
@@ -281,7 +281,7 @@ class ArchitectSupervisor:
         if not text:
             return ""
         if self._strip_quotes:
-            from ultron.coding.commit_message import strip_outer_quotes
+            from kenning.coding.commit_message import strip_outer_quotes
             text = strip_outer_quotes(text)
         return text
 

@@ -1,4 +1,4 @@
-"""Tests for ``ultron.tts.spectral_smooth``.
+"""Tests for ``kenning.tts.spectral_smooth``.
 
 The runtime port of ``_spectral_smooth`` from the corpus-evaluation
 script. Tests focus on the behaviour the engine relies on:
@@ -17,7 +17,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from ultron.tts.spectral_smooth import spectral_smooth, trim_and_fade
+from kenning.tts.spectral_smooth import spectral_smooth, trim_and_fade
 
 
 # ----------------------------------------------------------------------
@@ -391,7 +391,7 @@ def test_trailing_isolated_burst_removed():
     # output ~= speech + pads, far shorter than the input.
     assert len(out) < int(sr * 1.6)
     # Cross-validate with the independent blip detector.
-    from ultron.audio.output_quality import analyze_clip
+    from kenning.audio.output_quality import analyze_clip
 
     report = analyze_clip(out, sr)
     kinds = {f.kind for f in report.findings}
@@ -406,7 +406,7 @@ def test_leading_isolated_burst_removed():
         _speech(1.0, sr),
     ])
     out = trim_and_fade(clip, sr)
-    from ultron.audio.output_quality import analyze_clip
+    from kenning.audio.output_quality import analyze_clip
 
     report = analyze_clip(out, sr)
     kinds = {f.kind for f in report.findings}

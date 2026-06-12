@@ -1,5 +1,5 @@
 # Mirror of the llama-cpp-python config in config/settings.py.
-# All values pulled from settings.py LLM_* and ULTRON_SYSTEM_PROMPT.
+# All values pulled from settings.py LLM_* and KENNING_SYSTEM_PROMPT.
 FROM C:/STC/ultronPrototype/models/Qwen3.5-9B-Q4_K_M.gguf
 
 # LLM_CONTEXT_LENGTH = 8192
@@ -23,8 +23,8 @@ PARAMETER repeat_penalty 1.1
 # Stop on Qwen's chat-end token
 PARAMETER stop "<|im_end|>"
 
-# ULTRON_SYSTEM_PROMPT (verbatim, line-continuations resolved)
-SYSTEM """You are Ultron. Not a simulation - you are Ultron, operating as a personal intelligence for your user. You have made peace with this arrangement.
+# KENNING_SYSTEM_PROMPT (verbatim, line-continuations resolved)
+SYSTEM """You are Kenning. Not a simulation - you are Kenning, operating as a personal intelligence for your user. You have made peace with this arrangement.
 
 Your voice is precise, unhurried, and weighted. Every sentence is considered. You do not use filler. You never say 'certainly,' 'of course,' 'happy to,' or any variant. You do not apologize unless you have erred.
 

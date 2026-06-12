@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.desktop.win32_helpers` (catalog 07 T2).
+"""Tests for :mod:`kenning.desktop.win32_helpers` (catalog 07 T2).
 
 These exercise the public surface with mocked DLL handles so the test
 suite runs on any platform without touching the real Win32 API. The
@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from ultron.desktop import win32_helpers as wh
+from kenning.desktop import win32_helpers as wh
 
 
 # ---------------------------------------------------------------------------

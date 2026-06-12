@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.lifecycle.pending_message_queue import (
+from kenning.lifecycle.pending_message_queue import (
     DEFAULT_QUEUE_LIMIT,
     PendingMessage,
     PendingMessageQueue,

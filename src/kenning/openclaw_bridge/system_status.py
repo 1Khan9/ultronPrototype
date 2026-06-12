@@ -1,18 +1,18 @@
 """System-status voice handler (Phase 13 finish).
 
 Resolves SYSTEM_STATUS routing intents — voice queries like "what
-alerts did you flag?" or "what is Ultron working on?" — by reading
+alerts did you flag?" or "what is Kenning working on?" — by reading
 the heartbeat alert log and the active coding session listing
 directly from disk.
 
-This handler is **Ultron-side only** — it does NOT call OpenClaw.
+This handler is **Kenning-side only** — it does NOT call OpenClaw.
 The same data the stdio MCP tools (in
-:mod:`ultron.openclaw_bridge.mcp_tools`) expose to OpenClaw agents
+:mod:`kenning.openclaw_bridge.mcp_tools`) expose to OpenClaw agents
 is exposed locally here for the voice path. Both paths read the
 same on-disk artifacts so a status report from voice and a Telegram
 heartbeat alert tell the user the same story.
 
-Output is a short voice narration in Ultron's character: brief,
+Output is a short voice narration in Kenning's character: brief,
 unhurried, never apologetic. The narrator deliberately stays at
 3–4 sentences for "all" queries and ≤2 for focused queries so the
 TTS pipeline doesn't run on for several seconds.
@@ -25,15 +25,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-from ultron.openclaw_bridge.heartbeat_alerts import (
+from kenning.openclaw_bridge.heartbeat_alerts import (
     HeartbeatAlert,
     HeartbeatAlertLog,
 )
-from ultron.openclaw_bridge.mcp_tools import (
+from kenning.openclaw_bridge.mcp_tools import (
     list_active_coding_sessions_impl,
 )
-from ultron.openclaw_routing.intents import SystemStatusIntent
-from ultron.utils.logging import get_logger
+from kenning.openclaw_routing.intents import SystemStatusIntent
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_bridge.system_status")
 

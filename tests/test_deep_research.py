@@ -11,13 +11,13 @@ import json
 
 import pytest
 
-from ultron.web_search.deep_research import (
+from kenning.web_search.deep_research import (
     DeepResearchLoop,
     DeepResearchMatch,
     DeepResearchResult,
     match_deep_research,
 )
-from ultron.web_search.search import SearchPayload, SearchSource
+from kenning.web_search.search import SearchPayload, SearchSource
 
 
 # ---------------------------------------------------------------------------
@@ -244,7 +244,7 @@ def test_match_deep_research_negative(text):
 # ---------------------------------------------------------------------------
 # Orchestrator handler regression: _maybe_handle_deep_research references the
 # lazy-imported ``trace`` module (NOT a module global), so the handler needs
-# its own ``from ultron import trace`` -- without it, trace.tlog raised
+# its own ``from kenning import trace`` -- without it, trace.tlog raised
 # NameError before the try-block and crashed every deep-research command.
 # The loop tests above never exercised the handler, so this locks the fix.
 # ---------------------------------------------------------------------------
@@ -254,9 +254,9 @@ def test_orchestrator_deep_research_handler_runs_without_trace_nameerror(monkeyp
     import threading
     from types import SimpleNamespace
 
-    from ultron.pipeline import orchestrator as orch_mod
-    from ultron.pipeline.orchestrator import Orchestrator
-    import ultron.web_search.deep_research as dr_mod
+    from kenning.pipeline import orchestrator as orch_mod
+    from kenning.pipeline.orchestrator import Orchestrator
+    import kenning.web_search.deep_research as dr_mod
 
     monkeypatch.setattr(orch_mod.settings, "BARGE_IN_ENABLED", False, raising=False)
 

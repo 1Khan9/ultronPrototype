@@ -23,7 +23,7 @@ binary names are extracted from source. Dynamic reads
 (``os.getenv(name_from_user_input)``) emit ``info`` severity rather
 than ``warn`` so legitimate dynamic patterns don't get flagged.
 
-Generalises beyond skill manifests: any ultron subsystem with a
+Generalises beyond skill manifests: any kenning subsystem with a
 declared-capabilities manifest + a source body can route through
 :func:`check_coherence`. The pattern applies cleanly to skills
 (this batch), hooks (T5 in cline catalog port), MCP servers (T22

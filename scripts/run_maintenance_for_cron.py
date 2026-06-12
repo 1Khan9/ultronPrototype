@@ -20,7 +20,7 @@ Usage:
 
 What this is NOT: this is not a long-running daemon, not an MCP tool,
 and not a substitute for the in-process Qdrant+LLM that the live
-Ultron uses. It loads the LLM cold every run (~30 s), so prefer
+Kenning uses. It loads the LLM cold every run (~30 s), so prefer
 running it from cron when the voice path is idle (3am for nightly
 maintenance is the canonical slot).
 

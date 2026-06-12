@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.llm.inference import LLMEngine
+from kenning.llm.inference import LLMEngine
 
 
 # ---------------------------------------------------------------------------
@@ -249,13 +249,13 @@ def test_config_default_runtime_is_in_process():
     This is a critical safety property: existing callers must not
     suddenly start hitting an HTTP endpoint that may not be running.
     """
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config().llm
     assert cfg.runtime == "in_process"
 
 
 def test_config_server_block_has_expected_defaults():
-    from ultron.config import get_config
+    from kenning.config import get_config
     cfg = get_config().llm
     assert cfg.server.base_url.startswith("http://")
     assert cfg.server.api_key  # non-empty

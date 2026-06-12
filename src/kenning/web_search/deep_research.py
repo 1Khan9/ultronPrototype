@@ -5,9 +5,9 @@ is an iterative server-side loop -- decompose the question -> search each
 sub-question -> read -> identify gaps -> search again -> synthesize -- of
 which the client only ever sees the final answer + the ``query_analysis``
 sub-queries. Felo's own API is PAID (RED, not ported), but the LOOP PATTERN
-is entirely implementable over ultron's existing FREE providers (SearxNG ->
+is entirely implementable over kenning's existing FREE providers (SearxNG ->
 Brave -> DuckDuckGo + Trafilatura -> Jina), and the catalog-11
-:class:`~ultron.agent_loop.base.AgentLoop` base provides the exact
+:class:`~kenning.agent_loop.base.AgentLoop` base provides the exact
 safety-instrumented skeleton -- crucially its load-bearing ``max_steps``
 cap, which bounds the otherwise-unbounded "keep researching" autonomy.
 
@@ -20,7 +20,7 @@ cap, which bounds the otherwise-unbounded "keep researching" autonomy.
   searching the question verbatim; gap analysis falls back to "no gaps"
   (finish) so an LLM hiccup can never spin the loop.
 * **act**: searches each new sub-question through the SAME
-  :class:`~ultron.web_search.search.WebSearchExecutor` the normal path uses
+  :class:`~kenning.web_search.search.WebSearchExecutor` the normal path uses
   (so T1 reformulation + the provider/reader chains + the cross-encoder
   ranker + the ``web_results`` cache + the per-provider rate-limit tracker
   ALL apply for free), accumulating de-duplicated sources up to a hard cap.
@@ -50,9 +50,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, List, Optional, Sequence
 
-from ultron.agent_loop.base import AgentLoop, StepRecord
-from ultron.utils.logging import get_logger
-from ultron.web_search.search import SearchPayload, SearchSource
+from kenning.agent_loop.base import AgentLoop, StepRecord
+from kenning.utils.logging import get_logger
+from kenning.web_search.search import SearchPayload, SearchSource
 
 logger = get_logger("web_search.deep_research")
 
@@ -165,7 +165,7 @@ class DeepResearchLoop(AgentLoop):
     """Bounded decompose -> search -> gap-fill loop over the free search ladder.
 
     Args:
-        executor: a :class:`~ultron.web_search.search.WebSearchExecutor`
+        executor: a :class:`~kenning.web_search.search.WebSearchExecutor`
             (its ``.run`` is used per sub-question; ``None`` makes the loop
             a no-op that returns no sources).
         llm: an LLM engine exposing ``._llm.create_chat_completion`` (used
@@ -320,7 +320,7 @@ class DeepResearchLoop(AgentLoop):
             )
             raw = (out["choices"][0]["message"]["content"] or "").strip()
             try:
-                from ultron.llm.inference import strip_thinking_text
+                from kenning.llm.inference import strip_thinking_text
 
                 raw = strip_thinking_text(raw).strip()
             except Exception:  # noqa: BLE001

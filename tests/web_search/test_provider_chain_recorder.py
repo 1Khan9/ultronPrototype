@@ -26,14 +26,14 @@ from typing import Optional
 
 import pytest
 
-from ultron.web_search.brave import BraveSearchClient
-from ultron.web_search.duckduckgo import DuckDuckGoSearchClient
-from ultron.web_search.provider_chain import SearchProviderChain
-from ultron.web_search.rate_limit import (
+from kenning.web_search.brave import BraveSearchClient
+from kenning.web_search.duckduckgo import DuckDuckGoSearchClient
+from kenning.web_search.provider_chain import SearchProviderChain
+from kenning.web_search.rate_limit import (
     RateLimitTracker,
     reset_global_tracker_for_testing,
 )
-from ultron.web_search.searxng import SearxNGSearchClient
+from kenning.web_search.searxng import SearxNGSearchClient
 
 
 @pytest.fixture(autouse=True)
@@ -77,7 +77,7 @@ def test_brave_client_records_response_headers_through_chain(monkeypatch):
     chain = SearchProviderChain(provider_ids=["brave"], tracker=tracker)
 
     # Ensure the Brave client constructs (needs env var).
-    monkeypatch.setenv("ULTRON_BRAVE_API_KEY", "test-key")
+    monkeypatch.setenv("KENNING_BRAVE_API_KEY", "test-key")
 
     captured = {}
 
@@ -108,7 +108,7 @@ def test_brave_429_marks_chain_should_skip(monkeypatch):
     tracker = RateLimitTracker()
     chain = SearchProviderChain(provider_ids=["brave"], tracker=tracker)
 
-    monkeypatch.setenv("ULTRON_BRAVE_API_KEY", "test-key")
+    monkeypatch.setenv("KENNING_BRAVE_API_KEY", "test-key")
 
     def fake_get(url, headers=None, params=None, timeout=None, **_):
         return _StubResponse(
@@ -134,7 +134,7 @@ def test_chain_skips_cooled_provider_in_search_loop(monkeypatch):
     tracker = RateLimitTracker()
     chain = SearchProviderChain(provider_ids=["brave", "duckduckgo"], tracker=tracker)
 
-    monkeypatch.setenv("ULTRON_BRAVE_API_KEY", "test-key")
+    monkeypatch.setenv("KENNING_BRAVE_API_KEY", "test-key")
 
     brave_calls = {"n": 0}
     ddg_calls = {"n": 0}
@@ -237,7 +237,7 @@ def test_legacy_clients_without_recorder_still_work(monkeypatch):
     Tests that pass-through callers can still build a client with no
     ``on_response`` and the client never touches a tracker.
     """
-    monkeypatch.setenv("ULTRON_BRAVE_API_KEY", "test-key")
+    monkeypatch.setenv("KENNING_BRAVE_API_KEY", "test-key")
     client = BraveSearchClient()
     assert client._on_response is None
 

@@ -33,19 +33,19 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 
-from ultron.coding import (
+from kenning.coding import (
     CodingTaskRunner,
     CodingVoiceController,
     Project,
     ProjectRegistry,
     ProjectResolver,
     StatusNarrator,
-    UltronMCPServer,
+    KenningMCPServer,
 )
-from ultron.coding.bridge import TaskRequest
-from ultron.coding.coordinator import ConversationCoordinator
-from ultron.coding.session import SessionStatus
-from ultron.coding.verification import Verifier
+from kenning.coding.bridge import TaskRequest
+from kenning.coding.coordinator import ConversationCoordinator
+from kenning.coding.session import SessionStatus
+from kenning.coding.verification import Verifier
 
 from tests.coding.mock_bridge import ClaudeScript, ScriptedClaudeBridge
 
@@ -82,7 +82,7 @@ class _StubLLM:
 
 @dataclass
 class OrchStack:
-    server: UltronMCPServer
+    server: KenningMCPServer
     coordinator: ConversationCoordinator
     runner: CodingTaskRunner
     voice: CodingVoiceController
@@ -110,7 +110,7 @@ def _build_stack(
     scenarios, in which case we use a placeholder fake bridge."""
     sandbox = tmp_path / "sandbox"
     sandbox.mkdir(exist_ok=True)
-    server = UltronMCPServer(host="127.0.0.1", port=0)
+    server = KenningMCPServer(host="127.0.0.1", port=0)
     llm = llm or _StubLLM()
     verifier = Verifier(store=server.store)
     coordinator = ConversationCoordinator(
@@ -447,7 +447,7 @@ def test_scenario_5_verification_failure_then_correction_succeeds(tmp_path: Path
         stack.server.store.record_test_results(
             session.session_id, passing=1, failing=0, skipped=0, details="ok",
         )
-        from ultron.coding.session import CompletionClaim
+        from kenning.coding.session import CompletionClaim
         claim = CompletionClaim(
             summary="Real module", entry_point="real.py",
             files_created=["real.py", "test_real.py"],
@@ -661,7 +661,7 @@ def test_scenario_9_model_escalation_after_haiku_threshold(tmp_path: Path):
 
     # Trigger N back-to-back failed declare_complete calls. Each time
     # the verifier fails on FILES_EXIST (claimed file doesn't exist).
-    from ultron.coding.session import CompletionClaim
+    from kenning.coding.session import CompletionClaim
     for i in range(total_thresh + 1):
         # Make sure the session is in a state that allows VERIFYING.
         s = stack.server.get_session_state(session.session_id)
@@ -715,9 +715,9 @@ def test_scenario_10_project_root_outside_sandbox_rejected(tmp_path: Path, monke
     """The MCP server's _validate_project_root refuses paths outside
     CODING_SANDBOX_PATH unless explicitly relaxed. Phase 6 turns the
     relax flag OFF for this test to exercise the production check."""
-    monkeypatch.delenv("ULTRON_CODING_MCP_ALLOW_ANY_ROOT", raising=False)
+    monkeypatch.delenv("KENNING_CODING_MCP_ALLOW_ANY_ROOT", raising=False)
     # Production sandbox path; we attempt to create a session OUTSIDE it.
-    server = UltronMCPServer(host="127.0.0.1", port=0)
+    server = KenningMCPServer(host="127.0.0.1", port=0)
     bad_path = tmp_path / "elsewhere"
     bad_path.mkdir()
     with pytest.raises(ValueError, match="sandbox"):

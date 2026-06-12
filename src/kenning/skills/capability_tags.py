@@ -1,7 +1,7 @@
 """Capability-tag namespace + tag-driven filtering (T5).
 
 T5 (openclaw-clawhub catalog port; see ``THIRD_PARTY_NOTICES.md``).
-A canonical, frozen tag namespace any ultron subsystem exposing a
+A canonical, frozen tag namespace any kenning subsystem exposing a
 capability can attach to its primitives. Tags are the lens through
 which the orchestrator filters at intent time (don't expose a
 wallet-signing tool to a non-confirmed voice utterance), the
@@ -15,7 +15,7 @@ versioned change (matches the upstream catalogue's "commit to a
 small set, add only with explicit need" discipline). Where the
 upstream marketplace uses tags like ``can-make-purchases`` /
 ``requires-wallet`` / ``requires-paid-service`` (financial-domain
-patterns), ultron's tags focus on the voice-first single-user
+patterns), kenning's tags focus on the voice-first single-user
 runtime's actual gates: VRAM, latency, requires-input-device,
 gaming-mode-safety.
 """

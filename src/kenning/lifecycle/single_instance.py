@@ -1,6 +1,6 @@
-"""Process-level single-instance guard for ``python -m ultron``.
+"""Process-level single-instance guard for ``python -m kenning``.
 
-Two simultaneous Ultron processes both grab the microphone and
+Two simultaneous Kenning processes both grab the microphone and
 double-respond to every utterance; the second also collides on the
 embedded Qdrant lock (degrading silently to memory-disabled) and on
 the MCP server's port 19761 bind. This module provides a held-open
@@ -13,7 +13,7 @@ Design:
 * The lock is a **held byte-range lock** (``msvcrt.locking`` on
   Windows, ``fcntl.flock`` elsewhere) on a small metadata file. An OS
   lock auto-releases when the holding process dies, so there is no
-  stale-lock recovery problem -- a crashed Ultron never blocks the
+  stale-lock recovery problem -- a crashed Kenning never blocks the
   next launch.
 * The locked byte sits at offset :data:`_LOCK_BYTE_OFFSET` (4096),
   far past the JSON metadata at offset 0. On Windows ``msvcrt`` locks
@@ -27,10 +27,10 @@ Design:
   start. A broken lock path, an unwritable directory, or any
   unexpected error logs a warning and returns a no-op "bypass" lock
   so a legitimate launch is never blocked by the guard itself.
-* Escape hatch: ``ULTRON_ALLOW_MULTIPLE_INSTANCES=1`` bypasses the
+* Escape hatch: ``KENNING_ALLOW_MULTIPLE_INSTANCES=1`` bypasses the
   guard entirely (returns a "bypass" lock).
 
-The guard is owned by ``ultron.__main__`` ONLY. ``Orchestrator`` is
+The guard is owned by ``kenning.__main__`` ONLY. ``Orchestrator`` is
 deliberately untouched so pytest sweeps, the GPU e2e suite, and
 measurement scripts that construct it directly never contend.
 """
@@ -44,7 +44,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger("ultron.lifecycle.single_instance")
+logger = logging.getLogger("kenning.lifecycle.single_instance")
 
 __all__ = [
     "ALLOW_MULTIPLE_ENV",
@@ -68,7 +68,7 @@ except ImportError:  # pragma: no cover
     _fcntl = None  # type: ignore[assignment]
 
 
-ALLOW_MULTIPLE_ENV = "ULTRON_ALLOW_MULTIPLE_INSTANCES"
+ALLOW_MULTIPLE_ENV = "KENNING_ALLOW_MULTIPLE_INSTANCES"
 
 #: Byte offset of the 1-byte held lock region. Must stay beyond the
 #: metadata JSON at offset 0 (Windows msvcrt locks are mandatory --
@@ -90,11 +90,11 @@ def _default_lock_path() -> Path:
     CWD-relative ``data/`` if the config package cannot be imported.
     """
     try:
-        from ultron.config import PROJECT_ROOT
+        from kenning.config import PROJECT_ROOT
 
-        return Path(PROJECT_ROOT) / "data" / ".ultron_instance.lock"
+        return Path(PROJECT_ROOT) / "data" / ".kenning_instance.lock"
     except Exception:  # noqa: BLE001 - fail-open to the CWD convention
-        return Path("data") / ".ultron_instance.lock"
+        return Path("data") / ".kenning_instance.lock"
 
 
 DEFAULT_LOCK_PATH = _default_lock_path()

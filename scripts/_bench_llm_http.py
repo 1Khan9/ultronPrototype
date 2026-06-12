@@ -35,7 +35,7 @@ MAIN_REPO = Path(r"C:\STC\ultronPrototype")
 sys.path.insert(0, str(WORKTREE_ROOT / "src"))   # newest code
 sys.path.insert(0, str(MAIN_REPO))                # config/ shim
 
-from ultron.llm import LLMEngine  # noqa: E402
+from kenning.llm import LLMEngine  # noqa: E402
 
 REPRESENTATIVE_QUERIES = [
     "What is the boiling point of water?",

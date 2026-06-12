@@ -1,4 +1,4 @@
-"""Tests for ultron.desktop.placement."""
+"""Tests for kenning.desktop.placement."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import sys
 
 import pytest
 
-from ultron.desktop.monitors import Monitor
-from ultron.desktop.placement import (
+from kenning.desktop.monitors import Monitor
+from kenning.desktop.placement import (
     PlacementResult,
     focus_window,
     maximize_window,
@@ -97,11 +97,11 @@ def test_focus_window_bad_hwnd_returns_result():
 
 def test_minimize_idempotent_skips_when_already_minimized(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.placement._is_minimized", lambda hwnd: True,
+        "kenning.desktop.placement._is_minimized", lambda hwnd: True,
     )
     invoked = [0]
     monkeypatch.setattr(
-        "ultron.desktop.placement.minimize_window",
+        "kenning.desktop.placement.minimize_window",
         lambda hwnd: invoked.__setitem__(0, invoked[0] + 1)
         or PlacementResult(success=True, hwnd=hwnd),
     )
@@ -113,11 +113,11 @@ def test_minimize_idempotent_skips_when_already_minimized(monkeypatch):
 
 def test_minimize_idempotent_acts_when_not_minimized(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.placement._is_minimized", lambda hwnd: False,
+        "kenning.desktop.placement._is_minimized", lambda hwnd: False,
     )
     invoked = [0]
     monkeypatch.setattr(
-        "ultron.desktop.placement.minimize_window",
+        "kenning.desktop.placement.minimize_window",
         lambda hwnd: (invoked.__setitem__(0, invoked[0] + 1)
                       or PlacementResult(success=True, hwnd=hwnd)),
     )
@@ -130,11 +130,11 @@ def test_minimize_idempotent_acts_when_not_minimized(monkeypatch):
 def test_minimize_idempotent_acts_when_state_probe_fails(monkeypatch):
     """When _is_minimized returns None (probe failed), fall through to act."""
     monkeypatch.setattr(
-        "ultron.desktop.placement._is_minimized", lambda hwnd: None,
+        "kenning.desktop.placement._is_minimized", lambda hwnd: None,
     )
     invoked = [0]
     monkeypatch.setattr(
-        "ultron.desktop.placement.minimize_window",
+        "kenning.desktop.placement.minimize_window",
         lambda hwnd: (invoked.__setitem__(0, invoked[0] + 1)
                       or PlacementResult(success=True, hwnd=hwnd)),
     )
@@ -145,11 +145,11 @@ def test_minimize_idempotent_acts_when_state_probe_fails(monkeypatch):
 
 def test_maximize_idempotent_skips_when_already_maximized(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.placement._is_maximized", lambda hwnd: True,
+        "kenning.desktop.placement._is_maximized", lambda hwnd: True,
     )
     invoked = [0]
     monkeypatch.setattr(
-        "ultron.desktop.placement.maximize_window",
+        "kenning.desktop.placement.maximize_window",
         lambda hwnd: (invoked.__setitem__(0, invoked[0] + 1)
                       or PlacementResult(success=True, hwnd=hwnd)),
     )
@@ -161,11 +161,11 @@ def test_maximize_idempotent_skips_when_already_maximized(monkeypatch):
 
 def test_maximize_idempotent_acts_when_not_maximized(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.placement._is_maximized", lambda hwnd: False,
+        "kenning.desktop.placement._is_maximized", lambda hwnd: False,
     )
     invoked = [0]
     monkeypatch.setattr(
-        "ultron.desktop.placement.maximize_window",
+        "kenning.desktop.placement.maximize_window",
         lambda hwnd: (invoked.__setitem__(0, invoked[0] + 1)
                       or PlacementResult(success=True, hwnd=hwnd)),
     )
@@ -177,14 +177,14 @@ def test_maximize_idempotent_acts_when_not_maximized(monkeypatch):
 def test_restore_idempotent_skips_when_already_restored(monkeypatch):
     """A window that is neither minimized nor maximized is in NORMAL state."""
     monkeypatch.setattr(
-        "ultron.desktop.placement._is_minimized", lambda hwnd: False,
+        "kenning.desktop.placement._is_minimized", lambda hwnd: False,
     )
     monkeypatch.setattr(
-        "ultron.desktop.placement._is_maximized", lambda hwnd: False,
+        "kenning.desktop.placement._is_maximized", lambda hwnd: False,
     )
     invoked = [0]
     monkeypatch.setattr(
-        "ultron.desktop.placement.restore_window",
+        "kenning.desktop.placement.restore_window",
         lambda hwnd: (invoked.__setitem__(0, invoked[0] + 1)
                       or PlacementResult(success=True, hwnd=hwnd)),
     )
@@ -196,14 +196,14 @@ def test_restore_idempotent_skips_when_already_restored(monkeypatch):
 
 def test_restore_idempotent_acts_when_minimized(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.placement._is_minimized", lambda hwnd: True,
+        "kenning.desktop.placement._is_minimized", lambda hwnd: True,
     )
     monkeypatch.setattr(
-        "ultron.desktop.placement._is_maximized", lambda hwnd: False,
+        "kenning.desktop.placement._is_maximized", lambda hwnd: False,
     )
     invoked = [0]
     monkeypatch.setattr(
-        "ultron.desktop.placement.restore_window",
+        "kenning.desktop.placement.restore_window",
         lambda hwnd: (invoked.__setitem__(0, invoked[0] + 1)
                       or PlacementResult(success=True, hwnd=hwnd)),
     )
@@ -214,14 +214,14 @@ def test_restore_idempotent_acts_when_minimized(monkeypatch):
 
 def test_restore_idempotent_acts_when_maximized(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.placement._is_minimized", lambda hwnd: False,
+        "kenning.desktop.placement._is_minimized", lambda hwnd: False,
     )
     monkeypatch.setattr(
-        "ultron.desktop.placement._is_maximized", lambda hwnd: True,
+        "kenning.desktop.placement._is_maximized", lambda hwnd: True,
     )
     invoked = [0]
     monkeypatch.setattr(
-        "ultron.desktop.placement.restore_window",
+        "kenning.desktop.placement.restore_window",
         lambda hwnd: (invoked.__setitem__(0, invoked[0] + 1)
                       or PlacementResult(success=True, hwnd=hwnd)),
     )
@@ -233,14 +233,14 @@ def test_restore_idempotent_acts_when_maximized(monkeypatch):
 def test_restore_idempotent_acts_when_state_probe_fails(monkeypatch):
     """When either probe returns None, fall through to act."""
     monkeypatch.setattr(
-        "ultron.desktop.placement._is_minimized", lambda hwnd: None,
+        "kenning.desktop.placement._is_minimized", lambda hwnd: None,
     )
     monkeypatch.setattr(
-        "ultron.desktop.placement._is_maximized", lambda hwnd: False,
+        "kenning.desktop.placement._is_maximized", lambda hwnd: False,
     )
     invoked = [0]
     monkeypatch.setattr(
-        "ultron.desktop.placement.restore_window",
+        "kenning.desktop.placement.restore_window",
         lambda hwnd: (invoked.__setitem__(0, invoked[0] + 1)
                       or PlacementResult(success=True, hwnd=hwnd)),
     )

@@ -1,8 +1,8 @@
 """Canonical event catalog.
 
-Every event ultron publishes lives here as a named module constant.
+Every event kenning publishes lives here as a named module constant.
 Subsystems import the constant they need and pass it to
-:func:`~ultron.bus.publish` or :func:`~ultron.bus.subscribe`. New
+:func:`~kenning.bus.publish` or :func:`~kenning.bus.subscribe`. New
 events are added here, not scattered through call sites, so the
 full event taxonomy is greppable in one file (mirrors opencode's
 per-module ``BusEvent.define`` pattern but consolidated for
@@ -16,7 +16,7 @@ loggable but never crashy.
 
 from __future__ import annotations
 
-from ultron.bus.event import BusEvent
+from kenning.bus.event import BusEvent
 
 # ---------------------------------------------------------------------------
 # Voice loop lifecycle

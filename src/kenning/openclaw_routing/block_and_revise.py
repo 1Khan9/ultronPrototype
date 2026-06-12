@@ -3,7 +3,7 @@
 Per the runtime-verifier-mediation paper, a pre-flight check that asks
 the LLM "does this tool call advance the user's stated goal?" can
 intercept misdirected calls before they execute, triggering a
-block-and-revise loop. Same shape as Ultron's existing coding-side
+block-and-revise loop. Same shape as Kenning's existing coding-side
 verification (six checks before the worker is allowed to declare
 complete), but for the automation side.
 
@@ -29,7 +29,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_routing.block_and_revise")
 
@@ -185,7 +185,7 @@ def is_enabled(cfg: Any = None) -> bool:
     """Read the live config gate. Centralised so callers don't repeat
     the path-following logic."""
     if cfg is None:
-        from ultron.config import get_config
+        from kenning.config import get_config
         cfg = get_config()
     return bool(cfg.openclaw.block_and_revise.enabled)
 

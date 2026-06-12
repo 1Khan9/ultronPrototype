@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.llm.condensers.splitter import (
+from kenning.llm.condensers.splitter import (
     BASE_CHUNK_RATIO,
     IDENTIFIER_PRESERVATION_SUFFIX,
     IdentifierPreservationPolicy,

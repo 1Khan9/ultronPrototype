@@ -20,11 +20,11 @@ from typing import Dict, List
 
 import pytest
 
-from ultron.coding.session import (
+from kenning.coding.session import (
     CompletionClaim,
     SessionStore,
 )
-from ultron.coding.verification import (
+from kenning.coding.verification import (
     CheckId,
     Verifier,
 )

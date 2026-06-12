@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.agent_loop.base` (catalog 11 meta-pattern).
+"""Tests for :mod:`kenning.agent_loop.base` (catalog 11 meta-pattern).
 
 A single configurable concrete subclass (:class:`_ScriptedLoop`) drives
 every terminal path: completion, max-steps exhaustion, loop detection,
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.agent_loop.base import (
+from kenning.agent_loop.base import (
     AgentLoop,
     AgentLoopError,
     LoopResult,

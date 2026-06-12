@@ -6,7 +6,7 @@ DuckDuckGo's HTML / Lite endpoints — no API key, no rate limit ceiling
 fallback when the local SearxNG isn't running AND the Brave API has
 been rate-limited / circuit-broken.
 
-Result shape matches :class:`ultron.web_search.brave.SearchResult` so
+Result shape matches :class:`kenning.web_search.brave.SearchResult` so
 the rest of the search pipeline stays provider-agnostic.
 
 Failure modes (all return ``[]`` and log the failure):
@@ -25,11 +25,11 @@ from __future__ import annotations
 import time
 from typing import Callable, List, Mapping, Optional
 
-from ultron.config import get_config
-from ultron.errors import BraveAPIError
-from ultron.resilience import CircuitBreaker, CircuitOpenError, get_error_log
-from ultron.utils.logging import get_logger
-from ultron.web_search.brave import SearchResult
+from kenning.config import get_config
+from kenning.errors import BraveAPIError
+from kenning.resilience import CircuitBreaker, CircuitOpenError, get_error_log
+from kenning.utils.logging import get_logger
+from kenning.web_search.brave import SearchResult
 
 logger = get_logger("web_search.duckduckgo")
 

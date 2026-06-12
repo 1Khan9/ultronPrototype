@@ -1,4 +1,4 @@
-"""Multi-stage submit review with ultron-specific gates.
+"""Multi-stage submit review with kenning-specific gates.
 
 Direct port of SWE-Agent's
 ``tools/review_on_submit_m/bin/submit`` (MIT, Yang et al. 2024).
@@ -14,7 +14,7 @@ SWE-Agent's default stage tells the model to:
 3. Revert any test files touched
 4. Submit again
 
-Ultron's stages are domain-specific:
+Kenning's stages are domain-specific:
 
 * **VOICE_LOCK** -- did this session touch any voice-quality-locked
   file (``SOUL.md``, ``RVC``, ``Piper``, the LLM model file, the
@@ -25,7 +25,7 @@ Ultron's stages are domain-specific:
   If files were written but no test sweep was run, prompt the
   supervisor to run one.
 * **DOC_DRIFT** -- did the session touch
-  ``src/ultron/`` modules / ``scripts/`` files / ``tests/``
+  ``src/kenning/`` modules / ``scripts/`` files / ``tests/``
   directories without also touching ``docs/codebase_structure.md``?
   If so, prompt to update the doc.
 * **FREEFORM** -- catch-all stage where additional reviewers can
@@ -53,7 +53,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable, Iterable, Optional, Sequence
 
-from ultron.coding.session_registry import (
+from kenning.coding.session_registry import (
     SessionRegistry,
     get_session_registry,
 )
@@ -170,16 +170,16 @@ DEFAULT_VOICE_LOCKED_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
         r"SOUL\.md",
         r"\bIDENTITY\.md\b",
         r"models[\\/]piper[\\/]",
-        r"ultron_james_spader_mcu_6941[\\/]",
+        r"kenning_rvc_voice[\\/]",
         # Matches the legacy root-level location AND the
         # post-disk-cleaning "kokoro training audio/" home.
-        r"ultronVoiceAudio[\\/](?:kokoro training audio[\\/])?Ultron_vocals_mono_v1\.wav",
+        r"kenningVoiceAudio[\\/](?:kokoro training audio[\\/])?Kenning_vocals_mono_v1\.wav",
         r"models[\\/]Qwen3\.5-4B-Q4_K_M\.gguf",
         r"models[\\/]Qwen3\.5-0\.8B-Q4_K_M\.gguf",
-        r"models[\\/]kokoro[\\/]voices[\\/]ultron\.pt",
-        r"models[\\/]kokoro[\\/]ultron_finetune\.pth",
-        r"src[\\/]ultron[\\/]tts[\\/]rvc\.py",
-        r"src[\\/]ultron[\\/]tts[\\/]ultron_filter\.py",
+        r"models[\\/]kokoro[\\/]voices[\\/]kenning\.pt",
+        r"models[\\/]kokoro[\\/]kenning_finetune\.pth",
+        r"src[\\/]kenning[\\/]tts[\\/]rvc\.py",
+        r"src[\\/]kenning[\\/]tts[\\/]kenning_filter\.py",
     )
 )
 

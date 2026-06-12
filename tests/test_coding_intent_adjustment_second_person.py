@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.coding.intent import (
+from kenning.coding.intent import (
     CodingIntent,
     CodingIntentKind,
     classify,

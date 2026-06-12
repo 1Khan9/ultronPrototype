@@ -3,7 +3,7 @@
 Adapted from cline's ``StreamChunkCoordinator`` + ``Task.onRetryAttempt``
 pattern (Apache 2.0; see ``THIRD_PARTY_NOTICES.md``). Cline updates an
 existing ``api_req_started`` UI message in-place with a
-``retryStatus`` block; ultron's equivalent publishes a structured
+``retryStatus`` block; kenning's equivalent publishes a structured
 :class:`RetryStatus` payload that the orchestrator can render at
 configurable verbosity ("silent" / "narrate" / "interrupt").
 

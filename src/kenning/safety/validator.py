@@ -45,11 +45,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from ultron.safety.audit import AuditLog, get_audit_log
-from ultron.safety.path_resolver import PathResolver, get_path_resolver
-from ultron.safety.policy import Policy
+from kenning.safety.audit import AuditLog, get_audit_log
+from kenning.safety.path_resolver import PathResolver, get_path_resolver
+from kenning.safety.policy import Policy
 
-logger = logging.getLogger("ultron.safety.validator")
+logger = logging.getLogger("kenning.safety.validator")
 
 
 class Verdict(Enum):
@@ -273,7 +273,7 @@ class ToolCallValidator:
         # every blocked attempt lands in the ledger. Fail-open on probe
         # errors (the module guards still apply).
         try:
-            from ultron.safety.anticheat import (
+            from kenning.safety.anticheat import (
                 BLOCKED_NOTICE,
                 anticheat_active,
                 is_blocked_tool,
@@ -375,7 +375,7 @@ class ToolCallValidator:
             and getattr(ctx, "user_text", "")
         ):
             try:
-                from ultron.safety.intent import matches_explicit_intent
+                from kenning.safety.intent import matches_explicit_intent
                 hints = tuple(
                     Path(str(p)).name for p in ctx.paths if str(p)
                 )
@@ -456,7 +456,7 @@ class ToolCallValidator:
 
         # Evolution reach-signal (#63): notify the registered observer of a
         # hard block so the self-improvement loop can learn from repeated
-        # refusals ("ultron keeps attempting X which is blocked" distils a
+        # refusals ("kenning keeps attempting X which is blocked" distils a
         # DEFENSIVE skill). Pure observation -- runs AFTER the verdict +
         # audit are final, never alters them, and any observer exception is
         # swallowed (the validator stays fail-closed on its own logic and
@@ -574,38 +574,38 @@ def build_validator_from_config() -> ToolCallValidator:
     Imports rule modules lazily so this function stays importable when
     those modules aren't on the path (e.g. minimal test envs).
     """
-    from ultron.safety.policy import load_policy
-    from ultron.safety.rules.cap_carveouts import build_capability_rules
-    from ultron.safety.rules.category_a import build_category_a_rules
-    from ultron.safety.rules.category_b import build_category_b_rules
-    from ultron.safety.rules.category_c import build_category_c_rules
-    from ultron.safety.rules.category_d import build_category_d_rules
-    from ultron.safety.rules.category_e import build_category_e_rules
-    from ultron.safety.rules.category_f import build_category_f_rules
-    from ultron.safety.rules.category_g import build_category_g_rules
-    from ultron.safety.rules.category_h import build_category_h_rules
-    from ultron.safety.rules.category_i import build_category_i_rules
-    from ultron.safety.rules.category_j import build_category_j_rules
-    from ultron.safety.rules.category_k import build_category_k_rules
-    from ultron.safety.rules.category_m import build_category_m_rules
-    from ultron.safety.rules.category_n import build_category_n_rules
-    from ultron.safety.rules.category_o import build_category_o_rules
-    from ultron.safety.rules.category_p import build_category_p_rules
-    from ultron.safety.rules.category_q import build_category_q_rules
-    from ultron.safety.rules.category_r import build_category_r_rules
-    from ultron.safety.rules.category_it import build_category_it_rules
-    from ultron.safety.rules.category_s import build_category_s_rules
+    from kenning.safety.policy import load_policy
+    from kenning.safety.rules.cap_carveouts import build_capability_rules
+    from kenning.safety.rules.category_a import build_category_a_rules
+    from kenning.safety.rules.category_b import build_category_b_rules
+    from kenning.safety.rules.category_c import build_category_c_rules
+    from kenning.safety.rules.category_d import build_category_d_rules
+    from kenning.safety.rules.category_e import build_category_e_rules
+    from kenning.safety.rules.category_f import build_category_f_rules
+    from kenning.safety.rules.category_g import build_category_g_rules
+    from kenning.safety.rules.category_h import build_category_h_rules
+    from kenning.safety.rules.category_i import build_category_i_rules
+    from kenning.safety.rules.category_j import build_category_j_rules
+    from kenning.safety.rules.category_k import build_category_k_rules
+    from kenning.safety.rules.category_m import build_category_m_rules
+    from kenning.safety.rules.category_n import build_category_n_rules
+    from kenning.safety.rules.category_o import build_category_o_rules
+    from kenning.safety.rules.category_p import build_category_p_rules
+    from kenning.safety.rules.category_q import build_category_q_rules
+    from kenning.safety.rules.category_r import build_category_r_rules
+    from kenning.safety.rules.category_it import build_category_it_rules
+    from kenning.safety.rules.category_s import build_category_s_rules
 
     rules = []
     # Category K first -- self-protection. The order matters for audit
     # logs (the first matching rule's id is the dominant when multiple
     # rules return the same verdict severity).
     rules.extend(build_category_k_rules())
-    # Category U: .ultronignore path/command block (secrets protection).
-    # Default-safe -- a no-op until the user creates a .ultronignore. Placed
+    # Category U: .kenningignore path/command block (secrets protection).
+    # Default-safe -- a no-op until the user creates a .kenningignore. Placed
     # after K so self-protection still reports first on a tie.
     try:
-        from ultron.safety.rules.category_ignore import build_ignore_rules
+        from kenning.safety.rules.category_ignore import build_ignore_rules
         rules.extend(build_ignore_rules())
     except Exception:  # noqa: BLE001 -- keep the validator importable
         pass
@@ -635,38 +635,38 @@ def build_validator_from_config() -> ToolCallValidator:
     # Fail-open: any config-error in the IT category builder leaves
     # the rule list unchanged.
     try:
-        from ultron.config import get_config as _it_get_config
+        from kenning.config import get_config as _it_get_config
         cfg_it = _it_get_config().safety
         it_block = getattr(cfg_it, "interactive_tools", None)
         if it_block is not None:
-            from ultron.safety.rules.category_it import InteractiveToolsConfig
+            from kenning.safety.rules.category_it import InteractiveToolsConfig
             it_cfg = InteractiveToolsConfig(
                 enabled=bool(getattr(it_block, "enabled", True)),
                 prefix_blocklist=list(
                     getattr(it_block, "prefix_blocklist", None) or []
                 )
                 or list(__import__(
-                    "ultron.safety.rules.category_it",
+                    "kenning.safety.rules.category_it",
                     fromlist=["DEFAULT_PREFIX_BLOCKLIST"],
                 ).DEFAULT_PREFIX_BLOCKLIST),
                 standalone_blocklist=list(
                     getattr(it_block, "standalone_blocklist", None) or []
                 )
                 or list(__import__(
-                    "ultron.safety.rules.category_it",
+                    "kenning.safety.rules.category_it",
                     fromlist=["DEFAULT_STANDALONE_BLOCKLIST"],
                 ).DEFAULT_STANDALONE_BLOCKLIST),
                 unless_regex=dict(
                     getattr(it_block, "unless_regex", None) or {}
                 )
                 or dict(__import__(
-                    "ultron.safety.rules.category_it",
+                    "kenning.safety.rules.category_it",
                     fromlist=["DEFAULT_UNLESS_REGEX"],
                 ).DEFAULT_UNLESS_REGEX),
                 block_message=str(
                     getattr(it_block, "block_message", None)
                     or __import__(
-                        "ultron.safety.rules.category_it",
+                        "kenning.safety.rules.category_it",
                         fromlist=["DEFAULT_BLOCK_MESSAGE"],
                     ).DEFAULT_BLOCK_MESSAGE
                 ),
@@ -680,8 +680,8 @@ def build_validator_from_config() -> ToolCallValidator:
     rules.extend(build_capability_rules())
 
     try:
-        from ultron.config import get_config
-        from ultron.safety.audit import AuditLog
+        from kenning.config import get_config
+        from kenning.safety.audit import AuditLog
         cfg = get_config()
         safety_cfg = cfg.safety
         policy = load_policy(

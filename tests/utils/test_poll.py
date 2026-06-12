@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from ultron.utils.poll import (
+from kenning.utils.poll import (
     DEFAULT_DELAY_SECONDS,
     DEFAULT_MAX_ATTEMPTS,
     PollResult,
@@ -289,7 +289,7 @@ def test_async_backoff_doubles_delay():
         # Skip the actual sleep so tests stay fast.
         return None
 
-    import ultron.utils.poll as poll_mod
+    import kenning.utils.poll as poll_mod
 
     original = asyncio.sleep
     poll_mod.asyncio.sleep = patched_sleep  # type: ignore[attr-defined]
@@ -324,7 +324,7 @@ def test_backoff_respects_max_delay():
         delays_observed.append(delay)
         return None
 
-    import ultron.utils.poll as poll_mod
+    import kenning.utils.poll as poll_mod
 
     original = asyncio.sleep
     poll_mod.asyncio.sleep = patched_sleep  # type: ignore[attr-defined]

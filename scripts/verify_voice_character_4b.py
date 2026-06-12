@@ -5,10 +5,10 @@ twice (once with the 4B LLM, once with the 9B for direct comparison)
 **and speaks each response through the configured TTS engine** so you
 can A/B the actual cadence/timbre/prosody -- not just read the text.
 The first 2-3 sentences of each response are synthesised; if both
-models sound like Ultron, Stage E passes.
+models sound like Kenning, Stage E passes.
 
 The plan's verification criterion is qualitative ("user confirms
-Ultron sounds unchanged"), so this script just collects + plays the
+Kenning sounds unchanged"), so this script just collects + plays the
 data; the gate is your ear.
 
 Run from the main checkout (where models/ lives):
@@ -19,7 +19,7 @@ Run from the main checkout (where models/ lives):
 ``--no-audio`` runs text-only (the original Stage E v1 mode).
 
 The script does NOT modify config.yaml. It instantiates LLMEngine +
-the configured TTS engine (via :func:`ultron.tts.make_tts_engine`)
+the configured TTS engine (via :func:`kenning.tts.make_tts_engine`)
 twice -- once per model -- and unloads VRAM between runs so peak VRAM
 is bounded by the larger model + TTS stack. 2026-05-22: swapped the
 hard-coded RVC + Piper path for the production factory so this
@@ -35,7 +35,7 @@ import time
 from pathlib import Path
 from typing import Iterator, Optional
 
-# Make `config` (legacy shim) and `ultron` importable when running
+# Make `config` (legacy shim) and `kenning` importable when running
 # the script directly from any cwd. Mirrors download_models.py /
 # measure_baseline.py.
 _HERE = Path(__file__).resolve().parent.parent
@@ -87,12 +87,12 @@ def _run_one_model(
 ) -> list[dict]:
     print(f"\n=== {label} : {model_path.name} ===", flush=True)
     import os
-    os.environ["ULTRON_LLM_MODEL_PATH"] = str(model_path)
-    os.environ["ULTRON_LOG_LEVEL"] = "WARNING"
+    os.environ["KENNING_LLM_MODEL_PATH"] = str(model_path)
+    os.environ["KENNING_LOG_LEVEL"] = "WARNING"
 
     # Lazy imports so each call picks up the env override + reloads config.
-    from ultron.llm import LLMEngine  # noqa: WPS433
-    from ultron.config import reload_config  # noqa: WPS433
+    from kenning.llm import LLMEngine  # noqa: WPS433
+    from kenning.config import reload_config  # noqa: WPS433
     reload_config()
 
     t = time.monotonic()
@@ -102,7 +102,7 @@ def _run_one_model(
     tts = None
     rvc = None
     if play_audio:
-        from ultron.tts import make_tts_engine  # noqa: WPS433
+        from kenning.tts import make_tts_engine  # noqa: WPS433
         t = time.monotonic()
         rvc, tts = make_tts_engine()
         if hasattr(tts, "warmup"):
@@ -196,7 +196,7 @@ def main() -> int:
     print("4B optimization plan — Stage E voice-character A/B")
     print("=" * 60)
     print("Listen for: cadence, terseness, character (slightly menacing,")
-    print("no filler, no apology). Both models should sound like Ultron.\n")
+    print("no filler, no apology). Both models should sound like Kenning.\n")
 
     play = not args.no_audio
     results = {"4B": _run_one_model("4B", paths["4B"], play_audio=play)}

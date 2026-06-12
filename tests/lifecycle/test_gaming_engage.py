@@ -15,12 +15,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.lifecycle.gaming_engage import (
+from kenning.lifecycle.gaming_engage import (
     GamingEngageDeps,
     gaming_disengage_iterator,
     gaming_engage_iterator,
 )
-from ultron.lifecycle.start_task import (
+from kenning.lifecycle.start_task import (
     StartTaskStatus,
     drive_start_task,
 )
@@ -91,12 +91,12 @@ def stub_config(monkeypatch):
             preset = "qwen3.5-4b"
 
     monkeypatch.setattr(
-        "ultron.lifecycle.gaming_engage.__name__", "ultron.lifecycle.gaming_engage",
+        "kenning.lifecycle.gaming_engage.__name__", "kenning.lifecycle.gaming_engage",
     )
     # Patch get_config inside the iterator via monkeypatching the
     # import target.
-    import ultron.config
-    monkeypatch.setattr(ultron.config, "get_config", lambda: _Cfg)
+    import kenning.config
+    monkeypatch.setattr(kenning.config, "get_config", lambda: _Cfg)
 
 
 def test_engage_emits_all_stages(stub_config):
@@ -201,8 +201,8 @@ def test_engage_skips_llm_when_already_on_target_preset(stub_config, monkeypatch
         class llm:
             preset = "llama-3.2-3b-abliterated"
 
-    import ultron.config
-    monkeypatch.setattr(ultron.config, "get_config", lambda: _CfgOnTarget)
+    import kenning.config
+    monkeypatch.setattr(kenning.config, "get_config", lambda: _CfgOnTarget)
     llm = _StubLLM()
     deps = GamingEngageDeps(
         llm=llm, gaming_llm_preset="llama-3.2-3b-abliterated",

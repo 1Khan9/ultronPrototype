@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.llm.compression import (
+from kenning.llm.compression import (
     Compressor,
     CompressionResult,
     build_default_compressor,
@@ -271,7 +271,7 @@ _FakeTurn = namedtuple("_FakeTurn", ["role", "content"])
 def test_format_rag_block_default_off_unchanged() -> None:
     """Default behaviour preserved: compression OFF ⇒ block identical
     to pre-Item-4 shape."""
-    from ultron.llm.inference import LLMEngine
+    from kenning.llm.inference import LLMEngine
 
     snippets = [_FakeTurn("user", "the boiling point of water is one hundred")]
     block = LLMEngine._format_rag_block(snippets)
@@ -280,7 +280,7 @@ def test_format_rag_block_default_off_unchanged() -> None:
 
 def test_format_rag_block_with_compression_on_compresses() -> None:
     """Compression ON ⇒ block is shorter."""
-    from ultron.llm.inference import LLMEngine
+    from kenning.llm.inference import LLMEngine
 
     snippets = [
         _FakeTurn("user", "the user said the boiling point of water is the same as before in the morning"),
@@ -288,10 +288,10 @@ def test_format_rag_block_with_compression_on_compresses() -> None:
     ]
     cfg = _cfg(True, compress_rag=True)
     cfg.llm.compression.target_ratio = 2.0
-    with patch("ultron.llm.compression.get_config", return_value=cfg):
+    with patch("kenning.llm.compression.get_config", return_value=cfg):
         compressed_block = LLMEngine._format_rag_block(snippets)
 
-    with patch("ultron.llm.compression.get_config", return_value=_cfg(False)):
+    with patch("kenning.llm.compression.get_config", return_value=_cfg(False)):
         uncompressed_block = LLMEngine._format_rag_block(snippets)
 
     assert len(compressed_block) <= len(uncompressed_block)
@@ -303,7 +303,7 @@ def test_format_rag_block_with_compression_on_compresses() -> None:
 
 
 def test_format_sources_for_prompt_default_off_unchanged() -> None:
-    from ultron.web_search.search import SearchSource, format_sources_for_prompt
+    from kenning.web_search.search import SearchSource, format_sources_for_prompt
 
     sources = [
         SearchSource(
@@ -322,7 +322,7 @@ def test_format_sources_for_prompt_default_off_unchanged() -> None:
 def test_format_sources_for_prompt_compression_preserves_url() -> None:
     """Even with compression on, URLs must NOT be touched (citations
     must stay accurate)."""
-    from ultron.web_search.search import SearchSource, format_sources_for_prompt
+    from kenning.web_search.search import SearchSource, format_sources_for_prompt
 
     sources = [
         SearchSource(
@@ -335,6 +335,6 @@ def test_format_sources_for_prompt_compression_preserves_url() -> None:
     ]
     cfg = _cfg(True, compress_web=True)
     cfg.llm.compression.target_ratio = 2.0
-    with patch("ultron.llm.compression.get_config", return_value=cfg):
+    with patch("kenning.llm.compression.get_config", return_value=cfg):
         out = format_sources_for_prompt(sources)
     assert "https://example.com/very-specific-path" in out

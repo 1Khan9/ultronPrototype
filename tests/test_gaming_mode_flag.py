@@ -11,7 +11,7 @@ from typing import Any, List
 
 import pytest
 
-from ultron.openclaw_routing.gaming_mode import (
+from kenning.openclaw_routing.gaming_mode import (
     GamingModeManager,
     GamingModeStatus,
     is_gaming_mode_active,

@@ -15,7 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.pipeline.orchestrator import Orchestrator
+from kenning.pipeline.orchestrator import Orchestrator
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +96,7 @@ def test_respond_sets_intent_kind_before_streaming(monkeypatch):
 
     monkeypatch.setattr(o, "_build_response_stream", _stub_stream)
     monkeypatch.setattr(
-        "ultron.pipeline.orchestrator.settings.BARGE_IN_ENABLED",
+        "kenning.pipeline.orchestrator.settings.BARGE_IN_ENABLED",
         False,
     )
 
@@ -116,7 +116,7 @@ def test_respond_clears_intent_kind_after_streaming(monkeypatch):
 
     monkeypatch.setattr(o, "_build_response_stream", _stub_stream)
     monkeypatch.setattr(
-        "ultron.pipeline.orchestrator.settings.BARGE_IN_ENABLED",
+        "kenning.pipeline.orchestrator.settings.BARGE_IN_ENABLED",
         False,
     )
 
@@ -141,7 +141,7 @@ def test_respond_clears_intent_kind_after_exception(monkeypatch):
 
     monkeypatch.setattr(o, "_build_response_stream", _stub_stream)
     monkeypatch.setattr(
-        "ultron.pipeline.orchestrator.settings.BARGE_IN_ENABLED",
+        "kenning.pipeline.orchestrator.settings.BARGE_IN_ENABLED",
         False,
     )
 
@@ -163,7 +163,7 @@ def test_respond_with_none_intent_kind_still_clears(monkeypatch):
 
     monkeypatch.setattr(o, "_build_response_stream", _stub_stream)
     monkeypatch.setattr(
-        "ultron.pipeline.orchestrator.settings.BARGE_IN_ENABLED",
+        "kenning.pipeline.orchestrator.settings.BARGE_IN_ENABLED",
         False,
     )
 
@@ -194,7 +194,7 @@ def test_respond_setter_failure_does_not_break_streaming(monkeypatch):
 
     monkeypatch.setattr(o, "_build_response_stream", _stub_stream)
     monkeypatch.setattr(
-        "ultron.pipeline.orchestrator.settings.BARGE_IN_ENABLED",
+        "kenning.pipeline.orchestrator.settings.BARGE_IN_ENABLED",
         False,
     )
 
@@ -214,7 +214,7 @@ def test_respond_no_llm_does_not_crash(monkeypatch):
 
     monkeypatch.setattr(o, "_build_response_stream", _stub_stream)
     monkeypatch.setattr(
-        "ultron.pipeline.orchestrator.settings.BARGE_IN_ENABLED",
+        "kenning.pipeline.orchestrator.settings.BARGE_IN_ENABLED",
         False,
     )
 

@@ -11,7 +11,7 @@ out-of-process tools.
 Differences from SWE-Agent:
 
 * **Per-session isolation.** SWE-Agent uses a single file at
-  ``/root/.swe-agent-env``. Ultron may run multiple coding sessions
+  ``/root/.swe-agent-env``. Kenning may run multiple coding sessions
   in flight (or concurrent test sweeps); each gets its own file at
   ``data/coding/sessions/<session_id>/registry.json``.
 * **Thread-safe writes.** A per-registry :class:`threading.RLock`
@@ -48,7 +48,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional
 
-from ultron.config import PROJECT_ROOT
+from kenning.config import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +165,7 @@ class SessionRegistry:
             return {}
         result: dict[str, _Entry] = {}
         for k, v in blob.items():
-            if isinstance(v, Mapping) and "__ultron_registry_value__" in v:
+            if isinstance(v, Mapping) and "__kenning_registry_value__" in v:
                 # Versioned envelope shape (carries TTL).
                 result[str(k)] = _Entry(
                     value=v.get("value"),
@@ -185,7 +185,7 @@ class SessionRegistry:
                 payload[k] = entry.value
             else:
                 payload[k] = {
-                    "__ultron_registry_value__": True,
+                    "__kenning_registry_value__": True,
                     "value": entry.value,
                     "expires_at": entry.expires_at,
                 }

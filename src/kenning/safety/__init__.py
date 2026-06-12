@@ -1,4 +1,4 @@
-"""Runtime tool-call validator for Ultron.
+"""Runtime tool-call validator for Kenning.
 
 Pairs with the abliterated default LLM (Josiefied-Qwen3-8B,
 `llm.preset = "josiefied-qwen3-8b"`) to gate the actual capability
@@ -63,11 +63,11 @@ matcher).
 
 from __future__ import annotations
 
-from ultron.safety.audit import AuditLog, get_audit_log
-from ultron.safety.path_resolver import PathResolver
-from ultron.safety.policy import Policy, load_policy
-from ultron.safety.rules.base import Rule
-from ultron.safety.validator import (
+from kenning.safety.audit import AuditLog, get_audit_log
+from kenning.safety.path_resolver import PathResolver
+from kenning.safety.policy import Policy, load_policy
+from kenning.safety.rules.base import Rule
+from kenning.safety.validator import (
     RuleContext,
     RuleResult,
     ToolCallValidator,

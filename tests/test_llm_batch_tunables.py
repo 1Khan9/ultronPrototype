@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ultron.config import LLMConfig, UltronConfig
+from kenning.config import LLMConfig, KenningConfig
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +83,7 @@ def test_n_ubatch_can_exceed_n_batch_in_schema():
 
 def _stub_engine_for_build_llama() -> object:
     """Build a partial LLMEngine skeleton just for _build_llama call."""
-    from ultron.llm.inference import LLMEngine
+    from kenning.llm.inference import LLMEngine
     eng = object.__new__(LLMEngine)
     eng._memory = None
     return eng
@@ -170,18 +170,18 @@ def test_build_llama_passes_both_when_set(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Top-level UltronConfig round-trip
+# Top-level KenningConfig round-trip
 # ---------------------------------------------------------------------------
 
 
 def test_full_config_default_keeps_batch_knobs_none():
-    cfg = UltronConfig()
+    cfg = KenningConfig()
     assert cfg.llm.n_batch is None
     assert cfg.llm.n_ubatch is None
 
 
 def test_full_config_accepts_batch_knobs():
-    cfg = UltronConfig.model_validate({
+    cfg = KenningConfig.model_validate({
         "llm": {"preset": "custom", "model_path": "x.gguf",
                 "n_batch": 2048, "n_ubatch": 256},
     })

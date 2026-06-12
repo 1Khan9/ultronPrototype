@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.llm.cache_warmer`."""
+"""Tests for :mod:`kenning.llm.cache_warmer`."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from ultron.llm.cache_warmer import (
+from kenning.llm.cache_warmer import (
     CacheWarmer,
     DEFAULT_IDLE_GIVEUP_SECONDS,
     DEFAULT_INTERVAL_SECONDS,

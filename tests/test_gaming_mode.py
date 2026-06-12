@@ -17,7 +17,7 @@ from typing import Dict, List, Optional
 
 import pytest
 
-from ultron.openclaw_routing.gaming_mode import (
+from kenning.openclaw_routing.gaming_mode import (
     GamingModeManager,
     GamingModeReport,
     GamingModeStatus,
@@ -202,7 +202,7 @@ def test_on_engaged_callback_fires_after_status_flip():
     calls = []
 
     def _cb():
-        from ultron.openclaw_routing.gaming_mode import is_gaming_mode_active
+        from kenning.openclaw_routing.gaming_mode import is_gaming_mode_active
         calls.append(("engaged", is_gaming_mode_active()))
 
     mgr = GamingModeManager(
@@ -218,7 +218,7 @@ def test_on_disengaged_callback_fires_after_status_flip():
     calls = []
 
     def _cb():
-        from ultron.openclaw_routing.gaming_mode import is_gaming_mode_active
+        from kenning.openclaw_routing.gaming_mode import is_gaming_mode_active
         calls.append(("disengaged", is_gaming_mode_active()))
 
     mgr = GamingModeManager(
@@ -270,7 +270,7 @@ def test_llm_swaps_to_gaming_preset_on_engage_and_restores_on_disengage(monkeypa
     """Mirror of the orchestrator wiring: engage swaps to the gaming
     preset, disengage restores the prior preset captured at engage time.
     """
-    from ultron.config import get_config
+    from kenning.config import get_config
 
     llm = _StubLLM(preset="qwen3.5-4b")
     gaming_preset = "llama-3.2-3b-abliterated"
@@ -317,7 +317,7 @@ def test_llm_swaps_to_gaming_preset_on_engage_and_restores_on_disengage(monkeypa
 
 def test_llm_swap_skipped_when_already_on_gaming_preset(monkeypatch):
     """No swap call if config already has the gaming preset active."""
-    from ultron.config import get_config
+    from kenning.config import get_config
 
     llm = _StubLLM(preset="llama-3.2-3b-abliterated")
     gaming_preset = "llama-3.2-3b-abliterated"
@@ -348,7 +348,7 @@ def test_llm_swap_skipped_when_already_on_gaming_preset(monkeypatch):
 def test_gaming_mode_config_has_default_llm_preset():
     """The default config carries the gaming-mode preset (llama-3.2-3b)
     so users get the VRAM savings without manual config edits."""
-    from ultron.config import GamingModeConfig
+    from kenning.config import GamingModeConfig
 
     cfg = GamingModeConfig()
     assert cfg.llm_preset == "llama-3.2-3b-abliterated"
@@ -357,7 +357,7 @@ def test_gaming_mode_config_has_default_llm_preset():
 def test_gaming_mode_config_llm_preset_can_be_disabled():
     """Empty string is the documented disable value -- no swap fires
     when set, only Kokoro + VLM reclaim run."""
-    from ultron.config import GamingModeConfig
+    from kenning.config import GamingModeConfig
 
     cfg = GamingModeConfig(llm_preset="")
     assert cfg.llm_preset == ""

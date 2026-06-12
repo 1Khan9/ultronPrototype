@@ -2,7 +2,7 @@
 
 Direct port of SWE-Agent's
 ``tools/windowed/lib/windowed_file.py:WindowedFile`` (MIT,
-Yang et al. 2024) adapted to ultron's session-scoped registry.
+Yang et al. 2024) adapted to kenning's session-scoped registry.
 
 The pattern: the "current file" + "first line in window" + "window
 height" + "scroll overlap" all live in a per-session JSON store
@@ -10,7 +10,7 @@ height" + "scroll overlap" all live in a per-session JSON store
 ``scroll_down`` / ``view`` calls act on the open file without
 re-passing the path.
 
-For ultron the state machine has two consumers:
+For kenning the state machine has two consumers:
 
 * The architect narrator + completion narrator can read
   ``current_file`` so the narration speaks about the right file
@@ -22,14 +22,14 @@ For ultron the state machine has two consumers:
 Differences from SWE-Agent:
 
 * **Per-session isolation.** SWE-Agent uses one global state file
-  at ``/root/.swe-agent-env``; ultron uses the per-session
+  at ``/root/.swe-agent-env``; kenning uses the per-session
   registry.
 * **1-indexed external API.** SWE-Agent's internal `_first_line`
   is 0-indexed; the public-facing `WindowState.open(path, line=N)`
   takes 1-indexed N (matches user/voice expectations).
 * **No mutation surface.** SWE-Agent's `WindowedFile` also
   implements `set_window_text`, `replace_in_window`, `insert`,
-  `undo_edit`. Those mutating operations belong to ultron's
+  `undo_edit`. Those mutating operations belong to kenning's
   existing safety + file-history layer (T20); this module is
   read-only state tracking.
 """
@@ -41,8 +41,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from ultron.coding.session_registry import SessionRegistry, get_session_registry
-from ultron.coding.window_expand import (
+from kenning.coding.session_registry import SessionRegistry, get_session_registry
+from kenning.coding.window_expand import (
     DEFAULT_MAX_ADDED_LINES,
     WindowExpander,
 )

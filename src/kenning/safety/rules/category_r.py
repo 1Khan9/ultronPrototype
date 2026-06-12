@@ -15,7 +15,7 @@ under the sensor-control category framing.
 
 from __future__ import annotations
 
-from ultron.safety.rules.base import CommandPatternRule, Rule
+from kenning.safety.rules.base import CommandPatternRule, Rule
 
 
 def build_category_r_rules() -> list[Rule]:

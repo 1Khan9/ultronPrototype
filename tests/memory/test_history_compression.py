@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.memory.history_compression`."""
+"""Tests for :mod:`kenning.memory.history_compression`."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from ultron.memory.history_compression import (
+from kenning.memory.history_compression import (
     DEFAULT_SUMMARY_PREAMBLE,
     CompressionResult,
     compress_history,
@@ -16,8 +16,8 @@ from ultron.memory.history_compression import (
     messages_to_dicts,
     messages_to_text,
 )
-from ultron.utils.snapshot_guard import SnapshotGuard
-from ultron.utils.token_budget import char_count_tokens
+from kenning.utils.snapshot_guard import SnapshotGuard
+from kenning.utils.token_budget import char_count_tokens
 
 
 # ---------------------------------------------------------------------------
@@ -389,7 +389,7 @@ def test_compression_result_is_frozen():
 
 
 def test_background_summarizer_compress_history_method(tmp_path):
-    from ultron.memory.background_summarizer import BackgroundSummarizer
+    from kenning.memory.background_summarizer import BackgroundSummarizer
 
     def turns_fn():
         return []
@@ -424,7 +424,7 @@ def test_background_summarizer_compress_history_method(tmp_path):
 
 def test_background_summarizer_compress_falls_back_to_generate_fn():
     """When no separate compress_summarize_fn is wired, generate_fn is reused."""
-    from ultron.memory.background_summarizer import BackgroundSummarizer
+    from kenning.memory.background_summarizer import BackgroundSummarizer
 
     def turns_fn():
         return []

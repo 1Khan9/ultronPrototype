@@ -15,7 +15,7 @@ from typing import Any, Callable, List, Optional
 
 import pytest
 
-from ultron.coding.bridge import (
+from kenning.coding.bridge import (
     CodingBridge,
     EventKind,
     TaskEvent,
@@ -24,11 +24,11 @@ from ultron.coding.bridge import (
     TaskResult,
     TaskState,
 )
-from ultron.coding.runner import CodingTaskRunner
-from ultron.config import (
+from kenning.coding.runner import CodingTaskRunner
+from kenning.config import (
     LLMConfig,
     set_config,
-    UltronConfig,
+    KenningConfig,
 )
 
 
@@ -100,7 +100,7 @@ class _StubBridge(CodingBridge):
 def runner_with_ast_enabled(tmp_path, monkeypatch):
     """Build a CodingTaskRunner with ast_metadata.enabled = True and
     a stub bridge attached. Captures audit log writes for inspection."""
-    cfg = UltronConfig()
+    cfg = KenningConfig()
     cfg.coding.ast_metadata.enabled = True
     cfg.coding.ast_metadata.syntax_check_on_file_change = True
     cfg.coding.ast_metadata.attach_metadata_to_audit = True
@@ -123,14 +123,14 @@ def runner_with_ast_enabled(tmp_path, monkeypatch):
         yield runner, bridge, audit_records
     finally:
         # Reset config to defaults so other tests aren't affected.
-        set_config(UltronConfig())
+        set_config(KenningConfig())
 
 
 @pytest.fixture
 def runner_with_ast_disabled(tmp_path):
     """Default: ast_metadata.enabled = False. Verifies the listener
     is NOT registered when the flag is off."""
-    cfg = UltronConfig()
+    cfg = KenningConfig()
     cfg.coding.sandbox_root = str(tmp_path / "sandbox")
     cfg.coding.audit_log_path = str(tmp_path / "logs" / "coding_tasks.jsonl")
     cfg.coding.session_audit_dir = str(tmp_path / "logs" / "sessions")
@@ -140,7 +140,7 @@ def runner_with_ast_disabled(tmp_path):
         runner = CodingTaskRunner(bridge=bridge)
         yield runner, bridge
     finally:
-        set_config(UltronConfig())
+        set_config(KenningConfig())
 
 
 # ---------------------------------------------------------------------------

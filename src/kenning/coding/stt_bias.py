@@ -37,7 +37,7 @@ from collections import OrderedDict
 from typing import Iterable, List, Optional
 
 
-logger = logging.getLogger("ultron.coding.stt_bias")
+logger = logging.getLogger("kenning.coding.stt_bias")
 
 
 # Conservative identifier extractor. Catches snake_case, camelCase,

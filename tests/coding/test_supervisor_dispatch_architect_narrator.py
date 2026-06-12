@@ -15,12 +15,12 @@ from typing import List, Optional
 
 import pytest
 
-from ultron.coding.project_supervisor import (
+from kenning.coding.project_supervisor import (
     SupervisorAction,
     SupervisorDecision,
     SupervisorInputs,
 )
-from ultron.coding.supervisor_dispatch import (
+from kenning.coding.supervisor_dispatch import (
     DispatchActionKind,
     SupervisorDispatchController,
 )

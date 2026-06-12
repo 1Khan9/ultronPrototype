@@ -1,6 +1,6 @@
 """Spectral magnitude smoothing for Kokoro fine-tune output.
 
-The partially-trained Ultron Kokoro checkpoint (Stage 1 complete +
+The partially-trained Kenning Kokoro checkpoint (Stage 1 complete +
 Stage 2 epoch 0 only -- SLM joint adversarial training at epoch 3+
 never ran) produces audible **pitch wobble / shakiness**. The
 right long-term fix is more training; the short-term fix is a
@@ -12,18 +12,18 @@ frequency) -> ISTFT with original phase. The production window
 is 5 frames at ``hop=512``, ``sr=24 kHz`` (~107 ms of audio) --
 the post-A/B sweet spot on the partial-fine-tune corpus (2026-05-22
 user pick after comparing windows 3 / 5 / 7 / 9 on the 16-sentence
-Ultron test set). 3 frames (~64 ms) leaves audible wobble; 7+
+Kenning test set). 3 frames (~64 ms) leaves audible wobble; 7+
 frames (~150 ms+) starts softening fricatives.
 
 Origin: this is the runtime port of ``_spectral_smooth`` in
-``ultronVoiceAudio/scripts/bulk_evaluate_finetune.py``. The
+``kenningVoiceAudio/scripts/bulk_evaluate_finetune.py``. The
 bulk-evaluate version was proven on the 1654-clip training corpus
 (used to A/B different smoothing intensities); the algorithm here
 is bit-for-bit identical, just wrapped for runtime use with the
 fail-open semantics the orchestrator expects.
 
 **Cost:** ~10 ms per second of audio on CPU (measured against the
-16-sentence Ultron test corpus on 2026-05-22):
+16-sentence Kenning test corpus on 2026-05-22):
 
   ============  ==========
   Clip length  Latency
@@ -76,7 +76,7 @@ def spectral_smooth(
             hop=512, sr=24 kHz covers ~107 ms -- the post-A/B sweet
             spot on the partial-fine-tune corpus (2026-05-22 user
             pick after comparing 3 / 5 / 7 / 9 on the 16-sentence
-            Ultron test set). 3 (~64 ms) leaves audible wobble; 7+
+            Kenning test set). 3 (~64 ms) leaves audible wobble; 7+
             (~150 ms+) starts softening fricatives. Pass 1 to
             disable smoothing (no-op) without removing the call
             site. Values < 1 are clamped to 1.

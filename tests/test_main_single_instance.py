@@ -1,6 +1,6 @@
 """Entrypoint integration tests for the single-instance guard.
 
-Importing ``ultron.__main__`` only imports modules -- no models load.
+Importing ``kenning.__main__`` only imports modules -- no models load.
 All seams are monkeypatched; nothing touches the repo's real
 ``data/`` lock.
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-import ultron.__main__ as m
+import kenning.__main__ as m
 
 
 @pytest.fixture(autouse=True)
@@ -17,7 +17,7 @@ def _quiet_entrypoint(monkeypatch):
     """Keep main() hermetic inside the sweep.
 
     The real ``configure_logging()`` installs the rotating FILE
-    handler pointed at the live ``logs/ultron.log`` -- once installed
+    handler pointed at the live ``logs/kenning.log`` -- once installed
     it persists for the rest of the pytest process, adding synchronous
     disk I/O to every later logger call (this measurably broke the
     memory hot-path latency-budget test downstream) and writing sweep
@@ -67,11 +67,11 @@ def test_duplicate_exits_3_without_constructing_orchestrator(
     # __main__ imports the guard inside main(), so patch the SOURCE
     # module attributes.
     monkeypatch.setattr(
-        "ultron.lifecycle.single_instance.acquire_single_instance_lock",
+        "kenning.lifecycle.single_instance.acquire_single_instance_lock",
         lambda *a, **k: None,
     )
     monkeypatch.setattr(
-        "ultron.lifecycle.single_instance.read_lock_metadata",
+        "kenning.lifecycle.single_instance.read_lock_metadata",
         lambda *a, **k: {"pid": 1234},
     )
     monkeypatch.setattr(m, "Orchestrator", _Boom)
@@ -85,7 +85,7 @@ def test_duplicate_exits_3_without_constructing_orchestrator(
 def test_lock_released_in_finally_on_happy_path(monkeypatch):
     fake = _FakeLock()
     monkeypatch.setattr(
-        "ultron.lifecycle.single_instance.acquire_single_instance_lock",
+        "kenning.lifecycle.single_instance.acquire_single_instance_lock",
         lambda *a, **k: fake,
     )
     stub = _StubOrchestrator
@@ -100,7 +100,7 @@ def test_lock_released_in_finally_on_happy_path(monkeypatch):
 def test_lock_released_when_run_raises(monkeypatch):
     fake = _FakeLock()
     monkeypatch.setattr(
-        "ultron.lifecycle.single_instance.acquire_single_instance_lock",
+        "kenning.lifecycle.single_instance.acquire_single_instance_lock",
         lambda *a, **k: fake,
     )
 
@@ -117,7 +117,7 @@ def test_lock_released_when_run_raises(monkeypatch):
 def test_lock_released_on_missing_model(monkeypatch):
     fake = _FakeLock()
     monkeypatch.setattr(
-        "ultron.lifecycle.single_instance.acquire_single_instance_lock",
+        "kenning.lifecycle.single_instance.acquire_single_instance_lock",
         lambda *a, **k: fake,
     )
 

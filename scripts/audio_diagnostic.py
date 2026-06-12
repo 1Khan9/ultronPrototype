@@ -3,7 +3,7 @@
 Loads ONLY the audio path (sounddevice capture + openWakeWord + Silero
 VAD + faster-whisper). No LLM, no TTS, no RVC, no orchestrator. Total
 VRAM around ~1.5 GB so we can iterate without competing with a running
-Ultron.
+Kenning.
 
 Modes
 -----
@@ -84,7 +84,7 @@ import numpy as np
 WORKTREE_ROOT = Path(__file__).resolve().parent.parent
 MAIN_REPO_PATH = Path(r"C:\STC\ultronPrototype")
 sys.path.insert(0, str(MAIN_REPO_PATH))            # config/ shim
-sys.path.insert(0, str(WORKTREE_ROOT / "src"))     # worktree's ultron code
+sys.path.insert(0, str(WORKTREE_ROOT / "src"))     # worktree's kenning code
 
 # Stdout encoding: unicode log lines from libraries shouldn't crash a
 # cp1252-default console.
@@ -151,16 +151,16 @@ def build_audio_capture(device: Optional[str], gain_db: float):
     can confirm which physical input is being used (Voicemeeter vs
     Focusrite vs system default).
     """
-    from ultron.audio.capture import AudioCapture
-    from ultron.audio.devices import describe_device
-    from ultron.config import get_config
+    from kenning.audio.capture import AudioCapture
+    from kenning.audio.devices import describe_device
+    from kenning.config import get_config
     import os
 
     cfg = get_config().audio
     # Override path: explicit None means "use config default"; an empty
     # string means "system default". Same convention as the env var.
     resolved_device = device if device is not None else cfg.input_device
-    env_override = os.environ.get("ULTRON_AUDIO_DEVICE")
+    env_override = os.environ.get("KENNING_AUDIO_DEVICE")
     if env_override is not None:
         # The settings shim / env reader uses the env var when set.
         # An EMPTY string is treated as "no override" by some readers
@@ -168,9 +168,9 @@ def build_audio_capture(device: Optional[str], gain_db: float):
         # harness should surface the actual env state so the operator
         # knows.
         if env_override:
-            print(f"  ENV override: ULTRON_AUDIO_DEVICE='{env_override}' (matches '{env_override}')")
+            print(f"  ENV override: KENNING_AUDIO_DEVICE='{env_override}' (matches '{env_override}')")
         else:
-            print(f"  ENV override: ULTRON_AUDIO_DEVICE=<empty>  (system default; config 'input_device' is ignored)")
+            print(f"  ENV override: KENNING_AUDIO_DEVICE=<empty>  (system default; config 'input_device' is ignored)")
 
     cap = AudioCapture(
         sample_rate=cfg.sample_rate,
@@ -184,7 +184,7 @@ def build_audio_capture(device: Optional[str], gain_db: float):
 
 def _print_resolved_device(cap) -> None:
     """Call after cap.start() to print the actually-resolved device index + name."""
-    from ultron.audio.devices import describe_device
+    from kenning.audio.devices import describe_device
     if cap.device is None:
         print(f"  Resolved device: <system default>")
     else:
@@ -193,7 +193,7 @@ def _print_resolved_device(cap) -> None:
 
 def build_wake_word(threshold: Optional[float]):
     """Build a WakeWordDetector. ``threshold=None`` -> config default."""
-    from ultron.audio.wake_word import WakeWordDetector
+    from kenning.audio.wake_word import WakeWordDetector
     if threshold is None:
         return WakeWordDetector()
     return WakeWordDetector(threshold=threshold)
@@ -201,7 +201,7 @@ def build_wake_word(threshold: Optional[float]):
 
 def build_vad(threshold: Optional[float]):
     """Build a VAD. ``threshold=None`` -> config default."""
-    from ultron.audio.vad import VoiceActivityDetector
+    from kenning.audio.vad import VoiceActivityDetector
     if threshold is None:
         return VoiceActivityDetector()
     return VoiceActivityDetector(threshold=threshold)
@@ -214,7 +214,7 @@ def build_stt(beam_size: Optional[int]):
     Whisper-specific tuning hook -- it's silently ignored for engines
     that don't expose a per-call beam knob (Moonshine, Parakeet).
     """
-    from ultron.transcription import make_stt_engine
+    from kenning.transcription import make_stt_engine
     return make_stt_engine()
 
 
@@ -283,7 +283,7 @@ def mode_wake(args, audit_path: Path):
     print(f"\n[wake] Window: {args.seconds} s.")
     if args.label:
         print(f"       Label: {args.label}")
-    print(f"       Say 'Ultron.' once. Speak naturally for the distance.")
+    print(f"       Say 'Kenning.' once. Speak naturally for the distance.")
     print(f"       Press Enter to start.")
     input()
 
@@ -358,7 +358,7 @@ def mode_wake(args, audit_path: Path):
 
 def mode_phrase(args, audit_path: Path):
     """Phrase capture + VAD + Whisper transcription test."""
-    from ultron.audio.vad import SpeechEvent
+    from kenning.audio.vad import SpeechEvent
 
     cap = build_audio_capture(args.device, args.gain_db)
     vad = build_vad(args.vad_threshold)
@@ -466,7 +466,7 @@ def mode_phrase(args, audit_path: Path):
 
 def mode_monitor(args, audit_path: Path):
     """Live real-time meter. Ctrl+C to exit."""
-    from ultron.audio.vad import SpeechEvent
+    from kenning.audio.vad import SpeechEvent
 
     cap = build_audio_capture(args.device, args.gain_db)
     wake = build_wake_word(args.wake_threshold)
@@ -578,7 +578,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = p.parse_args(argv)
 
     if args.gain_db is None:
-        from ultron.config import get_config
+        from kenning.config import get_config
         try:
             args.gain_db = float(getattr(get_config().audio, "input_gain_db", 0.0))
         except Exception:
@@ -592,7 +592,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         audit_path = WORKTREE_ROOT / "logs" / f"audio_diag_{ts}.jsonl"
 
     print("=" * 64)
-    print(f"Ultron audio diagnostic harness  --  mode: {args.mode}")
+    print(f"Kenning audio diagnostic harness  --  mode: {args.mode}")
     print("=" * 64)
     print(f"  Device     : {args.device or '<from config>'}")
     print(f"  Gain (dB)  : {args.gain_db:+.1f}")
@@ -608,8 +608,8 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # Quiet logging. We want our own structured stdout, not framework logs.
     import os
-    os.environ["ULTRON_LOG_LEVEL"] = "WARNING"
-    from ultron.utils.logging import configure_logging
+    os.environ["KENNING_LOG_LEVEL"] = "WARNING"
+    from kenning.utils.logging import configure_logging
     configure_logging(level="WARNING")
 
     # Dispatch.

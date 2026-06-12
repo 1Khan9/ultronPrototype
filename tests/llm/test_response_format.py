@@ -1,10 +1,10 @@
-"""Tests for ultron.llm.response_format."""
+"""Tests for kenning.llm.response_format."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.llm import response_format as rf
+from kenning.llm import response_format as rf
 
 
 # ---------------------------------------------------------------------------

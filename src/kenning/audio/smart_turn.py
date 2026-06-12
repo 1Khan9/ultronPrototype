@@ -49,7 +49,7 @@ from typing import Optional
 
 import numpy as np
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("audio.smart_turn")
 
@@ -392,7 +392,7 @@ def build_detector_from_config(
         smart_turn_cfg: The ``VADConfig.smart_turn`` pydantic model.
         project_root: Base directory for resolving the relative
             model path. Typically :data:`PROJECT_ROOT` from
-            :mod:`ultron.config`.
+            :mod:`kenning.config`.
 
     Returns:
         A constructed (but not yet loaded) :class:`SmartTurnDetector`

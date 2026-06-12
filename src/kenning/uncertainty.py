@@ -1,6 +1,6 @@
 """Phase 5: translate preflight uncertainty signals into response behavior.
 
-The preflight pass (in :mod:`ultron.web_search.gating`) already produces
+The preflight pass (in :mod:`kenning.web_search.gating`) already produces
 three signals on every gate verdict:
 
   * ``knowledge_confidence``: high / medium / low / None
@@ -16,7 +16,7 @@ This module turns those into two outputs the orchestrator can act on:
   2. **Per-call user-message addendum**: a one-line hint prepended to
      the user's text that primes the LLM to match its answer style to
      the actual confidence level. The permanent system prompt already
-     instructs Ultron to handle uncertainty correctly; the per-call
+     instructs Kenning to handle uncertainty correctly; the per-call
      addendum just nudges it on this specific query.
 
 Hard-rule verdicts (no preflight) carry no uncertainty signals -- this
@@ -28,8 +28,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Tuple
 
-from ultron.utils.logging import get_logger
-from ultron.web_search.gating import GateDecision, GateVerdict
+from kenning.utils.logging import get_logger
+from kenning.web_search.gating import GateDecision, GateVerdict
 
 logger = get_logger("uncertainty")
 

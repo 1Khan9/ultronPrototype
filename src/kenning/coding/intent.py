@@ -2,7 +2,7 @@
 
 Three classifications matter to the orchestrator:
 
-1. ``CODE_TASK``  -- the user wants Ultron to write/edit code. Routes
+1. ``CODE_TASK``  -- the user wants Kenning to write/edit code. Routes
    into the coding runner instead of the normal LLM response path.
 2. ``PROGRESS_QUERY`` -- the user is asking about an in-flight task
    ("how's it going?"). Resolves from runner state without spawning
@@ -380,7 +380,7 @@ def derive_project_name(intent: CodingIntent) -> str:
       1. ``explicit_name`` from "called X" / "named X".
       2. A short slug of the first informative noun phrase in
          ``task_text`` (heuristic).
-      3. Fallback: timestamp-style ``ultron_project_<hex>``.
+      3. Fallback: timestamp-style ``kenning_project_<hex>``.
     """
     if intent.explicit_name:
         return intent.explicit_name
@@ -404,4 +404,4 @@ def derive_project_name(intent: CodingIntent) -> str:
             slug = "_".join(words[:3])
             return slug
     import uuid
-    return f"ultron_project_{uuid.uuid4().hex[:6]}"
+    return f"kenning_project_{uuid.uuid4().hex[:6]}"

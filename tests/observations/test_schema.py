@@ -7,7 +7,7 @@ import re
 
 import pytest
 
-from ultron.observations.schema import (
+from kenning.observations.schema import (
     KNOWN_OUTCOMES,
     KNOWN_SUBSYSTEMS,
     Observation,

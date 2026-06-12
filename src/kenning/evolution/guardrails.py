@@ -8,7 +8,7 @@ is automatically rolled back via the checkpoint. The four guardrails:
 * **latency** -- the voice path's time-to-first-audio / TTFT / TTS synth
   must not regress past a tolerance over the locked baseline;
 * **quality** -- the user-correction + re-ask + barge-in rate must not
-  climb (a proxy for "the change made ultron worse to talk to");
+  climb (a proxy for "the change made kenning worse to talk to");
 * **errors** -- the error + fail-open + validator-block rate must not
   climb;
 * **resource** -- VRAM peak must not approach the hard ceiling.
@@ -58,7 +58,7 @@ GUARDRAILS: tuple[str, ...] = ("latency", "quality", "error", "resource")
 class GuardrailBaseline:
     """The locked reference values a change must not regress past.
 
-    Defaults are ultron's measured voice baseline (TTFA 266 ms / TTFT
+    Defaults are kenning's measured voice baseline (TTFA 266 ms / TTFT
     172 ms / TTS 78 ms; VRAM peak ~6664 MB). ``correction_rate`` /
     ``error_rate`` default to 0 (the pre-change rate is supplied by the
     caller when known).

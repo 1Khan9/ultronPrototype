@@ -1,6 +1,6 @@
 """Wake-word detection via openWakeWord.
 
-The user-facing wake word is "Ultron", which is **not** a pretrained model in
+The user-facing wake word is "Kenning", which is **not** a pretrained model in
 openWakeWord. The detector tries to load a custom-trained ONNX at
 ``settings.WAKE_WORD_MODEL_PATH`` and, if missing, falls back to one of the
 shipped pretrained words (default: ``hey_jarvis``) with a prominent warning.
@@ -17,7 +17,7 @@ from typing import Optional
 import numpy as np
 
 from config import settings
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("audio.wake_word")
 
@@ -26,7 +26,7 @@ class WakeWordDetector:
     """Streaming wake-word detector.
 
     Args:
-        model_path: Path to a custom ONNX model (e.g. ``ultron.onnx``).
+        model_path: Path to a custom ONNX model (e.g. ``kenning.onnx``).
             If ``None`` or missing, falls back to ``fallback_name``.
         fallback_name: Pretrained word to use when no custom model is found.
             Must be one of openWakeWord's built-ins.
@@ -63,9 +63,9 @@ class WakeWordDetector:
         self._using_fallback = True
         self._active_word = fallback_name
         msg = (
-            f"Custom Ultron wake-word model not found at {model_path}. "
+            f"Custom Kenning wake-word model not found at {model_path}. "
             f"Falling back to pretrained '{fallback_name}'. "
-            f"To use 'Ultron' as the wake word, train a custom model and "
+            f"To use 'Kenning' as the wake word, train a custom model and "
             f"place it at the path above."
         )
         logger.warning(msg)

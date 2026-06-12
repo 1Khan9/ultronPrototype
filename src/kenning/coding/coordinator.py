@@ -1,6 +1,6 @@
 """ConversationCoordinator -- the supervisor's decision policy engine.
 
-Sits between :class:`UltronMCPServer` (which exposes Claude's tool calls
+Sits between :class:`KenningMCPServer` (which exposes Claude's tool calls
 as events) and :class:`CodingTaskRunner` (which owns the bridge and the
 session lifecycle). The coordinator is *only* consulted when a real
 decision needs to be made:
@@ -35,20 +35,20 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from config import settings
-from ultron.coding.session import (
+from kenning.coding.session import (
     ClarificationRequest,
     CompletionClaim,
     ProjectSession,
     SessionStatus,
     SessionStore,
 )
-from ultron.coding.templates import (
+from kenning.coding.templates import (
     PromptTooLargeError,
     SchemaValidationError,
     TemplateRenderer,
 )
-from ultron.coding.verification import Verifier, VerificationReport
-from ultron.utils.logging import get_logger
+from kenning.coding.verification import Verifier, VerificationReport
+from kenning.utils.logging import get_logger
 
 logger = get_logger("coding.coordinator")
 
@@ -228,7 +228,7 @@ Output ONLY a JSON object, no commentary, no markdown:
 
 
 _VOICE_QUESTION_PROMPT = """\
-Translate this technical clarification request into a natural, spoken-style question for the user. Stay in Ultron's voice -- precise, weighted, brief, no filler. Lead with the project context.
+Translate this technical clarification request into a natural, spoken-style question for the user. Stay in Kenning's voice -- precise, weighted, brief, no filler. Lead with the project context.
 
 {projected_context}
 
@@ -330,7 +330,7 @@ class ConversationCoordinator:
         # min_confidence=..., max_age_days=...) -> List[Dict[str, Any]]``.
         # When ``None``, ``decide_clarification`` skips the stored-facts
         # fast-path. The orchestrator wires this to
-        # ``UltronMCPServer.lookup_facts`` (which proxies to
+        # ``KenningMCPServer.lookup_facts`` (which proxies to
         # ``ConversationMemory.search_facts``).
         self._facts_lookup = facts_lookup
         # Phase 3 hook: when set, follow-up prompts the coordinator hands
@@ -370,7 +370,7 @@ class ConversationCoordinator:
         """Return the answer string Claude should receive.
 
         This is the responder installed on
-        :meth:`UltronMCPServer.set_clarification_responder`. It runs in
+        :meth:`KenningMCPServer.set_clarification_responder`. It runs in
         the MCP server's asyncio loop. Sync LLM calls dispatched via
         ``run_in_executor`` so we don't block the event loop thread.
         """
@@ -912,7 +912,7 @@ class ConversationCoordinator:
         # Phase C / Phase 1: build the bounded projection rather than
         # serializing the whole session. Prevents context-budget overflow
         # on long-running sessions.
-        from ultron.coding.projections import project_clarification_context
+        from kenning.coding.projections import project_clarification_context
         projection = project_clarification_context(
             session,
             clarification_question=request.question,
@@ -951,7 +951,7 @@ class ConversationCoordinator:
             )
         # Phase C / Phase 1: same bounded projection feeds the voice-rendering
         # prompt -- single source of truth for what Qwen sees.
-        from ultron.coding.projections import project_clarification_context
+        from kenning.coding.projections import project_clarification_context
         projection = project_clarification_context(
             session,
             clarification_question=request.question,
@@ -973,7 +973,7 @@ class ConversationCoordinator:
         user_text: str,
     ) -> str:
         # Phase C / Phase 1: bounded projection.
-        from ultron.coding.projections import project_adjustment_context
+        from kenning.coding.projections import project_adjustment_context
         projection = project_adjustment_context(
             session, adjustment_text=user_text,
         )

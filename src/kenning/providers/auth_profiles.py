@@ -50,7 +50,7 @@ DEFAULT_COOLDOWN_SECONDS: float = 30.0
 MAX_FAILURE_COUNT: int = 5
 
 #: Default cap on per-key transient retries (used by
-#: :func:`execute_with_rotation` in :mod:`ultron.providers.rotation`).
+#: :func:`execute_with_rotation` in :mod:`kenning.providers.rotation`).
 DEFAULT_MAX_TRANSIENT_RETRIES: int = 3
 
 

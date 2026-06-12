@@ -35,7 +35,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("utils.health_check")
 
@@ -46,7 +46,7 @@ logger = get_logger("utils.health_check")
 DEFAULT_HEALTH_CHECK_TIMEOUT_S: float = 2.0
 
 # Default Chrome DevTools host. CDP debug endpoints only ever listen on
-# loopback in ultron's model (exposing CDP to a routable interface is a
+# loopback in kenning's model (exposing CDP to a routable interface is a
 # security hazard the catalog + the upstream docs both warn against).
 DEFAULT_CDP_HOST: str = "127.0.0.1"
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.coding.confirm_group import ConfirmGroup, ConfirmGroupResolution
+from kenning.coding.confirm_group import ConfirmGroup, ConfirmGroupResolution
 
 
 # ---------------------------------------------------------------------------

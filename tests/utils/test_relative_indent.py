@@ -1,10 +1,10 @@
-"""Tests for :mod:`ultron.utils.relative_indent`."""
+"""Tests for :mod:`kenning.utils.relative_indent`."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.utils.relative_indent import (
+from kenning.utils.relative_indent import (
     RelativeIndenter,
     absolute_indent,
     relative_indent,

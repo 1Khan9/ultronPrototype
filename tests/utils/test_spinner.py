@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.utils.spinner`."""
+"""Tests for :mod:`kenning.utils.spinner`."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from ultron.utils.spinner import (
+from kenning.utils.spinner import (
     DEFAULT_FIRST_FRAME_DELAY_SECONDS,
     DEFAULT_UPDATE_INTERVAL_SECONDS,
     Spinner,

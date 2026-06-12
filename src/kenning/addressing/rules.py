@@ -32,7 +32,7 @@ class RuleHit:
 
 
 # ---------------------------------------------------------------------------
-# Strong YES signals: utterances that look like direct address to Ultron.
+# Strong YES signals: utterances that look like direct address to Kenning.
 # Word boundaries (\b) keep "what" from matching "somewhat".
 # ---------------------------------------------------------------------------
 
@@ -54,7 +54,7 @@ _FACTUAL_QUESTION_STEMS = re.compile(
 )
 
 # Second-person-target questions ("did you...", "are you..."). These are
-# genuinely ambiguous between "directed at Ultron" and "directed at a human"
+# genuinely ambiguous between "directed at Kenning" and "directed at a human"
 # (roommate, partner, child). We deliberately keep them below the 0.8
 # threshold so the zero-shot model gets the final call using context.
 _SECOND_PERSON_QUESTIONS = re.compile(
@@ -91,16 +91,16 @@ _IMPERATIVE_VERBS = re.compile(
     re.IGNORECASE,
 )
 
-# Direct address by name. "Ultron, ..." in the second-person sense.
-# We detect "ultron" at the START followed by a comma / vocative pause.
-# Mid-sentence "ultron" (third-person mention) is handled by NO rules below.
+# Direct address by name. "Kenning, ..." in the second-person sense.
+# We detect "kenning" at the START followed by a comma / vocative pause.
+# Mid-sentence "kenning" (third-person mention) is handled by NO rules below.
 _DIRECT_ADDRESS = re.compile(
-    r"^\s*(?:hey\s+|okay\s+|alright\s+)?ultron\b[\s,.\-:]+",
+    r"^\s*(?:hey\s+|okay\s+|alright\s+)?kenning\b[\s,.\-:]+",
     re.IGNORECASE,
 )
 
 # Short continuation answers most likely directed at us when said in a
-# follow-up window after Ultron asked / proposed something. Standalone
+# follow-up window after Kenning asked / proposed something. Standalone
 # YES/NO are easy to misclassify so we keep this pool tight.
 _CONTINUATION_TOKENS = {
     "yes", "yeah", "yep", "yup", "sure", "correct", "right",
@@ -115,25 +115,25 @@ _CONTINUATION_TOKENS = {
 
 
 # ---------------------------------------------------------------------------
-# Strong NO signals: utterances that clearly aren't directed at Ultron.
+# Strong NO signals: utterances that clearly aren't directed at Kenning.
 # ---------------------------------------------------------------------------
 
-# Third-person mention of Ultron ("Ultron said X", "ultron's response was..."),
-# i.e. the speaker is talking ABOUT Ultron, not TO Ultron. Anchored
-# mid-sentence to avoid catching the YES "ultron, what's..." case which is
+# Third-person mention of Kenning ("Kenning said X", "kenning's response was..."),
+# i.e. the speaker is talking ABOUT Kenning, not TO Kenning. Anchored
+# mid-sentence to avoid catching the YES "kenning, what's..." case which is
 # matched by _DIRECT_ADDRESS first.
 _THIRD_PERSON_MENTION = re.compile(
-    r"\bultron\s+(?:just|already|previously|earlier|said|thinks|told|wrote|claimed|reported|mentioned)\b",
+    r"\bkenning\s+(?:just|already|previously|earlier|said|thinks|told|wrote|claimed|reported|mentioned)\b",
     re.IGNORECASE,
 )
 
 # 2026-05-11 false-positive guard: tight patterns that catch the
-# common "I'm narrating Ultron's behaviour to a third party in the
+# common "I'm narrating Kenning's behaviour to a third party in the
 # room" cases observed in real session logs. These were sliding
 # through the rule layer at exactly 0.75 zero-shot confidence and
 # getting wrongly routed to ADDRESSED.
 #
-# The patterns are deliberately narrow -- legitimate Ultron commands
+# The patterns are deliberately narrow -- legitimate Kenning commands
 # like "tell him to send the email" or "ask her about the meeting"
 # don't match, but "I'm talking to him", "got him to the point...",
 # "you'll see", "watch this/him" all do.
@@ -143,21 +143,21 @@ _THIRD_PARTY_NARRATIVE = re.compile(
     # commentary about who you're addressing, not a command.
     r"\b(?:i'?m|i\s+am)\s+talking\s+(?:to|about|at|with)\s+(?:him|her|it|them)\b"
     # Causative "got/made/let him to <something>" -- past-tense
-    # narrative about Ultron's state, not a directive to Ultron.
+    # narrative about Kenning's state, not a directive to Kenning.
     r"|\b(?:got|made|let|forced|coaxed)\s+(?:him|her|it)\s+to\s+(?:the\s+)?\w+"
     # Meta-narration to a third party: "you'll see", "watch this/him",
     # "look at this/him" at the start of an utterance.
     r"|^\s*you'?ll\s+see\b"
     r"|^\s*watch\s+(?:this|him|it|what\s+he|what\s+it|what\s+she)\b"
     # Subject-pronoun status updates: "he's workable / broken / done /
-    # ready / stuck / thinking / good / working" -- describing Ultron's
+    # ready / stuck / thinking / good / working" -- describing Kenning's
     # state to someone else.
     r"|^\s*(?:he|it|she)(?:'s|\s+is)\s+(?:workable|broken|done|ready|stuck|"
     r"thinking|working|good|fine|set|set\s+up|all\s+set)\b"
     # 2026-05-19 Issue 6 fix: continuation of third-party reference
     # like "I'm running him through his paces" / "running him" /
     # "showing him to the team". The first-person verb + him/her
-    # signals the user is reporting about Ultron to a third party.
+    # signals the user is reporting about Kenning to a third party.
     r"|\b(?:i'?m|i\s+am|i)\s+(?:running|showing|telling|teaching|"
     r"explaining|introducing|demoing|testing|debugging)\s+(?:him|her|it)\b"
     r")",
@@ -166,12 +166,12 @@ _THIRD_PARTY_NARRATIVE = re.compile(
 
 # 2026-05-19 Issue 6 fix: third-party possessive questions.
 # "Where's his sandbox?" / "What's her name?" / "When is their birthday?"
-# are about-Ultron-to-a-third-party, not directed AT Ultron. Without
+# are about-Kenning-to-a-third-party, not directed AT Kenning. Without
 # this guard the factual-question-stem rule below fires (because the
 # utterance starts with "where's") and ADDRESSED wins with conf 0.85
 # -- live session 2026-05-19: "Where's his sandbar?" (Whisper-mangled
 # from "where's his sandbox") was wrongly accepted as a follow-up to
-# Ultron and triggered a SEARCH for a JPEG that didn't exist.
+# Kenning and triggered a SEARCH for a JPEG that didn't exist.
 _THIRD_PARTY_POSSESSIVE_QUESTION = re.compile(
     r"^\s*(?:what|where|when|why|how|which)(?:'s|s|\s+is|\s+are|\s+was|\s+were)?\s+"
     r"(?:his|her|their|its)\s+\w+",
@@ -215,7 +215,7 @@ def classify(
 
     ``seconds_since_response`` slightly biases the continuation pool: short
     answers are more likely to be a real continuation if the user spoke
-    within ~5 s of Ultron's last response.
+    within ~5 s of Kenning's last response.
     """
     text = utterance.strip()
     if not text:
@@ -224,27 +224,27 @@ def classify(
     lowered = text.lower().rstrip(".!?,")
 
     # NO rules fire first: a direct phone opener wins over a question stem
-    # ("hey mom, what time is it?" is not for Ultron).
+    # ("hey mom, what time is it?" is not for Kenning).
     if _PHONE_OPENERS.search(text):
         return RuleHit(
             AddressingDecision.NOT_ADDRESSED, 0.92, "phone-call / interpersonal opener"
         )
     if _THIRD_PERSON_MENTION.search(text):
         return RuleHit(
-            AddressingDecision.NOT_ADDRESSED, 0.85, "third-person mention of Ultron"
+            AddressingDecision.NOT_ADDRESSED, 0.85, "third-person mention of Kenning"
         )
     if _THIRD_PARTY_NARRATIVE.search(text):
         return RuleHit(
-            AddressingDecision.NOT_ADDRESSED, 0.85, "narrating Ultron to a third party"
+            AddressingDecision.NOT_ADDRESSED, 0.85, "narrating Kenning to a third party"
         )
-    # Issue 6 fix: "where's his X?" / "what's her Y?" -- about Ultron,
-    # not to Ultron. Must run BEFORE the factual-question-stem rule
+    # Issue 6 fix: "where's his X?" / "what's her Y?" -- about Kenning,
+    # not to Kenning. Must run BEFORE the factual-question-stem rule
     # below, which would otherwise grab "where's" and short-circuit
     # to ADDRESSED at 0.85.
     if _THIRD_PARTY_POSSESSIVE_QUESTION.match(text):
         return RuleHit(
             AddressingDecision.NOT_ADDRESSED, 0.85,
-            "third-party possessive question (about Ultron, not to Ultron)",
+            "third-party possessive question (about Kenning, not to Kenning)",
         )
     if lowered in _INTERJECTIONS:
         return RuleHit(
@@ -291,7 +291,7 @@ def classify(
         )
     if _SECOND_PERSON_QUESTIONS.match(text):
         # Second-person-target questions are ambiguous between addressing
-        # Ultron and addressing a human in the room. Stay below the 0.8
+        # Kenning and addressing a human in the room. Stay below the 0.8
         # short-circuit threshold so the zero-shot fallback can decide.
         return RuleHit(
             AddressingDecision.UNCERTAIN, 0.55, "second-person question (ambiguous)"
@@ -312,10 +312,10 @@ def explain_rules() -> List[Tuple[str, str]]:
     ``(rule_name, summary)`` for documentation."""
     return [
         ("phone_openers", "interpersonal openers like 'hey mom', 'yo', \"it's me\""),
-        ("third_person_mention", "'Ultron said ...', talking about Ultron not to him"),
-        ("third_party_narrative", "'I'm talking to him', 'got him to ...', 'you'll see' -- narrating Ultron to a third party"),
+        ("third_person_mention", "'Kenning said ...', talking about Kenning not to him"),
+        ("third_party_narrative", "'I'm talking to him', 'got him to ...', 'you'll see' -- narrating Kenning to a third party"),
         ("interjections", "'oh god', 'lol', 'shit' -- self-talk"),
-        ("direct_address", "starts with 'Ultron, ...' (vocative)"),
+        ("direct_address", "starts with 'Kenning, ...' (vocative)"),
         ("imperative_verbs", "starts with command verb: play, find, turn on, ..."),
         ("question_stems", "starts with what/who/how/why/can you/..."),
         ("continuation_tokens", "single-word answers: yes, no, ok, do that, ..."),

@@ -1,4 +1,4 @@
-"""Allow-list of well-known root-level files plus ultron-specific
+"""Allow-list of well-known root-level files plus kenning-specific
 operational files.
 
 The list is informed by aider's ``aider/special.py`` (Apache 2.0; see
@@ -6,19 +6,19 @@ The list is informed by aider's ``aider/special.py`` (Apache 2.0; see
 
   * Modern Python tooling that post-dates aider's snapshot
     (``uv.lock``, ``ruff.toml``, ``conda-lock.yml``).
-  * Ultron-internal operational files (``CLAUDE.md``,
+  * Kenning-internal operational files (``CLAUDE.md``,
     ``docs/codebase_structure.md``, ``MEMORY.md``, ``SOUL.md``,
     ``THIRD_PARTY_NOTICES.md``, ``config.yaml``).
 
-Purpose: when ultron snapshots an arbitrary project on disk
-(:mod:`ultron.coding.project_introspect`) or ranks files for a repo
-map (:mod:`ultron.coding.repo_map`, batch 2), the README, the manifest,
+Purpose: when kenning snapshots an arbitrary project on disk
+(:mod:`kenning.coding.project_introspect`) or ranks files for a repo
+map (:mod:`kenning.coding.repo_map`, batch 2), the README, the manifest,
 the linter config and similar "what is this project" files should
 always be near the top — even when nobody references them and they
 have no inbound edges in the PageRank graph. They tell you what the
 project IS.
 
-For ultron's own source tree the operational files extend that idea:
+For kenning's own source tree the operational files extend that idea:
 ``CLAUDE.md`` is the orientation document, ``docs/codebase_structure.md``
 is the authoritative module map, ``MEMORY.md`` is the cross-session
 context index. None are referenced by ``__import__`` but all are
@@ -88,23 +88,23 @@ _IMPORTANT_FILENAMES_LIST = (
     "requirements_dev.txt",
     "Pipfile",
     "Pipfile.lock",
-    "uv.lock",            # ultron extension (modern)
+    "uv.lock",            # kenning extension (modern)
     "poetry.lock",
-    "conda-lock.yml",     # ultron extension
+    "conda-lock.yml",     # kenning extension
     "environment.yml",
     "environment.yaml",
     "tox.ini",
     "pytest.ini",
     "mypy.ini",
-    "ruff.toml",          # ultron extension
+    "ruff.toml",          # kenning extension
     ".python-version",
     "MANIFEST.in",
     # JavaScript / TypeScript tooling
     "package.json",
     "package-lock.json",
     "yarn.lock",
-    "pnpm-lock.yaml",     # ultron extension
-    "bun.lockb",          # ultron extension
+    "pnpm-lock.yaml",     # kenning extension
+    "bun.lockb",          # kenning extension
     "npm-shrinkwrap.json",
     "tsconfig.json",
     "jsconfig.json",
@@ -113,8 +113,8 @@ _IMPORTANT_FILENAMES_LIST = (
     "babel.config.json",
     "webpack.config.js",
     "rollup.config.js",
-    "vite.config.js",     # ultron extension
-    "vite.config.ts",     # ultron extension
+    "vite.config.js",     # kenning extension
+    "vite.config.ts",     # kenning extension
     "next.config.js",
     "nuxt.config.js",
     "vue.config.js",
@@ -185,8 +185,8 @@ _IMPORTANT_FILENAMES_LIST = (
     "compose.yml",
     # Build automation
     "Makefile",
-    "Justfile",           # ultron extension
-    "Taskfile.yml",       # ultron extension
+    "Justfile",           # kenning extension
+    "Taskfile.yml",       # kenning extension
     "gulpfile.js",
     "Gruntfile.js",
     "parcel.config.js",
@@ -205,7 +205,7 @@ _IMPORTANT_FILENAMES_LIST = (
     "ansible.cfg",
     "kubernetes.yaml",
     "k8s.yaml",
-    "skaffold.yaml",      # ultron extension
+    "skaffold.yaml",      # kenning extension
     # CI / CD
     ".travis.yml",
     ".gitlab-ci.yml",
@@ -220,10 +220,10 @@ _IMPORTANT_FILENAMES_LIST = (
     "phpunit.xml",
     "karma.conf.js",
     "jest.config.js",
-    "jest.config.ts",     # ultron extension
-    "vitest.config.ts",   # ultron extension
+    "jest.config.ts",     # kenning extension
+    "vitest.config.ts",   # kenning extension
     "cypress.json",
-    "cypress.config.js",  # ultron extension
+    "cypress.config.js",  # kenning extension
     "playwright.config.ts",
     ".nycrc",
     ".nycrc.json",
@@ -231,7 +231,7 @@ _IMPORTANT_FILENAMES_LIST = (
     "schema.sql",
     "liquibase.properties",
     "flyway.conf",
-    "alembic.ini",        # ultron extension
+    "alembic.ini",        # kenning extension
     # API docs
     "swagger.yaml",
     "swagger.json",
@@ -240,7 +240,7 @@ _IMPORTANT_FILENAMES_LIST = (
     # Misc package registries / runtime
     ".nvmrc",
     ".ruby-version",
-    ".node-version",      # ultron extension
+    ".node-version",      # kenning extension
     "Vagrantfile",
     "_config.yml",
     "mkdocs.yml",
@@ -255,8 +255,8 @@ _IMPORTANT_FILENAMES_LIST = (
     ".gitkeep",
     ".npmignore",
     ".codeclimate.yml",
-    # Ultron-specific operational files (only relevant when the
-    # project on disk IS ultron itself, but harmless elsewhere).
+    # Kenning-specific operational files (only relevant when the
+    # project on disk IS kenning itself, but harmless elsewhere).
     "CLAUDE.md",
     "MEMORY.md",
     "SOUL.md",

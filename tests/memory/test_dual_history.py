@@ -1,10 +1,10 @@
-"""Tests for ultron.memory.dual_history."""
+"""Tests for kenning.memory.dual_history."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.memory import dual_history as dh
+from kenning.memory import dual_history as dh
 
 
 # ---------------------------------------------------------------------------

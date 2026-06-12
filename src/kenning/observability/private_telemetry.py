@@ -2,7 +2,7 @@
 
 T15 (openclaw-clawhub catalog port; see ``THIRD_PARTY_NOTICES.md``).
 The upstream marketplace's privacy-preserving telemetry shape
-generalised into ultron's internal per-session metrics. The
+generalised into kenning's internal per-session metrics. The
 contract: every identifier that could leak into outbound or
 log-readable surfaces is **hashed at the type boundary**; raw
 paths / user text / response bodies never become :class:`HashedRootId`
@@ -19,7 +19,7 @@ Five architectural pieces:
 
 2. **Hash primitives** (:func:`hash_root`, :func:`hash_skill_slug`).
    Stable SHA-256 with a deployment-specific salt so the same
-   root path on a different ultron install hashes differently
+   root path on a different kenning install hashes differently
    (prevents cross-install correlation if a future federation
    endpoint ships). Salt lives in
    ``data/observability/telemetry_salt.txt`` -- generated on first
@@ -48,8 +48,8 @@ store). Tests verify the type boundary via mock-fetch round
 trips.
 
 Module-level :func:`is_telemetry_enabled` consults
-``ULTRON_TELEMETRY`` env var; default is fail-private (telemetry
-disabled). Operators opt in by setting ``ULTRON_TELEMETRY=opt-in``
+``KENNING_TELEMETRY`` env var; default is fail-private (telemetry
+disabled). Operators opt in by setting ``KENNING_TELEMETRY=opt-in``
 explicitly.
 """
 
@@ -99,10 +99,10 @@ TELEMETRY_EVENTS_FILENAME: str = "private_metrics.jsonl"
 
 #: Env var operators set to opt in to telemetry collection. Default
 #: behaviour (env unset or any other value) is telemetry-disabled.
-TELEMETRY_ENABLE_ENV: str = "ULTRON_TELEMETRY"
+TELEMETRY_ENABLE_ENV: str = "KENNING_TELEMETRY"
 
 #: Explicit opt-in token. Anything else (incl. the legacy
-#: ``ULTRON_DISABLE_TELEMETRY`` style) leaves telemetry off.
+#: ``KENNING_DISABLE_TELEMETRY`` style) leaves telemetry off.
 TELEMETRY_ENABLE_OPT_IN_TOKEN: str = "opt-in"
 
 
@@ -123,7 +123,7 @@ class RawPathLeakError(RuntimeError):
         super().__init__(
             f"raw value supplied for hashed field {field_name!r}: "
             f"len={len(value)} chars. Hash via "
-            "ultron.observability.hash_root/hash_skill_slug first."
+            "kenning.observability.hash_root/hash_skill_slug first."
         )
         self.field_name = field_name
 
@@ -151,7 +151,7 @@ def _read_or_create_salt(project_root: Path) -> str:
     persisted to ``data/observability/telemetry_salt.txt``.
     Subsequent calls read the cached value. Salt prevents cross-
     install correlation if telemetry ever ships off-machine: the
-    same root path on two different ultron installs hashes
+    same root path on two different kenning installs hashes
     differently.
     """
     path = _salt_path(project_root)
@@ -191,7 +191,7 @@ def hash_root(path: str | Path, *, project_root: Path) -> HashedRootId:
 
     The salt is read (or generated) from
     ``<project_root>/data/observability/telemetry_salt.txt`` so the
-    same root path on a different ultron install hashes
+    same root path on a different kenning install hashes
     differently. Empty / whitespace-only paths return the all-zeros
     hash (never raises) so callers don't need a separate empty
     branch.
@@ -343,7 +343,7 @@ def _is_safe_attribute(key: str, value: object) -> bool:
 def is_telemetry_enabled(env: Optional[Mapping[str, str]] = None) -> bool:
     """Return True iff the operator has explicitly opted in.
 
-    Reads :data:`TELEMETRY_ENABLE_ENV` (``ULTRON_TELEMETRY``).
+    Reads :data:`TELEMETRY_ENABLE_ENV` (``KENNING_TELEMETRY``).
     Default behaviour (env unset, set to empty, or set to anything
     other than :data:`TELEMETRY_ENABLE_OPT_IN_TOKEN`) is
     telemetry-disabled.

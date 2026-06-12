@@ -1,4 +1,4 @@
-"""Tests for ultron.safety.ignore."""
+"""Tests for kenning.safety.ignore."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.safety import ignore as ig
+from kenning.safety import ignore as ig
 
 
 @pytest.fixture(autouse=True)
@@ -32,26 +32,26 @@ class TestLayers:
         assert verdict.ignored is False
 
     def test_workspace_layer_blocks(self, tmp_path: Path) -> None:
-        _write_ignore(tmp_path / ".ultronignore", "secrets/\n*.key\n")
+        _write_ignore(tmp_path / ".kenningignore", "secrets/\n*.key\n")
         ctl = ig.IgnoreController(tmp_path, global_path=tmp_path / "absent")
         assert ctl.check_path(tmp_path / "secrets" / "api.txt").ignored is True
         assert ctl.check_path(tmp_path / "private.key").ignored is True
         assert ctl.check_path(tmp_path / "src" / "a.py").ignored is False
 
     def test_project_layer_blocks(self, tmp_path: Path) -> None:
-        _write_ignore(tmp_path / ".ultron" / ".ultronignore", "data/\n")
+        _write_ignore(tmp_path / ".kenning" / ".kenningignore", "data/\n")
         ctl = ig.IgnoreController(tmp_path, global_path=tmp_path / "absent")
         assert ctl.check_path(tmp_path / "data" / "x.csv").ignored is True
         assert ctl.check_path(tmp_path / "src" / "a.py").ignored is False
 
     def test_global_layer_blocks(self, tmp_path: Path) -> None:
-        global_path = tmp_path / "global" / ".ultronignore"
+        global_path = tmp_path / "global" / ".kenningignore"
         _write_ignore(global_path, "*.pem\n")
         ctl = ig.IgnoreController(tmp_path, global_path=global_path)
         assert ctl.check_path(tmp_path / "key.pem").ignored is True
 
     def test_matched_layer_and_pattern(self, tmp_path: Path) -> None:
-        _write_ignore(tmp_path / ".ultronignore", "private/\n")
+        _write_ignore(tmp_path / ".kenningignore", "private/\n")
         ctl = ig.IgnoreController(tmp_path, global_path=tmp_path / "absent")
         v = ctl.check_path(tmp_path / "private" / "x")
         assert v.ignored is True
@@ -59,7 +59,7 @@ class TestLayers:
         assert "private" in v.matched_pattern
 
     def test_mtime_invalidation_drops_stale_cache(self, tmp_path: Path) -> None:
-        ignore_file = tmp_path / ".ultronignore"
+        ignore_file = tmp_path / ".kenningignore"
         _write_ignore(ignore_file, "a/\n")
         ctl = ig.IgnoreController(tmp_path, global_path=tmp_path / "absent")
         assert ctl.check_path(tmp_path / "a" / "x").ignored is True
@@ -71,7 +71,7 @@ class TestLayers:
         assert ctl.check_path(tmp_path / "a" / "x").ignored is False
 
     def test_invalidate_forces_reread(self, tmp_path: Path) -> None:
-        _write_ignore(tmp_path / ".ultronignore", "a/\n")
+        _write_ignore(tmp_path / ".kenningignore", "a/\n")
         ctl = ig.IgnoreController(tmp_path, global_path=tmp_path / "absent")
         ctl.check_path(tmp_path / "a")
         ctl.invalidate()
@@ -95,24 +95,24 @@ class TestInclude:
         base = tmp_path / "base.ignore"
         _write_ignore(base, "private/\n")
         _write_ignore(
-            tmp_path / ".ultronignore", f"!include {base.name}\n*.key\n",
+            tmp_path / ".kenningignore", f"!include {base.name}\n*.key\n",
         )
         ctl = ig.IgnoreController(tmp_path, global_path=tmp_path / "absent")
         assert ctl.check_path(tmp_path / "private" / "x").ignored is True
         assert ctl.check_path(tmp_path / "a.key").ignored is True
 
     def test_include_cycle_terminates(self, tmp_path: Path) -> None:
-        a = tmp_path / ".ultronignore"
+        a = tmp_path / ".kenningignore"
         b = tmp_path / "other"
         _write_ignore(a, "!include other\n*.key\n")
-        _write_ignore(b, "!include .ultronignore\n*.pem\n")
+        _write_ignore(b, "!include .kenningignore\n*.pem\n")
         ctl = ig.IgnoreController(tmp_path, global_path=tmp_path / "absent")
         # Should not infinite-loop and should pick up patterns from both.
         assert ctl.check_path(tmp_path / "a.key").ignored is True
         assert ctl.check_path(tmp_path / "a.pem").ignored is True
 
     def test_include_missing_file_quiet(self, tmp_path: Path) -> None:
-        _write_ignore(tmp_path / ".ultronignore", "!include nonexistent\n*.bad\n")
+        _write_ignore(tmp_path / ".kenningignore", "!include nonexistent\n*.bad\n")
         ctl = ig.IgnoreController(tmp_path, global_path=tmp_path / "absent")
         assert ctl.check_path(tmp_path / "x.bad").ignored is True
 
@@ -123,7 +123,7 @@ class TestInclude:
 
 class TestFilterPaths:
     def test_filter_paths_keeps_allowed(self, tmp_path: Path) -> None:
-        _write_ignore(tmp_path / ".ultronignore", "secrets/\n")
+        _write_ignore(tmp_path / ".kenningignore", "secrets/\n")
         ctl = ig.IgnoreController(tmp_path, global_path=tmp_path / "absent")
         all_paths = [
             tmp_path / "secrets" / "a.txt",
@@ -137,7 +137,7 @@ class TestFilterPaths:
         assert all("secrets" not in p for p in kept)
 
     def test_is_path_allowed_inverse(self, tmp_path: Path) -> None:
-        _write_ignore(tmp_path / ".ultronignore", "*.key\n")
+        _write_ignore(tmp_path / ".kenningignore", "*.key\n")
         ctl = ig.IgnoreController(tmp_path, global_path=tmp_path / "absent")
         assert ctl.is_path_allowed(tmp_path / "a.py") is True
         assert ctl.is_path_allowed(tmp_path / "a.key") is False
@@ -163,7 +163,7 @@ class TestValidateCommand:
         assert v.program == "echo"
 
     def test_cat_with_blocked_path(self, tmp_path: Path) -> None:
-        _write_ignore(tmp_path / ".ultronignore", "*.key\n")
+        _write_ignore(tmp_path / ".kenningignore", "*.key\n")
         ctl = ig.IgnoreController(tmp_path, global_path=tmp_path / "absent")
         v = ctl.validate_command("cat secrets.key")
         assert v.denied_path == "secrets.key"
@@ -171,20 +171,20 @@ class TestValidateCommand:
         assert "workspace" in v.reason
 
     def test_cat_with_allowed_path(self, tmp_path: Path) -> None:
-        _write_ignore(tmp_path / ".ultronignore", "*.key\n")
+        _write_ignore(tmp_path / ".kenningignore", "*.key\n")
         ctl = ig.IgnoreController(tmp_path, global_path=tmp_path / "absent")
         v = ctl.validate_command("cat README.md")
         assert v.denied_path is None
 
     def test_powershell_aliases_recognised(self, tmp_path: Path) -> None:
-        _write_ignore(tmp_path / ".ultronignore", "*.key\n")
+        _write_ignore(tmp_path / ".kenningignore", "*.key\n")
         ctl = ig.IgnoreController(tmp_path, global_path=tmp_path / "absent")
         for cmd_form in ("gc secrets.key", "Get-Content secrets.key", "type secrets.key"):
             v = ctl.validate_command(cmd_form)
             assert v.denied_path == "secrets.key"
 
     def test_flags_skipped(self, tmp_path: Path) -> None:
-        _write_ignore(tmp_path / ".ultronignore", "*.key\n")
+        _write_ignore(tmp_path / ".kenningignore", "*.key\n")
         ctl = ig.IgnoreController(tmp_path, global_path=tmp_path / "absent")
         # The flag `-n` should not be treated as a path even though it
         # could match a glob; the path arg behind it should be checked.
@@ -198,7 +198,7 @@ class TestValidateCommand:
         assert v.denied_path is None
 
     def test_exe_suffix_stripped(self, tmp_path: Path) -> None:
-        _write_ignore(tmp_path / ".ultronignore", "*.key\n")
+        _write_ignore(tmp_path / ".kenningignore", "*.key\n")
         ctl = ig.IgnoreController(tmp_path, global_path=tmp_path / "absent")
         v = ctl.validate_command("C:/bin/cat.exe secrets.key")
         assert v.program == "cat"
@@ -231,7 +231,7 @@ class TestRegistry:
 
 class TestConstants:
     def test_default_ignore_filename(self) -> None:
-        assert ig.DEFAULT_IGNORE_FILENAME == ".ultronignore"
+        assert ig.DEFAULT_IGNORE_FILENAME == ".kenningignore"
 
     def test_command_set_populated(self) -> None:
         assert "cat" in ig.COMMANDS_THAT_READ_FILES

@@ -4,12 +4,12 @@ T10 (openclaw-clawhub catalog port; see ``THIRD_PARTY_NOTICES.md``).
 Closes the "did anyone edit this skill since install?" gap. Every
 install writes two files:
 
-1. **Lockfile** at ``<workdir>/.ultron/lock.json`` — the workdir-scoped
+1. **Lockfile** at ``<workdir>/.kenning/lock.json`` — the workdir-scoped
    "what's currently installed" registry. Keyed by slug; each entry
    carries ``version``, ``installedAt`` (Unix milliseconds), and the
    optional T11 ``pinned`` / ``pinReason`` fields.
 2. **Per-skill origin manifest** at
-   ``<skill_dir>/.ultron/origin.json`` — the skill-self-attestation:
+   ``<skill_dir>/.kenning/origin.json`` — the skill-self-attestation:
    where did I come from, what version did I install as, what content
    fingerprint did I have. Used for drift detection: at load time the
    registry recomputes the fingerprint and compares to the origin; a
@@ -25,7 +25,7 @@ file is absent rather than raising, so callers don't need a separate
 Content fingerprint algorithm (matches the upstream pattern):
 
 1. Walk the skill directory; collect every text file. Skip
-   ``.git/``, ``.ultron/``, ``node_modules/``, ``.venv/``,
+   ``.git/``, ``.kenning/``, ``node_modules/``, ``.venv/``,
    ``__pycache__/``, hidden files (``.foo``), and known binary
    extensions.
 2. For each surviving file, compute ``sha256(bytes)``.
@@ -35,7 +35,7 @@ Content fingerprint algorithm (matches the upstream pattern):
 4. The fingerprint is ``sha256(payload).hexdigest()``.
 
 This module is pure data + pure IO. No catalog logic; callers
-(:mod:`ultron.skills.registry`, the future install scanner, the
+(:mod:`kenning.skills.registry`, the future install scanner, the
 voice-baseline-lock guard at orchestrator startup) compose the
 helpers without touching the underlying schema.
 """
@@ -56,10 +56,10 @@ LOGGER = logging.getLogger(__name__)
 #: when the on-disk shape changes incompatibly.
 LOCKFILE_SCHEMA_VERSION: int = 1
 
-#: Directory name carrying ultron-managed install state. Sibling to
+#: Directory name carrying kenning-managed install state. Sibling to
 #: any upstream ``.clawhub/`` / ``.clawdhub/`` directories which we
-#: do NOT consume (ultron runs its own state).
-ULTRON_STATE_DIRNAME: str = ".ultron"
+#: do NOT consume (kenning runs its own state).
+KENNING_STATE_DIRNAME: str = ".kenning"
 
 #: Filename for the workdir-scoped lockfile.
 LOCKFILE_NAME: str = "lock.json"
@@ -72,7 +72,7 @@ _FINGERPRINT_SKIP_DIRS: frozenset[str] = frozenset({
     ".git",
     ".hg",
     ".svn",
-    ".ultron",
+    ".kenning",
     ".clawhub",
     ".clawdhub",
     "node_modules",
@@ -295,13 +295,13 @@ class SkillOrigin:
 
 
 def workdir_lockfile_path(workdir: Path) -> Path:
-    """Return the canonical lockfile path under ``<workdir>/.ultron/``."""
-    return Path(workdir) / ULTRON_STATE_DIRNAME / LOCKFILE_NAME
+    """Return the canonical lockfile path under ``<workdir>/.kenning/``."""
+    return Path(workdir) / KENNING_STATE_DIRNAME / LOCKFILE_NAME
 
 
 def skill_origin_path(skill_dir: Path) -> Path:
-    """Return the canonical origin manifest path under ``<skill_dir>/.ultron/``."""
-    return Path(skill_dir) / ULTRON_STATE_DIRNAME / ORIGIN_NAME
+    """Return the canonical origin manifest path under ``<skill_dir>/.kenning/``."""
+    return Path(skill_dir) / KENNING_STATE_DIRNAME / ORIGIN_NAME
 
 
 # ---------------------------------------------------------------------------
@@ -362,7 +362,7 @@ def _to_int(value: object, *, default: int) -> int:
 
 
 def read_lockfile(workdir: Path) -> Lockfile:
-    """Return the lockfile at ``<workdir>/.ultron/lock.json`` (default if absent).
+    """Return the lockfile at ``<workdir>/.kenning/lock.json`` (default if absent).
 
     Fail-open: malformed / unreadable files return a default-empty
     lockfile and log WARN. Callers don't need to special-case
@@ -430,7 +430,7 @@ def is_likely_text_file(path: Path) -> bool:
 def iter_text_files(root: Path) -> Iterable[Path]:
     """Yield every text file under ``root`` in deterministic order.
 
-    Skips the directory blocklist (``.git``, ``.ultron``,
+    Skips the directory blocklist (``.git``, ``.kenning``,
     ``node_modules``, etc.), hidden filenames (``.foo``), and
     suspected binaries (via :func:`is_likely_text_file`).
     """
@@ -572,7 +572,7 @@ class FingerprintDriftReport:
 
 __all__ = [
     "LOCKFILE_SCHEMA_VERSION",
-    "ULTRON_STATE_DIRNAME",
+    "KENNING_STATE_DIRNAME",
     "LOCKFILE_NAME",
     "ORIGIN_NAME",
     "LockfileEntry",

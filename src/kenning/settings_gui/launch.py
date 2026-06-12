@@ -15,7 +15,7 @@ import subprocess
 import sys
 from typing import Callable, Optional
 
-logger = logging.getLogger("ultron.settings_gui.launch")
+logger = logging.getLogger("kenning.settings_gui.launch")
 
 __all__ = ["match_settings_command", "launch_gui", "close_gui"]
 
@@ -73,7 +73,7 @@ def launch_gui(
     try:
         from pathlib import Path
 
-        from ultron.config import PROJECT_ROOT
+        from kenning.config import PROJECT_ROOT
 
         # No console window: prefer pythonw.exe (GUI-subsystem python,
         # never allocates a console); fall back to python.exe with
@@ -89,7 +89,7 @@ def launch_gui(
             creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
         spawn = spawn_fn or subprocess.Popen
         proc = spawn(
-            [interpreter, "-m", "ultron.settings_gui"],
+            [interpreter, "-m", "kenning.settings_gui"],
             cwd=str(PROJECT_ROOT),
             creationflags=creationflags,
             close_fds=True,
@@ -121,7 +121,7 @@ def close_gui(
         return False
     try:
         if kill_fn is None:
-            from ultron.subprocess.kill_tree import kill_process_tree
+            from kenning.subprocess.kill_tree import kill_process_tree
 
             kill_fn = kill_process_tree
         kill_fn(pid)

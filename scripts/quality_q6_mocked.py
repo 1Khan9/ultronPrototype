@@ -35,7 +35,7 @@ _MAIN = Path(r"C:\STC\ultronPrototype")
 sys.path.insert(0, str(_MAIN))
 sys.path.insert(0, str(_WORKTREE_ROOT / "src"))
 
-import ultron.config as _cfg_mod
+import kenning.config as _cfg_mod
 _cfg_mod.PROJECT_ROOT = _MAIN
 _cfg_mod.MODELS_DIR = _MAIN / "models"
 _cfg_mod.LOGS_DIR = _MAIN / "logs"
@@ -49,8 +49,8 @@ _cfg_mod.DEFAULT_CONFIG_PATH = _MAIN / "config.yaml"
 def run_q9b_phrases() -> dict[str, Any]:
     print("\n[Q9.B] Error phrase pool integrity")
     print("-" * 60)
-    from ultron.resilience.phrases import phrase_for, reset_phrase_cache
-    from ultron.config import get_config
+    from kenning.resilience.phrases import phrase_for, reset_phrase_cache
+    from kenning.config import get_config
 
     cfg = get_config()
     phrase_pools = cfg.error_phrases.model_dump() if hasattr(cfg.error_phrases, "model_dump") else dict(cfg.error_phrases.__dict__)
@@ -94,9 +94,9 @@ def run_q9b_phrases() -> dict[str, Any]:
 def run_q9c_browser_parsing() -> dict[str, Any]:
     print("\n[Q9.C] Browser-tool result-parsing fidelity")
     print("-" * 60)
-    from ultron.openclaw_bridge.browser import BrowserTool
-    from ultron.openclaw_bridge.client import ToolInvocationResult
-    from ultron.errors import OpenClawToolError
+    from kenning.openclaw_bridge.browser import BrowserTool
+    from kenning.openclaw_bridge.client import ToolInvocationResult
+    from kenning.errors import OpenClawToolError
 
     # Use a duck-typed fake client object that returns ToolInvocationResult
     class FakeClient:
@@ -170,8 +170,8 @@ def run_q9c_browser_parsing() -> dict[str, Any]:
 def run_q9d_slug_routing() -> dict[str, Any]:
     print("\n[Q9.D] Desktop / Window slug routing")
     print("-" * 60)
-    from ultron.openclaw_bridge.desktop import DesktopTool, WindowControlTool
-    from ultron.config import get_config
+    from kenning.openclaw_bridge.desktop import DesktopTool, WindowControlTool
+    from kenning.config import get_config
     cfg = get_config()
 
     invocations: list[tuple[str, str]] = []
@@ -229,8 +229,8 @@ def run_q9d_slug_routing() -> dict[str, Any]:
 def run_q9e_gaming_mode() -> dict[str, Any]:
     print("\n[Q9.E] Gaming-mode engage/disengage roundtrip")
     print("-" * 60)
-    from ultron.openclaw_routing.gaming_mode import GamingModeManager, GamingModeStatus
-    from ultron.openclaw_bridge.client import PluginToggleResult
+    from kenning.openclaw_routing.gaming_mode import GamingModeManager, GamingModeStatus
+    from kenning.openclaw_bridge.client import PluginToggleResult
     import asyncio
 
     enable_calls: list[str] = []
@@ -291,8 +291,8 @@ def run_q9e_gaming_mode() -> dict[str, Any]:
 def run_q6a_coordinator() -> dict[str, Any]:
     print("\n[Q6.A] Coordinator decision routing (DecisionPath exhaustion)")
     print("-" * 60)
-    from ultron.coding.coordinator import ConversationCoordinator
-    from ultron.coding.session import (
+    from kenning.coding.coordinator import ConversationCoordinator
+    from kenning.coding.session import (
         ProjectSession, ClarificationRequest, SessionStatus, SessionStore,
     )
 
@@ -368,8 +368,8 @@ def run_q6a_coordinator() -> dict[str, Any]:
 def run_q6b_verifier() -> dict[str, Any]:
     print("\n[Q6.B] Verifier discrimination")
     print("-" * 60)
-    from ultron.coding.verification import Verifier
-    from ultron.coding.session import (
+    from kenning.coding.verification import Verifier
+    from kenning.coding.session import (
         ProjectSession, SessionStatus, FileRecord, SessionStore,
     )
 
@@ -458,8 +458,8 @@ def run_q6b_verifier() -> dict[str, Any]:
 def run_q6c_narrator() -> dict[str, Any]:
     print("\n[Q6.C] StatusNarrator clarity")
     print("-" * 60)
-    from ultron.coding.narration import StatusNarrator
-    from ultron.coding.session import (
+    from kenning.coding.narration import StatusNarrator
+    from kenning.coding.session import (
         ProjectSession, SessionStatus, FileRecord, StageRecord, SessionStore,
     )
 
@@ -528,14 +528,14 @@ def run_q6c_narrator() -> dict[str, Any]:
 def run_q6d_projections() -> dict[str, Any]:
     print("\n[Q6.D] Projection budget compliance under stress")
     print("-" * 60)
-    from ultron.coding.projections import (
+    from kenning.coding.projections import (
         project_clarification_context,
         project_status_delta,
         project_adjustment_context,
         project_correction_context,
         project_completion_context,
     )
-    from ultron.coding.session import (
+    from kenning.coding.session import (
         ProjectSession, SessionStatus, FileRecord, StageRecord,
         ClarificationRequest, AdjustmentRecord, SessionStore,
     )

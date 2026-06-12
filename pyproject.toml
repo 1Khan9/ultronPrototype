@@ -3,13 +3,13 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ultron"
+name = "kenning"
 version = "0.1.0"
 description = "Local voice-first AI assistant prototype"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Ultron Project" }]
+authors = [{ name = "Kenning Project" }]
 dependencies = [
     "numpy>=1.24,<2.0",
     "sounddevice>=0.4.6",
@@ -55,7 +55,7 @@ dev = [
 ]
 
 [project.scripts]
-ultron = "ultron.__main__:main"
+kenning = "kenning.__main__:main"
 # scripts/cleanup_stale_processes.py is invoked directly
 # (`python scripts/cleanup_stale_processes.py`); not registered here
 # because scripts/ is not a package.

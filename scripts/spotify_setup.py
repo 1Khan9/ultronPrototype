@@ -1,8 +1,8 @@
-"""One-time Spotify authorization for Ultron.
+"""One-time Spotify authorization for Kenning.
 
 Opens the consent page in your browser, catches the redirect on a tiny
 local server, exchanges the code for a refresh token, and saves it into
-the gitignored credentials file (``~/.ultron/spotify.json``). Run once::
+the gitignored credentials file (``~/.kenning/spotify.json``). Run once::
 
     python scripts/spotify_setup.py
 
@@ -24,14 +24,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from ultron.spotify.auth import (  # noqa: E402
+from kenning.spotify.auth import (  # noqa: E402
     build_authorize_url,
     exchange_code,
     load_credentials,
     save_refresh_token,
 )
 
-DEFAULT_CREDS = "~/.ultron/spotify.json"
+DEFAULT_CREDS = "~/.kenning/spotify.json"
 
 
 def main() -> int:
@@ -49,7 +49,7 @@ def main() -> int:
             # carries ``code`` or ``error``.
             if "code" in q:
                 captured["code"] = q["code"][0]
-                body = b"Ultron is now connected to Spotify. You can close this tab."
+                body = b"Kenning is now connected to Spotify. You can close this tab."
             elif "error" in q:
                 captured["error"] = q["error"][0]
                 body = b"Authorization was denied. Check the console."
@@ -95,7 +95,7 @@ def main() -> int:
         print("No refresh token returned. Did you already authorize once?")
         return 1
     save_refresh_token(creds.path or creds_path, refresh)
-    print(f"Saved refresh token to {creds.path}. Ultron can now control Spotify.")
+    print(f"Saved refresh token to {creds.path}. Kenning can now control Spotify.")
     return 0
 
 

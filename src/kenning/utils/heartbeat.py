@@ -8,7 +8,7 @@ Protocol WebSocket alive by spawning a daemon thread that sends a cheap
 no-op (``Runtime.evaluate "1"``) every 60 s so the remote end's idle
 timeout never fires during a long-running task. This module generalises
 that pattern into a reusable, stoppable, fail-open primitive usable for
-ANY long-lived connection ultron holds open: the ``browser-use`` CLI
+ANY long-lived connection kenning holds open: the ``browser-use`` CLI
 daemon, the Parakeet STT HTTP server, the OpenClaw bridge -- anything
 with a server-side idle timeout that differs from the caller's
 expectation.
@@ -44,7 +44,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("utils.heartbeat")
 

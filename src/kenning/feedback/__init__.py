@@ -7,15 +7,15 @@ action routes through.
 
 This package ships:
 
-* :mod:`ultron.feedback.report_queue` — :class:`Report` +
+* :mod:`kenning.feedback.report_queue` — :class:`Report` +
   :class:`ReportQueue` with append-only JSONL persistence + SHA-256
-  hash chain (mirrors :mod:`ultron.safety.audit`).
-* :mod:`ultron.feedback.moderation_plan` — :class:`ModerationPlan`
+  hash chain (mirrors :mod:`kenning.safety.audit`).
+* :mod:`kenning.feedback.moderation_plan` — :class:`ModerationPlan`
   preview shape + :func:`render_plan_for_voice` + the gate decision
   predicate.
 """
 
-from ultron.feedback.moderation_plan import (
+from kenning.feedback.moderation_plan import (
     ImpactSeverity,
     ModerationPlan,
     PlanImpact,
@@ -24,7 +24,7 @@ from ultron.feedback.moderation_plan import (
     render_plan_for_voice,
     requires_confirmation,
 )
-from ultron.feedback.report_queue import (
+from kenning.feedback.report_queue import (
     FinalAction,
     Report,
     ReportQueue,

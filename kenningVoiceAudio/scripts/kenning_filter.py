@@ -1,7 +1,7 @@
-"""Ultron mechanical-voice post-processing filter chain.
+"""Kenning mechanical-voice post-processing filter chain.
 
 XTTS v2 (and Kokoro after fine-tuning) produces clean natural speech
-in the cloned voice character. The MCU Ultron voice has an additional
+in the cloned voice character. The MCU Kenning voice has an additional
 DSP processing layer on top -- the "robotic / mechanical / hollow
 metal cavity" character. This module is that processing layer.
 
@@ -16,7 +16,7 @@ delay, reverb, EQ); they differ in the parameter weights.
 
 Run as a CLI to A/B several presets against one input file:
 
-    python ultron_filter.py <input.wav> [<output_dir>]
+    python kenning_filter.py <input.wav> [<output_dir>]
 
 Outputs ``<input>__filter_v1_subtle.wav``, ``__v2_medium.wav``,
 ``__v3_heavy.wav`` (and a ``__v0_passthrough.wav`` for reference)
@@ -61,7 +61,7 @@ PresetName = Literal["v1_subtle", "v2_medium", "v3_heavy"]
 
 
 def _v1_subtle() -> Pedalboard:
-    """Light Ultron filter: noticeable but understated.
+    """Light Kenning filter: noticeable but understated.
 
     Use when the voice should feel "slightly enhanced" rather than
     obviously processed -- e.g., for casual / quiet utterances where
@@ -80,7 +80,7 @@ def _v1_subtle() -> Pedalboard:
 
 
 def _v2_medium() -> Pedalboard:
-    """Balanced Ultron filter: clearly mechanical, still clean.
+    """Balanced Kenning filter: clearly mechanical, still clean.
 
     Default-recommended starting point. Pitch slightly deeper, a small
     comb-style delay for the metallic edge, modest reverb body, mild
@@ -106,7 +106,7 @@ def _v2_medium() -> Pedalboard:
 
 
 def _v3_heavy() -> Pedalboard:
-    """Full Ultron filter: pronounced robotic processing.
+    """Full Kenning filter: pronounced robotic processing.
 
     Use when the voice should obviously sound like a machine -- when
     you want maximum character at the cost of some intelligibility
@@ -164,7 +164,7 @@ def apply_filter(
     preset: PresetName = "v2_medium",
     tail_silence_ms: float = 500.0,
 ) -> np.ndarray:
-    """Apply the Ultron filter chain to ``audio``.
+    """Apply the Kenning filter chain to ``audio``.
 
     Args:
         audio: 1-D mono float32 array in [-1, 1], OR shape
@@ -223,7 +223,7 @@ def apply_filter(
 
 def _cli(argv: list[str]) -> int:
     if len(argv) < 2:
-        print("usage: ultron_filter.py <input.wav> [<output_dir>]")
+        print("usage: kenning_filter.py <input.wav> [<output_dir>]")
         return 2
     src = Path(argv[1])
     if not src.is_file():

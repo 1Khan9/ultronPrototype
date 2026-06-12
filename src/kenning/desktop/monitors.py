@@ -30,7 +30,7 @@ from typing import Optional, Union
 import win32api  # type: ignore[import]
 import win32con  # type: ignore[import]
 
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("desktop.monitors")
 

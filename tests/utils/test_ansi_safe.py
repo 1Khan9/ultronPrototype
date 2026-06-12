@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.utils.ansi_safe import (
+from kenning.utils.ansi_safe import (
     grapheme_width,
     is_full_width,
     is_zero_width,
@@ -110,7 +110,7 @@ def test_sanitize_for_log_plain_unicode_passes_through() -> None:
 def test_sanitize_for_log_module_source_is_ascii_safe() -> None:
     """Sanity-check: the module body uses no literal control chars."""
     from pathlib import Path
-    src = Path(__file__).parent.parent.parent / "src" / "ultron" / "utils" / "ansi_safe.py"
+    src = Path(__file__).parent.parent.parent / "src" / "kenning" / "utils" / "ansi_safe.py"
     body = src.read_text(encoding="utf-8")
     for char in body:
         cp = ord(char)

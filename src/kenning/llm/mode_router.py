@@ -2,8 +2,8 @@
 
 Adapted from cline's ``buildApiHandler`` + ``planModeApiProvider`` vs
 ``actModeApiProvider`` per-task selection (Apache 2.0; see
-``THIRD_PARTY_NOTICES.md``). Ultron's variant maps an
-:class:`ultron.agent_loop.mode.Mode` to a preset name configured in
+``THIRD_PARTY_NOTICES.md``). Kenning's variant maps an
+:class:`kenning.agent_loop.mode.Mode` to a preset name configured in
 ``config.yaml:llm.presets`` and delegates the actual hot-swap to the
 existing :meth:`LLMEngine.reload_for_preset` path.
 
@@ -35,7 +35,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Optional
 
-from ultron.agent_loop.mode import Mode
+from kenning.agent_loop.mode import Mode
 
 
 @dataclass(frozen=True)
@@ -64,7 +64,7 @@ class PresetEntry:
 
 #: Default mode -> preset routes. Caller can override the entire map
 #: via :class:`ModeLLMRouter` constructor or per-entry via
-#: :meth:`ModeLLMRouter.set_preset`. The defaults match ultron's
+#: :meth:`ModeLLMRouter.set_preset`. The defaults match kenning's
 #: current standby (``qwen3.5-4b``) + gaming (``llama-3.2-3b-abliterated``)
 #: + coding-architect (uses the same standby preset but with lower
 #: temperature for determinism) layout.
@@ -126,7 +126,7 @@ PresetReloader = Callable[[str], tuple[bool, str]]
 
 #: Type for the "what preset is currently loaded?" callable. The
 #: orchestrator hands the router a closure that reads the engine's
-#: own state (or the active ``ULTRON_LLM_PRESET`` env var).
+#: own state (or the active ``KENNING_LLM_PRESET`` env var).
 PresetProbe = Callable[[], str]
 
 
@@ -136,7 +136,7 @@ class ModeLLMRouter:
     Args:
         reloader: callable that performs the actual preset swap. The
             real wiring uses
-            :meth:`ultron.llm.inference.LLMEngine.reload_for_preset`;
+            :meth:`kenning.llm.inference.LLMEngine.reload_for_preset`;
             tests pass a fake that records calls.
         active_preset_probe: callable that returns the preset name
             currently loaded. Lets the router skip the swap when the

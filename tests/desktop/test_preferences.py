@@ -1,4 +1,4 @@
-"""Tests for ultron.desktop.preferences."""
+"""Tests for kenning.desktop.preferences."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.desktop.preferences import (
+from kenning.desktop.preferences import (
     DesktopPreference,
     PreferenceLogger,
     _format_for_workspace,
@@ -211,7 +211,7 @@ def test_find_preference_reverse_substring(tmp_path):
     ))
     set_preference_logger(lg)
     try:
-        result = find_preference_for_phrase("hey ultron open chrome please")
+        result = find_preference_for_phrase("hey kenning open chrome please")
         assert result is not None
         assert result.user_phrase == "open chrome"
     finally:
@@ -339,7 +339,7 @@ def test_record_launch_preference_empty_phrase_rejected(tmp_path):
 def test_record_launch_preference_no_logger_singleton_returns_false(monkeypatch):
     set_preference_logger(None)
     monkeypatch.setattr(
-        "ultron.desktop.preferences.get_preference_logger", lambda **kw: None,
+        "kenning.desktop.preferences.get_preference_logger", lambda **kw: None,
     )
     assert record_launch_preference(
         user_phrase="x", app_name="chrome",

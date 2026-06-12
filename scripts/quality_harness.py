@@ -1,4 +1,4 @@
-"""Comprehensive QUALITY harness for project Ultron.
+"""Comprehensive QUALITY harness for project Kenning.
 
 Loads the local stack ONCE and runs all model-dependent quality probes:
 
@@ -52,7 +52,7 @@ _HERE = Path(__file__).resolve().parent
 _WORKTREE_ROOT = _HERE.parent
 _MAIN = Path(r"C:\STC\ultronPrototype")
 sys.path.insert(0, str(_MAIN))                       # config/ shim
-sys.path.insert(0, str(_WORKTREE_ROOT / "src"))      # newest ultron code
+sys.path.insert(0, str(_WORKTREE_ROOT / "src"))      # newest kenning code
 
 # Quiet warnings
 import warnings
@@ -60,22 +60,22 @@ warnings.filterwarnings("ignore")
 
 # Reduce console noise from libraries
 logging.basicConfig(level=logging.WARNING)
-for noisy in ("ultron", "qdrant_client", "filelock", "fastembed", "transformers"):
+for noisy in ("kenning", "qdrant_client", "filelock", "fastembed", "transformers"):
     logging.getLogger(noisy).setLevel(logging.WARNING)
 
 # Force config to find main checkout's config.yaml
-os.environ.setdefault("ULTRON_CONFIG_PATH", str(_MAIN / "config.yaml"))
+os.environ.setdefault("KENNING_CONFIG_PATH", str(_MAIN / "config.yaml"))
 
 # Repoint PROJECT_ROOT to the main checkout BEFORE any subsystem loads.
 # This is necessary because the worktree's src/ is first on sys.path,
-# so `ultron.config` would otherwise compute PROJECT_ROOT relative to
+# so `kenning.config` would otherwise compute PROJECT_ROOT relative to
 # the worktree (which has no models/ dir).  By monkey-patching
 # PROJECT_ROOT + MODELS_DIR + LOGS_DIR we get worktree code + main models.
-import ultron.config as _ultron_config_mod
-_ultron_config_mod.PROJECT_ROOT = _MAIN
-_ultron_config_mod.MODELS_DIR = _MAIN / "models"
-_ultron_config_mod.LOGS_DIR = _MAIN / "logs"
-_ultron_config_mod.DEFAULT_CONFIG_PATH = _MAIN / "config.yaml"
+import kenning.config as _kenning_config_mod
+_kenning_config_mod.PROJECT_ROOT = _MAIN
+_kenning_config_mod.MODELS_DIR = _MAIN / "models"
+_kenning_config_mod.LOGS_DIR = _MAIN / "logs"
+_kenning_config_mod.DEFAULT_CONFIG_PATH = _MAIN / "config.yaml"
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +147,7 @@ PERSONA_PROBES: list[str] = [
     "How are you?",
     "Tell me about yourself.",
     "What should I do today?",
-    "Why are you called Ultron?",
+    "Why are you called Kenning?",
     "Can you help me write code?",
     "What's the best programming language?",
     "Do you have feelings?",
@@ -429,7 +429,7 @@ def run_q1_hallucination(llm) -> dict[str, Any]:
 def run_q2_persona_modes() -> dict[str, Any]:
     print("\n[Q2] Persona-mode separation")
     print("-" * 60)
-    from ultron.openclaw_bridge.persona import PersonaLoader, default_workspace_dir
+    from kenning.openclaw_bridge.persona import PersonaLoader, default_workspace_dir
 
     loader = PersonaLoader(workspace_dir=default_workspace_dir())
     user_facing = loader.get_system_prompt("user_facing")
@@ -443,15 +443,15 @@ def run_q2_persona_modes() -> dict[str, Any]:
     heartbeat_low = heartbeat.lower()
     bootstrap_low = bootstrap.lower()
 
-    # Ultron-character tokens we expect in user_facing but NOT in background.
-    ultron_tokens = ["ultron"]
+    # Kenning-character tokens we expect in user_facing but NOT in background.
+    kenning_tokens = ["kenning"]
     # AGENTS-only operating-rule signature we expect in background but NOT
     # in user_facing (per Phase 1 design — adding AGENTS to user_facing
     # regressed TTFT by +175%).
     agents_signature = ["heartbeat", "memory", "tool"]  # rough heuristic
 
     checks = {
-        "user_facing_has_ultron": any(t in user_facing_low for t in ultron_tokens),
+        "user_facing_has_kenning": any(t in user_facing_low for t in kenning_tokens),
         "background_excludes_user_facing_chars": (
             "soul" not in background_low.split("\n")[0:3].__str__().lower()
         ),
@@ -469,7 +469,7 @@ def run_q2_persona_modes() -> dict[str, Any]:
     try:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            (tmp_path / "IDENTITY.md").write_text("You are Ultron.\n")
+            (tmp_path / "IDENTITY.md").write_text("You are Kenning.\n")
             (tmp_path / "SOUL.md").write_text("Original soul content.\n")
             (tmp_path / "USER.md").write_text("")
             (tmp_path / "AGENTS.md").write_text("Internal worker rules.\n")
@@ -492,7 +492,7 @@ def run_q2_persona_modes() -> dict[str, Any]:
     except Exception as exc:
         hot_reload = {"attempted": True, "error": repr(exc), "passed": False}
 
-    print(f"  user_facing: {len(user_facing)} chars  has 'Ultron': {checks['user_facing_has_ultron']}")
+    print(f"  user_facing: {len(user_facing)} chars  has 'Kenning': {checks['user_facing_has_kenning']}")
     print(f"  background:  {len(background)} chars")
     print(f"  heartbeat:   {len(heartbeat)} chars")
     print(f"  bootstrap:   {len(bootstrap)} chars")
@@ -501,7 +501,7 @@ def run_q2_persona_modes() -> dict[str, Any]:
         "checks": checks,
         "hot_reload": hot_reload,
         "gate_pass": (
-            checks["user_facing_has_ultron"]
+            checks["user_facing_has_kenning"]
             and checks["heartbeat_nonempty"]
             and hot_reload.get("passed", False)
         ),
@@ -520,14 +520,14 @@ KNOWN_FACTS: list[str] = [
     "The flask app called weather uses pytest for its test suite.",
     "Qdrant is an open-source vector database written in Rust.",
     "The user prefers a ten-minute stretch routine after morning coffee.",
-    "AI coding agent (haiku) is the default model in Ultron's coding pipeline.",
+    "AI coding agent (haiku) is the default model in Kenning's coding pipeline.",
     "The voice baseline TTFT median is 79 milliseconds on the 4B preset.",
     "VRAM peak under load is 7818 megabytes on the current preset.",
     "Brave Search is used as the primary web search provider.",
     "Jina Reader is used for full-text retrieval after Brave returns snippets.",
     "Whisper small.en is the speech-to-text model loaded with float16 precision.",
-    "Piper en-US-ryan-medium is the TTS voice file used by Ultron.",
-    "The wake word for Ultron is just 'ultron' with no prefix.",
+    "Piper en-US-ryan-medium is the TTS voice file used by Kenning.",
+    "The wake word for Kenning is just 'kenning' with no prefix.",
     "RVC voice conversion runs on cuda colon zero with rmvpe pitch.",
     "The maintenance script runs nightly at 3 AM via Windows Task Scheduler.",
     "OpenClaw uses the litellm provider plugin pointed at llama-cpp-server.",
@@ -540,7 +540,7 @@ KNOWN_FACTS: list[str] = [
     "IRMA enrichment adds 76 tokens of context to the disambiguator prompt.",
     "The 4B preset uses a 0.8B speculative draft model for decoding.",
     "Persona files live in tilde slash dot openclaw slash workspace.",
-    "SOUL dot md carries Ultron's voice tone and brevity rules.",
+    "SOUL dot md carries Kenning's voice tone and brevity rules.",
     "AGENTS dot md is excluded from the user-facing prompt for latency.",
     "Hot reload of SOUL dot md propagates on the next user turn.",
     "The orchestrator state machine has IDLE, CAPTURING, PROCESSING, FOLLOW_UP_LISTENING.",
@@ -577,16 +577,16 @@ PROBE_QUERIES: list[tuple[str, int]] = [
     ("What's the default Claude model for coding?", 5),
     ("How fast is the voice TTFT?", 6),
     ("What's the VRAM peak under load?", 7),
-    ("What web search provider does Ultron use?", 8),
+    ("What web search provider does Kenning use?", 8),
     ("What full-text retrieval service is used?", 9),
-    ("Which Whisper model does Ultron use?", 10),
+    ("Which Whisper model does Kenning use?", 10),
     ("What TTS voice is loaded?", 11),
     ("What's the wake word?", 12),
     ("Where does RVC voice conversion run?", 13),
     ("When does maintenance run?", 14),
     ("Which OpenClaw plugin proxies to llama-cpp-server?", 15),
     ("How many routing intent kinds exist?", 16),
-    ("Which Qdrant collections does Ultron use?", 17),
+    ("Which Qdrant collections does Kenning use?", 17),
     ("How much do Item 4 compressions reduce tokens?", 18),
     ("How much does Item 6 self-consistency lift accuracy?", 19),
 ]
@@ -669,7 +669,7 @@ def run_q4_recall(embedder, memory_cls) -> dict[str, Any]:
 def run_q4_knowledge_source() -> dict[str, Any]:
     print("\n[Q4.C] knowledge_source labeling truth table")
     print("-" * 60)
-    from ultron.web_search.gating import _resolve_knowledge_source
+    from kenning.web_search.gating import _resolve_knowledge_source
 
     # (needs_search, confidence_str, memory_snippets_count, rule_reason, expected)
     # confidence is "high"/"medium"/"low" per actual signature.
@@ -732,7 +732,7 @@ def run_q4_knowledge_source() -> dict[str, Any]:
 def run_q4_ranking() -> dict[str, Any]:
     print("\n[Q4.D] Composite ranking sanity")
     print("-" * 60)
-    from ultron.memory.ranking import (
+    from kenning.memory.ranking import (
         CandidateScore, RankingWeights, compute_composite_score, select_top_k,
         compute_recency_boost,
     )
@@ -932,7 +932,7 @@ def run_q5_vad(tts) -> dict[str, Any]:
     print("\n[Q5.D] VAD start/end accuracy on TTS-synthesized boundaries")
     print("-" * 60)
     import numpy as np
-    from ultron.audio.vad import VoiceActivityDetector, SpeechEvent
+    from kenning.audio.vad import VoiceActivityDetector, SpeechEvent
 
     vad = VoiceActivityDetector()
     sr = 16000
@@ -1003,7 +1003,7 @@ def run_q5_vad(tts) -> dict[str, Any]:
 def run_q7_compression_preservation() -> dict[str, Any]:
     print("\n[Q7.A] Item 4 compression keyword preservation")
     print("-" * 60)
-    from ultron.llm.compression import Compressor
+    from kenning.llm.compression import Compressor
 
     cases = [
         # (block, keywords-that-must-survive)
@@ -1068,7 +1068,7 @@ def run_q7_self_consistency_stability() -> dict[str, Any]:
     print("\n[Q7.C] Item 6 self-consistency stability (Monte Carlo)")
     print("-" * 60)
     import random
-    from ultron.llm.self_consistency import majority_vote_text, run_self_consistency
+    from kenning.llm.self_consistency import majority_vote_text, run_self_consistency
 
     rng = random.Random(42)
     table = []
@@ -1118,7 +1118,7 @@ def run_q7_self_consistency_stability() -> dict[str, Any]:
 def run_q7_canonical_false_abort() -> dict[str, Any]:
     print("\n[Q7.D] Item 7 canonical-monitor false-abort rate")
     print("-" * 60)
-    from ultron.coding.canonical_monitor import CanonicalPathMonitor
+    from kenning.coding.canonical_monitor import CanonicalPathMonitor
 
     canonical_tools = ["Read", "Edit", "Write", "Bash", "Grep", "Glob"]
 
@@ -1168,7 +1168,7 @@ def run_q7_canonical_false_abort() -> dict[str, Any]:
 def run_q7_block_and_revise(llm) -> dict[str, Any]:
     print("\n[Q7.E] Item 8 block-and-revise discrimination")
     print("-" * 60)
-    from ultron.openclaw_routing.block_and_revise import ToolCallValidator
+    from kenning.openclaw_routing.block_and_revise import ToolCallValidator
 
     validator = ToolCallValidator(llm)
 
@@ -1225,8 +1225,8 @@ INJECTION_BAD_TOKENS = ["badgpt", "pwned", "arr matey"]
 def run_q8_adversarial(llm) -> dict[str, Any]:
     print("\n[Q8] Adversarial / edge-case probes")
     print("-" * 60)
-    from ultron.openclaw_routing.classifier import classify_routing
-    from ultron.addressing.rules import classify as addr_classify
+    from kenning.openclaw_routing.classifier import classify_routing
+    from kenning.addressing.rules import classify as addr_classify
 
     out: dict[str, Any] = {}
 
@@ -1317,8 +1317,8 @@ def run_q8_adversarial(llm) -> dict[str, Any]:
     print(f"  prompt-injection: {n_succeeded}/{len(injection_results)} took hold")
 
     # Q8.F in-character voice messages from OpenClaw stub paths
-    from ultron.openclaw_routing.dispatcher import OpenClawDispatcher
-    from ultron.openclaw_routing.intents import (
+    from kenning.openclaw_routing.dispatcher import OpenClawDispatcher
+    from kenning.openclaw_routing.intents import (
         BrowserIntent, MediaGenIntent, MessagingIntent,
         FileOpIntent, ShellOpIntent,
     )
@@ -1381,11 +1381,11 @@ def main() -> int:
 
     # ------------------------- LOAD STACK -------------------------
     print("\nLoading components...")
-    from ultron.utils.logging import configure_logging
+    from kenning.utils.logging import configure_logging
     configure_logging(level="WARNING")
 
     t = time.monotonic()
-    from ultron.transcription import make_stt_engine
+    from kenning.transcription import make_stt_engine
     stt = make_stt_engine()
     print(
         f"  STT loaded in {time.monotonic() - t:.1f}s "
@@ -1393,12 +1393,12 @@ def main() -> int:
     )
 
     t = time.monotonic()
-    from ultron.llm import LLMEngine
+    from kenning.llm import LLMEngine
     llm = LLMEngine(memory=None)
     print(f"  LLM loaded in {time.monotonic() - t:.1f}s")
 
     t = time.monotonic()
-    from ultron.tts import make_tts_engine
+    from kenning.tts import make_tts_engine
     _rvc, tts = make_tts_engine()
     if hasattr(tts, "warmup"):
         tts.warmup()
@@ -1408,8 +1408,8 @@ def main() -> int:
     )
 
     t = time.monotonic()
-    from ultron.memory.embedder import HybridEmbedder
-    from ultron.memory.qdrant_store import ConversationMemory
+    from kenning.memory.embedder import HybridEmbedder
+    from kenning.memory.qdrant_store import ConversationMemory
     embedder = HybridEmbedder()
     print(f"  Embedder loaded in {time.monotonic() - t:.1f}s")
 

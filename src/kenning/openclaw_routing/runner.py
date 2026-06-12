@@ -18,9 +18,9 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ultron.config import UltronConfig, get_config, resolve_path
-from ultron.openclaw_routing.dispatcher import OpenClawDispatcher
-from ultron.openclaw_routing.intents import (
+from kenning.config import KenningConfig, get_config, resolve_path
+from kenning.openclaw_routing.dispatcher import OpenClawDispatcher
+from kenning.openclaw_routing.intents import (
     BrowserIntent,
     DesktopIntent,
     DispatchResult,
@@ -34,7 +34,7 @@ from ultron.openclaw_routing.intents import (
     TaskInfo,
     WindowIntent,
 )
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("openclaw_routing.runner")
 
@@ -43,7 +43,7 @@ class AutomationTaskRunner:
     """Tracks OpenClaw-dispatched tasks and serves voice narration about them.
 
     Args:
-        config: full :class:`UltronConfig`; defaults to ``get_config()``.
+        config: full :class:`KenningConfig`; defaults to ``get_config()``.
         dispatcher: a configured :class:`OpenClawDispatcher`.
         audit_log_path: optional override for the JSONL audit log path.
             Defaults to ``logs/automation_tasks.jsonl``.
@@ -51,7 +51,7 @@ class AutomationTaskRunner:
 
     def __init__(
         self,
-        config: Optional[UltronConfig] = None,
+        config: Optional[KenningConfig] = None,
         dispatcher: Optional[OpenClawDispatcher] = None,
         audit_log_path: Optional[Path] = None,
     ) -> None:

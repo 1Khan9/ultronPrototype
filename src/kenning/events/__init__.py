@@ -4,7 +4,7 @@ Pattern lineage attributed in ``THIRD_PARTY_NOTICES.md``.
 
 The OpenHands V1 server's ``EventService`` ABC + per-event JSON file +
 opaque page-id pagination + per-conversation export-as-zip is the
-shape this package ports. Ultron's version is sync (single-process,
+shape this package ports. Kenning's version is sync (single-process,
 voice-first) and per-session-scoped (the orchestrator owns the
 session id) but the contract surface is the same: ``save_event`` /
 ``get_event`` / ``search_events`` / ``count_events`` / a
@@ -24,18 +24,18 @@ Three backends ship:
   to be retrievable via the existing memory embedding pipeline.
 """
 
-from ultron.events.chain import (
+from kenning.events.chain import (
     ChainVerificationError,
     ChainVerificationResult,
     compute_event_chain_hash,
     verify_chain,
 )
-from ultron.events.export import (
+from kenning.events.export import (
     SessionExport,
     export_session_to_bytes,
     export_session_to_path,
 )
-from ultron.events.models import (
+from kenning.events.models import (
     DEFAULT_PAGE_LIMIT,
     DEFAULT_SEARCH_SORT,
     EventKind,
@@ -46,7 +46,7 @@ from ultron.events.models import (
     canonical_event_json,
     new_event_id,
 )
-from ultron.events.store import (
+from kenning.events.store import (
     EventStore,
     EventStoreError,
     JsonlEventStore,
@@ -57,12 +57,12 @@ from ultron.events.store import (
     reset_event_store_for_testing,
     set_event_store,
 )
-from ultron.events.bus_sink import (
+from kenning.events.bus_sink import (
     BusEventSink,
     install_bus_event_sink,
     uninstall_bus_event_sink,
 )
-from ultron.events.callbacks import (
+from kenning.events.callbacks import (
     CallbackProcessor,
     CallbackRegistry,
     CallbackResult,
@@ -74,7 +74,7 @@ from ultron.events.callbacks import (
     reset_callback_registry_for_testing,
     set_callback_registry,
 )
-from ultron.events.processors import (
+from kenning.events.processors import (
     ChannelGuardProcessor,
     CountingCallbackProcessor,
     LoggingCallbackProcessor,

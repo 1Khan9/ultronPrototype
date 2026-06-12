@@ -3,7 +3,7 @@ orchestrator (Batch B of the deferred-primitive wiring pass).
 
 Uses Orchestrator.__new__ to exercise _mint_forensic_token without
 the heavy voice-stack init. The real round-trip redirects
-ultron.config.PROJECT_ROOT to a tmp_path so nothing touches the repo
+kenning.config.PROJECT_ROOT to a tmp_path so nothing touches the repo
 data/ dir (R9). Per docs/test_sweep_binding_rules.md: R1, R4, R7,
 R9, R11.
 """
@@ -16,7 +16,7 @@ import pytest
 
 
 def _bare_orchestrator() -> Any:
-    from ultron.pipeline.orchestrator import Orchestrator
+    from kenning.pipeline.orchestrator import Orchestrator
 
     return Orchestrator.__new__(Orchestrator)
 
@@ -30,7 +30,7 @@ class TestMintForensicTokenWiring:
     def test_registers_when_caller_unknown_then_mints(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import ultron.identity.short_lived_token as slt
+        import kenning.identity.short_lived_token as slt
 
         registered: list = []
         mint_calls: list = []
@@ -46,7 +46,7 @@ class TestMintForensicTokenWiring:
         o = _bare_orchestrator()
         token = o._mint_forensic_token(
             caller_id="mcp:tools",
-            audience="ultron-mcp",
+            audience="kenning-mcp",
             scope=("mcp.tools.read", "mcp.tools.invoke"),
             ttl_seconds=3600,
             extra_claims={"sse_url": "http://x"},
@@ -60,7 +60,7 @@ class TestMintForensicTokenWiring:
         assert len(mint_calls) == 1
         kw = mint_calls[0]
         assert kw["caller_id"] == "mcp:tools"
-        assert kw["audience"] == "ultron-mcp"
+        assert kw["audience"] == "kenning-mcp"
         assert kw["scope"] == ("mcp.tools.read", "mcp.tools.invoke")
         assert kw["ttl_seconds"] == 3600
         # pid is auto-added; extra claim preserved.
@@ -70,7 +70,7 @@ class TestMintForensicTokenWiring:
     def test_skips_register_when_caller_known(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import ultron.identity.short_lived_token as slt
+        import kenning.identity.short_lived_token as slt
 
         registered: list = []
         existing = slt.TrustedCaller(caller_id="mcp:tools")
@@ -85,7 +85,7 @@ class TestMintForensicTokenWiring:
         o = _bare_orchestrator()
         token = o._mint_forensic_token(
             caller_id="mcp:tools",
-            audience="ultron-mcp",
+            audience="kenning-mcp",
             scope=("mcp.tools.read",),
             ttl_seconds=3600,
         )
@@ -96,7 +96,7 @@ class TestMintForensicTokenWiring:
     def test_fail_open_on_mint_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import ultron.identity.short_lived_token as slt
+        import kenning.identity.short_lived_token as slt
 
         monkeypatch.setattr(slt, "load_trusted_caller", lambda cid, *, project_root: None)
         monkeypatch.setattr(
@@ -123,7 +123,7 @@ class TestMintForensicTokenRoundTrip:
     def test_real_mint_writes_audit_under_tmp(
         self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import ultron.config as cfgmod
+        import kenning.config as cfgmod
 
         # Redirect PROJECT_ROOT so the token + audit files land under
         # tmp_path, never the repo data/ dir.
@@ -131,7 +131,7 @@ class TestMintForensicTokenRoundTrip:
         o = _bare_orchestrator()
         token = o._mint_forensic_token(
             caller_id="voice:gaming-engage",
-            audience="ultron-llm",
+            audience="kenning-llm",
             scope=("llm.preset.swap",),
             ttl_seconds=3600,
             extra_claims={"action": "gaming_engage"},
@@ -146,14 +146,14 @@ class TestMintForensicTokenRoundTrip:
     def test_real_mint_verifies(
         self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import ultron.config as cfgmod
-        from ultron.identity.short_lived_token import verify_token
+        import kenning.config as cfgmod
+        from kenning.identity.short_lived_token import verify_token
 
         monkeypatch.setattr(cfgmod, "PROJECT_ROOT", tmp_path)
         o = _bare_orchestrator()
         token = o._mint_forensic_token(
             caller_id="mcp:tools",
-            audience="ultron-mcp",
+            audience="kenning-mcp",
             scope=("mcp.tools.read",),
             ttl_seconds=3600,
         )
@@ -162,7 +162,7 @@ class TestMintForensicTokenRoundTrip:
         claims = verify_token(
             token,
             project_root=tmp_path,
-            expected_audience="ultron-mcp",
+            expected_audience="kenning-mcp",
         )
         assert claims.caller_id == "mcp:tools"
         assert "mcp.tools.read" in claims.scope

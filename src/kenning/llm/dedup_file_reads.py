@@ -20,7 +20,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
-from ultron.llm.response_format import (
+from kenning.llm.response_format import (
     duplicate_file_read_notice,
     duplicate_payload_notice,
 )
@@ -33,7 +33,7 @@ LOGGER = logging.getLogger(__name__)
 DEFAULT_CHARS_PER_TOKEN: int = 4
 
 #: Default minimum savings ratio that should suppress full compaction
-#: (cline cites ~30 %; ultron keeps the same threshold).
+#: (cline cites ~30 %; kenning keeps the same threshold).
 DEFAULT_SAVINGS_SUPPRESS_THRESHOLD: float = 0.30
 
 

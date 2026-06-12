@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from ultron.memory.qdrant_store import ConversationMemory
+from kenning.memory.qdrant_store import ConversationMemory
 
 
 @pytest.fixture

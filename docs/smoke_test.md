@@ -35,17 +35,17 @@ baseline.
 ### 1. Cold start
 
 ```powershell
-python -m ultron
+python -m kenning
 ```
 
-Expected: ~60 s load time. Console prints "Ultron is listening. Say
-'ultron' to wake."
+Expected: ~60 s load time. Console prints "Kenning is listening. Say
+'kenning' to wake."
 
 `scripts/check_vram.py` (in another shell) should show ~10 GB used.
 
 **Phase responsibility:** core voice stack (Phases A + 0-5).
 
-### 2. Voice query: "Good morning, Ultron."
+### 2. Voice query: "Good morning, Kenning."
 
 Speak the wake word + greeting.
 
@@ -54,8 +54,8 @@ filler ("certainly", "of course", etc.). Slightly menacing tone.
 
 Console shows:
 ```
-  you: good morning ultron
-  ultron: <terse, in-character greeting>
+  you: good morning kenning
+  kenning: <terse, in-character greeting>
 ```
 
 **Phase responsibility:** orchestrator + Whisper + LLM + Piper + RVC.
@@ -63,10 +63,10 @@ Console shows:
 ### 3. Memory recall: "What did we talk about yesterday?"
 
 Expected: if conversation history exists in Qdrant, RAG retrieves
-recent turns and Ultron summarizes. If no prior history, Ultron says
+recent turns and Kenning summarizes. If no prior history, Kenning says
 so plainly.
 
-Verify in `logs/ultron.log` that retrieval ran (look for "memory
+Verify in `logs/kenning.log` that retrieval ran (look for "memory
 retrieve" lines).
 
 **Phase responsibility:** Qdrant memory + RAG (Phase 3).
@@ -74,7 +74,7 @@ retrieve" lines).
 ### 4. Search-triggering query: "What's the latest on Python 3.13 features?"
 
 Expected:
-- Within ~200 ms, Ultron speaks an acknowledgment phrase ("Querying
+- Within ~200 ms, Kenning speaks an acknowledgment phrase ("Querying
   external sources." or similar from the pool).
 - Brave call → Jina Reader fetch → response with citations.
 - Console shows:
@@ -92,11 +92,11 @@ Replace X with a small concrete task (e.g. "prints today's date in ISO
 format").
 
 Expected:
-- Ultron acknowledges the task ("Acknowledged. Starting.").
+- Kenning acknowledges the task ("Acknowledged. Starting.").
 - Console + `logs/coding_tasks.jsonl` show task progress.
 - A new project appears under `data/sandbox/`.
 - Files are created.
-- After 1-3 minutes, Ultron speaks the completion narration.
+- After 1-3 minutes, Kenning speaks the completion narration.
 
 **Phase responsibility:** coding orchestration (Phases A + 6 of original prompts).
 
@@ -118,7 +118,7 @@ fit well under the 600-token budget).
 Replace Y with a reasonable adjustment (e.g. "use UTC instead of
 local time").
 
-Expected: Ultron records the adjustment and the coding task picks it
+Expected: Kenning records the adjustment and the coding task picks it
 up on the next correction or follow-up. Visible in
 `logs/sessions/<id>.jsonl` as an `adjustment` event.
 
@@ -126,14 +126,14 @@ up on the next correction or follow-up. Visible in
 
 ### 8. Cancel: "Stop the task"
 
-Expected: graceful cancellation. Ultron narrates "Cancelled." or
+Expected: graceful cancellation. Kenning narrates "Cancelled." or
 similar. Subprocess terminates cleanly.
 
 **Phase responsibility:** runner + bridge.
 
 ### 9. OpenClaw stub: "Open Wikipedia"
 
-Expected: stub response in Ultron's voice ("I'd open that page for
+Expected: stub response in Kenning's voice ("I'd open that page for
 you, but the gateway isn't connected yet.").
 
 `logs/routing_decisions.jsonl` shows:
@@ -160,10 +160,10 @@ gateway isn't connected yet.").
 
 ### 11. Restart
 
-Stop Ultron (Ctrl+C). Restart:
+Stop Kenning (Ctrl+C). Restart:
 
 ```powershell
-python -m ultron
+python -m kenning
 ```
 
 Expected: clean shutdown of TTS / RVC / Whisper / LLM. Restart loads
@@ -173,7 +173,7 @@ the same models in ~30-60 s (file cache warm).
 
 After restart, ask: "What did we talk about earlier?"
 
-Expected: Ultron retrieves earlier-this-session conversation from
+Expected: Kenning retrieves earlier-this-session conversation from
 Qdrant. The project from step 5 still exists in `data/projects.json`
 (verify with `cat data/projects.json`).
 
@@ -181,7 +181,7 @@ Qdrant. The project from step 5 still exists in `data/projects.json`
 
 ### 13. Maintenance script
 
-Stop Ultron. Run:
+Stop Kenning. Run:
 
 ```powershell
 python scripts/maintenance.py
@@ -192,25 +192,25 @@ labeling tags conversation clusters. Output reports counts.
 
 Verify with:
 ```powershell
-python -c "from ultron.config import resolve_path; from qdrant_client import QdrantClient; c = QdrantClient(path=str(resolve_path('data/qdrant'))); print(c.count('facts').count, 'facts')"
+python -c "from kenning.config import resolve_path; from qdrant_client import QdrantClient; c = QdrantClient(path=str(resolve_path('data/qdrant'))); print(c.count('facts').count, 'facts')"
 ```
 
 **Phase responsibility:** maintenance pipeline.
 
 ### 14. Inject a Brave failure
 
-Stop Ultron. Edit `.env` to set an invalid Brave API key:
+Stop Kenning. Edit `.env` to set an invalid Brave API key:
 
 ```ini
-ULTRON_BRAVE_API_KEY=invalid-test-key
+KENNING_BRAVE_API_KEY=invalid-test-key
 ```
 
-Restart Ultron. Ask a search-triggering query: "What's the latest news?"
+Restart Kenning. Ask a search-triggering query: "What's the latest news?"
 
 Expected:
 - The orchestrator detects the bad key OR Brave returns 4xx.
 - Three failures within 5 minutes trips the breaker.
-- Ultron speaks the in-character fallback ("Search isn't working
+- Kenning speaks the in-character fallback ("Search isn't working
   right now." or similar).
 - `logs/errors.jsonl` records `BraveAPIError` entries.
 
@@ -221,11 +221,11 @@ Restore the real key and restart.
 
 ### 15. Audit log inspection
 
-Stop Ultron. Verify each log file populated:
+Stop Kenning. Verify each log file populated:
 
 ```powershell
 @(
-  'logs/ultron.log',
+  'logs/kenning.log',
   'logs/addressing.jsonl',
   'logs/coding_tasks.jsonl',
   'logs/routing_decisions.jsonl',
@@ -255,7 +255,7 @@ and completion.
 
 ### 16. Final VRAM + latency check
 
-Restart Ultron. After full load:
+Restart Kenning. After full load:
 
 ```powershell
 python scripts/check_vram.py

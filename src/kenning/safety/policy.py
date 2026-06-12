@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger("ultron.safety.policy")
+logger = logging.getLogger("kenning.safety.policy")
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,7 @@ class Policy:
             Anthropic). Empty list means "no outbound checks" --
             distinct from "block all".
 
-    See `src/ultron/safety/rules/category_k.py` for how Category K
+    See `src/kenning/safety/rules/category_k.py` for how Category K
     consumes ``protected_files`` / ``protected_dirs``.
     """
 
@@ -95,28 +95,28 @@ _DEFAULT_PROTECTED_FILES_RELATIVE = [
     # K2: voice character / model assets. Both the legacy root-level
     # path and the post-disk-cleaning location are protected (the WAV
     # moved 2026-06-11; protection follows the file, never shrinks).
-    "ultronVoiceAudio/Ultron_vocals_mono_v1.wav",
-    "ultronVoiceAudio/kokoro training audio/Ultron_vocals_mono_v1.wav",
+    "kenningVoiceAudio/Kenning_vocals_mono_v1.wav",
+    "kenningVoiceAudio/kokoro training audio/Kenning_vocals_mono_v1.wav",
     # K3: validator + existing block-and-revise modules.
-    "src/ultron/safety/__init__.py",
-    "src/ultron/safety/validator.py",
-    "src/ultron/safety/path_resolver.py",
-    "src/ultron/safety/audit.py",
-    "src/ultron/safety/policy.py",
-    "src/ultron/safety/intent.py",
-    "src/ultron/safety/taint.py",
-    "src/ultron/safety/rules/base.py",
-    "src/ultron/safety/rules/category_k.py",
-    "src/ultron/openclaw_routing/block_and_revise.py",
-    "src/ultron/coding/canonical_monitor.py",
+    "src/kenning/safety/__init__.py",
+    "src/kenning/safety/validator.py",
+    "src/kenning/safety/path_resolver.py",
+    "src/kenning/safety/audit.py",
+    "src/kenning/safety/policy.py",
+    "src/kenning/safety/intent.py",
+    "src/kenning/safety/taint.py",
+    "src/kenning/safety/rules/base.py",
+    "src/kenning/safety/rules/category_k.py",
+    "src/kenning/openclaw_routing/block_and_revise.py",
+    "src/kenning/coding/canonical_monitor.py",
     # K4: audit log writers. The log files themselves are protected;
     # the writer code that produces them is also protected.
     "logs/errors.jsonl",
     "logs/safety_audit.jsonl",
-    "src/ultron/resilience/error_log.py",
+    "src/kenning/resilience/error_log.py",
     # K5: OpenClaw bridge.
-    "src/ultron/openclaw_bridge/client.py",
-    "src/ultron/openclaw_bridge/holder.py",
+    "src/kenning/openclaw_bridge/client.py",
+    "src/kenning/openclaw_bridge/holder.py",
     # K7: dependency manifests.
     "requirements.txt",
     "pyproject.toml",
@@ -134,19 +134,19 @@ _DEFAULT_PROTECTED_FILES_RELATIVE = [
     "docs/memory_architecture.md",
     "docs/standing_orders.md",
     # K10: MCP entry scripts.
-    "scripts/run_ultron_mcp_for_openclaw.py",
+    "scripts/run_kenning_mcp_for_openclaw.py",
     "scripts/start_llamacpp_server.py",
     "scripts/supervised_llamacpp_server.py",
 ]
 
 # Directories the user-locked SOUL.md, RVC, Piper, XTTS models live
-# in. ``ultron_james_spader_mcu_6941/`` is the RVC voice model dir;
+# in. ``kenning_rvc_voice/`` is the RVC voice model dir;
 # ``models/piper/`` is the Piper TTS; ``models/`` overall holds the
 # LLM GGUFs + Smart Turn ONNX which K2 / S5 jointly protect.
 _DEFAULT_PROTECTED_DIRS_RELATIVE = [
     "models",
-    "ultron_james_spader_mcu_6941",
-    "ultronVoiceAudio",
+    "kenning_rvc_voice",
+    "kenningVoiceAudio",
     # K9 covers PowerShell profile / shell rc files which live in the
     # user's home, not the project. Those rules check absolute paths
     # in the rule logic, not via this list.
@@ -167,7 +167,7 @@ def load_policy(
     """Build a :class:`Policy` from defaults + user overrides.
 
     The defaults bake in the Category K protected-files list (the
-    user's restriction list under "Ultron self-protection (meta)").
+    user's restriction list under "Kenning self-protection (meta)").
     Callers add their own entries via the ``extra_*`` parameters.
 
     Args:
@@ -185,14 +185,14 @@ def load_policy(
         approved_outbound_apis: hostnames the model is allowed to
             contact (used by Categories I/J).
         project_root: override PROJECT_ROOT for testing. Defaults to
-            :data:`ultron.config.PROJECT_ROOT`.
+            :data:`kenning.config.PROJECT_ROOT`.
 
     Returns:
         A frozen :class:`Policy` instance.
     """
     if project_root is None:
         try:
-            from ultron.config import PROJECT_ROOT
+            from kenning.config import PROJECT_ROOT
             project_root = Path(PROJECT_ROOT)
         except Exception:
             import os as _os
@@ -226,7 +226,7 @@ def load_policy(
         ]
     else:
         # Default sandboxes: the CONFIGURED coding-task scratch area
-        # (production-hardening: now ``~/.ultron/sandbox``, outside the
+        # (production-hardening: now ``~/.kenning/sandbox``, outside the
         # repo so the coding CLI stops loading the repo's orientation
         # context into every task) PLUS the legacy in-repo location so
         # pre-existing sandbox projects remain editable/runnable.
@@ -234,7 +234,7 @@ def load_policy(
         legacy = (project_root / "data" / "sandbox").resolve(strict=False)
         sandboxes = []
         try:
-            from ultron.config import get_config, resolve_path
+            from kenning.config import get_config, resolve_path
 
             configured = resolve_path(get_config().coding.sandbox_root)
             sandboxes.append(configured)

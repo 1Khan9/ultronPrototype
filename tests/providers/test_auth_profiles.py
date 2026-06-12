@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.providers.auth_profiles import (
+from kenning.providers.auth_profiles import (
     AuthProfile,
     AuthProfileState,
     AuthProfileStore,
@@ -15,14 +15,14 @@ from ultron.providers.auth_profiles import (
     reset_profile_store_for_testing,
     set_profile_store,
 )
-from ultron.providers.failover_policy import (
+from kenning.providers.failover_policy import (
     FAILOVER_PROBE_REASONS,
     FAILOVER_TRANSIENT_SLOT_REASONS,
     FailoverReason,
     should_allow_cooldown_probe,
     should_use_transient_cooldown_slot,
 )
-from ultron.providers.rotation import (
+from kenning.providers.rotation import (
     DEFAULT_TRANSIENT_DELAY_SECONDS,
     RotationOutcome,
     classify_provider_error,

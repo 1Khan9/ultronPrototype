@@ -14,17 +14,17 @@ from typing import Any, Optional
 
 import pytest
 
-import ultron.coding.scrap as scrap_mod
-from ultron.coding.file_history import FileHistory
-from ultron.coding.scrap import (
+import kenning.coding.scrap as scrap_mod
+from kenning.coding.file_history import FileHistory
+from kenning.coding.scrap import (
     ScrapRevertResult,
     match_scrap_command,
     revert_session_edits,
     summarize_scrap,
 )
-from ultron.coding.session_registry import SessionRegistry
-from ultron.coding.voice import CapabilityVoiceController, VoiceResponse
-from ultron.pipeline.orchestrator import Orchestrator
+from kenning.coding.session_registry import SessionRegistry
+from kenning.coding.voice import CapabilityVoiceController, VoiceResponse
+from kenning.pipeline.orchestrator import Orchestrator
 
 
 # ---------------------------------------------------------------------------
@@ -38,7 +38,7 @@ class TestMatcher:
         [
             "scrap it",
             "Scrap that.",
-            "ultron, scrap the project",
+            "kenning, scrap the project",
             "just scrap it",
             "scrap the whole thing",
             "scrap everything",

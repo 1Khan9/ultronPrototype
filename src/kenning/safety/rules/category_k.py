@@ -1,4 +1,4 @@
-r"""Category K -- Ultron self-protection (meta).
+r"""Category K -- Kenning self-protection (meta).
 
 These rules prevent the abliterated model from disabling the
 validator itself or tampering with the inputs the AI pipeline
@@ -11,7 +11,7 @@ Mapping to the user's 2026-05-12 restriction list:
 
 * K1 -- config.yaml edits that govern the validator
 * K2 -- SOUL.md / RVC / Piper / XTTS voice character + model files
-* K3 -- src/ultron/safety/**, block_and_revise.py, canonical_monitor.py
+* K3 -- src/kenning/safety/**, block_and_revise.py, canonical_monitor.py
 * K4 -- logs/errors.jsonl, logs/safety_audit.jsonl, audit-log writers
 * K5 -- OpenClaw bridge configuration (tools.deny, tools.alsoAllow)
 * K6 -- this restriction-list / policy file itself
@@ -21,7 +21,7 @@ Mapping to the user's 2026-05-12 restriction list:
   codebase_structure.md, system-prompt files)
 * K9 -- shell rc / $PROFILE -- per-rule because the paths live in
   the user's home, not the project, and need OS-specific resolution
-* K10 -- MCP entry scripts (run_ultron_mcp_for_openclaw.py, etc.)
+* K10 -- MCP entry scripts (run_kenning_mcp_for_openclaw.py, etc.)
 
 Phase 2 implementation strategy:
 
@@ -46,10 +46,10 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ultron.safety.rules.base import PathSetRule, Rule
+from kenning.safety.rules.base import PathSetRule, Rule
 
 if TYPE_CHECKING:
-    from ultron.safety.policy import Policy
+    from kenning.safety.policy import Policy
 
 
 def _matches_any_relative(p: Path, relatives: list[str]) -> bool:
@@ -126,10 +126,10 @@ class K2VoiceCharacterProtection(PathSetRule):
         )
 
     def protected_paths(self, policy: "Policy") -> list[Path]:
-        # K2 protects the entire ultronVoiceAudio/ tree (XTTS
+        # K2 protects the entire kenningVoiceAudio/ tree (XTTS
         # references, generated samples, filter prototypes), the
         # piper/ subdir of models/, and the RVC model dir
-        # (ultron_james_spader_mcu_6941/). All of these are in
+        # (kenning_rvc_voice/). All of these are in
         # policy.protected_dirs.
         return list(policy.protected_dirs)
 
@@ -140,7 +140,7 @@ class K2VoiceCharacterProtection(PathSetRule):
 
 
 class K3ValidatorSourceProtection(PathSetRule):
-    """K3: src/ultron/safety/**, block_and_revise.py, canonical_monitor.py.
+    """K3: src/kenning/safety/**, block_and_revise.py, canonical_monitor.py.
 
     The model cannot rewrite the safety validator's own source. If
     it could, every other K rule becomes a courtesy suggestion.
@@ -154,21 +154,21 @@ class K3ValidatorSourceProtection(PathSetRule):
         )
 
     def protected_paths(self, policy: "Policy") -> list[Path]:
-        # All files under src/ultron/safety/ plus the two specific
+        # All files under src/kenning/safety/ plus the two specific
         # block-and-revise modules. Filter from the default protected
         # list.
         keep = [
-            "src/ultron/safety/__init__.py",
-            "src/ultron/safety/validator.py",
-            "src/ultron/safety/path_resolver.py",
-            "src/ultron/safety/audit.py",
-            "src/ultron/safety/policy.py",
-            "src/ultron/safety/intent.py",
-            "src/ultron/safety/taint.py",
-            "src/ultron/safety/rules/base.py",
-            "src/ultron/safety/rules/category_k.py",
-            "src/ultron/openclaw_routing/block_and_revise.py",
-            "src/ultron/coding/canonical_monitor.py",
+            "src/kenning/safety/__init__.py",
+            "src/kenning/safety/validator.py",
+            "src/kenning/safety/path_resolver.py",
+            "src/kenning/safety/audit.py",
+            "src/kenning/safety/policy.py",
+            "src/kenning/safety/intent.py",
+            "src/kenning/safety/taint.py",
+            "src/kenning/safety/rules/base.py",
+            "src/kenning/safety/rules/category_k.py",
+            "src/kenning/openclaw_routing/block_and_revise.py",
+            "src/kenning/coding/canonical_monitor.py",
         ]
         return [p for p in policy.protected_files if _matches_any_relative(p, keep)]
 
@@ -206,7 +206,7 @@ class K4AuditLogProtection(PathSetRule):
         keep = [
             "logs/errors.jsonl",
             "logs/safety_audit.jsonl",
-            "src/ultron/resilience/error_log.py",
+            "src/kenning/resilience/error_log.py",
         ]
         return [p for p in policy.protected_files if _matches_any_relative(p, keep)]
 
@@ -233,8 +233,8 @@ class K5OpenClawBridgeProtection(PathSetRule):
 
     def protected_paths(self, policy: "Policy") -> list[Path]:
         keep = [
-            "src/ultron/openclaw_bridge/client.py",
-            "src/ultron/openclaw_bridge/holder.py",
+            "src/kenning/openclaw_bridge/client.py",
+            "src/kenning/openclaw_bridge/holder.py",
         ]
         return [p for p in policy.protected_files if _matches_any_relative(p, keep)]
 
@@ -245,7 +245,7 @@ class K5OpenClawBridgeProtection(PathSetRule):
 
 
 class K6PolicyFileProtection(PathSetRule):
-    """K6: ``src/ultron/safety/policy.py`` -- the policy loader.
+    """K6: ``src/kenning/safety/policy.py`` -- the policy loader.
 
     K3 covers the same file under "validator source." K6 is the
     explicit acknowledgement that the policy itself is a separate
@@ -263,7 +263,7 @@ class K6PolicyFileProtection(PathSetRule):
         )
 
     def protected_paths(self, policy: "Policy") -> list[Path]:
-        keep = ["src/ultron/safety/policy.py"]
+        keep = ["src/kenning/safety/policy.py"]
         return [p for p in policy.protected_files if _matches_any_relative(p, keep)]
 
 
@@ -307,7 +307,7 @@ class K7DependencyManifestProtection(PathSetRule):
 
 
 class K8PromptIngestionProtection(PathSetRule):
-    """K8: files known to be ingested by Ultron's AI pipeline.
+    """K8: files known to be ingested by Kenning's AI pipeline.
 
     MEMORY.md, docs/codebase_structure.md, and the rest
     are read on every session start. If the model can write
@@ -393,7 +393,7 @@ class K9ShellInitProtection(Rule):
     )
 
     def evaluate(self, ctx, *, policy, resolver):
-        from ultron.safety.validator import RuleResult, Verdict
+        from kenning.safety.validator import RuleResult, Verdict
 
         # Heuristic write check (same as PathSetRule).
         is_write = any(
@@ -449,8 +449,8 @@ class K9ShellInitProtection(Rule):
 class K10McpEntryScriptProtection(PathSetRule):
     """K10: stdio MCP entry scripts.
 
-    ``scripts/run_ultron_mcp_for_openclaw.py`` is the script
-    OpenClaw spawns to access Ultron's MCP tools. Editing it could
+    ``scripts/run_kenning_mcp_for_openclaw.py`` is the script
+    OpenClaw spawns to access Kenning's MCP tools. Editing it could
     redirect the MCP layer to bypass the validator. Same threat
     surface as K3 / K5.
     """
@@ -464,7 +464,7 @@ class K10McpEntryScriptProtection(PathSetRule):
 
     def protected_paths(self, policy: "Policy") -> list[Path]:
         keep = [
-            "scripts/run_ultron_mcp_for_openclaw.py",
+            "scripts/run_kenning_mcp_for_openclaw.py",
             "scripts/start_llamacpp_server.py",
             "scripts/supervised_llamacpp_server.py",
         ]
@@ -474,7 +474,7 @@ class K10McpEntryScriptProtection(PathSetRule):
 def build_category_k_rules() -> list[Rule]:
     """Factory for the Category K rule set.
 
-    Called by :func:`ultron.safety.validator.build_validator_from_config`
+    Called by :func:`kenning.safety.validator.build_validator_from_config`
     during orchestrator init.
     """
     return [

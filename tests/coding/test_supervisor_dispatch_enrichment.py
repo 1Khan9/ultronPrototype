@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.project_supervisor import (
+from kenning.coding.project_supervisor import (
     SupervisorAction,
     SupervisorDecision,
     SupervisorInputs,
 )
-from ultron.coding.supervisor_dispatch import SupervisorDispatchController
+from kenning.coding.supervisor_dispatch import SupervisorDispatchController
 
 
 def _make_controller(*, enriched=False, sandbox_root=None):

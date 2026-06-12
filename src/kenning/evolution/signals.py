@@ -1,11 +1,11 @@
-"""Opportunity-signal extraction for ultron's self-improvement loop.
+"""Opportunity-signal extraction for kenning's self-improvement loop.
 
 Catalog 13 (clawhub-capability-evolver) clean-room synthesis -- the
 GREEN, local-only signal layer. The upstream's three-layer detector had
 a third layer that POSTed a corpus summary to a remote hub LLM
 (``/a2a/signal/analyze``) every fifth cycle; that layer is **deliberately
 NOT implemented** -- it is a network egress + paid-API path that violates
-ultron's local-only contract. ultron keeps only the two local layers
+kenning's local-only contract. kenning keeps only the two local layers
 (deterministic regex + weighted-keyword scoring) plus the genuinely
 clever, fully-local **history-aware post-processing** the catalog flagged
 as the real intellectual value:
@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping, Optional, Sequence
 
-from ultron.evolution.models import (
+from kenning.evolution.models import (
     CommandFailureSignal,
     ComplexityHint,
     CorrectionCapsule,
@@ -91,7 +91,7 @@ COSMETIC_SIGNALS: frozenset[str] = frozenset(
     }
 )
 
-# --- thresholds (ultron-calibrated; documented constants) -------------------
+# --- thresholds (kenning-calibrated; documented constants) -------------------
 
 REPAIR_LOOP_THRESHOLD: int = 3
 RECENT_WINDOW: int = 8
@@ -135,8 +135,8 @@ class SignalProfile:
     threshold: float = 1.0
 
 
-#: Layer-2 weighted-keyword profiles, calibrated for ultron's voice /
-#: assistant corpus. Weights + thresholds are clean-room ultron values
+#: Layer-2 weighted-keyword profiles, calibrated for kenning's voice /
+#: assistant corpus. Weights + thresholds are clean-room kenning values
 #: (the upstream's lived in obfuscated data); the SHAPE -- accumulate
 #: weak cues to a threshold -- is the ported pattern.
 SIGNAL_PROFILES: dict[str, SignalProfile] = {
@@ -241,7 +241,7 @@ SIGNAL_PROFILES: dict[str, SignalProfile] = {
 # --- multilingual user-request triggers (layer 1, local, GREEN) -------------
 #
 # The upstream detected feature requests / improvement suggestions in four
-# languages with a verbatim snippet. ultron is an English voice assistant,
+# languages with a verbatim snippet. kenning is an English voice assistant,
 # so English coverage is primary; the documented CJK literal triggers are
 # kept for fidelity (they are harmless extra matches).
 
@@ -706,9 +706,9 @@ def apply_post_processing(
 # ---------------------------------------------------------------------------
 # Catalog 14 (clawhub-self-improving-agent) -- qualitative conversation-event
 # detectors. Pure functions over turn text producing the structured capture
-# records in :mod:`ultron.evolution.models`; never raise; zero IO / network.
+# records in :mod:`kenning.evolution.models`; never raise; zero IO / network.
 # Correction detection is gated on a non-empty ``prior_response`` so a bare
-# "actually..." with no preceding ultron claim is not mistaken for a
+# "actually..." with no preceding kenning claim is not mistaken for a
 # correction. Only the detect-the-event-in-text BEHAVIOUR is ported -- the
 # upstream's dangerous PostToolUse BASH-hook mechanism is excluded.
 # ---------------------------------------------------------------------------
@@ -859,7 +859,7 @@ def _estimate_complexity(text: str) -> ComplexityHint:
 def extract_correction(
     user_text: str, *, prior_response: str = ""
 ) -> Optional[CorrectionCapsule]:
-    """Detect that the user corrected ultron on the turn FOLLOWING a
+    """Detect that the user corrected kenning on the turn FOLLOWING a
     response. Fires only when a correction phrase matches AND
     ``prior_response`` is non-empty (there was an agent claim to correct).
     Returns a :class:`CorrectionCapsule`, else ``None``. Never raises."""
@@ -893,7 +893,7 @@ def extract_knowledge_gap(
     prior_response: str = "",
     source: KnowledgeSource = KnowledgeSource.USER,
 ) -> Optional[KnowledgeGapCapsule]:
-    """Detect the user supplying a fact ultron lacked / had wrong. Returns
+    """Detect the user supplying a fact kenning lacked / had wrong. Returns
     a :class:`KnowledgeGapCapsule`, else ``None``. Never raises."""
     try:
         if not user_text or not user_text.strip():

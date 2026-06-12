@@ -1,4 +1,4 @@
-"""Tests for ultron.desktop.uia."""
+"""Tests for kenning.desktop.uia."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ultron.desktop.uia import (
+from kenning.desktop.uia import (
     BROWSER_NAMES,
     BrowserContent,
     BrowserLink,
@@ -29,7 +29,7 @@ from ultron.desktop.uia import (
     type_text_into_element,
     wait_for_text_in_window,
 )
-from ultron.desktop.windows import WindowInfo
+from kenning.desktop.windows import WindowInfo
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ def test_validate_uia_action_returns_allow_when_validator_unavailable(monkeypatc
     def broken_validator_call(*a, **kw):
         raise RuntimeError("validator module missing")
     monkeypatch.setattr(
-        "ultron.safety.validator.get_validator", broken_validator_call,
+        "kenning.safety.validator.get_validator", broken_validator_call,
     )
     v = _validate_uia_action(
         action="click", window_title="X", element_query="Y",
@@ -99,14 +99,14 @@ def test_validate_uia_action_returns_allow_when_validator_unavailable(monkeypatc
 
 
 def test_validate_uia_action_blocks_when_validator_blocks(monkeypatch):
-    from ultron.safety.validator import ValidatorVerdict, Verdict
+    from kenning.safety.validator import ValidatorVerdict, Verdict
 
     blocked = ValidatorVerdict(
         verdict=Verdict.BLOCK_HARD, reason="test block",
         triggered_rule_id="test", user_message="refused",
     )
     monkeypatch.setattr(
-        "ultron.safety.validator.get_validator",
+        "kenning.safety.validator.get_validator",
         lambda: type("V", (), {"check": lambda self, ctx: blocked})(),
     )
     v = _validate_uia_action(
@@ -122,7 +122,7 @@ def test_validate_uia_action_blocks_when_validator_blocks(monkeypatch):
 
 def test_collect_window_text_returns_empty_when_pywinauto_missing(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.uia._import_pywinauto", lambda: None,
+        "kenning.desktop.uia._import_pywinauto", lambda: None,
     )
     assert collect_window_text(0) == []
 
@@ -132,7 +132,7 @@ def test_collect_window_text_returns_empty_when_connect_fails(monkeypatch):
     callers get an empty list rather than an exception.
     """
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window", lambda hwnd: None,
+        "kenning.desktop.uia._connect_window", lambda hwnd: None,
     )
     assert collect_window_text(99999999) == []
 
@@ -152,7 +152,7 @@ def test_collect_window_text_respects_max_elements(monkeypatch):
 
     fake_spec = MagicMock()
     fake_spec.element_info = root
-    monkeypatch.setattr("ultron.desktop.uia._connect_window", lambda hwnd: fake_spec)
+    monkeypatch.setattr("kenning.desktop.uia._connect_window", lambda hwnd: fake_spec)
 
     out = collect_window_text(0, max_elements=10)
     assert 0 < len(out) <= 10
@@ -176,7 +176,7 @@ def test_collect_window_text_dedupes_and_filters_short(monkeypatch):
     ])
     fake_spec = MagicMock()
     fake_spec.element_info = root
-    monkeypatch.setattr("ultron.desktop.uia._connect_window", lambda hwnd: fake_spec)
+    monkeypatch.setattr("kenning.desktop.uia._connect_window", lambda hwnd: fake_spec)
 
     out = collect_window_text(0, min_length=2)
     assert "OK" in out
@@ -203,7 +203,7 @@ def test_collect_window_text_skips_broken_children(monkeypatch):
     root = GoodNode("root", [BrokenNode(), GoodNode("Healthy")])
     fake_spec = MagicMock()
     fake_spec.element_info = root
-    monkeypatch.setattr("ultron.desktop.uia._connect_window", lambda hwnd: fake_spec)
+    monkeypatch.setattr("kenning.desktop.uia._connect_window", lambda hwnd: fake_spec)
 
     out = collect_window_text(0)
     assert "root" in out
@@ -217,19 +217,19 @@ def test_collect_window_text_skips_broken_children(monkeypatch):
 
 
 def test_find_element_returns_none_when_pywinauto_missing(monkeypatch):
-    monkeypatch.setattr("ultron.desktop.uia._import_pywinauto", lambda: None)
+    monkeypatch.setattr("kenning.desktop.uia._import_pywinauto", lambda: None)
     assert find_element(0, query="Submit") is None
 
 
 def test_find_element_returns_none_when_connect_fails(monkeypatch):
-    monkeypatch.setattr("ultron.desktop.uia._connect_window", lambda hwnd: None)
+    monkeypatch.setattr("kenning.desktop.uia._connect_window", lambda hwnd: None)
     assert find_element(0, query="Submit") is None
 
 
 def test_find_element_empty_query_and_no_automation_id_returns_none(monkeypatch):
     fake_spec = MagicMock()
     fake_spec.element_info = MagicMock()
-    monkeypatch.setattr("ultron.desktop.uia._connect_window", lambda hwnd: fake_spec)
+    monkeypatch.setattr("kenning.desktop.uia._connect_window", lambda hwnd: fake_spec)
     assert find_element(0, query="") is None
     assert find_element(0, query="   ") is None
 
@@ -240,20 +240,20 @@ def test_find_element_empty_query_and_no_automation_id_returns_none(monkeypatch)
 
 
 def test_click_element_returns_error_when_no_connection(monkeypatch):
-    monkeypatch.setattr("ultron.desktop.uia._connect_window", lambda hwnd: None)
+    monkeypatch.setattr("kenning.desktop.uia._connect_window", lambda hwnd: None)
     r = click_element(0, "Submit")
     assert r.success is False
     assert r.error and "connect" in r.error
 
 
 def test_click_element_short_circuits_on_validator_block(monkeypatch):
-    from ultron.safety.validator import ValidatorVerdict, Verdict
+    from kenning.safety.validator import ValidatorVerdict, Verdict
 
     fake_spec = MagicMock()
     fake_spec.window_text = lambda: "Some window"
-    monkeypatch.setattr("ultron.desktop.uia._connect_window", lambda hwnd: fake_spec)
+    monkeypatch.setattr("kenning.desktop.uia._connect_window", lambda hwnd: fake_spec)
     monkeypatch.setattr(
-        "ultron.desktop.uia._validate_uia_action",
+        "kenning.desktop.uia._validate_uia_action",
         lambda **kw: ValidatorVerdict(
             verdict=Verdict.BLOCK_HARD, reason="test policy block",
             triggered_rule_id="test", user_message="refused",
@@ -267,20 +267,20 @@ def test_click_element_short_circuits_on_validator_block(monkeypatch):
 def test_click_element_returns_error_when_element_not_found(monkeypatch):
     fake_spec = MagicMock()
     fake_spec.window_text = lambda: "Some window"
-    monkeypatch.setattr("ultron.desktop.uia._connect_window", lambda hwnd: fake_spec)
+    monkeypatch.setattr("kenning.desktop.uia._connect_window", lambda hwnd: fake_spec)
     monkeypatch.setattr(
-        "ultron.desktop.uia._validate_uia_action",
+        "kenning.desktop.uia._validate_uia_action",
         lambda **kw: __import__(
-            "ultron.safety.validator", fromlist=["ValidatorVerdict", "Verdict"],
+            "kenning.safety.validator", fromlist=["ValidatorVerdict", "Verdict"],
         ).ValidatorVerdict(
             verdict=__import__(
-                "ultron.safety.validator", fromlist=["Verdict"],
+                "kenning.safety.validator", fromlist=["Verdict"],
             ).Verdict.ALLOW,
             reason="ok",
         ),
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.find_element", lambda *a, **kw: None,
+        "kenning.desktop.uia.find_element", lambda *a, **kw: None,
     )
     r = click_element(0, "NonexistentButton")
     assert r.success is False
@@ -288,13 +288,13 @@ def test_click_element_returns_error_when_element_not_found(monkeypatch):
 
 
 def test_type_text_into_element_short_circuits_on_validator_block(monkeypatch):
-    from ultron.safety.validator import ValidatorVerdict, Verdict
+    from kenning.safety.validator import ValidatorVerdict, Verdict
 
     fake_spec = MagicMock()
     fake_spec.window_text = lambda: "Bank login"
-    monkeypatch.setattr("ultron.desktop.uia._connect_window", lambda hwnd: fake_spec)
+    monkeypatch.setattr("kenning.desktop.uia._connect_window", lambda hwnd: fake_spec)
     monkeypatch.setattr(
-        "ultron.desktop.uia._validate_uia_action",
+        "kenning.desktop.uia._validate_uia_action",
         lambda **kw: ValidatorVerdict(
             verdict=Verdict.BLOCK_HARD, reason="payment domain typing blocked",
             triggered_rule_id="Cap-3.payment-domain", user_message="refused",
@@ -321,7 +321,7 @@ def test_collect_window_text_live_on_foreground():
     """Smoke test: collecting text from the foreground window doesn't crash
     and returns a list (may be empty for canvas-rendered apps).
     """
-    from ultron.desktop.windows import get_foreground_window
+    from kenning.desktop.windows import get_foreground_window
 
     fg = get_foreground_window()
     if fg is None:
@@ -336,7 +336,7 @@ def test_collect_window_text_live_on_foreground():
 # ---------------------------------------------------------------------------
 
 
-from ultron.desktop.uia import (  # noqa: E402  -- intentional below test imports
+from kenning.desktop.uia import (  # noqa: E402  -- intentional below test imports
     dpi_aware_click_at_element_center,
     physical_center_of_element,
     physical_rect_of_element,
@@ -362,7 +362,7 @@ class TestPhysicalCenterOfElement:
         elem = _elem_with_rect(100, 200, 300, 400)
         # Stub logical_to_physical so the test stays hermetic.
         monkeypatch.setattr(
-            "ultron.desktop.win32_helpers.logical_to_physical",
+            "kenning.desktop.win32_helpers.logical_to_physical",
             lambda x, y, **_: (x * 2, y * 2),
         )
         assert physical_center_of_element(elem, assume_logical=True) == (400, 600)
@@ -373,7 +373,7 @@ class TestPhysicalCenterOfElement:
 
         # Force the lazy import to fail so the helper falls back to
         # the identity centre.
-        monkeypatch.setitem(_sys.modules, "ultron.desktop.win32_helpers", None)
+        monkeypatch.setitem(_sys.modules, "kenning.desktop.win32_helpers", None)
         assert physical_center_of_element(elem, assume_logical=True) == (200, 300)
 
     def test_zero_rect_returns_origin(self):
@@ -397,7 +397,7 @@ class TestPhysicalRectOfElement:
             return x * 2, y * 2
 
         monkeypatch.setattr(
-            "ultron.desktop.win32_helpers.logical_to_physical", _stub,
+            "kenning.desktop.win32_helpers.logical_to_physical", _stub,
         )
         result = physical_rect_of_element(elem, assume_logical=True)
         assert result == (200, 200, 400, 400)
@@ -489,7 +489,7 @@ class TestDpiAwareClickAtElementCenter:
         elem = _elem_with_rect(100, 100, 300, 300)
         ctrl = _FakeController(success=True)
         monkeypatch.setattr(
-            "ultron.desktop.win32_helpers.logical_to_physical",
+            "kenning.desktop.win32_helpers.logical_to_physical",
             lambda x, y, **_: (x * 2, y * 2),
         )
         dpi_aware_click_at_element_center(
@@ -503,7 +503,7 @@ class TestDpiAwareClickAtElementCenter:
         elem = _elem_with_rect()
         ctrl = _FakeController(success=True)
         monkeypatch.setattr(
-            "ultron.desktop.input_control.get_input_controller",
+            "kenning.desktop.input_control.get_input_controller",
             lambda: ctrl,
         )
         result = dpi_aware_click_at_element_center(elem)
@@ -517,7 +517,7 @@ class TestDpiAwareClickAtElementCenter:
             raise RuntimeError("singleton broken")
 
         monkeypatch.setattr(
-            "ultron.desktop.input_control.get_input_controller",
+            "kenning.desktop.input_control.get_input_controller",
             _boom,
         )
         result = dpi_aware_click_at_element_center(elem)
@@ -589,7 +589,7 @@ def test_ui_element_info_is_frozen():
 
 def test_get_ui_element_inventory_returns_empty_when_connect_fails(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window", lambda hwnd: None,
+        "kenning.desktop.uia._connect_window", lambda hwnd: None,
     )
     assert get_ui_element_inventory(0) == {}
 
@@ -600,7 +600,7 @@ def test_get_ui_element_inventory_returns_empty_when_element_info_raises(monkeyp
         lambda self: (_ for _ in ()).throw(RuntimeError("boom"))
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window", lambda hwnd: spec,
+        "kenning.desktop.uia._connect_window", lambda hwnd: spec,
     )
     assert get_ui_element_inventory(0) == {}
 
@@ -623,7 +623,7 @@ def test_get_ui_element_inventory_buckets_by_control_type(monkeypatch):
         ],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
+        "kenning.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
     )
 
     inv = get_ui_element_inventory(0)
@@ -648,7 +648,7 @@ def test_get_ui_element_inventory_strips_empty_buckets(monkeypatch):
         ],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
+        "kenning.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
     )
     inv = get_ui_element_inventory(0)
     # No links / checkboxes / tabs in this tree -- buckets should be omitted.
@@ -673,7 +673,7 @@ def test_get_ui_element_inventory_admits_edit_without_name(monkeypatch):
         ],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
+        "kenning.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
     )
     inv = get_ui_element_inventory(0)
     assert inv["text_fields"][0].value == "some user text"
@@ -692,7 +692,7 @@ def test_get_ui_element_inventory_skips_nameless_other_controls(monkeypatch):
         ],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
+        "kenning.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
     )
     inv = get_ui_element_inventory(0)
     assert len(inv["buttons"]) == 1
@@ -710,7 +710,7 @@ def test_get_ui_element_inventory_filters_by_control_types(monkeypatch):
         ],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
+        "kenning.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
     )
     inv = get_ui_element_inventory(0, control_types=["Button", "Hyperlink"])
     assert "buttons" in inv
@@ -728,7 +728,7 @@ def test_get_ui_element_inventory_truncates_value(monkeypatch):
         ],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
+        "kenning.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
     )
     inv = get_ui_element_inventory(0, value_truncate=20)
     assert len(inv["text_fields"][0].value) == 20
@@ -742,7 +742,7 @@ def test_get_ui_element_inventory_respects_max_elements(monkeypatch):
     ]
     root = _UINode(name="root", control_type="Window", children=children)
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
+        "kenning.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
     )
     inv = get_ui_element_inventory(0, max_elements=5)
     total = sum(len(items) for items in inv.values())
@@ -761,7 +761,7 @@ def test_get_ui_element_inventory_skips_broken_children(monkeypatch):
         children=[broken, _UINode(name="Healthy", control_type="Button")],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
+        "kenning.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
     )
     inv = get_ui_element_inventory(0)
     # "Bad" is itself admitted because its name + control_type are intact;
@@ -780,7 +780,7 @@ def test_get_ui_element_inventory_classifies_unknown_as_other(monkeypatch):
         ],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
+        "kenning.desktop.uia._connect_window", lambda hwnd: _spec_with(root),
     )
     inv = get_ui_element_inventory(0)
     assert "other" in inv
@@ -831,10 +831,10 @@ def test_wait_for_text_found_on_first_poll(monkeypatch):
         is_minimized=False, is_foreground=True,
     )
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [target],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [target],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.collect_window_text",
+        "kenning.desktop.uia.collect_window_text",
         lambda w, **kw: ["File name:", "Choose a folder"],
     )
 
@@ -859,10 +859,10 @@ def test_wait_for_text_case_insensitive(monkeypatch):
         is_minimized=False, is_foreground=False,
     )
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [target],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [target],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.collect_window_text",
+        "kenning.desktop.uia.collect_window_text",
         lambda w, **kw: ["Connected to Server"],
     )
     assert wait_for_text_in_window(
@@ -880,10 +880,10 @@ def test_wait_for_text_case_sensitive_when_disabled(monkeypatch):
         is_minimized=False, is_foreground=False,
     )
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [target],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [target],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.collect_window_text",
+        "kenning.desktop.uia.collect_window_text",
         lambda w, **kw: ["connected"],
     )
     clock = _FakeClock()
@@ -904,10 +904,10 @@ def test_wait_for_text_returns_false_on_timeout(monkeypatch):
         is_minimized=False, is_foreground=False,
     )
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [target],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [target],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.collect_window_text",
+        "kenning.desktop.uia.collect_window_text",
         lambda w, **kw: ["nothing matching here"],
     )
 
@@ -949,10 +949,10 @@ def test_wait_for_text_filters_by_window_title(monkeypatch):
         return ["matched text"]
 
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [other, target],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [other, target],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.collect_window_text", _collect,
+        "kenning.desktop.uia.collect_window_text", _collect,
     )
     found = wait_for_text_in_window(
         "matched", "save",
@@ -975,10 +975,10 @@ def test_wait_for_text_fail_open_on_enumerate_exception(monkeypatch):
         raise RuntimeError("simulated enumerate failure")
 
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", _enumerate,
+        "kenning.desktop.windows.enumerate_windows", _enumerate,
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.collect_window_text", lambda w, **kw: [],
+        "kenning.desktop.uia.collect_window_text", lambda w, **kw: [],
     )
 
     clock = _FakeClock()
@@ -1015,10 +1015,10 @@ def test_wait_for_text_skips_collect_exception(monkeypatch):
         return ["the secret phrase"]
 
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [bad, good],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [bad, good],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia.collect_window_text", _collect,
+        "kenning.desktop.uia.collect_window_text", _collect,
     )
     assert wait_for_text_in_window(
         "secret", "",
@@ -1115,7 +1115,7 @@ def _make_browser_window(
 
 def test_find_browser_window_returns_none_when_no_browser(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows",
+        "kenning.desktop.windows.enumerate_windows",
         lambda **kw: [
             WindowInfo(
                 hwnd=1, title="Visual Studio Code", class_name="VSC",
@@ -1131,7 +1131,7 @@ def test_find_browser_window_returns_none_when_no_browser(monkeypatch):
 def test_find_browser_window_picks_first_match(monkeypatch):
     target = _make_browser_window()
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows",
+        "kenning.desktop.windows.enumerate_windows",
         lambda **kw: [target],
     )
     match = find_browser_window()
@@ -1145,7 +1145,7 @@ def test_find_browser_window_respects_hint(monkeypatch):
     chrome = _make_browser_window(hwnd=1, title="A - Chrome", process="chrome.exe")
     edge = _make_browser_window(hwnd=2, title="B - Edge", process="msedge.exe")
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows",
+        "kenning.desktop.windows.enumerate_windows",
         lambda **kw: [chrome, edge],
     )
     match = find_browser_window(browser_hint="edge")
@@ -1160,7 +1160,7 @@ def test_find_browser_window_fail_open_on_enumerate_exception(monkeypatch):
         raise RuntimeError("simulated")
 
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", _raise,
+        "kenning.desktop.windows.enumerate_windows", _raise,
     )
     assert find_browser_window() is None
 
@@ -1201,7 +1201,7 @@ def _browser_spec(root: _BrowserNode, title: str = "Example Page - Google Chrome
 
 def test_extract_browser_content_returns_none_when_no_browser(monkeypatch):
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [],
     )
     assert extract_browser_content() is None
 
@@ -1221,10 +1221,10 @@ def test_extract_browser_content_categorises_text_and_headings(monkeypatch):
     )
     win = _make_browser_window()
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [win],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window",
+        "kenning.desktop.uia._connect_window",
         lambda hwnd: _browser_spec(root),
     )
     content = extract_browser_content()
@@ -1246,10 +1246,10 @@ def test_extract_browser_content_deduplicates_text(monkeypatch):
     )
     win = _make_browser_window()
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [win],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window",
+        "kenning.desktop.uia._connect_window",
         lambda hwnd: _browser_spec(root),
     )
     content = extract_browser_content()
@@ -1268,10 +1268,10 @@ def test_extract_browser_content_buttons_gated_by_flag(monkeypatch):
     )
     win = _make_browser_window()
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [win],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window",
+        "kenning.desktop.uia._connect_window",
         lambda hwnd: _browser_spec(root),
     )
     # Without include_buttons, the bucket is empty.
@@ -1307,10 +1307,10 @@ def test_extract_browser_content_links_with_url(monkeypatch):
     )
     win = _make_browser_window()
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [win],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window",
+        "kenning.desktop.uia._connect_window",
         lambda hwnd: _browser_spec(root),
     )
     content = extract_browser_content(include_links=True)
@@ -1335,10 +1335,10 @@ def test_extract_browser_content_inputs_capture_value(monkeypatch):
     )
     win = _make_browser_window()
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [win],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window",
+        "kenning.desktop.uia._connect_window",
         lambda hwnd: _browser_spec(root),
     )
     content = extract_browser_content(include_inputs=True)
@@ -1359,10 +1359,10 @@ def test_extract_browser_content_images_gated(monkeypatch):
     )
     win = _make_browser_window()
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [win],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window",
+        "kenning.desktop.uia._connect_window",
         lambda hwnd: _browser_spec(root),
     )
     content = extract_browser_content(include_images=True)
@@ -1389,10 +1389,10 @@ def test_extract_browser_content_full_flag_enables_everything(monkeypatch):
     )
     win = _make_browser_window()
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [win],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window",
+        "kenning.desktop.uia._connect_window",
         lambda hwnd: _browser_spec(root),
     )
     content = extract_browser_content(full=True)
@@ -1413,10 +1413,10 @@ def test_extract_browser_content_respects_caps(monkeypatch):
     )
     win = _make_browser_window()
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [win],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window",
+        "kenning.desktop.uia._connect_window",
         lambda hwnd: _browser_spec(root),
     )
     content = extract_browser_content(max_text=5)
@@ -1427,10 +1427,10 @@ def test_extract_browser_content_respects_caps(monkeypatch):
 def test_extract_browser_content_returns_none_when_connect_fails(monkeypatch):
     win = _make_browser_window()
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [win],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window", lambda hwnd: None,
+        "kenning.desktop.uia._connect_window", lambda hwnd: None,
     )
     assert extract_browser_content() is None
 
@@ -1448,10 +1448,10 @@ def test_extract_browser_content_explicit_window_skips_autodetect(monkeypatch):
         return []
 
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", _enum,
+        "kenning.desktop.windows.enumerate_windows", _enum,
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window",
+        "kenning.desktop.uia._connect_window",
         lambda hwnd: _browser_spec(root, title="x - Firefox"),
     )
     win = _make_browser_window(hwnd=42, title="x - Firefox", process="firefox.exe")
@@ -1469,10 +1469,10 @@ def test_extract_browser_content_truncated_flag(monkeypatch):
     root = _BrowserNode(name="root", control_type="Window", children=children)
     win = _make_browser_window()
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [win],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window",
+        "kenning.desktop.uia._connect_window",
         lambda hwnd: _browser_spec(root),
     )
     content = extract_browser_content(max_elements=10)
@@ -1488,10 +1488,10 @@ def test_extract_browser_content_truncates_text_name(monkeypatch):
     )
     win = _make_browser_window()
     monkeypatch.setattr(
-        "ultron.desktop.windows.enumerate_windows", lambda **kw: [win],
+        "kenning.desktop.windows.enumerate_windows", lambda **kw: [win],
     )
     monkeypatch.setattr(
-        "ultron.desktop.uia._connect_window",
+        "kenning.desktop.uia._connect_window",
         lambda hwnd: _browser_spec(root),
     )
     content = extract_browser_content(text_name_max=100)
@@ -1505,14 +1505,14 @@ def test_extract_browser_content_truncates_text_name(monkeypatch):
 
 
 def test_wait_for_pixel_color_returns_false_on_zero_timeout():
-    from ultron.desktop.uia import wait_for_pixel_color
+    from kenning.desktop.uia import wait_for_pixel_color
     assert wait_for_pixel_color(
         10, 10, (255, 0, 0), timeout_s=0.0,
     ) is False
 
 
 def test_wait_for_pixel_color_returns_false_on_invalid_target():
-    from ultron.desktop.uia import wait_for_pixel_color
+    from kenning.desktop.uia import wait_for_pixel_color
     # Two-tuple (missing third channel) -> caller error, returns False
     # rather than raising IndexError.
     assert wait_for_pixel_color(0, 0, (255, 0)) is False  # type: ignore[arg-type]
@@ -1520,10 +1520,10 @@ def test_wait_for_pixel_color_returns_false_on_invalid_target():
 
 def test_wait_for_pixel_color_matches_first_sample(monkeypatch):
     """Exact match on the first poll returns True without sleeping."""
-    from ultron.desktop.uia import wait_for_pixel_color
+    from kenning.desktop.uia import wait_for_pixel_color
 
     monkeypatch.setattr(
-        "ultron.desktop.capture.get_pixel_color",
+        "kenning.desktop.capture.get_pixel_color",
         lambda x, y: (12, 34, 56),
     )
     clock = _FakeClock()
@@ -1541,10 +1541,10 @@ def test_wait_for_pixel_color_matches_first_sample(monkeypatch):
 def test_wait_for_pixel_color_matches_with_tolerance(monkeypatch):
     """Per-channel L-infinity tolerance covers anti-aliased / jpeg
     rendered pixels that are a couple of units off the ideal colour."""
-    from ultron.desktop.uia import wait_for_pixel_color
+    from kenning.desktop.uia import wait_for_pixel_color
 
     monkeypatch.setattr(
-        "ultron.desktop.capture.get_pixel_color",
+        "kenning.desktop.capture.get_pixel_color",
         lambda x, y: (200, 100, 50),
     )
     clock = _FakeClock()
@@ -1561,11 +1561,11 @@ def test_wait_for_pixel_color_matches_with_tolerance(monkeypatch):
 
 def test_wait_for_pixel_color_tolerance_zero_requires_exact(monkeypatch):
     """tolerance=0 (default) requires exact channel-wise equality."""
-    from ultron.desktop.uia import wait_for_pixel_color
+    from kenning.desktop.uia import wait_for_pixel_color
 
     samples = iter([(200, 100, 50), (200, 100, 50), (200, 100, 50)])
     monkeypatch.setattr(
-        "ultron.desktop.capture.get_pixel_color",
+        "kenning.desktop.capture.get_pixel_color",
         lambda x, y: next(samples, (200, 100, 50)),
     )
 
@@ -1583,10 +1583,10 @@ def test_wait_for_pixel_color_tolerance_zero_requires_exact(monkeypatch):
 
 
 def test_wait_for_pixel_color_returns_false_on_timeout(monkeypatch):
-    from ultron.desktop.uia import wait_for_pixel_color
+    from kenning.desktop.uia import wait_for_pixel_color
 
     monkeypatch.setattr(
-        "ultron.desktop.capture.get_pixel_color",
+        "kenning.desktop.capture.get_pixel_color",
         lambda x, y: (0, 0, 0),  # never matches the bright-green target
     )
     clock = _FakeClock()
@@ -1605,7 +1605,7 @@ def test_wait_for_pixel_color_returns_false_on_timeout(monkeypatch):
 def test_wait_for_pixel_color_polls_until_match(monkeypatch):
     """Returns True as soon as a sample matches, even if earlier samples
     were misses."""
-    from ultron.desktop.uia import wait_for_pixel_color
+    from kenning.desktop.uia import wait_for_pixel_color
 
     samples = iter([
         (0, 0, 0),
@@ -1613,7 +1613,7 @@ def test_wait_for_pixel_color_polls_until_match(monkeypatch):
         (255, 255, 255),  # match here
     ])
     monkeypatch.setattr(
-        "ultron.desktop.capture.get_pixel_color",
+        "kenning.desktop.capture.get_pixel_color",
         lambda x, y: next(samples, (255, 255, 255)),
     )
     clock = _FakeClock()
@@ -1632,7 +1632,7 @@ def test_wait_for_pixel_color_polls_until_match(monkeypatch):
 def test_wait_for_pixel_color_fail_open_on_sample_exception(monkeypatch):
     """A per-sample exception is treated as "no match" so the loop
     re-tries on the next poll."""
-    from ultron.desktop.uia import wait_for_pixel_color
+    from kenning.desktop.uia import wait_for_pixel_color
 
     call_count = {"n": 0}
     def _probe(x, y):
@@ -1642,7 +1642,7 @@ def test_wait_for_pixel_color_fail_open_on_sample_exception(monkeypatch):
         return (10, 20, 30)
 
     monkeypatch.setattr(
-        "ultron.desktop.capture.get_pixel_color", _probe,
+        "kenning.desktop.capture.get_pixel_color", _probe,
     )
     clock = _FakeClock()
     def _sleep(s):
@@ -1660,11 +1660,11 @@ def test_wait_for_pixel_color_fail_open_on_sample_exception(monkeypatch):
 
 def test_wait_for_pixel_color_handles_none_sample(monkeypatch):
     """If the probe returns None (capture fail), the loop continues."""
-    from ultron.desktop.uia import wait_for_pixel_color
+    from kenning.desktop.uia import wait_for_pixel_color
 
     samples = iter([None, None, (0, 0, 0)])
     monkeypatch.setattr(
-        "ultron.desktop.capture.get_pixel_color",
+        "kenning.desktop.capture.get_pixel_color",
         lambda x, y: next(samples, (0, 0, 0)),
     )
     clock = _FakeClock()

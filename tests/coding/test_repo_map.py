@@ -1,4 +1,4 @@
-"""Tests for :mod:`ultron.coding.repo_map`."""
+"""Tests for :mod:`kenning.coding.repo_map`."""
 
 from __future__ import annotations
 
@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from ultron.coding.repo_map import (
+from kenning.coding.repo_map import (
     RepoMap,
     SKIP_DIRECTORIES,
     extract_idents_from_text,
     find_source_files,
 )
-from ultron.utils.mtime_cache import MtimeCache
+from kenning.utils.mtime_cache import MtimeCache
 
 
 # ---------------------------------------------------------------------------
@@ -43,11 +43,11 @@ def test_extract_idents_finds_camel_case():
 
 def test_extract_idents_finds_dotted_paths():
     idents = extract_idents_from_text(
-        "Edit ultron.coding.repo_map and verify ultron.utils.mtime_cache"
+        "Edit kenning.coding.repo_map and verify kenning.utils.mtime_cache"
     )
     # Both dotted forms picked up.
-    assert any("ultron.coding" in i for i in idents)
-    assert any("ultron.utils" in i for i in idents)
+    assert any("kenning.coding" in i for i in idents)
+    assert any("kenning.utils" in i for i in idents)
 
 
 def test_extract_idents_ignores_plain_words():
@@ -245,12 +245,12 @@ def test_repo_map_force_refresh_runs_clean(tmp_path: Path):
 def test_supervisor_attaches_repo_map_via_provider(tmp_path: Path):
     """End-to-end: a SupervisorDecision gains repo_map_text from the
     configured provider."""
-    from ultron.coding.project_supervisor import (
+    from kenning.coding.project_supervisor import (
         ProjectSupervisor,
         SupervisorAction,
         SupervisorDecision,
     )
-    from ultron.coding.projects import ProjectRegistry
+    from kenning.coding.projects import ProjectRegistry
 
     registry_path = tmp_path / "projects.json"
     registry = ProjectRegistry(registry_path)
@@ -279,12 +279,12 @@ def test_supervisor_attaches_repo_map_via_provider(tmp_path: Path):
 
 
 def test_supervisor_skips_repo_map_for_clarify(tmp_path: Path):
-    from ultron.coding.project_supervisor import (
+    from kenning.coding.project_supervisor import (
         ProjectSupervisor,
         SupervisorAction,
         SupervisorDecision,
     )
-    from ultron.coding.projects import ProjectRegistry
+    from kenning.coding.projects import ProjectRegistry
 
     registry = ProjectRegistry(tmp_path / "projects.json")
     calls = {"count": 0}
@@ -309,12 +309,12 @@ def test_supervisor_skips_repo_map_for_clarify(tmp_path: Path):
 
 
 def test_supervisor_skips_repo_map_when_no_path(tmp_path: Path):
-    from ultron.coding.project_supervisor import (
+    from kenning.coding.project_supervisor import (
         ProjectSupervisor,
         SupervisorAction,
         SupervisorDecision,
     )
-    from ultron.coding.projects import ProjectRegistry
+    from kenning.coding.projects import ProjectRegistry
 
     registry = ProjectRegistry(tmp_path / "projects.json")
     calls = {"count": 0}
@@ -340,12 +340,12 @@ def test_supervisor_skips_repo_map_when_no_path(tmp_path: Path):
 
 def test_supervisor_swallows_provider_errors(tmp_path: Path):
     """Provider exceptions must not propagate."""
-    from ultron.coding.project_supervisor import (
+    from kenning.coding.project_supervisor import (
         ProjectSupervisor,
         SupervisorAction,
         SupervisorDecision,
     )
-    from ultron.coding.projects import ProjectRegistry
+    from kenning.coding.projects import ProjectRegistry
 
     registry = ProjectRegistry(tmp_path / "projects.json")
 
@@ -368,7 +368,7 @@ def test_supervisor_swallows_provider_errors(tmp_path: Path):
 
 
 def test_supervisor_decision_log_dict_excludes_repo_map_text(tmp_path: Path):
-    from ultron.coding.project_supervisor import (
+    from kenning.coding.project_supervisor import (
         SupervisorAction,
         SupervisorDecision,
     )
@@ -389,7 +389,7 @@ def test_supervisor_decision_log_dict_excludes_repo_map_text(tmp_path: Path):
 
 
 def test_provider_cache_reuses_repo_map_instance(tmp_path: Path):
-    from ultron.coding.repo_map import RepoMapProviderCache
+    from kenning.coding.repo_map import RepoMapProviderCache
 
     _seed_project(tmp_path)
     cache = RepoMapProviderCache(
@@ -402,14 +402,14 @@ def test_provider_cache_reuses_repo_map_instance(tmp_path: Path):
 
 
 def test_provider_cache_returns_none_for_missing_path(tmp_path: Path):
-    from ultron.coding.repo_map import RepoMapProviderCache
+    from kenning.coding.repo_map import RepoMapProviderCache
 
     cache = RepoMapProviderCache()
     assert cache.get_or_create(str(tmp_path / "does-not-exist")) is None
 
 
 def test_provider_cache_call_returns_rendered_map(tmp_path: Path):
-    from ultron.coding.repo_map import RepoMapProviderCache
+    from kenning.coding.repo_map import RepoMapProviderCache
 
     _seed_project(tmp_path)
     cache = RepoMapProviderCache(
@@ -422,7 +422,7 @@ def test_provider_cache_call_returns_rendered_map(tmp_path: Path):
 
 
 def test_provider_cache_call_returns_none_on_invalid_path(tmp_path: Path):
-    from ultron.coding.repo_map import RepoMapProviderCache
+    from kenning.coding.repo_map import RepoMapProviderCache
 
     cache = RepoMapProviderCache()
     assert cache(str(tmp_path / "missing"), "anything") is None
@@ -431,7 +431,7 @@ def test_provider_cache_call_returns_none_on_invalid_path(tmp_path: Path):
 def test_provider_cache_mines_idents_from_user_text(tmp_path: Path):
     """The cache call must run extract_idents on the utterance and pass
     them through to RepoMap.get_map for personalization."""
-    from ultron.coding.repo_map import RepoMapProviderCache
+    from kenning.coding.repo_map import RepoMapProviderCache
 
     _seed_project(tmp_path)
     (tmp_path / "obscure_extra.py").write_text(

@@ -118,7 +118,7 @@ class _FakeRequests:
 @pytest.fixture
 def parakeet_engine(monkeypatch):
     """Construct a ParakeetEngine bypassing real server / NeMo init."""
-    from ultron.transcription import parakeet_engine as pe_mod
+    from kenning.transcription import parakeet_engine as pe_mod
 
     monkeypatch.setattr(pe_mod, "is_nemo_available", lambda: True)
     monkeypatch.setattr(

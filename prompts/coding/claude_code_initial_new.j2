@@ -46,11 +46,11 @@ this machine.
 - Write tests for each component as you build it.
 - Run tests after each component is implemented, before moving to the next.
 - Fix failures before proceeding -- do not weaken or delete tests to make them pass.
-- After each test run, call `mcp__ultron_coding__report_test_results`
+- After each test run, call `mcp__kenning_coding__report_test_results`
   with the passing/failing/skipped counts and a one-line `details` field.
 
 ## Reporting requirements
-- Call `mcp__ultron_coding__report_progress` after every meaningful unit
+- Call `mcp__kenning_coding__report_progress` after every meaningful unit
   of work (scaffolding done, module implemented, tests written, tests
   passing, refactor complete).
 - Each call should have a clear `stage` label and the list of files
@@ -58,8 +58,8 @@ this machine.
 
 ## Clarification protocol
 - If you need information you don't have, call
-  `mcp__ultron_coding__request_clarification`. The user's supervisor
-  (Ultron) will answer if possible or escalate to the user.
+  `mcp__kenning_coding__request_clarification`. The user's supervisor
+  (Kenning) will answer if possible or escalate to the user.
 - DO call request_clarification for: scope additions beyond the goal,
   external services or credentials, paid API tiers, breaking design
   choices, deployment targets, anything that costs money.
@@ -83,7 +83,7 @@ this machine.
 {% endif %}
 
 ## Completion criteria
-You may call `mcp__ultron_coding__declare_complete` only when:
+You may call `mcp__kenning_coding__declare_complete` only when:
 - All requested features are implemented.
 - All tests pass (zero failures).
 - The entry point (if applicable) runs without crashing on startup.

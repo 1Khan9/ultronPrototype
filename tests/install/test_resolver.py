@@ -9,11 +9,11 @@ import tarfile
 
 import pytest
 
-from ultron.install.artifact_identity import (
+from kenning.install.artifact_identity import (
     ArtifactIdentity,
     compute_identity,
 )
-from ultron.install.resolver import (
+from kenning.install.resolver import (
     ArtifactResolver,
     ArtifactVerificationOutcome,
     ExtractStrategy,
@@ -26,7 +26,7 @@ from ultron.install.resolver import (
     build_tarball_url_artifact,
     verify_artifact_bytes,
 )
-from ultron.install.trust_envelope import ArtifactKind
+from kenning.install.trust_envelope import ArtifactKind
 
 
 def _make_tarball(*, name: str, version: str) -> bytes:

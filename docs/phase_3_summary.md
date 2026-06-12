@@ -7,13 +7,13 @@ Bridge layer is complete. Five new modules + orchestrator wiring +
 
 | File | Role |
 |---|---|
-| `src/ultron/openclaw_bridge/client.py` | `OpenClawClient` — async client over the `openclaw` CLI. Public surface: `health`, `send_message`, `trigger_heartbeat`, `run_agent`, `invoke_tool`, `mcp_set/show/list/unset`. |
-| `src/ultron/openclaw_bridge/workspace.py` | `WorkspaceWriter` — atomic writes (`os.replace`) + advisory lockfiles (`filelock`) for `MEMORY.md`, `USER.md`, daily memory files. |
-| `src/ultron/openclaw_bridge/events.py` | `OpenClawEventReceiver` — gated-off scaffold for the `[voice]`-prefix inbound handoff. Pure prefix/payload helpers locked down by tests. |
-| `src/ultron/openclaw_bridge/mcp_registration.py` | `UltronMcpRegistrar` — idempotent registration via `openclaw mcp set` with `schedule_retry()` for background recovery. |
-| `src/ultron/openclaw_bridge/holder.py` | `OpenClawBridge` — orchestrator-owned holder. Probes the Gateway, runs MCP registration, launches a daemon retry thread when needed. |
-| `src/ultron/pipeline/orchestrator.py` | `_load_openclaw_bridge_if_enabled()` factory + `shutdown()` cleanup hook. |
-| `src/ultron/config.py` | `OpenClawBridgeConfig` sub-model on `OpenClawConfig`. |
+| `src/kenning/openclaw_bridge/client.py` | `OpenClawClient` — async client over the `openclaw` CLI. Public surface: `health`, `send_message`, `trigger_heartbeat`, `run_agent`, `invoke_tool`, `mcp_set/show/list/unset`. |
+| `src/kenning/openclaw_bridge/workspace.py` | `WorkspaceWriter` — atomic writes (`os.replace`) + advisory lockfiles (`filelock`) for `MEMORY.md`, `USER.md`, daily memory files. |
+| `src/kenning/openclaw_bridge/events.py` | `OpenClawEventReceiver` — gated-off scaffold for the `[voice]`-prefix inbound handoff. Pure prefix/payload helpers locked down by tests. |
+| `src/kenning/openclaw_bridge/mcp_registration.py` | `KenningMcpRegistrar` — idempotent registration via `openclaw mcp set` with `schedule_retry()` for background recovery. |
+| `src/kenning/openclaw_bridge/holder.py` | `OpenClawBridge` — orchestrator-owned holder. Probes the Gateway, runs MCP registration, launches a daemon retry thread when needed. |
+| `src/kenning/pipeline/orchestrator.py` | `_load_openclaw_bridge_if_enabled()` factory + `shutdown()` cleanup hook. |
+| `src/kenning/config.py` | `OpenClawBridgeConfig` sub-model on `OpenClawConfig`. |
 | `config.yaml` | `openclaw.bridge` subsection with twelve fields; defaults preserve fail-open posture. |
 
 ## Deviations from the integration spec
@@ -52,7 +52,7 @@ Gateway is unreachable:
   `OpenClawAuthError`; transport failures raise
   `OpenClawGatewayError`.
 - Shutdown joins the retry thread (≤2 s) and stops the receiver.
-  The MCP entry stays registered so OpenClaw can spawn Ultron's
+  The MCP entry stays registered so OpenClaw can spawn Kenning's
   MCP across restarts.
 
 ## Verification
@@ -63,7 +63,7 @@ Gateway is unreachable:
 | `OpenClawClient` constructs and runs CLI subprocesses | ✅ 35 unit tests + 4 real-subprocess integration tests. |
 | `WorkspaceWriter` serialises concurrent writers | ✅ 4 threads × 20 entries land 80 entries intact under `filelock`. |
 | `OpenClawEventReceiver` prefix logic locked down | ✅ 15 tests covering enabled/disabled, prefix match cases, dispatch error swallowing. |
-| `UltronMcpRegistrar` idempotent + fail-open | ✅ 16 tests covering match-existing skip, transient retry, give-up at max_attempts, auth handling. |
+| `KenningMcpRegistrar` idempotent + fail-open | ✅ 16 tests covering match-existing skip, transient retry, give-up at max_attempts, auth handling. |
 | `OpenClawBridge` holder lifecycle | ✅ 10 tests covering construction with/without CLI, start with reachable/unreachable Gateway, retry thread launch + clean shutdown. |
 | Orchestrator startup with `openclaw.enabled=False` | ✅ Default. Bridge factory returns `None`; no behavior change. |
 | Orchestrator startup with `openclaw.enabled=True` + Gateway down | ✅ Bridge constructs, logs WARN, launches retry thread (when MCP command configured), voice pipeline unaffected. |
@@ -81,7 +81,7 @@ The Phase 0 + Phase 1 constraints carry forward unchanged:
    llama-cpp-server.
 4. `models[].reasoning: true`.
 5. `api: "openai-completions"` on the litellm provider.
-6. Don't disable `tools.deny` for `ultron-main` — the messaging
+6. Don't disable `tools.deny` for `kenning-main` — the messaging
    profile stays in place until Phase 6 wires browser/file tools
    explicitly.
 

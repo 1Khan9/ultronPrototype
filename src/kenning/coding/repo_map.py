@@ -9,10 +9,10 @@ Pipeline:
 
   1. Walk the project tree for source files (``find_source_files``).
      Languages with vendored ``*-tags.scm`` queries
-     (:mod:`ultron.coding.tree_sitter_tags`) are eligible.
+     (:mod:`kenning.coding.tree_sitter_tags`) are eligible.
   2. Extract per-file tags (defs + refs) via
      :func:`tree_sitter_tags.extract_tags`. Results memoized via
-     :class:`ultron.utils.mtime_cache.MtimeCache`.
+     :class:`kenning.utils.mtime_cache.MtimeCache`.
   3. Build a ``networkx.MultiDiGraph``:
        * Nodes = files (relative paths, POSIX).
        * Edges = referencing-file → defining-file, weighted by
@@ -34,7 +34,7 @@ Pipeline:
        * Files whose path components match ``mentioned_idents``:
          ``personalize``
        * Files in the
-         :func:`ultron.coding.important_files.is_important` allowlist:
+         :func:`kenning.coding.important_files.is_important` allowlist:
          ``personalize * 0.5`` (creative extension — README et al. get
          a boost so they float to the top without inbound edges).
   5. Run ``nx.pagerank(G, weight="weight", personalization=...,
@@ -88,20 +88,20 @@ from typing import (
     Tuple,
 )
 
-from ultron.coding.important_files import is_important, promoted_score
-from ultron.coding.tree_sitter_tags import Tag, extract_tags_for_files
-from ultron.utils.mtime_cache import MtimeCache
-from ultron.utils.token_budget import char_count_tokens
+from kenning.coding.important_files import is_important, promoted_score
+from kenning.coding.tree_sitter_tags import Tag, extract_tags_for_files
+from kenning.utils.mtime_cache import MtimeCache
+from kenning.utils.token_budget import char_count_tokens
 
 
 warnings.simplefilter("ignore", category=FutureWarning)
 
 
-logger = logging.getLogger("ultron.coding.repo_map")
+logger = logging.getLogger("kenning.coding.repo_map")
 
 
 # Directories the walker skips wholesale. Mirrors
-# :data:`ultron.coding.project_introspect.SKIP_DIRECTORIES` plus a few
+# :data:`kenning.coding.project_introspect.SKIP_DIRECTORIES` plus a few
 # entries specific to source-graph use (we don't want vendored deps to
 # pollute the PageRank).
 SKIP_DIRECTORIES: FrozenSet[str] = frozenset({
@@ -135,7 +135,7 @@ SKIP_DIRECTORIES: FrozenSet[str] = frozenset({
     "temp",
     ".turbo",
     ".parcel-cache",
-    "models",       # ultron-specific: gitignored model weights
+    "models",       # kenning-specific: gitignored model weights
     "logs",
 })
 
@@ -917,7 +917,7 @@ class RepoMapProviderCache:
           * :func:`extract_idents_from_text` for identifier mentions
             (snake_case / camelCase / etc.) — passed as
             ``mentioned_idents`` to bias the PageRank graph weights.
-          * :func:`ultron.coding.file_mention_resolver.resolve_mentions`
+          * :func:`kenning.coding.file_mention_resolver.resolve_mentions`
             for implicit file references — passed as
             ``mentioned_fnames`` to bias the personalization vector
             (catalog T16 wiring).
@@ -959,7 +959,7 @@ class RepoMapProviderCache:
         finds no matches.
         """
         try:
-            from ultron.coding.file_mention_resolver import resolve_mentions
+            from kenning.coding.file_mention_resolver import resolve_mentions
         except ImportError:
             return set()
         try:

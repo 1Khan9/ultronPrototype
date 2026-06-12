@@ -45,7 +45,7 @@ from typing import Any, Callable, Dict, List, Optional
 import tiktoken
 
 from config import settings
-from ultron.coding.session import (
+from kenning.coding.session import (
     ClarificationRequest,
     CompletionClaim,
     FileRecord,
@@ -53,7 +53,7 @@ from ultron.coding.session import (
     SessionStatus,
     StageRecord,
 )
-from ultron.utils.logging import get_logger
+from kenning.utils.logging import get_logger
 
 logger = get_logger("coding.projections")
 
@@ -131,7 +131,7 @@ def _finalize_projection(
       * ``truncation_warning_threshold`` — fraction of budget above which
         we emit a WARNING even if we technically fit
     """
-    from ultron.config import get_config
+    from kenning.config import get_config
 
     truncation_warning: Optional[str] = None
     proj_name = type(proj).__name__

@@ -44,8 +44,8 @@ $action = New-ScheduledTaskAction `
 $trigger = New-ScheduledTaskTrigger -Daily -At 3:00am
 
 Register-ScheduledTask -Action $action -Trigger $trigger `
-    -TaskName "ultron-nightly-maintenance" `
-    -Description "Run Ultron memory maintenance: backfill, extract facts, cluster, decay, cleanup."
+    -TaskName "kenning-nightly-maintenance" `
+    -Description "Run Kenning memory maintenance: backfill, extract facts, cluster, decay, cleanup."
 ```
 
 Output goes to the task scheduler's history. Pipe to a file +
@@ -56,7 +56,7 @@ day if you want Telegram delivery of the previous night's summary.
 
 Once the OpenClaw stdio MCP entrypoint exists (deferred — Phase 3.2's
 `mcp_server_command` is currently `None`), the agent can call an
-`ultron.run_maintenance(scope)` tool directly:
+`kenning.run_maintenance(scope)` tool directly:
 
 ```powershell
 & "$env:USERPROFILE\AppData\Roaming\npm\openclaw.cmd" cron add `
@@ -67,7 +67,7 @@ Once the OpenClaw stdio MCP entrypoint exists (deferred — Phase 3.2's
     --announce `
     --channel telegram `
     --to "$env:TELEGRAM_USER_ID" `
-    --message "Run Ultron maintenance via the ultron.run_maintenance tool. Scope: all. Report a brief summary of what was processed."
+    --message "Run Kenning maintenance via the kenning.run_maintenance tool. Scope: all. Report a brief summary of what was processed."
 ```
 
 This is the pattern from the integration spec; until the MCP tool
@@ -93,7 +93,7 @@ search, project registry lookup, heartbeat alert log).
 
 The agent reads SOUL.md / IDENTITY.md / USER.md (via the standard
 persona-loading path) and AGENTS.md (via the heartbeat-style
-context budget). It calls Ultron MCP tools to actually fetch data
+context budget). It calls Kenning MCP tools to actually fetch data
 — which again requires the stdio entrypoint. Until that lands the
 agent's reply will be vague but in-character.
 
@@ -133,7 +133,7 @@ For Option A (Windows Task Scheduler) — manually run the task from
 Task Scheduler GUI or:
 
 ```powershell
-Start-ScheduledTask -TaskName "ultron-nightly-maintenance"
+Start-ScheduledTask -TaskName "kenning-nightly-maintenance"
 ```
 
 ## Coordination with the voice path
@@ -155,8 +155,8 @@ voice queries even if they collide.
 
 ## Configuration knobs
 
-There are no Ultron-side config knobs for cron — the schedule lives
-entirely in OpenClaw. The Ultron-side helper (`run_maintenance_for_cron.py`)
+There are no Kenning-side config knobs for cron — the schedule lives
+entirely in OpenClaw. The Kenning-side helper (`run_maintenance_for_cron.py`)
 takes its configuration from `config.yaml` via the existing
 maintenance pipeline.
 

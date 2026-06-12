@@ -6,7 +6,7 @@ without parsing exception messages.
 
 Hierarchy:
 
-    UltronError                       (root — all Ultron-raised errors)
+    KenningError                       (root — all Kenning-raised errors)
     ├── DependencyUnavailableError    (external service unreachable / failing)
     │   ├── BraveAPIError
     │   ├── JinaReaderError
@@ -41,8 +41,8 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 
-class UltronError(Exception):
-    """Base for every Ultron-raised exception.
+class KenningError(Exception):
+    """Base for every Kenning-raised exception.
 
     Attributes:
         message: short human-readable summary
@@ -64,13 +64,13 @@ class UltronError(Exception):
         self.context: Dict[str, Any] = dict(context or {})
         self.recovery: Optional[str] = recovery
 
-    def with_recovery(self, recovery: str) -> "UltronError":
+    def with_recovery(self, recovery: str) -> "KenningError":
         """Annotate this error with a recovery description (the fallback
         path being taken). Returns self for chaining."""
         self.recovery = recovery
         return self
 
-    def with_context(self, **kwargs: Any) -> "UltronError":
+    def with_context(self, **kwargs: Any) -> "KenningError":
         self.context.update(kwargs)
         return self
 
@@ -88,7 +88,7 @@ class UltronError(Exception):
 # ---------------------------------------------------------------------------
 
 
-class DependencyUnavailableError(UltronError):
+class DependencyUnavailableError(KenningError):
     """Generic 'the thing we needed wasn't reachable / functional'.
 
     Subclassed per dependency so callers can branch on which one failed.
@@ -132,7 +132,7 @@ class OpenClawAuthError(OpenClawGatewayError):
     pipeline keeps working."""
 
 
-class OpenClawToolError(UltronError):
+class OpenClawToolError(KenningError):
     """An OpenClaw tool invocation failed at the application layer (the
     Gateway responded, but the tool returned an error result). Distinct
     from transport failures (``OpenClawGatewayError``) — this means the
@@ -144,7 +144,7 @@ class OpenClawToolError(UltronError):
 # ---------------------------------------------------------------------------
 
 
-class ClaudeCodeError(UltronError):
+class ClaudeCodeError(KenningError):
     """AI coding agent subprocess failures: nonzero exit, malformed
     stream-json, hang/timeout, killed by external signal."""
 
@@ -154,7 +154,7 @@ class ClaudeCodeError(UltronError):
 # ---------------------------------------------------------------------------
 
 
-class AudioPipelineError(UltronError):
+class AudioPipelineError(KenningError):
     """Anything in the audio path failed in a way the caller should
     surface to the user."""
 
@@ -187,22 +187,22 @@ class AddressingClassifierError(AudioPipelineError):
 # ---------------------------------------------------------------------------
 
 
-class MCPServerError(UltronError):
+class MCPServerError(KenningError):
     """MCP server crashed / unreachable / protocol error."""
 
 
-class ConfigurationError(UltronError):
+class ConfigurationError(KenningError):
     """Invalid config.yaml or schema mismatch. Raised loudly at startup;
     we never proceed with a partial config."""
 
 
-class FilesystemError(UltronError):
+class FilesystemError(KenningError):
     """Audit log write failed, sandbox creation failed, project
     registry I/O failed, etc."""
 
 
 __all__ = [
-    "UltronError",
+    "KenningError",
     "DependencyUnavailableError",
     "BraveAPIError",
     "JinaReaderError",

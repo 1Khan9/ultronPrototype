@@ -1,10 +1,10 @@
-"""Tests for :mod:`ultron.coding.edit_matcher`."""
+"""Tests for :mod:`kenning.coding.edit_matcher`."""
 
 from __future__ import annotations
 
 import pytest
 
-from ultron.coding.edit_matcher import (
+from kenning.coding.edit_matcher import (
     DEFAULT_SIMILARITY_THRESHOLD,
     EditResult,
     Strategy,

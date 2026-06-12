@@ -21,11 +21,11 @@ from __future__ import annotations
 
 import pytest
 
-from ultron.llm.inference import (
+from kenning.llm.inference import (
     _is_short_conversational_query,
     _strip_brevity_hint,
 )
-from ultron.response_style import apply_brevity_hint
+from kenning.response_style import apply_brevity_hint
 
 
 # ---------------------------------------------------------------------------
