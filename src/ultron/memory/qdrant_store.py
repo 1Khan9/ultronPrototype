@@ -210,22 +210,6 @@ class ConversationMemory:
             len(self._recent), self.session_id, self.path,
         )
 
-    def close(self) -> None:
-        """Release the underlying Qdrant client.
-
-        In local (file-backed) mode Qdrant holds an EXCLUSIVE OS lock on
-        ``<path>/.lock`` for the lifetime of the client, so only one
-        :class:`ConversationMemory` can be open against a given path at once.
-        Closing frees that lock (and the file handles) -- useful for clean
-        shutdown and for any harness/tooling that opens a second instance
-        against the same path. Best-effort + fail-open; the background writer
-        is a daemon thread that exits with the process.
-        """
-        try:
-            self._client.close()
-        except Exception as e:                                       # noqa: BLE001
-            logger.debug("ConversationMemory.close failed: %s", e)
-
     # --- collection bootstrap -----------------------------------------------
 
     def _ensure_collections(self) -> None:
@@ -1375,7 +1359,23 @@ class ConversationMemory:
             return len(self._recent)
 
     def close(self) -> None:
-        """Drain the writer queue and close the Qdrant client."""
+        """Drain the writer queue and release the Qdrant client.
+
+        In local (file-backed) mode Qdrant holds an EXCLUSIVE OS lock
+        on ``<path>/.lock`` for the lifetime of the client, so only one
+        client can be open against a given path at once (the supervisor
+        ProjectIndex and the web cache BORROW this instance's client
+        for exactly that reason). Closing frees that lock and the file
+        handles -- used for clean shutdown and by harness/tooling (the
+        voice e2e suite closes between phases) that opens a fresh
+        instance against the same path. Best-effort + fail-open at
+        every step; the writer is a daemon thread, so even a failed
+        join exits with the process.
+
+        Note (2026-06-12): this was previously shadowed by a dead
+        duplicate ``close`` earlier in the class; this queue-draining
+        implementation has always been the one Python actually used.
+        """
         try:
             # Wait for in-flight writes to complete (~ms each, capped).
             self._write_queue.join()

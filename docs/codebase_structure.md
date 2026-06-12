@@ -3618,7 +3618,14 @@ Module is I/O-free. Callers wire their own persistence (Qdrant payload, JSONL au
   - `retrieve_multi(primary_query, category_queries, *, k, exclude_recent)` (V1-gap A2) — multi-pass per-category hybrid RRF + composite re-ranking. Parallel fan-out via `ThreadPoolExecutor`. Falls back to single-pass on any failure.
   - `retrieve_for_query(primary_query, gate_verdict=None, *, k, exclude_recent)` (V1-gap A2) — routing helper: when `memory.retrieval.multi_pass_enabled` is True AND the verdict carries `context_categories`, fans out via `retrieve_multi`; otherwise calls `retrieve`. Default-OFF preserves byte-for-byte legacy behaviour.
   - `search_facts(query, *, k=5, min_confidence=0.0, max_age_days=None) -> List[FactRow]` (V1-gap A3) — hybrid RRF over the `facts` collection. Filters via Qdrant `confidence >= min_confidence` and `last_confirmed >= now - max_age_days*86400`. Fail-open: returns `[]` on any Qdrant / embedder failure.
-  - `__len__()` / `close()`
+  - `__len__()` / `close()` — close() drains the writer queue, sends
+    the shutdown sentinel, joins the writer thread, then releases the
+    Qdrant client (freeing the local-mode exclusive `<path>/.lock`;
+    the supervisor ProjectIndex + web cache BORROW this client for
+    exactly that one-client-per-path reason). 2026-06-12 cleanup: a
+    dead duplicate `close()` definition earlier in the class (client-
+    only body, shadowed by this one) was removed; its .lock docstring
+    was folded into the surviving implementation.
 
 #### `memory/ranking.py` (V1-gap A2)
 - `@dataclass class RankingWeights` — frozen snapshot of the rrf_weight / recency_weight / recency_half_life_days / surprise_weight / redundancy_weight tuning.
