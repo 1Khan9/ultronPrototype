@@ -136,6 +136,65 @@ def spectral_smooth(
     return out / weight
 
 
+def _strip_post_gap_blip(
+    audio_f32: "np.ndarray",
+    sr: int,
+    *,
+    content_db: float = -33.0,
+    energy_after_db: float = -56.0,
+    min_gap_ms: float = 90.0,
+    frame_ms: float = 10.0,
+) -> "np.ndarray":
+    """Chop an isolated faint blip the fine-tune emits AFTER a long
+    near-silence gap.
+
+    Waveform-measured (2026-06-12): a ~-41 dB, ~40 ms bump 200-700 ms past the
+    last speech, with a long stretch of near-total silence between. It sits
+    BELOW the -40 dB trim threshold, so the run-discard in ``trim_and_fade``
+    never sees it. It is told apart from the natural REVERB tail by the gap:
+    reverb decays continuously (no >= ``min_gap_ms`` near-silence stretch with
+    energy after it), so a reverb-only tail is never touched -- only a
+    silence-then-energy pattern is cut, at the start of that silence.
+
+    Cheap: one framed-RMS pass + a slice. No FFT, no per-sample work.
+    """
+    if len(audio_f32) == 0:
+        return audio_f32
+    fr = max(1, int(sr * frame_ms / 1000.0))
+    n = len(audio_f32) // fr
+    if n < 4:
+        return audio_f32
+    block = audio_f32[: n * fr].reshape(n, fr)
+    rms = np.sqrt(np.maximum(np.mean(block * block, axis=1), 1e-12))
+    content = 10.0 ** (content_db / 20.0)
+    energy_after = 10.0 ** (energy_after_db / 20.0)
+    above = np.where(rms > content)[0]
+    if len(above) == 0:
+        return audio_f32
+    # Speech (incl. strong reverb) ends at the last frame above ``content``.
+    # AFTER it, a single ``energy_after`` threshold splits the tail into
+    # quiet (gap, incl. the decaying reverb's faint floor) and energy. A
+    # frame above the threshold following a >= min_gap_ms quiet run is the
+    # post-gap blip -> chop at the gap start. A reverb-only tail decays into
+    # the quiet floor with NO energy after it, so it is never cut. Working
+    # only past last_content keeps internal between-word pauses untouched.
+    last_content = int(above[-1])
+    gap_frames = max(1, int(np.ceil(min_gap_ms / frame_ms)))
+    gap_run = 0
+    gap_start = None
+    for k in range(last_content + 1, n):
+        if rms[k] <= energy_after:
+            if gap_run == 0:
+                gap_start = k
+            gap_run += 1
+        else:
+            if gap_run >= gap_frames and gap_start is not None:
+                return audio_f32[: gap_start * fr].copy()
+            gap_run = 0
+            gap_start = None
+    return audio_f32
+
+
 def trim_and_fade(
     audio: np.ndarray,
     sr: int = 24000,
@@ -284,6 +343,13 @@ def trim_and_fade(
     end = min(len(audio_f32), (last_frame + 1) * frame_samples)
     trimmed = audio_f32[start:end].copy()
 
+    if len(trimmed) == 0:
+        return audio_f32
+
+    # Chop the sub-threshold post-gap blip the run-discard above can't see
+    # (it lives below the -40 dB speech threshold). Reverb-safe: only cuts a
+    # silence-then-faint-energy pattern, never a continuous decay.
+    trimmed = _strip_post_gap_blip(trimmed, sr)
     if len(trimmed) == 0:
         return audio_f32
 
