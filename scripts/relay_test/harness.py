@@ -184,7 +184,7 @@ def run(stage: str, limit: int | None, run_tag: str,
     # ring and provokes the LLM to copy the previous output, which never
     # happens in real spread-out play. Seeded for reproducible runs.
     import random as _random
-    _random.Random(42).shuffle(cases)
+    _random.Random(7).shuffle(cases)
     if limit:
         cases = cases[:limit]
     out_dir = ROOT / "logs" / "relay_test"
@@ -232,8 +232,25 @@ def run(stage: str, limit: int | None, run_tag: str,
 
             if cmd is not None and need_llm:
                 try:
-                    line = build_relay_line(cmd, llm=llm, rephrase=True,
-                                            recent_lines=recent[-6:])
+                    # Mirror the orchestrator: roast / fun-fact relays speak
+                    # VERBATIM from the curated pools (the orchestrator
+                    # intercepts these BEFORE build_relay_line), so reproduce
+                    # that here for test fidelity instead of LLM-composing them.
+                    if getattr(cmd, "roast", False):
+                        from kenning.audio.relay_speech import (
+                            load_roast_lines, pick_line,
+                        )
+                        line = pick_line(load_roast_lines("data/relay_roasts.txt"),
+                                         recent_lines=recent[-6:])
+                    elif getattr(cmd, "fun_fact", False):
+                        from kenning.audio.relay_speech import (
+                            load_fun_facts, pick_line,
+                        )
+                        line = pick_line(load_fun_facts("data/relay_fun_facts.txt"),
+                                         recent_lines=recent[-6:])
+                    else:
+                        line = build_relay_line(cmd, llm=llm, rephrase=True,
+                                                recent_lines=recent[-6:])
                 except Exception as e:                               # noqa: BLE001
                     line = ""
                     rec["fails"].append(f"rephrase-exc: {e}")

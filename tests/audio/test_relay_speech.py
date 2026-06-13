@@ -183,29 +183,32 @@ def test_named_rephrase_prompt_mentions_name() -> None:
 
     def fake_generate(prompt: str):
         captured.append(prompt)
-        return iter(["Clove, smoke window every round."])
+        return iter(["Clove, what is the meaning of life?"])
 
-    cmd = match_relay_command("ask clove to smoke window every round")
+    # A named QUESTION reaches the LLM (a short ability directive like 'smoke
+    # window' is now handled deterministically by the snap path).
+    cmd = match_relay_command("ask clove what the meaning of life is")
     assert cmd is not None
     line = build_relay_line(cmd, generate_fn=fake_generate)
-    assert line == "Clove, smoke window every round."
+    assert line == "Clove, what is the meaning of life?"
     assert "Clove" in captured[0]
-    assert "smoke window every round" in captured[0]
+    assert "meaning of life" in captured[0]
 
 
 def test_compose_prompt_has_no_reported_speech() -> None:
-    # A directive-compose ("respond and calm him down") authors the line, so
-    # its prompt must NOT carry a literal "reported speech" payload block.
+    # A directive-compose ("respond") authors the line, so its prompt must NOT
+    # carry a literal "reported speech" payload block. (Uses a non-calm
+    # directive: 'calm' now routes to a curated pool, bypassing the LLM.)
     captured: list[str] = []
 
     def fake_generate(prompt: str):
         captured.append(prompt)
-        return iter(["Jett, ease up."])
+        return iter(["Jett, your insolence amuses me."])
 
-    cmd = match_relay_command("jett is flaming me, respond and calm him down")
+    cmd = match_relay_command("jett is making fun of me, respond")
     assert cmd is not None and cmd.compose
     line = build_relay_line(cmd, generate_fn=fake_generate)
-    assert line == "Jett, ease up."
+    assert line == "Jett, your insolence amuses me."
     assert "reported speech" not in captured[0]
 
 
@@ -225,7 +228,9 @@ def test_morale_compose_uses_curated_pool() -> None:
 
 def test_first_person_instruction_present_in_prompt() -> None:
     captured: list[str] = []
-    cmd = match_relay_command("tell my team I am lurking this round")
+    # An insult is off-snap -> reaches the LLM (literal callouts like 'I am
+    # lurking' are now deterministic and never sent to the model).
+    cmd = match_relay_command("tell my team they are bots")
     assert cmd is not None
     build_relay_line(
         cmd, generate_fn=lambda p: captured.append(p) or iter(["x y"]),
@@ -604,12 +609,14 @@ def test_prompt_includes_recent_lines_and_variety_instruction() -> None:
 
 def test_prompt_recent_lines_capped_at_six() -> None:
     captured: list[str] = []
-    cmd = match_relay_command("tell my team nice try everyone")
+    # An enemy playstyle read reaches the LLM (and is not a general question),
+    # so the recent-lines block is included and we can assert its cap.
+    cmd = match_relay_command("tell my team the enemy is camping")
     assert cmd is not None
     build_relay_line(
         cmd,
         recent_lines=[f"line {i}" for i in range(10)],
-        generate_fn=lambda p: captured.append(p) or iter(["Nice try."]),
+        generate_fn=lambda p: captured.append(p) or iter(["They cower."]),
     )
     prompt = captured[0]
     assert "line 9" in prompt and "line 4" in prompt
@@ -778,12 +785,13 @@ def test_relay_generation_is_fully_isolated() -> None:
     class _FakeLLM:
         def generate_stream(self, prompt, **kwargs):
             captured.update(kwargs, prompt=prompt)
-            return iter(["Clove, smoke window."])
+            return iter(["Clove, what is your plan?"])
 
-    cmd = match_relay_command("tell clove to smoke window every round")
+    # A named QUESTION reaches the LLM (snap handles short ability directives).
+    cmd = match_relay_command("ask clove what the plan is")
     assert cmd is not None
     line = build_relay_line(cmd, _FakeLLM())
-    assert line == "Clove, smoke window."
+    assert line == "Clove, what is your plan?"
     assert captured["suppress_memory_context"] is True
     assert captured["record_history"] is False
     assert captured["enable_thinking"] is False

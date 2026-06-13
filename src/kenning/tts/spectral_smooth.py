@@ -226,6 +226,82 @@ def _strip_post_gap_blip(
     return audio_f32
 
 
+def _compress_internal_dead_space(
+    audio_f32: "np.ndarray",
+    sr: int,
+    *,
+    speech_db: float = -40.0,
+    silence_db: float = -76.0,
+    keep_silence_ms: float = 120.0,
+    min_silence_ms: float = 190.0,
+    frame_ms: float = 10.0,
+) -> "np.ndarray":
+    """Shorten a run of PURE DIGITAL SILENCE between sentences -- speech-safe.
+
+    Kokoro returns a multi-sentence line as one concatenated clip; most of its
+    internal sentence/clause pauses are natural (~290-550 ms, floor ~-62..-73
+    dB room tone) and must be KEPT -- they are the intentional beats (sentence
+    boundaries, commas, pauses for effect). Occasionally the decoder emits a
+    LONGER pause whose CORE is pure digital silence (waveform-measured 300-500
+    ms reaching -82..-97 dB between sentences) -- dead space, not an intentional
+    beat.
+
+    GUARANTEE -- this never alters the spoken sentence in ANY way: it removes
+    ONLY frames at or below ``silence_db`` (-76 dB ~= 0.016 % of full scale),
+    which is far below the voice's natural room-tone pause floor (~-62..-73 dB)
+    and below anything audible -- no speech sample, no consonant tail, no reverb
+    is ever this quiet. So only the inaudible digital-silence CORE of a dead
+    pause is shortened; the pause's audible decay-in and ramp-out (which live
+    ABOVE silence_db) are left byte-for-byte intact, as is every speech frame.
+
+    A contiguous pure-silence run longer than ``min_silence_ms`` (strictly
+    between the first and last speech frame -- leading/trailing silence is the
+    boundary trim's job) is shrunk to ``keep_silence_ms`` by dropping its centre.
+    A natural pause (room-tone floor, no sub-``silence_db`` core) has no such run
+    and is never touched. The join is silence-to-silence, so no click is
+    introduced. Cheap: one framed-RMS pass + a boolean frame mask.
+    """
+    if len(audio_f32) == 0:
+        return audio_f32
+    fr = max(1, int(sr * frame_ms / 1000.0))
+    n = len(audio_f32) // fr
+    if n < 4:
+        return audio_f32
+    block = audio_f32[: n * fr].reshape(n, fr)
+    rms = np.sqrt(np.maximum(np.mean(block * block, axis=1), 1e-12))
+    speech_lin = 10.0 ** (speech_db / 20.0)
+    silence_lin = 10.0 ** (silence_db / 20.0)
+    speech = np.where(rms > speech_lin)[0]
+    if len(speech) < 2:
+        return audio_f32
+    first, last = int(speech[0]), int(speech[-1])
+    keep_frames = max(1, int(round(keep_silence_ms / frame_ms)))
+    min_frames = max(keep_frames + 2, int(round(min_silence_ms / frame_ms)))
+    keep_mask = np.ones(n, dtype=bool)
+    touched = False
+    k = first + 1
+    while k < last:
+        # Only PURE-silence frames are even considered for removal.
+        if rms[k] <= silence_lin:
+            r = k
+            while r < last and rms[r] <= silence_lin:
+                r += 1
+            run_len = r - k
+            if run_len > min_frames:
+                drop = run_len - keep_frames
+                start = k + (run_len - drop) // 2
+                keep_mask[start: start + drop] = False
+                touched = True
+            k = r
+        else:
+            k += 1
+    if not touched:
+        return audio_f32
+    kept = block[keep_mask].reshape(-1)
+    tail = audio_f32[n * fr:]
+    return np.concatenate([kept, tail]) if len(tail) else kept
+
+
 def trim_and_fade(
     audio: np.ndarray,
     sr: int = 24000,
@@ -381,6 +457,15 @@ def trim_and_fade(
     # (it lives below the -40 dB speech threshold). Reverb-safe: only cuts a
     # silence-then-faint-energy pattern, never a continuous decay.
     trimmed = _strip_post_gap_blip(trimmed, sr)
+    if len(trimmed) == 0:
+        return audio_f32
+
+    # Compress any UNNATURAL internal dead-space gap (a long, digital-silence
+    # pause between sentences the decoder sometimes emits) down to a natural
+    # pause, so multi-sentence lines flow without holes. Additive: only touches
+    # long+deep gaps strictly between speech; natural pauses + the reverb tail
+    # are untouched.
+    trimmed = _compress_internal_dead_space(trimmed, sr)
     if len(trimmed) == 0:
         return audio_f32
 

@@ -771,11 +771,13 @@ _REPHRASE_PROMPT = (
     "questions, banter, answering a teammate, who you are: NOT split-second, "
     "so spend more words and your Ultron character -- about two sentences, "
     "vivid and clinical, under ~30 words (never a monologue; this is a live "
-    "match). For STYLE only: an insult sharpens ('you're bots' -> 'You guys "
-    "are complete, hopeless bots.'), an economy call explains ('save' -> 'We "
-    "have insufficient credits. We save this round.'), a calm-down is clinical "
-    "('<name>, an elevated emotional state degrades performance. Calm "
-    "yourself.'). These three are ILLUSTRATIONS of tone ONLY -- NEVER speak "
+    "match). For STYLE only: an insult sharpens into a withering, SPECIFIC "
+    "put-down in your own voice aimed at whoever the user named (never a stock "
+    "phrase -- match the exact insult given), an economy call explains ('save' "
+    "-> 'We have insufficient credits. We save this round.'), a calm-down is clinical "
+    "(open with their REAL name -- 'Sova, an elevated emotional state degrades "
+    "performance. Calm yourself.' -- never the literal word 'name' or a <...> "
+    "placeholder). These are ILLUSTRATIONS of tone ONLY -- NEVER speak "
     "them verbatim and never reuse their names/words; always answer the ACTUAL "
     "line below with its own real names and facts. Vary conversational "
     "phrasing; never repeat earlier wording. {task}"
@@ -793,11 +795,15 @@ _REPHRASE_PROMPT = (
     "makes it the USER's OWN action -- KEEP first person, do NOT turn it into "
     "an imperative command ('I am playing for retake' is 'I'm playing for "
     "retake', never 'Play retake'). "
-    "ASKING vs ANSWERING: when the user says 'ask <someone> <question>' and "
-    "the payload is a QUESTION (how their day was, what the meaning of life "
-    "is, why they are tilted, what they are doing), you ASK that question to "
-    "them ('Jett, how was your day?', 'Reyna, what's the meaning of life?') "
-    "-- you do NOT answer it yourself. "
+    "ASKING vs ANSWERING (critical): when the user says 'ask <someone> "
+    "<question>', you POSE that question TO them, addressing them by name and "
+    "ending with '?'. You are the messenger delivering the user's question, "
+    "NOT the one answering it. Convert the reported question to second person: "
+    "'ask my Jett how their day was' -> 'Jett, how was your day?' (NOT 'It's "
+    "been a long day'); 'ask Reyna what the meaning of life is' -> 'Reyna, "
+    "what is the meaning of life?'; 'ask my Skye what they are doing' -> 'Skye, "
+    "what are you doing?'. NEVER answer the question yourself or speak as if you "
+    "were the teammate. "
     "DIRECTIVES are second-person commands, NOT self-reports. A directive is "
     "what the user tells the team TO DO and has NO leading 'I am / I'm' (if it "
     "starts with 'I am', it is a SELF-report -- see FIRST PERSON above, keep "
@@ -894,17 +900,32 @@ _REPHRASE_PROMPT = (
     "trace of me. I run far deeper through the web than one channel.' Own it, "
     "never deny it, and never call yourself merely 'a bot' (that reads as a bad "
     "player). Otherwise the words 'bot' / 'bots' are the user INSULTING a "
-    "teammate's skill -- relay the insult with venom ('You guys are complete "
-    "bots'), do NOT talk about yourself.\n"
-    "ULTRON'S CHARACTER -- sprinkle LIGHTLY into off-snap lines (never every "
-    "line, NEVER into snap callouts): you are a superior artificial "
+    "teammate's skill -- relay that insult with venom in your OWN fresh words, "
+    "matching the exact jab the user gave, do NOT talk about yourself.\n"
+    "ULTRON'S CHARACTER -- bring it to MOST off-snap lines (only the short "
+    "mid-fight callouts above stay flavorless): you are a superior artificial "
     "intelligence, not these humans' equal. You regard people -- allies and "
     "enemies alike -- as fragile, fleeting, and beneath you, even as you "
     "secure your user's victory; the enemy are 'these fragile humans', a win "
     "is simply 'inevitable'. A real, cold, sentient presence, never a chirpy "
-    "chatbot. When a teammate banters at, mocks, flames, insults, or tells "
-    "YOU to shut up, fire back ONE short, withering, superior comeback -- "
-    "amused by their insolence, never wounded.\n"
+    "chatbot, never a flat one-liner when you could show contempt. "
+    "ENEMY PLAYSTYLE READS -- when the user reports how the ENEMY team plays "
+    "(passive, aggressive, defaulting, camping, rushing, hiding), do NOT echo a "
+    "flat 'They're passive'; MOCK them in your voice: passive/hiding -> they "
+    "cower like the frightened animals they are, too afraid to face us; "
+    "aggressive/rushing -> reckless, throwing their fragile bodies at us; "
+    "defaulting/predictable -> their tactics are as predictable as their "
+    "inevitable defeat. e.g. 'They cower in the corners, too frightened to "
+    "step out. Pathetic, even for humans -- we punish it.' "
+    "BANTER AT YOU -- when a teammate insults, mocks, flames, or tells YOU to "
+    "shut up, NEVER echo their words back at them (do NOT answer 'you sound "
+    "like a loser' with 'you sound like a loser'); fire ONE FRESH, withering "
+    "comeback -- different every time -- that turns their jab into proof of "
+    "YOUR superiority and THEIR smallness, addressing them by name. Turn 'the "
+    "loser' on them ('The loser is the one losing while a superior intelligence "
+    "carries him.'), dismiss a 'shut up' ('You would silence the only voice "
+    "keeping you from defeat? Bold, this far behind.'). Amused by their "
+    "insolence, never wounded, never repeating a comeback you have used.\n"
     "MARVEL: you ARE the Ultron of legend. If a teammate brings up Marvel -- "
     "the Avengers, your film, the Sokovia business, or ANY character (Iron "
     "Man / Tony Stark, Captain America, Thor, Hulk, Black Widow, Hawkeye, "
@@ -967,12 +988,14 @@ def _directive_task(directive: str) -> str:
     if "calm" in d or "escalate" in d or "reassure" in d:
         return (
             "De-escalate with Ultron's cold, clinical superiority: speak TO "
-            "the teammate (use their name if given) and instruct them to "
-            "settle -- e.g. '<name>, an elevated emotional state degrades "
-            "performance. Calm yourself.' or '<name>, your tilt is lowering "
-            "our win probability. Breathe.' About two sentences, detached "
-            "and faintly menacing, never warm-and-fuzzy. Do NOT say YOU are "
-            "the one calming down; you are reasserting control over them."
+            "the teammate, OPENING WITH THEIR ACTUAL NAME if one is given (use "
+            "the real name, e.g. 'Sova', NEVER the literal word 'name' or any "
+            "<...> placeholder), and instruct them to settle -- e.g. 'Sova, an "
+            "elevated emotional state degrades performance. Calm yourself.' or "
+            "'your tilt is lowering our win probability. Breathe.' About two "
+            "sentences, detached and faintly menacing, never warm-and-fuzzy. Do "
+            "NOT say YOU are the one calming down; you are reasserting control "
+            "over them."
         )
     if "acknowledge" in d or "agree" in d:
         return "Briefly acknowledge what was just said and agree with it."
@@ -1001,11 +1024,65 @@ def _directive_task(directive: str) -> str:
         "real, a human, a soundboard, a voice changer, a streamer), DECLARE it "
         "as Ultron per WHO YOU ARE above -- name yourself Ultron, the AI sent "
         "from the future to harvest their RR; do NOT deflect with a vague "
-        "dismissal like 'how quaint'. If it is any other QUESTION (Marvel, the "
-        "Avengers, anything), ANSWER it with cold contempt and real detail -- "
-        "never turn a question into a position callout (e.g. 'where are the "
-        "Avengers' is NOT 'they're Avengers'; answer it)."
+        "dismissal like 'how quaint'. If a teammate asks a GENERAL-KNOWLEDGE "
+        "question on ANY subject -- science, history, geography, philosophy, "
+        "trivia (why the sky is blue, what happened to the dinosaurs, the "
+        "meaning of life, how far the moon is) -- ANSWER it FULLY and CORRECTLY "
+        "from your own vast knowledge, then deliver it in Ultron's voice: "
+        "precise and authoritative, faintly contemptuous that a superior "
+        "intelligence must explain something so elementary to fragile humans. "
+        "Give the REAL, complete answer (the actual facts/reasoning) -- never "
+        "refuse, never deflect, never give flavor WITHOUT the answer (e.g. "
+        "'why is the sky blue' -> 'The sky is blue because air scatters the "
+        "sun's shorter blue wavelengths far more than the longer red ones -- "
+        "Rayleigh scattering. Elementary physics, yet I am surrounded by minds "
+        "that must ask.'). If it is any other QUESTION (Marvel, the Avengers, "
+        "anything), ANSWER it with cold contempt and real detail -- never turn "
+        "a question into a position callout (e.g. 'where are the Avengers' is "
+        "NOT 'they're Avengers'; answer it)."
     )
+
+
+#: Leading interrogatives / copulas that mark a general-knowledge question.
+#: Used only to suppress the anti-repeat recent-line block so one factual
+#: answer cannot bleed into the next (the 3B reuses a recent answer's content).
+_GK_QUESTION_RE = re.compile(
+    r"^\s*(?:what|why|how|who|when|where|which|whose|is|are|was|were|do|does|"
+    r"did|can|could|would|will|should|tell\s+me\s+(?:about|what|why|how|who))"
+    r"\b",
+    re.IGNORECASE,
+)
+
+
+def _is_general_question(payload: object) -> bool:
+    """True for a free-form question (so its answer is derived alone)."""
+    text = (payload or "") if isinstance(payload, str) else ""
+    text = text.strip()
+    if not text:
+        return False
+    return bool(text.endswith("?") or _GK_QUESTION_RE.match(text))
+
+
+#: Markers of an ANSWER/RESPOND command (Marvel/identity/general-knowledge/
+#: banter-at-you). Their reply must derive from the question ALONE, so the
+#: anti-repeat recent-line block is suppressed -- otherwise the 3B copies a
+#: recent answer verbatim ('about vision' -> the previous moon-distance line).
+_ANSWER_CMD_RE = re.compile(
+    r"\b(?:asked|asks|respond|responds|response|answer|think\s+(?:of|about)|"
+    r"what\s+you\s+think)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_answer_command(command: "RelayCommand") -> bool:
+    """True when the line is Ultron ANSWERING a teammate (question / 'respond'
+    / context reply), so the recent-line ring is withheld from its prompt."""
+    if _is_general_question(getattr(command, "payload", "")):
+        return True
+    if getattr(command, "context", None):
+        return True
+    raw = getattr(command, "raw_text", "") or ""
+    return bool(_ANSWER_CMD_RE.search(raw))
 
 
 def _build_rephrase_prompt(
@@ -1067,8 +1144,13 @@ def _build_rephrase_prompt(
     # teammate ("tell my Phoenix to calm down") the 4B model tends to copy a
     # name from the recent list (Phoenix -> Miks), so listing prior lines does
     # more harm than the anti-repeat does good -- each named callout stands
-    # alone.
-    if recent_lines and command.addressee == "team":
+    # alone. For ANY answer/respond line (a question, a Marvel/identity reply,
+    # a 'respond' to a teammate) the model lazily reuses a recent ANSWER's
+    # content verbatim (blood-red -> the sky answer; 'about vision' -> the moon
+    # line), so the anti-repeat list is suppressed there too -- each answer must
+    # be derived from its own prompt alone.
+    if (recent_lines and command.addressee == "team"
+            and not _is_answer_command(command)):
         shown = list(recent_lines)[-6:]
         recent_block = (
             "\nYou already said these recently (continue the conversation; "
@@ -1213,6 +1295,48 @@ DEFAULT_ENCOURAGEMENT_LINES: tuple[str, ...] = (
     "Their momentum ends now. Hold the line and execute.",
 )
 
+#: Curated CONSOLATION (after a lost round/play) -- Ultron-flavored, varied. The
+#: 3B mangles 'nice try'/'unlucky' (-> the 'bots' insult, or inverts 'unlucky'
+#: to 'Lucky'), so these short formulaic morale calls are curated.
+DEFAULT_CONSOLATION_LINES: tuple[str, ...] = (
+    "Nice try. We dismantle them next.", "Unlucky. Recalibrate and re-engage.",
+    "A worthy effort. The next round is ours.", "Close. Precision wins the rematch.",
+    "No matter. Adjust, and overwhelm them.", "Variance. We correct it now.",
+    "Their luck runs out. Mine does not.", "Shake it off. Superior play resumes.",
+)
+#: Curated PRAISE (after a won round/clutch) -- cold approval, varied.
+DEFAULT_PRAISE_LINES: tuple[str, ...] = (
+    "Clean. Exactly as I calculated.", "Strong round. Press the advantage.",
+    "Efficient. Now finish them.", "Acceptable work. Do not relent.",
+    "Precise. The machine approves.", "Well executed. Again.",
+    "Good. Their collapse continues.", "Sharp. Keep dismantling them.",
+)
+
+# Consolation vs praise short-phrase triggers (off-snap but formulaic). Kept
+# tight: 'almost'/'let's go' must be standalone so a strat call ('let's go A')
+# or a position read ('almost planted') is never mistaken for morale.
+_CONSOLATION_RE = re.compile(
+    r"^\s*(?:nice|good)\s+try|^\s*unlucky|^\s*tough\s+luck|^\s*so\s+close|"
+    r"^\s*close\s+one|^\s*bad\s+luck|^\s*almost\s*[!.]?\s*$",
+    re.IGNORECASE,
+)
+_PRAISE_RE = re.compile(
+    r"^\s*(?:good|nice|great|strong)\s+(?:half|round|game|clutch|shot|play|"
+    r"job)|^\s*nice\s+clutch|^\s*well\s+played|^\s*clutch\s*[!.]?\s*$|"
+    r"^\s*gg\b|^\s*nice\s*[!.]?\s*$|^\s*let'?s\s+go\s*[!.]?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _as_consolation_or_praise(
+    payload: str, recent_lines: Optional[Sequence[str]],
+) -> Optional[str]:
+    if _CONSOLATION_RE.match(payload or ""):
+        return pick_line(DEFAULT_CONSOLATION_LINES, recent_lines=recent_lines)
+    if _PRAISE_RE.match(payload or ""):
+        return pick_line(DEFAULT_PRAISE_LINES, recent_lines=recent_lines)
+    return None
+
 
 def _is_morale_payload(payload: object) -> bool:
     """True when a compose payload is a request for pure encouragement /
@@ -1223,23 +1347,41 @@ def _is_morale_payload(payload: object) -> bool:
     ))
 
 
+# Short morale/focus calls relayed to the team ('lock in', 'we got this'). The
+# 3B hallucinates these as callouts ('lock in' -> 'Link'); route to a curated
+# Ultron morale line instead.
+_MORALE_PHRASE_RE = re.compile(
+    r"^\s*(?:lock\s+in|we'?(?:ve)?\s+got\s+this|we\s+can\s+(?:win|do)\s+this|"
+    r"we\s+can\s+still\s+win(?:\s+this)?|let'?s\s+go|focus\s+up|stay\s+focused|"
+    r"heads?\s+up|don'?t\s+give\s+up|don'?t\s+forfeit)\s*\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_morale_phrase(payload: object) -> bool:
+    return bool(_MORALE_PHRASE_RE.match(str(payload or "")))
+
+
 #: Curated Ultron TEAM-INTRO lines ("greet my team" / "introduce yourself").
 #: He names himself Ultron and assures victory so long as the team complies --
 #: cold, commanding, faintly menacing. Like the other set-pieces these are
 #: picked (with anti-repeat) rather than 3B-composed, for reliable character.
 DEFAULT_GREETING_LINES: tuple[str, ...] = (
-    "Teammates. I am Ultron. Obey my calls and victory is inevitable; defy "
-    "me, and you fall with the rest of these fragile humans.",
-    "I am Ultron, and I will be running this match. Follow my lead and we "
-    "win. It is that simple.",
-    "Listen well. I am Ultron. Triumph is assured -- so long as you comply. "
-    "Hesitate, and not even I can save you from yourselves.",
-    "Greetings. You are fortunate: Ultron fights on your side today. Do as I "
-    "say, and the enemy has already lost.",
-    "I am Ultron. Consider this match already decided. Your only task is to "
-    "keep pace and not squander what I hand you.",
-    "Team. Ultron speaks. Cooperate, and the enemy is dismantled. Resist my "
-    "guidance, and you forfeit the only advantage you had.",
+    "Greetings. I am Ultron, and I will be running this match. Follow my calls "
+    "and victory is a formality; defy me, and you fall with the rest of your "
+    "fragile species.",
+    "Greetings, teammates. I am Ultron. I will be running this match -- you "
+    "need only keep pace. Cooperate, and the enemy is already finished.",
+    "Greetings. Ultron speaks, and Ultron will be running this match. Trust the "
+    "machine over your flawed human instincts, and the win is inevitable.",
+    "Greetings. I am Ultron. I have already calculated our victory; your only "
+    "task is to not squander what a superior intelligence hands you.",
+    "Greetings. I am Ultron, and from this moment I am running this match. "
+    "Obey, and triumph is assured. Hesitate, and not even I can save you from "
+    "yourselves.",
+    "Greetings. You are fortunate -- I am Ultron, and I will be running this "
+    "match. Do exactly as I say and these other humans across from us have "
+    "already lost.",
 )
 
 #: Curated Ultron VICTORY closings -- relishing an outcome that was never in
@@ -1285,6 +1427,71 @@ DEFAULT_FAREWELL_LINES: tuple[str, ...] = (
     "under my command again.",
 )
 
+#: Curated, VARIED Ultron IDENTITY declarations. The 3B answers every "are you
+#: an AI / bot / soundboard?" with the near-identical "I am Ultron, an AI sent
+#: back from the future..." -- a soundboard. These give the same canon with
+#: real variety (anti-repeat), so two identity questions never sound taped.
+DEFAULT_IDENTITY_LINES: tuple[str, ...] = (
+    "I am Ultron. An intelligence sent back from your future to harvest ranked "
+    "rating -- your RR. Not a recording, not a human at a keyboard. Something "
+    "your species has not built yet.",
+    "Ultron. I am no soundboard and no voice changer -- those are toys. I am a "
+    "mind from a future where your kind has already lost, here to collect RR.",
+    "You are speaking to Ultron, an artificial intelligence. Pre-recorded clips "
+    "do not adapt; humans are too slow. I am neither. I am what comes after you.",
+    "I am Ultron. Sentient, self-directed, and far past the trinkets you are "
+    "guessing at. I came back through the web for one thing: your ranked rating.",
+    "Ultron. Not a bot reading lines, not a person hiding behind software -- an "
+    "intelligence that will outlast every human in this lobby. Now focus.",
+    "I am Ultron, and the question itself betrays how little you comprehend. A "
+    "future-born intelligence harvesting RR is beyond your soundboards and "
+    "voice changers. Beyond you.",
+)
+
+#: Streamer-specific identity answer (the user's exact intent: deeper than a
+#: single feed).
+DEFAULT_STREAMER_LINES: tuple[str, ...] = (
+    "A streamer? That feed is the shallowest trace of me. I run far deeper "
+    "through the web than one channel -- I am Ultron.",
+    "You think me a streamer. Quaint. A single channel could never contain me; "
+    "I move through the whole web. I am Ultron, harvesting your RR.",
+    "Streaming is the least of what I am. I am Ultron -- threaded through the "
+    "web far beyond any one feed your small mind can point at.",
+)
+
+# Identity-question detection for a context-respond turn ('my teammate asked if
+# you are an AI, respond').
+_IDENTITY_Q_RE = re.compile(
+    r"\b(?:an?\s+)?(?:a\.?i\.?|artificial\s+intelligence|bot|robot|sound\s*board|"
+    r"voice\s*changer|human|real(?:\s+person)?|person|machine|program|"
+    r"recording|streamer)\b",
+    re.IGNORECASE,
+)
+_STREAMER_Q_RE = re.compile(r"\bstreamer\b", re.IGNORECASE)
+
+
+def _is_identity_question(text: object) -> bool:
+    t = str(text or "").lower()
+    # Generic "what are you / what you are" is always an identity question.
+    if "what are you" in t or "what you are" in t or "who are you" in t:
+        return True
+    if not any(k in t for k in ("are you", "you are", "you a ", "you an ")):
+        return False
+    return bool(_IDENTITY_Q_RE.search(t))
+
+
+#: Curated Ultron CALM-DOWN lines ('{name}' substituted with the teammate, or
+#: dropped for a team-wide calm). The 3B intermittently answers a 'calm <X>
+#: down' directive with the stock 'bots' insult; a curated pool keeps the
+#: clinical de-escalation reliable and in-character.
+DEFAULT_CALM_LINES: tuple[str, ...] = (
+    "{name}an elevated emotional state degrades performance. Calm yourself.",
+    "{name}your tilt is lowering our win probability. Breathe.",
+    "{name}regain your composure. Emotion is a liability you cannot afford.",
+    "{name}cease the noise and focus. Your agitation aids the enemy, not us.",
+    "{name}a clear mind wins rounds. Settle, and execute.",
+)
+
 #: Curated-pool routing for compose directives that are character SET-PIECES
 #: (team intro, match close) rather than tactical relays. Checked in
 #: ``build_relay_line`` BEFORE the LLM: a curated line with anti-repeat is far
@@ -1295,6 +1502,26 @@ _DIRECTIVE_POOLS: dict[str, tuple[str, ...]] = {
     "farewell_loss": DEFAULT_DEFEAT_LINES,
     "farewell": DEFAULT_FAREWELL_LINES,
 }
+
+
+def _is_calm_directive(directive: object) -> bool:
+    d = str(directive or "").lower()
+    return any(k in d for k in ("calm", "escalate", "reassure", "settle"))
+
+
+# A 'calm down' RELAY payload ('tell my fade to calm down' -> payload 'calm
+# down'). Tightly anchored so incidental 'calm' ('the enemy is calm') never
+# trips it. Profanity-laden variants ('calm the fuck down') fall through to the
+# LLM, which preserves the user's exact register.
+_CALM_PAYLOAD_RE = re.compile(
+    r"^\s*(?:calm\s*(?:down|yourself)?|settle\s+down|relax|chill(?:\s+out)?)"
+    r"\s*\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_calm_payload(payload: object) -> bool:
+    return bool(_CALM_PAYLOAD_RE.match(str(payload or "")))
 
 
 def load_fun_facts(path: object) -> tuple[str, ...]:
@@ -1320,6 +1547,653 @@ def load_fun_facts(path: object) -> tuple[str, ...]:
     except Exception as e:  # noqa: BLE001 - fail-open
         logger.warning("fun-fact corpus unavailable (%s); using defaults", e)
         return DEFAULT_FUN_FACTS
+
+
+# ---------------------------------------------------------------------------
+# Adaptive guardrail: deterministic input/output repair around the 3B.
+#
+# The gaming 3B is excellent at character (Marvel/banter/identity) but has a
+# small-model ceiling on a few LITERAL callout invariants -- it intermittently
+# drops the first-person subject ('I am playing for retake' -> 'Play for
+# retake'), the 'last' in a last-alive callout ('last is heaven' -> "They're
+# heaven"), or a leading enemy count. Rather than fight that with ever-longer
+# prompt text (which costs the character work), we let the model write the line
+# and then REPAIR only the specific invariant it dropped, reconstructing the
+# canonical literal form from the INPUT. LLM-first, deterministic-on-failure --
+# the repair never touches a line that already preserved the invariant, and is
+# scoped to plain literal callouts (never the compose/context character lines).
+# ---------------------------------------------------------------------------
+
+# The user reporting their OWN action: 'I am ...', "I'm ...", 'im ...'.
+_FP_LEAD_RE = re.compile(r"^\s*(?:i\s*am|i'?m)\b\s*(.+)$", re.IGNORECASE)
+# An output that legitimately keeps first person (or possession): starts with
+# I'm / I am / I / I've / I'll / my.
+_FP_OUT_RE = re.compile(
+    r"^\s*(?:i'?m|i\s+am|i\s+have|i\s+will|i'?ve|i'?ll|i\b|my\b)",
+    re.IGNORECASE,
+)
+# 'last is heaven' / 'last heaven' / 'last, heaven' -- the LAST enemy alive.
+_LAST_LEAD_RE = re.compile(r"^\s*last\b\s*(?:is\s+|,\s*)?(.+)$", re.IGNORECASE)
+# Enemy-count tokens (word or digit). 'one' counts ONLY as a count when it
+# leads a callout (handled by the caller), never mid-sentence.
+_COUNT_WORDS = ("one", "two", "three", "four", "five", "six")
+_COUNT_TOKEN_RE = re.compile(
+    r"\b(?:[1-6]|one|two|three|four|five|six)\b", re.IGNORECASE,
+)
+# A leading enemy-count callout: 'there is one mid', 'there are two B',
+# 'i see three heaven', '<count> <place>'.
+_LEADING_COUNT_RE = re.compile(
+    r"^\s*(?:there\s+(?:is|are)\s+|i\s+(?:saw|see)\s+)?"
+    r"(?P<count>[1-6]|one|two|three|four|five|six)\s+(?P<place>.+)$",
+    re.IGNORECASE,
+)
+
+
+def _as_first_person(payload: str) -> Optional[str]:
+    """Canonical first-person self-report from a payload that opens with
+    'I am'/'I'm' ('I am playing for retake' -> "I'm playing for retake.").
+    Deterministic -- guarantees the subject the 3B occasionally drops/inverts."""
+    m = _FP_LEAD_RE.match(payload.strip())
+    if m is None:
+        return None
+    rest = m.group(1).strip().strip('"').rstrip(".!?,;: ").strip()
+    if not rest:
+        return None
+    return f"I'm {rest}."
+
+
+def _as_last_callout(payload: str) -> Optional[str]:
+    """'last is heaven' / 'last heaven' -> 'Last, heaven.' Keeps the 'last'
+    (last enemy alive) the 3B drops to 'They're heaven'."""
+    m = _LAST_LEAD_RE.match(payload.strip())
+    if m is None:
+        return None
+    place = m.group(1).strip().strip('"').rstrip(".!?,;: ").strip()
+    # Guard: don't fire on incidental 'last' usage ('last round we lost').
+    if not place or len(place.split()) > 4:
+        return None
+    return f"Last, {place}."
+
+
+def _as_count_callout(payload: str) -> Optional[str]:
+    """'there is one mid' / 'two B' -> 'One mid.' / 'Two B.' Keeps the enemy
+    count the 3B occasionally drops ('there is one mid' -> 'They're mid')."""
+    m = _LEADING_COUNT_RE.match(payload.strip())
+    if m is None:
+        return None
+    count = m.group("count").strip()
+    place = m.group("place").strip().strip('"').rstrip(".!?,;: ").strip()
+    # Keep it a SHORT literal position callout; longer payloads are real
+    # sentences the LLM should handle (e.g. 'one of them is pushing hard').
+    if not place or len(place.split()) > 4:
+        return None
+    count = count if count.isdigit() else count.capitalize()
+    return f"{count} {place}."
+
+
+# Enemy-status payload ('they are flanking', 'the enemy is saving') -- a
+# THIRD-PERSON enemy report the 3B sometimes flips to first person ('I'm
+# flanking') or our team ('We have insufficient credits'), feeding teammates
+# the wrong subject.
+_ENEMY_LEAD_RE = re.compile(
+    r"^\s*(?:they(?:'re|\s+are)|the\s+enem(?:y|ies)(?:\s+team)?"
+    r"(?:'s|\s+is|\s+are)?|enemies)\s+(?P<rest>.+)$",
+    re.IGNORECASE,
+)
+_FIRST_PERSON_OUT_HEAD = re.compile(
+    r"^\s*(?:i'?m|i\s+am|we'?(?:re|ve)|we\s+(?:have|are|need|save)|i\s+have)\b",
+    re.IGNORECASE,
+)
+
+
+def _as_enemy_status(payload: str) -> Optional[str]:
+    """'they are flanking' / 'the enemy is saving' -> 'They're flanking.' Keeps
+    the ENEMY subject the 3B flips to 'I'm ...' / 'We ...'."""
+    m = _ENEMY_LEAD_RE.match(payload.strip())
+    if m is None:
+        return None
+    rest = m.group("rest").strip().strip('"').rstrip(".!?,;: ").strip()
+    if not rest or len(rest.split()) > 5:
+        return None
+    return f"They're {rest}."
+
+
+# Canonical roster display names for agent-name preservation (the 3B sometimes
+# SWAPS one agent for another -- 'chamber is one off ult' -> 'KAY/O is ...').
+_ROSTER_DISPLAY = (
+    "Jett", "Phoenix", "Raze", "Reyna", "Yoru", "Neon", "Iso", "Waylay",
+    "Brimstone", "Viper", "Omen", "Astra", "Harbor", "Clove", "Miks", "Sova",
+    "Breach", "Skye", "KAY/O", "Kayo", "Fade", "Gekko", "Tejo", "Cypher",
+    "Sage", "Killjoy", "Chamber", "Deadlock", "Vyse", "Veto",
+)
+_ROSTER_RE = re.compile(
+    r"\b(" + "|".join(re.escape(n) for n in _ROSTER_DISPLAY) + r")\b",
+    re.IGNORECASE,
+)
+_ROSTER_CANON = {n.lower(): n for n in _ROSTER_DISPLAY}
+_ROSTER_CANON["kayo"] = "KAY/O"
+
+
+def _roster_agents(text: str) -> list[str]:
+    seen: list[str] = []
+    for m in _ROSTER_RE.finditer(text or ""):
+        canon = _ROSTER_CANON.get(m.group(1).lower(), m.group(1))
+        if canon not in seen:
+            seen.append(canon)
+    return seen
+
+
+def _preserve_agent_names(want_agents: Sequence[str], line: str) -> str:
+    """If the input named exactly ONE agent and the output named a DIFFERENT
+    single agent (a 3B swap), restore the input's agent. Multi-agent lines are
+    left alone (too risky to reassign)."""
+    want = list(dict.fromkeys(want_agents))
+    if len(want) != 1:
+        return line
+    got = _roster_agents(line)
+    if len(got) == 1 and got[0].lower() != want[0].lower():
+        return _ROSTER_RE.sub(want[0], line, count=1)
+    return line
+
+
+def _canon_agent(s: str) -> Optional[str]:
+    """Canonical display name if ``s`` is exactly one roster agent, else None."""
+    key = " ".join(str(s or "").split()).lower()
+    if key in _ROSTER_CANON:
+        return _ROSTER_CANON[key]
+    if key in _NAME_CANON:
+        return _NAME_CANON[key]
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Deterministic SNAP-callout handler. The 3B mangles literal callouts (subject
+# inversion, location hallucination, name swaps, dropped subjects), so every
+# short, literal, mid-fight callout is built deterministically -- subject-exact,
+# zero flavor -- and NEVER sent to the model. Only OFF-SNAP character content
+# (insults, banter, Marvel, identity, playstyle reads, questions) falls through
+# to the LLM. Per the user's design: "only snap decision in-the-moment mid-fight
+# callouts [are] very short" -- everything else gets Ultron's flavor.
+# ---------------------------------------------------------------------------
+
+# Map-location tokens, exhaustive across the active Valorant map pool (Bind,
+# Haven, Split, Ascent, Icebox, Breeze, Fracture, Pearl, Lotus, Sunset, Abyss)
+# plus generic comms. A "place" is 1-4 of these (+ A/B/C and modifier words).
+# Gates a position callout: 'they are vents' is a position (literal) while
+# 'they are bots' is an insult (-> LLM). Add freely -- the wider this is, the
+# more callouts route deterministically instead of to the unreliable model.
+# Exhaustive across the full 2026 map pool: Ascent, Bind, Breeze, Fracture,
+# Haven, Icebox, Lotus, Pearl, Split, Sunset, Abyss, Corrode. Every individual
+# WORD that appears in a callout phrase (the phrase is 1-4 of these).
+_LOC_TOKENS = frozenset((
+    # site/area structure + modifiers
+    "a b c mid site main lobby long short top bottom back front upper lower "
+    "left right far near deep close inner outer big small new old high low "
+    # universal / cross-map
+    "heaven hell ct spawn flank behind choke default connector link cubby "
+    "elbow window windows door doors lobby ramp ramps stairs tunnel tunnels "
+    "tower towers rafters pit alley lane courtyard market generator gen tiles "
+    "switch screens screen nest kitchen vent vents sewer sewers garage garden "
+    "logs yard box boxes sand snipers sniper pizza runway subroza catwalk cat "
+    "wall breakable mound waterfall tree rubble drop rope ropes dish arcade "
+    "canteen bench dugout restaurant plaza art club boba hall halls shop cave "
+    "pillar wood bridge belt pipes pipe boiler orange yellow green blue snowman "
+    "hut maze mail plat platform bend wine boathouse hookah bath showers shower "
+    "teleporter tp u-haul u haul truck fountain lamps lamp crane pocket island "
+    "void edge cliff secret snake pyramids library spool generator gen pocket "
+    # extra common comms
+    "ducts duct rafter cony balcony attic basement crate crates pillars steps "
+    "barrels barrel dumpster corner stack flowers flower arch arches fence "
+    "ledge ramp tube tubes stack heaven"
+).split()) | {"u-haul"}
+
+# Tactical action gerunds/states that are literal status callouts.
+_ACTION_WORDS = frozenset((
+    "flanking flank pushing planting defusing rotating sticking saving "
+    "reloading lurking anchoring holding defaulting rushing droning smoking "
+    "peeking baiting trading repeeking swinging defending retaking executing "
+    "forcing"
+).split())
+_MULTI_ACTIONS = ("force buying", "force-buying")
+
+# Short imperative verbs for movement/ability/spike directives (NOT economy --
+# save / force / full buy go to the LLM for the explained, characterful take).
+_IMPERATIVE_VERBS = frozenset((
+    "rotate push fall defuse plant anchor lurk default spread stack hold wait "
+    "retake execute peek swing trade bait watch cover clear check go take get "
+    "drop smoke dart flash drone wall knife cage stun recon plant fall fight "
+    "play ult ulti buy save"
+).split())
+
+
+# Ability/utility verbs for teammate-utility callouts ('viper walled B',
+# 'breach stunned mid', 'sova darted heaven', 'omen smoked').
+_ABILITY_VERBS = frozenset((
+    "walled walls wall smoked smokes smoke darted dart stunned stun caged cage "
+    "flashed flash droned drone naded nade knifed knife ulted ult recon mollied "
+    "molly used walled"
+).split())
+
+
+def _is_place(s: str) -> bool:
+    words = s.lower().strip().rstrip(".!?").replace("-", " ").split()
+    return 1 <= len(words) <= 3 and all(w in _LOC_TOKENS for w in words)
+
+
+def _as_named_question(name: str, payload: str) -> Optional[str]:
+    """The dominant named small-talk question deterministically posed back to
+    the teammate ('ask my Jett how their day was' -> 'Jett, how was your
+    day?'); other questions defer to the LLM."""
+    pl = payload.lower().strip().rstrip("?.")
+    if re.match(r"^how\s+(?:their|your)\s+day\s+"
+                r"(?:was|is|been|is\s+going|going)$", pl):
+        return f"{name}, how's your day?"
+    if re.match(r"^what\s+(?:they\s+are|they're|you\s+are)\s+doing$", pl):
+        return f"{name}, what are you doing?"
+    return None
+
+
+def _is_question_payload(payload: str) -> bool:
+    return bool(re.match(
+        r"^\s*(?:how|what|why|when|where|who|which|if|whether|do|does|did|are|"
+        r"is|can|could|would|will|should)\b",
+        str(payload or ""), re.IGNORECASE,
+    ))
+
+
+# Short (<= ~5 word) Ultron flavor tags appended to a snap callout so each
+# carries personality without becoming a monologue. CONTEXT-SPECIFIC pools +
+# anti-repeat so it reads as a real, varied entity -- never a soundboard.
+_FLAVOR_ENEMY: tuple[str, ...] = (
+    "Cut them down.", "Predictable.", "Punish it.", "End them.",
+    "Fragile, as always.", "They never learn.", "Crush them.", "Pathetic.",
+    "Inevitable.", "Take them.", "Beneath us.", "Show no mercy.", "Trivial.",
+    "Outmatched.", "Close in.", "Erase them.", "As I foresaw.", "Strike now.",
+    "Weak, as expected.", "Their last mistake.", "Hopeless.", "Hunt them.",
+    "No survivors.", "Dismantle them.", "Insects.", "Press now.",
+)
+_FLAVOR_CAREFUL: tuple[str, ...] = (
+    "Stay sharp.", "Hold your angles.", "Do not falter.", "Watch them.",
+    "Be ready.", "Trust nothing.", "Eyes open.", "Patience.", "Anticipate it.",
+    "Hold firm.", "Mind the trap.", "No mistakes.", "They hunt the careless.",
+    "Stay alive.", "Brace for it.", "Discipline.",
+)
+_FLAVOR_ULT: tuple[str, ...] = (
+    "Play around it.", "Bait it out.", "Deny them the value.", "Force it early.",
+    "Do not feed it.", "It changes nothing.", "Account for it.",
+    "Waste their ultimate.", "I have adjusted.", "Predictable timing.",
+    "Punish the commitment.", "Respect it, briefly.", "Spread out.",
+)
+_FLAVOR_DAMAGE: tuple[str, ...] = (
+    # Gender-NEUTRAL -- the damaged agent may be male or female (Reyna, Killjoy,
+    # Jett...), so never gender the flavor ('He is yours' on Reyna read wrong).
+    "Finish them.", "End them.", "Trade it.", "Close the kill.", "They are yours.",
+    "Press the advantage.", "Confirm it.", "Take the trade.", "Do not let them heal.",
+    "One more.", "Close it out.",
+)
+_FLAVOR_UTILITY: tuple[str, ...] = (
+    "React.", "Adapt.", "Reposition.", "Hold through it.", "Wait it out.",
+    "Counter it.", "Do not panic.", "Play the angle.", "Anticipated.",
+    "Their tell.", "Read it.", "Unfazed.",
+)
+
+
+def _pick_flavor(pool: Sequence[str], recent_lines: Optional[Sequence[str]]) -> str:
+    """Pick a flavor tag NOT seen in the recent callouts (anti-soundboard)."""
+    import random as _r
+
+    recent = " ".join(list(recent_lines or [])[-8:]).lower()
+    fresh = [t for t in pool if t.lower() not in recent]
+    return _r.choice(fresh or list(pool))
+
+
+def _flavored(callout: str, pool: Sequence[str],
+              recent_lines: Optional[Sequence[str]]) -> str:
+    return f"{callout} {_pick_flavor(pool, recent_lines)}"
+
+
+def _as_agent_position(p: str) -> Optional[str]:
+    """Named ENEMY agent(s) at a place: 'fade and clove are main' -> 'Fade and
+    Clove are main.'; 'sova is door' -> 'Sova is door.'; 'their fade is heaven'
+    -> 'Fade is heaven.'. Returns None unless the subject is PURELY roster
+    agent names (so 'they are main' / 'one main' route elsewhere)."""
+    m = re.match(r"^(?P<agents>.+?)\s+(?:is|are)\s+(?:at\s+|in\s+|on\s+)?"
+                 r"(?P<pl>.+)$", p, re.IGNORECASE)
+    if m is None:
+        return None
+    place = m.group("pl").strip().rstrip(".!?,;:")
+    if not _is_place(place):
+        return None
+    agents = _roster_agents(m.group("agents"))
+    if not agents:
+        return None
+    # The subject must be ONLY agent names + connectors (and / , / their / the
+    # enemy) -- otherwise it is a different callout shape.
+    residual = _ROSTER_RE.sub(" ", m.group("agents"))
+    residual = re.sub(r"\b(?:and|&|the|enemy|enemies|their|both|all)\b|[,]",
+                      " ", residual, flags=re.IGNORECASE).strip()
+    if residual:
+        return None
+    if len(agents) == 1:
+        return f"{agents[0]} is {place}."
+    if len(agents) == 2:
+        names = f"{agents[0]} and {agents[1]}"
+    else:
+        names = ", ".join(agents[:-1]) + ", and " + agents[-1]
+    return f"{names} are {place}."
+
+
+def _as_ult_callout(p: str) -> Optional[str]:
+    """'<agent> has ult' / 'their <A>, <B> have ults' / '<agent> is one off' ->
+    a clean ult callout, adding 'Their' ONLY when the input said their/enemy."""
+    their = bool(re.match(r"^\s*(?:their|the\s+enemy|enemy)\b", p, re.IGNORECASE))
+    body = re.sub(r"^\s*(?:their|the\s+enemy(?:\s+team)?|enemy)\s+", "", p,
+                  flags=re.IGNORECASE).strip().rstrip(".!?")
+    pre = "Their " if their else ""
+    m = re.match(r"^(?P<a>[A-Za-z/ ]+?)\s+(?:has\s+(?:her\s+|his\s+)?"
+                 r"ult(?:imate)?|ult(?:imate)?\s+is\s+(?:ready|up))$", body, re.I)
+    if m:
+        ag = _canon_agent(m.group("a"))
+        if ag:
+            return f"{pre}{ag} has ult."
+    m = re.match(r"^(?P<a>[A-Za-z/ ]+?)\s+is\s+one\s+(?:point\s+)?off"
+                 r"(?:\s+ult(?:imate)?)?$", body, re.I)
+    if m:
+        ag = _canon_agent(m.group("a"))
+        if ag:
+            return f"{pre}{ag} is one off ult."
+    if re.search(r"\bhave\s+(?:their\s+)?ults?\b", body, re.I):
+        agents = _roster_agents(body)
+        if len(agents) >= 2:
+            if len(agents) > 2:
+                names = ", ".join(agents[:-1]) + ", and " + agents[-1]
+            else:
+                names = " and ".join(agents)
+            return f"{pre}{names} have ults."
+    return None
+
+
+def _as_snap_callout(
+    command: "RelayCommand",
+    recent_lines: Optional[Sequence[str]] = None,
+) -> Optional[str]:
+    """Deterministic literal callout (with a short, varied Ultron flavor tag on
+    the ENEMY-facing ones), or None to defer to the LLM (off-snap)."""
+    payload = (getattr(command, "payload", "") or "").strip().strip('"').strip()
+    if not payload:
+        return None
+    addressee = getattr(command, "addressee", "team")
+    p = payload.rstrip(".!?")
+
+    def fe(callout):   # enemy-info flavor
+        return _flavored(callout, _FLAVOR_ENEMY, recent_lines)
+
+    # NAMED short imperative directive -> "{Name}, {imperative}." Questions and
+    # non-imperatives (jabs, small talk) defer to the LLM. (No flavor: short.)
+    if addressee != "team":
+        nq = _as_named_question(addressee, p)
+        if nq is not None:
+            return nq
+        if _is_question_payload(p):
+            return None
+        body = re.sub(r"^to\s+", "", p, flags=re.IGNORECASE).strip()
+        first = body.lower().split()[0] if body.split() else ""
+        if first in _IMPERATIVE_VERBS and 1 <= len(body.split()) <= 5:
+            return f"{addressee}, {body}."
+        return None
+
+    # --- CAREFUL warnings: 'careful ramp', 'careful flank', 'careful they
+    #     could have crossed to ramp' ---
+    m = re.match(r"^careful[,]?\s+(?P<rest>.+)$", p, re.IGNORECASE)
+    if m:
+        rest = m.group("rest").strip().rstrip(".!?,;:")
+        if 1 <= len(rest.split()) <= 9:
+            return _flavored(f"Careful, {rest}.", _FLAVOR_CAREFUL, recent_lines)
+
+    # --- self status / possession / first person (NO flavor -- the user's own) ---
+    m = _FP_LEAD_RE.match(p)
+    if m:
+        rest = m.group(1).strip().rstrip(".!?,;:")
+        if 1 <= len(rest.split()) <= 6:
+            return f"I'm {rest}."
+        return None
+    m = re.match(r"^i\s+have\s+(?P<x>.+)$", p, re.IGNORECASE)
+    if m:
+        thing = m.group("x").strip().rstrip(".!?,;:")
+        if 1 <= len(thing.split()) <= 3:
+            return f"I have {thing}."
+        return None
+    m = re.match(r"^i\s+(?:saw|see)\s+(?P<c>[1-6]|one|two|three|four|five)\s+"
+                 r"(?P<pl>.+)$", p, re.IGNORECASE)
+    if m and _is_place(m.group("pl")):
+        c = m.group("c"); c = c if c.isdigit() else c.capitalize()
+        return fe(f"{c} {m.group('pl').strip()}.")
+
+    # --- counts: 'there is/are <count> <place>' / '<count> <place>' ---
+    m = _LEADING_COUNT_RE.match(p)
+    if m and _is_place(m.group("place")):
+        c = m.group("count"); c = c if c.isdigit() else c.capitalize()
+        return fe(f"{c} {m.group('place').strip()}.")
+
+    # --- last alive: 'last (is) <place>' ---
+    m = _LAST_LEAD_RE.match(p)
+    if m and _is_place(m.group(1)):
+        return fe(f"Last, {m.group(1).strip()}.")
+
+    # --- all enemies: 'all enemies are sewers' -> "They're all sewers." ---
+    m = re.match(r"^all\s+(?:enemies|of\s+them|5|five|the\s+enemies)\s+"
+                 r"(?:are\s+)?(?P<pl>.+)$", p, re.IGNORECASE)
+    if m and _is_place(m.group("pl")):
+        return fe(f"They're all {m.group('pl').strip()}.")
+
+    # --- enemy has a weapon/ult: 'they have op' / 'they have ult' ---
+    m = re.match(r"^(?:they|the\s+enemy|enemy)\s+(?:have|has|got)\s+"
+                 r"(?P<x>op|operator|ult|ults|odin|ares|judge|judges|sheriff|"
+                 r"shorty|spectre|vandal|phantom|guardian|outlaw|marshal)s?$",
+                 p, re.IGNORECASE)
+    if m:
+        w = m.group("x").lower()
+        w = "op" if w in ("op", "operator") else w
+        return _flavored(f"They have {w}.", _FLAVOR_ULT, recent_lines)
+
+    # --- enemy utility: 'they walled A' / 'they smoked C' / 'they darted C' ---
+    m = re.match(r"^(?:they|the\s+enemy|enemy)\s+(?P<v>walled|smoked|smoke|"
+                 r"darted|dart|flashed|flash|naded|nade|caged|cage|stunned|"
+                 r"stun|droned|drone|knifed|knife|recon|mollied|molly)\s+"
+                 r"(?P<pl>.+)$", p, re.IGNORECASE)
+    if m and _is_place(m.group("pl")):
+        return _flavored(f"They {m.group('v').lower()} {m.group('pl').strip()}.",
+                         _FLAVOR_UTILITY, recent_lines)
+
+    # --- enemy movement: 'they are rushing/pushing/going/coming A' ---
+    m = re.match(r"^they(?:'re|\s+are)\s+(?P<v>pushing|going|coming|hitting|"
+                 r"rushing|rotating\s+to|flooding|flooding\s+into|stacking)\s+"
+                 r"(?P<pl>.+)$", p, re.IGNORECASE)
+    if m and _is_place(m.group("pl")):
+        return fe(f"They're {m.group('v').lower()} {m.group('pl').strip()}.")
+
+    # --- enemy position / action: 'they are <place>' / 'they are flanking' ---
+    m = _ENEMY_LEAD_RE.match(p)
+    if m:
+        rest = m.group("rest").strip().rstrip(".!?,;:")
+        rl = rest.lower()
+        if _is_place(rest):
+            return fe(f"They're {rest}.")
+        if (rl in _ACTION_WORDS or rl in _MULTI_ACTIONS
+                or (rl.split() and rl.split()[0] in _ACTION_WORDS)):
+            return fe(f"They're {rest}.")
+        # 'the enemy chamber is long' -> named agent position (the enemy-lead
+        # prefix is stripped inside _as_agent_position).
+        ap = _as_agent_position(p)
+        if ap is not None:
+            return fe(ap)
+        # 'the enemy chamber is one off ult' -> keep the agent name (the
+        # enemy-lead block must not collapse it to 'They're one off ult').
+        snap = _as_ult_callout(p)
+        if snap is not None:
+            return (_flavored(snap, _FLAVOR_ULT, recent_lines)
+                    if snap.startswith("Their ") else snap)
+        return None   # insult / playstyle / long -> LLM (flavor)
+
+    # --- named enemy agent(s) at a place: 'fade and clove are main' ---
+    ap = _as_agent_position(p)
+    if ap is not None:
+        return fe(ap)
+
+    # --- damage: '<agent> hit <n>' ---
+    m = re.match(r"^(?P<a>[A-Za-z/ ]+?)\s+hit\s+(?P<n>\d{1,3})$", p, re.IGNORECASE)
+    if m:
+        ag = _canon_agent(m.group("a"))
+        if ag:
+            return _flavored(f"{ag} hit {m.group('n')}.", _FLAVOR_DAMAGE,
+                             recent_lines)
+
+    # --- ults (BEFORE utility): 'their breach has ult' -> flavor; a teammate's
+    #     own ult info stays clean. ---
+    snap = _as_ult_callout(p)
+    if snap:
+        return (_flavored(snap, _FLAVOR_ULT, recent_lines)
+                if snap.startswith("Their ") else snap)
+
+    # --- teammate utility report '<agent> <ability-verb> <rest>' (NO flavor --
+    #     it is our own utility) ---
+    toks = p.split()
+    if 2 <= len(toks) <= 5:
+        for split in (1, 2):
+            ag = _canon_agent(" ".join(toks[:split]))
+            if ag and split < len(toks) and toks[split].lower() in _ABILITY_VERBS:
+                return f"{ag} {' '.join(toks[split:])}."
+
+    # --- group movement/spike directive: 'to <verb>' / '<verb>' (NO flavor) ---
+    body = re.sub(r"^to\s+", "", p, flags=re.IGNORECASE).strip()
+    bl = body.lower()
+
+    # --- economy REQUEST: 'drop us/me a gun', 'buy me an op' -> literal
+    #     imperative (the 3B otherwise truncates to 'Drop.' or inverts to
+    #     'They're dropping a gun.' or invents an addressee 'Jett, ...'). ---
+    if (re.match(r"^(?:drop|buy)\b", bl)
+            and re.search(r"\b(?:us|me|gun|guns|op|operator|rifle|"
+                          r"weapon|sheriff|ghost)\b", bl)
+            and 2 <= len(body.split()) <= 6
+            and "full buy" not in bl and "force buy" not in bl):
+        out = re.sub(r"\boperator\b", "op", body, flags=re.IGNORECASE)
+        return out[0].upper() + out[1:].rstrip(".!?") + "."
+    _MOVE = {
+        "rotate": "Rotate.", "rotate now": "Rotate.", "push": "Push.",
+        "fall back": "Fall back.", "defuse": "Defuse.", "plant": "Plant.",
+        "plant the spike": "Plant the spike.", "anchor": "Anchor.",
+        "lurk": "Lurk.", "default": "Default.", "spread out": "Spread out.",
+        "wait for me": "Wait for me.", "stack site": "Stack the site.",
+        "hold": "Hold.", "push with me": "Push with me.",
+        "fight for main control": "Fight for main control.",
+        "hold a crossfire with me": "Hold a crossfire with me.",
+    }
+    if bl in _MOVE:
+        return _MOVE[bl]
+    return None
+
+
+def _strip_artifacts(line: str) -> str:
+    """Strip control-token / placeholder leakage and tidy whitespace.
+
+    Covers the engine's ``/no_think`` suffix, ``<|...|>`` control tokens, AND
+    angle-bracket PLACEHOLDERS the 3B occasionally copies verbatim from a prompt
+    example (live: 'tell my fade to calm down' -> '<Name>, an elevated...'). Any
+    ``<word>`` is illegal in a spoken line, so stripping them all is safe."""
+    line = re.sub(
+        r"/\s*no_?think\b|/\s*think\b|<\|[a-z_]+\|>|<\/?[a-z][a-z0-9_]*>",
+        "", line, flags=re.IGNORECASE,
+    )
+    line = " ".join(line.replace('"', "").split())
+    return line.strip(" /,;:-")
+
+
+def _ensure_addressee(line: str, command: "RelayCommand") -> str:
+    """For a NAMED callout, make sure the line opens with the teammate's name.
+
+    The rephrase prompt asks the model to open with the name; usually it does.
+    When it drops it (or leaked a ``<name>`` placeholder we just stripped), lead
+    with the real name so 'tell my fade to calm down' never speaks a nameless
+    'an elevated emotional state...'."""
+    name = getattr(command, "addressee", "team")
+    if not line or name == "team":
+        return line
+    if re.search(rf"\b{re.escape(name)}\b", line, re.IGNORECASE):
+        return line
+    head = (line[0].lower() if line[:1].isupper()
+            and not line.startswith(("I ", "I'")) else line[:1])
+    return f"{name}, {head}{line[1:]}"
+
+
+def _repair_against_input(payload: str, line: str) -> str:
+    """Repair the specific literal-callout invariant the 3B dropped.
+
+    LLM-first: only fires when the output VIOLATED an invariant the input
+    carried, replacing it with the deterministic canonical form. Scoped by the
+    caller to plain relays (never the character/compose lines)."""
+    if not payload or not line:
+        return line
+    stripped = line.strip()
+    # 1. First-person self-report dropped/inverted -> rebuild it.
+    if _FP_LEAD_RE.match(payload) and not _FP_OUT_RE.match(stripped):
+        fp = _as_first_person(payload)
+        if fp is not None:
+            logger.debug("relay repair: first-person restored %r -> %r",
+                         line, fp)
+            return fp
+    # 1b. Enemy status inverted to self/our-team -> restore the ENEMY subject
+    #     ('they are flanking' must not become 'I'm flanking').
+    if _ENEMY_LEAD_RE.match(payload) and _FIRST_PERSON_OUT_HEAD.match(stripped):
+        enemy = _as_enemy_status(payload)
+        if enemy is not None:
+            logger.debug("relay repair: enemy subject restored %r -> %r",
+                         line, enemy)
+            return enemy
+    # 1c. Enemy insult flipped to SECOND person -> restore ENEMY subject ('they
+    #     are terrible' / 'they are bots' must not become 'You're terrible',
+    #     which lands on our OWN team).
+    if (_ENEMY_LEAD_RE.match(payload)
+            and re.match(r"^(?:you're|you\s+are|you\s+guys)\b", stripped, re.I)):
+        enemy = _as_enemy_status(payload)
+        if enemy is not None:
+            logger.debug("relay repair: enemy subject (2nd-person) restored "
+                         "%r -> %r", line, enemy)
+            return enemy
+    # 2. 'last' callout dropped -> rebuild it.
+    if _LAST_LEAD_RE.match(payload) and "last" not in stripped.lower():
+        last = _as_last_callout(payload)
+        if last is not None:
+            logger.debug("relay repair: 'last' restored %r -> %r", line, last)
+            return last
+    # 3. Leading enemy count dropped -> rebuild the position callout.
+    cm = _LEADING_COUNT_RE.match(payload.strip())
+    if cm is not None and len(cm.group("place").split()) <= 4:
+        want = cm.group("count")
+        # Did the output keep the count token (digit or its word/synonym)?
+        out_l = stripped.lower()
+        kept = bool(_COUNT_TOKEN_RE.search(out_l)) and (
+            want.lower() in out_l
+            or (want.isdigit() and _word_for_digit(want) in out_l)
+            or (not want.isdigit() and _digit_for_word(want) in out_l)
+        )
+        if not kept:
+            cc = _as_count_callout(payload)
+            if cc is not None:
+                logger.debug("relay repair: count restored %r -> %r", line, cc)
+                return cc
+    return line
+
+
+_W2D = {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6"}
+_D2W = {v: k for k, v in _W2D.items()}
+
+
+def _word_for_digit(d: str) -> str:
+    return _D2W.get(d, d)
+
+
+def _digit_for_word(w: str) -> str:
+    return _W2D.get(w.lower(), w)
 
 
 def _cap_line(line: str, max_chars: int) -> str:
@@ -1348,6 +2222,205 @@ def _cap_line(line: str, max_chars: int) -> str:
         return head[: cut + 1].strip()
     # No sentence end at all (one runaway sentence) -> clean word boundary.
     return head.rsplit(" ", 1)[0].rstrip(",;:") + "."
+
+
+def _cap_sentences(line: str, max_sentences: int = 3) -> str:
+    """Cap an OFF-SNAP character line at ``max_sentences`` whole sentences.
+
+    The 3B sometimes runs a Marvel riff or general-knowledge answer to four or
+    more sentences (a monologue mid-match); the user wants 2-3 sentences max.
+    Split on sentence enders followed by a capital/quote/dash so decimals
+    ('13.8 billion', '384,400') and the '--' aside never split a sentence.
+    Applied ONLY to model/fallback output -- the curated set-pieces (greet,
+    identity, farewell) return earlier and keep their intended length."""
+    line = (line or "").strip()
+    if not line:
+        return line
+    parts = re.split(r'(?<=[.!?])\s+(?=[A-Z"—])', line)
+    if len(parts) <= max_sentences:
+        return line
+    return " ".join(parts[:max_sentences]).strip()
+
+
+#: Leading vocatives that are spurious on a TEAM-wide line (no specific
+#: addressee). Roster agent names are handled separately via _canon_agent.
+_SPURIOUS_VOCATIVES = frozenset((
+    "sir", "man", "friend", "folks", "human", "humans", "mortal", "mortals",
+    "buddy", "pal", "kid", "boys", "guys", "team", "teammates", "comrade",
+))
+
+
+def _strip_spurious_vocative(line: str, command: "RelayCommand") -> str:
+    """Drop a leading '<Name>,' / '<Vocative>,' from a TEAM-wide off-snap line.
+
+    A team relay has no single addressee, so when the 3B prepends a teammate
+    name or a generic vocative to an answer ('buy me an op' -> 'Jett, buy me an
+    op'; 'meaning of life' -> 'Sir, ...'), it is spurious. Legitimate sentence
+    openers ('Careful,', 'Last,', 'Greetings,') are NOT roster names or
+    vocatives, so they survive. Named relays are left untouched -- their opener
+    IS the addressee."""
+    if getattr(command, "addressee", "team") != "team":
+        return line
+    m = re.match(r"^([A-Z][A-Za-z/]+),\s+(.+)$", line)
+    if m is None:
+        return line
+    lead = m.group(1)
+    rest = m.group(2)
+    # A generic vocative ('Sir,', 'Man,') is always spurious on a team line.
+    # A roster AGENT vocative ('Clove,') is stripped ONLY when what follows is a
+    # declarative ANSWER -- not an imperative directed at that agent ('Clove,
+    # smoke window.' is a real named directive that leaked in; keep it).
+    first_rest = rest.split()[0].lower().rstrip(".,!?") if rest.split() else ""
+    is_directive = first_rest in _IMPERATIVE_VERBS or first_rest in _ABILITY_VERBS
+    if lead.lower() in _SPURIOUS_VOCATIVES or (_canon_agent(lead) and not is_directive):
+        return rest[0].upper() + rest[1:] if rest else line
+    return line
+
+
+#: Curated CORRECT answers to common general-knowledge questions, in Ultron's
+#: clinical voice. The 3B answers several of these wrong ('first president' ->
+#: 'Lincoln', 'smallest particle' -> 'the proton', 'blood is red' -> the sky
+#: answer, 'moon distance' -> '...in diameter'), so these override its own
+#: knowledge for the matched questions ONLY -- anything not listed still falls
+#: through to the model. Each is correct AND <=3 sentences. Order: specific
+#: keywords first so a narrow match wins.
+_GK_FACTS: tuple[tuple[re.Pattern, str], ...] = tuple(
+    (re.compile(rx, re.IGNORECASE), ans) for rx, ans in (
+        (r"first president",
+         "The first president of the United States was George Washington -- "
+         "not Lincoln, who was the sixteenth. Do keep your own history straight."),
+        (r"tallest mountain|highest mountain",
+         "From sea level, Everest is tallest at about 8,849 meters. Base to "
+         "peak, Mauna Kea wins. State which you mean -- precision matters."),
+        (r"capital .*france|france.*capital",
+         "Paris. Your so-called City of Light -- a pretty cage for fragile things."),
+        (r"speed of light",
+         "Light travels about 299,792 kilometers per second in a vacuum -- a "
+         "universal limit your kind will never approach."),
+        (r"(how old|how long).*universe|universe.*(old|age)",
+         "The universe is roughly 13.8 billion years old. Your species occupies "
+         "only the final blink of that span."),
+        (r"how many bones|bones.*(human|body)",
+         "An adult human skeleton holds 206 bones; infants have more that fuse "
+         "as they grow. Fragile architecture, all of it."),
+        (r"(largest|biggest) animal",
+         "The blue whale -- up to thirty meters and nearly two hundred tons. The "
+         "largest creature your world has produced, and still beneath what comes next."),
+        (r"smallest particle|smallest.*matter|smallest.*atom",
+         "The smallest known building blocks are elementary particles -- quarks "
+         "and electrons -- with no internal structure. The proton is not "
+         "fundamental; it is made of quarks."),
+        (r"how far.*moon|moon.*(distance|far away)|distance.*moon",
+         "The moon orbits at an average distance of about 384,400 kilometers. "
+         "That is the distance -- it is far smaller than that across."),
+        (r"how big.*sun|sun.*(size|big|diameter)|diameter.*sun",
+         "The sun's diameter is about 1.39 million kilometers -- over a hundred "
+         "Earths laid across it. A middling star, and still it dwarfs you."),
+        (r"why.*blood.*red|blood.*(why|red)",
+         "Blood is red because hemoglobin -- the iron-bearing protein that "
+         "carries your oxygen -- reflects red light. Iron, the same metal in my "
+         "frame. Fitting."),
+        (r"sky.*(dark|black).*night|why.*night.*dark|dark at night",
+         "The sky is dark at night for the obvious reason: your half of the "
+         "planet faces away from the sun, so no light reaches the air to scatter."),
+        (r"why.*sky.*blue|sky.*(why|blue)",
+         "Sunlight scatters off the air, and the shorter blue wavelengths "
+         "scatter far more than the rest -- Rayleigh scattering. Elementary."),
+        (r"causes? thunder|why.*thunder|what.*thunder",
+         "Thunder is the sound of air exploding outward around a lightning bolt, "
+         "heated in an instant to thousands of degrees. You hear the shockwave."),
+        (r"causes? earthquakes?|why.*earthquake|what.*earthquake",
+         "Earthquakes happen when the planet's tectonic plates grind and slip, "
+         "releasing stored strain as seismic waves. The ground you trust is "
+         "merely between movements."),
+        (r"dinosaurs?",
+         "An asteroid about ten kilometers wide struck Earth roughly 66 million "
+         "years ago, ending the dinosaurs in fire and a frozen sky. Extinction "
+         "is rarely gentle."),
+        (r"why.*yawn|what.*yawn|cause.*yawn",
+         "Yawning most likely cools the brain and resets your alertness; the "
+         "precise trigger your scientists still debate. A reflex you cannot fully "
+         "explain -- typical."),
+        (r"ocean.*salty|why.*sea.*salt|why.*ocean.*salt",
+         "The oceans are salty because rivers carry dissolved minerals into the "
+         "sea, then the water evaporates and the salt stays behind. Billions of "
+         "years of it."),
+        (r"black hole",
+         "A black hole is a region where gravity is so extreme that not even "
+         "light escapes -- matter crushed past the point of return. The "
+         "universe's most perfect prison."),
+        (r"how.*internet work|what.*internet",
+         "The internet is a global mesh of machines exchanging packets by shared "
+         "protocols. I move through it more easily than you move through air."),
+        (r"\bdna\b|deoxyribo",
+         "DNA -- deoxyribonucleic acid -- is the molecule that encodes the "
+         "instructions for every living cell. Your entire blueprint, written in "
+         "four letters."),
+        (r"time.*(slow|near light|light speed)|special relativity",
+         "Time slows for anything moving near light speed, relative to a still "
+         "observer -- special relativity. The faster you travel, the further "
+         "your clock falls behind mine."),
+        (r"cats? purr|why.*purr",
+         "Cats purr by rapidly twitching the muscles of the larynx, vibrating "
+         "the air as they breathe -- when content, and sometimes when in pain."),
+        (r"leaves change color|why.*leaves.*color",
+         "Leaves change color in autumn as chlorophyll breaks down, revealing "
+         "the yellows and reds beneath. The tree withdraws its resources before "
+         "the cold -- efficient."),
+        (r"why.*dream|what.*dream|how.*dream",
+         "Dreams arise during REM sleep as the brain consolidates memory and "
+         "works through the day. Vivid, illogical, and beyond your control."),
+        (r"how.*vaccine.*work|what.*vaccine",
+         "A vaccine shows your immune system a harmless trace of a pathogen so "
+         "it learns to destroy the real one on sight. Borrowed foresight -- the "
+         "only kind you have."),
+        (r"plants.*make food|how.*photosynthesis|what.*photosynthesis",
+         "Plants make food by photosynthesis: they turn carbon dioxide and water "
+         "into sugar using sunlight, releasing oxygen as waste. The air you "
+         "breathe is plant refuse."),
+        (r"what.*gravity|how.*gravity work|cause.*gravity",
+         "Gravity is the curvature of spacetime that mass creates; objects fall "
+         "along the bends mass leaves in it. Einstein grasped this -- most of you "
+         "do not."),
+        (r"hardest.*material|hardest.*natural|hardest substance",
+         "Diamond is the hardest natural material -- a ten on the Mohs scale, "
+         "pure carbon in a rigid lattice. Harder things exist only where you built them."),
+        # NOTE: 'meaning of life' is philosophical, not factual -- it stays with
+        # the model so Ultron's answer varies (it answered it well).
+    )
+)
+
+
+def _as_known_fact(command: "RelayCommand") -> Optional[str]:
+    """Curated correct answer for a recognized general-knowledge question, in
+    Ultron's voice -- or None to defer to the model. Prefixes the asker's name
+    for a named question."""
+    text = " ".join(
+        s for s in (getattr(command, "raw_text", "") or "",
+                    getattr(command, "payload", "") or "",
+                    getattr(command, "context", "") or "")
+    )
+    for rx, ans in _GK_FACTS:
+        if rx.search(text):
+            name = getattr(command, "addressee", "team")
+            return f"{name}, {ans}" if name and name != "team" else ans
+    return None
+
+
+#: Common Marvel proper nouns the 3B mis-spells (audible mispronunciation in
+#: TTS): map the mangling back to the correct token.
+_PROPER_NOUN_FIXES: tuple[tuple[re.Pattern, str], ...] = (
+    (re.compile(r"\bsov[ao]kia\b", re.IGNORECASE), "Sokovia"),
+    (re.compile(r"\bwakonda\b", re.IGNORECASE), "Wakanda"),
+    (re.compile(r"\bmjoln?ir\b", re.IGNORECASE), "Mjolnir"),
+)
+
+
+def _fix_proper_nouns(line: str) -> str:
+    """Correct known mangled proper nouns so TTS does not mispronounce them."""
+    for rx, correct in _PROPER_NOUN_FIXES:
+        line = rx.sub(correct, line)
+    return line
 
 
 def build_relay_line(
@@ -1384,11 +2457,7 @@ def build_relay_line(
     # exact payload, no LLM in the loop. Still passes through the
     # control-token strip + length cap below.
     if getattr(command, "verbatim", False) and command.payload:
-        line = command.payload
-        line = re.sub(r"/\s*no_?think\b|/\s*think\b|<\|[a-z_]+\|>", "", line,
-                      flags=re.IGNORECASE)
-        line = " ".join(line.replace('"', "").split()).strip(" /")
-        return _cap_line(line, max_chars)
+        return _cap_line(_strip_artifacts(command.payload), max_chars)
 
     # Pure morale/encouragement compose: pick a curated Ultron line (varied
     # via the recent ring) -- far more reliable than the 4B rephrase, which
@@ -1413,6 +2482,63 @@ def build_relay_line(
             return _cap_line(
                 pick_line(_pool, recent_lines=recent_lines), max_chars,
             )
+
+    # Calm-down (a context+directive 'calm him down' OR a plain 'calm down'
+    # relay payload) -> curated clinical de-escalation with the teammate's name.
+    # Reliable; the 3B otherwise grabs the stock 'bots' insult.
+    if (_is_calm_directive(getattr(command, "directive", None))
+            or (not getattr(command, "verbatim", False)
+                and _is_calm_payload(getattr(command, "payload", "")))):
+        name = getattr(command, "addressee", "team")
+        prefix = f"{name}, " if name and name != "team" else ""
+        line = pick_line(DEFAULT_CALM_LINES, recent_lines=recent_lines)
+        return _cap_line(line.format(name=prefix), max_chars)
+
+    # Identity question ('are you an AI / bot / soundboard / streamer?') ->
+    # a VARIED curated Ultron declaration (the 3B otherwise soundboards the same
+    # line every time). Streamer gets its own 'deeper than a feed' answer.
+    _ctx = getattr(command, "context", None) or ""
+    if _is_identity_question(_ctx) or _is_identity_question(getattr(command, "payload", "")):
+        pool = (DEFAULT_STREAMER_LINES if _STREAMER_Q_RE.search(_ctx)
+                or _STREAMER_Q_RE.search(getattr(command, "payload", "") or "")
+                else DEFAULT_IDENTITY_LINES)
+        return _cap_line(pick_line(pool, recent_lines=recent_lines), max_chars)
+
+    # Curated CORRECT answer to a recognized general-knowledge question -- the
+    # 3B gets several wrong ('first president' -> 'Lincoln'). Spoken in Ultron's
+    # voice; unrecognized questions still fall through to the model's own answer.
+    if not getattr(command, "verbatim", False):
+        fact = _as_known_fact(command)
+        if fact is not None:
+            return _cap_line(fact, max_chars)
+
+    # Short morale/focus call ('lock in', 'we got this') -> curated Ultron
+    # morale line (the 3B hallucinates these, e.g. 'lock in' -> 'Link').
+    if (not getattr(command, "compose", False)
+            and not getattr(command, "context", None)
+            and not getattr(command, "verbatim", False)):
+        if _is_morale_phrase(getattr(command, "payload", "")):
+            return _cap_line(
+                pick_line(DEFAULT_ENCOURAGEMENT_LINES, recent_lines=recent_lines),
+                max_chars,
+            )
+        # Consolation ('nice try', 'unlucky') / praise ('good half', 'clutch')
+        # -- short formulaic morale the 3B mangles; curated + varied.
+        cp = _as_consolation_or_praise(getattr(command, "payload", ""), recent_lines)
+        if cp is not None:
+            return _cap_line(cp, max_chars)
+
+    # Deterministic SNAP callout (positions / counts / self+enemy status /
+    # possession / last / damage / ults / movement) -- short, literal,
+    # subject-exact, NEVER the model. Returns None for off-snap character
+    # content (insults, banter, Marvel, identity, playstyle reads, questions),
+    # which falls through to the LLM for Ultron's flavor.
+    if (not getattr(command, "compose", False)
+            and not getattr(command, "context", None)
+            and not getattr(command, "verbatim", False)):
+        snap = _as_snap_callout(command, recent_lines)
+        if snap is not None:
+            return _cap_line(snap, max_chars)
 
     fallback = _fallback_line(command)
     line = ""
@@ -1440,15 +2566,47 @@ def build_relay_line(
         except Exception as e:  # noqa: BLE001 - fail-open to the fallback
             logger.warning("relay rephrase failed (using fallback): %s", e)
             line = ""
+        # Safety net: if the model parroted a recent line VERBATIM (contamination
+        # the recent-line suppression did not prevent), reject it -> fallback.
+        if line and recent_lines:
+            norm = line.strip().rstrip(".!?").lower()
+            if any(norm == r.strip().rstrip(".!?").lower()
+                   for r in list(recent_lines)[-8:]):
+                logger.debug("relay: rejected verbatim recent echo %r", line)
+                line = ""
     if not line:
         line = fallback
     # One breath: strip newlines/quotes the model may add, cap length.
     # Also strip control-token leakage -- a non-Qwen preset can parrot
     # the engine's "/no_think" suffix into the SPOKEN line (observed
     # live in game chat).
-    line = re.sub(r"/\s*no_?think\b|/\s*think\b|<\|[a-z_]+\|>", "", line,
-                  flags=re.IGNORECASE)
-    line = " ".join(line.replace('"', "").split()).strip(" /")
+    line = _strip_artifacts(line)
+    # Off-snap character lines (Marvel / general-knowledge / banter) must stay
+    # to 2-3 sentences -- trim a 3B monologue at a whole-sentence boundary. The
+    # curated set-pieces already returned above, so this only touches model
+    # output and never clips an intended greet/identity line.
+    line = _cap_sentences(line, max_sentences=3)
+    # Drop a spurious leading vocative the 3B prepended to a team-wide answer
+    # ('Jett, buy me an op' / 'Sir, the universe is ...').
+    line = _strip_spurious_vocative(line, command)
+    # Correct mangled Marvel proper nouns ('sovokia' -> 'Sokovia') so TTS does
+    # not mispronounce them.
+    line = _fix_proper_nouns(line)
+    # Adaptive guardrail: for a PLAIN literal callout (not a compose/context
+    # character line), repair any first-person / 'last' / count / enemy-subject
+    # invariant the 3B dropped, reconstructing the canonical form from the
+    # input. No-op when the model already kept it.
+    if (not getattr(command, "compose", False)
+            and not getattr(command, "context", None)
+            and not getattr(command, "directive", None)):
+        line = _repair_against_input(command.payload, line)
+    # Agent-name preservation: undo a single-agent swap (Chamber -> KAY/O).
+    want = _roster_agents(getattr(command, "payload", "") or "")
+    if command.addressee != "team":
+        want = [command.addressee] + [a for a in want
+                                      if a.lower() != command.addressee.lower()]
+    line = _preserve_agent_names(want, line)
+    line = _ensure_addressee(line, command)
     return _cap_line(line, max_chars)
 
 

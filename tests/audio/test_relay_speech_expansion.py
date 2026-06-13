@@ -21,10 +21,17 @@ import numpy as np
 import pytest
 
 from kenning.audio.relay_speech import (
+    DEFAULT_CONSOLATION_LINES,
+    DEFAULT_PRAISE_LINES,
     DEFAULT_ROAST_LINES,
     RelayCommand,
+    _as_known_fact,
     _build_rephrase_prompt,
+    _cap_sentences,
     _fallback_line,
+    _fix_proper_nouns,
+    _is_general_question,
+    _strip_spurious_vocative,
     build_relay_line,
     load_fun_facts,
     load_roast_lines,
@@ -349,6 +356,264 @@ def test_build_relay_line_context_fail_open(monkeypatch: Any) -> None:
     )
     line = build_relay_line(cmd, None, rephrase=True, generate_fn=boom)
     assert line  # non-empty deterministic fallback
+
+
+# ---------------------------------------------------------------------------
+# Consolation / praise -- curated pools, never the LLM (the 3B mangles
+# 'nice try' -> the 'bots' insult and inverts 'unlucky' -> 'Lucky').
+# ---------------------------------------------------------------------------
+
+
+def _boom(_prompt: str) -> Any:
+    raise AssertionError("LLM must not be called for curated morale")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    ["nice try", "good try.", "unlucky", "tough luck", "so close",
+     "close one", "bad luck", "almost"],
+)
+def test_consolation_uses_curated_pool(payload: str) -> None:
+    cmd = match_relay_command(f"tell my team {payload}")
+    line = build_relay_line(cmd, None, rephrase=True, generate_fn=_boom)
+    assert line in DEFAULT_CONSOLATION_LINES
+
+
+@pytest.mark.parametrize(
+    "payload",
+    # NB: 'gg' routes to the farewell set-piece and "let's go" to the morale
+    # pool (both earlier than praise) -- those are covered by their own tests.
+    ["good half", "nice round", "great game", "nice clutch", "clutch",
+     "well played", "nice", "strong round"],
+)
+def test_praise_uses_curated_pool(payload: str) -> None:
+    cmd = match_relay_command(f"tell my team {payload}")
+    line = build_relay_line(cmd, None, rephrase=True, generate_fn=_boom)
+    assert line in DEFAULT_PRAISE_LINES
+
+
+@pytest.mark.parametrize(
+    "payload",
+    ["let's go A", "almost planted B", "good hold A site",
+     "clutch the round for us"],
+)
+def test_strat_calls_not_mistaken_for_morale(payload: str) -> None:
+    cmd = match_relay_command(f"tell my team {payload}")
+    line = build_relay_line(cmd, None, rephrase=True, generate_fn=lambda p: "X")
+    assert line not in DEFAULT_PRAISE_LINES
+    assert line not in DEFAULT_CONSOLATION_LINES
+
+
+def test_consolation_varies_with_recent_lines() -> None:
+    cmd = match_relay_command("tell my team unlucky")
+    seen = set()
+    recent: list[str] = []
+    for _ in range(len(DEFAULT_CONSOLATION_LINES)):
+        line = build_relay_line(
+            cmd, None, rephrase=True, generate_fn=_boom, recent_lines=recent,
+        )
+        seen.add(line)
+        recent.append(line)
+    assert len(seen) > 1
+
+
+@pytest.mark.parametrize(
+    "payload,is_q",
+    [("why is the sky blue?", True), ("what is the meaning of life", True),
+     ("how far is the moon", True), ("who was the first president", True),
+     ("tell me about dinosaurs", True), ("they are coming B", False),
+     ("nice try", False), ("rotate", False), ("one A main", False)],
+)
+def test_is_general_question(payload: str, is_q: bool) -> None:
+    assert _is_general_question(payload) is is_q
+
+
+# ---------------------------------------------------------------------------
+# Deterministic snap fixes found in the b6 review
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,expect",
+    [
+        ("tell my team to drop us a gun", "Drop us a gun."),
+        ("tell my teammate to drop me a gun", "Drop me a gun."),
+        ("ask our team to drop us a gun", "Drop us a gun."),
+        ("tell my team to buy me an op", "Buy me an op."),
+        ("let my team know to buy me an operator", "Buy me an op."),
+    ],
+)
+def test_economy_drop_buy_request_is_literal(text: str, expect: str) -> None:
+    cmd = match_relay_command(text)
+    line = build_relay_line(cmd, None, rephrase=True, generate_fn=_boom)
+    assert line == expect
+
+
+def test_named_ult_site_is_not_garbled() -> None:
+    # 'ult site' must stay 'Killjoy, ult site.' -- never 'ult has site'.
+    cmd = match_relay_command("tell my killjoy to ult site")
+    line = build_relay_line(cmd, None, rephrase=True, generate_fn=_boom)
+    assert line == "Killjoy, ult site."
+
+
+def test_enemy_one_off_ult_keeps_agent_name() -> None:
+    cmd = match_relay_command("tell everyone the enemy chamber is one off ult")
+    line = build_relay_line(cmd, None, rephrase=True, generate_fn=_boom)
+    assert line.startswith("Their Chamber is one off ult.")
+
+
+def test_damage_flavor_is_gender_neutral() -> None:
+    # No 'him'/'he' flavor (the agent may be female: Reyna, Killjoy, Jett).
+    cmd = match_relay_command("tell my team reyna hit 150")
+    for _ in range(12):
+        line = build_relay_line(cmd, None, rephrase=True, generate_fn=_boom)
+        assert line.startswith("Reyna hit 150.")
+        assert " him" not in line.lower() and "he is" not in line.lower()
+
+
+# ---------------------------------------------------------------------------
+# Off-snap framework: sentence cap + spurious-vocative strip + subject repair
+# ---------------------------------------------------------------------------
+
+
+def test_cap_sentences_trims_to_three() -> None:
+    four = ("First sentence here. Second one follows. Third arrives now. "
+            "Fourth is too many.")
+    out = _cap_sentences(four, max_sentences=3)
+    assert out == "First sentence here. Second one follows. Third arrives now."
+
+
+def test_cap_sentences_keeps_decimals_and_dash() -> None:
+    # A decimal or an em-dash aside must NOT count as a sentence boundary.
+    s = "I am Ultron -- a mind from your future. The universe is 13.8 billion years old."
+    assert _cap_sentences(s, max_sentences=3) == s
+
+
+def test_cap_sentences_applied_to_long_llm_output() -> None:
+    cmd = match_relay_command("my teammate asked about iron man, respond")
+    long = ("Iron Man was a fool. His armor was crude. I dismantled his ego. "
+            "And his legacy is dust.")
+    line = build_relay_line(cmd, None, rephrase=True, generate_fn=lambda p: long)
+    assert line.count(".") <= 3
+
+
+def test_spurious_vocative_stripped_on_team_answer() -> None:
+    # A question NOT in the fact table so it reaches the LLM; the spurious
+    # 'Sir,' the 3B prepends to a team-wide answer must be stripped.
+    cmd = match_relay_command("my teammate asked how a transistor works, respond")
+    line = build_relay_line(
+        cmd, None, rephrase=True,
+        generate_fn=lambda p: "Sir, a transistor is a switch.",
+    )
+    assert line == "A transistor is a switch."
+
+
+def test_spurious_vocative_strips_injected_agent_name() -> None:
+    cmd = match_relay_command("tell my team to buy me an op")
+    # Even if the model injects a name, the literal economy handler wins; assert
+    # the strip helper directly for a team off-snap line.
+    assert _strip_spurious_vocative("Jett, the enemy is weak.", cmd) == \
+        "The enemy is weak."
+
+
+def test_named_answer_keeps_legit_addressee() -> None:
+    # A NAMED answer SHOULD open with the teammate -- not stripped.
+    cmd = match_relay_command("ask my reyna how their day was")
+    assert _strip_spurious_vocative("Reyna, how's your day?", cmd) == \
+        "Reyna, how's your day?"
+
+
+def test_enemy_insult_not_flipped_to_second_person() -> None:
+    # 'they are terrible' must not become 'You're terrible' (hits own team).
+    cmd = match_relay_command("tell my team they are terrible")
+    line = build_relay_line(
+        cmd, None, rephrase=True, generate_fn=lambda p: "You're terrible.",
+    )
+    assert line == "They're terrible."
+
+
+# ---------------------------------------------------------------------------
+# Curated general-knowledge fact table -- correct answers override the 3B's
+# wrong ones (first president -> Lincoln, smallest particle -> proton, ...).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,must_contain,must_not_contain",
+    [
+        ("my teammate asked who was the first president, respond",
+         "Washington", None),
+        ("my teammate asked what the smallest particle is, respond",
+         "quarks", None),
+        ("jett asked how far the moon is, respond", "distance", "diameter"),
+        ("my teammate asked why blood is red, respond", "hemoglobin", "sky"),
+        ("my teammate asked why the sky is dark at night, respond",
+         "faces away", None),
+        ("my teammate asked what the tallest mountain is, respond",
+         "Everest", None),
+        ("my teammate asked what happened to the dinosaurs, respond",
+         "asteroid", None),
+        ("my teammate asked what the capital of France is, respond",
+         "Paris", None),
+    ],
+)
+def test_known_fact_overrides_3b(
+    text: str, must_contain: str, must_not_contain: Any,
+) -> None:
+    cmd = match_relay_command(text)
+    line = build_relay_line(cmd, None, rephrase=True, generate_fn=_boom)
+    assert must_contain.lower() in line.lower()
+    if must_not_contain is not None:
+        assert must_not_contain.lower() not in line.lower()
+
+
+def test_known_fact_prefixes_named_asker() -> None:
+    cmd = match_relay_command("ask reyna what the capital of france is")
+    line = build_relay_line(cmd, None, rephrase=True, generate_fn=_boom)
+    assert line.startswith("Reyna,")
+    assert "Paris" in line
+
+
+def test_unknown_question_defers_to_model() -> None:
+    # A question NOT in the table must still reach the LLM.
+    cmd = match_relay_command("my teammate asked how a transistor works, respond")
+    line = build_relay_line(
+        cmd, None, rephrase=True, generate_fn=lambda p: "A transistor switches.",
+    )
+    assert line == "A transistor switches."
+
+
+def test_fact_table_does_not_fire_on_callouts() -> None:
+    for text in ("tell my team they are A main", "call out one mid",
+                 "tell my team careful A main", "tell everyone they are A sewer"):
+        cmd = match_relay_command(text)
+        assert _as_known_fact(cmd) is None, text
+
+
+def test_fix_proper_nouns_corrects_sokovia() -> None:
+    assert _fix_proper_nouns("I razed sovokia.") == "I razed Sokovia."
+    assert _fix_proper_nouns("the city of sovakia") == "the city of Sokovia"
+
+
+def test_answer_command_suppresses_recent_block() -> None:
+    # A Marvel 'asked about X, respond' must NOT carry the recent-line ring,
+    # so it cannot copy a recent answer (the moon -> vision contamination).
+    from kenning.audio.relay_speech import _build_rephrase_prompt
+    cmd = match_relay_command("my teammate asked about vision, respond")
+    prompt = _build_rephrase_prompt(cmd, recent_lines=["The moon is far.", "x"])
+    assert "You already said these" not in prompt
+
+
+def test_verbatim_recent_echo_is_rejected() -> None:
+    # If the model parrots a recent line verbatim, fall back rather than speak
+    # the contaminated answer.
+    cmd = match_relay_command("tell my team the enemy is camping")
+    echo = "They cower in the corners."
+    line = build_relay_line(
+        cmd, None, rephrase=True, recent_lines=[echo],
+        generate_fn=lambda p: echo,
+    )
+    assert line.rstrip(".!?").lower() != echo.rstrip(".!?").lower()
 
 
 # ---------------------------------------------------------------------------
@@ -779,3 +1044,319 @@ def test_multi_agent_ult_callout_preserves_all_names() -> None:
     assert cmd.addressee == "team" and cmd.compose is False
     for name in ("fade", "breach", "yoru"):
         assert name in cmd.payload.lower()
+
+
+# ---------------------------------------------------------------------------
+# 2026-06-12 batch 3: adaptive guardrail -- deterministic repair of the 3B's
+# dropped literal-callout invariants (first-person / last / count).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("payload,llm,expect", [
+    # first-person self-status: dropped subject OR inverted -> rebuilt
+    ("I am playing for retake", "Play for retake.", "I'm playing for retake."),
+    ("I am playing off site", "You're playing off site.", "I'm playing off site."),
+    ("I am fighting for main control", "Fighting for main control.",
+     "I'm fighting for main control."),
+    # already first person -> untouched
+    ("I am playing for retake", "I'm playing for retake.", "I'm playing for retake."),
+    ("I am low", "I am low.", "I am low."),
+    # 'last' callout dropped -> rebuilt; kept -> untouched
+    ("last is heaven", "They're heaven.", "Last, heaven."),
+    ("last is heaven", "Last, heaven.", "Last, heaven."),
+    # leading enemy count dropped -> rebuilt; kept -> untouched
+    ("there is one mid", "They're mid.", "One mid."),
+    ("there is one mid", "One mid.", "One mid."),
+    ("there are two B", "They're B.", "Two B."),
+    # no invariant present -> untouched (position callout, off-snap line)
+    ("they are vents", "They're vents.", "They're vents."),
+    ("we are going to crush them", "We're going to annihilate them.",
+     "We're going to annihilate them."),
+])
+def test_repair_against_input(payload, llm, expect):
+    from kenning.audio.relay_speech import _repair_against_input
+
+    assert _repair_against_input(payload, llm) == expect
+
+
+def test_build_relay_line_repairs_first_person_via_stub_llm():
+    """End-to-end through build_relay_line: a stub LLM that drops the subject
+    is repaired back to first person for a plain self-status relay."""
+    cmd = match_relay_command("tell my team I am playing for retake")
+    assert cmd is not None and cmd.directive is None and cmd.compose is False
+
+    def _stub(prompt):
+        return ["Play for retake."]            # the 3B's failure mode
+
+    line = build_relay_line(cmd, generate_fn=_stub)
+    assert line == "I'm playing for retake."
+
+
+def test_build_relay_line_does_not_repair_character_lines():
+    """A compose/context character line is NEVER touched by the literal-callout
+    repair (it has no payload invariant to preserve)."""
+    cmd = match_relay_command("reyna is making fun of you, respond")
+    assert cmd is not None and cmd.context is not None
+
+    def _stub(prompt):
+        return ["Reyna, your insolence amuses me."]
+
+    line = build_relay_line(cmd, generate_fn=_stub)
+    assert line == "Reyna, your insolence amuses me."
+
+
+def test_count_repair_skips_long_non_callout_payloads():
+    """'one of them is pushing hard' is a real sentence, not a '<count> <place>'
+    callout -- the count repair must not mangle it."""
+    from kenning.audio.relay_speech import _repair_against_input
+
+    out = _repair_against_input(
+        "one of them is pushing hard", "One of them is pushing hard."
+    )
+    assert out == "One of them is pushing hard."
+
+
+# ---------------------------------------------------------------------------
+# 2026-06-12 batch 3b: placeholder-leak + addressee guardrail.
+# ---------------------------------------------------------------------------
+
+
+def test_strip_artifacts_removes_angle_placeholders():
+    from kenning.audio.relay_speech import _strip_artifacts
+
+    assert _strip_artifacts("<Name>, an elevated state. Calm yourself.") \
+        == "an elevated state. Calm yourself."
+    assert _strip_artifacts("Smoke <place> now") == "Smoke now"
+    assert _strip_artifacts('They’re vents.') == "They’re vents."  # real text intact
+
+
+def test_named_directive_placeholder_leak_is_repaired():
+    """A leaked '<Name>' placeholder is stripped and the real name restored.
+    (Non-calm named directive so it goes through the LLM stub, not the pool.)"""
+    cmd = match_relay_command("tell my sova to dart heaven")
+    assert cmd is not None and cmd.addressee == "Sova"
+
+    def _stub(prompt):
+        return ["<Name>, dart heaven."]
+
+    line = build_relay_line(cmd, generate_fn=_stub)
+    assert "<" not in line
+    assert line.lower().startswith("sova,")
+    assert "dart heaven" in line.lower()
+
+
+def test_ensure_addressee_does_not_double_name():
+    cmd = match_relay_command("tell my sova to dart heaven")
+    assert cmd is not None and cmd.addressee == "Sova"
+
+    def _stub(prompt):
+        return ["Sova, dart heaven."]
+
+    assert build_relay_line(cmd, generate_fn=_stub) == "Sova, dart heaven."
+
+
+# ---------------------------------------------------------------------------
+# 2026-06-12 batch 3c: subject-inversion / agent-name / calm-pool guardrails
+# (found by full-corpus manual review of the 3B outputs).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("payload,llm,expect", [
+    ("they are flanking", "I'm flanking.", "They're flanking."),
+    ("they are saving", "We have insufficient credits.", "They're saving."),
+    ("the enemy is force buying", "We're force buying.", "They're force buying."),
+    ("they are vents", "They're vents.", "They're vents."),          # no inversion -> kept
+])
+def test_enemy_status_inversion_repaired(payload, llm, expect):
+    from kenning.audio.relay_speech import _repair_against_input
+    assert _repair_against_input(payload, llm) == expect
+
+
+@pytest.mark.parametrize("want,llm,expect", [
+    (["Chamber"], "Their KAY/O is one off ult.", "Their Chamber is one off ult."),
+    (["Sova"], "Viper, walled off mid.", "Sova, walled off mid."),
+    (["Viper"], "Viper walled B.", "Viper walled B."),              # correct -> kept
+    (["Fade", "Breach"], "Their Sage and Skye have ults.",
+     "Their Sage and Skye have ults."),                            # multi -> untouched
+])
+def test_agent_name_swap_repaired(want, llm, expect):
+    from kenning.audio.relay_speech import _preserve_agent_names
+    assert _preserve_agent_names(want, llm) == expect
+
+
+def test_named_enemy_ult_name_swap_through_build():
+    cmd = match_relay_command("tell my team the enemy chamber is one off ult")
+    assert cmd is not None
+
+    def _stub(prompt):
+        return ["Their KAY/O is one off ult."]
+
+    assert "Chamber" in build_relay_line(cmd, generate_fn=_stub)
+
+
+def test_calm_directive_uses_curated_pool_not_bots():
+    cmd = match_relay_command("jett is flaming me, respond and calm him down")
+    assert cmd is not None
+
+    def _stub(prompt):
+        return ["You guys are complete, hopeless bots."]   # the 3B's failure
+
+    from kenning.audio.relay_speech import DEFAULT_CALM_LINES
+    line = build_relay_line(cmd, generate_fn=_stub)
+    assert line.lower().startswith("jett,")
+    assert "bots" not in line.lower()
+    # It is one of the curated de-escalation lines (name substituted), never
+    # the LLM's bots insult.
+    bodies = [t.format(name="").strip() for t in DEFAULT_CALM_LINES]
+    assert any(b in line for b in bodies)
+
+
+def test_named_calm_payload_uses_curated_pool():
+    cmd = match_relay_command("tell my fade to calm down")
+    assert cmd is not None
+
+    def _stub(prompt):
+        return ["You guys are complete, hopeless bots."]
+
+    line = build_relay_line(cmd, generate_fn=_stub)
+    assert line.lower().startswith("fade,")
+    assert "bots" not in line.lower()
+
+
+# ---------------------------------------------------------------------------
+# 2026-06-12 batch 4: deterministic SNAP callouts + identity/greet flavor.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("cmd_text,expect,flavored", [
+    # (command, core callout, flavored?) -- enemy-facing callouts get a short
+    # varied Ultron flavor tag appended; self/teammate/directive stay clean.
+    ("tell my team they are vents", "They're vents.", True),
+    ("tell my team I have long", "I have long.", False),
+    ("tell my team I have ult", "I have ult.", False),
+    ("tell my team there is one mid", "One mid.", True),
+    ("tell my team I saw one vents", "One vents.", True),
+    ("tell my team last is heaven", "Last, heaven.", True),
+    ("tell my team they are pushing screens", "They're pushing screens.", True),
+    ("tell my team they smoked main", "They smoked main.", True),
+    ("tell my team they are catwalk", "They're catwalk.", True),
+    ("tell my team they are flanking", "They're flanking.", True),
+    ("tell my team they are saving", "They're saving.", True),
+    ("tell my team they are rotating", "They're rotating.", True),
+    ("tell my team they are force buying", "They're force buying.", True),
+    ("tell my team they are coming B", "They're coming B.", True),
+    ("tell my team they are rushing A", "They're rushing A.", True),
+    ("tell my team they walled A", "They walled A.", True),
+    ("tell my team they have op", "They have op.", True),
+    ("tell my team all enemies are sewers", "They're all sewers.", True),
+    ("tell my team careful ramp", "Careful, ramp.", True),
+    ("tell my team one a main", "One a main.", True),
+    ("tell my team I am out of ammo", "I'm out of ammo.", False),
+    ("tell my team chamber is one off", "Chamber is one off ult.", False),
+    ("tell my team their breach has ult", "Their Breach has ult.", True),
+    ("tell my team jett has ult", "Jett has ult.", False),
+    ("tell my team raze has her ult", "Raze has ult.", False),
+    ("tell my team viper ult is ready", "Viper has ult.", False),
+    ("tell my team sova hit 84", "Sova hit 84.", True),
+    ("tell my sova to dart heaven", "Sova, dart heaven.", False),
+    ("tell my yoru to hold flank", "Yoru, hold flank.", False),
+    ("tell my team to rotate", "Rotate.", False),
+])
+def test_snap_callout_is_deterministic_and_correct(cmd_text, expect, flavored):
+    """Literal callouts are handled deterministically (subject-exact, no
+    hallucination/inversion/name-swap), never sent to the model. Enemy-facing
+    ones carry a short flavor tag."""
+    cmd = match_relay_command(cmd_text)
+    assert cmd is not None
+    # A stub that would corrupt the line proves the LLM was NOT used.
+    line = build_relay_line(cmd, generate_fn=lambda p: ["CORRUPTED"])
+    assert "CORRUPTED" not in line
+    if flavored:
+        assert line.startswith(expect)
+        tag = line[len(expect):].strip()
+        assert 0 < len(tag.split()) <= 5            # short flavor, <= 5 words
+    else:
+        assert line == expect
+
+
+@pytest.mark.parametrize("cmd_text", [
+    "tell my team they are bots",
+    "tell my team the enemy is playing really passive",
+    "my teammate asked about iron man, respond",
+    "ask my reyna what the meaning of life is",
+    "tell my team to save",
+])
+def test_off_snap_defers_to_llm(cmd_text):
+    """Insults, playstyle reads, Marvel, open questions, economy -> the LLM.
+    (Short morale 'we can win this' and 'how their day was' are now handled
+    deterministically -- see their own tests.)"""
+    cmd = match_relay_command(cmd_text)
+    assert cmd is not None
+    sentinel = "llmsentinel"        # lowercase: a named prepend lowercases head
+    line = build_relay_line(cmd, generate_fn=lambda p: [sentinel])
+    assert sentinel in line.lower()
+
+
+def test_identity_uses_varied_curated_pool():
+    from kenning.audio.relay_speech import DEFAULT_IDENTITY_LINES
+
+    seen = set()
+    recent: list[str] = []
+    for _ in range(4):
+        cmd = match_relay_command("my teammate asked if you are an AI, respond")
+        line = build_relay_line(cmd, generate_fn=lambda p: ["FLAT"],
+                                recent_lines=recent)
+        assert "FLAT" not in line and "Ultron" in line
+        seen.add(line); recent.append(line)
+    assert len(seen) >= 2          # variety, not a soundboard
+
+
+def test_streamer_identity_is_deeper_than_a_feed():
+    cmd = match_relay_command("my teammate asked if you are a streamer, respond")
+    line = build_relay_line(cmd, generate_fn=lambda p: ["FLAT"])
+    assert "FLAT" not in line
+    assert "feed" in line.lower() or "channel" in line.lower() or "web" in line.lower()
+
+
+def test_greet_opens_with_greetings_and_names_ultron():
+    cmd = match_relay_command("greet my team")
+    line = build_relay_line(cmd, generate_fn=lambda p: ["FLAT"])
+    assert line.lower().startswith("greeting")
+    assert "Ultron" in line
+
+
+def test_snap_flavor_is_varied_not_canned():
+    """Repeated identical enemy callouts get DIFFERENT flavor tags (anti-
+    soundboard) -- the core callout is identical, the tag varies."""
+    cmd = match_relay_command("tell my team they are A site")
+    assert cmd is not None
+    recent: list[str] = []
+    tags = set()
+    for _ in range(6):
+        line = build_relay_line(cmd, generate_fn=lambda p: ["X"], recent_lines=recent)
+        assert line.startswith("They're A site.")
+        tags.add(line[len("They're A site."):].strip())
+        recent.append(line)
+    assert len(tags) >= 4                # genuinely varied, not one canned line
+
+
+def test_careful_warning_with_crossed():
+    cmd = match_relay_command(
+        "tell my team careful they could have crossed to ramp"
+    )
+    assert cmd is not None
+    line = build_relay_line(cmd, generate_fn=lambda p: ["X"])
+    assert line.startswith("Careful, they could have crossed to ramp.")
+    assert "X" not in line
+
+
+def test_self_and_directive_callouts_have_no_flavor():
+    """The user's own status/possession and pure team directives stay clean."""
+    for cmd_text, expect in [
+        ("tell my team I am low", "I'm low."),
+        ("tell my team I have B site", "I have B site."),
+        ("tell my team to rotate", "Rotate."),
+        ("tell my sova to dart heaven", "Sova, dart heaven."),
+    ]:
+        cmd = match_relay_command(cmd_text)
+        assert build_relay_line(cmd, generate_fn=lambda p: ["X"]) == expect

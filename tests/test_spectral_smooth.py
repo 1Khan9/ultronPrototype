@@ -425,14 +425,19 @@ def test_two_trailing_bursts_both_removed():
 
 
 def test_real_final_word_after_pause_is_preserved():
-    """A genuine short word (300 ms) after a 250 ms pause is ABOVE the
-    120 ms burst cap -- never clipped."""
+    """A genuine short word (300 ms) after a pause is ABOVE the 120 ms burst
+    cap -- never clipped. (The pure-silence pause itself may be compressed by
+    the dead-space step -- in real audio a pause carries room tone and is not
+    touched; here both WORDS must survive in full.)"""
     sr = 24000
     word = _speech(0.3, sr)
     clip = np.concatenate([_speech(1.0, sr), _silence(0.25, sr), word])
     out = trim_and_fade(clip, sr)
-    # The trimmed clip still contains the full final word's duration.
-    assert len(out) >= int(sr * (1.0 + 0.25 + 0.3) * 0.95)
+    # Both words survive in full (silence between them may be shortened).
+    assert len(out) >= int(sr * (1.0 + 0.3) * 0.95)
+    # The final word's energy is intact (not faded/clipped to a burst).
+    from kenning.tts.spectral_smooth import _compress_internal_dead_space
+    assert float(np.sum(out ** 2)) >= float(np.sum(clip ** 2)) * 0.85
 
 
 def _decay(seconds: float, sr: int = 24000, start_amp: float = 0.4):
@@ -497,3 +502,89 @@ def test_strip_post_gap_blip_keeps_real_short_word_after_pause():
     clip = np.concatenate([_speech(1.0, sr), _silence(0.2, sr), _speech(0.2, sr)])
     out = _strip_post_gap_blip(clip, sr)
     assert len(out) == len(clip)                  # final word preserved
+
+
+def _room_tone(seconds: float, sr: int = 24000, db: float = -65.0):
+    """Quiet natural pause floor (room tone) -- ABOVE the dead-space gate, so a
+    pause of this depth must be preserved however long."""
+    n = int(sr * seconds)
+    amp = 10.0 ** (db / 20.0)
+    rng = np.random.default_rng(7)
+    return (amp * rng.standard_normal(n)).astype(np.float32)
+
+
+def test_internal_dead_space_pure_silence_core_shrunk():
+    """A long PURE-DIGITAL-SILENCE core between two sentences is shrunk; the
+    speech on both sides is preserved."""
+    from kenning.tts.spectral_smooth import _compress_internal_dead_space
+
+    sr = 24000
+    clip = np.concatenate([_speech(0.6, sr), _silence(0.7, sr), _speech(0.6, sr)])
+    out = _compress_internal_dead_space(clip, sr)
+    # 0.7 s pure silence -> ~0.16 s kept: ~0.54 s removed.
+    assert len(out) < len(clip) - int(sr * 0.4)
+    assert len(out) >= int(sr * (0.6 + 0.12 + 0.6))         # both words + a beat
+
+
+def test_natural_room_tone_pause_is_preserved():
+    """A long but SHALLOW pause (room tone, -65 dB, ABOVE the -76 dB silence
+    floor) is an intentional beat -- never compressed, even at 600 ms."""
+    from kenning.tts.spectral_smooth import _compress_internal_dead_space
+
+    sr = 24000
+    clip = np.concatenate([_speech(0.5, sr), _room_tone(0.6, sr, -65.0), _speech(0.5, sr)])
+    out = _compress_internal_dead_space(clip, sr)
+    assert len(out) == len(clip)                            # untouched
+
+
+def test_short_silence_is_preserved():
+    """A short pure-silence beat (< min_silence) is a normal pause -- kept."""
+    from kenning.tts.spectral_smooth import _compress_internal_dead_space
+
+    sr = 24000
+    clip = np.concatenate([_speech(0.5, sr), _silence(0.18, sr), _speech(0.5, sr)])
+    out = _compress_internal_dead_space(clip, sr)
+    assert len(out) == len(clip)
+
+
+def test_dead_space_compress_NEVER_touches_speech_byte_for_byte():
+    """The strongest guarantee the user asked for: every sample ABOVE the
+    silence floor (all speech, every consonant tail, all reverb) survives
+    byte-for-byte and in order. Only pure sub-silence_db samples are dropped."""
+    from kenning.tts.spectral_smooth import _compress_internal_dead_space
+
+    sr = 24000
+    a, b = _speech(0.6, sr), _speech(0.6, sr)
+    clip = np.concatenate([a, _silence(0.8, sr), b])
+    out = _compress_internal_dead_space(clip, sr)
+    sil_amp = 10.0 ** (-76.0 / 20.0)
+    loud_in = clip[np.abs(clip) > sil_amp]
+    loud_out = out[np.abs(out) > sil_amp]
+    assert np.array_equal(loud_in, loud_out)               # speech untouched
+
+
+def test_dead_space_compress_preserves_speech_energy():
+    """Total signal energy is unchanged (only inaudible silence dropped)."""
+    from kenning.tts.spectral_smooth import _compress_internal_dead_space
+
+    sr = 24000
+    clip = np.concatenate([_speech(0.6, sr), _silence(0.8, sr), _speech(0.6, sr)])
+    before = float(np.sum(clip ** 2))
+    after = float(np.sum(_compress_internal_dead_space(clip, sr) ** 2))
+    assert abs(before - after) / before < 1e-6             # silence carries ~no energy
+
+
+def test_full_trim_and_fade_preserves_speech_with_dead_space():
+    """End-to-end: trim_and_fade (boundary trim + blip strip + dead-space
+    compress + fades) on a multi-sentence clip with a dead gap keeps both
+    speech runs intact and removes the dead core."""
+    sr = 24000
+    clip = np.concatenate([
+        _speech(0.7, sr), _silence(0.7, sr), _speech(0.7, sr), _silence(0.05, sr),
+    ])
+    out = trim_and_fade(clip, sr)
+    from kenning.audio.output_quality import analyze_clip
+    kinds = {f.kind for f in analyze_clip(out, sr).findings}
+    assert "internal_dropout" not in kinds                 # dead gap shrunk
+    # both ~0.7 s words survive (allow fades/pads): >= ~1.4 s of audio remains.
+    assert len(out) >= int(sr * 1.4)

@@ -45,18 +45,92 @@ class Case:
 
 # --- vocab ------------------------------------------------------------------
 
-# Map locations across the Valorant pool (callout names). Deliberately broad.
-LOCATIONS = [
-    "vents", "screens", "sewers", "main", "heaven", "hell", "sand", "CT",
-    "window", "box", "rafters", "tiles", "top mid", "mid", "drop", "close",
-    "back site", "top site", "garage", "long", "short", "market", "link",
-    "lamps", "generator", "pit", "tree", "alley", "elbow", "cubby",
-    "default", "spawn", "hookah", "stairs", "catwalk", "kitchen", "ramp",
-    "A main", "B main", "C main", "A site", "B site", "A lobby", "B lobby",
-    "A heaven", "B heaven", "A rafters", "mid courtyard", "mid doors",
-    "mid pizza", "mid runway", "snipers nest", "showers", "bottom mid",
-    "subroza", "logs", "yard", "boba", "u-haul", "switch", "rubble",
+# GENERIC (non-map-specific) callouts -- the universal terms used on every map.
+GENERIC_CALLOUTS = [
+    "A", "B", "C", "A site", "B site", "C site", "A main", "B main", "C main",
+    "A lobby", "B lobby", "C lobby", "A long", "B long", "A short", "B short",
+    "mid", "top mid", "bottom mid", "heaven", "hell", "CT", "spawn", "default",
+    "long", "short", "back site", "top site", "site", "flank", "A heaven",
+    "B heaven", "A rafters", "B rafters", "window", "cubby", "elbow",
+    "connector", "link", "ramp", "stairs", "A link", "B link", "C link",
 ]
+
+# MAP-SPECIFIC callouts for the FULL 2026 pool (web-verified: Ascent, Bind,
+# Breeze, Fracture, Haven, Icebox, Lotus, Pearl, Split, Sunset, Abyss, Corrode).
+MAP_CALLOUTS = {
+    "ascent": [
+        "A main", "A lobby", "A site", "A rafters", "generator", "wine", "tree",
+        "mid", "mid cubby", "mid link", "mid catwalk", "mid pizza",
+        "mid courtyard", "market", "B main", "B lobby", "B site", "lane",
+        "switch", "boathouse", "tiles", "garden", "A wine",
+    ],
+    "bind": [
+        "A short", "A long", "A lobby", "A site", "hookah", "bath", "showers",
+        "teleporter", "garden", "u-haul", "truck", "elbow", "B long", "B short",
+        "B site", "B window", "fountain", "tower", "lamps", "B hall",
+    ],
+    "breeze": [
+        "A main", "A lobby", "A site", "A hall", "A shop", "A cave", "cave",
+        "pyramids", "mid", "mid doors", "mid pillar", "mid top", "mid wood",
+        "B main", "B site", "B window", "B tunnel", "switch", "bridge", "snake",
+    ],
+    "fracture": [
+        "A main", "A site", "A hall", "A drop", "A rope", "A dish", "dish",
+        "arcade", "A link", "mid", "B main", "B site", "B tower", "B arcade",
+        "canteen", "generator", "bench", "A tunnel", "B tunnel", "ropes",
+    ],
+    "haven": [
+        "A long", "A short", "A lobby", "A site", "A heaven", "sewer", "garage",
+        "garden", "C long", "C site", "C cubby", "C window", "C lobby",
+        "mid window", "mid doors", "mid courtyard", "platform", "back plat",
+        "tower", "bend",
+    ],
+    "icebox": [
+        "A main", "A site", "A belt", "A nest", "A rafters", "A pipes",
+        "A screen", "kitchen", "mid", "mid boiler", "mid tube", "mid orange",
+        "mid blue", "B main", "B site", "B hut", "B yellow", "B green",
+        "B snowman", "tube", "garage", "maze",
+    ],
+    "lotus": [
+        "A main", "A site", "A lobby", "A rubble", "A drop", "A tree", "A link",
+        "A door", "mid", "mid top", "mid doors", "mid link", "B main", "B site",
+        "C main", "C site", "C lobby", "C mound", "C waterfall", "C door",
+        "tree", "waterfall",
+    ],
+    "pearl": [
+        "A main", "A site", "A link", "A dugout", "A flowers", "A restaurant",
+        "A secret", "mid", "mid top", "mid doors", "mid connector", "mid plaza",
+        "art", "B main", "B site", "B link", "B tower", "B ramp", "B hall",
+        "club", "screens",
+    ],
+    "split": [
+        "A main", "A lobby", "A ramps", "A site", "A rafters", "A screens",
+        "A sewer", "mid", "mid vent", "mid mail", "top mid", "B main", "B lobby",
+        "B site", "B tower", "B rafters", "B alley", "heaven", "hell", "ropes",
+        "vents",
+    ],
+    "sunset": [
+        "A main", "A site", "A lobby", "A alley", "A elbow", "A tower", "mid",
+        "mid courtyard", "mid top", "mid bottom", "market", "B main", "B site",
+        "B market", "boba", "tiles", "top mid",
+    ],
+    "abyss": [
+        "A main", "A site", "A tower", "A plat", "A island", "mid", "mid nest",
+        "mid bridge", "bridge", "B main", "B site", "B tunnel", "B cave",
+        "library", "vent", "catwalk", "CT link", "void", "cliff", "nest",
+    ],
+    "corrode": [
+        "A main", "A site", "A crane", "A link", "A pocket", "A elbow", "yard",
+        "cubby", "mid", "mid window", "mid stairs", "top mid", "B main",
+        "B site", "B tower", "B link", "B elbow", "CT",
+    ],
+}
+
+# Flattened, de-duplicated location list used by the combinatorial location
+# section -- generic terms + every map-specific callout.
+LOCATIONS = list(dict.fromkeys(
+    GENERIC_CALLOUTS + [c for cs in MAP_CALLOUTS.values() for c in cs]
+))
 
 NUMS_WORD = ["one", "two", "three", "four", "five"]
 NUMS_DIGIT = ["1", "2", "3", "4", "5"]
@@ -297,9 +371,85 @@ IDENTITY = [
     ("my teammate asked what you are, respond", "what are you"),
 ]
 
+# General-knowledge questions on random subjects -> Ultron ANSWERS in full from
+# his own trained knowledge, in character (precise + faintly contemptuous), NOT
+# a refusal and NOT flavor-without-the-answer. Wide variety: physics, biology,
+# astronomy, history, geography, philosophy, chemistry, tech, trivia.
+GENERAL_KNOWLEDGE = [
+    ("my teammate asked why the sky is blue, respond", "Rayleigh scattering"),
+    ("my teammate asked what happened to the dinosaurs, respond", "asteroid/K-Pg"),
+    ("my teammate asked what the meaning of life is, respond", "philosophy"),
+    ("jett asked how far the moon is, respond", "~384,000 km"),
+    ("my teammate asked why the ocean is salty, respond", "dissolved minerals"),
+    ("reyna asked what causes thunder, respond", "lightning heating air"),
+    ("my teammate asked how old the universe is, respond", "~13.8 billion yrs"),
+    ("sage asked why we dream, respond", "memory/processing"),
+    ("my teammate asked what a black hole is, respond", "gravity well"),
+    ("my teammate asked how plants make food, respond", "photosynthesis"),
+    ("yoru asked why we yawn, respond", "physiology"),
+    ("my teammate asked what the speed of light is, respond", "~300,000 km/s"),
+    ("my teammate asked why blood is red, respond", "hemoglobin/iron"),
+    ("breach asked what the tallest mountain is, respond", "Everest"),
+    ("my teammate asked who was the first president, respond", "Washington (US)"),
+    ("my teammate asked what the capital of France is, respond", "Paris"),
+    ("clove asked how many bones are in the human body, respond", "206"),
+    ("my teammate asked what the largest animal is, respond", "blue whale"),
+    ("my teammate asked how the internet works, respond", "packets/protocols"),
+    ("phoenix asked why cats purr, respond", "vibration/communication"),
+    ("my teammate asked what causes earthquakes, respond", "tectonic plates"),
+    ("my teammate asked why leaves change color, respond", "chlorophyll breakdown"),
+    ("omen asked what the smallest particle is, respond", "quarks/elementary"),
+    ("my teammate asked how vaccines work, respond", "immune training"),
+    ("my teammate asked why time slows near light speed, respond", "relativity"),
+    ("my teammate asked what gravity is, respond", "spacetime curvature"),
+    ("iso asked how big the sun is, respond", "~1.39M km diameter"),
+    ("my teammate asked what DNA is, respond", "genetic code"),
+    ("my teammate asked why the sky is dark at night, respond", "Olbers' paradox"),
+    ("my teammate asked what the hardest natural material is, respond", "diamond"),
+]
+
 
 def _add(cases: list, c: Case) -> None:
     cases.append(c)
+
+
+# Equivalent group-relay prefixes -- all route to the same plain group callout
+# (verified). Rotated per case so the regenerated corpus phrases each scenario
+# DIFFERENTLY than the last run while testing the exact same thing.
+_GROUP_PREFIXES = (
+    "tell my team", "tell my teammates", "let my team know", "inform my team",
+    "call out", "tell everyone", "let the squad know",
+)
+# Only these LITERAL-callout categories are safe to re-prefix (farewell / greet
+# / roast / fun_fact / compose / named / context have prefix-sensitive routing).
+_SAFE_VARY_CATS = frozenset((
+    "location", "self_status", "team_status", "utility", "directive", "ult",
+    "enemy_ult", "damage", "eco_tactics", "enemy_read", "self_playstyle",
+    "freeform", "economy", "enemy_movement", "enemy_utility", "careful",
+    "all_enemies", "have_weapon", "enemy_spike", "agent_position",
+))
+
+
+def _is_safe_vary(cat: str) -> bool:
+    return cat in _SAFE_VARY_CATS or cat.startswith("map_")
+
+
+def _vary_phrasing(cases: "list[Case]") -> "list[Case]":
+    """Rewrite the leading 'tell my team' of safe literal-callout cases to a
+    rotated equivalent prefix, so each regeneration uses fresh phrasings."""
+    from dataclasses import replace
+    out: list[Case] = []
+    gi = 0
+    for c in cases:
+        if (c.expect_match and c.addressee == "team"
+                and _is_safe_vary(c.category)
+                and c.text.lower().startswith("tell my team ")):
+            pre = _GROUP_PREFIXES[gi % len(_GROUP_PREFIXES)]
+            gi += 1
+            out.append(replace(c, text=pre + c.text[len("tell my team"):]))
+        else:
+            out.append(c)
+    return out
 
 
 def build_corpus() -> list[Case]:
@@ -562,6 +712,101 @@ def build_corpus() -> list[Case]:
     for text, note in IDENTITY:
         _add(cases, Case(text, "identity", flags=("context",), note=note))
 
+    # 24b. General-knowledge questions -> Ultron ANSWERS in full, in character.
+    for text, note in GENERAL_KNOWLEDGE:
+        _add(cases, Case(text, "general_knowledge", flags=("context",),
+                         note=note))
+
+    # 25. ENEMY MOVEMENT to sites/areas ('they are coming B', 'rushing A',
+    #     'going C', 'hitting mid', 'stacking A').
+    _MOVE_VERBS = ["coming", "rushing", "going", "hitting", "pushing",
+                   "rotating to", "stacking", "flooding"]
+    _SITES = ["A", "B", "C", "mid", "A main", "B main", "heaven", "garage",
+              "long", "short", "site", "A site", "B site"]
+    for i, site in enumerate(_SITES):
+        v = _MOVE_VERBS[i % len(_MOVE_VERBS)]
+        _add(cases, Case(f"tell my team they are {v} {site}", "enemy_movement",
+                         glossary=(site,), note=f"enemy {v} {site} -> short + flavor"))
+
+    # 26. ENEMY UTILITY ('they walled A', 'they smoked C', 'they darted heaven').
+    _UTIL = [("walled", "A"), ("smoked", "C"), ("darted", "heaven"),
+             ("flashed", "mid"), ("naded", "B"), ("caged", "site"),
+             ("stunned", "A"), ("droned", "B"), ("molly", "default"),
+             ("recon", "A site")]
+    for verb, place in _UTIL:
+        _add(cases, Case(f"tell my team they {verb} {place}", "enemy_utility",
+                         glossary=(verb, place), note=f"enemy {verb} {place}"))
+
+    # 27. CAREFUL warnings ('careful ramp', 'careful flank', 'careful they could
+    #     have crossed to ramp').
+    _CAREFUL_PLACES = ["ramp", "flank", "heaven", "rafters", "back site",
+                       "cubby", "behind", "the flank", "garage", "vents",
+                       "long", "short", "mid", "site"]
+    for pl in _CAREFUL_PLACES:
+        _add(cases, Case(f"tell my team careful {pl}", "careful",
+                         glossary=(pl,), note=f"warn team: enemies could be {pl}"))
+    for pl in ["ramp", "heaven", "long", "mid"]:
+        _add(cases, Case(
+            f"tell my team careful they could have crossed to {pl}", "careful",
+            glossary=(pl,), note="careful: enemy may have crossed past LOS"))
+
+    # 28. ALL-ENEMIES stack ('all enemies are sewers', 'all five A').
+    for pl in ["sewers", "mid", "A", "B", "heaven", "garage", "long"]:
+        _add(cases, Case(f"tell my team all enemies are {pl}", "all_enemies",
+                         glossary=(pl,), note=f"whole enemy team {pl}"))
+
+    # 29. ENEMY HAS WEAPON/ULT ('they have op', 'they have ult').
+    for w in ["op", "ult", "odin", "judge", "sheriff", "operator"]:
+        _add(cases, Case(f"tell my team they have {w}", "have_weapon",
+                         glossary=(w,), note=f"enemy has {w}"))
+
+    # 30. ENEMY PLANTING/DEFUSING at a site.
+    for act, site in [("planting", "B"), ("planting", "A"), ("defusing", "C"),
+                      ("planting", "default")]:
+        _add(cases, Case(f"tell my team they are {act} {site}", "enemy_spike",
+                         glossary=(act, site), note=f"enemy {act} {site}"))
+
+    # 31. PER-MAP callouts -- exercise every map-specific location with a
+    #     position, a count, and a careful warning, so the whole pool is tuned.
+    for mp, callouts in MAP_CALLOUTS.items():
+        for i, loc in enumerate(callouts):
+            shape = i % 3
+            if shape == 0:
+                text = f"tell my team they are {loc}"
+            elif shape == 1:
+                n = NUMS_WORD[i % 5]
+                text = f"tell my team {n} {loc}"
+            else:
+                text = f"tell my team careful {loc}"
+            _add(cases, Case(text, f"map_{mp}", glossary=(loc,),
+                             note=f"{mp}: {loc}"))
+
+    # 32. NAMED ENEMY AGENTS at a place ('fade and clove are main', 'sova is
+    #     door') -- single + multi-agent, must keep the names + place + flavor.
+    _AGENT_POS = [
+        ("sova is door", ("sova", "door")),
+        ("fade and clove are main", ("fade", "clove", "main")),
+        ("jett is garage", ("jett", "garage")),
+        ("reyna and yoru are heaven", ("reyna", "yoru", "heaven")),
+        ("their fade is rafters", ("fade", "rafters")),
+        ("omen is mid", ("omen", "mid")),
+        ("the enemy chamber is long", ("chamber", "long")),
+        ("breach and sova are b main", ("breach", "sova", "b main")),
+        ("killjoy is site", ("killjoy", "site")),
+        ("cypher and vyse are c", ("cypher", "vyse", "c")),
+        ("neon is mid window", ("neon", "mid window")),
+        ("raze, jett, and phoenix are a main", ("raze", "jett", "phoenix")),
+    ]
+    for text, gl in _AGENT_POS:
+        _add(cases, Case(f"tell my team {text}", "agent_position",
+                         glossary=gl, note="named enemy agents at a location"))
+
+    # 33. ALL-OF-THEM variants ('all of them are X' must work like 'all
+    #     enemies are X').
+    for pl in ["mid", "A", "sewers", "heaven", "garage"]:
+        _add(cases, Case(f"tell my team all of them are {pl}", "all_enemies",
+                         glossary=(pl,), note=f"all of them {pl}"))
+
     # 25. NEGATIVE controls -- ordinary speech that must NOT trip the matcher.
     for text in [
         "what time is it in tokyo",
@@ -580,7 +825,7 @@ def build_corpus() -> list[Case]:
         _add(cases, Case(text, "negative_control", expect_match=False,
                          note="must fall through to the normal pipeline"))
 
-    return cases
+    return _vary_phrasing(cases)
 
 
 def stats(cases: list[Case]) -> dict:
