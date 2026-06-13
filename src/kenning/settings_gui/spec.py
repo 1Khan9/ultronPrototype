@@ -103,14 +103,15 @@ SECTIONS: tuple[Section, ...] = (
     Section("Game Chat Relay", (
         Knob(("relay_speech", "enabled"), "Enabled", "bool",
              help="Voice relay into the game voice chat"),
-        # Dynamic dropdown: every PortAudio output device on this
-        # machine, so VoiceMeeter strips can be A/B-tested live. The
-        # device is resolved PER RELAY LINE from live config, so the
-        # change hot-applies on the next callout -- no action needed.
-        Knob(("relay_speech", "output_device"), "Output device", "choice",
+        # TEAM output: only team-addressed callouts play here (never private
+        # conversation). Point at the free "Voicemeeter Input" strip -> route
+        # it to bus B1 -> select "Voicemeeter Out B1" as Kenning's mic in-game.
+        # Resolved PER RELAY LINE from live config, so it hot-applies on the
+        # next callout after a save (config reload) -- no runtime action needed.
+        Knob(("relay_speech", "output_device"), "Team output (→ B1)", "choice",
              choices_provider="output_devices",
-             help="Audio device the relay speaks on (VoiceMeeter strip); "
-                  "applies from the next relay line"),
+             help="Device for team callouts only (VoiceMeeter Input → B1); "
+                  "select Voicemeeter Out B1 as the game mic"),
         Knob(("relay_speech", "rephrase"), "LLM rephrase", "bool",
              help="Convert reported speech into a natural direct line"),
         Knob(("relay_speech", "echo_to_user"), "Echo to me", "bool",
@@ -128,16 +129,22 @@ SECTIONS: tuple[Section, ...] = (
         Knob(("tts", "kokoro", "device"), "Kokoro device", "choice",
              choices=("cuda", "cpu"), action="kokoro_device",
              help="Move the TTS engine between GPU and CPU live"),
-        # Second output that mirrors EVERY spoken line -- normal chat AND
-        # team relay -- to a separate, OBS-capturable device for stream
-        # viewers. Never replaces the speakers; routing-independent of the
-        # relay mic bus, so teammates never hear normal conversation.
-        # Blank = off. Hot-applied via the broadcast_device action.
-        Knob(("audio", "broadcast_device"), "Broadcast output (OBS)",
+        # EVERYTHING output: mirrors EVERY spoken line -- normal chat AND team
+        # relay -- to a separate, OBS-capturable device for stream viewers.
+        # Never replaces the speakers; routing-independent of the relay mic
+        # bus, so teammates never hear normal conversation. Point at the free
+        # "Voicemeeter AUX Input" strip -> route to bus B3 -> capture
+        # "Voicemeeter Out B3" in OBS. Blank = off. Hot-applied live.
+        Knob(("audio", "broadcast_device"), "Everything output (→ B3)",
              "choice", choices_provider="output_devices_optional",
              action="broadcast_device",
-             help="Mirror ALL of Kenning's audio to a capture device for "
-                  "your stream; blank = off. Use a free VoiceMeeter input"),
+             help="Mirror ALL of Kenning's audio to a capture device "
+                  "(VoiceMeeter AUX → B3); blank = off"),
+        # Separate OBS-capturable WINDOW with a live voice visualizer.
+        Knob(("visualizer", "enabled"), "Waveform overlay", "bool",
+             action="visualizer",
+             help="Pop a borderless waveform window to add in OBS as a "
+                  "Window Capture (KENNING // VOICE)"),
         Knob(("tts", "kokoro", "speed"), "Speech speed", "float",
              minimum=0.8, maximum=1.3),
         Knob(("tts", "pause_ms"), "Sentence pause (ms)", "int",

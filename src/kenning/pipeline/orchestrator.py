@@ -652,6 +652,16 @@ class Orchestrator:
             configure_from_config()
         except Exception as e:                                       # noqa: BLE001
             logger.debug("broadcast mirror configure skipped (%s)", e)
+        # 2026-06-12: bring up the optional voice waveform overlay (a separate
+        # borderless OBS-capturable window that visualizes EVERY spoken line --
+        # conversation AND relay). Off unless ``visualizer.enabled``; fail-open
+        # (no display/Tk -> just never appears), never blocks the voice path.
+        try:
+            from kenning.audio.waveform import configure_from_config as _viz_cfg
+
+            _viz_cfg()
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("waveform overlay configure skipped (%s)", e)
         # 2026-05-24 OpenHands batch 8 (T6) -- install the default STT +
         # TTS injectors on the module-level registry. The closures hand
         # back the already-built engines so callers that go through the
@@ -1896,6 +1906,25 @@ class Orchestrator:
                 )
             except Exception as e:                                   # noqa: BLE001
                 logger.warning("broadcast_device apply failed: %s", e)
+        elif action == "visualizer":
+            # Toggle the voice waveform overlay window (OBS window capture).
+            on = str(value or "").strip().lower() in {"1", "true", "on", "yes"}
+            try:
+                from kenning.config import get_config
+                from kenning.audio.waveform import (
+                    get_waveform_sink, configure_from_config as _viz_cfg,
+                )
+
+                get_config().visualizer.enabled = on
+                _viz_cfg()  # apply enable + current appearance from config
+                if not on:
+                    get_waveform_sink().configure(enabled=False)
+                logger.info("gui action: visualizer -> %s", on)
+                self._speak(
+                    "Waveform overlay on." if on else "Waveform overlay off."
+                )
+            except Exception as e:                                   # noqa: BLE001
+                logger.warning("visualizer apply failed: %s", e)
         elif action == "wake_word":
             word = str(value or "").strip().lower()
             wake = getattr(self, "wake", None)
@@ -2245,6 +2274,14 @@ class Orchestrator:
                 from kenning.audio.broadcast import submit as _broadcast_submit
 
                 _broadcast_submit(pcm, sr)
+            except Exception:                                        # noqa: BLE001
+                pass
+            # Also drive the on-stream waveform overlay (OBS window capture) so
+            # viewers see Kenning "talking" on team callouts too.
+            try:
+                from kenning.audio.waveform import submit as _viz_submit
+
+                _viz_submit(pcm, sr)
             except Exception:                                        # noqa: BLE001
                 pass
             seconds = play_to_device(pcm, sr, device)

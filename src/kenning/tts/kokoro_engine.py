@@ -50,16 +50,23 @@ logger = get_logger("tts.kokoro")
 
 
 def _broadcast_submit(pcm, sr) -> None:
-    """Tee a spoken clip to the optional broadcast mirror (OBS capture).
+    """Tee a spoken clip to the optional aux sinks: the broadcast mirror (OBS
+    audio capture) and the waveform overlay (OBS window capture).
 
-    Thin, fail-open wrapper: a no-op when the mirror is off (the common case)
-    and never raises into the playback path. Imported lazily so the engine has
-    no hard dependency on the broadcast module.
+    Thin, fail-open wrapper: each tee is a no-op when off (the common case) and
+    never raises into the playback path. Imported lazily so the engine has no
+    hard dependency on either module.
     """
     try:
         from kenning.audio.broadcast import submit as _submit
 
         _submit(pcm, sr)
+    except Exception:  # noqa: BLE001 - a tee must never break playback
+        pass
+    try:
+        from kenning.audio.waveform import submit as _viz_submit
+
+        _viz_submit(pcm, sr)
     except Exception:  # noqa: BLE001 - a tee must never break playback
         pass
 

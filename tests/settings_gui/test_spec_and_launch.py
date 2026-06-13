@@ -401,7 +401,7 @@ def test_every_action_knob_has_known_action() -> None:
     """Action knobs must use an action the orchestrator dispatches."""
     known = {
         "gaming_mode", "llm_preset", "kokoro_device", "wake_word",
-        "broadcast_device",
+        "broadcast_device", "visualizer",
     }
     for section in SECTIONS:
         for knob in section.knobs:

@@ -3607,6 +3607,23 @@ class RelaySpeechConfig(_Strict):
     fun_facts_path: str = "data/relay_fun_facts.txt"
 
 
+class VisualizerConfig(_Strict):
+    """Voice waveform overlay -- a separate borderless, always-on-top window
+    that renders a circular audio visualizer reacting to EVERY line Kenning
+    speaks (normal + relay). Added in OBS as a single Window Capture so viewers
+    see "him" talking; no second physical device / virtual cable needed for the
+    visual. Off by default; fail-open (no display/Tk -> the window just never
+    appears, voice path untouched). See kenning/audio/waveform.py."""
+    enabled: bool = False
+    size: int = Field(default=300, ge=120, le=1080)
+    bars: int = Field(default=60, ge=8, le=180)
+    fps: int = Field(default=30, ge=10, le=60)
+    bg_color: str = "#0b0b10"          # chroma key (keyed out when transparent)
+    accent_color: str = "#e5484d"      # Kenning crimson
+    transparent: bool = True           # Windows: key out bg_color for an overlay
+    always_on_top: bool = True
+
+
 class KenningConfig(_Strict):
     """Top-level configuration. Matches the structure of ``config.yaml``."""
     version: str = "1.0"
@@ -3649,6 +3666,8 @@ class KenningConfig(_Strict):
     # secondary output device (VoiceMeeter strip -> mic bus) so people in
     # the user's voice chat hear Kenning. Strict matcher; fail-open.
     relay_speech: RelaySpeechConfig = Field(default_factory=RelaySpeechConfig)
+    # Voice waveform overlay window for OBS window-capture (off by default).
+    visualizer: VisualizerConfig = Field(default_factory=VisualizerConfig)
     # Voice-driven Spotify playback control (credentials gitignored,
     # outside the repo).
     spotify: SpotifyConfig = Field(default_factory=SpotifyConfig)

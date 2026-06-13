@@ -102,14 +102,15 @@ audio:
   # to override (e.g. "Voicemeeter Out B2" to revert).
   input_device: "Focusrite"
   output_device: null         # null = system default; or set KENNING_AUDIO_OUTPUT_DEVICE env
-  # Second output that mirrors EVERY line Kenning speaks -- normal chat AND
+  # EVERYTHING output: mirrors EVERY line Kenning speaks -- normal chat AND
   # team relay -- to a separate, OBS-capturable device for stream viewers.
   # "" / null = off. Never replaces output_device (you still hear Kenning on
   # your speakers) and is routing-independent of the relay mic bus, so
-  # teammates never hear normal conversation. Pick a FREE VoiceMeeter virtual
-  # input here and add it as an audio source in OBS. Hot-swappable from the
-  # settings panel (Voice -> Broadcast output).
-  broadcast_device: ""
+  # teammates never hear normal conversation. Points at the FREE VoiceMeeter
+  # "Voicemeeter AUX Input" virtual strip; route that strip to bus B3 in
+  # VoiceMeeter and capture "Voicemeeter Out B3" in OBS. Hot-swappable from the
+  # settings panel (Voice -> Everything output (OBS)).
+  broadcast_device: "Voicemeeter AUX Input"
   barge_in_enabled: true      # wake-word interrupts Kenning's own TTS
   barge_in_grace_seconds: 0.5
   # 2026-05-09 audio-quality pass: pre-amp applied to the captured
@@ -1703,7 +1704,13 @@ spotify:
 
 relay_speech:
   enabled: true
-  output_device: "Voicemeeter Aux Input"  # name substring or PortAudio index
+  # TEAM output: only what Kenning says TO your teammates lands here (callouts,
+  # relayed messages) -- never private conversation. Points at the FREE
+  # "Voicemeeter Input" virtual strip; route that strip to bus B1 in VoiceMeeter
+  # and select "Voicemeeter Out B1" as Kenning's mic in your game (and add it in
+  # OBS if you want viewers to hear team callouts on a dedicated track).
+  # Name substring or PortAudio index. Separate from the EVERYTHING feed above.
+  output_device: "Voicemeeter Input"
   rephrase: true              # LLM converts reported speech -> direct address
   max_line_chars: 360         # ceiling for a full two-sentence reply; trims only at a sentence boundary
   echo_to_user: false         # also play the line on the normal output
@@ -1724,6 +1731,26 @@ relay_speech:
   # "Kenning, tell my team a fun fact" corpus -- one true fact per row,
   # spoken VERBATIM. Ships in the repo; re-read per request.
   fun_facts_path: "data/relay_fun_facts.txt"
+
+# ---------------------------------------------------------------------------
+# Voice waveform overlay — a compact, dynamic visualizer window for OBS.
+# ---------------------------------------------------------------------------
+# A SEPARATE borderless, always-on-top window (not the settings panel) that
+# renders a circular/radial visualizer reacting to EVERY line Kenning speaks
+# (normal + relay). Add it in OBS as ONE Window Capture ("KENNING // VOICE")
+# so viewers see him talking — no second physical device / virtual cable
+# needed for the visual. transparent=true keys out bg_color on Windows so only
+# the glow shows over your game. Drag with left-drag; right-click to hide.
+# Off by default; toggle live from the settings panel (Voice → Waveform overlay).
+visualizer:
+  enabled: false
+  size: 300                  # window px (square)
+  bars: 60                   # radial bars
+  fps: 30                    # redraw rate
+  bg_color: "#0b0b10"        # chroma key (keyed out when transparent)
+  accent_color: "#e5484d"    # Kenning crimson
+  transparent: true          # Windows: make bg_color transparent for an overlay
+  always_on_top: true
 
 # ---------------------------------------------------------------------------
 # Evolution (catalog 13) — bounded autonomous self-improvement.
