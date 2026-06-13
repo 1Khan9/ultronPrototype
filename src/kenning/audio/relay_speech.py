@@ -2122,6 +2122,24 @@ def _as_ult_callout(p: str) -> Optional[str]:
         ag = _canon_agent(m.group("a"))
         if ag:
             return f"{pre}{ag} has no ult."
+    # ult RAN OUT / gone / over -> spent (the player no longer has it).
+    m = re.match(r"^(?P<a>[A-Za-z/ ]+?)\s+ult(?:imate)?\s+"
+                 r"(?:ran\s+out|is\s+(?:gone|over|spent|done|used)"
+                 r"|wore\s+off|expired)$", body, re.I)
+    if m:
+        ag = _canon_agent(m.group("a"))
+        if ag:
+            return f"{pre}{ag}'s ult ran out."
+    # ult is DOWN, optionally with a 'back in N (seconds/rounds)' timer.
+    m = re.match(r"^(?P<a>[A-Za-z/ ]+?)\s+(?:ult(?:imate)?|lockdown)\s+is\s+down"
+                 r"(?:[,\s]+(?:back\s+in\s+)?(?P<t>\d{1,3}\s*"
+                 r"(?:seconds?|secs?|rounds?))?)?$", body, re.I)
+    if m:
+        ag = _canon_agent(m.group("a"))
+        if ag:
+            t = (m.group("t") or "").strip()
+            return (f"{pre}{ag} ult is down, back in {t}." if t
+                    else f"{pre}{ag} ult is down.")
     return None
 
 
@@ -2298,8 +2316,9 @@ def _as_snap_callout(
 
     # --- damage: '<agent> hit <n>' (+ optional short trailing location:
     #     'Vyse hit 84 in C main', 'Omen hit 44 through B smoke') ---
-    m = re.match(r"^(?P<a>[A-Za-z/ ]+?)\s+hit\s+(?P<n>\d{1,3})"
-                 r"(?:[\s,]+(?P<loc>.+))?$", p, re.IGNORECASE)
+    m = re.match(r"^(?P<a>[A-Za-z/ ]+?)\s+hit\s+"
+                 r"(?:(?:them|someone|him|her|it|the\s+\w+)\s+for\s+)?"
+                 r"(?P<n>\d{1,3})(?:[\s,]+(?P<loc>.+))?$", p, re.IGNORECASE)
     if m:
         ag = _canon_agent(m.group("a"))
         if ag:
