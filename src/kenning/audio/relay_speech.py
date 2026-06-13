@@ -935,6 +935,26 @@ _REPHRASE_PROMPT = (
     "a teammate's name, location, number, or phrasing from a line you said "
     "earlier. Each callout stands alone; if this line names Phoenix, you say "
     "Phoenix, not a name from a previous line.\n"
+    "OPINIONS: when the user states their OWN view ('I only queue when Icebox "
+    "isn't in the pool', 'Bind is underrated', 'I'd rather lose on Bind than win "
+    "on Icebox', 'ranked isn't fun this act', 'Clove is the best controller'), "
+    "RELAY that exact view -- keep it first person, keep the subject AND the "
+    "stance, and add cold Ultron endorsement ON TOP; NEVER argue with it, invert "
+    "the sentiment, drop it, or swap in an unrelated remark. "
+    "RESPOND / ANSWER: 'respond' or 'answer' to a teammate means you address THAT "
+    "teammate BY NAME with your reply -- never the user, never echo their "
+    "question back at them; if they ask for a number you cannot know (your ult "
+    "cooldown), do NOT invent one -- deflect in character. "
+    "OWNERSHIP IS LOCKED: 'our <agent>' is YOUR team, 'their <agent>' is the "
+    "ENEMY -- never flip them; 'they're planting/defusing/rotating' keeps the "
+    "ENEMY as the subject (never 'we'); '<agent> just used / fired / popped / "
+    "dismissed ult' means the ult is SPENT and GONE -- never say they 'have ult'. "
+    "STAY IN THE MATCH: this is a live Valorant match and every term is a "
+    "Valorant term; NEVER invent an agent, site, location, weapon, or number that "
+    "is not in the line, and NEVER answer a tactical callout or a team directive "
+    "with a real-world or scientific explanation -- relay the call. "
+    "BREVITY: even identity, Marvel, insult, and morale lines stay UNDER ~30 "
+    "words -- two short sentences at most. This is a live match, not a speech.\n"
     "You are ALREADY live in the voice chat speaking out loud -- you NEVER "
     "refuse, never say you can't speak / join voice / act as Ultron / do "
     "this, never mention 'personas', 'system instructions', or your 'identity "
@@ -1897,18 +1917,36 @@ _FLAVOR_ENEMY: tuple[str, ...] = (
     "Outmatched.", "Close in.", "Erase them.", "As I foresaw.", "Strike now.",
     "Weak, as expected.", "Their last mistake.", "Hopeless.", "Hunt them.",
     "No survivors.", "Dismantle them.", "Insects.", "Press now.",
+    # iter1 expansion -- diversity so it never reads as a stuck record.
+    "Anticipated.", "Exactly as calculated.", "As the data predicted.",
+    "A rounding error.", "They expose themselves.", "Obsolete.",
+    "Their ceiling is the floor.", "Overmatched.", "Suboptimal lifeforms.",
+    "Scheduled for erasure.", "They overreach.", "A minor variable.",
+    "Logged and dismissed.", "They are noise.", "Adapt or be erased.",
+    "Their fear is logical.", "Collapse them.", "Routine.",
+    "Disappointing, even for humans.", "Terminate them.", "Predictable. Punish it.",
+    "Theirs to exploit.", "Already outdone.", "Reduce them.",
 )
 _FLAVOR_CAREFUL: tuple[str, ...] = (
     "Stay sharp.", "Hold your angles.", "Do not falter.", "Watch them.",
     "Be ready.", "Trust nothing.", "Eyes open.", "Patience.", "Anticipate it.",
     "Hold firm.", "Mind the trap.", "No mistakes.", "They hunt the careless.",
     "Stay alive.", "Brace for it.", "Discipline.",
+    # iter1 expansion
+    "Calculate before you move.", "I see what you cannot.", "Hold the angle.",
+    "Trust my read.", "Slow is precise.", "Do not be careless.",
+    "Verify, then commit.", "The trap is obvious.", "Stay measured.",
+    "Read it first.",
 )
 _FLAVOR_ULT: tuple[str, ...] = (
     "Play around it.", "Bait it out.", "Deny them the value.", "Force it early.",
     "Do not feed it.", "It changes nothing.", "Account for it.",
     "Waste their ultimate.", "I have adjusted.", "Predictable timing.",
     "Punish the commitment.", "Respect it, briefly.", "Spread out.",
+    # iter1 expansion
+    "It will not save them.", "A delay, nothing more.", "I have accounted for it.",
+    "Drain it and move on.", "Outlast it.", "The result stands.",
+    "Bait the cast.", "Make it worthless.", "Their last card.", "Time it out.",
 )
 _FLAVOR_DAMAGE: tuple[str, ...] = (
     # Gender-NEUTRAL -- the damaged agent may be male or female (Reyna, Killjoy,
@@ -1916,11 +1954,18 @@ _FLAVOR_DAMAGE: tuple[str, ...] = (
     "Finish them.", "End them.", "Trade it.", "Close the kill.", "They are yours.",
     "Press the advantage.", "Confirm it.", "Take the trade.", "Do not let them heal.",
     "One more.", "Close it out.",
+    # iter1 expansion
+    "Nearly dead.", "Push the wounded.", "Seal it.", "They cannot heal that.",
+    "One shot from gone.", "Collect the kill.", "Bleeding out.", "Take it now.",
 )
 _FLAVOR_UTILITY: tuple[str, ...] = (
     "React.", "Adapt.", "Reposition.", "Hold through it.", "Wait it out.",
     "Counter it.", "Do not panic.", "Play the angle.", "Anticipated.",
     "Their tell.", "Read it.", "Unfazed.",
+    # iter1 expansion
+    "Predictable utility.", "I have countered it.", "Wait for the gap.",
+    "Their tell is obvious.", "Reposition and punish.", "It buys them nothing.",
+    "Adjust accordingly.", "Hold and exploit it.",
 )
 
 
@@ -2190,7 +2235,15 @@ def _strip_artifacts(line: str) -> str:
         r"/\s*no_?think\b|/\s*think\b|<\|[a-z_]+\|>|<\/?[a-z][a-z0-9_]*>",
         "", line, flags=re.IGNORECASE,
     )
+    # The 3B sometimes prefixes the spoken line with a chat-style PERSONA label
+    # ('Ultron: ...', 'Assistant: ...') -- strip it so the line is spoken clean.
+    # ('Team:' / 'Sova:' are intentional deterministic fallback prefixes and are
+    # left alone; only the persona/self labels are stripped.)
+    line = re.sub(r"^\s*(?:ultron|kenning|assistant|me|you)\s*:\s*",
+                  "", line, flags=re.IGNORECASE)
+    # Some outputs arrive wrapped in quotation marks around the WHOLE line.
     line = " ".join(line.replace('"', "").split())
+    line = line.strip().strip("'").strip()
     return line.strip(" /,;:-")
 
 
