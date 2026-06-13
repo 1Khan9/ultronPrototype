@@ -50,7 +50,7 @@
 
 |  |  |
 |---|---|
-| 🧪 &nbsp;**Tests** | 9991 passing · 39 skipped · 0 failed (~152 s sweep) |
+| 🧪 &nbsp;**Tests** | 10018 passing · 39 skipped · 0 failed (~155 s sweep) |
 | ⚡ &nbsp;**Latency (TTFA)** | ~266 ms composite cache-hit turn (LLM TTFT 172 ms, TTS synth 78 ms, STT 16 ms) |
 | 🧠 &nbsp;**VRAM** | ~6.3 GB standby on RTX 4070 Ti (peak ~6.7 GB) → ~2.1 GB in gaming mode |
 | 🛠️ &nbsp;**Active stack** | Parakeet TDT STT (CUDA) · Qwen 3.5 4B Q4_K_M (CUDA) · Kokoro StyleTTS2 (CUDA, fine-tuned voice) · OpenClaw bridge live |
@@ -69,6 +69,7 @@
 - Silero VAD + **Smart Turn V3** — semantic end-of-turn in ~12 ms
 - Dual-engine STT registry (Moonshine · Parakeet TDT · Whisper)
 - **Custom fine-tuned voicepack** — Kokoro StyleTTS2 on CUDA
+- **In-model prosody shaping** — scales the model's own pitch / energy / per-phoneme duration curves *before* the decoder for expressive, naturally-paced delivery at **zero added latency** (timbre + reverb preserved)
 - Producer-consumer audio pipeline; clip N+1 synth overlaps clip N playback
 - Boundary-artifact mute via cosine fades + tail aggressive zero
 - **Game team-relay** — deterministic snap callouts + persona off-snap lines, routed to a separate game-chat output strip

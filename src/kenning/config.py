@@ -2408,6 +2408,23 @@ class KokoroConfig(_Strict):
     apply_trim_fade: bool = True
     trim_fade_threshold_db: float = Field(default=-40.0, ge=-80.0, le=-10.0)
 
+    # 2026-06-12 IN-MODEL prosody shaping (zero latency, reverb + timbre
+    # preserved, deterministic). The trained voice is perceptually monotone /
+    # robotic; these scale Kokoro/StyleTTS2's OWN predicted pitch, energy, and
+    # per-phoneme duration curves BEFORE the ISTFTNet decoder, so the decoder
+    # re-renders the same timbre + reverb with a livelier, more naturally-paced
+    # delivery. All 1.0 / off = the raw trained voice.
+    f0_contour_factor: float = Field(default=1.4, ge=1.0, le=2.0)
+    f0_shift_semitones: float = Field(default=-0.5, ge=-4.0, le=4.0)
+    f0_max_excursion: float = Field(default=4.5, ge=2.0, le=8.0)
+    f0_energy_factor: float = Field(default=1.2, ge=1.0, le=1.6)
+    dur_final_factor: float = Field(default=1.3, ge=1.0, le=1.5)
+    dur_internal_factor: float = Field(default=1.18, ge=1.0, le=1.5)
+    dur_stress_factor: float = Field(default=1.08, ge=1.0, le=1.4)
+    # Cap any internal pause (ms) so deliberate dramatic pauses stay under the
+    # 600 ms dead-air threshold; 0 = no cap.
+    max_pause_cap_ms: float = Field(default=520.0, ge=0.0, le=2000.0)
+
 
 class OutputWatchConfig(_Strict):
     """TTS output-quality watcher -- catch audible blips in synthesized clips.

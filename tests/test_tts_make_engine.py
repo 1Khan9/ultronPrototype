@@ -90,6 +90,14 @@ def _kokoro_subcfg() -> SimpleNamespace:
         spectral_smooth_window=5,
         apply_trim_fade=True,
         trim_fade_threshold_db=-40.0,
+        f0_contour_factor=1.4,
+        f0_shift_semitones=-0.5,
+        f0_max_excursion=4.5,
+        f0_energy_factor=1.2,
+        dur_final_factor=1.3,
+        dur_internal_factor=1.18,
+        dur_stress_factor=1.08,
+        max_pause_cap_ms=520.0,
     )
 
 

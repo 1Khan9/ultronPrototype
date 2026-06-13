@@ -248,6 +248,14 @@ class KokoroSpeech:
         spectral_smooth_window: int = 5,
         apply_trim_fade: bool = True,
         trim_fade_threshold_db: float = -40.0,
+        f0_contour_factor: float = 1.0,
+        f0_shift_semitones: float = 0.0,
+        f0_max_excursion: float = 4.5,
+        f0_energy_factor: float = 1.0,
+        dur_final_factor: float = 1.0,
+        dur_internal_factor: float = 1.0,
+        dur_stress_factor: float = 1.0,
+        max_pause_cap_ms: float = 0.0,
         flush_chars: str = ".!?\n",
         sample_rate: int = _KOKORO_DEFAULT_SAMPLE_RATE,
     ) -> None:
@@ -280,6 +288,20 @@ class KokoroSpeech:
         self.spectral_smooth_window = int(spectral_smooth_window)
         self.apply_trim_fade = bool(apply_trim_fade)
         self.trim_fade_threshold_db = float(trim_fade_threshold_db)
+        # 2026-06-12 in-model prosody shaping. Live attrs read by the F0 /
+        # duration hooks installed in ``_ensure_loaded``; all 1.0 / 0.0 = the
+        # raw trained voice. Editing these scales Kokoro's own pitch / energy /
+        # per-phoneme duration curves before the decoder (zero latency, reverb +
+        # timbre preserved). See kenning/tts/{f0_control,duration_control}.py.
+        self.f0_contour_factor = float(f0_contour_factor)
+        self.f0_shift_semitones = float(f0_shift_semitones)
+        self.f0_max_excursion = float(f0_max_excursion)
+        self.f0_energy_factor = float(f0_energy_factor)
+        self.dur_final_factor = float(dur_final_factor)
+        self.dur_internal_factor = float(dur_internal_factor)
+        self.dur_stress_factor = float(dur_stress_factor)
+        self.max_pause_cap_ms = float(max_pause_cap_ms)
+        self._prosody_hooks_installed = False
         self.flush_chars = set(flush_chars)
         self._sample_rate = int(sample_rate)
         self._model = None
@@ -508,6 +530,39 @@ class KokoroSpeech:
             "Kokoro ready (voice=%s, device=%s, sample_rate=%d)",
             self._voice_display, self.device, self._sample_rate,
         )
+        self._install_prosody_hooks()
+
+    def _install_prosody_hooks(self) -> None:
+        """Install the in-model F0 + duration shaping hooks (idempotent).
+
+        These patch the loaded Kokoro model so every synthesis reads the live
+        ``f0_*`` / ``dur_*`` engine attrs and scales the model's own pitch /
+        energy / per-phoneme duration curves before the decoder -- zero added
+        latency, reverb + timbre preserved (the decoder re-renders them). With
+        all factors at 1.0 / 0.0 the hooks are exact no-ops, so installing is
+        always safe. Fail-open: a hook that won't install just leaves the raw
+        voice. See kenning/tts/{f0_control,duration_control}.py.
+        """
+        if self._prosody_hooks_installed:
+            return
+        try:
+            from kenning.tts.f0_control import install_f0_contour_shaping
+            from kenning.tts.duration_control import install_duration_shaping
+
+            f0_ok = install_f0_contour_shaping(self)
+            dur_ok = install_duration_shaping(self)
+            self._prosody_hooks_installed = f0_ok or dur_ok
+            logger.info(
+                "Kokoro prosody hooks: f0=%s duration=%s "
+                "(contour=%.2f shift=%.2fst energy=%.2f "
+                "dur final/internal/stress=%.2f/%.2f/%.2f cap=%.0fms)",
+                f0_ok, dur_ok, self.f0_contour_factor, self.f0_shift_semitones,
+                self.f0_energy_factor, self.dur_final_factor,
+                self.dur_internal_factor, self.dur_stress_factor,
+                self.max_pause_cap_ms,
+            )
+        except Exception as e:                                    # noqa: BLE001
+            logger.warning("Kokoro prosody hooks not installed: %s", e)
 
     def warmup(self, text: str = "Online.") -> None:
         """Touch the inference pipeline with a tiny request.
@@ -887,6 +942,21 @@ class KokoroSpeech:
         # Clip + convert to int16 (mirrors the XTTS engine's tail).
         np.clip(pcm_f32, -1.0, 1.0, out=pcm_f32)
         out_pcm = (pcm_f32 * 32767.0).astype(np.int16)
+
+        # Cap over-long internal pauses (keeps deliberate, dramatic pauses but
+        # stays under the dead-air threshold). Artifact-free silence trim from
+        # the middle of the pause. OFF unless ``max_pause_cap_ms`` is set.
+        _cap = getattr(self, "max_pause_cap_ms", None)
+        if _cap:
+            try:
+                from kenning.tts.spectral_smooth import expand_internal_pauses
+
+                out_pcm = expand_internal_pauses(
+                    out_pcm, self._sample_rate, scale=1.0,
+                    min_pause_ms=80.0, max_pause_ms=float(_cap),
+                )
+            except Exception:                                 # noqa: BLE001
+                pass
 
         # Output-quality watcher: non-blocking enqueue for blip analysis
         # on a daemon thread (hard onsets/tails, boundary noise bursts,

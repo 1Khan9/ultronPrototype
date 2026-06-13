@@ -106,6 +106,14 @@ def make_tts_engine(
                 "spectral_smooth_window": kokoro_cfg.spectral_smooth_window,
                 "apply_trim_fade": kokoro_cfg.apply_trim_fade,
                 "trim_fade_threshold_db": kokoro_cfg.trim_fade_threshold_db,
+                "f0_contour_factor": kokoro_cfg.f0_contour_factor,
+                "f0_shift_semitones": kokoro_cfg.f0_shift_semitones,
+                "f0_max_excursion": kokoro_cfg.f0_max_excursion,
+                "f0_energy_factor": kokoro_cfg.f0_energy_factor,
+                "dur_final_factor": kokoro_cfg.dur_final_factor,
+                "dur_internal_factor": kokoro_cfg.dur_internal_factor,
+                "dur_stress_factor": kokoro_cfg.dur_stress_factor,
+                "max_pause_cap_ms": kokoro_cfg.max_pause_cap_ms,
             }
         logger.info(
             "TTS engine: kokoro (StyleTTS2 + ISTFTNet, voice=%s, device=%s)",

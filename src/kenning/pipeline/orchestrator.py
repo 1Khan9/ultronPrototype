@@ -2151,6 +2151,7 @@ class Orchestrator:
                 build_relay_line,
                 match_relay_command,
                 play_to_device,
+                relay_tts_text,
                 resolve_relay_device,
             )
             from kenning.config import get_config
@@ -2233,7 +2234,9 @@ class Orchestrator:
             )
             return True
         try:
-            pcm, sr = synthesize(line)
+            # Synthesize the PRONOUNCED form ('A site' -> 'eigh site'); the
+            # displayed/logged ``line`` stays clean.
+            pcm, sr = synthesize(relay_tts_text(line))
             # Tee the relay line to the broadcast mirror (OBS capture) too, so
             # stream viewers hear team callouts as well. This is a SEPARATE
             # device from the mic B-bus -- teammates still only hear the relay

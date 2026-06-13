@@ -595,6 +595,44 @@ def test_fix_proper_nouns_corrects_sokovia() -> None:
     assert _fix_proper_nouns("the city of sovakia") == "the city of Sokovia"
 
 
+# ---------------------------------------------------------------------------
+# Site-letter pronunciation (relay_tts_text): 'A site' -> spoken 'eigh site'
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "line,spoken",
+    [
+        ("Sova darted A site.", "Sova darted eigh site."),
+        ("One A main.", "One eigh main."),
+        ("They are A long.", "They are eigh long."),
+        ("Careful, A main.", "Careful, eigh main."),
+        ("Two A heaven.", "Two eigh heaven."),
+    ],
+)
+def test_relay_tts_text_spells_site_letter_a(line: str, spoken: str) -> None:
+    from kenning.audio.relay_speech import relay_tts_text
+    assert relay_tts_text(line) == spoken
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "A man who thought he could control me failed.",  # article, sentence-start
+        "A worthy effort. The next round is ours.",
+        "I am Ultron, a mind from the future.",
+        "A loss. Disappointing.",
+        "You are nothing but a bot.",
+        "They are A.",          # standalone letter already pronounced correctly
+        "They are B long.",     # B already reads as a letter
+        "Push to A. They never learn.",
+    ],
+)
+def test_relay_tts_text_leaves_non_site_a_untouched(line: str) -> None:
+    from kenning.audio.relay_speech import relay_tts_text
+    assert relay_tts_text(line) == line
+
+
 def test_answer_command_suppresses_recent_block() -> None:
     # A Marvel 'asked about X, respond' must NOT carry the recent-line ring,
     # so it cannot copy a recent answer (the moon -> vision contamination).

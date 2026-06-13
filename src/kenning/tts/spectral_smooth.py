@@ -302,6 +302,103 @@ def _compress_internal_dead_space(
     return np.concatenate([kept, tail]) if len(tail) else kept
 
 
+def expand_internal_pauses(
+    audio: "np.ndarray",
+    sr: int,
+    *,
+    scale: float = 1.6,
+    min_pause_ms: float = 80.0,
+    max_pause_ms: float = 500.0,
+    min_keep_ms: float = 110.0,
+    threshold_db: float = -30.0,
+    speech_db: float = -28.0,
+    frame_ms: float = 5.0,
+) -> "np.ndarray":
+    """Scale the natural pauses at punctuation -- prosody-preserving, blip-free.
+
+    The line is synthesized as ONE clean clip (so there is exactly one boundary
+    trim and no per-fragment burst). This pass then resizes only the existing
+    INTERNAL low-energy dips -- a comma leaves ~180 ms at ~-45 dB, a sentence
+    end a deeper gap -- by inserting OR removing pure silence at the MIDDLE of
+    each dip. The spoken samples and Kokoro's intonation are left byte-for-byte
+    intact; edits happen between the dip's own ramp-down and ramp-up, so neither
+    join is a speech edge and no click/burst is created.
+
+    ``scale`` > 1 lengthens each pause (capped at ``max_pause_ms``); ``scale`` < 1
+    shortens it UNIFORMLY (never below ``min_keep_ms`` -- so a pause is trimmed,
+    never erased). This is the controlled replacement for the old dead-space
+    compressor, which cut pauses arbitrarily. Only dips longer than
+    ``min_pause_ms`` (real punctuation beats) are touched; word-internal gaps and
+    the clip's leading/trailing edges never are. ``scale == 1`` is a no-op.
+    dtype (int16/float32) preserved.
+    """
+    if audio is None or len(audio) == 0:
+        return audio
+    # scale == 1.0 still runs IF a finite cap is set (to clamp over-long pauses
+    # under the dead-air threshold); otherwise it is a no-op.
+    if scale == 1.0 and (max_pause_ms is None or max_pause_ms <= 0):
+        return audio
+    is_int16 = audio.dtype == np.int16
+    f = (audio.astype(np.float32) / 32768.0) if is_int16 else audio.astype(np.float32)
+    fr = max(1, int(sr * frame_ms / 1000.0))
+    n = len(f) // fr
+    if n < 4:
+        return audio
+    block = f[: n * fr].reshape(n, fr)
+    rms = np.sqrt(np.maximum(np.mean(block * block, axis=1), 1e-12))
+    db = 20.0 * np.log10(np.maximum(rms, 1e-9))
+    speech = np.where(db > speech_db)[0]
+    if len(speech) < 2:
+        return audio
+    first, last = int(speech[0]), int(speech[-1])
+    min_frames = max(1, int(round(min_pause_ms / frame_ms)))
+    keep_frames = max(1, int(round(min_keep_ms / frame_ms)))
+    max_frames = int(round(max_pause_ms / frame_ms)) if max_pause_ms > 0 else None
+    parts: list[np.ndarray] = []
+    changed = False
+    i = 0
+    while i < n:
+        if first < i < last and db[i] < threshold_db:
+            j = i
+            while j < last and db[j] < threshold_db:
+                j += 1
+            run = j - i
+            if run >= min_frames:
+                target = int(round(run * scale))
+                if max_frames is not None:
+                    target = min(target, max_frames)
+                target = max(target, keep_frames)
+                half = run // 2
+                if target > run:  # lengthen: inject silence in the middle
+                    parts.append(block[i:i + half].reshape(-1))
+                    parts.append(np.zeros((target - run) * fr, dtype=np.float32))
+                    parts.append(block[i + half:j].reshape(-1))
+                    changed = True
+                elif target < run:  # shorten: drop the centre of the pure pause
+                    drop = run - target
+                    parts.append(block[i:i + half - drop // 2].reshape(-1))
+                    parts.append(block[i + half - drop // 2 + drop:j].reshape(-1))
+                    changed = True
+                else:
+                    parts.append(block[i:j].reshape(-1))
+            else:
+                parts.append(block[i:j].reshape(-1))
+            i = j
+        else:
+            parts.append(block[i])
+            i += 1
+    if not changed:
+        return audio
+    tail = f[n * fr:]
+    if len(tail):
+        parts.append(tail)
+    out = np.concatenate(parts)
+    if is_int16:
+        np.clip(out, -1.0, 1.0, out=out)
+        return (out * 32767.0).astype(np.int16)
+    return out
+
+
 def trim_and_fade(
     audio: np.ndarray,
     sr: int = 24000,
@@ -313,6 +410,8 @@ def trim_and_fade(
     pad_ms: float = 5.0,
     hard_silence_pad_ms: float = 8.0,
     tail_aggressive_trim_ms: float = 25.0,
+    tail_floor_db: float = -58.0,
+    compress_dead_space: bool = False,
 ) -> np.ndarray:
     """Trim boundary noise, apply fades, prepend/append hard silence.
 
@@ -446,6 +545,33 @@ def trim_and_fade(
     first_frame = max(0, runs[0][0] - pad_frames)
     last_frame = min(n_frames - 1, runs[-1][1] + pad_frames)
 
+    # Reverb-tail preservation. The speech threshold (-40 dB) sits HIGH in this
+    # voice's reverb decay, so stopping at the last >-40 dB frame lops off the
+    # audible reverb (waveform-measured: the tail decays -40 -> -58 over
+    # ~100-200 ms before going inaudible). Walk forward through the CONTINUOUS
+    # decay, keeping frames down to ``tail_floor_db``, and stop once the signal
+    # has been sustainedly below that floor -- which lands BEFORE any detached
+    # trailing decoder blip (that blip sits past a real silence gap and is
+    # removed by _strip_post_gap_blip below). Only EXTENDS the kept region, so a
+    # voice without a reverb tail (decay already below -58 within a frame) is a
+    # no-op. tail_floor_db >= threshold_db disables it.
+    if tail_floor_db < threshold_db:
+        tail_floor_lin = 10.0 ** (tail_floor_db / 20.0)
+        sil_hold = max(1, int(np.ceil(60.0 / frame_ms)))
+        ext = int(runs[-1][1])
+        run_sil = 0
+        kf = ext + 1
+        while kf < n_frames:
+            if rms[kf] >= tail_floor_lin:
+                ext = kf
+                run_sil = 0
+            else:
+                run_sil += 1
+                if run_sil >= sil_hold:
+                    break
+            kf += 1
+        last_frame = min(n_frames - 1, max(last_frame, ext + pad_frames))
+
     start = first_frame * frame_samples
     end = min(len(audio_f32), (last_frame + 1) * frame_samples)
     trimmed = audio_f32[start:end].copy()
@@ -460,14 +586,15 @@ def trim_and_fade(
     if len(trimmed) == 0:
         return audio_f32
 
-    # Compress any UNNATURAL internal dead-space gap (a long, digital-silence
-    # pause between sentences the decoder sometimes emits) down to a natural
-    # pause, so multi-sentence lines flow without holes. Additive: only touches
-    # long+deep gaps strictly between speech; natural pauses + the reverb tail
-    # are untouched.
-    trimmed = _compress_internal_dead_space(trimmed, sr)
-    if len(trimmed) == 0:
-        return audio_f32
+    # Internal dead-space compression is OFF by default (2026-06-12): this clean
+    # voice renders its real sentence pauses as PURE digital silence (-91 dB),
+    # so the compressor was shortening MEANINGFUL pauses (measured: a 250 ms
+    # sentence pause cut to 120 ms). Pause length is now controlled, uniformly
+    # and predictably, by ``expand_internal_pauses`` downstream instead.
+    if compress_dead_space:
+        trimmed = _compress_internal_dead_space(trimmed, sr)
+        if len(trimmed) == 0:
+            return audio_f32
 
     # Raised-cosine fade is quieter in the first ~30% of the ramp
     # than a linear fade -- better at hiding burst artifacts that

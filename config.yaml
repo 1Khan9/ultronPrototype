@@ -1097,7 +1097,7 @@ tts:
     # Swap back to "am_michael" if the fine-tune voice misbehaves.
     voice: "kenning"
     device: "cuda"                 # "cuda" for ~3x faster synth at +330 MB VRAM; gaming mode auto-flips to cpu
-    speed: 1.3                     # 1.0 native; safe range ~0.8-1.3
+    speed: 1.0                     # 1.0 native; in-model duration shaping (below) supplies cadence, so base stays 1.0
     apply_runtime_filter: false    # set true to run v3 pedalboard over Kokoro output (CPU 10-30 ms/sentence)
     filter_preset: "v3_heavy"      # unused while apply_runtime_filter=false
     # 2026-05-22: spectral magnitude smoothing pass to mask pitch
@@ -1111,6 +1111,22 @@ tts:
     spectral_smooth_window: 5      # ~107 ms STFT median window at hop=512, sr=24 kHz (post-A/B sweet spot 2026-05-22)
     apply_trim_fade: true          # trim boundary noise + fade-in/out; ON for partial fine-tune; disable post full training
     trim_fade_threshold_db: -40.0  # RMS frames below this are treated as silence/noise at boundaries
+    # 2026-06-12 IN-MODEL prosody shaping -- scales Kokoro/StyleTTS2's OWN
+    # predicted pitch, energy, and per-phoneme duration curves BEFORE the
+    # ISTFTNet decoder, so the trained Ultron timbre + baked-in reverb are
+    # re-rendered unchanged with a livelier, more naturally-paced delivery.
+    # ZERO added latency (a single tensor op in the existing forward pass),
+    # deterministic, and applied UNIFORMLY to every clip (snap callouts AND
+    # persona lines). All 1.0 / 0.0 = the raw trained voice. Hand-tuned + A/B
+    # approved 2026-06-12. See kenning/tts/{f0_control,duration_control}.py.
+    f0_contour_factor: 1.4         # pitch-contour expansion around the median (1.0=flat/monotone)
+    f0_shift_semitones: -0.5       # median pitch shift; slightly deeper timbre
+    f0_max_excursion: 4.5          # tanh soft-limit (semitones) on pitch excursion -> no single-word spikes
+    f0_energy_factor: 1.2          # mean-preserving energy/dynamics expansion (emphasis)
+    dur_final_factor: 1.3          # sentence-final (. ! ?) rime lengthening
+    dur_internal_factor: 1.18      # phrase-internal (, ; : --) rime lengthening
+    dur_stress_factor: 1.08        # primary-stressed vowel lift
+    max_pause_cap_ms: 520.0        # cap any internal pause so dramatic pauses stay under the 600 ms dead-air flag; 0=off
 
   # Output-quality watcher (2026-06-11): every synthesized clip is
   # analyzed on a DAEMON thread for audible blips -- hard un-faded

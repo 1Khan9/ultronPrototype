@@ -1780,6 +1780,31 @@ def _is_place(s: str) -> bool:
     return 1 <= len(words) <= 3 and all(w in _LOC_TOKENS for w in words)
 
 
+# Site-letter pronunciation fix. misaki phonemizes a site letter "A" that is
+# FOLLOWED BY A WORD as the indefinite article schwa ("A site" -> "uh site");
+# "eigh" forces the letter sound /eI/. The letters B / C / D already read
+# correctly as letters, and a STANDALONE "A." ('they are A.') is already the
+# letter -- so we only rewrite an uppercase "A" immediately followed by a
+# Valorant location word. The article ("A man", "a mind") is never followed by
+# a location token, so it is left untouched (context-aware, no false positives).
+_A_SITE_RE = re.compile(
+    r"\bA\b(?=\s+(?i:"
+    + "|".join(sorted((re.escape(w) for w in _LOC_TOKENS if len(w) > 1),
+                      key=len, reverse=True))
+    + r")\b)"
+)
+
+
+def relay_tts_text(line: str) -> str:
+    """Return the line as it should be PRONOUNCED -- the displayed/logged text
+    stays clean. Currently corrects the site-letter 'A' callout pronunciation
+    ('A site' -> spoken 'eigh site' = the letter); extend with other spoken-form
+    fixes as needed."""
+    if not line or "A" not in line:
+        return line
+    return _A_SITE_RE.sub("eigh", line)
+
+
 def _as_named_question(name: str, payload: str) -> Optional[str]:
     """The dominant named small-talk question deterministically posed back to
     the teammate ('ask my Jett how their day was' -> 'Jett, how was your

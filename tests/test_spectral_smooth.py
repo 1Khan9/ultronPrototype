@@ -574,17 +574,31 @@ def test_dead_space_compress_preserves_speech_energy():
     assert abs(before - after) / before < 1e-6             # silence carries ~no energy
 
 
-def test_full_trim_and_fade_preserves_speech_with_dead_space():
-    """End-to-end: trim_and_fade (boundary trim + blip strip + dead-space
-    compress + fades) on a multi-sentence clip with a dead gap keeps both
-    speech runs intact and removes the dead core."""
+def test_dead_space_compression_is_off_by_default_preserving_pauses():
+    """2026-06-12: the dead-space compressor is OFF by default -- this clean
+    voice renders real sentence pauses as pure digital silence, so compressing
+    them removed MEANINGFUL pauses. By default the gap must survive."""
     sr = 24000
     clip = np.concatenate([
         _speech(0.7, sr), _silence(0.7, sr), _speech(0.7, sr), _silence(0.05, sr),
     ])
-    out = trim_and_fade(clip, sr)
+    default = trim_and_fade(clip, sr)
+    compressed = trim_and_fade(clip, sr, compress_dead_space=True)
+    # default keeps the ~0.7 s pause; opt-in compression shrinks the clip.
+    assert len(default) > len(compressed) + int(sr * 0.2)
+    # both ~0.7 s words survive in both modes.
+    assert len(default) >= int(sr * 1.4)
+    assert len(compressed) >= int(sr * 1.4)
+
+
+def test_compress_dead_space_opt_in_still_shrinks_core():
+    """The capability still works when explicitly requested."""
+    sr = 24000
+    clip = np.concatenate([
+        _speech(0.7, sr), _silence(0.7, sr), _speech(0.7, sr), _silence(0.05, sr),
+    ])
+    out = trim_and_fade(clip, sr, compress_dead_space=True)
     from kenning.audio.output_quality import analyze_clip
     kinds = {f.kind for f in analyze_clip(out, sr).findings}
     assert "internal_dropout" not in kinds                 # dead gap shrunk
-    # both ~0.7 s words survive (allow fades/pads): >= ~1.4 s of audio remains.
     assert len(out) >= int(sr * 1.4)
