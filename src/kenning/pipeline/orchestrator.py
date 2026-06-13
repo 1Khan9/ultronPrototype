@@ -3701,6 +3701,15 @@ class Orchestrator:
                         "gaming engage driver failed (%s); falling back "
                         "to no-op", e,
                     )
+                # Free the cross-encoder reranker (~1 GB): RAG is gated off in
+                # gaming mode so it is dead weight. It lazily reloads after
+                # disengage. Fail-open.
+                try:
+                    from kenning.memory.reranker import reset_shared_reranker
+                    reset_shared_reranker()
+                    logger.info("gaming engage: cross-encoder reranker freed")
+                except Exception as e:                            # noqa: BLE001
+                    logger.debug("gaming engage: reranker free skipped (%s)", e)
 
             def _disengage_extra():
                 from kenning.lifecycle.gaming_engage import (
