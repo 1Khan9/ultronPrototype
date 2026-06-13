@@ -1322,17 +1322,40 @@ def test_snap_callout_is_deterministic_and_correct(cmd_text, expect, flavored):
     "tell my team the enemy is playing really passive",
     "my teammate asked about iron man, respond",
     "ask my reyna what the meaning of life is",
-    "tell my team to save",
 ])
 def test_off_snap_defers_to_llm(cmd_text):
-    """Insults, playstyle reads, Marvel, open questions, economy -> the LLM.
-    (Short morale 'we can win this' and 'how their day was' are now handled
-    deterministically -- see their own tests.)"""
+    """Insults, playstyle reads, Marvel, open questions -> the LLM.
+    (Short morale 'we can win this' and 'how their day was' are handled
+    deterministically; economy 'save/force/full buy' is now deterministic too
+    -- see test_economy_is_deterministic.)"""
     cmd = match_relay_command(cmd_text)
     assert cmd is not None
     sentinel = "llmsentinel"        # lowercase: a named prepend lowercases head
     line = build_relay_line(cmd, generate_fn=lambda p: [sentinel])
     assert sentinel in line.lower()
+
+
+@pytest.mark.parametrize("cmd_text,must_have,must_not", [
+    ("tell my team to save", "save", "insufficient credits is OK"),
+    ("tell my team we save this round", "save", None),
+    ("tell my team force buy", "force", "insufficient"),
+    ("tell my team we force this round", "force", "insufficient"),
+    ("tell my team full buy", None, "insufficient"),
+])
+def test_economy_is_deterministic(cmd_text, must_have, must_not):
+    """Economy calls are handled deterministically with correct framing -- the
+    3B otherwise bleeds the SAVE 'insufficient credits' line onto force/full
+    buys. A corrupting stub proves the LLM was NOT used."""
+    cmd = match_relay_command(cmd_text)
+    assert cmd is not None
+    line = build_relay_line(cmd, generate_fn=lambda p: ["CORRUPTED"]).lower()
+    assert "corrupted" not in line
+    if "full buy" in cmd_text:
+        assert "full" in line and "insufficient" not in line
+    elif "force" in cmd_text:
+        assert "force" in line and "insufficient" not in line   # force != save
+    else:
+        assert "save" in line
 
 
 def test_identity_uses_varied_curated_pool():

@@ -292,8 +292,11 @@ def test_build_relay_line_rephrase_disabled_skips_llm() -> None:
     def fail(prompt: str):  # pragma: no cover - must not be called
         raise AssertionError("generate_fn must not be called")
 
-    line = build_relay_line(_cmd("save this round"), rephrase=False, generate_fn=fail)
-    assert line == "Team: save this round"
+    # An off-snap line (an insult) with rephrase disabled -> the deterministic
+    # fallback, never the LLM. (Economy 'save' is now handled deterministically,
+    # so it is no longer a clean rephrase-skip probe -- see the economy tests.)
+    line = build_relay_line(_cmd("they are clueless"), rephrase=False, generate_fn=fail)
+    assert line == "Team: they are clueless"
 
 
 def test_build_relay_line_strips_quotes_newlines_and_caps_length() -> None:

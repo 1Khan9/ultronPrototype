@@ -1983,6 +1983,52 @@ def _flavored(callout: str, pool: Sequence[str],
     return f"{callout} {_pick_flavor(pool, recent_lines)}"
 
 
+# Economy calls are deterministic + correctly framed: the 3B bleeds the SAVE
+# 'insufficient credits' explanation onto force buys, full buys, and even enemy
+# saves. Each pool is the user's clinical Ultron voice, varied via the ring.
+DEFAULT_SAVE_LINES: tuple[str, ...] = (
+    "We have insufficient credits. We save this round.",
+    "Credits are insufficient. We save and rebuild.",
+    "We save this round. Their advantage is temporary.",
+    "Economy is thin. Hold your credits.",
+    "We save. Buy nothing, concede nothing.",
+)
+DEFAULT_FORCE_LINES: tuple[str, ...] = (
+    "We force this round. Commit fully.",
+    "We force buy. Deny them the momentum.",
+    "We force. Apply the pressure now.",
+    "Force buy. We do not let them stabilize.",
+)
+DEFAULT_FULLBUY_LINES: tuple[str, ...] = (
+    "Full buy. We have the economy.",
+    "Full buy. Spare nothing.",
+    "We full buy this round. Take the advantage.",
+    "Full loadout. No excuses now.",
+)
+
+
+def _as_economy_callout(
+    bl: str, recent_lines: Optional[Sequence[str]] = None,
+) -> Optional[str]:
+    """Deterministic OUR-economy call (save / force / full buy). Returns None
+    for enemy economy ('they are force buying' is handled as enemy info), for
+    'anti-eco' (nuanced -> LLM), and for anything longer than a bare command."""
+    bl = bl.strip().rstrip(".!?")
+    if re.match(r"^(?:they|their|the\s+enemy|enemy)\b", bl, re.IGNORECASE):
+        return None
+    if "anti" in bl:                       # 'anti-eco' is not a save -> LLM
+        return None
+    if len(bl.split()) > 5:                # only bare buy commands
+        return None
+    if re.search(r"\bfull\s+buy\b", bl, re.IGNORECASE):
+        return pick_line(DEFAULT_FULLBUY_LINES, recent_lines=recent_lines)
+    if re.search(r"\bforce(?:\s+buy(?:ing)?)?\b", bl, re.IGNORECASE):
+        return pick_line(DEFAULT_FORCE_LINES, recent_lines=recent_lines)
+    if re.search(r"\b(?:save|saving|eco)\b", bl, re.IGNORECASE):
+        return pick_line(DEFAULT_SAVE_LINES, recent_lines=recent_lines)
+    return None
+
+
 def _as_agent_position(p: str) -> Optional[str]:
     """Named ENEMY agent(s) at a place: 'fade and clove are main' -> 'Fade and
     Clove are main.'; 'sova is door' -> 'Sova is door.'; 'their fade is heaven'
@@ -2020,6 +2066,8 @@ def _as_ult_callout(p: str) -> Optional[str]:
     their = bool(re.match(r"^\s*(?:their|the\s+enemy|enemy)\b", p, re.IGNORECASE))
     body = re.sub(r"^\s*(?:their|the\s+enemy(?:\s+team)?|enemy)\s+", "", p,
                   flags=re.IGNORECASE).strip().rstrip(".!?")
+    # 'our Raze has ult' / 'my Sage has ult' -> teammate ult (no 'Their' prefix).
+    body = re.sub(r"^\s*(?:our|my)\s+", "", body, flags=re.IGNORECASE).strip()
     pre = "Their " if their else ""
     m = re.match(r"^(?P<a>[A-Za-z/ ]+?)\s+(?:has\s+(?:her\s+|his\s+)?"
                  r"ult(?:imate)?|ult(?:imate)?\s+is\s+(?:ready|up))$", body, re.I)
@@ -2041,15 +2089,44 @@ def _as_ult_callout(p: str) -> Optional[str]:
             else:
                 names = " and ".join(agents)
             return f"{pre}{names} have ults."
+    # ult SPENT this round ('just used / fired / popped / cast / burned (his/her)
+    # ult', 'just ulted') -> the ultimate is GONE, never 'has ult'.
+    m = re.match(r"^(?P<a>[A-Za-z/ ]+?)\s+just\s+"
+                 r"(?:used|fired|popped|cast|burned|spent|blew(?:\s+up)?)\s+"
+                 r"(?:his\s+|her\s+|their\s+)?ult(?:imate)?$", body, re.I)
+    if m:
+        ag = _canon_agent(m.group("a"))
+        if ag:
+            return f"{pre}{ag} just used ult."
+    m = re.match(r"^(?P<a>[A-Za-z/ ]+?)\s+just\s+ulted$", body, re.I)
+    if m:
+        ag = _canon_agent(m.group("a"))
+        if ag:
+            return f"{pre}{ag} just ulted."
+    # NO ult this round ('has no ult', 'doesn't have ult', 'no ult') -> keep the
+    # negative; it is the tactical green-light, not an ult threat.
+    m = re.match(r"^(?P<a>[A-Za-z/ ]+?)\s+(?:has\s+no|doesn'?t\s+have\s+"
+                 r"(?:an?\s+|her\s+|his\s+)?|no)\s+ult(?:imate)?"
+                 r"(?:\s+this\s+round)?$", body, re.I)
+    if m:
+        ag = _canon_agent(m.group("a"))
+        if ag:
+            return f"{pre}{ag} has no ult."
     return None
 
 
 def _as_snap_callout(
     command: "RelayCommand",
     recent_lines: Optional[Sequence[str]] = None,
+    *,
+    flavor: bool = True,
 ) -> Optional[str]:
     """Deterministic literal callout (with a short, varied Ultron flavor tag on
-    the ENEMY-facing ones), or None to defer to the LLM (off-snap)."""
+    the ENEMY-facing ones), or None to defer to the LLM (off-snap).
+
+    ``flavor=False`` returns the bare callout with no Ultron tail -- used when a
+    compound is being assembled from several pieces, so the joined line carries
+    at most one tail instead of one per fact."""
     payload = (getattr(command, "payload", "") or "").strip().strip('"').strip()
     if not payload:
         return None
@@ -2057,7 +2134,10 @@ def _as_snap_callout(
     p = payload.rstrip(".!?")
 
     def fe(callout):   # enemy-info flavor
-        return _flavored(callout, _FLAVOR_ENEMY, recent_lines)
+        return _flavored(callout, _FLAVOR_ENEMY, recent_lines) if flavor else callout
+
+    def flav(callout, pool):   # pool-specific flavor (ult / careful / damage / ...)
+        return _flavored(callout, pool, recent_lines) if flavor else callout
 
     # NAMED short imperative directive -> "{Name}, {imperative}." Questions and
     # non-imperatives (jabs, small talk) defer to the LLM. (No flavor: short.)
@@ -2079,7 +2159,7 @@ def _as_snap_callout(
     if m:
         rest = m.group("rest").strip().rstrip(".!?,;:")
         if 1 <= len(rest.split()) <= 9:
-            return _flavored(f"Careful, {rest}.", _FLAVOR_CAREFUL, recent_lines)
+            return flav(f"Careful, {rest}.", _FLAVOR_CAREFUL)
 
     # --- self status / possession / first person (NO flavor -- the user's own) ---
     m = _FP_LEAD_RE.match(p)
@@ -2100,11 +2180,40 @@ def _as_snap_callout(
         c = m.group("c"); c = c if c.isdigit() else c.capitalize()
         return fe(f"{c} {m.group('pl').strip()}.")
 
-    # --- counts: 'there is/are <count> <place>' / '<count> <place>' ---
+    # --- counts: 'there is/are <count> <place>' / '<count> <place>' /
+    #     '<count> more <place>' ('two more hookah' -> 'Two hookah.') ---
     m = _LEADING_COUNT_RE.match(p)
-    if m and _is_place(m.group("place")):
+    if m:
+        place = re.sub(r"^(?:more|of\s+them)\s+", "", m.group("place").strip(),
+                       flags=re.IGNORECASE).strip()
+        if _is_place(place):
+            c = m.group("count"); c = c if c.isdigit() else c.capitalize()
+            return fe(f"{c} {place}.")
+
+    # --- count + movement: 'one rotating to A from garage', 'two coming through
+    #     B link fast', 'three of them went long C' -> keep the count AND the
+    #     whole movement phrase (the 3B drops the count or inverts it into a
+    #     team order). ---
+    m = re.match(
+        r"^(?P<count>[1-6]|one|two|three|four|five|six)\s+(?:of\s+them\s+|more\s+)?"
+        r"(?P<rest>(?:rotating|rotate|coming|going|went|push(?:ing)?|heading|"
+        r"moving|hitting|rushing|flooding|sneaking|flanking|peeking|"
+        r"swinging)\b.+)$",
+        p, re.IGNORECASE,
+    )
+    if m and len(m.group("rest").split()) <= 8:
         c = m.group("count"); c = c if c.isdigit() else c.capitalize()
-        return fe(f"{c} {m.group('place').strip()}.")
+        rest = m.group("rest").strip().rstrip(".!?,;:")
+        return fe(f"{c} {rest}.")
+
+    # --- spike status: 'spike A, planted', 'spike planted A main', 'spike B
+    #     default, they're planting' -> keep the location + plant state literal
+    #     (the 3B collapses these to 'C site.' or 'Defaulting'). ---
+    m = re.match(r"^spike\b\s*(?P<rest>.+)$", p, re.IGNORECASE)
+    if m:
+        rest = m.group("rest").strip().rstrip(".!?,;:")
+        if 1 <= len(rest.split()) <= 7:
+            return f"Spike {rest}."
 
     # --- last alive: 'last (is) <place>' ---
     m = _LAST_LEAD_RE.match(p)
@@ -2125,7 +2234,7 @@ def _as_snap_callout(
     if m:
         w = m.group("x").lower()
         w = "op" if w in ("op", "operator") else w
-        return _flavored(f"They have {w}.", _FLAVOR_ULT, recent_lines)
+        return flav(f"They have {w}.", _FLAVOR_ULT)
 
     # --- enemy utility: 'they walled A' / 'they smoked C' / 'they darted C' ---
     m = re.match(r"^(?:they|the\s+enemy|enemy)\s+(?P<v>walled|smoked|smoke|"
@@ -2133,8 +2242,8 @@ def _as_snap_callout(
                  r"stun|droned|drone|knifed|knife|recon|mollied|molly)\s+"
                  r"(?P<pl>.+)$", p, re.IGNORECASE)
     if m and _is_place(m.group("pl")):
-        return _flavored(f"They {m.group('v').lower()} {m.group('pl').strip()}.",
-                         _FLAVOR_UTILITY, recent_lines)
+        return flav(f"They {m.group('v').lower()} {m.group('pl').strip()}.",
+                    _FLAVOR_UTILITY)
 
     # --- enemy movement: 'they are rushing/pushing/going/coming A' ---
     m = re.match(r"^they(?:'re|\s+are)\s+(?P<v>pushing|going|coming|hitting|"
@@ -2162,7 +2271,7 @@ def _as_snap_callout(
         # enemy-lead block must not collapse it to 'They're one off ult').
         snap = _as_ult_callout(p)
         if snap is not None:
-            return (_flavored(snap, _FLAVOR_ULT, recent_lines)
+            return (flav(snap, _FLAVOR_ULT)
                     if snap.startswith("Their ") else snap)
         return None   # insult / playstyle / long -> LLM (flavor)
 
@@ -2171,19 +2280,27 @@ def _as_snap_callout(
     if ap is not None:
         return fe(ap)
 
-    # --- damage: '<agent> hit <n>' ---
-    m = re.match(r"^(?P<a>[A-Za-z/ ]+?)\s+hit\s+(?P<n>\d{1,3})$", p, re.IGNORECASE)
+    # --- damage: '<agent> hit <n>' (+ optional short trailing location:
+    #     'Vyse hit 84 in C main', 'Omen hit 44 through B smoke') ---
+    m = re.match(r"^(?P<a>[A-Za-z/ ]+?)\s+hit\s+(?P<n>\d{1,3})"
+                 r"(?:[\s,]+(?P<loc>.+))?$", p, re.IGNORECASE)
     if m:
         ag = _canon_agent(m.group("a"))
         if ag:
-            return _flavored(f"{ag} hit {m.group('n')}.", _FLAVOR_DAMAGE,
-                             recent_lines)
+            loc = re.sub(r"^(?:in|at)\s+", "",
+                         (m.group("loc") or "").strip().rstrip(".!?,;:"),
+                         flags=re.IGNORECASE).strip()
+            if not loc:
+                return flav(f"{ag} hit {m.group('n')}.", _FLAVOR_DAMAGE)
+            if len(loc.split()) <= 5:
+                return flav(f"{ag} hit {m.group('n')}, {loc}.", _FLAVOR_DAMAGE)
+            return None   # long tail -> compound / LLM
 
     # --- ults (BEFORE utility): 'their breach has ult' -> flavor; a teammate's
     #     own ult info stays clean. ---
     snap = _as_ult_callout(p)
     if snap:
-        return (_flavored(snap, _FLAVOR_ULT, recent_lines)
+        return (flav(snap, _FLAVOR_ULT)
                 if snap.startswith("Their ") else snap)
 
     # --- teammate utility report '<agent> <ability-verb> <rest>' (NO flavor --
@@ -2198,6 +2315,13 @@ def _as_snap_callout(
     # --- group movement/spike directive: 'to <verb>' / '<verb>' (NO flavor) ---
     body = re.sub(r"^to\s+", "", p, flags=re.IGNORECASE).strip()
     bl = body.lower()
+
+    # --- economy (OUR buy decision): deterministic + correctly framed so the
+    #     3B never bleeds the 'insufficient credits' SAVE line onto a force or
+    #     full buy. Enemy economy / anti-eco / long sentences return None. ---
+    econ = _as_economy_callout(bl, recent_lines)
+    if econ is not None:
+        return econ
 
     # --- economy REQUEST: 'drop us/me a gun', 'buy me an op' -> literal
     #     imperative (the 3B otherwise truncates to 'Drop.' or inverts to
@@ -2222,6 +2346,91 @@ def _as_snap_callout(
     if bl in _MOVE:
         return _MOVE[bl]
     return None
+
+
+class _PayloadShim:
+    """Minimal command stand-in so a single compound fact can be re-run through
+    ``_as_snap_callout`` (which only reads .payload / .addressee)."""
+    __slots__ = ("payload", "addressee")
+
+    def __init__(self, payload: str, addressee: str = "team"):
+        self.payload = payload
+        self.addressee = addressee
+
+
+# A new tactical fact clearly begins with one of these subjects. Used to split
+# ' and X' / ', X' ONLY before a genuine new fact, so multi-agent callouts
+# ('Fade and Clove are main') and intra-fact commas ('spike A, planted main',
+# 'Sova hit 94, B site') are NOT broken apart.
+_NEWFACT_SUBJECT = (
+    r"(?:their|our|my|they|they're|we|we're|i|i'm|spike|last|careful|watch|"
+    r"hold|push|rotate|fall\s+back|default|stay|lurk|the\s+enemy|enemy|"
+    r"all\s+enemies|" + "|".join(
+        re.escape(a) for a in sorted(_ROSTER_CANON, key=len, reverse=True)
+    ) + r")\b|(?:one|two|three|four|five|six)\s"
+)
+
+
+def _split_compound(payload: str) -> list[str]:
+    """Split a compound relay ('two B and their Killjoy has ult', 'spike A,
+    planted -- Reyna has ult') into its independent facts. Conservative: STRONG
+    joiners (dash/also/plus) always split; ' and ' and ',' split ONLY before a
+    clear new-fact subject, so multi-agent callouts ('Fade and Clove are main')
+    and intra-fact commas ('spike A, planted main area') survive intact."""
+    s = " " + payload.strip() + " "
+    s = re.sub(r"\s*(?:--|—|–)\s*", " | ", s)
+    s = re.sub(r"\s*;\s*", " | ", s)
+    s = re.sub(r"\s+plus\s+", " | ", s, flags=re.IGNORECASE)
+    s = re.sub(r"\s*,?\s+also\s+", " | ", s, flags=re.IGNORECASE)
+    s = re.sub(r"\s*,?\s+and\s+(?=" + _NEWFACT_SUBJECT + r")", " | ", s,
+               flags=re.IGNORECASE)
+    s = re.sub(r"\s*,\s*(?=" + _NEWFACT_SUBJECT + r")", " | ", s,
+               flags=re.IGNORECASE)
+    parts = []
+    for seg in s.split("|"):
+        seg = re.sub(r"^(?:and|also)\s+", "", seg.strip(), flags=re.IGNORECASE)
+        seg = seg.strip(" ,.;:").strip()
+        if seg:
+            parts.append(seg)
+    return parts
+
+
+def _as_compound_callout(
+    command: "RelayCommand",
+    recent_lines: Optional[Sequence[str]] = None,
+) -> Optional[str]:
+    """Resolve a multi-fact callout DETERMINISTICALLY by handling each fact
+    through ``_as_snap_callout`` and joining -- so the 3B never gets the chance
+    to drop a fact or hallucinate a filler line. Returns None (defer to the LLM)
+    if ANY piece is off-snap (insult/banter/calm-down) or unresolvable, so mixed
+    compounds still get the model's flavor. Flavor is suppressed per-piece; at
+    most one short tail is added to the whole line."""
+    payload = (getattr(command, "payload", "") or "").strip().strip('"').strip()
+    if not payload:
+        return None
+    parts = _split_compound(payload)
+    if len(parts) < 2:
+        return None
+    outs: list[str] = []
+    enemy_facing = False
+    for piece in parts:
+        snap = _as_snap_callout(_PayloadShim(piece), recent_lines, flavor=False)
+        if snap is None:
+            return None                       # a piece is off-snap -> whole -> LLM
+        snap = snap.strip()
+        if not snap.endswith((".", "!", "?")):
+            snap += "."
+        outs.append(snap)
+        if re.search(r"\b(?:they|they're|their|enemy|enemies)\b", snap, re.I):
+            enemy_facing = True
+    if not outs:
+        return None
+    line = " ".join(outs)
+    # One short Ultron tail on a tight enemy-facing compound (keeps personality
+    # without burying two facts; long compounds stay clean).
+    if enemy_facing and len(line.split()) <= 11:
+        line = _flavored(line, _FLAVOR_ENEMY, recent_lines)
+    return line
 
 
 def _strip_artifacts(line: str) -> str:
@@ -2678,6 +2887,12 @@ def build_relay_line(
         snap = _as_snap_callout(command, recent_lines)
         if snap is not None:
             return _cap_line(snap, max_chars)
+        # COMPOUND (two+ facts): resolve each fact deterministically and join,
+        # so the 3B never drops a fact or hallucinates filler. Mixed compounds
+        # (a fact + an insult/calm-down) return None and fall through to the LLM.
+        compound = _as_compound_callout(command, recent_lines)
+        if compound is not None:
+            return _cap_line(compound, max_chars)
 
     fallback = _fallback_line(command)
     line = ""
