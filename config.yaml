@@ -1745,7 +1745,7 @@ relay_speech:
 # the glow shows over your game. Drag with left-drag; right-click to hide.
 # Off by default; toggle live from the settings panel (Voice → Waveform overlay).
 visualizer:
-  enabled: false
+  enabled: true                # overlay ON for streaming (anticheat-safe: own window only)
   size: 300                  # window px (square)
   bars: 60                   # radial bars
   fps: 30                    # redraw rate
