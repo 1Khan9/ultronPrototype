@@ -2142,6 +2142,12 @@ def _as_snap_callout(
         return None
     addressee = getattr(command, "addressee", "team")
     p = payload.rstrip(".!?")
+    # A genuine multi-fact compound (per _split_compound). The greedy single-fact
+    # handlers (count+movement, spike, careful, team-directive) must NOT grab
+    # across a fact boundary -- the caller's compound path handles those. The
+    # precise/multi-subject handlers (agent-position, ult, damage, count+place)
+    # are unaffected and still resolve 'Fade and Clove are main' as one unit.
+    _is_compound = len(_split_compound(p)) >= 2
 
     def fe(callout):   # enemy-info flavor
         return _flavored(callout, _FLAVOR_ENEMY, recent_lines) if flavor else callout
@@ -2166,7 +2172,7 @@ def _as_snap_callout(
     # --- CAREFUL warnings: 'careful ramp', 'careful flank', 'careful they
     #     could have crossed to ramp' ---
     m = re.match(r"^careful[,]?\s+(?P<rest>.+)$", p, re.IGNORECASE)
-    if m:
+    if m and not _is_compound:
         rest = m.group("rest").strip().rstrip(".!?,;:")
         if 1 <= len(rest.split()) <= 9:
             return flav(f"Careful, {rest}.", _FLAVOR_CAREFUL)
@@ -2211,7 +2217,7 @@ def _as_snap_callout(
         r"swinging)\b.+)$",
         p, re.IGNORECASE,
     )
-    if m and len(m.group("rest").split()) <= 8:
+    if m and not _is_compound and len(m.group("rest").split()) <= 8:
         c = m.group("count"); c = c if c.isdigit() else c.capitalize()
         rest = m.group("rest").strip().rstrip(".!?,;:")
         return fe(f"{c} {rest}.")
@@ -2220,7 +2226,7 @@ def _as_snap_callout(
     #     default, they're planting' -> keep the location + plant state literal
     #     (the 3B collapses these to 'C site.' or 'Defaulting'). ---
     m = re.match(r"^spike\b\s*(?P<rest>.+)$", p, re.IGNORECASE)
-    if m:
+    if m and not _is_compound:
         rest = m.group("rest").strip().rstrip(".!?,;:")
         if 1 <= len(rest.split()) <= 7:
             return f"Spike {rest}."
@@ -2361,6 +2367,7 @@ def _as_snap_callout(
     #     3B otherwise inverts these into enemy observations. Questions defer. ---
     first = bl.split()[0] if bl.split() else ""
     if (first in _TEAM_DIRECTIVE_VERBS
+            and not _is_compound
             and not _is_question_payload(body)
             and 1 <= len(body.split()) <= 7):
         out = body.rstrip(".!?")
@@ -2383,9 +2390,13 @@ class _PayloadShim:
 # ('Fade and Clove are main') and intra-fact commas ('spike A, planted main',
 # 'Sova hit 94, B site') are NOT broken apart.
 _NEWFACT_SUBJECT = (
-    r"(?:their|our|my|they|they're|we|we're|i|i'm|spike|last|careful|watch|"
-    r"hold|push|rotate|fall\s+back|default|stay|lurk|the\s+enemy|enemy|"
-    r"all\s+enemies|" + "|".join(
+    r"(?:their|our|my|they|they're|we|we're|i|i'm|spike|last|careful|"
+    r"the\s+enemy|enemy|all\s+enemies|do\s+not|don'?t|"
+    # team-directive verbs (so ', check corners' / ', do not feed it' split off a
+    # trailing imperative as its own fact)
+    + "|".join(sorted(_TEAM_DIRECTIVE_VERBS, key=len, reverse=True)) + r"|"
+    # roster agent names (so ', Cypher trip...' / ' and their Killjoy...' split)
+    + "|".join(
         re.escape(a) for a in sorted(_ROSTER_CANON, key=len, reverse=True)
     ) + r")\b|(?:one|two|three|four|five|six)\s"
 )
@@ -2418,39 +2429,51 @@ def _split_compound(payload: str) -> list[str]:
 def _as_compound_callout(
     command: "RelayCommand",
     recent_lines: Optional[Sequence[str]] = None,
-) -> Optional[str]:
-    """Resolve a multi-fact callout DETERMINISTICALLY by handling each fact
-    through ``_as_snap_callout`` and joining -- so the 3B never gets the chance
-    to drop a fact or hallucinate a filler line. Returns None (defer to the LLM)
-    if ANY piece is off-snap (insult/banter/calm-down) or unresolvable, so mixed
-    compounds still get the model's flavor. Flavor is suppressed per-piece; at
-    most one short tail is added to the whole line."""
+) -> tuple[Optional[str], Optional[str]]:
+    """Resolve the tactical facts of a multi-fact callout DETERMINISTICALLY so
+    the 3B never drops a fact or hallucinates a filler line.
+
+    Returns ``(det_line, leftover)``:
+      * ``(None, None)``     -- not a compound, or NO piece resolves -> the
+        caller defers the whole thing to the LLM as before.
+      * ``(line, None)``     -- EVERY piece resolved; ``line`` is the joined
+        deterministic callout (with at most one short Ultron tail).
+      * ``(line, leftover)`` -- PARTIAL: ``line`` is the deterministic tactical
+        facts (no tail); ``leftover`` is the off-snap remainder the caller
+        should rephrase through the LLM and append (so a tactical fact is never
+        lost just because it shared an utterance with an insult/calm-down)."""
     payload = (getattr(command, "payload", "") or "").strip().strip('"').strip()
     if not payload:
-        return None
+        return None, None
     parts = _split_compound(payload)
     if len(parts) < 2:
-        return None
-    outs: list[str] = []
+        return None, None
+    resolved: list[str] = []
+    leftover: list[str] = []
     enemy_facing = False
     for piece in parts:
         snap = _as_snap_callout(_PayloadShim(piece), recent_lines, flavor=False)
         if snap is None:
-            return None                       # a piece is off-snap -> whole -> LLM
+            leftover.append(piece)
+            continue
         snap = snap.strip()
         if not snap.endswith((".", "!", "?")):
             snap += "."
-        outs.append(snap)
+        resolved.append(snap)
         if re.search(r"\b(?:they|they're|their|enemy|enemies)\b", snap, re.I):
             enemy_facing = True
-    if not outs:
-        return None
-    line = " ".join(outs)
-    # One short Ultron tail on a tight enemy-facing compound (keeps personality
-    # without burying two facts; long compounds stay clean).
-    if enemy_facing and len(line.split()) <= 11:
-        line = _flavored(line, _FLAVOR_ENEMY, recent_lines)
-    return line
+    if not resolved:
+        return None, None                      # nothing tactical -> whole -> LLM
+    det_line = " ".join(resolved)
+    if leftover:
+        # Tactical facts go out deterministically; the off-snap remainder is
+        # rephrased by the LLM and appended by the caller. No tail here -- the
+        # LLM piece carries the character.
+        return det_line, " ".join(leftover)
+    # Every piece resolved: one short Ultron tail on a tight enemy-facing line.
+    if enemy_facing and len(det_line.split()) <= 11:
+        det_line = _flavored(det_line, _FLAVOR_ENEMY, recent_lines)
+    return det_line, None
 
 
 def _strip_artifacts(line: str) -> str:
@@ -2907,12 +2930,30 @@ def build_relay_line(
         snap = _as_snap_callout(command, recent_lines)
         if snap is not None:
             return _cap_line(snap, max_chars)
-        # COMPOUND (two+ facts): resolve each fact deterministically and join,
-        # so the 3B never drops a fact or hallucinates filler. Mixed compounds
-        # (a fact + an insult/calm-down) return None and fall through to the LLM.
-        compound = _as_compound_callout(command, recent_lines)
-        if compound is not None:
-            return _cap_line(compound, max_chars)
+        # COMPOUND (two+ facts): resolve each tactical fact deterministically so
+        # the 3B never drops a fact or hallucinates filler.
+        det_line, leftover = _as_compound_callout(command, recent_lines)
+        if det_line is not None and not leftover:
+            return _cap_line(det_line, max_chars)         # fully deterministic
+        if det_line is not None and leftover:
+            # PARTIAL: tactical facts go out deterministically; rephrase ONLY the
+            # off-snap remainder (insult / calm-down / read / question) through
+            # the full pipeline and append it -- so a tactical fact is never lost
+            # to a mixed utterance. (The leftover is a single off-snap clause, so
+            # it will not re-enter this compound branch.)
+            from dataclasses import replace as _dc_replace
+            try:
+                sub = _dc_replace(command, payload=leftover)
+            except Exception:                                        # noqa: BLE001
+                sub = None
+            if sub is not None:
+                tail = build_relay_line(
+                    sub, llm=llm, rephrase=rephrase, max_chars=max_chars,
+                    recent_lines=recent_lines, generate_fn=generate_fn,
+                )
+                if tail and tail.strip():
+                    return _cap_line(f"{det_line} {tail.strip()}", max_chars)
+            return _cap_line(det_line, max_chars)
 
     fallback = _fallback_line(command)
     line = ""
@@ -2948,6 +2989,18 @@ def build_relay_line(
                    for r in list(recent_lines)[-8:]):
                 logger.debug("relay: rejected verbatim recent echo %r", line)
                 line = ""
+        # Safety net 2: the 3B confabulates a bare position 'they're switch' /
+        # 'enemies switch' / 'they are switch' on inputs that never mention
+        # switching (a recurring hallucination from the audit). Reject ONLY that
+        # position form -- a legitimate sentence ('a transistor is a switch') is
+        # untouched.
+        if (line
+                and re.search(r"\b(?:they'?re|they\s+are|enemies?|enemy|we'?re)"
+                              r"\s+switch\b", line, re.IGNORECASE)
+                and not re.search(r"\bswitch\b", command.payload or "",
+                                  re.IGNORECASE)):
+            logger.debug("relay: rejected 'switch' position hallucination %r", line)
+            line = ""
     if not line:
         line = fallback
     # One breath: strip newlines/quotes the model may add, cap length.

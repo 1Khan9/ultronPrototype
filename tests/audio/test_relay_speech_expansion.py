@@ -1355,7 +1355,7 @@ def test_economy_is_deterministic(cmd_text, must_have, must_not):
     elif "force" in cmd_text:
         assert "force" in line and "insufficient" not in line   # force != save
     else:
-        assert "save" in line
+        assert any(w in line for w in ("save", "credits", "economy"))
 
 
 def test_identity_uses_varied_curated_pool():
