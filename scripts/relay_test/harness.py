@@ -321,6 +321,15 @@ def _load_llm(preset: str = GAMING_PRESET):
     # collides with a second concurrent harness/probe run.
     qpath = (pathlib.Path(tempfile.gettempdir())
              / f"kenning_relay_test_qdrant_{os.getpid()}")
+    # TESTING MODE: gate RAG / web-search OFF (gaming parity) WITHOUT the gaming
+    # device swaps, so the relay rephrase runs the same context-free path it does
+    # in-game but we may keep the LLM on GPU for fast iteration.
+    try:
+        from kenning.safety.testing_mode import set_testing_mode_active
+        set_testing_mode_active(True)
+    except Exception:                                                # noqa: BLE001
+        pass
+
     embedder = HybridEmbedder()
     memory = ConversationMemory(embedder=embedder, path=qpath)
 
@@ -338,9 +347,19 @@ def _load_llm(preset: str = GAMING_PRESET):
     atexit.register(_cleanup_relay_qdrant)
     eng = LLMEngine(memory=memory)
     if preset and hasattr(eng, "reload_for_preset"):
+        # In-game the gaming preset is CPU-only (gpu_layers=0). For TESTING we
+        # default to full GPU (-1) for speed -- the model + sampling are
+        # identical, so the OUTPUT we grade is the same; gpu_layers only moves
+        # where compute runs. Override via RELAY_TEST_GPU_LAYERS=0 to test CPU.
+        _gl_env = os.environ.get("RELAY_TEST_GPU_LAYERS")
+        gpu_layers = int(_gl_env) if _gl_env not in (None, "") else -1
         try:
-            ok, msg = eng.reload_for_preset(preset)
-            print(f"[llm] preset -> {preset}: {ok} ({msg})", flush=True)
+            try:
+                ok, msg = eng.reload_for_preset(preset, gpu_layers=gpu_layers)
+            except TypeError:
+                ok, msg = eng.reload_for_preset(preset)  # older signature
+            print(f"[llm] preset -> {preset} (gpu_layers={gpu_layers}): "
+                  f"{ok} ({msg})", flush=True)
         except Exception as e:                                       # noqa: BLE001
             print(f"[llm] preset swap failed ({e}); using default", flush=True)
     if hasattr(eng, "warmup"):
