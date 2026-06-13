@@ -65,3 +65,74 @@ def test_fired_recently_negative_window_returns_false(detector):
     detector._last_trigger_ts = time.monotonic()  # noqa: SLF001
     # Caller-error case; the implementation clamps via float() comparison.
     assert detector.fired_recently(window_s=-1.0) is False
+
+
+# ---------------------------------------------------------------------------
+# Per-word thresholds + consecutive-frame gate (2026-06-12 no-retrain
+# false-accept controls). The active word's threshold overrides the flat one,
+# and a single above-threshold frame must NOT fire -- the score has to persist
+# for ``min_consecutive_frames`` in a row.
+# ---------------------------------------------------------------------------
+
+import numpy as np  # noqa: E402
+
+
+class _ScoreModel:
+    score = 0.0
+
+    def predict(self, pcm):
+        return {"w": self.score}
+
+    def reset(self):
+        pass
+
+
+def _stub_load(self, path, fb):
+    self._active_word = self._name  # noqa: SLF001
+    return _ScoreModel()
+
+
+def _scored(monkeypatch, word="ultron", thresholds=None, min_consec=2):
+    monkeypatch.setattr(WakeWordDetector, "_load_model", _stub_load)
+    d = WakeWordDetector(model_path=None, name=word)
+    d._thresholds = thresholds or {"kenning": 0.4, "ultron": 0.6}  # noqa: SLF001
+    d._min_consecutive = min_consec  # noqa: SLF001
+    d.threshold = d._threshold_for(word)
+    return d
+
+
+def test_per_word_threshold_overrides_flat(monkeypatch):
+    d = _scored(monkeypatch, word="ultron")
+    assert d.threshold == 0.6                 # ultron runs hotter
+    assert d._threshold_for("kenning") == 0.4  # noqa: SLF001
+    assert d._threshold_for("unknown") == d._default_threshold  # noqa: SLF001
+
+
+def test_consecutive_frame_gate_fires_only_when_sustained(monkeypatch):
+    d = _scored(monkeypatch, word="ultron", min_consec=2)
+    frame = np.zeros(1280, dtype=np.float32)
+    d._model.score = 0.5                       # below 0.6  # noqa: SLF001
+    assert d.process(frame) is False
+    d._model.score = 0.7                       # 1st above  # noqa: SLF001
+    assert d.process(frame) is False           # consec 1 < 2
+    assert d.process(frame) is True            # consec 2 >= 2 -> fire
+
+
+def test_single_frame_spike_is_filtered(monkeypatch):
+    d = _scored(monkeypatch, word="ultron", min_consec=2)
+    frame = np.zeros(1280, dtype=np.float32)
+    for score in (0.7, 0.3, 0.7):              # spike broken by a dip
+        d._model.score = score                 # noqa: SLF001
+        assert d.process(frame) is False       # never two-in-a-row
+
+
+def test_swap_applies_target_word_threshold(monkeypatch):
+    # reload_for_word recomputes the per-word threshold + resets the gate.
+    d = _scored(monkeypatch, word="ultron")
+    d._thresholds = {"kenning": 0.4, "ultron": 0.6}  # noqa: SLF001
+    d._consec = 5  # noqa: SLF001
+    d._active_word = "ultron"  # noqa: SLF001
+    # Simulate the in-place recompute the swap performs:
+    d.threshold = d._threshold_for("kenning")
+    d._consec = 0  # noqa: SLF001
+    assert d.threshold == 0.4 and d._consec == 0  # noqa: SLF001

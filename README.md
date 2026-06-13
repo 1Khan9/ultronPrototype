@@ -65,7 +65,7 @@
 <td width="50%" valign="top">
 
 ### 🎤 Voice pipeline
-- Custom-trained `kenning` wake word (OpenWakeWord)
+- Custom-trained `kenning` / `ultron` wake words (OpenWakeWord), hot-swappable from the settings panel, with **per-word thresholds** + a **consecutive-frame gate** to reject confusables without retraining
 - Silero VAD + **Smart Turn V3** — semantic end-of-turn in ~12 ms
 - Dual-engine STT registry (Moonshine · Parakeet TDT · Whisper)
 - **Custom fine-tuned voicepack** — Kokoro StyleTTS2 on CUDA
@@ -106,7 +106,7 @@
 ### 🛡️ Safety + ops
 - **141-rule** tool-call validator across 19 categories
 - Tamper-evident SHA-256 hash-chain audit log
-- **Gaming-mode** VRAM reclaim chain (~2.3 GB freed on demand)
+- **Gaming-mode** VRAM reclaim chain (~2.3 GB freed on demand) + a **bare-bones profile** (optionally auto-engaged at boot): LLM swapped to a **CPU-only** 3B, Kokoro TTS → CPU, Parakeet stopped, VLM unloaded, and per-turn RAG retrieval / reranker / web-search skipped — near-zero GPU so it never costs game frames, while the voice + team relay stay live
 - **Anticheat-safe mode** — a 3-layer hard block (module guards · validator BLOCK_HARD · surface-stop hooks) on *every* desktop-interaction surface (input injection, screen capture, OCR, UIA, clipboard, window control, browser CDP), pinnable always-on for running beside kernel anticheats; audio + the voice/team relay + the overlay stay live
 - Typed event bus — `turn.started` · `gate.verdict` · `supervisor.decided` · 14 more
 - opencode-inspired project digest + supervisor stack

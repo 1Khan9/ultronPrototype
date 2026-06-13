@@ -213,7 +213,10 @@ def test_llama_3_2_3b_abliterated_preset_resolves() -> None:
     assert cfg.preset == "llama-3.2-3b-abliterated"
     assert cfg.model_path == "models/Llama-3.2-3B-Instruct-abliterated.Q4_K_M.gguf"
     assert cfg.n_ctx == 6144
-    assert cfg.draft_model_path == "models/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+    # 2026-06-12: this is the GAMING preset -- CPU-only (gpu_layers=0) with NO
+    # draft model, so generation uses zero GPU while a game has the card.
+    assert cfg.draft_model_path is None
+    assert cfg.gpu_layers == 0
 
 
 def test_new_presets_match_download_script_filenames() -> None:
@@ -238,7 +241,8 @@ def test_new_presets_match_download_script_filenames() -> None:
         ("gemma-3-4b-abliterated", "model_path", "gemma-3-4b-it-abliterated.Q4_K_M.gguf"),
         ("gemma-3-4b-abliterated", "draft_model_path", "google_gemma-3-1b-it-Q4_K_M.gguf"),
         ("llama-3.2-3b-abliterated", "model_path", "Llama-3.2-3B-Instruct-abliterated.Q4_K_M.gguf"),
-        ("llama-3.2-3b-abliterated", "draft_model_path", "Llama-3.2-1B-Instruct-Q4_K_M.gguf"),
+        # 2026-06-12: the gaming preset dropped its draft model (CPU-only, zero
+        # GPU) -- draft_model_path is None, so there's no filename to match here.
     ]
     for preset, key, expected_filename in expected_pairs:
         actual = LLM_PRESETS[preset][key]

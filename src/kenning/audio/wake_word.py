@@ -53,10 +53,30 @@ class WakeWordDetector:
         name: str = settings.WAKE_WORD_NAME,
     ) -> None:
         self.threshold = threshold
+        self._default_threshold = threshold
         self.cooldown_seconds = cooldown_seconds
         self._last_trigger_ts = 0.0
         self._using_fallback = False
         self._active_word: str = ""
+        # Per-word thresholds + consecutive-frame gate (no-retrain false-accept
+        # controls). Read from config; fail-open to {} / 1. The active word's
+        # threshold overrides the flat one; requiring N consecutive above-
+        # threshold frames filters single-frame spurious spikes.
+        self._thresholds: dict = {}
+        self._min_consecutive = 1
+        self._consec = 0
+        try:
+            from kenning.config import get_config
+
+            ww = get_config().wake_word
+            self._thresholds = {
+                str(k).strip().lower(): float(v)
+                for k, v in (getattr(ww, "thresholds", {}) or {}).items()
+            }
+            self._min_consecutive = max(
+                1, int(getattr(ww, "min_consecutive_frames", 1)))
+        except Exception:  # noqa: BLE001
+            pass
         self._name = (name or "kenning").strip().lower()
         self._fallback_name = (fallback_name or "ultron").strip().lower()
         # Directory that holds the side-by-side custom models
@@ -68,6 +88,13 @@ class WakeWordDetector:
         )
 
         self._model = self._load_model(model_path, self._fallback_name)
+        # Apply the active word's per-word threshold (if configured).
+        self.threshold = self._threshold_for(self._active_word)
+
+    def _threshold_for(self, word: str) -> float:
+        """Per-word detection threshold; falls back to the flat default."""
+        return self._thresholds.get(
+            (word or "").strip().lower(), self._default_threshold)
 
     # --- model loading -------------------------------------------------------
 
@@ -150,7 +177,11 @@ class WakeWordDetector:
             self._active_word = word
             self._using_fallback = False
             self._last_trigger_ts = 0.0
-            logger.info("Wake word hot-swapped to '%s' (%s)", word, target.name)
+            self._consec = 0
+            self.threshold = self._threshold_for(word)   # per-word sensitivity
+            logger.info(
+                "Wake word hot-swapped to '%s' (%s, thr=%.2f)",
+                word, target.name, self.threshold)
             return True, word
 
         # Requested model missing -> custom fallback (e.g. ultron).
@@ -166,6 +197,8 @@ class WakeWordDetector:
             self._active_word = self._fallback_name
             self._using_fallback = True
             self._last_trigger_ts = 0.0
+            self._consec = 0
+            self.threshold = self._threshold_for(self._fallback_name)
             logger.warning(
                 "Wake word '%s' model missing; using fallback '%s'",
                 word, self._fallback_name,
@@ -199,7 +232,15 @@ class WakeWordDetector:
         scores = self._model.predict(pcm)
         score = max(scores.values()) if scores else 0.0
 
+        # Consecutive-frame gate: the score must stay above threshold for
+        # ``_min_consecutive`` frames in a row before firing. A real wake word
+        # sustains a high score across many frames; a confusable/transient
+        # spikes for one and is filtered.
         if score < self.threshold:
+            self._consec = 0
+            return False
+        self._consec += 1
+        if self._consec < self._min_consecutive:
             return False
 
         now = time.monotonic()
@@ -207,7 +248,10 @@ class WakeWordDetector:
             return False
 
         self._last_trigger_ts = now
-        logger.info("Wake word '%s' detected (score=%.2f)", self._active_word, score)
+        self._consec = 0
+        logger.info(
+            "Wake word '%s' detected (score=%.2f, thr=%.2f, frames>=%d)",
+            self._active_word, score, self.threshold, self._min_consecutive)
         return True
 
     def reset(self) -> None:

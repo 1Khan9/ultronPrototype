@@ -1017,6 +1017,30 @@ class Orchestrator:
         except Exception:
             pass
 
+        # 2026-06-12: optionally engage gaming mode at startup so Kenning boots
+        # straight into the bare-bones, minimal-GPU profile -- LLM swapped to the
+        # CPU-only 3B, Kokoro TTS -> CPU, Parakeet STT stopped, VLM unloaded, and
+        # (via is_gaming_mode_active gates) per-turn RAG retrieval / reranker /
+        # web-search skipped. No need to say "gaming mode" each session. Runs
+        # last, once every subsystem is constructed. Fail-open.
+        try:  # pragma: no cover -- live boot path
+            from kenning.config import get_config as _gc
+
+            if getattr(_gc().gaming_mode, "engage_at_startup", False):
+                manager = self._resolve_gaming_mode_manager()
+                if manager is not None:
+                    import asyncio
+                    asyncio.run(manager.engage())
+                    logger.info(
+                        "gaming mode: auto-engaged at startup (bare-bones, "
+                        "minimal-GPU profile)")
+                else:
+                    logger.warning(
+                        "gaming mode: engage_at_startup set but no manager "
+                        "available")
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("gaming mode startup engage failed: %s", e)
+
     def _load_mcp_server_if_enabled(self):
         """Construct + start the MCP server (Phase 1+). Failures degrade
         silently -- the coding pipeline can run without MCP, just without
@@ -1802,6 +1826,20 @@ class Orchestrator:
             self._speak("Settings updated.")
         except Exception as e:                                       # noqa: BLE001
             logger.warning("config hot-reload failed: %s", e)
+
+    def _barebones_skip_web_search(self) -> bool:
+        """True when gaming mode is engaged and bare-bones web-search skip is on
+        -- force NO_SEARCH so a gaming turn never pays the search preflight."""
+        try:
+            from kenning.openclaw_routing.gaming_mode import is_gaming_mode_active
+            from kenning.config import get_config
+
+            return bool(
+                is_gaming_mode_active()
+                and getattr(get_config().gaming_mode, "barebones_skip_web_search", True)
+            )
+        except Exception:  # noqa: BLE001
+            return False
 
     def _drain_gui_actions(self) -> None:
         """Apply runtime actions the settings panel requested (gaming-mode
@@ -7823,6 +7861,14 @@ class Orchestrator:
             trace.tlog(
                 logger, "gate:cached_verdict_used",
                 decision=verdict.decision.value, source=verdict.source,
+            )
+        elif self._barebones_skip_web_search():
+            # Bare-bones gaming mode: skip the web-search preflight (an LLM
+            # classification call) + executor entirely. Force NO_SEARCH so the
+            # turn is a plain STT->LLM->TTS reply with no GPU/compute for search.
+            verdict = GateVerdict(
+                GateDecision.NO_SEARCH, "high", "gaming_mode",
+                "gaming mode: web search skipped",
             )
         else:
             try:

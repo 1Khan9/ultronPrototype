@@ -236,9 +236,9 @@ wake_word:
   # from the settings panel's "Wake word" dropdown (no restart). When the
   # selected model is missing the detector falls back to the custom
   # `fallback_model` ONNX -- NEVER hey_jarvis.
-  name: "kenning"
-  model_path: "models/openwakeword/kenning.onnx"
-  fallback_model: "ultron"       # custom ultron.onnx; used if kenning.onnx is missing
+  name: "ultron"
+  model_path: "models/openwakeword/ultron.onnx"
+  fallback_model: "kenning"      # custom kenning.onnx; used if ultron.onnx is missing
   # 0.40 is calibrated for the shipped kenning model (v8): ~88% recall on
   # synthesized clips at ~1.6% adversarial false-accept. "kenning" is
   # acoustically confusable (kennel/canning/kenneth) so it can't reach
@@ -246,7 +246,20 @@ wake_word:
   # reliably). ultron at 0.40 is ~100% recall, so the shared threshold also
   # suits the dropdown's ultron option. NOTE: an env override
   # KENNING_WAKE_WORD_THRESHOLD wins over this -- keep them in sync.
-  threshold: 0.4
+  threshold: 0.4               # flat fallback for any word not in `thresholds`
+  # PER-WORD thresholds (2026-06-12): the ACTIVE word's value here overrides the
+  # flat threshold above and applies on hot-swap. "ultron" runs HOTTER (0.6) to
+  # reject confusables (it has the recall headroom -- ~100% @ 0.40); "kenning"
+  # stays 0.4 (it can't reach ultron's recall). Raise ultron toward 0.7 if it
+  # still false-fires; lower it toward 0.5 if it ever misses your real callout.
+  thresholds:
+    kenning: 0.4
+    ultron: 0.6
+  # Require this many CONSECUTIVE above-threshold frames before firing -- the
+  # main no-retrain false-accept filter (a real wake word sustains a high score
+  # for many frames; a confusable spikes for one). 2 is a light filter; raise to
+  # 3 if ultron still triggers on non-wake words.
+  min_consecutive_frames: 2
   cooldown_seconds: 1.5         # debounce repeated triggers
 
 # ---------------------------------------------------------------------------
@@ -1554,6 +1567,9 @@ gaming_mode:
   # overlay window stay fully alive. Toggle in the settings panel
   # (Gaming / Anticheat -> Anticheat-safe mode) or by voice.
   anticheat_safe_mode: true            # PINNED ON -- safe to run with Vanguard
+  engage_at_startup: true              # boot straight into bare-bones gaming mode (min GPU)
+  barebones_skip_retrieval: true       # gaming turns skip RAG memory + reranker (GPU/compute saver)
+  barebones_skip_web_search: true      # gaming turns skip the web-search preflight + executor
   anticheat_with_gaming_mode: true     # (retained for back-compat; tie is unconditional)
   plugins_to_disable:
     - desktop-control
@@ -1749,9 +1765,9 @@ visualizer:
   size: 300                  # window px (square)
   bars: 60                   # radial bars
   fps: 30                    # redraw rate
-  bg_color: "#0b0b10"        # chroma key (keyed out when transparent)
+  bg_color: "#00ff00"        # NEON GREEN chroma-key background -- add a Chroma Key (green) filter in OBS to drop it; the red art + dark nameplate stay
   accent_color: "#e5484d"    # Kenning crimson
-  transparent: true          # Windows: make bg_color transparent for an overlay
+  transparent: false         # solid bg (NOT Windows-transparent): OBS window capture renders it as green so you can color-key. (transparent=true shows BLACK in OBS, which won't key.)
   # true  = floats on top of everything (easy to see/position while setting up).
   # false = BACKGROUND mode: sinks behind your desktop windows (tool window, no
   #         taskbar/Alt-Tab, never steals focus) so it's not distracting, while

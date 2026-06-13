@@ -567,6 +567,10 @@ class _RenderState:
         self.accent_rgb = _hex_to_rgb(accent)
         self.tip_rgb = (255, 240, 240)
         self.bg = bg
+        # The radial art fades toward this DARK base (not the canvas bg) so a
+        # chroma-key background (e.g. neon green) never bleeds into the glow as
+        # an un-keyable olive mid-tone. Only the empty canvas bg is the key.
+        self.art_base = (18, 8, 12)
         self.cx = size / 2.0
         self.cy = size / 2.0
         self.r0 = size * 0.20          # inner ring radius
@@ -686,11 +690,13 @@ class _RenderState:
         core_col = _lerp_color((40, 12, 16), accent, 0.35 + 0.65 * level)
         c.coords(self.core, cx - cr, cy - cr, cx + cr, cy + cr)
         c.itemconfigure(self.core, fill=core_col)
-        # Glow rings expand with level.
+        # Glow rings expand with level. Fade from the DARK art_base (not the
+        # chroma bg) -> accent, so on a green key background the rings never go
+        # olive (un-keyable); only the empty canvas stays pure green.
         for k, item in enumerate(self.glow_items):
             gr = r0 + (r_max - r0) * (0.5 + 0.5 * level) * (0.6 + 0.25 * k)
-            shade = _lerp_color(bg if isinstance(bg, tuple) else _hex_to_rgb(bg),
-                                accent, max(0.0, level - 0.15 * k) * 0.5)
+            shade = _lerp_color(self.art_base, accent,
+                                max(0.0, level - 0.15 * k) * 0.5)
             c.coords(item, cx - gr, cy - gr, cx + gr, cy + gr)
             c.itemconfigure(item, outline=shade)
 

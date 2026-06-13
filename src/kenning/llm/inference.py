@@ -1188,6 +1188,20 @@ class LLMEngine:
         """
         if self._memory is None:
             return []
+        # 2026-06-12 bare-bones gaming mode: skip RAG retrieval entirely while
+        # gaming mode is engaged -- this also skips the embedder + cross-encoder
+        # reranker, the per-turn GPU/compute the user wants off during a match.
+        # Fail-open: any error here just falls through to normal retrieval.
+        try:
+            from kenning.openclaw_routing.gaming_mode import is_gaming_mode_active
+
+            if is_gaming_mode_active() and getattr(
+                get_config().gaming_mode, "barebones_skip_retrieval", True,
+            ):
+                logger.debug("RAG retrieval skipped (bare-bones gaming mode)")
+                return []
+        except Exception:  # noqa: BLE001
+            pass
         mem_cfg = get_config().memory
         retrieval_cfg = getattr(mem_cfg, "retrieval", None)
         skip_short = bool(getattr(

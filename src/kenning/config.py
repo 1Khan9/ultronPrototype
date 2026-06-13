@@ -266,6 +266,20 @@ class WakeWordConfig(_Strict):
     # NEVER hey_jarvis: the user requires ultron as the fallback.
     fallback_model: str = "ultron"
     threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    # 2026-06-12 PER-WORD thresholds (no-retrain false-accept fix). The active
+    # word's value here OVERRIDES the flat ``threshold`` and applies on hot-swap,
+    # so each word runs at its own calibrated sensitivity: "ultron" is
+    # acoustically clean (high recall) so it runs HOTTER (0.6) to reject
+    # confusables, while "kenning" stays low (0.4) since it can't reach ultron's
+    # recall. A word absent here falls back to ``threshold``.
+    thresholds: dict[str, float] = Field(
+        default_factory=lambda: {"kenning": 0.4, "ultron": 0.6},
+    )
+    # Require the score to stay above threshold for this many CONSECUTIVE frames
+    # before firing -- filters single-frame spurious spikes (the main no-retrain
+    # false-accept reducer; a real wake word sustains a high score for many
+    # frames). 1 = legacy fire-on-first-frame.
+    min_consecutive_frames: int = Field(default=2, ge=1, le=10)
     cooldown_seconds: float = 1.5
 
 
@@ -703,9 +717,15 @@ LLM_PRESETS: dict[str, dict[str, Any]] = {
     "llama-3.2-3b-abliterated": {
         # See gemma note above on naming conventions -- main from
         # mradermacher (dot), draft from bartowski (hyphen).
+        # 2026-06-12: this is the GAMING preset -- run it FULLY ON CPU
+        # (gpu_layers=0) so there is ZERO GPU compute during generation while
+        # Valorant has the card, and drop the draft model (no speculative
+        # decoding -> no second model + no draft GPU/RAM). Short callout /
+        # reply generation on CPU is slower but does not steal frames.
         "model_path": "models/Llama-3.2-3B-Instruct-abliterated.Q4_K_M.gguf",
         "n_ctx": 6144,
-        "draft_model_path": "models/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+        "draft_model_path": None,
+        "gpu_layers": 0,
     },
 }
 
@@ -2942,6 +2962,18 @@ class GamingModeConfig(_Strict):
     # ``anticheat_safe_mode: true`` pins it permanently on.
     anticheat_safe_mode: bool = False
     anticheat_with_gaming_mode: bool = True
+    # 2026-06-12: engage gaming mode automatically at startup (LLM->CPU 3B,
+    # Kokoro TTS->CPU, Parakeet stopped, VLM unloaded) so Kenning boots straight
+    # into the bare-bones, minimal-GPU profile -- no need to say "gaming mode"
+    # each session. Pairs with anticheat_safe_mode for a fully gaming-safe boot.
+    engage_at_startup: bool = False
+    # 2026-06-12: when gaming mode is active, skip per-turn RAG memory retrieval,
+    # the cross-encoder reranker, and the web-search preflight + executor. These
+    # are pure GPU/compute savers for a bare-bones speak+relay session; the team
+    # relay never used them, and conversational turns degrade cleanly (the LLM
+    # just answers without memory recall / search). Default ON with gaming mode.
+    barebones_skip_retrieval: bool = True
+    barebones_skip_web_search: bool = True
     plugins_to_disable: List[str] = Field(
         default_factory=lambda: ["desktop-control", "windows-control"],
     )
