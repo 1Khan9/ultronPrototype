@@ -1989,6 +1989,19 @@ def _as_named_question(name: str, payload: str) -> Optional[str]:
         return f"{name}, how's your day?"
     if re.match(r"^what\s+(?:they\s+are|they're|you\s+are)\s+doing$", pl):
         return f"{name}, what are you doing?"
+    # 'ask <teammate> if/whether <clause>' -> pose the yes/no question TO them in
+    # second person ('ask Harbor if he used his cove yet' -> 'Harbor, have you used
+    # your cove yet?'). Without this the clause leaked as a literal 'If ...'.
+    m = re.match(r"^(?:if|whether)\s+(.+)$", pl)
+    if m and 1 <= len(m.group(1).split()) <= 12:
+        q = m.group(1)
+        q = re.sub(r"\b(?:he's|she's|they're)\b", "you're", q)
+        q = re.sub(r"\b(?:he|she|they|him|them)\b", "you", q)
+        q = re.sub(r"\b(?:his|her|their|hers|theirs)\b", "your", q)
+        q = re.sub(r"^you\s+has\b", "you have", q)
+        q = re.sub(r"^you\s+is\b", "you are", q)
+        q = re.sub(r"^you\s+does\b", "you do", q)
+        return f"{name}, {q}?"
     return None
 
 

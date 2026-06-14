@@ -190,8 +190,19 @@ def _nd(tok: str) -> str:
     return _W2D.get(tok.lower(), tok.lower())
 
 
+_STT_BIGRAMS = [
+    (re.compile(r"\bway\s+lay\b"), "waylay"),
+    (re.compile(r"\bkay\s*[/\-\s]?\s*o\b"), "kay/o"),
+    (re.compile(r"\bkill\s*joy\b"), "killjoy"),
+    (re.compile(r"\bdead\s*lock\b"), "deadlock"),
+    (re.compile(r"\btek\s*ko\b|\btay\s*ho\b"), "tejo"),
+]
+
+
 def extract_facts(text: str) -> dict:
     t = (text or "").lower()
+    for rx, rep in _STT_BIGRAMS:               # join 2-word agent STT spellings
+        t = rx.sub(rep, t)
     words = re.findall(r"[a-z/0-9']+", t)
     cw = [_AGENT_ALIASES.get(w, w) for w in words]       # canonicalize agent aliases
     return {
