@@ -91,6 +91,13 @@ _GROUP_PRON = (
 _CHANNEL = (
     r"(?:the\s+|my\s+)?(?:team|game|voice|all|in[\s-]?game)\s*(?:chat)?"
 )
+# The ENEMY as an addressee for bravado/trash-talk the streamer wants spoken
+# ("let the enemy know they are washed", "tell the other team gg"). Ultron can
+# only voice it into team comms, but it is still a relay the streamer intends.
+_ENEMY_GROUP = (
+    r"(?:the\s+)?(?:enemy(?:\s+team)?|enemies|other\s+team|other\s+side|"
+    r"opps|opponents|enemy\s+side)"
+)
 
 # STT artifact normalisation: the wake word occasionally leaves a
 # leading "One," / "1." fragment on the transcript ("One, tell my
@@ -172,6 +179,41 @@ _RELAY_PATTERNS: tuple[re.Pattern[str], ...] = (
         r"^(?:please\s+)?call\s+out\s+(?:that\s+)?(?P<payload>.+)$",
         re.IGNORECASE,
     ),
+    # "relay to my team(:) X" / "relay to the squad that X" / "relay to em X" --
+    # explicit (CLOSED) group addressee.
+    re.compile(
+        rf"^(?:please\s+)?relay\s+to\s+(?:{_GROUP}|{_GROUP_PRON})\s*[:,]?\s*"
+        rf"(?:that\s+)?(?P<payload>.+)$",
+        re.IGNORECASE,
+    ),
+    # "relay X" / "relay: X" / "relay that X" -- BARE (no addressee). The
+    # negative lookahead rejects "relay to <name>" so an out-of-roster name
+    # ("relay to Jordan ...") never leaks into the payload (closed vocab).
+    re.compile(
+        r"^(?:please\s+)?relay\s*[:,]?\s+(?!to\s)(?:that\s+)?(?P<payload>.+)$",
+        re.IGNORECASE,
+    ),
+    # ENEMY-addressed bravado: "let the enemy know X" / "tell the other team X" /
+    # "say to the enemy X" -- relayed (Ultron voices it into team comms).
+    re.compile(
+        rf"^(?:please\s+)?(?:tell|let|warn|inform|remind|say\s+to)\s+"
+        rf"{_ENEMY_GROUP}\s+(?:know\s+)?(?:that\s+|to\s+)?(?P<payload>.+)$",
+        re.IGNORECASE,
+    ),
+    # "ask if/whether/who/whoever X" -- a question relayed to the team with no
+    # explicit group ("ask if anyone needs a rifle", "ask whoever is IGLing X").
+    re.compile(
+        r"^(?:please\s+)?ask\s+(?P<payload>(?:if|whether|who|whoever|when|"
+        r"anyone|everyone|somebody|someone)\b\s+.+)$",
+        re.IGNORECASE,
+    ),
+)
+
+# BARE "say X" -- relay to team (implicit addressee). Applied as a LAST RESORT in
+# match_relay_command (after the named "say X to Clove" form) and requires >=2
+# payload words so a bare "say hello" / "say what" never trips it.
+_BARE_SAY_RE = re.compile(
+    r"^(?:please\s+)?say\s+(?:that\s+)?(?P<payload>\S+\s+.+)$", re.IGNORECASE,
 )
 
 # Composition requests: the user asks Kenning to AUTHOR a line rather
@@ -438,9 +480,9 @@ def _named_patterns(names_key: tuple[str, ...]) -> tuple[re.Pattern[str], ...]:
     )
     if not alts:
         return ()
-    # "my clove" / "our sova" -- the user often refers to the teammate
-    # possessively by the agent they're playing.
-    name = rf"(?:my\s+|our\s+)?(?P<name>{alts})\b"
+    # "my clove" / "our sova" / "the jett" / "their chamber" -- the user refers
+    # to the teammate (my/our/the) or an enemy (their) by the agent they play.
+    name = rf"(?:my\s+|our\s+|the\s+|their\s+)?(?P<name>{alts})\b"
     return (
         # "tell clove (that|to) X" / "tell my sova X"
         re.compile(
@@ -481,6 +523,41 @@ _TOGGLE_ON_RE = re.compile(
     r"|start\s+(?:talking|speaking)\s+to\s+(?:my|the)\s+team(?:mates)?"
     r"(?:\s+again)?"
     r")\s*[.!?]?$",
+    re.IGNORECASE,
+)
+
+# Narration / private-thought / external-chat framing that is relay-SHAPED but
+# must NOT relay (the false-relay gate). A real relay command never has a
+# first-person modal SUBJECT before the trigger ("tell them X"), so when the
+# trigger is preceded by "I should/want to/keep ... tell", "part of me wants to
+# tell", "chat says ...", "my coach Dave said ...", etc., it is the streamer
+# thinking out loud / reacting to chat -- suppress it.
+_NARRATION_LEAD_RE = re.compile(
+    r"(?:"
+    # private intention: "I should/want to/keep ... tell/say/ask" (a real command
+    # never has a first-person modal SUBJECT before the trigger).
+    r"\bi\s+(?:should|want\s+to|keep|wish|need\s+to|am\s+going\s+to|gotta|"
+    r"might|could|kept|tried\s+to|was\s+(?:about\s+to|gonna|going\s+to|thinking|"
+    r"saying))\b[^.?!]*\b(?:tell|telling|say|saying|ask|asking|relay)\b"
+    r"|\bpart\s+of\s+(?:me|that)\b"               # "part of me wants to ..."
+    r"|\bi\s+keep\s+(?:saying|telling|wanting|thinking)\b"
+    # reacting to chat / stream / viewers -- external, not a team relay.
+    r"|\b(?:chat|the\s+chat|viewers?|the\s+stream|my\s+stream)\s+(?:says|is\s+"
+    r"saying|said|wants|is\s+asking|thinks|asks)\b"
+    r"|\b(?:someone|somebody)\s+(?:donated|in\s+(?:the\s+)?chat|watching|"
+    r"on\s+stream)\b"
+    # the streamer was TOLD to do something by an external person.
+    r"|\b(?:my|our)\s+(?:coach|boy|friend|buddy|mom|dad|girlfriend)\s+\w+\s+"
+    r"(?:said|says|told\s+me)\b[^.?!]*\bi\s+(?:should|need\s+to|have\s+to|gotta)\b"
+    r"|\bthis\s+is\s+internal\b"
+    r"|\bi\s+(?:do\s+not|don'?t)\s+want\s+(?:ultron|the\s+llm)\b"
+    # the streamer debating with themselves / asking how to react, not commanding.
+    r"|\bdo\s+i\s+(?:tell|say|relay|ask)\b"
+    r"|\bshould\s+i\s+(?:tell|say|relay|ask|respond|reply)\b"
+    r"|\b(?:how\s+(?:do|should)\s+(?:you|i)\s+(?:handle|respond|reply)|"
+    r"handle\s+(?:that|this|it))\b"
+    r"|\bhave\s+you\s+ever\b"
+    r")",
     re.IGNORECASE,
 )
 
@@ -569,7 +646,8 @@ class RelayPlaybackResult:
 # one-word callout ("tell my teammates the" must not relay; "tell my
 # team to save" must).
 _JUNK_SINGLE_WORDS = frozenset(
-    "the a an to that this it is are was be my our me you i and or".split()
+    "the a an to that this it is are was be my our me you i and or of for with "
+    "about so but if then them they we us he she here there what".split()
 )
 
 # Valid SHORT (<4 char) one-word callouts that must relay even though the
@@ -591,12 +669,17 @@ def _payload_has_content(payload: str) -> bool:
     a substantive callout ("save", "rotate") rather than a clipped
     article or pronoun.
     """
-    words = payload.split()
-    if len(words) >= 2:
-        return True
+    words = [w.strip(".,!?;:'\"-").lower() for w in payload.split()]
+    words = [w for w in words if w]
     if not words:
         return False
-    word = words[0].strip(".,!?;:").lower()
+    # An ALL-junk payload ("that the", "about", "of them") carries no message
+    # even with multiple words -- reject it so a clipped fragment never relays.
+    if all(w in _JUNK_SINGLE_WORDS for w in words):
+        return False
+    if len(words) >= 2:
+        return True
+    word = words[0]
     if word in _SHORT_CALLOUTS:
         return True
     return len(word) >= 4 and word not in _JUNK_SINGLE_WORDS
@@ -704,6 +787,12 @@ def match_relay_command(
         return None
     cleaned = _normalize_speech(_LEADING_ARTIFACT.sub("", text.strip()))
 
+    # Narration / private-thought / chat-reaction that is relay-SHAPED but must
+    # NOT relay -- the streamer thinking out loud ("I should tell them to X",
+    # "part of me wants to tell them...", "chat says ... respond").
+    if _NARRATION_LEAD_RE.search(cleaned):
+        return None
+
     vocabulary = tuple(
         n.strip().lower() for n in (names or DEFAULT_ADDRESSEE_NAMES)
         if n and n.strip()
@@ -809,6 +898,30 @@ def match_relay_command(
                 )
             if _GROUP_MENTION_RE.search(payload):
                 return RelayCommand(payload=payload, raw_text=text)
+
+    # BARE "say X" (>=2 words, implicit team) -- LAST RESORT so every explicit
+    # addressee / channel / named "say X to Clove" form above wins first.
+    m = _BARE_SAY_RE.match(cleaned)
+    if m is not None:
+        payload = (m.group("payload") or "").strip().strip('"').strip()
+        payload, verbatim = _strip_verbatim_suffix(payload)
+        # "say something/anything ..." is a COMPOSE request to Ultron, not a relay
+        # of specific content; and "say hi to the stream/chat" addresses the
+        # broadcast, not the team -- both fall through to the conversational path.
+        # A COMPOSE / identity request to Ultron, not a relay of content:
+        # "say something/anything ...", "say your real name", "say the most
+        # Ultron thing you can say", "say GG without conditions for once".
+        bad = (re.match(r"^(?:something|anything|your|the\s+most|a\s+\w+\s+thing)\b",
+                        payload, re.IGNORECASE)
+               or re.search(r"\bto\s+(?:the\s+)?(?:stream|chat|viewers?|camera|"
+                            r"audience)\b", payload, re.IGNORECASE)
+               or re.search(r"\b(?:you\s+can\s+say|right\s+now|for\s+once|"
+                            r"without\s+conditions)\b", payload, re.IGNORECASE)
+               # bare "say to my team" with no real payload after the group.
+               or re.match(r"^to\s+(?:my|our|the)\s+(?:whole\s+|entire\s+)?\w+\s*$",
+                           payload, re.IGNORECASE))
+        if not bad and _payload_has_content(payload):
+            return RelayCommand(payload=payload, raw_text=text, verbatim=verbatim)
     return None
 
 
