@@ -1482,3 +1482,40 @@ def test_self_and_directive_callouts_carry_owner_aware_flavor():
             low = tail.lower()
             assert not any(re.search(r"\b" + re.escape(w) + r"\b", low)
                            for w in _CONTEMPT), (cmd_text, tail)
+
+
+def test_repeat_to_team_relays_phrase_verbatim():
+    """"Repeat to my team X" -> speak X EXACTLY (the soundboard check). No LLM,
+    any literal phrase incl. a single short word; addressee may sit before or
+    after the phrase, team or a roster name."""
+    for cmd_text, addr, expect in [
+        ("repeat to my team watermelon", "team", "watermelon"),
+        ("repeat to my team banana split", "team", "banana split"),
+        ("ultron, repeat to my team purple monkey dishwasher", "team",
+         "purple monkey dishwasher"),
+        ("repeat watermelon to my team", "team", "watermelon"),
+        ("repeat to the squad rutabaga", "team", "rutabaga"),
+        ("repeat to my team gg", "team", "gg"),          # short callout word
+        ("repeat to my team go", "team", "go"),          # single 2-char word
+        ("repeat to my team cat", "team", "cat"),        # 3-char, would fail content gate
+        ("echo to my team falcon nine", "team", "falcon nine"),
+        ("repeat to my team exactly pineapple", "team", "pineapple"),
+        ("repeat to my team the following: code word falcon", "team",
+         "code word falcon"),
+        ("repeat to my team to the moon and back", "team",
+         "to the moon and back"),
+        ("repeat to jett nice shot", "Jett", "nice shot"),
+    ]:
+        cmd = match_relay_command(cmd_text)
+        assert cmd is not None, cmd_text
+        assert cmd.verbatim is True, cmd_text
+        assert cmd.addressee == addr, cmd_text
+        line = build_relay_line(cmd, generate_fn=lambda p: ["LLM_SHOULD_NOT_RUN"])
+        assert line == expect, (cmd_text, line)
+
+
+def test_repeat_without_addressee_does_not_relay():
+    """A bare "repeat ..." with no 'to my team'/'to <name>' clause is the user
+    asking Ultron to repeat HIMSELF, not a relay -- it must not match."""
+    for txt in ("repeat that", "can you repeat that", "repeat", "repeat please"):
+        assert match_relay_command(txt) is None, txt

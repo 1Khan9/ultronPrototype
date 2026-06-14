@@ -327,6 +327,74 @@ _VERBATIM_SUFFIX_RE = re.compile(
     re.IGNORECASE,
 )
 
+# "Repeat to my team X" -- a PREFIX verbatim relay. The soundboard check: a
+# teammate asks the user to say a specific word/phrase out loud to prove a human
+# (not a soundboard) is on comms, so Ultron must speak X EXACTLY. Distinct from
+# the trailing verbatim DEMAND above -- here the verb itself ('repeat'/'echo')
+# carries the meaning. An addressee clause ('to my team' / 'to <name>') is
+# REQUIRED (so conversational "repeat that" never relays) and may sit before OR
+# after the phrase; everything else is the LITERAL payload.
+_REPEAT_LEAD_RE = re.compile(
+    r"^(?:please\s+|ok(?:ay)?\s+)?(?:.{0,40}?[,;.]\s+)?"
+    r"(?:repeat|echo)(?:\s+(?:back|after\s+me))*\b",
+    re.IGNORECASE,
+)
+# Leading meta-connective the user may put before the phrase ("repeat to my team
+# exactly X" / "...verbatim X" / "...the following: X" / "...: X"). Only strips
+# unambiguous markers -- never "this"/"that", which are likely part of the phrase.
+_REPEAT_CONNECTIVE_RE = re.compile(
+    r"^(?:[:,]\s*)?(?:(?:say\s+)?(?:exactly|word\s+for\s+word|verbatim"
+    r"|the\s+following)\b[:,]?\s+)?(?:[:,]\s*)?",
+    re.IGNORECASE,
+)
+
+
+def _match_repeat_command(
+    cleaned: str, text: str, vocabulary: Sequence[str],
+) -> Optional["RelayCommand"]:
+    """Match "repeat to my team X" -> a VERBATIM relay of X (soundboard check).
+
+    Returns a ``verbatim=True`` :class:`RelayCommand` whose payload is the exact
+    phrase, or None when there is no ``repeat``/``echo`` verb, no addressee
+    clause, or no real phrase left to speak.
+    """
+    m = _REPEAT_LEAD_RE.match(cleaned)
+    if m is None:
+        return None
+    rest = re.sub(r"^[:,]\s*", "", cleaned[m.end():].strip()).strip()
+    if not rest:
+        return None
+    names_alt = "|".join(
+        sorted((re.escape(n) for n in vocabulary if n), key=len, reverse=True)
+    )
+    addr = _GROUP if not names_alt else rf"(?:{_GROUP}|{names_alt})"
+    who = None
+    lead = re.match(
+        rf"^(?:to|for)\s+(?P<who>{addr})(?:\s*[:,])?\s+(?P<rest>.+)$",
+        rest, re.IGNORECASE,
+    )
+    if lead is not None:
+        who, rest = lead.group("who"), lead.group("rest").strip()
+    else:
+        tail = re.search(
+            rf"\s+(?:to|for)\s+(?P<who>{addr})\s*[.!?]*$", rest, re.IGNORECASE,
+        )
+        if tail is not None:
+            who, rest = tail.group("who"), rest[:tail.start()].strip()
+    if who is None:
+        return None  # require an explicit 'to my team' / 'to <name>' addressee
+    addressee = (
+        "team" if re.fullmatch(_GROUP, who, re.IGNORECASE)
+        else _display_name(who)
+    )
+    rest = _REPEAT_CONNECTIVE_RE.sub("", rest, count=1).strip().strip('"').strip()
+    if not re.search(r"[A-Za-z0-9]", rest):
+        return None
+    return RelayCommand(
+        payload=rest, raw_text=text, addressee=addressee, verbatim=True,
+    )
+
+
 # Spoken-form normalisation applied before matching. (1) Collapse the KAY/O
 # slash ("kay/o", "k/o", "kay / o" -> "kayo") so the agent name tokenises and
 # the named-addressee patterns can match ("ask KAY/O to flash"). (2) Drop
@@ -811,6 +879,13 @@ def match_relay_command(
         n.strip().lower() for n in (names or DEFAULT_ADDRESSEE_NAMES)
         if n and n.strip()
     )
+
+    # "Repeat to my team X" -- explicit VERBATIM relay (the soundboard check).
+    # Highest priority so the literal phrase wins over every interpreted route
+    # ("repeat to my team gg" speaks "gg", it is not a farewell monologue).
+    repeat = _match_repeat_command(cleaned, text, vocabulary)
+    if repeat is not None:
+        return repeat
 
     # Roast requests ("roast my team") -- verbatim user-curated lines.
     if _ROAST_RE.match(cleaned):
