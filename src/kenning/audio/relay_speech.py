@@ -3289,13 +3289,20 @@ def _extract_site(payload: str) -> Optional[str]:
     eco' -> 'A site'; 'lurking B main' -> 'B main'; 'play heaven' -> 'heaven'). The
     longest run of words that _is_place accepts; single-letter sites upper-cased."""
     toks = re.findall(r"[A-Za-z]+", payload)
+    _generic = {"site", "sites", "callout", "position", "spot", "area", "angle", "place"}
     best = None
     for i in range(len(toks)):
         for j in range(min(i + 3, len(toks)), i, -1):
-            if _is_place(" ".join(toks[i:j])):
-                fmt = " ".join(w.upper() if len(w) == 1 else w for w in toks[i:j])
-                if best is None or (j - i) > best[1]:
-                    best = (fmt, j - i)
+            run = toks[i:j]
+            if {w.lower() for w in run} <= _generic:   # 'site' alone is not a callout
+                continue
+            if _is_place(" ".join(run)):
+                fmt = " ".join(w.upper() if len(w) == 1 else w for w in run)
+                # prefer a run with a single-letter SITE (A/B/C), else the longest
+                has_letter = any(len(w) == 1 for w in run)
+                score = (2 if has_letter else 0) + (j - i)
+                if best is None or score > best[1]:
+                    best = (fmt, score)
                 break
     return best[0] if best else None
 
@@ -3322,7 +3329,8 @@ _CURATED_PATTERNS = [
     (r"\byou'?re\s+welcome\b|\byoure\s+welcome\b", "youre_welcome_team", None),
     (r"\bask\b.*\b(?:why|explain)\b.*\bthrow", None, "ask_why_throwing_named"),
     (r"\bask\b.*\b(?:if|whether)\b.*\bthrow", None, "ask_throwing_named"),
-    (r"\bask\b.*\bwhat\b.*\bdoing\b", None, "ask_what_doing_named"),
+    (r"\bask\b.*\bwhat\b.*\bdoing\b|\bwhat\s+(?:are|is)\s+(?:they|you|nobody|everyone|"
+     r"we)\b.*\bdoing\b", "ask_doing_what_team", "ask_doing_what_named"),
     (r"\bstop\s+(?:throwing|griefing|inting|feeding)\b", None, "stop_throwing_named"),
     (r"\bstop\s+(?:flaming|fighting|arguing)\b", "stop_flaming_team", None),
     (r"\b(?:throwing|throw)\s+the\s+game\b|\bthey'?re\s+throwing\b|"
@@ -3346,6 +3354,59 @@ _CURATED_PATTERNS = [
     (r"\bcarry(?:ing)?\b", None, "carry_named"),
     (r"\b(?:great|good|nice)\s+(?:job|work|play)\b|\bwell\s+done\b", "good_round_team",
      "great_job_named"),
+    # --- batch 2 (slot-filled + more) -- specific first ---
+    (r"\bwhy\s+(?:(?:would|did|do)\s+(?:they|you)|(?:they|you)\s+(?:would|did))\b",
+     "ask_why_would_team", "ask_why_would_named"),
+    (r"\bwhy\b.*\b(?:aren'?t|not|isn'?t)\b.*\b(?:doing\s+(?:their|your)\s+job|"
+     r"playing\s+(?:their|your)\s+role)\b", None, "ask_not_job_named"),
+    (r"\bwhy\b.*\b(?:aren'?t|not)\b.*\b(?:carry|carrying|grab|grabbing|pick|picking|"
+     r"take|taking|on)\b.*\bspike\b", None, "ask_not_spike_named"),
+    (r"\b(?:nobody|no\s*one)\b.*\b(?:carry|carrying|grab|grabbing|taking|on|picking|"
+     r"has)\b.*\bspike\b", "ask_nobody_spike_team", None),
+    (r"\bwhere\b.*\bsmokes?\b", None, "ask_where_smokes_named"),
+    (r"\bwhy\b.*\b(?:aren'?t|not)\b.*\bsmok", None, "ask_why_not_smoking_named"),
+    (r"\bsmokes?\s+(?:are|were)\s+(?:terrible|awful|bad|garbage|atrocious|trash)\b|"
+     r"\b(?:terrible|bad|awful)\s+smokes?\b", None, "smokes_terrible_named"),
+    (r"\bfor\s+a\s+heal\b|\bneed\s+(?:a\s+)?heal\b|\bheal\s+me\b|\bcan\s+i\s+get\s+a\s+heal\b",
+     None, "ask_heal_named"),
+    (r"\bdrop\s+(?:me|us)\s+(?:a\b|the\b)|\bto\s+drop\b.*\b(?:gun|weapon|rifle|op|"
+     r"operator)\b", None, "ask_drop_gun_named"),
+    (r"\b(?:can\s+)?(?:someone|anyone|somebody)\b.*\bdrop\b", "ask_drop_anyone_team", None),
+    (r"\bi\s+can\s+drop\b|\bcan\s+drop\s+(?:them|you|him|her|the\s+team)\b",
+     "offer_drop_team", "offer_drop_named"),
+    (r"\bplay\s+off\s+site\b.*\bult\b|\bplay\s+off\b.*\bhas\s+(?:her\s+|his\s+)?ult\b",
+     "play_off_site_ult_team", None),
+    (r"\bone\s+(?:point\s+)?off\b.*\bult\b.*\borb\b.*\b(?:in|at|on)\b",
+     "enemy_one_off_orb_site_team", None),
+    (r"\bone\s+(?:point\s+)?off\b.*\bult(?:imate)?\b.*\borb\b|"
+     r"\borb\b.*\bone\s+(?:point\s+)?off\b.*\bult\b", "enemy_one_off_orb_team", None),
+    (r"\bsaving\s+for\s+(?:op|operator)\b.*\bbelieve\b|\bbelieve\s+in\s+(?:them|you)\b.*"
+     r"\bsaving\b", "saving_op_believe_team", None),
+    (r"\bbait\s+me\b|\blet\s+me\s+(?:go\s+in|die)\s+first\b|\btrade\s+(?:off\s+)?me\b",
+     "bait_me_low_team", None),
+    (r"\beasiest\s+site\b|\bweakest\s+site\b|\bsite\s+to\s+take\s+is\b",
+     "easiest_site_team", None),
+    (r"\b(?:they|enemy|enemies)\b.*\b(?:not\s+holding|aren'?t\s+holding|isn'?t\s+holding)\b",
+     "enemy_not_holding_team", None),
+    (r"\bneed\s+to\s+(?:be\s+)?hold(?:ing)?\b.*\bbetter\b|\bhold\b.*\bbetter\b",
+     "hold_better_team", None),
+    (r"\btaking\b.*\bfor\s+free\b|\bfor\s+free\b.*\b(?:site|control)\b|\bfree\s+control\b",
+     "enemy_free_site_team", None),
+    (r"\b(?:enemy|they)\b.*\bforce\b.*\bevery\s+round\b|\bforce\s+buying\s+every\b",
+     "enemy_force_every_team", None),
+    (r"\b(?:lots\s+of|many|stacked|plenty\s+of)\s+ults\b|\bplay\s+(?:for\s+)?picks?\b",
+     "enemy_ults_picks_team", None),
+    (r"\bgo\b.*\benemy\b.*\beco\b|\benemy\b.*\beco\b.*\blonger\b", "go_site_enemy_eco_team", None),
+    (r"\bgo\b.*\bwe(?:'re)?\b.*\beco\b|\bwe(?:'re)?\s+(?:on\s+)?eco\b.*\bshorter\b",
+     "go_site_our_eco_team", None),
+    (r"\bdefault\b.*\beco\b|\beco\b.*\bdefault\b", "default_eco_team", None),
+    (r"\b(?:i'?m|i\s+am)\s+lurking\b", "lurking_site_team", None),
+    (r"\bto\s+wait\s+for\s+me\b|\bwait\s+for\s+me\b", None, "wait_for_me_named"),
+    (r"\b(?:to\s+)?play\b", None, "play_site_named"),
+    (r"\bi\s+agree\b|\bi\s+do\s+agree\b|\bagreed\b", "agree_team", None),
+    (r"\bi\s+disagree\b|\bi\s+do\s+not\s+agree\b|\bi\s+don'?t\s+agree\b", "disagree_team", None),
+    (r"^\s*(?:that'?s\s+a\s+)?yes\b|\bsay\s+yes\b|\banswer\s+is\s+yes\b", "yes_team", None),
+    (r"^\s*(?:that'?s\s+a\s+)?no\b|\bsay\s+no\b|\banswer\s+is\s+no\b", "no_team", None),
 ]
 _CURATED_RX = [(re.compile(rx, re.IGNORECASE), t, n)
                for rx, t, n in _CURATED_PATTERNS]
@@ -3363,6 +3424,13 @@ def _as_curated_command(command: "RelayCommand") -> Optional[str]:
     for rx, t_id, n_id in _CURATED_RX:
         if rx.search(payload):
             cid = n_id if named else t_id
+            # 'I am lurking' with no place -> the generic lurk pool (no {site}).
+            if cid == "lurking_site_team" and not _extract_site(payload):
+                cid = "lurking_team"
+            # 'play <site>' needs a real site; 'play their life' / 'play retake' has
+            # none -> defer to the deterministic named directive instead.
+            if cid == "play_site_named" and not _extract_site(payload):
+                return None
             if cid and _CMD_RESP.get(cid):
                 resp = _pick_lru(list(_CMD_RESP[cid]))
                 slot = _CMD_SLOT.get(cid, "none")
