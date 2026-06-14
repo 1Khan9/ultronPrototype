@@ -49,3 +49,12 @@ detectably broken, relay a fact-perfect LITERAL of the input instead. Keep the L
 ## Validate
 Re-run scorecard (matcher + routing + quality fact-retention/inversion/hallucination + flavor) before/after;
 gate no-regression on every metric; `--bench` for latency+RSS. Commit per fix. Reshuffle for iter5.
+
+## RESULTS (iter4)
+- MATCHER: 94.07% -> 99.15% clean; false-relay 22 -> 3; missed 1165 -> 167.
+- OUTPUT abstention (F1): fact-retention on LLM-routed lines 0.42 -> 0.74 mean (p50 0.5 -> 1.0);
+  44% of corrupted lines converted to fact-perfect literals.
+- LATENCY/RESOURCE (new metrics): CPU-3B bench -- det path p50 0.15ms / p99 0.44ms vs LLM path
+  p50 1266ms / p99 5573ms; peak RSS 3577 MB. Pre-route + abstention lifted pure-deterministic
+  (no-model-call) coverage 32% -> 61%, so ~61% of lines are now ~0.15ms instead of ~1.3-5.6s.
+- 356/356 relay tests green. All committed.

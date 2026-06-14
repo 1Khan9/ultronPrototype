@@ -3217,6 +3217,21 @@ def build_relay_line(
                     return _cap_line(f"{det_line} {tail.strip()}", max_chars)
             return _cap_line(det_line, max_chars)
 
+        # LATENCY/RESOURCE: a TACTICAL line the deterministic handlers could not
+        # structure is one the 3B usually corrupts -> it would be abstained to a
+        # literal AFTER a wasted CPU-3B call. Pre-route it straight to the literal
+        # (fact-perfect, + a short flavor tail when it fits): no model call, so it
+        # is instant in gaming mode. Gated on a count/location/ability fact (a
+        # pure-agent line like "their Reyna is washed" is an insult -> keep the
+        # LLM's flavor); opinions/banter/identity have no such fact-token.
+        if not getattr(command, "verbatim", False):
+            nums, agents, locs, abils = _fact_tokens(command.payload or "")
+            tactical = len(nums) + len(locs) + len(abils)
+            if tactical >= 1 and (tactical + len(agents)) >= 2:
+                lit = _literal_relay(command.payload, recent_lines)
+                if lit:
+                    return _cap_line(lit, max_chars)
+
     fallback = _fallback_line(command)
     line = ""
     if rephrase:

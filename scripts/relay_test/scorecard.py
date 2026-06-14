@@ -140,12 +140,24 @@ _STUB = "zzllmstubzz"
 
 
 def classify_route(cmd) -> tuple[str, str]:
-    out = build_relay_line(cmd, generate_fn=lambda p: [_STUB], recent_lines=[])
+    """Route by whether the LLM was actually INVOKED (the latency/resource cost),
+    not whether the stub text survived -- the fact-preserving abstention discards
+    a fact-less stub to a literal, which would otherwise masquerade as
+    deterministic. 'deterministic' = NO model call (snap/compound/curated/
+    pre-routed literal); 'llm'/'partial' = a model call happened."""
+    called = [False]
+
+    def gf(prompt):
+        called[0] = True
+        return [_STUB]
+
+    out = build_relay_line(cmd, generate_fn=gf, recent_lines=[])
+    if not called[0]:
+        return "deterministic", out          # no model call -> the fast path
     low = out.lower()
-    if _STUB not in low:
-        return "deterministic", out
     residue = low.replace(_STUB, "").strip(" .!?,;:-'\"")
-    return ("llm" if not residue else "partial"), out
+    # model was called; stub fully replaced (abstained/repaired) vs left in place.
+    return ("llm" if (_STUB in low and not residue) else "partial"), out
 
 
 # --------------------------------------------------------------------------
