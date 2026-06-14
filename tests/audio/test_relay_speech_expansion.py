@@ -466,6 +466,24 @@ def test_enemy_one_off_ult_keeps_agent_name() -> None:
     assert line.startswith("Their Chamber is one off ult.")
 
 
+def test_strips_invented_trailing_vocative_name() -> None:
+    """The 3B parrots the prompt's 'Sova,...' calm-down example and appends an
+    invented teammate name ('Calm down, Sova.') on a team-wide line where no name
+    was given -- strip it. A name actually IN the instruction is kept; a leading
+    named directive ('Clove, smoke window.') is untouched."""
+    from kenning.audio.relay_speech import _strip_spurious_vocative
+
+    team = RelayCommand(payload="tell them to chill", raw_text="x", addressee="team")
+    assert _strip_spurious_vocative("Calm down, Sova.", team) == "Calm down."
+    assert _strip_spurious_vocative("Hold it, Jett.", team) == "Hold it."
+    # name present in the instruction -> legitimate, kept
+    named_src = RelayCommand(payload="calm reyna down", raw_text="x", addressee="team")
+    assert "Reyna" in _strip_spurious_vocative("Steady your aim, Reyna.", named_src)
+    # leading named directive -> untouched
+    assert _strip_spurious_vocative(
+        "Clove, smoke window.", team) == "Clove, smoke window."
+
+
 def test_damage_flavor_uses_correct_agent_gender() -> None:
     # iter5+: per-agent tails use the agent's CANONICAL gender. Reyna is female,
     # so her flavor must never use a MASCULINE pronoun (word-boundary check, so

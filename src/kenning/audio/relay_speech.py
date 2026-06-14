@@ -2013,10 +2013,13 @@ from kenning.audio._ultron_pools import (  # noqa: E402
 
 
 def _pick_flavor(pool: Sequence[str], recent_lines: Optional[Sequence[str]]) -> str:
-    """Pick a flavor tag NOT seen in the recent callouts (anti-soundboard)."""
+    """Pick a flavor tag NOT seen in the recent callouts (anti-soundboard).
+
+    Window widened to the last 16 lines so a tail does not recur within a long
+    exchange (reduces the soundboard max-repeat)."""
     import random as _r
 
-    recent = " ".join(list(recent_lines or [])[-8:]).lower()
+    recent = " ".join(list(recent_lines or [])[-16:]).lower()
     fresh = [t for t in pool if t.lower() not in recent]
     return _r.choice(fresh or list(pool))
 
@@ -2982,6 +2985,21 @@ def _strip_spurious_vocative(line: str, command: "RelayCommand") -> str:
     IS the addressee."""
     if getattr(command, "addressee", "team") != "team":
         return line
+    # Agent names actually present in the user's instruction -- a vocative that
+    # names one of THESE is legitimate; a roster name the 3B INVENTED (parroting
+    # the prompt's 'Sova,...' calm-down example) is not, and is stripped.
+    src = (getattr(command, "payload", "") or "") + " " \
+        + (getattr(command, "context", "") or "")
+    in_src = {a.lower() for a in _roster_agents(src)}
+
+    # TRAILING invented vocative: 'Calm down, Sova.' / 'Hold it, Jett.' ->
+    # strip ', <Name>' when that agent was never in the instruction.
+    mt = re.search(r",\s+([A-Z][A-Za-z/]+)\s*([.!?]?)$", line)
+    if mt:
+        nm = _canon_agent(mt.group(1))
+        if nm and nm.lower() not in in_src:
+            line = (line[:mt.start()].rstrip() + (mt.group(2) or ".")).strip()
+
     m = re.match(r"^([A-Z][A-Za-z/]+),\s+(.+)$", line)
     if m is None:
         return line
