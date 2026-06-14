@@ -668,7 +668,7 @@ _JUNK_SINGLE_WORDS = frozenset(
 # generic single-word gate below requires >=4 chars (which rejects clipped
 # articles). These are real terse directives/callouts a teammate acts on.
 _SHORT_CALLOUTS = frozenset(
-    "eco op go gg ace run hp low top sub cat rat ult mid off".split()
+    "eco op go gg ace run hp low top sub cat rat ult mid off yes no".split()
 )
 
 # First-person instructions TO Kenning ("I want you to acknowledge")
