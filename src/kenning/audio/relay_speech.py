@@ -2164,6 +2164,11 @@ try:
     from kenning.audio._agent_flavor import AGENT_FLAVOR as _AGENT_FLAVOR
 except Exception:                                                # noqa: BLE001
     _AGENT_FLAVOR = {}
+#: Multi-agent (2+) situational tails -- used when a callout names several agents.
+try:
+    from kenning.audio._multi_flavor import MULTI_FLAVOR as _MULTI_FLAVOR
+except Exception:                                                # noqa: BLE001
+    _MULTI_FLAVOR = {}
 #: register -> per-agent situation key (only the ENEMY-facing registers map; an
 #: order/self line is never about an enemy agent so it gets no contempt tail).
 _REGISTER_SITUATION = {"enemy": "spotted", "ult": "ult",
@@ -2182,25 +2187,19 @@ _REGISTER_POOL: dict = {
 }
 
 
-def _ctx_candidates(register: str, *, agent: Optional[str] = None,
-                    ability: Optional[str] = None, loc: Optional[str] = None,
+def _ctx_candidates(register: str, *, ability: Optional[str] = None,
+                    loc: Optional[str] = None,
                     count: Optional[str] = None) -> list[str]:
-    """Short flavor tails that REFERENCE the specific callout fact (location,
-    ability, count, agent). Empty when nothing to anchor to -> caller uses the
-    generic register pool. Kept to <=6 words (a snap tail)."""
+    """Location / count / ability contextual templates for callouts with NO named
+    agent (the agent case is handled in _flavor_ctx via the per-agent / multi-agent
+    pools). Empty -> caller uses the generic register pool. <=6 words."""
     out: list[str] = []
     L = (loc or "").strip()
     if len(L) == 1:                       # a single-letter SITE is always upper (A/B/C)
         L = L.upper()
     Ls = (L[:1].upper() + L[1:]) if L else L    # sentence-initial form
     A = (ability or "").strip().lower()
-    G = (agent or "").strip()
     c = (count or "").strip().lower()
-    # Per-agent ability-fantasy contempt (the richest, most contextual tails) --
-    # only for ENEMY-facing registers, where the named agent IS the enemy.
-    if G and register in _REGISTER_SITUATION:
-        out += list(_AGENT_FLAVOR.get(G, {}).get(
-            _REGISTER_SITUATION[register], ()))
     if register == "enemy":
         if L:
             out += [f"They do not leave {L}.", f"{Ls} is their grave.",
@@ -2213,15 +2212,9 @@ def _ctx_candidates(register: str, *, agent: Optional[str] = None,
         elif c in ("3", "three", "4", "four", "5", "five"):
             out += ["They overcommit.", "All of them -- still not enough."]
     elif register == "ult":
-        if G:
-            out += [f"{G}'s ult will not save them.", f"Bait {G}'s cast.",
-                    f"Account for {G}. Nothing more."]
-        else:
-            out += ["A delay, nothing more.", "Drain it and move on."]
-    elif register == "damage":
-        if G:
-            out += [f"{G} is already finished.", f"Close {G} out.",
-                    f"{G} cannot heal that."]
+        out += ["A delay, nothing more.", "Drain it and move on."]
+        if A:
+            out += [f"The {A} only delays them."]
     elif register == "utility":
         if A:
             out += [f"Their {A} is wasted.", f"I read the {A}.",
@@ -2234,35 +2227,44 @@ def _ctx_candidates(register: str, *, agent: Optional[str] = None,
 
 def _flavor_ctx(callout: str, register: str,
                 recent_lines: Optional[Sequence[str]], *,
-                agent: Optional[str] = None, ability: Optional[str] = None,
+                agents: Sequence[str] = (), ability: Optional[str] = None,
                 loc: Optional[str] = None, count: Optional[str] = None) -> str:
-    """Append an owner-aware, fact-referencing Ultron tail to ``callout``. The
-    contextual templates are weighted above the generic pool so the tail names
-    the actual callout fact whenever one is present (anti-soundboard)."""
-    ctx = _ctx_candidates(register, agent=agent, ability=ability,
-                          loc=loc, count=count)
+    """Append an owner-aware, contextually-tied Ultron tail to ``callout``.
+
+    The tail is ALWAYS selected for what the callout actually said:
+      * ONE named enemy agent -> that agent's situational pool is the SOLE source
+        (character-specific, e.g. a Neon-ult line about her speed) -- never diluted
+        by the generic pool;
+      * TWO+ named enemy agents -> the multi-agent situational pool (plural);
+      * NO named agent -> location/count contextual templates (heavily weighted)
+        then the generic register pool.
+    """
+    sit = _REGISTER_SITUATION.get(register)
+    if sit and agents:
+        if len(agents) == 1:
+            ac = list(_AGENT_FLAVOR.get(agents[0], {}).get(sit, ()))
+        else:
+            ac = list(_MULTI_FLAVOR.get(sit, ()))
+        if ac:                                   # agent-specific is the sole source
+            return f"{callout} {_pick_flavor(ac, recent_lines)}"
+    ctx = _ctx_candidates(register, ability=ability, loc=loc, count=count)
     pool = list(_REGISTER_POOL.get(register, _FLAVOR_ENEMY))
-    # weight contextual 2x so a fact-bearing line usually references its fact,
-    # but never ALWAYS (variety); recent-line filter keeps it off a record.
-    cands = ctx * 2 + pool
+    cands = ctx * 4 + pool if ctx else pool      # fact-templates dominate when present
     return f"{callout} {_pick_flavor(cands, recent_lines)}"
 
 
 def _payload_flavor_facts(p: str) -> dict:
-    """Pull the single most relevant loc / ability / agent / count token from a
-    callout payload, for contextual flavor anchoring. Best-effort, fail-soft."""
+    """Pull the callout's flavor anchors: the ORDERED list of roster agents named
+    (1 -> per-agent pool, 2+ -> multi-agent pool) plus the most relevant loc /
+    ability / count token. Best-effort, fail-soft."""
     try:
-        nums, agents, locs, abils = _fact_tokens(p or "")
+        nums, _agents, locs, abils = _fact_tokens(p or "")
     except Exception:                                                # noqa: BLE001
         return {}
-    ag = None
-    for a in _roster_agents(p or ""):
-        ag = a
-        break
     return {
+        "agents": _roster_agents(p or ""),       # canonical, may be 0/1/2+
         "loc": next(iter(sorted(locs)), None),
         "ability": next(iter(sorted(abils)), None),
-        "agent": ag,
         "count": next(iter(sorted(nums)), None),
     }
 
