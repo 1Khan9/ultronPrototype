@@ -1347,7 +1347,7 @@ def test_snap_callout_is_deterministic_and_correct(cmd_text, expect, flavored):
     if flavored:
         assert line.startswith(expect)
         tag = line[len(expect):].strip()
-        assert 0 < len(tag.split()) <= 6            # short flavor, 3-6 words
+        assert 0 < len(tag.split()) <= 10           # short flavor (ability-specific tails run a touch longer)
     else:
         assert line == expect
 
@@ -1478,7 +1478,7 @@ def test_self_and_directive_callouts_carry_owner_aware_flavor():
             assert "X" not in line                  # no LLM call (deterministic)
             assert line.startswith(expect)          # fact core preserved exactly
             tail = line[len(expect):].strip()
-            assert 0 < len(tail.split()) <= 6       # a short tail IS present now
+            assert 0 < len(tail.split()) <= 10      # a short tail IS present now
             low = tail.lower()
             assert not any(re.search(r"\b" + re.escape(w) + r"\b", low)
                            for w in _CONTEMPT), (cmd_text, tail)

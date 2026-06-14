@@ -423,7 +423,7 @@ AGENT_FLAVOR: dict[str, dict[str, tuple[str, ...]]] = {
             'A professional. Thoroughly ordinary.',
         ),
         'ult': (
-            'He drags one of us to a duel. Refuse the trade.',
+            'He drags one to a duel. Refuse the trade.',
             'Kill Contract. A 1v1 he thinks he wins.',
             'He isolates one mortal. We are still five.',
             'His arena, his grave. Send no one weak.',
