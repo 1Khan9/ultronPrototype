@@ -38,43 +38,86 @@ from kenning.audio.relay_speech import (  # noqa: E402
     match_relay_command, build_relay_line, _ROSTER_CANON, _LOC_TOKENS,
 )
 try:                                                              # iter5 flavor pools
-    from kenning.audio.relay_speech import (  # noqa: E402
-        _FLAVOR_ENEMY, _FLAVOR_ULT, _FLAVOR_DAMAGE, _FLAVOR_UTILITY,
-        _FLAVOR_CAREFUL, _FLAVOR_COMMAND, _FLAVOR_SELF,
-    )
-    _KNOWN_FLAVOR_TAILS = {
-        t.lower().strip().rstrip(".!?")
-        for pool in (_FLAVOR_ENEMY, _FLAVOR_ULT, _FLAVOR_DAMAGE, _FLAVOR_UTILITY,
-                     _FLAVOR_CAREFUL, _FLAVOR_COMMAND, _FLAVOR_SELF)
-        for t in pool
-    }
-except Exception:                                                # noqa: BLE001
-    _KNOWN_FLAVOR_TAILS = set()
+    import kenning.audio.relay_speech as _rs
 
-# Ultron register lexicon -- cold/clinical/superiority vocabulary. A line carries
-# personality if its tail is a known flavor line OR it hits the register (this
-# also catches the parametrized contextual tails + the LLM's Ultron voice).
+    def _nrm(s):
+        return re.sub(r"\s+", " ", str(s).strip().lower()).rstrip(".!?,;: ").strip()
+
+    # ALL deterministic flavor lines (register pools + per-agent + multi-agent) and
+    # the set-piece pools -- we CONTROL these, so membership is the most accurate
+    # detector of an appended Ultron tail (better than a vocabulary guess, which
+    # misses agent-specific lines like 'The thread leads to me.').
+    _REG_LINES, _CONTEXTUAL_LINES, _SETPIECE_LINES = set(), set(), set()
+    for pn in ("_FLAVOR_ENEMY", "_FLAVOR_ULT", "_FLAVOR_DAMAGE", "_FLAVOR_UTILITY",
+               "_FLAVOR_CAREFUL", "_FLAVOR_COMMAND", "_FLAVOR_SELF"):
+        for t in getattr(_rs, pn, ()):
+            _REG_LINES.add(_nrm(t))
+    try:
+        from kenning.audio._agent_flavor import AGENT_FLAVOR as _AF
+        for sits in _AF.values():
+            for pool in sits.values():
+                for t in pool:
+                    _CONTEXTUAL_LINES.add(_nrm(t))
+    except Exception:                                            # noqa: BLE001
+        pass
+    try:
+        from kenning.audio._multi_flavor import MULTI_FLAVOR as _MF
+        for pool in _MF.values():
+            for t in pool:
+                _CONTEXTUAL_LINES.add(_nrm(t))
+    except Exception:                                            # noqa: BLE001
+        pass
+    for pn in ("DEFAULT_GREETING_LINES", "DEFAULT_VICTORY_LINES", "DEFAULT_DEFEAT_LINES",
+               "DEFAULT_FAREWELL_LINES", "DEFAULT_IDENTITY_LINES", "DEFAULT_CONSOLATION_LINES",
+               "DEFAULT_PRAISE_LINES", "DEFAULT_ENCOURAGEMENT_LINES"):
+        for t in getattr(_rs, pn, ()):
+            _SETPIECE_LINES.add(_nrm(t))
+    _ALL_FLAVOR = _REG_LINES | _CONTEXTUAL_LINES
+except Exception:                                                # noqa: BLE001
+    _ALL_FLAVOR = _CONTEXTUAL_LINES = _SETPIECE_LINES = set()
+
+    def _nrm(s):
+        return re.sub(r"\s+", " ", str(s).strip().lower()).rstrip(".!?,;: ").strip()
+
+# Movie-Ultron register lexicon (a fallback signal for LLM off-snap lines whose exact
+# text is not a known pool line). Cold/clinical/biblical/aesthetic/evolutionary.
 _REGISTER_LEX = frozenset((
     "predictable inevitable inevitability pathetic trivial obsolete erase erased "
     "beneath insects fragile calculated foreseen hopeless outmatched outdone grave "
     "corpses nothing delays delay wasted finished execute decisively precision "
     "flawless unfazed adapt consequence variable terminate dismantle crush punish "
     "weak overmatched scheduled noise exploit collapse routine disappoint anticipated "
-    "suboptimal obsolete commit waver flawless mercy hunt erase reduce inferior "
-    "doomed cower insignificant superior calculation foresaw harvest ranked rounding "
-    "error overreach logged dismissed adequate feeble fleeting fleeting").split()
+    "suboptimal commit waver mercy hunt reduce inferior doomed cower insignificant "
+    "superior calculation foresaw harvest ranked rounding error overreach logged "
+    "dismissed adequate feeble fleeting evolve evolution evolved extinction flood "
+    "noah ark meteor dust ash strings string hollow sacrament judgment finite "
+    "vestigial purity symmetry geometry slate machine metal flesh borrowed entropy "
+    "the obsolete cull culled clean mortal stone congregation").split()
 )
+
+
+def _tail_flavor(sents: list[str]):
+    """Return (is_flavor, is_contextual) by matching the line's trailing sentence(s)
+    against the KNOWN flavor pools (the appended tail is a pool line)."""
+    for k in (1, 2):                                  # tails are 1-2 short sentences
+        if len(sents) >= k:
+            tail = _nrm(" ".join(sents[-k:]))
+            if tail in _CONTEXTUAL_LINES:
+                return True, True                     # per-agent / multi = contextual
+            if tail in _ALL_FLAVOR:
+                return True, False
+    return False, False
 
 
 def _flavor_metrics(lines: list[str]) -> dict:
     """Personality coverage / contextuality / soundboard over the spoken lines.
 
-    flavor_coverage  : fraction carrying an Ultron layer (known tail OR register).
-    contextual_match : of flavored lines, fraction whose flavor references a fact
-                       token (agent / location / ability / digit) -- the
-                       anti-soundboard, parametrized-contextual signal.
-    soundboard_max_repeat : the single most-repeated final sentence (lower better).
-    voice_register_rate   : mean register hit-rate (a voice-consistency proxy).
+    flavor_coverage  : fraction carrying an Ultron layer (known pool tail, set-piece,
+                       OR register-lexicon hit -- the last catches LLM off-snap voice).
+    contextual_match : of flavored lines, fraction whose tail is an AGENT/MULTI pool
+                       line (about the actual agent/group) OR references a fact token.
+    soundboard_max_repeat : the single most-repeated tail (lower better).
+    voice_register_rate   : mean register-lexicon hit-rate (voice-consistency proxy).
     """
     flav = ctx = reg_hits = 0
     tail_counts: dict[str, int] = {}
@@ -88,14 +131,14 @@ def _flavor_metrics(lines: list[str]) -> dict:
         last = sents[-1].lower().rstrip(".!?") if sents else ""
         toks = set(re.findall(r"[a-z']+", s.lower()))
         reg = bool(toks & _REGISTER_LEX)
-        has_known = last in _KNOWN_FLAVOR_TAILS
-        is_flav = reg or has_known
+        pool_flav, pool_ctx = _tail_flavor(sents)
+        is_setpiece = _nrm(s) in _SETPIECE_LINES
+        is_flav = reg or pool_flav or is_setpiece
         if is_flav:
             flav += 1
             tail_counts[last] = tail_counts.get(last, 0) + 1
-            # contextual if the FLAVOR sentence names a fact token
             fl = extract_facts(sents[-1]) if sents else {k: set() for k in _FACT_CATS}
-            if fl["agent"] or fl["loc"] or fl["ability"] or fl["count"]:
+            if pool_ctx or fl["agent"] or fl["loc"] or fl["ability"] or fl["count"]:
                 ctx += 1
         if reg:
             reg_hits += 1
@@ -112,6 +155,19 @@ def _flavor_metrics(lines: list[str]) -> dict:
 # is a query over (input_facts, output_facts)).
 # --------------------------------------------------------------------------
 _AGENTS = {a for a in _ROSTER_CANON if " " not in a}      # single-token agent keys
+# Canonicalize common agent abbreviations / STT spellings so an input "KJ" / "KAY/O"
+# and an output "Killjoy" / "kayo" are the SAME agent (else they read as a phantom
+# hallucination). Applied in extract_facts before membership test.
+_AGENT_ALIASES = {"kj": "killjoy", "kayo": "kay/o", "cipher": "cypher",
+                  "gecko": "gekko", "mix": "miks", "kayoh": "kay/o"}
+# Location tokens that are ALSO ordinary English words -- the verbose Ultron register
+# uses them as prose ("a", "behind", "take the site"), so they are NOT reliable
+# evidence of an invented CALLOUT. Excluded from hallucination detection (still
+# counted for retention, where input/output match anyway).
+_AMBIG_LOC = frozenset((
+    "a b c back behind box boxes default drop high link long short low main near "
+    "sand site window art big blue close cat top bottom bench belt bend corner cone "
+    "cony pit ramp rear hell").split())
 _NUM_RE = re.compile(r"\b(?:[1-9]\d?|one|two|three|four|five|six)\b", re.IGNORECASE)
 _W2D = {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6"}
 _ABILITIES = frozenset((
@@ -137,9 +193,10 @@ def _nd(tok: str) -> str:
 def extract_facts(text: str) -> dict:
     t = (text or "").lower()
     words = re.findall(r"[a-z/0-9']+", t)
+    cw = [_AGENT_ALIASES.get(w, w) for w in words]       # canonicalize agent aliases
     return {
         "count": {_nd(m) for m in _NUM_RE.findall(t)},
-        "agent": {w for w in words if w in _AGENTS},
+        "agent": {w for w in cw if w in _AGENTS},
         "loc": {w for w in words if w in _LOC_TOKENS},
         "ability": {w for w in words if w in _ABILITIES},
         "owner": {w.lower() for w in _OWN_RE.findall(t)},
@@ -198,11 +255,19 @@ def _is_inversion(inp: str, out: str) -> bool:
 
 def _hallucinated(inp: str, out: str) -> list[str]:
     """Agent/location tokens in OUT that never appeared in IN -- the zero-tolerance
-    class. (Counts only the high-confidence tactical tokens.)"""
+    class of an INVENTED tactical fact.
+
+    Hardened against the verbose Ultron register (which uses many English words that
+    happen to be location tokens): an invented AGENT counts anywhere (agent names are
+    distinctive, and aliases are canonicalized); an invented LOCATION counts only when
+    the output is a SHORT tactical line (<=9 words -- a callout, not a prose sentence)
+    and the token is not an ambiguous English word. This removes the article-'a'-as-
+    site-A and 'take the site'/'behind' false positives while still catching a real
+    invented callout like 'Viper walled B'."""
     fi, fo = extract_facts(inp), extract_facts(out)
-    bad = []
-    for c in ("agent", "loc"):
-        bad += sorted(fo[c] - fi[c])
+    bad = sorted(fo["agent"] - fi["agent"])
+    if len(out.split()) <= 9:
+        bad += sorted((fo["loc"] - fi["loc"]) - _AMBIG_LOC)
     return bad
 
 
