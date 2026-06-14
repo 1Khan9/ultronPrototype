@@ -2240,7 +2240,7 @@ def _ctx_candidates(register: str, *, ability: Optional[str] = None,
     if register == "enemy":
         if L:
             out += [f"They do not leave {L}.", f"{Ls} is their grave.",
-                    f"They chose {L} poorly."]
+                    f"They gain nothing at {L}."]
         if A:
             out += [f"Their {A} changes nothing.", f"The {A} only delays them.",
                     f"I accounted for the {A}."]
@@ -3348,6 +3348,19 @@ _GK_FACTS: tuple[tuple[re.Pattern, str], ...] = tuple(
 )
 
 
+# A general-knowledge ANSWER must answer an actual QUESTION -- never a tactical
+# callout that merely happens to contain a fact keyword ('heal me in TIME, tell
+# her to SLOW them' is not a relativity question). Requiring a question marker
+# gates the whole table so a scattered keyword match inside a long tactical
+# compound can never fire (every real GK query carries one).
+_QUESTION_MARKER_RE = re.compile(
+    r"\?|\b(?:what|what'?s|why|how|when|where|who|whose|whom|which"
+    r"|is\s+it\s+true|tell\s+me\s+(?:about|what|why|how|who)|name\s+the"
+    r"|explain)\b",
+    re.IGNORECASE,
+)
+
+
 def _as_known_fact(command: "RelayCommand") -> Optional[str]:
     """Curated correct answer for a recognized general-knowledge question, in
     Ultron's voice -- or None to defer to the model. Prefixes the asker's name
@@ -3357,6 +3370,8 @@ def _as_known_fact(command: "RelayCommand") -> Optional[str]:
                     getattr(command, "payload", "") or "",
                     getattr(command, "context", "") or "")
     )
+    if not _QUESTION_MARKER_RE.search(text):
+        return None
     for rx, ans in _GK_FACTS:
         if rx.search(text):
             name = getattr(command, "addressee", "team")
