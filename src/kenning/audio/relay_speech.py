@@ -72,10 +72,12 @@ _GROUP_WORDS = (
     r"|crew|stack|fellas|guys|duo)"
 )
 
-# A possessive group reference: "my team" / "our teammates" / "the
-# whole squad". Every group pattern requires the possessive so bare
-# nouns in ordinary speech never trip the matcher.
-_GROUP = rf"(?:my|our|the)\s+(?:whole\s+|entire\s+)?{_GROUP_WORDS}"
+# A group reference: "my team" / "our teammates" / "the whole squad", and
+# (determiner-less) the shorthand "relay to team: X" / "tell teammates X" that
+# live transcripts and quick callouts use. The determiner is OPTIONAL; the
+# group pattern only ever fires AFTER an explicit relay verb (tell/relay to/say
+# to/let ... know), so a bare noun in ordinary speech still never trips it.
+_GROUP = rf"(?:(?:my|our|the)\s+)?(?:whole\s+|entire\s+)?{_GROUP_WORDS}"
 
 # Bare pronoun group references that, in a voice-chat session AFTER the wake
 # word, clearly mean the team: "tell 'em X", "say to the guys X". "them" and
@@ -113,21 +115,23 @@ _LEADING_ARTIFACT = re.compile(
 # Strict relay patterns. Each captures the message payload; the
 # addressee is normalised to "team" wording for the rephrase prompt.
 _RELAY_PATTERNS: tuple[re.Pattern[str], ...] = (
-    # "tell my teammates (that|to) X" / "tell our team X"
+    # "tell my teammates (that|to) X" / "tell our team X" / "tell my team, X"
+    # ([\s,:]+ after the addressee tolerates the pause-comma/colon live
+    # transcripts insert: "tell my team, two B" / "let my team know: X").
     re.compile(
-        rf"^(?:please\s+)?tell\s+{_GROUP}\s+"
+        rf"^(?:please\s+)?tell\s+{_GROUP}[\s,:]+"
         rf"(?:that\s+|to\s+)?(?P<payload>.+)$",
         re.IGNORECASE,
     ),
-    # "let my team know (that) X"
+    # "let my team know (that) X" / "let my team know, X"
     re.compile(
-        rf"^(?:please\s+)?let\s+{_GROUP}\s+know\s+"
+        rf"^(?:please\s+)?let\s+{_GROUP}\s+know[\s,:]+"
         rf"(?:that\s+)?(?P<payload>.+)$",
         re.IGNORECASE,
     ),
-    # "remind/warn/inform my team (that|to|about) X"
+    # "remind/warn/inform my team (that|to|about) X" / "warn my team, X"
     re.compile(
-        rf"^(?:please\s+)?(?:remind|warn|inform)\s+{_GROUP}\s+"
+        rf"^(?:please\s+)?(?:remind|warn|inform)\s+{_GROUP}[\s,:]+"
         rf"(?:that\s+|to\s+|about\s+)?(?P<payload>.+)$",
         re.IGNORECASE,
     ),
@@ -142,10 +146,11 @@ _RELAY_PATTERNS: tuple[re.Pattern[str], ...] = (
         rf"|in\s+{_CHANNEL})\s*[.!?]?$",
         re.IGNORECASE,
     ),
-    # "ask my teammates (to|for|if|whether|why|...) X" -- question
-    # words kept in the payload so questions relay as questions.
+    # "ask my teammates (to|for|if|whether|why|...) X" / "ask them if X" --
+    # question words kept in the payload so questions relay as questions; the
+    # pronoun group ("ask them/'em") is honoured too.
     re.compile(
-        rf"^(?:please\s+)?ask\s+{_GROUP}\s+"
+        rf"^(?:please\s+)?ask\s+(?:{_GROUP}|{_GROUP_PRON})[\s,:]+"
         rf"(?P<payload>(?:to|for|if|whether|why|how|what|when|where|who)"
         rf"\s+.+)$",
         re.IGNORECASE,
@@ -154,7 +159,7 @@ _RELAY_PATTERNS: tuple[re.Pattern[str], ...] = (
     # these address the team; "tell me ..." does not match by construction, and
     # a bare "tell him/her ..." is only honoured in the context+directive forms.
     re.compile(
-        rf"^(?:please\s+)?tell\s+{_GROUP_PRON}\s+"
+        rf"^(?:please\s+)?tell\s+{_GROUP_PRON}[\s,:]+"
         rf"(?:that\s+|to\s+)?(?P<payload>.+)$",
         re.IGNORECASE,
     ),
@@ -162,7 +167,7 @@ _RELAY_PATTERNS: tuple[re.Pattern[str], ...] = (
     # the let/remind/warn/inform forms above.
     re.compile(
         rf"^(?:please\s+)?(?:let\s+{_GROUP_PRON}\s+know|"
-        rf"(?:remind|warn|inform)\s+{_GROUP_PRON})\s+"
+        rf"(?:remind|warn|inform)\s+{_GROUP_PRON})[\s,:]+"
         rf"(?:that\s+|to\s+|about\s+)?(?P<payload>.+)$",
         re.IGNORECASE,
     ),
@@ -408,6 +413,15 @@ _FILLER_RE = re.compile(
     r"[\s,]*\b(?:uh+|um+|er+|erm|hmm)\b[\s,]*",
     re.IGNORECASE,
 )
+# "on my behalf" / "on behalf of me" carry no payload meaning -- they only mark
+# that Ultron is relaying FOR the user, which is already implied. Stripping them
+# unwedges the addressee from the payload ("ask the team on my behalf if X" ->
+# "ask the team if X"). Never meaningful tactical content, so a global strip is
+# safe (unlike e.g. "over there", which can be a real position).
+_BEHALF_RE = re.compile(
+    r"[\s,]*\bon\s+(?:my\s+behalf|behalf\s+of\s+me)\b[\s,]*",
+    re.IGNORECASE,
+)
 
 
 # Common agent abbreviations / STT homophones -> the canonical agent name so the
@@ -426,6 +440,7 @@ def _normalize_speech(text: str) -> str:
     agent abbreviations/homophones)."""
     text = _KAYO_SLASH_RE.sub("kayo", text)
     text = _FILLER_RE.sub(" ", text)
+    text = _BEHALF_RE.sub(" ", text)
     for rx, sub in _ABBREV_SUBS:
         text = rx.sub(sub, text)
     text = re.sub(r"\s{2,}", " ", text).strip()
@@ -617,7 +632,10 @@ _TOGGLE_ON_RE = re.compile(
 _NARRATION_LEAD_RE = re.compile(
     r"(?:"
     # private intention: "I should/want to/keep ... tell/say/ask" (a real command
-    # never has a first-person modal SUBJECT before the trigger).
+    # never has a first-person modal SUBJECT before the trigger). Search-anywhere
+    # so it catches the narration even mid-sentence ("...and I keep thinking I
+    # should tell them to reset"); a genuine LEADING command is exempted below via
+    # _LEADING_RELAY_RE so "tell my squad I was gonna say X" still relays.
     r"\bi\s+(?:should|want\s+to|keep|wish|need\s+to|am\s+going\s+to|gotta|"
     r"might|could|kept|tried\s+to|was\s+(?:about\s+to|gonna|going\s+to|thinking|"
     r"saying))\b[^.?!]*\b(?:tell|telling|say|saying|ask|asking|relay)\b"
@@ -640,6 +658,21 @@ _NARRATION_LEAD_RE = re.compile(
     r"handle\s+(?:that|this|it))\b"
     r"|\bhave\s+you\s+ever\b"
     r")",
+    re.IGNORECASE,
+)
+
+# An utterance that BEGINS with an explicit group-/pronoun-addressed relay command
+# is a command, not narration -- a first-person intention that follows is the
+# message ("tell my squad I was gonna say something but I got shot"). Exempts such
+# leads from the narration guard. Tight by construction: it requires the relay
+# verb + an actual group/pronoun (or "relay to ..."), so "I should tell them" /
+# "should I tell my team" (which START with I/should) are never exempted.
+_LEADING_RELAY_RE = re.compile(
+    rf"^(?:please\s+)?(?:"
+    rf"(?:tell|warn|inform|remind)\s+(?:{_GROUP}|{_GROUP_PRON})"
+    rf"|let\s+(?:{_GROUP}|{_GROUP_PRON})\s+(?:know|hear)"
+    rf"|relay\s+to\s+"
+    rf")",
     re.IGNORECASE,
 )
 
@@ -872,7 +905,7 @@ def match_relay_command(
     # Narration / private-thought / chat-reaction that is relay-SHAPED but must
     # NOT relay -- the streamer thinking out loud ("I should tell them to X",
     # "part of me wants to tell them...", "chat says ... respond").
-    if _NARRATION_LEAD_RE.search(cleaned):
+    if _NARRATION_LEAD_RE.search(cleaned) and not _LEADING_RELAY_RE.match(cleaned):
         return None
 
     vocabulary = tuple(
