@@ -466,13 +466,18 @@ def test_enemy_one_off_ult_keeps_agent_name() -> None:
     assert line.startswith("Their Chamber is one off ult.")
 
 
-def test_damage_flavor_is_gender_neutral() -> None:
-    # No 'him'/'he' flavor (the agent may be female: Reyna, Killjoy, Jett).
+def test_damage_flavor_uses_correct_agent_gender() -> None:
+    # iter5+: per-agent tails use the agent's CANONICAL gender. Reyna is female,
+    # so her flavor must never use a MASCULINE pronoun (word-boundary check, so
+    # 'she'/'her' do not false-trip). Earlier this asserted gender-neutrality;
+    # the design now genders each agent correctly.
     cmd = match_relay_command("tell my team reyna hit 150")
-    for _ in range(12):
+    masc = re.compile(r"\b(he|him|his)\b", re.IGNORECASE)
+    for _ in range(20):
         line = build_relay_line(cmd, None, rephrase=True, generate_fn=_boom)
         assert line.startswith("Reyna hit 150.")
-        assert " him" not in line.lower() and "he is" not in line.lower()
+        tail = line[len("Reyna hit 150."):]
+        assert not masc.search(tail), tail
 
 
 # ---------------------------------------------------------------------------
