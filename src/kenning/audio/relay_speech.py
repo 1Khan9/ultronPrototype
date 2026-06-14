@@ -1293,6 +1293,31 @@ def _is_answer_command(command: "RelayCommand") -> bool:
     return bool(_ANSWER_CMD_RE.search(raw))
 
 
+def _fact_report(payload: str) -> str:
+    """A compact, deterministically-extracted 'PRESERVE EXACTLY' line for the LLM
+    (the user's idea 1): hand the model the protected fact-core so it spends its
+    capacity on VOICE, not parsing, and knows precisely what must survive. Empty
+    when the payload carries no roster/map/number/ability token."""
+    try:
+        nums, agents, locs, abils = _fact_tokens(payload or "")
+    except Exception:                                                # noqa: BLE001
+        return ""
+    parts = []
+    if agents:
+        parts.append("agent name(s) " + ", ".join(
+            sorted(_canon_agent(a) or a.title() for a in agents)))
+    if nums:
+        parts.append("number(s) " + ", ".join(sorted(nums)))
+    if locs:
+        parts.append("map callout(s) " + ", ".join(sorted(locs)))
+    if abils:
+        parts.append("ability term(s) " + ", ".join(sorted(abils)))
+    if not parts:
+        return ""
+    return ("\nPRESERVE EXACTLY (never drop, change, round, translate, or invent): "
+            + "; ".join(parts) + ". Keep the user's stance/sentiment intact.")
+
+
 def _build_rephrase_prompt(
     command: RelayCommand,
     recent_lines: Optional[Sequence[str]] = None,
@@ -1332,15 +1357,24 @@ def _build_rephrase_prompt(
     else:
         task = (
             "Convert the user's instruction into the line you say to them, "
-            "keeping their ACTUAL meaning and sentiment: an info callout stays "
-            "that exact callout; consolation stays consolation ('nice try' -> "
-            "'Nice try. We take the next.'); praise stays praise ('good half' "
-            "-> 'Strong half. Hold the line.'); an insult stays an insult. "
-            "NEVER swap in a different sentiment or reuse an example from the "
-            "rules above."
+            "keeping their ACTUAL meaning and sentiment intact -- every fact, "
+            "name, number, and their exact stance. You are Ultron, so do NOT "
+            "flat-echo it: if this is a STATEMENT, OPINION, morale, consolation, "
+            "or praise line, deliver its full meaning carried in YOUR cold, "
+            "clinical voice -- add one short Ultron frame (superiority, certainty, "
+            "or contempt for the enemy) before or after the point so it never "
+            "reads as a bare repeat. If it is instead a terse enemy position / "
+            "count / damage callout, keep it short and literal with NO added "
+            "flavour. An info callout stays that exact callout; consolation stays "
+            "consolation ('nice try' -> 'Nice try. We take the next.'); praise "
+            "stays praise ('good half' -> 'Strong half. Hold the line.'); an "
+            "insult stays an insult; an opinion keeps its exact stance with cold "
+            "Ultron endorsement on top. NEVER swap in a different sentiment, "
+            "weaken the user's point, or reuse an example from the rules above."
         )
         payload_block = (
             f"The user's instruction (reported speech): {command.payload}"
+            + _fact_report(command.payload)
         )
     context_block = ""
     if command.context:
@@ -2161,6 +2195,17 @@ _FLAVOR_SELF: tuple[str, ...] = (
     "As intended.", "Calculated.", "Exactly where I must be.",
 )
 
+#: Per-agent CONTEXTUAL flavor (web-grounded board, hand-curated). Keyed by
+#: enemy AGENT + situation -> ability-fantasy contempt tails. Fail-soft.
+try:
+    from kenning.audio._agent_flavor import AGENT_FLAVOR as _AGENT_FLAVOR
+except Exception:                                                # noqa: BLE001
+    _AGENT_FLAVOR = {}
+#: register -> per-agent situation key (only the ENEMY-facing registers map; an
+#: order/self line is never about an enemy agent so it gets no contempt tail).
+_REGISTER_SITUATION = {"enemy": "spotted", "ult": "ult",
+                       "damage": "damaged", "utility": "utility"}
+
 #: register key -> generic fallback pool. The contextual templates below take
 #: priority when a fact is present; this is the breadth when none is.
 _REGISTER_POOL: dict = {
@@ -2188,6 +2233,11 @@ def _ctx_candidates(register: str, *, agent: Optional[str] = None,
     A = (ability or "").strip().lower()
     G = (agent or "").strip()
     c = (count or "").strip().lower()
+    # Per-agent ability-fantasy contempt (the richest, most contextual tails) --
+    # only for ENEMY-facing registers, where the named agent IS the enemy.
+    if G and register in _REGISTER_SITUATION:
+        out += list(_AGENT_FLAVOR.get(G, {}).get(
+            _REGISTER_SITUATION[register], ()))
     if register == "enemy":
         if L:
             out += [f"They do not leave {L}.", f"{Ls} is their grave.",
