@@ -3276,8 +3276,28 @@ try:
     from kenning.audio._ultron_commands import (  # noqa: E402
         COMMAND_RESPONSES as _CMD_RESP, COMMAND_SCOPE as _CMD_SCOPE,
     )
+    try:
+        from kenning.audio._ultron_commands import COMMAND_SLOT as _CMD_SLOT
+    except Exception:                                            # noqa: BLE001
+        _CMD_SLOT = {}
 except Exception:                                                # noqa: BLE001
-    _CMD_RESP, _CMD_SCOPE = {}, {}
+    _CMD_RESP, _CMD_SCOPE, _CMD_SLOT = {}, {}, {}
+
+
+def _extract_site(payload: str) -> Optional[str]:
+    """Pull the map/site callout phrase from a command payload ('go A site because
+    eco' -> 'A site'; 'lurking B main' -> 'B main'; 'play heaven' -> 'heaven'). The
+    longest run of words that _is_place accepts; single-letter sites upper-cased."""
+    toks = re.findall(r"[A-Za-z]+", payload)
+    best = None
+    for i in range(len(toks)):
+        for j in range(min(i + 3, len(toks)), i, -1):
+            if _is_place(" ".join(toks[i:j])):
+                fmt = " ".join(w.upper() if len(w) == 1 else w for w in toks[i:j])
+                if best is None or (j - i) > best[1]:
+                    best = (fmt, j - i)
+                break
+    return best[0] if best else None
 
 # (payload regex, team-command-id | None, named-command-id | None). First match
 # wins -- most specific first.
@@ -3345,9 +3365,19 @@ def _as_curated_command(command: "RelayCommand") -> Optional[str]:
             cid = n_id if named else t_id
             if cid and _CMD_RESP.get(cid):
                 resp = _pick_lru(list(_CMD_RESP[cid]))
+                slot = _CMD_SLOT.get(cid, "none")
+                if slot in ("site", "both"):
+                    resp = resp.replace("{site}", _extract_site(payload) or "the site")
+                if slot in ("agent", "both"):
+                    ags = _roster_agents(payload)
+                    if not ags:
+                        return None              # the referenced agent is essential
+                    resp = resp.replace("{agent}", ags[0])
                 if named:
-                    return resp.replace("{name}", addr)
-                return resp.replace("{name}, ", "").replace("{name}", "").strip()
+                    resp = resp.replace("{name}", addr)
+                else:
+                    resp = resp.replace("{name}, ", "").replace("{name}", "")
+                return resp.strip()
             return None                          # matched but no pool for this scope
     return None
 
