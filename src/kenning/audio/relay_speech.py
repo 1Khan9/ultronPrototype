@@ -2143,6 +2143,37 @@ def _as_ult_callout(p: str) -> Optional[str]:
     return None
 
 
+# Tokens that, immediately after an agent name, signal a UTILITY / ability report
+# (verbs + ability nouns). Gating the agent-utility handler on these means it
+# grabs 'our Sova darted A main' / 'their Cypher cyber caged B' but NOT an insult
+# like 'their Reyna thinks she is a pro' (which stays off-snap for the LLM).
+_ABILITY_LEAD = _ABILITY_VERBS | frozenset((
+    "nova cyber recon neural mosh gravity cosmic satchel satcheled gatecrash "
+    "gatecrashed blade bladed shear sheared razorvine cove prowler prowled turret "
+    "alarmbot trip tripped lockdown nanoswarm paranoia seize seized reckoning "
+    "empress thrash fuel suppressed spammed pulsed haunted aftershock orbital "
+    "concussed scanned revealed slowed headhunted sucked undercut contingency "
+    "shrouded prowl meddled curveball hot-handed").split())
+
+
+def _as_agent_utility(p: str) -> Optional[tuple[str, bool]]:
+    """'[our/their/my] <agent> <ability-word> <rest>' -> ('<Their >?<Agent>
+    <rest>.', is_enemy), or None. Ability-word gated so it never grabs banter."""
+    their = bool(re.match(r"^\s*(?:their|the\s+enemy|enemy)\b", p, re.IGNORECASE))
+    body = re.sub(r"^\s*(?:our|my|their|the\s+enemy(?:\s+team)?|enemy)\s+", "", p,
+                  flags=re.IGNORECASE).strip()
+    body = re.sub(r"^just\s+", "", body, flags=re.IGNORECASE).strip().rstrip(".!?,;:")
+    toks = body.split()
+    if not (2 <= len(toks) <= 8):
+        return None
+    for split in (1, 2):
+        ag = _canon_agent(" ".join(toks[:split]))
+        if ag and split < len(toks) and toks[split].lower() in _ABILITY_LEAD:
+            rest = " ".join(toks[split:]).rstrip(".!?,;:")
+            return (f"{'Their ' if their else ''}{ag} {rest}.", their)
+    return None
+
+
 def _as_snap_callout(
     command: "RelayCommand",
     recent_lines: Optional[Sequence[str]] = None,
@@ -2231,8 +2262,9 @@ def _as_snap_callout(
     m = re.match(
         r"^(?P<count>[1-6]|one|two|three|four|five|six)\s+(?:of\s+them\s+|more\s+)?"
         r"(?P<rest>(?:rotating|rotate|coming|going|went|push(?:ing)?|heading|"
-        r"moving|hitting|rushing|flooding|sneaking|flanking|peeking|"
-        r"swinging)\b.+)$",
+        r"moving|hitting|rushing|flooding|sneaking|flanking|peeking|swinging|"
+        r"holding|stacking|watching|posted|lurking|sitting|camping|waiting|"
+        r"defending|splitting)\b.+)$",
         p, re.IGNORECASE,
     )
     if m and not _is_compound and len(m.group("rest").split()) <= 8:
@@ -2307,6 +2339,12 @@ def _as_snap_callout(
         if snap is not None:
             return (flav(snap, _FLAVOR_ULT)
                     if snap.startswith("Their ") else snap)
+        # 'their Cypher cyber caged B' / 'their Viper fuel is low' -> enemy
+        # utility report (kept literal + flavor); banter falls through to None.
+        if not _is_compound:
+            u = _as_agent_utility(p)
+            if u is not None:
+                return flav(u[0], _FLAVOR_UTILITY) if u[1] else u[0]
         return None   # insult / playstyle / long -> LLM (flavor)
 
     # --- named enemy agent(s) at a place: 'fade and clove are main' ---
@@ -2338,14 +2376,14 @@ def _as_snap_callout(
         return (flav(snap, _FLAVOR_ULT)
                 if snap.startswith("Their ") else snap)
 
-    # --- teammate utility report '<agent> <ability-verb> <rest>' (NO flavor --
-    #     it is our own utility) ---
-    toks = p.split()
-    if 2 <= len(toks) <= 5:
-        for split in (1, 2):
-            ag = _canon_agent(" ".join(toks[:split]))
-            if ag and split < len(toks) and toks[split].lower() in _ABILITY_VERBS:
-                return f"{ag} {' '.join(toks[split:])}."
+    # --- agent utility report '[our/their/my] <agent> <ability-word> <rest>'
+    #     ('our Sova darted A main', 'their Astra nova pulsed the angle') -- enemy
+    #     gets flavor, our own stays clean. Skipped on a compound (the per-piece
+    #     pass handles each fact). ---
+    if not _is_compound:
+        u = _as_agent_utility(p)
+        if u is not None:
+            return flav(u[0], _FLAVOR_UTILITY) if u[1] else u[0]
 
     # --- group movement/spike directive: 'to <verb>' / '<verb>' (NO flavor) ---
     body = re.sub(r"^to\s+", "", p, flags=re.IGNORECASE).strip()
