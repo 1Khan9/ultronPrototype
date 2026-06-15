@@ -739,7 +739,35 @@ class Orchestrator:
                 ).start()
             except Exception as e:                                      # noqa: BLE001
                 logger.debug("Reranker warmup thread skipped (%s)", e)
-        self.llm = LLMEngine(memory=self.memory)
+        # LEAN GAMING BOOT: construct the LLM DIRECTLY as the 3B-CPU gaming preset
+        # so we never load the base 4B on GPU (~4-5 GB) only to swap it for the 3B
+        # on engage. Explicit model_path + n_gpu_layers bypass the
+        # KENNING_LLM_GPU_LAYERS env override (only applied when None); the startup
+        # engage's reload_for_preset then NO-OPS (model already loaded), so the
+        # warmup below isn't wasted. Non-gaming boots are unchanged.
+        self.llm = None
+        if self._skip_for_lean_gaming("barebones_direct_gaming_llm"):
+            try:
+                from kenning.config import LLM_PRESETS, PROJECT_ROOT, get_config
+                _gm = get_config().gaming_mode
+                _gp = (_gm.llm_preset or "").strip()
+                _rel = LLM_PRESETS.get(_gp, {}).get("model_path")
+                if _rel:
+                    _gl = int(getattr(_gm, "llm_gpu_layers", 0))
+                    _nctx = LLM_PRESETS.get(_gp, {}).get("n_ctx")  # match the preset's window
+                    self.llm = LLMEngine(memory=self.memory,
+                                         model_path=PROJECT_ROOT / _rel,
+                                         n_ctx=_nctx,
+                                         n_gpu_layers=_gl)
+                    logger.info("lean gaming boot: LLM loaded DIRECTLY as gaming "
+                                "preset '%s' (n_gpu_layers=%d) -- no 4B-on-GPU "
+                                "load-then-swap", _gp, _gl)
+            except Exception as e:                                   # noqa: BLE001
+                logger.warning("lean gaming direct-LLM load failed (%s); using "
+                               "the base preset", e)
+                self.llm = None
+        if self.llm is None:
+            self.llm = LLMEngine(memory=self.memory)
         # Latency hygiene: warm the LLM so the first real turn doesn't pay the
         # cold-context prefill (~100-200 ms of TTFT shaved off the user's first
         # interaction). SYNCHRONOUS, not a daemon thread: llama-cpp's single
@@ -5875,6 +5903,27 @@ class Orchestrator:
 
     # --- phase: wake ---------------------------------------------------------
 
+    def _maybe_recover_embedding(self) -> None:
+        """Throttled (~60s) idle-loop nudge: if the command router's embedding
+        sidecar fell to lexical mid-session (the 3x failure latch) but has since
+        come back, re-enable the HYBRID backend so we never stay degraded. Costs
+        ~one /healthz ping per minute, and ONLY while currently lexical (the
+        backend's try_recover() no-ops when embedding is already on). Fail-open."""
+        try:
+            import time
+            now = time.monotonic()
+            if now - getattr(self, "_last_emb_recover_check", 0.0) < 60.0:
+                return
+            self._last_emb_recover_check = now
+            from kenning.audio.command_router import get_command_router
+            router = get_command_router()
+            backend = getattr(router, "backend", None) if router else None
+            rec = getattr(backend, "try_recover", None)
+            if callable(rec):
+                rec()
+        except Exception:                                            # noqa: BLE001
+            pass
+
     def _wait_for_wake_word(self) -> bool:
         """Block until wake word fires. Returns False if shutdown was requested."""
         self.audio.drain()
@@ -5891,6 +5940,7 @@ class Orchestrator:
                 # fail-open.
                 self._maybe_reload_config()
                 self._drain_gui_actions()
+                self._maybe_recover_embedding()
                 continue
             self.ring.write(chunk)
             if self.wake.process(chunk):

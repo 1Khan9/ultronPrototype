@@ -1372,6 +1372,20 @@ class LLMEngine:
         current = get_config().llm.preset
         if current == preset:
             return True, f"already on {preset}"
+        # Also no-op if the LIVE model is ALREADY this preset's GGUF: a lean
+        # gaming boot constructs the LLM directly as the gaming preset, so the
+        # startup engage's reload_for_preset(same) must NOT redundantly reload
+        # (that would discard the just-warmed model). The lean path always loads
+        # that GGUF on CPU (the gaming gpu_layers), matching the engage's
+        # gpu_layers=0 request, so a model-path match is a safe no-op.
+        try:
+            from kenning.config import PROJECT_ROOT as _PR
+            _rel = LLM_PRESETS.get(preset, {}).get("model_path")
+            if (_rel and getattr(self, "model_path", None) is not None
+                    and Path(self.model_path).resolve() == (_PR / _rel).resolve()):
+                return True, f"already loaded {preset}"
+        except Exception:                                            # noqa: BLE001
+            pass
 
         # 2026-05-26 (openclaw-clawhub T1 + T9 wiring) -- enforce the
         # version-exact contract before loading the target GGUF. Preset
