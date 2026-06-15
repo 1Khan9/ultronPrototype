@@ -176,7 +176,7 @@ _RELAY_PATTERNS: tuple[re.Pattern[str], ...] = (
     # (the existing "say X to my team" handles payload-first).
     re.compile(
         rf"^(?:please\s+)?say\s+(?:to\s+(?:{_GROUP}|{_GROUP_PRON})"
-        rf"|in\s+{_CHANNEL})\s+(?:that\s+)?(?P<payload>.+)$",
+        rf"|in\s+{_CHANNEL})[\s,:]+(?:that\s+)?(?P<payload>.+)$",
         re.IGNORECASE,
     ),
     # "call out (that) X" -- gamer shorthand for a team info callout.
@@ -338,6 +338,19 @@ _VERBATIM_SUFFIX_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Verbatim demand at the START of the payload ("word for word, X" / "verbatim
+# X" / "the following: X" / "exactly: X"). Mirrors the trailing form so
+# "tell my team word for word, rotating now" relays EXACTLY "rotating now" --
+# the marker never leaks into the spoken line. "exactly" requires a [:,] after
+# it so a real callout ("exactly two on A") is never mistaken for the marker.
+_VERBATIM_PREFIX_RE = re.compile(
+    r"^(?:say\s+)?(?:"
+    r"(?:word\s+for\s+word|verbatim|the\s+following)\b\s*[:,]?"
+    r"|exactly\s*[:,]"
+    r")\s+",
+    re.IGNORECASE,
+)
+
 # "Repeat to my team X" -- a PREFIX verbatim relay. The soundboard check: a
 # teammate asks the user to say a specific word/phrase out loud to prove a human
 # (not a soundboard) is on comms, so Ultron must speak X EXACTLY. Distinct from
@@ -347,7 +360,10 @@ _VERBATIM_SUFFIX_RE = re.compile(
 # after the phrase; everything else is the LITERAL payload.
 _REPEAT_LEAD_RE = re.compile(
     r"^(?:please\s+|ok(?:ay)?\s+)?(?:.{0,40}?[,;.]\s+)?"
-    r"(?:repeat|echo)(?:\s+(?:back|after\s+me))*\b",
+    r"(?:(?:repeat|echo)(?:\s+(?:back|after\s+me))*"
+    # "say exactly to my team X" / "say word for word ..." / "say verbatim ..."
+    # are soundboard-verbatim too (the marker, not just 'repeat', carries it).
+    r"|say\s+(?:exactly|word\s+for\s+word|verbatim))\b",
     re.IGNORECASE,
 )
 # Leading meta-connective the user may put before the phrase ("repeat to my team
@@ -451,6 +467,22 @@ def _normalize_speech(text: str) -> str:
         text = rx.sub(sub, text)
     text = re.sub(r"\s{2,}", " ", text).strip()
     return text
+
+
+def _strip_verbatim_prefix(payload: str) -> tuple[str, bool]:
+    """Split a LEADING verbatim marker off a payload.
+
+    Returns ``(payload_without_prefix, is_verbatim)``. A payload that is ONLY
+    the marker (nothing real after) is left untouched (returns is_verbatim
+    False) so an empty line never relays.
+    """
+    m = _VERBATIM_PREFIX_RE.match(payload)
+    if m is None:
+        return payload, False
+    rest = payload[m.end():].strip().strip('"').strip()
+    if not re.search(r"[A-Za-z0-9]", rest):
+        return payload, False
+    return rest, True
 
 
 def _strip_verbatim_suffix(payload: str) -> tuple[str, bool]:
@@ -857,6 +889,8 @@ def _match_context_directive(
         context = cleaned[: m.start()].strip().strip(",;.").strip()
         payload = (m.group("payload") or "").strip().strip('"').strip()
         payload, verbatim = _strip_verbatim_suffix(payload)
+        payload, _vb_pre = _strip_verbatim_prefix(payload)
+        verbatim = verbatim or _vb_pre
         if (
             len(context.split()) >= 3
             and _CONTEXT_VERB_RE.search(context)
@@ -983,6 +1017,8 @@ def match_relay_command(
         # carries nothing ("ask the team to save" -> "save").
         payload = re.sub(r"^to\s+", "", payload, flags=re.IGNORECASE)
         payload, verbatim = _strip_verbatim_suffix(payload)
+        payload, _vb_pre = _strip_verbatim_prefix(payload)
+        verbatim = verbatim or _vb_pre
         # Require real content so a clipped transcript ("tell my
         # teammates the") doesn't relay nonsense; substantive one-word
         # callouts ("tell my team to save") pass.
@@ -999,6 +1035,8 @@ def match_relay_command(
         payload = (m.group("payload") or "").strip().strip('"').strip()
         payload = re.sub(r"^to\s+", "", payload, flags=re.IGNORECASE)
         payload, verbatim = _strip_verbatim_suffix(payload)
+        payload, _vb_pre = _strip_verbatim_prefix(payload)
+        verbatim = verbatim or _vb_pre
         if not _payload_has_content(payload):
             return None
         return RelayCommand(
@@ -1033,6 +1071,8 @@ def match_relay_command(
     if m is not None:
         payload = (m.group("payload") or "").strip().strip('"').strip()
         payload, verbatim = _strip_verbatim_suffix(payload)
+        payload, _vb_pre = _strip_verbatim_prefix(payload)
+        verbatim = verbatim or _vb_pre
         # "say something/anything ..." is a COMPOSE request to Ultron, not a relay
         # of specific content; and "say hi to the stream/chat" addresses the
         # broadcast, not the team -- both fall through to the conversational path.
@@ -1558,7 +1598,7 @@ def _fallback_line(command: RelayCommand) -> str:
             return "Heard -- agreed, let's do it."
         if "clap" in d or "shut" in d or "straight" in d:
             return "Noted. Scoreboard talks louder -- focus up."
-        return "I'm Kenning, his AI on comms. You heard right."
+        return "No soundboard, no strings. I am Ultron, his AI on comms."
     if command.compose:
         return "Good fight, team. Heads up - we take the next one."
     # Plain relay with no LLM output -> a CLEAN, fact-perfect literal of the

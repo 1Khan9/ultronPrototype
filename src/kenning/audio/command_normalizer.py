@@ -1,0 +1,216 @@
+"""Pre-routing command normalizer for the live voice path.
+
+Raw STT output is messy in ways that wreck strict command routing:
+
+  * the wake word bleeds a leading fragment ("Ultron, ..." -> "Run, ...") and
+    natural speech adds filler ("uh", "I mean", "I hope", "and ...");
+  * the first command word -- almost always the relay verb "tell" -- gets
+    clipped, so "Ultron, tell my team there's a Jett on A main" arrives as
+    "my team, there's a Jet A main" (no verb -> the strict relay matcher misses
+    it -> it falls through to the conversational LLM);
+  * Valorant proper nouns are misheard ("Jett"->"jet", "Cypher"->"cipher",
+    "Raze"->"ray zombie", "Sova"->"Silva", "B main"->"be main").
+
+This layer cleans the transcript into a CANONICAL command string BEFORE routing,
+so every downstream matcher (relay / Spotify / identity / desktop) sees text it
+can actually match. The whole point: routing should be robust to how the
+streamer really talks, not just to textbook phrasing.
+
+Pipeline (each stage conservative + idempotent on already-clean text):
+
+  1. ``_strip_leading_junk``  -- drop a leading misheard wake word + filler.
+  2. ``correct_callout_stt``  -- Valorant vocab + agent corrections (phrase,
+     context, token, fuzzy), reused from :mod:`kenning.audio._stt_correct`.
+  3. ``recover_relay_lead``   -- when the cleaned text is clearly a TEAM CALLOUT
+     but the relay verb was dropped, prepend the canonical "tell my team ..."
+     lead so the strict relay matcher catches it. CONTEXTUALLY GATED: questions,
+     Spotify, identity, and desktop commands are NEVER rewritten as relays.
+
+``normalize_command`` is the single entry point the orchestrator calls before
+the dispatch chain. It is cheap (regex + short-string work, ~tens of us) and
+returns the input unchanged when nothing applies.
+"""
+
+from __future__ import annotations
+
+import re
+
+from kenning.audio._stt_correct import _AGENTS, correct_callout_stt
+
+# ---------------------------------------------------------------------------
+# 1. Leading junk: misheard wake word + conversational filler.
+# ---------------------------------------------------------------------------
+# Wake-word homophones the STT prepends ("Ultron"->Run/Ron/Tron/One/...), plus
+# disfluencies and lead-ins people say before the real command. Stripped
+# iteratively from the FRONT only. We never strip the entire utterance (if the
+# strip would empty it, keep the original) so a bare "okay" still survives.
+_WAKE_HOMOPHONES = (
+    r"ultron|altron|voltron|ultra|ultro|tron|ron|run|rons"
+)
+_FILLER = (
+    r"hey|ok|okay|um+|uh+|er+|hmm+|so|well|like|yeah|yep|yup|now|and|then|"
+    r"please|alright|right|i\s+mean|i\s+think|i\s+hope|i\s+guess|i\s+wanna|"
+    r"i\s+want\s+to|let'?s\s+see|you\s+know|basically|just"
+)
+# A leading token run: wake homophone(s) and/or filler, each optionally
+# followed by light punctuation. Anchored at start, case-insensitive.
+_LEADING_JUNK = re.compile(
+    rf"^(?:\s*(?:{_WAKE_HOMOPHONES}|{_FILLER})\b[\s,.:;!?-]*)+",
+    re.IGNORECASE,
+)
+
+
+def _strip_leading_junk(s: str) -> str:
+    """Strip a leading wake-remnant / filler run. Never empties the string."""
+    out = _LEADING_JUNK.sub("", s, count=1).lstrip()
+    return out if out else s
+
+
+# ---------------------------------------------------------------------------
+# 2. Relay-lead recovery (the dropped-"tell" fix).
+# ---------------------------------------------------------------------------
+# Already a valid relay / compose / soundboard lead -> never recover.
+_HAS_RELAY_LEAD = re.compile(
+    r"^\s*(?:please\s+)?(?:tell|say|let|warn|inform|remind|wish|ask|relay|"
+    r"repeat|echo|yell|shout|announce|broadcast|call\s+out|encourage|hype|"
+    r"roast|flame|give|share|drop)\b",
+    re.IGNORECASE,
+)
+
+# A team-address lead with the VERB dropped ("my team ...", "the squad ...").
+_TEAM_LEAD = re.compile(
+    r"^\s*(?:my\s+|our\s+|the\s+)?"
+    r"(?:team|teammates?|squad|boys|guys|mates|homies|fellas|crew)\b[\s,:]*",
+    re.IGNORECASE,
+)
+
+# Negative gate: utterances that must NEVER be rewritten into a relay -- they
+# belong to other routes (conversation / Spotify / identity / desktop) and the
+# strict matchers there should see them verbatim.
+_NOT_A_CALLOUT = re.compile(
+    r"^\s*(?:"
+    # questions / conversational openers + "tell me ..." (about Ultron/Marvel)
+    r"(?:what|what'?s|who|whom|whose|where|when|why|how|which|is|are|am|was|"
+    r"were|do|does|did|can|could|should|would|will|won'?t|have|has|had|may|"
+    r"might|should|shall)\b"
+    r"|tell\s+me\b|ask\s+me\b|teammate\s+asked\b|my\s+teammate\s+asked\b"
+    # any "... asked about / asked me ..." -> relaying a question ABOUT a topic
+    r"|(?:my\s+)?(?:team|teammate|teammates)\s+asked\b"
+    # more conversational / personal openers (never a team callout)
+    r"|explain\b|describe\b|define\b|summari[sz]e\b|remind\s+me\b"
+    r"|i\s+think\b|i\s+feel\b|i\s+wonder\b|i\s+want\s+to\s+know\b|what\s+about\b"
+    r"|thank\s+you\b|thanks\b|good\s+bye\b|goodbye\b"
+    # Spotify control verbs
+    r"|play\b|pause\b|resume\b|unpause\b|skip\b|next\b|previous\b|prev\b|"
+    r"stop\b|mute\b|unmute\b|shuffle\b|repeat\b|loop\b|volume\b|louder\b|"
+    r"quieter\b|softer\b|turn\s+it\b|turn\s+the\s+volume\b|crank\b|"
+    r"like\s+this\b|love\s+this\b|unlike\b|thumbs\b|save\s+this\b|"
+    r"what'?s\s+playing\b|who\s+sings\b|what\s+song\b|now\s+playing\b|"
+    r"throw\s+on\b|put\s+on\b|queue\b|start\s+playing\b|keep\s+playing\b|"
+    r"go\s+back\b|restart\b|start\s+it\s+over\b|i\s+wanna\s+hear\b"
+    # identity / greeting (the greet matcher handles these)
+    r"|introduce\b|identify\b|state\s+your\s+name\b|who\s+are\s+you\b|"
+    r"say\s+(?:hi|hello|hey|what'?s\s+up)\b|are\s+you\s+(?:there|online|ready)\b"
+    # desktop / safety (refused in gaming, never relayed)
+    r"|take\s+a\s+screenshot\b|screenshot\b|click\b|type\b|open\s+\w|launch\b|"
+    r"move\s+the\s+mouse\b|close\s+\w|minimi[sz]e\b|maximi[sz]e\b"
+    # control toggles
+    r"|mute\s+the\s+team\b|gaming\s+mode\b|anticheat\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Spotify signal that can appear MID-utterance (so the start-anchored gate above
+# misses it): "set the volume to 40", "make the volume 60", "lower the volume
+# by 10". Any of these mark a music command -> leave verbatim for the Spotify
+# handler, never rewrite as a team relay.
+_SPOTIFY_SIGNAL = re.compile(
+    r"\b(?:volume|spotify|the\s+song|this\s+song|that\s+song|the\s+track|"
+    r"this\s+track|the\s+music|the\s+album|the\s+playlist|the\s+queue|"
+    r"next\s+track|next\s+song|previous\s+(?:song|track))\b",
+    re.IGNORECASE,
+)
+
+# Positive callout signals -- ANY one marks the utterance as a team callout
+# worth relaying (used only for the BARE form, with no team lead). Enemy
+# framing, abilities/utility, locations, self-status, orders, morale.
+_CALLOUT_SIGNAL = re.compile(
+    r"\b(?:"
+    # enemy / spotting
+    r"there'?s|theres|enemy|enemies|they'?re|hostile|spotted|incoming|"
+    r"pushing|push|pushed|rotating|rotate|rotated|lurking|lurk|holding|hold|"
+    r"flanking|flank|planting|plant|planted|peeking|peek|defusing|defuse|"
+    # abilities / utility
+    r"ult|ulted|ulting|ultimate|turret|wall|walled|smoke|smokes|smoked|"
+    r"flash|flashed|flashing|molly|molotov|drone|dart|cage|cages|trip|"
+    r"tripwire|nanoswarm|stun|stunned|knife|blade|spike|orb|recon|"
+    # locations
+    r"heaven|hell|main|mid|middle|long|short|window|site|spawn|market|"
+    r"garage|hookah|connector|tree|elbow|ramp|pit|rafters|generator|"
+    # self status
+    r"low|one\s+shot|one-shot|reloading|i\s+died|i'?m\s+dead|i'?m\s+low|"
+    r"i'?m\s+planting|i'?m\s+flanking|i'?m\s+pushing|i'?m\s+rotating|"
+    r"i'?m\s+holding|i'?m\s+going|i\s+have\s+(?:a|b|c|site|the\s+spike)|"
+    # orders / morale / social
+    r"save|eco|force|retake|default|stack|group\s+up|fall\s+back|lock\s+in|"
+    r"good\s+game|gg|nice|great\s+play|well\s+played|let'?s\s+go|we\s+got\s+this|"
+    r"good\s+luck|my\s+bad|nice\s+shot|clutch|careful|watch\s+the|"
+    r"winning|we'?re\s+winning|we\s+lost|good\s+round|nice\s+round"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Roster agent names (canonical, post-correction) are also a callout signal.
+_AGENT_SIGNAL = re.compile(
+    r"\b(?:" + "|".join(re.escape(a.replace("/", "")) for a in _AGENTS) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def recover_relay_lead(text: str) -> str:
+    """Prepend the canonical "tell my team ..." lead when a clipped TEAM CALLOUT
+    arrives without its relay verb. Returns ``text`` unchanged for anything that
+    is already a relay lead, or that belongs to another route."""
+    s = text.strip()
+    if not s:
+        return text
+    if _HAS_RELAY_LEAD.match(s):
+        return text  # already a valid relay/compose/soundboard lead
+    if _NOT_A_CALLOUT.match(s):
+        return text  # question / Spotify / identity / desktop -> leave verbatim
+    if _TEAM_LEAD.match(s):
+        # "my team X" / "the squad X" -> the verb was dropped; restore "tell".
+        # Liberal here: a wake-addressed utterance that opens with the team is
+        # almost always a relay (the negative gate already removed questions).
+        return "tell " + s
+    if _CALLOUT_SIGNAL.search(s) or _AGENT_SIGNAL.search(s):
+        # Bare callout with no addressee at all ("there's a Jett A main",
+        # "Chamber holding long", "I'm planting") -> address the team.
+        return "tell my team " + s
+    return text
+
+
+# ---------------------------------------------------------------------------
+# Entry point.
+# ---------------------------------------------------------------------------
+def normalize_command(text: str) -> str:
+    """Clean an STT transcript into a canonical command string for routing.
+
+    Order: strip leading junk -> Valorant vocab correction -> relay-lead
+    recovery. Cheap + idempotent; returns the input unchanged when nothing
+    applies (so already-clean text and the test corpus are never altered in a
+    way that changes routing)."""
+    if not text or not text.strip():
+        return text
+    s = _strip_leading_junk(text.strip())
+    # ZERO-MISTAKES GATE: conversational / Spotify / identity / desktop commands
+    # are left VERBATIM -- the aggressive Valorant vocab correction (phonetic +
+    # fuzzy) runs ONLY on callout-bound text, so a question or a song title is
+    # never corrupted into agent names. Everything that ISN'T clearly one of
+    # those routes is treated as a team callout (the primary wake-addressed use)
+    # and gets corrected + lead-recovered.
+    if _NOT_A_CALLOUT.match(s) or _SPOTIFY_SIGNAL.search(s):
+        return s
+    s = correct_callout_stt(s)
+    s = recover_relay_lead(s)
+    return s.strip()

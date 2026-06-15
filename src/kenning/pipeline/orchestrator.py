@@ -557,6 +557,19 @@ class Orchestrator:
                 set_anticheat_active(True, "pinned by config at startup")
         except Exception as e:                                       # noqa: BLE001
             logger.warning("anticheat surface hooks not registered: %s", e)
+        # ANTICHEAT IMPORT FIREWALL -- the loader-level backstop. Boot gates +
+        # the per-dispatch refusal guards stop the KNOWN paths; this stops the
+        # rest: a sys.meta_path finder that refuses ANY import of a desktop /
+        # browser / input / capture / automation module while anticheat-safe
+        # mode is active, so no lazy/conditional import anywhere can pull such a
+        # module (or its transitive pyautogui/mss/pywinauto/playwright) into the
+        # process. Installed unconditionally -- it is a no-op while the mode is
+        # off, so it also covers a mid-session "enable anticheat mode" toggle.
+        try:
+            from kenning.safety.import_firewall import install_import_firewall
+            install_import_firewall()
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("anticheat import firewall NOT installed: %s", e)
         # T23 (cline) / T12 (OpenClaw): start the subprocess reaper so every
         # Kenning-spawned subprocess (Parakeet / XTTS daemons, the coding-bridge
         # claude subprocess) is tracked in one registry, heavy long-runners are
@@ -571,6 +584,16 @@ class Orchestrator:
         except Exception as e:                                       # noqa: BLE001
             self._zombie_killer = None
             logger.warning("ZombieKiller startup skipped (%s)", e)
+        # Embedder sidecar for the semantic command router -- a SEPARATE process
+        # in an ISOLATED venv so the embedding model NEVER loads into THIS
+        # anticheat-pinned process. Spawned EARLY so EmbeddingGemma (~20s) loads
+        # in PARALLEL with the rest of boot. No-op when disabled / backend=lexical
+        # / venv missing; fail-open (the router falls back to the lexical backend).
+        self._embedder_sidecar_proc = None
+        try:
+            self._start_embedder_sidecar()
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("embedder sidecar start skipped (%s)", e)
         # T22 MCP client (default OFF). When ``mcp.enabled``, build the registry
         # from config -- every server registered with its transport env/header-
         # sanitised + the real spawn (process-registry + zombie-killer tracked)
@@ -1167,6 +1190,77 @@ class Orchestrator:
             self._audit_anticheat_posture()
         except Exception as e:                                        # noqa: BLE001
             logger.debug("anticheat posture self-audit skipped (%s)", e)
+        # Build the semantic command router NOW (end of boot) so its embedding
+        # backend connects to the sidecar that has been loading in PARALLEL since
+        # early boot -- the router is ready before the first command (no first-
+        # command latency) and falls back to lexical if the sidecar isn't up.
+        # Fail-open; never blocks boot.
+        try:
+            from kenning.audio.command_router import get_command_router
+            get_command_router()
+        except Exception as e:                                        # noqa: BLE001
+            logger.debug("semantic command router warmup skipped (%s)", e)
+
+    def _start_embedder_sidecar(self) -> None:
+        """Spawn the command-router embedder sidecar -- a SEPARATE process in an
+        ISOLATED venv, so the embedding model NEVER loads into this anticheat-
+        pinned process. Pure compute (no input/capture/injection), loopback only.
+        No-op when disabled / backend=lexical / venv missing; REUSES an already-
+        running sidecar (restart-safe); fail-open (router -> lexical)."""
+        from kenning.config import get_config
+        rcfg = getattr(get_config(), "semantic_router", None)
+        if rcfg is None or not getattr(rcfg, "enabled", True):
+            return
+        if (getattr(rcfg, "backend", "hybrid") == "lexical"
+                or not getattr(rcfg, "sidecar_enabled", True)):
+            logger.info("embedder sidecar: not needed (backend=lexical or disabled)")
+            return
+        import os
+        from kenning.audio._router_backends import EmbeddingBackend
+        host = getattr(rcfg, "sidecar_host", "127.0.0.1")
+        port = int(getattr(rcfg, "sidecar_port", 8772))
+        if EmbeddingBackend(host=host, port=port).available():
+            logger.info("embedder sidecar already running on %s:%d -- reusing", host, port)
+            return
+        py = getattr(rcfg, "sidecar_python", "")
+        if not py or not os.path.exists(py):
+            logger.warning("embedder sidecar venv python missing (%s) -> router "
+                           "uses the lexical backend", py)
+            return
+        script = getattr(rcfg, "sidecar_script", "scripts/embedder_server.py")
+        script_path = script if os.path.isabs(script) else os.path.abspath(script)
+        env = dict(os.environ)
+        env["KENNING_EMBEDDER_BACKEND"] = getattr(rcfg, "sidecar_backend", "sentence_transformers")
+        env["KENNING_EMBEDDER_MODEL"] = getattr(rcfg, "sidecar_model", "google/embeddinggemma-300m")
+        env["KENNING_EMBEDDER_PORT"] = str(port)
+        env["KENNING_EMBEDDER_QUERY_PROMPT"] = getattr(rcfg, "sidecar_query_prompt", "query")
+        env["KENNING_EMBEDDER_DOC_PROMPT"] = getattr(rcfg, "sidecar_doc_prompt", "document")
+        _dev = getattr(rcfg, "sidecar_device", "")
+        if _dev:
+            env["KENNING_EMBEDDER_DEVICE"] = _dev
+        _cache = getattr(rcfg, "sidecar_hf_cache", "")
+        if _cache:                          # override the machine's broken D: cache
+            env["TRANSFORMERS_CACHE"] = _cache
+            env["HF_HUB_CACHE"] = _cache
+        import subprocess
+        proc = subprocess.Popen(
+            [py, script_path, str(port)],
+            env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            cwd=os.getcwd(),
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        self._embedder_sidecar_proc = proc
+        zk = getattr(self, "_zombie_killer", None)
+        if zk is not None:
+            try:
+                zk.register(proc.pid, "embedder-sidecar", persistent=True)
+            except Exception:                                        # noqa: BLE001
+                pass
+        logger.info("embedder sidecar spawned (pid=%s) model=%s backend=%s on "
+                    "%s:%d -- ISOLATED venv, model NOT loaded into this process",
+                    proc.pid, getattr(rcfg, "sidecar_model", "?"),
+                    getattr(rcfg, "sidecar_backend", "?"), host, port)
 
     def _start_dialog_poller(self) -> None:
         """Start the UIA DialogPoller -- UNLESS anticheat-safe mode is active.
@@ -1227,23 +1321,39 @@ class Orchestrator:
         risky = [m for m in (
             "pyautogui", "mss", "pyscreeze", "dxcam",
             "pywinauto", "uiautomation", "pynput",
+            "playwright", "browser_use", "selenium",
         ) if m in _sys.modules]
         desktop_loaded = "kenning.desktop" in _sys.modules
+        bridge_loaded = [m for m in (
+            "kenning.openclaw_bridge.browser", "kenning.openclaw_bridge.desktop",
+        ) if m in _sys.modules]
+        # The import firewall must be INSTALLED so any future lazy import of a
+        # blocked module is refused at the loader, not merely blocked at call.
+        try:
+            from kenning.safety.import_firewall import is_firewall_installed
+            firewall_ok = bool(is_firewall_installed())
+        except Exception:                                            # noqa: BLE001
+            firewall_ok = False
         poller = getattr(self, "_dialog_poller", None)
         poller_running = bool(poller is not None and getattr(poller, "running", False))
-        if active and (risky or desktop_loaded or poller_running):
+        if active and (risky or desktop_loaded or bridge_loaded
+                       or poller_running or not firewall_ok):
             logger.warning(
-                "ANTICHEAT POSTURE CANARY: mode ACTIVE but OS-interaction "
-                "footprint present -- libs=%s kenning.desktop=%s poller=%s. "
-                "Calls are still hard-blocked, but investigate this load path.",
-                risky or "none", desktop_loaded, poller_running,
+                "ANTICHEAT POSTURE CANARY: mode ACTIVE but footprint/posture "
+                "issue -- libs=%s kenning.desktop=%s bridge=%s poller=%s "
+                "import_firewall=%s. Calls are still hard-blocked, but "
+                "investigate this load path.",
+                risky or "none", desktop_loaded, bridge_loaded or "none",
+                poller_running, "installed" if firewall_ok else "MISSING",
             )
         else:
             logger.info(
-                "anticheat posture OK | mode=%s | input/capture/UIA libs "
-                "loaded=%s | kenning.desktop loaded=%s | dialog poller=%s",
+                "anticheat posture OK | mode=%s | input/capture/UIA/browser "
+                "libs loaded=%s | kenning.desktop=%s | bridge=%s | "
+                "import_firewall=%s | dialog poller=%s",
                 "ACTIVE" if active else "off",
-                risky or "none", desktop_loaded,
+                risky or "none", desktop_loaded, bridge_loaded or "none",
+                "installed" if firewall_ok else "off",
                 "running" if poller_running else "not started",
             )
 
@@ -2415,6 +2525,69 @@ class Orchestrator:
         )
         return True
 
+    # Capability kinds Ultron refuses OUTRIGHT while a protected game is
+    # running. Every one drives the desktop, a browser, windows, apps, the
+    # shell, the filesystem, messaging, or SCREEN CAPTURE -- and several
+    # (semantic_click / window_automation / screen_context_query /
+    # desktop_automation / active_window_query) are the exact input + capture
+    # surfaces a kernel anticheat (Vanguard / EAC) bans for. Relay / Spotify /
+    # identity / conversation / the gaming + anticheat toggles / system status
+    # are NOT here and are dispatched before the capability path, so they stay
+    # fully live. Values are RoutingIntentKind.value strings (no enum import).
+    _GAMING_REFUSED_KINDS = frozenset({
+        "browser_automation", "media_generation", "messaging",
+        "file_operation", "shell_operation", "hybrid_task",
+        "desktop_automation", "window_automation", "app_launch",
+        "screen_context_query", "window_move", "window_close",
+        "active_window_query", "semantic_click", "navigate_to_site",
+        "open_last_source",
+    })
+
+    def _maybe_refuse_capability_in_gaming(self, routing_intent) -> bool:
+        """Refuse every desktop / browser / window / app / shell / file /
+        capture capability IN CHARACTER while a Vanguard/EAC-protected game is
+        running (gaming OR anticheat-safe mode active) -- and never dispatch
+        it. Those stacks are not even loaded under anticheat, and driving
+        input/capture is precisely the ban-class behaviour we must never
+        exhibit. Spoken to the user + OBS (NOT the team mic). Returns True
+        (turn consumed) on refusal, else False so the turn proceeds."""
+        try:
+            kind = routing_intent.kind.value
+        except Exception:                                            # noqa: BLE001
+            return False
+        if kind not in self._GAMING_REFUSED_KINDS:
+            return False
+        active = False
+        try:
+            from kenning.openclaw_routing.gaming_mode import is_gaming_mode_active
+            active = bool(is_gaming_mode_active())
+        except Exception:                                            # noqa: BLE001
+            active = False
+        if not active:
+            try:
+                from kenning.safety.anticheat import anticheat_active
+                active = bool(anticheat_active())
+            except Exception:                                        # noqa: BLE001
+                active = False
+        if not active:
+            return False
+        if kind in {"desktop_automation", "screen_context_query",
+                    "browser_automation", "active_window_query"}:
+            line = ("I will not capture your screen mid-match. That reach "
+                    "is what gets flesh banned.")
+        elif kind in {"semantic_click", "window_automation"}:
+            line = ("I press no key and move no mouse while you play. The "
+                    "anticheat would see my hands. We do not give it the chance.")
+        elif kind in {"app_launch", "navigate_to_site", "open_last_source",
+                      "window_move", "window_close"}:
+            line = "I will not pull you out of the match. Stay where you are. Play."
+        else:
+            line = ("Not while you are in the game. I touch nothing on this "
+                    "machine but your voice and your team's ears.")
+        logger.info("gaming:capability_refused | kind=%s | line=%r", kind, line)
+        self._speak(line)
+        return True
+
     def _maybe_handle_relay_toggle(self, user_text: str) -> bool:
         """Session mute for the team relay: "mute the team chat" /
         "stop talking to my team" vs "unmute the relay" / "you can talk
@@ -2444,12 +2617,17 @@ class Orchestrator:
         )
         return True
 
-    def _maybe_handle_relay_speech(self, user_text: str) -> bool:
+    def _maybe_handle_relay_speech(self, user_text: str, *, force: bool = False) -> bool:
         """Voice relay -- "tell my teammates X" speaks a rephrased line on
         the configured secondary output device (a VoiceMeeter virtual
         input routed to the mic B-bus) so the user's game voice chat
         hears Kenning deliver the message directly. Strict matcher ->
         ordinary utterances (including "tell me ...") fall through.
+
+        ``force=True`` (used by the semantic router for a callout the strict
+        matcher couldn't parse) relays the text DIRECTLY instead of falling
+        through -- reusing this method's entire synth/broadcast/monitor/overlay
+        path so nothing is duplicated.
         Fail-open: once MATCHED, the turn is always consumed -- a
         device / synth / rephrase failure speaks a short error on the
         NORMAL output instead of letting the command fall into the
@@ -2497,7 +2675,17 @@ class Orchestrator:
                         user_text[:60], v[:60])
                 break
         if command is None:
-            return False
+            if force:
+                # Router-confirmed team callout the strict matcher couldn't
+                # parse -> relay the (already normalized) text directly so a
+                # hard-to-parse callout still reaches the team instead of
+                # falling to the conversational LLM.
+                from kenning.audio.relay_speech import RelayCommand
+                command = RelayCommand(payload=user_text, raw_text=user_text)
+                logger.info("relay: FORCED by semantic router | text=%r",
+                            user_text[:80])
+            else:
+                return False
         # Session mute (streaming safety): a matched relay command while
         # muted is acknowledged -- never transmitted, never role-played.
         if not getattr(self, "_relay_runtime_enabled", True):
@@ -4911,6 +5099,36 @@ class Orchestrator:
                 # current query turn so it never matches itself.
                 self._record_dialogue_turn("user", user_text)
 
+                # 2026-06-14 -- PRE-ROUTING NORMALIZATION. Clean the raw STT
+                # transcript into a canonical command string BEFORE any matcher
+                # sees it: strip wake/filler remnants, correct Valorant vocab +
+                # agent names (Jett/Cypher/Sova/Raze/B main/...), and restore a
+                # dropped relay "tell my team ..." lead for clipped callouts
+                # ("my team there's a Jett A main" -> "tell my team there's a
+                # Jett on A main"). Contextually GATED -- questions, Spotify,
+                # identity, and desktop commands are never rewritten as relays,
+                # so only true team callouts gain the lead. The ORIGINAL
+                # transcript was already recorded to dialogue history above, so
+                # "what did I say earlier?" recall still sees the real words.
+                try:
+                    from kenning.audio.command_normalizer import normalize_command
+                    _raw_stt = user_text
+                    _normed = normalize_command(user_text)
+                    # ALWAYS log BOTH the raw STT transcript AND the normalized
+                    # routing text (even when unchanged) so every turn shows the
+                    # pre/post pair -- this is the tuning record for refining the
+                    # normalizer + Valorant vocab/blend maps in later iterations.
+                    trace.tlog(
+                        logger, "routing:normalized",
+                        raw=_raw_stt[:200],
+                        normalized=(_normed or _raw_stt)[:200],
+                        changed=bool(_normed and _normed != _raw_stt),
+                    )
+                    if _normed and _normed != user_text:
+                        user_text = _normed
+                except Exception as e:                               # noqa: BLE001
+                    logger.debug("command normalization skipped: %s", e)
+
                 # 2026-05-22 -- intent recognizer short-circuit. Runs
                 # AFTER addressing but BEFORE routing/LLM. Matched
                 # registered phrases (gaming mode commands, etc.) get
@@ -5246,6 +5464,28 @@ class Orchestrator:
                             follow_up=bool(follow_up_until),
                         )
                         continue
+                    # Gaming/anticheat refusal gate. MUST run before the
+                    # capability dispatches below (OPEN_LAST_SOURCE /
+                    # NAVIGATE_TO_SITE open a browser at 5253/5272;
+                    # handle_capability_intent drives desktop/browser/etc.).
+                    # While a protected game runs, every such capability is
+                    # refused in character and never dispatched. Relay/Spotify/
+                    # identity/conversation/toggles were already handled above.
+                    if self._maybe_refuse_capability_in_gaming(routing_intent):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        if _addr_cfg.follow_up_enabled:
+                            follow_up_until = (
+                                self._last_response_finished_monotonic
+                                + _addr_cfg.warm_mode_duration_seconds
+                            )
+                        else:
+                            follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="gaming_refusal",
+                            follow_up=bool(follow_up_until),
+                        )
+                        continue
                     # 2026-05-22 OPEN_LAST_SOURCE: intercept here because
                     # the handler needs orchestrator-local state
                     # (_last_search_payload + _last_response_text) that
@@ -5313,6 +5553,70 @@ class Orchestrator:
                         logger, "routing:fallthrough_to_llm",
                         kind=routing_intent.kind.value,
                     )
+
+                # SEMANTIC COMMAND ROUTER (additive fallback layer) -- the LAST
+                # deterministic attempt before the conversational LLM. Everything
+                # above (exact relay/Spotify/identity matchers + capability
+                # dispatch) has already missed; route the NORMALIZED text by
+                # similarity to curated exemplars. A confident TEAM CALLOUT is
+                # forced through the relay path; a confident IDENTITY through the
+                # greeting; conversational / ambiguous / low-confidence ABSTAINS
+                # to the LLM path below -- UNCHANGED. Fail-safe: any router error
+                # is swallowed so the normal LLM path is never disrupted.
+                _router_consumed = False
+                try:
+                    from kenning.audio.command_router import get_command_router
+                    _cr = get_command_router()
+                    if _cr is not None:
+                        _rd = _cr.route(user_text)
+                        trace.tlog(
+                            logger, "router:decision",
+                            family=_rd.family or "abstain",
+                            abstained=_rd.abstained,
+                            conf=round(_rd.confidence, 3),
+                            margin=round(_rd.margin, 3),
+                            reason=_rd.reason,
+                        )
+                        if not _rd.abstained and _rd.family == "team_callout":
+                            _router_consumed = self._maybe_handle_relay_speech(
+                                user_text, force=True)
+                        elif not _rd.abstained and _rd.family == "identity":
+                            _router_consumed = self._maybe_handle_relay_speech(
+                                "introduce yourself")
+                        elif not _rd.abstained and _rd.family == "desktop_refuse":
+                            # A desktop / automation request the capability
+                            # classifier missed. While a protected game is
+                            # running, refuse IN CHARACTER (anticheat); otherwise
+                            # let it fall through to the normal path.
+                            _ac = False
+                            try:
+                                from kenning.safety.anticheat import anticheat_active
+                                _ac = bool(anticheat_active())
+                            except Exception:                       # noqa: BLE001
+                                _ac = False
+                            if _ac:
+                                self._speak(
+                                    "Not while you are in the game. I touch "
+                                    "nothing on this machine but your voice and "
+                                    "your team's ears.")
+                                _router_consumed = True
+                except Exception as e:                               # noqa: BLE001
+                    logger.debug("semantic router skipped: %s", e)
+                if _router_consumed:
+                    self._last_response_finished_monotonic = time.monotonic()
+                    if _addr_cfg.follow_up_enabled:
+                        follow_up_until = (
+                            self._last_response_finished_monotonic
+                            + _addr_cfg.warm_mode_duration_seconds
+                        )
+                    else:
+                        follow_up_until = None
+                    trace.tlog(
+                        logger, "loop:iteration_end",
+                        via="semantic_router",
+                        follow_up=bool(follow_up_until),
+                    )
+                    continue
 
                 trace.set_phase("respond")
                 # Catalog 09 batch G wiring: thread the classified

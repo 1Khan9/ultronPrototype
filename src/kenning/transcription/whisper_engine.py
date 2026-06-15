@@ -7,6 +7,7 @@ the rest of the pipeline already standardizes on that, so no resampling here.
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Optional
 
@@ -18,6 +19,28 @@ from kenning.resilience import get_error_log
 from kenning.utils.logging import get_logger
 
 logger = get_logger("transcription.whisper")
+
+# faster-whisper emits stock phrases ("Thank you.", "Thanks for watching",
+# "you", ".") on near-silence / room tone / non-speech audio. On the gaming
+# relay path a false transcript would fire a bogus team callout or a
+# conversational turn, so when the WHOLE transcript normalises to one of these
+# it is dropped. Kept deliberately NARROW -- only phrases that are never a
+# meaningful standalone command (real commands like "you're welcome" untouched).
+_WHISPER_HALLUCINATIONS = frozenset({
+    "thank you", "thanks", "thank you so much", "thank you very much",
+    "thanks for watching", "thank you for watching", "thanks for watching everyone",
+    "please subscribe", "subscribe", "thanks for listening", "you", "bye",
+    "bye bye", "the", "music", "applause", "silence", "background noise",
+    "i'm sorry", "oh", "hmm", "mm", "mmm", "uh", "um", "ah",
+})
+
+
+def _is_whisper_hallucination(text: str) -> bool:
+    """True when ``text`` is, in whole, a known faster-whisper non-speech
+    artifact (case/punctuation-insensitive)."""
+    norm = re.sub(r"[^\w\s']", " ", text.lower())
+    norm = re.sub(r"\s+", " ", norm).strip()
+    return norm in _WHISPER_HALLUCINATIONS
 
 
 class WhisperEngine:
@@ -84,6 +107,12 @@ class WhisperEngine:
             return ""
         if audio.dtype != np.float32:
             audio = audio.astype(np.float32)
+        # Silence gate: skip the GPU call on near-silent buffers. faster-whisper
+        # hallucinates stock phrases ("Thank you.") on silence / faint room
+        # tone; a real callout peaks far above this floor. Cheap insurance that
+        # also saves an inference when upstream VAD lets a quiet buffer through.
+        if float(np.max(np.abs(audio))) < 0.008:
+            return ""
 
         t0 = time.monotonic()
         try:
@@ -95,7 +124,19 @@ class WhisperEngine:
                 condition_on_previous_text=settings.WHISPER_CONDITION_ON_PREVIOUS_TEXT,
                 vad_filter=settings.WHISPER_VAD_FILTER,
             )
-            text = " ".join(seg.text.strip() for seg in segments).strip()
+            kept = []
+            for seg in segments:
+                # Drop segments the model is highly confident are non-speech.
+                if getattr(seg, "no_speech_prob", 0.0) > 0.85:
+                    continue
+                piece = (seg.text or "").strip()
+                if piece:
+                    kept.append(piece)
+            text = " ".join(kept).strip()
+            # Final guard: a whole-transcript stock phrase is a hallucination.
+            if text and _is_whisper_hallucination(text):
+                logger.debug("whisper: dropped non-speech hallucination %r", text)
+                text = ""
         except Exception as e:
             elapsed_ms = (time.monotonic() - t0) * 1000
             logger.error(

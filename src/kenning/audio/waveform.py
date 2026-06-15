@@ -601,13 +601,23 @@ class _RenderState:
         self.plate_top = int(round(size * 0.82))
         self.cur_level = 0.0
         self.cur_bands = np.zeros(bars, dtype=np.float32)
-        self.angle = 0.0
+        self.angle = 0.0   # breath/shimmer clock -- always advances (idle pulse)
+        self.spin = 0.0     # bar-ring rotation -- frozen at idle (see render)
         self.drag_x = 0
         self.drag_y = 0
         self.glow_items: list = []
         self.bar_outline_items: list = []   # black underlay -> crisp bar edges
         self.bar_items: list = []
         self.core = None
+        # Render change-detection: only push a canvas.coords/itemconfigure when
+        # the PIXEL-ROUNDED value actually changed, so the desktop compositor
+        # redraws only what moved. Tk snaps lines/ovals to pixels anyway, so
+        # rounding is visually identical -- but the slow idle breath now crosses
+        # a pixel boundary only a few times/sec instead of mutating every frame,
+        # collapsing idle GPU compositing from ~60 redraws/s to a handful. Keyed
+        # by canvas item id.
+        self._coords_cache: dict = {}
+        self._cfg_cache: dict = {}
         # Nameplate (ULTRON): a dark plate (contrast over gameplay) with a REAL
         # Gaussian-blurred neon glow -- a bright tube core + soft, rounded halo
         # in the SAME red the glyphs light up to -- pre-rendered with PIL at N
@@ -687,6 +697,24 @@ class _RenderState:
             font=(self.font_family, fsize, "bold"),
             fill=_rgb_to_hex(self.CORE_IDLE))
 
+    def _set_coords(self, item, x0, y0, x1, y1) -> None:
+        """canvas.coords ONLY when the pixel-rounded box changed (skip no-ops)."""
+        rc = (round(x0), round(y0), round(x1), round(y1))
+        if self._coords_cache.get(item) != rc:
+            self._coords_cache[item] = rc
+            self.canvas.coords(item, *rc)
+
+    def _set_cfg(self, item, **kw) -> None:
+        """canvas.itemconfigure ONLY for keys whose value changed (skip no-ops)."""
+        cache = self._cfg_cache.get(item)
+        if cache is None:
+            cache = {}
+            self._cfg_cache[item] = cache
+        changed = {k: v for k, v in kw.items() if cache.get(k) != v}
+        if changed:
+            cache.update(changed)
+            self.canvas.itemconfigure(item, **changed)
+
     def render(self, target_level: float, target_bands: np.ndarray) -> None:
         c = self.canvas
         # Ease current -> target (attack fast, release smooth).
@@ -696,9 +724,17 @@ class _RenderState:
             self.cur_bands = np.zeros(self.bars, dtype=np.float32)
         gain = np.where(target_bands > self.cur_bands, 0.6, 0.22)
         self.cur_bands = self.cur_bands + (target_bands - self.cur_bands) * gain
-        # Idle breathing so it's never fully dead on screen.
+        # Idle breathing so it's never fully dead on screen. The clock always
+        # advances so the breath pulse + core never freeze. The bar RING spin,
+        # though, only advances while actually speaking: at idle the ring is a
+        # uniform set of breath-height stubs, so freezing the spin is visually
+        # indistinguishable but stops all 48 bars from changing coords (and so
+        # redrawing) 30x/s -- collapsing idle GPU compositing to near zero. The
+        # spin resumes seamlessly the instant Ultron speaks.
         breath = 0.04 * (0.5 + 0.5 * math.sin(self.angle * 1.7))
         self.angle += 0.018
+        if self.cur_level > 0.05:   # speaking -> rotate; idle -> frozen (invisible)
+            self.spin += 0.018
         level = max(self.cur_level, breath)
 
         accent, tip, bg = self.accent_rgb, self.tip_rgb, self.bg
@@ -710,7 +746,7 @@ class _RenderState:
             bi = i if i <= half else n - i
             bi = min(bi, self.cur_bands.shape[0] - 1)
             amp = float(self.cur_bands[bi]) + breath * 0.6
-            ang = self.angle + (2.0 * math.pi * i / n)
+            ang = self.spin + (2.0 * math.pi * i / n)
             ca, sa = math.cos(ang), math.sin(ang)
             inner = r0 + 3.0
             # Fan out everywhere except straight DOWN (toward the nameplate):
@@ -722,7 +758,9 @@ class _RenderState:
             x1, y1 = cx + ca * outer, cy + sa * outer
             # Travelling shimmer highlight sweeps around the ring (a spectrum
             # glint), and peaks flash white-hot -- cool motion without clutter.
-            shimmer = 0.5 + 0.5 * math.sin(ang * 2.0 - self.angle * 3.2)
+            # Shimmer phase rides the gated spin (not the breath clock) so it
+            # travels at the identical rate while speaking but freezes at idle.
+            shimmer = 0.5 + 0.5 * math.sin(ang * 2.0 - self.spin * 3.2)
             hot = min(1.0, amp * 1.2 + 0.22 * shimmer * level)
             col_rgb = _lerp_rgb(accent, tip, hot)
             if amp > 0.62:
@@ -731,27 +769,31 @@ class _RenderState:
             # Loud bars get a touch thicker -> the energy reads as "fatter".
             bw = max(2, int(self.size * (0.011 + 0.006 * min(1.0, amp))))
             ow = bw + max(2, int(self.size * 0.006))   # black outline, a bit wider
-            c.coords(self.bar_outline_items[i], x0, y0, x1, y1)
-            c.itemconfigure(self.bar_outline_items[i], width=ow)
-            c.coords(self.bar_items[i], x0, y0, x1, y1)
-            c.itemconfigure(self.bar_items[i], fill=col, width=bw)
+            self._set_coords(self.bar_outline_items[i], x0, y0, x1, y1)
+            self._set_cfg(self.bar_outline_items[i], width=ow)
+            self._set_coords(self.bar_items[i], x0, y0, x1, y1)
+            self._set_cfg(self.bar_items[i], fill=col, width=bw)
         # Pulsing core: snappier swell + a hotter centre that flashes toward
         # white as he speaks (the "arc reactor" pulse).
         cr = r0 * (0.60 + 0.58 * level)
         core_rgb = _lerp_rgb((40, 12, 16), accent, 0.30 + 0.70 * level)
         if level > 0.55:
             core_rgb = _lerp_rgb(core_rgb, (255, 236, 238), (level - 0.55) * 0.8)
-        c.coords(self.core, cx - cr, cy - cr, cx + cr, cy + cr)
-        c.itemconfigure(self.core, fill=_rgb_to_hex(core_rgb))
+        self._set_coords(self.core, cx - cr, cy - cr, cx + cr, cy + cr)
+        self._set_cfg(self.core, fill=_rgb_to_hex(core_rgb))
         # Glow rings expand with level. Fade from the DARK art_base (not the
         # chroma bg) -> accent, so on a green key background the rings never go
         # olive (un-keyable); only the empty canvas stays pure green.
         for k, item in enumerate(self.glow_items):
             gr = r0 + (r_max - r0) * (0.5 + 0.5 * level) * (0.6 + 0.25 * k)
-            shade = _lerp_color(self.art_base, accent,
-                                max(0.0, level - 0.15 * k) * 0.5)
-            c.coords(item, cx - gr, cy - gr, cx + gr, cy + gr)
-            c.itemconfigure(item, outline=shade)
+            # Rings render in the SAME accent red as the bars (visible at idle,
+            # not the near-black art_base they used to fade to) and brighten
+            # toward white-hot as he speaks. Red is keyable on the green chroma
+            # (only pure-green empty canvas is keyed), so no olive bleed.
+            shade = _lerp_color(self.accent_rgb, (255, 255, 255),
+                                max(0.0, level - 0.15 * k) * 0.6)
+            self._set_coords(item, cx - gr, cy - gr, cx + gr, cy + gr)
+            self._set_cfg(item, outline=shade)
 
         # ---- Nameplate: swap to the pre-rendered glow image for the current
         # speech level. Fast attack/decay -> a quick neon pulse (brighten fast,

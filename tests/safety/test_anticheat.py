@@ -289,8 +289,12 @@ def test_no_ban_class_apis_anywhere_in_source() -> None:
     offenders: list[str] = []
     for py in SRC.rglob("*.py"):
         rel = py.relative_to(SRC).as_posix()
-        if rel.startswith("safety/rules/") or rel == "safety/anticheat.py":
-            continue  # defense regexes / threat-model docs, not API usage
+        if (rel.startswith("safety/rules/") or rel == "safety/anticheat.py"
+                or rel == "safety/import_firewall.py"):
+            # Defense files: the rules regexes, the anticheat threat-model, and
+            # the import firewall (which NAMES the modules it BLOCKS) -- not API
+            # usage. Same carve-out rationale for all three.
+            continue
         if forbidden.search(py.read_text(encoding="utf-8", errors="replace")):
             offenders.append(rel)
     assert not offenders, (

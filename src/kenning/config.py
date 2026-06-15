@@ -314,7 +314,9 @@ class STTConfig(_Strict):
     # the transcription suddenly mishears proper nouns, accents, or
     # technical jargon that used to work, try ``stt.engine: whisper``
     # to confirm it's the engine before chasing other causes.
-    engine: Literal["auto", "whisper", "parakeet", "moonshine"] = "auto"
+    # 2026-06-14: default hardened "auto" -> "whisper". Ultron must ALWAYS boot
+    # the new accurate STT, never the old model, even if config.yaml is reset.
+    engine: Literal["auto", "whisper", "parakeet", "moonshine"] = "whisper"
     # 2026-05-22 -- dual-STT swap for gaming mode. When set to any
     # value other than "" or the primary ``engine``, the orchestrator
     # loads BOTH engines at startup and the gaming-mode engage callback
@@ -327,11 +329,15 @@ class STTConfig(_Strict):
     # for the game. Set to "" to disable the dual-engine setup
     # entirely (gaming mode then only flips Kokoro + VLM + LLM, not
     # the STT engine).
-    gaming_engine: Literal["", "whisper", "parakeet", "moonshine"] = "moonshine"
+    # 2026-06-14: default "" (no gaming downgrade). VRAM isn't the constraint
+    # (LLM on CPU); keep the accurate engine in gaming too. Never swap to old.
+    gaming_engine: Literal["", "whisper", "parakeet", "moonshine"] = ""
     # --- Whisper-side config (used when engine resolves to whisper) ---
-    model: str = "small.en"
+    # 2026-06-14: defaults hardened to large-v3-turbo @ int8_float16 so a
+    # missing/edited config.yaml still boots the accurate model, NEVER small.en.
+    model: str = "deepdml/faster-whisper-large-v3-turbo-ct2"
     device: str = "cuda"
-    compute_type: str = "float16"
+    compute_type: str = "int8_float16"
     # 2026-05-15 latency: default changed 5 -> 1 (greedy decoding).
     # Live bench on the 4070 Ti with small.en int8_float16 shows
     # beam=1 saves ~80 ms median on 5s audio (78 ms vs 157 ms) at
@@ -3701,6 +3707,41 @@ class TestingModeConfig(_Strict):
     enabled: bool = False
 
 
+class SemanticRouterConfig(_Strict):
+    """Semantic command router -- an ADDITIVE fallback layer BENEATH the exact
+    matchers. For utterances the exact relay / Spotify / identity matchers all
+    miss, it routes by similarity to curated exemplar commands (so imperfect
+    transcription still routes correctly), abstaining to the conversational LLM
+    for ambiguous / conversational input. The similarity backend is ``lexical``
+    (rapidfuzz + Metaphone, pure CPU, no model) or ``hybrid``/``embedding``,
+    which add a SIDECAR embedder process. The sidecar runs an ISOLATED venv
+    (newer sentence-transformers/transformers for EmbeddingGemma) so the model
+    NEVER loads into the anticheat-pinned main process; it is pure compute (no
+    input/capture/injection) and binds loopback only."""
+    enabled: bool = True
+    backend: Literal["hybrid", "embedding", "lexical"] = "hybrid"
+    embedding_weight: float = Field(default=0.6, ge=0.0, le=1.0)
+    # --- embedding sidecar (separate process + isolated venv) ---
+    sidecar_enabled: bool = True
+    sidecar_host: str = "127.0.0.1"
+    sidecar_port: int = 8772
+    # Absolute path to the ISOLATED venv's python (kept OUT of the main venv).
+    sidecar_python: str = "C:/STC/ultronVoiceAudio/.venv-embedder/Scripts/python.exe"
+    sidecar_script: str = "scripts/embedder_server.py"
+    sidecar_backend: Literal["sentence_transformers", "fastembed"] = "sentence_transformers"
+    sidecar_model: str = "google/embeddinggemma-300m"
+    sidecar_query_prompt: str = "query"
+    sidecar_doc_prompt: str = "document"
+    sidecar_device: str = ""            # "" -> auto (cuda if available)
+    # HF cache override -- the machine's TRANSFORMERS_CACHE points at a missing D:.
+    sidecar_hf_cache: str = "C:/Users/alecf/.cache/huggingface/hub"
+    # The boot-end router warmup polls for the sidecar up to this long so a COLD
+    # boot still gets the embedding backend. The sidecar is spawned EARLY (loads
+    # in parallel with the rest of boot), so in practice it is already ready by
+    # the warmup and the poll returns immediately.
+    sidecar_startup_timeout_seconds: float = Field(default=30.0, ge=5.0)
+
+
 class KenningConfig(_Strict):
     """Top-level configuration. Matches the structure of ``config.yaml``."""
     version: str = "1.0"
@@ -3743,6 +3784,9 @@ class KenningConfig(_Strict):
     # secondary output device (VoiceMeeter strip -> mic bus) so people in
     # the user's voice chat hear Kenning. Strict matcher; fail-open.
     relay_speech: RelaySpeechConfig = Field(default_factory=RelaySpeechConfig)
+    # Semantic command router -- additive similarity fallback beneath the exact
+    # matchers, with an isolated-venv embedder sidecar. See SemanticRouterConfig.
+    semantic_router: SemanticRouterConfig = Field(default_factory=SemanticRouterConfig)
     # Voice waveform overlay window for OBS window-capture (off by default).
     visualizer: VisualizerConfig = Field(default_factory=VisualizerConfig)
     # Testing mode -- mimics gaming/anticheat disabled-functionality (RAG/web/

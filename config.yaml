@@ -313,7 +313,17 @@ stt:
   #   "whisper"    -- CUDA, distil-whisper, one-shot
   # Flip this single line + restart to swap. Both engines stay set up;
   # the dual-engine factory just picks the active one.
-  engine: "moonshine"
+  # 2026-06-14: moonshine -> whisper. Live gaming test drive showed
+  # Moonshine-on-CPU garbling callouts ("play Despacito" -> "I'm playing
+  # Despacito", "good game" -> "Run. Tell my team good game") because the
+  # 3B-LLM + Moonshine + game all share the CPU -> capture-queue drops ->
+  # incomplete audio -> mistranscription. faster-distil-whisper-small.en on
+  # CUDA is ~3.48% WER @ ~78 ms/clip @ ~250 MB VRAM (LLM is on CPU so VRAM
+  # is free) -- moves STT off the contended CPU AND onto a more accurate
+  # model. GPU "spike" is a single ~78 ms inference per command, not the
+  # sustained load the 4B-on-GPU used to cause. Anticheat-irrelevant (pure
+  # CUDA compute, like Kokoro). Flip back to "moonshine" if VRAM ever tight.
+  engine: "whisper"
   # 2026-05-22 -- dual-STT for gaming mode. When ``gaming_engine`` is
   # set AND differs from ``engine``, both load at startup; gaming-mode
   # engage swaps to ``gaming_engine`` and kills the Parakeet server if
@@ -321,7 +331,11 @@ stt:
   # is empty, the registry collapses to one engine (no STT swap on
   # gaming mode; Kokoro/LLM/VLM swaps still fire). Set to "moonshine"
   # while moonshine is primary to keep behaviour consistent.
-  gaming_engine: "moonshine"
+  # 2026-06-14: "" -> keep Whisper in gaming too (no downgrade to Moonshine).
+  # The whole point of the moonshine gaming-swap was to free VRAM, but the
+  # LLM is on CPU so VRAM is not the constraint; accuracy is. One engine for
+  # both states = no swap latency + the accurate engine while we actually play.
+  gaming_engine: ""
 
   # -------------------------------------------------------------------------
   # WHISPER KNOBS  (ACTIVE WHEN engine == "whisper" OR auto-fallback)
@@ -339,10 +353,18 @@ stt:
   # PRIOR DEFAULTS (kept as one-line swap-back options):
   #   "base.en"         -- 74M, ~200 MB VRAM, ~5.0% WER, fastest
   #   "small.en"        -- 244M, ~520 MB VRAM, ~3.4% WER, more accurate
+  #   "Systran/faster-distil-whisper-small.en" -- 166M, ~250MB, ~3.48% WER
   #   The model: field accepts either the short Whisper size names above
   #   or a full HuggingFace repo ID like below. faster-whisper picks the
   #   right loader automatically.
-  model: "Systran/faster-distil-whisper-small.en"
+  # 2026-06-14: distil-small.en -> large-v3-turbo. The live test drive showed
+  # small.en mangling Valorant proper nouns/callouts. large-v3-turbo (809M, the
+  # distilled-decoder large-v3) is large-v3-tier accuracy on agent names + "ult"
+  # but ~8x faster than full large-v3. At int8_float16 it is ~1 GB VRAM and the
+  # per-command GPU spike is a single ~120-200 ms forward pass (brief, NOT the
+  # sustained load the 4B-on-GPU caused) -- fits the headroom with the LLM on
+  # CPU. Swap back to a smaller repo above if VRAM ever gets tight.
+  model: "deepdml/faster-whisper-large-v3-turbo-ct2"
   device: "cuda"
   # 2026-05-14 VRAM-relief pass: float16 -> int8_float16. int8_float16
   # uses 8-bit weights + fp16 activations -- saves ~250 MB VRAM on the

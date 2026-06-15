@@ -2619,6 +2619,47 @@ class CapabilityVoiceController:
             )
             return None
 
+        # ANTICHEAT HARD GUARD (defense-in-depth behind the orchestrator's
+        # gaming refusal gate). While anticheat-safe mode is active, refuse
+        # every desktop / browser / window / app / shell / file / capture
+        # capability BEFORE its handler runs -- those handlers lazily import
+        # the automation stack (kenning.desktop.* -> pyautogui/mss/pywinauto,
+        # or the OpenClaw browser client) INTO THIS PROCESS, which must never
+        # happen under a kernel anticheat. CONVERSATIONAL / MODEL_SWITCH /
+        # SYSTEM_STATUS / GAMING_MODE / coding kinds are NOT in the set and
+        # stay fully live. This is the import-site backstop; the primary block
+        # is the orchestrator gate that refuses before we ever get here.
+        _anticheat_refused = {
+            RoutingIntentKind.BROWSER_AUTOMATION, RoutingIntentKind.MEDIA_GENERATION,
+            RoutingIntentKind.MESSAGING, RoutingIntentKind.FILE_OPERATION,
+            RoutingIntentKind.SHELL_OPERATION, RoutingIntentKind.HYBRID_TASK,
+            RoutingIntentKind.DESKTOP_AUTOMATION, RoutingIntentKind.WINDOW_AUTOMATION,
+            RoutingIntentKind.APP_LAUNCH, RoutingIntentKind.SCREEN_CONTEXT_QUERY,
+            RoutingIntentKind.WINDOW_MOVE, RoutingIntentKind.WINDOW_CLOSE,
+            RoutingIntentKind.ACTIVE_WINDOW_QUERY, RoutingIntentKind.SEMANTIC_CLICK,
+            RoutingIntentKind.OPEN_LAST_SOURCE, RoutingIntentKind.NAVIGATE_TO_SITE,
+        }
+        if kind in _anticheat_refused:
+            try:
+                from kenning.safety.anticheat import anticheat_active
+                _ac = bool(anticheat_active())
+            except Exception:                                        # noqa: BLE001
+                _ac = False
+            if _ac:
+                get_routing_log().record(
+                    routing_intent,
+                    handler="voice.anticheat_refused",
+                    outcome="refused",
+                )
+                logger.info(
+                    "anticheat: refused capability kind=%s (no automation import)",
+                    kind.value,
+                )
+                return VoiceResponse(text=(
+                    "Not while anticheat-safe mode is active. I touch nothing "
+                    "on this machine but your voice and your team's ears."
+                ))
+
         # 4B plan — voice-driven model swap. Handled in-process by
         # calling reload_for_preset on the live LLMEngine. The reload
         # blocks (~1-3s for 4B, ~3-5s for 9B) so the user hears a brief
