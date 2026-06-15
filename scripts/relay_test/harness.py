@@ -205,7 +205,31 @@ def run(stage: str, limit: int | None, run_tag: str,
         llm = _load_llm()
     if need_tts:
         from kenning.tts.kokoro_engine import KokoroSpeech
-        tts = KokoroSpeech(voice="kenning")
+        from kenning.config import get_config
+        # Build the engine the SAME way production does (make_tts_engine) so the
+        # audio-blip metric reflects what teammates actually hear -- crucially the
+        # max_pause_cap_ms that holds dramatic pauses under the dead-air flag.
+        # A bare KokoroSpeech(voice="kenning") leaves the cap OFF and manufactures
+        # phantom internal-dropout blips on long verbose lines that never occur in
+        # the real relay.
+        _kc = get_config().tts.kokoro
+        tts = KokoroSpeech(
+            voice="kenning",
+            apply_runtime_filter=_kc.apply_runtime_filter,
+            filter_preset=_kc.filter_preset,
+            apply_spectral_smooth=_kc.apply_spectral_smooth,
+            spectral_smooth_window=_kc.spectral_smooth_window,
+            apply_trim_fade=_kc.apply_trim_fade,
+            trim_fade_threshold_db=_kc.trim_fade_threshold_db,
+            f0_contour_factor=_kc.f0_contour_factor,
+            f0_shift_semitones=_kc.f0_shift_semitones,
+            f0_max_excursion=_kc.f0_max_excursion,
+            f0_energy_factor=_kc.f0_energy_factor,
+            dur_final_factor=_kc.dur_final_factor,
+            dur_internal_factor=_kc.dur_internal_factor,
+            dur_stress_factor=_kc.dur_stress_factor,
+            max_pause_cap_ms=_kc.max_pause_cap_ms,
+        )
         tts.warmup()
     if need_stt:
         from kenning.transcription.moonshine_engine import MoonshineEngine
