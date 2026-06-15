@@ -548,6 +548,7 @@ def test_orchestrator_relay_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_orchestrator_relay_echo_to_user(monkeypatch: pytest.MonkeyPatch) -> None:
     import kenning.audio.relay_speech as relay_mod
+    import kenning.audio.monitor as monitor_mod
 
     o = _bare_orchestrator()
     o.tts = SimpleNamespace(
@@ -558,10 +559,18 @@ def test_orchestrator_relay_echo_to_user(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(
         relay_mod, "play_to_device", lambda pcm, sr, device, **kw: 0.1,
     )
+    teed: list[tuple[int, int]] = []
+    monkeypatch.setattr(
+        monitor_mod, "maybe_submit",
+        lambda pcm, sr: teed.append((len(pcm), sr)),
+    )
 
     assert o._maybe_handle_relay_speech("tell them to watch flank") is True
-    # iter5: a short owner-aware command tail may follow the imperative core.
-    assert len(o._spoken) == 1 and o._spoken[0].startswith("Watch flank.")
+    # echo_to_user now tees the SAME synthesized clip to the local monitor
+    # (the user's own speakers) -- no re-synthesis, in sync with the mic write.
+    assert teed == [(10, 24000)]
+    # ...and it must NOT re-speak the line on the normal conversational path.
+    assert o._spoken == []
 
 
 def test_orchestrator_relay_playback_failure_speaks_error(

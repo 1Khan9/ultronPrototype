@@ -1732,7 +1732,9 @@ relay_speech:
   output_device: "Voicemeeter Input"
   rephrase: true              # LLM converts reported speech -> direct address
   max_line_chars: 360         # ceiling for a full two-sentence reply; trims only at a sentence boundary
-  echo_to_user: false         # also play the line on the normal output
+  echo_to_user: true          # ALSO play team callouts on your default speakers
+                              # (local monitor tee -- so YOU hear your own callouts,
+                              # not just teammates/OBS). Hot-applies per callout.
   # Named callouts ("ask Clove to smoke window", "tell Sova to drone
   # sewers", "ask Sage if I can get a heal"). Empty list = the built-in
   # Valorant agent roster; add friend names / other-game callsigns here.

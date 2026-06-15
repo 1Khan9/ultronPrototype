@@ -1966,7 +1966,8 @@ For the current decisions and Foundation phase status see
 │       │   ├── smart_turn.py       ← Smart Turn V3 ONNX wrapper (NEW 2026-05-12; CPU-only end-of-turn confirmation)
 │       │   ├── vad.py              ← Silero-VAD wrapper
 │       │   ├── wake_word.py        ← openWakeWord (custom ultron.onnx default + kenning; per-word thresholds + min_consecutive_frames consecutive-frame gate; reload_for_word hot-swap)
-│       │   ├── broadcast.py        ← BroadcastSink: daemon tee of ALL Kenning speech (normal + relay) to audio.broadcast_device for an isolated OBS capture source (drop-oldest, mono→stereo, zero speaker-path latency)
+│       │   ├── broadcast.py        ← BroadcastSink: daemon tee of ALL Kenning speech (normal + relay) to audio.broadcast_device for an isolated OBS capture source (drop-oldest, mono→stereo, zero speaker-path latency); name-parametrized so a 2nd instance backs the local monitor
+│       │   ├── monitor.py          ← Local monitor: reuses BroadcastSink to tee RELAY callouts to the user's OWN default output (audio.output_device, None→system default) so they hear their own callouts (relay otherwise plays only on the mic B-bus + OBS); gated by relay_speech.echo_to_user read LIVE per callout (GUI toggle hot-applies, no re-synth)
 │       │   └── waveform.py         ← WaveformSink: borderless Tk overlay (radial waveform + glowing PIL nameplate, downward-suppressed bars, hide-behind that OBS still captures, green chroma); off by default, fail-open
 │       │
 │       ├── addressing/             ← Phase 2 addressing classifier (CPU)

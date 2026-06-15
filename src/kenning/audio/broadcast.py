@@ -58,7 +58,12 @@ class BroadcastSink:
     the relay path, etc. -- because all the producer does is copy + enqueue.
     """
 
-    def __init__(self, *, resolver=None, stream_factory=None) -> None:
+    def __init__(self, *, resolver=None, stream_factory=None,
+                 name: str = "broadcast") -> None:
+        # Label used in the daemon thread name + INFO logs so a second
+        # instance (the local monitor) is distinguishable from the broadcast
+        # mirror in logs.
+        self._name = name
         self._device_spec: Optional[DeviceSpec] = None
         self._resolved_index: Optional[int] = None
         self._lock = threading.Lock()
@@ -100,7 +105,7 @@ class BroadcastSink:
                 return
             self._device_spec = norm
             self._generation += 1
-            logger.info("broadcast mirror device set to %r", norm)
+            logger.info("%s mirror device set to %r", self._name, norm)
             if norm is not None and (self._thread is None or not self._thread.is_alive()):
                 self._start_consumer_locked()
 
@@ -165,7 +170,7 @@ class BroadcastSink:
     def _start_consumer_locked(self) -> None:
         """Spin up the daemon consumer. Caller holds ``self._lock``."""
         self._thread = threading.Thread(
-            target=self._consume_loop, daemon=True, name="broadcast-mirror",
+            target=self._consume_loop, daemon=True, name=f"{self._name}-mirror",
         )
         self._thread.start()
 
@@ -235,7 +240,8 @@ class BroadcastSink:
         self._stream_sr = sr
         self._stream_generation = gen
         self._resolved_index = idx
-        logger.info("broadcast mirror streaming to device index %s @ %d Hz", idx, sr)
+        logger.info("%s mirror streaming to device index %s @ %d Hz",
+                    self._name, idx, sr)
         return stream
 
     def _write_clip(self, pcm: np.ndarray, sr: int) -> None:

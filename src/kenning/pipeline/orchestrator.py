@@ -690,6 +690,17 @@ class Orchestrator:
             configure_from_config()
         except Exception as e:                                       # noqa: BLE001
             logger.debug("broadcast mirror configure skipped (%s)", e)
+        # 2026-06-14: local monitor -- tee relay/team callouts to the user's OWN
+        # default speakers (relay otherwise plays only on the mic B-bus, so the
+        # user can't hear their own callouts). Gated by relay_speech.echo_to_user.
+        try:
+            from kenning.audio.monitor import (
+                configure_from_config as _configure_monitor,
+            )
+
+            _configure_monitor()
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("local monitor configure skipped (%s)", e)
         # 2026-06-12: bring up the optional voice waveform overlay (a separate
         # borderless OBS-capturable window that visualizes EVERY spoken line --
         # conversation AND relay). Off unless ``visualizer.enabled``; fail-open
@@ -2353,6 +2364,17 @@ class Orchestrator:
                 _broadcast_submit(pcm, sr)
             except Exception:                                        # noqa: BLE001
                 pass
+            # Tee the SAME synthesized clip to the user's own default speakers
+            # (the local monitor) so they hear their own team callouts -- relay
+            # otherwise plays only on the mic B-bus. Parallel + non-blocking;
+            # no re-synthesis, stays in sync with the mic write. No-op unless
+            # relay_speech.echo_to_user is on.
+            try:
+                from kenning.audio.monitor import maybe_submit as _monitor_submit
+
+                _monitor_submit(pcm, sr)
+            except Exception:                                        # noqa: BLE001
+                pass
             # Also drive the on-stream waveform overlay (OBS window capture) so
             # viewers see Kenning "talking" on team callouts too.
             try:
@@ -2377,8 +2399,11 @@ class Orchestrator:
         self._relay_follow_up_seconds = float(
             getattr(cfg, "follow_up_seconds", 120.0) or 0.0
         )
-        if getattr(cfg, "echo_to_user", False):
-            self._speak(line)
+        # NOTE: echo_to_user is honoured by the local-monitor tee above
+        # (_monitor_submit) -- it replays the SAME synthesized clip on the
+        # user's default speakers, in sync with the mic write and with no
+        # re-synthesis. (Previously this re-spoke the line via _speak, which
+        # re-ran TTS and landed a beat late on a second broadcast hit.)
         return True
 
     def _maybe_handle_report_concern(self, user_text: str) -> bool:

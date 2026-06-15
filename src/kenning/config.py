@@ -3622,9 +3622,12 @@ class RelaySpeechConfig(_Strict):
     # response, not a mid-word chop. (Was 280, which clipped a two-sentence
     # Captain America reply mid-sentence.)
     max_line_chars: int = Field(default=360, ge=40, le=600)
-    # Also play the relay line on the user's normal output so they hear
-    # what was transmitted (VoiceMeeter monitoring usually covers this,
-    # so default off).
+    # Also play the relay/team callout on the user's OWN default output so
+    # they hear their own callouts (relay otherwise plays only on the mic
+    # B-bus + the OBS broadcast feed). Implemented as a parallel local-monitor
+    # tee of the SAME synthesized clip (kenning.audio.monitor) -- in sync with
+    # the mic write, no re-synthesis. Read live per callout, so the settings-
+    # GUI "Echo to me" toggle hot-applies on the next callout.
     echo_to_user: bool = False
     # After a relay turn, hold the follow-up listening window open this
     # long (vs the standard ~30 s warm window) so a whole in-game
