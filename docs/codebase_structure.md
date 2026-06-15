@@ -3635,6 +3635,11 @@ byte-for-byte restored when it closes — zero residual resources.
 - `launch.py`: `match_settings_command` (strict open/close phrasings;
   "what are your settings?" never matches), `launch_gui` (detached
   spawn, fail-open None), `close_gui` (kill_process_tree, fail-open).
+  **Shutdown fix (2026-06-15):** `Orchestrator.shutdown()` now calls
+  `close_gui(self._settings_gui_pid)` so a detached settings panel is
+  closed when Ultron exits. It was previously orphaned and lingered
+  after exit — only the "close settings" voice command and gaming-engage
+  had closed it.
 - `app.py` (UI layer, untested by design — no GUI windows in the
   sweep): tkinter dark theme (near-black + Kenning crimson), scrollable
   two-column card grid, a LIVE LOG panel streaming `logs/kenning.log`
@@ -3647,7 +3652,12 @@ byte-for-byte restored when it closes — zero residual resources.
   `_drain_gui_actions` polled in the IDLE wake-word loop (every ≤0.5 s
   while the LLM/TTS are guaranteed not mid-turn). A NEWER reload-signal
   mtime → `reload_config()` swaps the singleton so every call-time
-  `get_config()` read hot-applies; the action channel
+  `get_config()` read hot-applies. **First-Apply fix (2026-06-15):**
+  `_maybe_reload_config`'s first-sight guard (which skips a stale signal
+  left over at boot) used to swallow the FIRST real Apply when no
+  `data/config_reload.signal` existed at startup. The orchestrator now
+  captures the signal's mtime EAGERLY at `__init__`, so any later write
+  fires the hot-reload as intended. The action channel
   (`data/gui_action.jsonl`, byte-offset tracked) carries the few knobs
   that aren't read call-time — `gaming_mode` (engage/disengage, which
   also drives anticheat), `llm_preset` (`reload_for_preset`),
@@ -3661,8 +3671,10 @@ byte-for-byte restored when it closes — zero residual resources.
   reflects the boot default by reading `gaming_mode.engage_at_startup` (so it
   shows ON at startup). **GUI reflects boot defaults (NEW 2026-06-15):** a
   new **"Lean Boot (barebones — all ON)"** section surfaces
-  `engage_at_startup` + all 12 `barebones_*` flags + `llm_gpu_layers`
-  (config.yaml now lists every `barebones_*` flag explicitly). New `app.py`
+  `engage_at_startup` + every `barebones_*` flag (including the
+  2026-06-15 second-wave `barebones_skip_memory` / `barebones_skip_intent`
+  / `barebones_skip_ack_prewarm`) + `llm_gpu_layers` (config.yaml now lists
+  every `barebones_*` flag explicitly). New `app.py`
   method `_apply_one(path)` applies a single knob on its own (backing the
   per-row apply buttons, including "APPLY MUTE ONLY" for
   `audio.mute_speakers`).
@@ -4238,6 +4250,12 @@ while populating, subsequent turns hit.
   based on `tts.engine` (`kokoro` | `xtts_v3` | `piper_rvc`). Defaults to
   `get_config().tts` when `cfg=None`. Returns ``(None, engine)`` for Kokoro
   and XTTS; returns ``(RvcConverter | None, TextToSpeech)`` for piper_rvc.
+  **RVC is built ONLY for the legacy `piper_rvc` engine.** Under the default
+  `kokoro` engine the factory returns `rvc=None`, so RVC is never loaded and the
+  `KENNING_RVC_*` env vars (`RVC_ENABLED`, pitch shift, etc.) are a no-op — the
+  Ultron voice character comes from the Kokoro fine-tune (`kenning_finetune.pth`)
+  plus the in-model prosody hooks (f0 / energy / per-phoneme duration shaping),
+  not from RVC.
 - `_load_rvc_if_enabled() -> Optional[RvcConverter]` — fail-open RVC loader:
   returns None when `settings.RVC_ENABLED` is false, when the model file is
   missing, or when `RvcConverter()` raises. The orchestrator's
@@ -5126,7 +5144,7 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
   - `_speak_with_barge_in_check(text, *, post_check_window_s=0.5) -> bool` (V1-gap A4) — speak text and report whether wake fired during/after; used by the pre-task confirmation flow.
   - `_handle_capability_response(response, routing_intent)` (V1-gap A4) — wraps the capability voice dispatch. Default path: speak `response.text`. A4 path: speak `response.pre_task_confirmation` first, abort dispatch on barge-in (audit via `runner.record_pre_task_aborted`).
   - `_announce_coding_completion_if_pending()`, `_announce_pending_clarifications()`, `_announce_pending_budget_warning()` — voice-loop poll hooks
-  - `_load_memory_if_enabled()` — Qdrant init with graceful fallback
+  - `_load_memory_if_enabled()` — Qdrant init with graceful fallback. In a lean gaming boot (`barebones_skip_memory`, default ON) it returns `None`, so the whole conversation-memory stack (Qdrant + bge-small dense + bm25 sparse FastEmbed encoders) is never built; `self.memory = None` is a guarded, supported state.
   - `_load_openclaw_bridge_if_enabled()` (Phase 3.5) — constructs
     :class:`OpenClawBridge`. Returns `None` when
     `openclaw.enabled=False` (current default). Fail-open: any
@@ -5150,6 +5168,13 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
   and has a gaming capability-refusal gate (`_maybe_refuse_capability_in_gaming`).
 
 - **2026-06-15 LEAN GAMING BOOT:** `_skip_for_lean_gaming(flag) -> bool` helper gates non-essential subsystems on the CONFIG INTENT `gaming_mode.engage_at_startup` (NOT runtime `is_gaming_mode_active()`, which is False throughout `__init__`, NOR `anticheat_active()` which must remain reserved for desktop surfaces). Skips: Docker autostart, the coding MCP server, the coding stack (ProjectIndex / Supervisor / CodingVoice / coordinator / project_introspect), OpenClaw bridge + threads, evolution, skills, events, the background summarizer, and the cross-encoder reranker warmup; flan-t5 addressee is lazy-loaded instead. The `GamingModeManager` is **hoisted to `self.gaming_mode_manager` in `__init__`** (it was previously born inside `coding_voice`, so skipping `coding_voice` would have nulled it and silently disabled the entire gaming engage). `_audit_anticheat_posture` now also asserts the runtime-heavy modules (`openclaw_bridge.holder` / `coding.mcp_server` / `coding.voice` / `evolution.service` / `sentence_transformers`) are absent from `sys.modules` and logs "lean boot OK" (a regression canary; if any of these slip back in, it logs a loud WARNING). Worker RSS is noisy (~3.5-6 GB, timing/GC-dependent) so no fixed delta is claimed; the reliable win is eliminating the ~4-5 GB 4B-on-GPU VRAM boot transient.
+
+- **2026-06-15 LEAN GAMING BOOT — second wave (four more skips, all default ON, GUI-toggleable from the settings panel's "Lean Boot" section):**
+  - `barebones_skip_memory` — `_load_memory_if_enabled()` returns `None`; the whole conversation-memory stack (Qdrant + the bge-small dense + bm25 sparse FastEmbed encoders) is never built. `self.memory = None` is an already-supported state (every call site is guarded). RAG retrieval is already off while gaming, so an embedded turn is never read back; in-session context still works via the LLM's own history deque — only cross-session memory is dropped.
+  - `barebones_skip_intent` — skips the in-process intent recognizer, which loaded a SECOND embeddinggemma-300m (q4, via `moonshine_voice`) IN the main process, a duplicate of the isolated-sidecar copy that defeated the sidecar's anticheat isolation. Its 25 phrases (gaming-mode toggle / time-date / news) are all redundant while gaming.
+  - `barebones_skip_ack_prewarm` — skips `_kick_off_ack_clip_prewarm`; conversational filler-acks are suppressed while gaming, so synthesizing/caching them is wasted.
+  - `barebones_skip_web_search` (widened) — now also short-circuits `_build_web_search`, which returns `(None, None, None)` so `web_gate` / `web_executor` are `None` and neither the provider chain (searxng/brave/duckduckgo) nor the reader chain (trafilatura/jina) is constructed at boot (previously only the per-turn preflight was skipped); the conversational path takes its no-web-gate branch.
+  - **Canary widened:** `_audit_anticheat_posture` now flag-gated-asserts that the intent recognizer, conversation memory, ack-prewarm thread, and web-search chain are all absent while gaming (so a regression is caught, and re-enabling one via the GUI never false-alarms). The "lean boot OK" log now lists: coding / MCP / OpenClaw / evolution / reranker / intent-model / memory / ack-prewarm / web-chain NOT loaded.
 
 - **2026-06-15 SIDECAR LIFECYCLE:** `_start_embedder_sidecar` calls `sidecar_lock.sweep()` before spawning and writes the pidfile on success. The sidecar is registered with ZombieKiller as `persistent=False / hard_timeout=1h` (was effectively immortal). `_kill_embedder_sidecar()` unregisters from ZombieKiller then `kill_process_tree()`s the sidecar (shim → embedder child) and clears the pidfile. `shutdown()` calls `_kill_embedder_sidecar()` BEFORE stopping the reaper so the orphan-sweep on next boot finds a clean state.
 
@@ -6620,7 +6645,7 @@ gaming_mode:
   anticheat_safe_mode: true       # PINNED ON — hard-blocks all desktop-interaction surfaces at boot, independent of gaming-mode engage
   engage_at_startup: true         # run gaming_mode.engage() at the end of Orchestrator.__init__ (no voice trigger needed)
   barebones_skip_retrieval: true  # skip per-turn RAG memory retrieval + cross-encoder reranker while gaming is active
-  barebones_skip_web_search: true # skip web-search preflight LLM call + executor; forces NO_SEARCH on every gaming turn
+  barebones_skip_web_search: true # skip web-search: forces NO_SEARCH every gaming turn AND (2026-06-15) skips BUILDING the provider chain (searxng/brave/duckduckgo) + reader chain (trafilatura/jina) at boot
   llm_gpu_layers: 0               # 0 = gaming LLM fully on CPU (overrides env KENNING_LLM_GPU_LAYERS and config llm.gpu_layers); -1 keeps GPU
   # NEW 2026-06-15 lean-boot flags (all default True, individually toggleable):
   barebones_direct_gaming_llm: true          # construct the 3B-CPU gaming LLM directly at boot (skips the 4B-on-GPU transient)
@@ -6633,14 +6658,22 @@ gaming_mode:
   barebones_skip_events: true                # skip background event subsystem
   barebones_skip_summarizer: true            # skip background summarizer
   barebones_lazy_zero_shot_addressee: true   # defer flan-t5 addressee until first use
+  # NEW 2026-06-15 (second lean-boot wave) — three more skips, all default True:
+  barebones_skip_memory: true                # skip the conversation-memory stack (Qdrant + bge-small dense + bm25 sparse FastEmbed encoders)
+  barebones_skip_intent: true                # skip the in-process intent recognizer (a SECOND embeddinggemma-300m q4 — duplicate of the sidecar copy)
+  barebones_skip_ack_prewarm: true           # skip prewarming the precomputed ack-clip cache (filler-acks are suppressed while gaming anyway)
+  # (barebones_skip_web_search above was widened to ALSO skip building the web-search + reader chains)
 ```
 
 - `anticheat_safe_mode` — read by `kenning.safety.anticheat.anticheat_active()` via `_config_pin_enabled`; guards 49 module entry points + safety-validator BLOCK_HARD + voice intents. Toggled by voice ("enable/disable anticheat mode") and the settings GUI.
 - `engage_at_startup` — checked in `Orchestrator.__init__` tail; calls `GamingModeManager.engage()` in a fresh thread via `_drive_async_blocking`.
 - `barebones_skip_retrieval` — gate in `llm.inference._retrieve_rag_snippets`; honours both `is_gaming_mode_active()` and `is_testing_mode_active()`.
-- `barebones_skip_web_search` — gate in `Orchestrator._barebones_skip_web_search()`; same dual-flag check.
+- `barebones_skip_web_search` — runtime gate in `Orchestrator._barebones_skip_web_search()` (same dual-flag check, forces `NO_SEARCH`); **2026-06-15 widened** so it also short-circuits `_build_web_search`, which returns `(None, None, None)` → `web_gate` / `web_executor` are `None` and the provider chain (searxng/brave/duckduckgo) + reader chain (trafilatura/jina) are never constructed. The conversational path takes its no-web-gate branch.
+- `barebones_skip_memory` — NEW 2026-06-15; `_load_memory_if_enabled()` returns `None` (Qdrant + the bge-small dense + bm25 sparse FastEmbed encoders are never built). `self.memory = None` is an already-supported state (every call site is guarded). Rationale: RAG retrieval is already off while gaming (`barebones_skip_retrieval`), so a recorded+embedded turn is never read back; in-session context still works via the LLM's own history deque, only cross-session memory is dropped while gaming.
+- `barebones_skip_intent` — NEW 2026-06-15; skips the in-process intent recognizer, which loaded a SECOND embeddinggemma-300m (q4, via `moonshine_voice`) IN the main process — a duplicate of the isolated-sidecar copy that defeated the sidecar's anticheat isolation. Its 25 phrases (gaming-mode toggle, now covered by the GUI + boot default; time/date, which the LLM answers; news/current-events, which needs web search that is off while gaming) are all redundant in a gaming session.
+- `barebones_skip_ack_prewarm` — NEW 2026-06-15; skips `_kick_off_ack_clip_prewarm` (the precomputed ack-clip cache prewarm thread). Conversational filler-acks are suppressed in gaming, so synthesizing/caching them is wasted work.
 - `llm_gpu_layers` — threaded into `GamingEngageDeps.gaming_llm_gpu_layers` → `LLM.reload_for_preset(preset, gpu_layers=0)`; disengage restores the pre-engage preset on the original device.
-- `barebones_direct_gaming_llm` / `barebones_skip_*` / `barebones_lazy_zero_shot_addressee` — NEW 2026-06-15 lean-boot gates; all read in `Orchestrator.__init__` via `_skip_for_lean_gaming(flag)`. Together they reduce boot imports to relay + Spotify + core-voice (the reranker + skipped subsystems stay out of RAM; worker RSS is noisy ~3.5-6 GB so no fixed delta is claimed — the clear win is eliminating the ~4-5 GB 4B-on-GPU VRAM boot transient) and are proven by the `_audit_anticheat_posture` "lean boot OK" sys.modules assertion.
+- `barebones_direct_gaming_llm` / `barebones_skip_*` / `barebones_lazy_zero_shot_addressee` — NEW 2026-06-15 lean-boot gates; all read in `Orchestrator.__init__` via `_skip_for_lean_gaming(flag)`. Together they reduce boot imports to relay + Spotify + core-voice (the reranker + skipped subsystems stay out of RAM; worker RSS is noisy ~3.5-6 GB so no fixed delta is claimed — the clear win is eliminating the ~4-5 GB 4B-on-GPU VRAM boot transient) and are proven by the `_audit_anticheat_posture` "lean boot OK" sys.modules assertion (which now also covers the intent model, conversation memory, ack-prewarm thread, and web-search chain — see below). Each `barebones_*` skip is GUI-toggleable from the settings panel's "Lean Boot" section.
 
 In `SemanticRouterConfig` (2026-06-15 NEW fields):
 - `sidecar_orphan_sweep_enabled: bool` (default `True`) — enables `sidecar_lock.sweep()` at boot before spawning the embedder sidecar.
