@@ -134,23 +134,27 @@ class EmbeddingBackend(SimilarityBackend):
     name = "embedding"
 
     def __init__(self, host: str = "127.0.0.1", port: int = 8772,
-                 timeout: float = 0.35) -> None:
+                 timeout: float = 0.5, prepare_timeout: float = 25.0) -> None:
         self._base = f"http://{host}:{port}"
-        # Loopback round-trip to a GPU embed is ~10-50ms; a >0.35s call has
+        # Per-QUERY embed (latency-critical, 1 text): a >0.5s loopback call has
         # already failed. A tight timeout caps the cost when the sidecar dies.
         self._timeout = timeout
+        # PREPARE embeds a whole family of exemplars AT ONCE (dozens of texts)
+        # and may hit a COLD model on first use -> a generous ONE-TIME timeout.
+        # (Using the per-query timeout here silently failed the router build.)
+        self._prepare_timeout = prepare_timeout
         # 1-entry cache: the router scores the SAME query against EVERY family in
         # a turn, so cache the last (texts, kind) embedding -> embed each query
         # ONCE per turn instead of once per family.
         self._cache_key = None
         self._cache_val = None
 
-    def _post(self, path: str, payload: dict) -> dict:
+    def _post(self, path: str, payload: dict, timeout: "float | None" = None) -> dict:
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             self._base + path, data=data,
             headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=self._timeout) as r:
+        with urllib.request.urlopen(req, timeout=timeout or self._timeout) as r:
             return json.loads(r.read().decode("utf-8"))
 
     def available(self) -> bool:
@@ -161,7 +165,8 @@ class EmbeddingBackend(SimilarityBackend):
         except Exception:                                         # noqa: BLE001
             return False
 
-    def _embed(self, texts: Sequence[str], kind: str = "document") -> np.ndarray:
+    def _embed(self, texts: Sequence[str], kind: str = "document",
+               timeout: "float | None" = None) -> np.ndarray:
         if not texts:
             return np.zeros((0, 1), dtype=np.float32)
         cache_key = (tuple(texts), kind)
@@ -175,7 +180,8 @@ class EmbeddingBackend(SimilarityBackend):
         # prompts -- best routing margins) prompt each side correctly; symmetric
         # models (bge) ignore it.
         try:
-            out = self._post("/embed", {"texts": list(texts), "kind": kind})
+            out = self._post("/embed", {"texts": list(texts), "kind": kind},
+                             timeout=timeout)
         except Exception:
             # Cache the failure for this (query, kind) so the remaining families
             # this turn skip the HTTP call; re-raise the REAL error so the
@@ -195,8 +201,11 @@ class EmbeddingBackend(SimilarityBackend):
         return result
 
     def prepare(self, exemplars: Sequence[str]) -> Any:
-        # Exemplars are the "documents" in the retrieval framing.
-        return self._embed(exemplars, kind="document")
+        # Exemplars are the "documents" in the retrieval framing. This batch
+        # embed (dozens of texts, possibly a cold model) runs ONCE at build, so
+        # it uses the GENEROUS prepare timeout -- not the tight per-query one.
+        return self._embed(exemplars, kind="document",
+                           timeout=self._prepare_timeout)
 
     def score(self, query: str, prepared: Any) -> List[float]:
         ex = prepared
@@ -237,7 +246,17 @@ class HybridBackend(SimilarityBackend):
 
     def prepare(self, exemplars: Sequence[str]) -> Any:
         lp = self.lex.prepare(exemplars)
-        ep = self.emb.prepare(exemplars) if self._emb_ok else None
+        ep = None
+        if self._emb_ok:
+            try:
+                ep = self.emb.prepare(exemplars)
+            except Exception as e:                                # noqa: BLE001
+                # A slow/unavailable sidecar at PREPARE time must NEVER kill the
+                # whole router build -> degrade this family to lexical-only
+                # (still fully usable) instead of losing the semantic layer.
+                self._emb_ok = False
+                logger.warning("command router: embedding prepare failed (%s) "
+                               "-> lexical-only for this session", e)
         return (lp, ep)
 
     def score(self, query: str, prepared: Any) -> List[float]:
