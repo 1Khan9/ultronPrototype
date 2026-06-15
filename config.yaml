@@ -1619,6 +1619,8 @@ gaming_mode:
   barebones_skip_skills: true          # skip skills
   barebones_skip_summarizer: true      # skip the background summarizer
   barebones_skip_memory: true          # skip Qdrant + bge-small/bm25 encoders (retrieval is off in gaming, so recording is never read back)
+  barebones_skip_intent: true          # skip the in-process intent recognizer (duplicate embeddinggemma-300m q4; redundant while gaming)
+  barebones_skip_ack_prewarm: true     # skip prewarming the ack-clip cache (conversational acks are suppressed in gaming)
   barebones_skip_reranker_warmup: true # skip the cross-encoder reranker warmup
   barebones_direct_gaming_llm: true    # construct the LLM directly as the 3B-CPU gaming preset (no 4B-on-GPU transient)
   barebones_lazy_zero_shot_addressee: true  # lazy-load the flan-t5 addressee classifier

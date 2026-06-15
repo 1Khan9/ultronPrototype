@@ -258,6 +258,13 @@ SECTIONS: tuple[Section, ...] = (
              "Skip conversation memory", "bool",
              help="Don't build Qdrant + the bge-small/bm25 encoders (retrieval "
                   "is off in gaming, so recording is never read back)"),
+        Knob(("gaming_mode", "barebones_skip_intent"),
+             "Skip intent recognizer", "bool",
+             help="Don't load the in-process embeddinggemma-300m q4 intent model "
+                  "(duplicate of the sidecar; redundant while gaming)"),
+        Knob(("gaming_mode", "barebones_skip_ack_prewarm"),
+             "Skip ack-clip prewarm", "bool",
+             help="Don't prewarm the filler-ack clips (acks are suppressed in gaming)"),
         Knob(("gaming_mode", "barebones_skip_web_search"),
              "Skip web search", "bool"),
         Knob(("gaming_mode", "barebones_direct_gaming_llm"),

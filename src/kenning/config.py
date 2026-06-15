@@ -3052,6 +3052,15 @@ class GamingModeConfig(_Strict):
     # works via the LLM's own history deque). self.memory=None is an
     # already-supported state, so every call site is guarded.
     barebones_skip_memory: bool = True
+    # Skip the in-process intent recognizer (it loads a SECOND embeddinggemma-300m
+    # q4 in the main process -- duplicating the isolated sidecar copy + defeating
+    # the sidecar's anticheat isolation). Its phrases are gaming-mode toggle
+    # (covered by the GUI + boot default), time/date (the LLM answers), and news
+    # (needs web search, which is off in gaming) -- so it's redundant while gaming.
+    barebones_skip_intent: bool = True
+    # Skip prewarming the precomputed ack-clip cache. Conversational filler-acks
+    # are suppressed in gaming, so synthesizing + caching them is wasted.
+    barebones_skip_ack_prewarm: bool = True
     barebones_lazy_zero_shot_addressee: bool = True  # defer the flan-t5 addressee model load until first ambiguous follow-up
     # GPU layers for the gaming LLM. 0 = fully on CPU (no GPU compute during
     # generation), forced regardless of the env/config gpu_layers override.

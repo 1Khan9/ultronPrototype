@@ -1612,16 +1612,39 @@ class Orchestrator:
                 "kenning.coding.voice", "kenning.evolution.service",
                 "sentence_transformers",
             ) if m in _sys.modules]
-            if heavy:
+            # The intent recognizer pulls a SECOND embeddinggemma q4 into the
+            # main process via moonshine_voice -- it must stay out while gaming.
+            if (self._skip_for_lean_gaming("barebones_skip_intent")
+                    and "moonshine_voice.intent_recognizer" in _sys.modules):
+                heavy.append("moonshine_voice.intent_recognizer")
+            # Instance-level lean skips: each subsystem must be absent IFF its
+            # skip flag is on (so re-enabling one via the GUI never false-alarms).
+            leaked = []
+            if (self._skip_for_lean_gaming("barebones_skip_intent")
+                    and getattr(self, "_intent_recognizer", None) is not None):
+                leaked.append("intent_recognizer")
+            if (self._skip_for_lean_gaming("barebones_skip_ack_prewarm")
+                    and getattr(self, "_ack_clip_prewarm_thread", None) is not None):
+                leaked.append("ack_clip_prewarm")
+            if (self._skip_for_lean_gaming("barebones_skip_memory")
+                    and getattr(self, "memory", None) is not None):
+                leaked.append("conversation_memory")
+            if (self._skip_for_lean_gaming("barebones_skip_web_search")
+                    and (getattr(self, "web_gate", None) is not None
+                         or getattr(self, "web_executor", None) is not None)):
+                leaked.append("web_search_chain")
+            if heavy or leaked:
                 logger.warning(
                     "LEAN BOOT CANARY: gaming-startup boot but non-essential "
-                    "modules are LOADED=%s -- a lean-boot gate regressed; these "
-                    "must never enter RAM while gaming (anticheat surface).", heavy)
+                    "modules/subsystems LOADED -- heavy=%s leaked=%s -- a "
+                    "lean-boot gate regressed; these must never enter RAM while "
+                    "gaming (anticheat surface).", heavy, leaked)
             else:
                 logger.info(
                     "lean boot OK | non-essential subsystems "
-                    "(coding/MCP/OpenClaw/evolution/reranker) NOT loaded -- only "
-                    "core relay + Spotify + voice in RAM")
+                    "(coding/MCP/OpenClaw/evolution/reranker/intent-model/"
+                    "memory/ack-prewarm/web-chain) NOT loaded -- only core "
+                    "relay + Spotify + voice in RAM")
 
     def _load_mcp_server_if_enabled(self):
         """Construct + start the MCP server (Phase 1+). Failures degrade
@@ -3241,6 +3264,12 @@ class Orchestrator:
         error logs WARN and returns None so the run loop skips the
         intent check.
         """
+        if self._skip_for_lean_gaming("barebones_skip_intent"):
+            logger.info(
+                "lean gaming boot: intent recognizer skipped (the in-process "
+                "embeddinggemma-300m q4 is NOT loaded -- duplicate of the "
+                "sidecar; gaming-mode toggle uses the GUI/boot default)")
+            return None
         try:
             from kenning.config import get_config
             cfg = get_config().intent
@@ -4551,6 +4580,15 @@ class Orchestrator:
         providers can be constructed at all".
         """
         from kenning.config import get_config
+        # Lean gaming boot: web search is forced NO_SEARCH (barebones_skip_web_search),
+        # so building the provider chain (searxng/brave/ddg) + reader chain
+        # (trafilatura/jina) + gate is wasted -- skip it entirely. web_gate/executor
+        # = None routes the conversational path through its no-web-gate branch.
+        if self._skip_for_lean_gaming("barebones_skip_web_search"):
+            logger.info(
+                "lean gaming boot: web-search provider + reader chains NOT built "
+                "(web search is off while gaming)")
+            return None, None, None
         from kenning.web_search.provider_chain import SearchProviderChain
         ws_cfg = get_config().web_search
         if not ws_cfg.enabled:
@@ -4985,6 +5023,11 @@ class Orchestrator:
         unreachable mid-prewarm, or partial population all leave the
         engine in its pre-existing state.
         """
+        if self._skip_for_lean_gaming("barebones_skip_ack_prewarm"):
+            logger.info(
+                "lean gaming boot: ack-clip prewarm skipped (conversational "
+                "filler-acks are suppressed in gaming -- nothing to cache)")
+            return None
         if not hasattr(self.tts, "set_ack_cache"):
             logger.debug(
                 "TTS engine %s has no set_ack_cache hook; skipping ack prewarm",
@@ -5052,6 +5095,19 @@ class Orchestrator:
             fail_open_log.flush_to_disk()
         except Exception as e:                                      # noqa: BLE001
             logger.debug("fail_open_log flush failed: %s", e)
+        # Close the detached settings panel if one is open -- otherwise it
+        # lingers as an orphan window after Ultron exits (it's useless then:
+        # no running orchestrator to hot-apply changes to, and edits go to the
+        # boot-cleared overlay). Only closed via voice / gaming-engage before;
+        # now it also follows Ultron's lifecycle. Fail-open.
+        _gui_pid = getattr(self, "_settings_gui_pid", None)
+        if _gui_pid is not None:
+            try:
+                from kenning.settings_gui.launch import close_gui
+                close_gui(_gui_pid)
+                self._settings_gui_pid = None
+            except Exception as e:                                  # noqa: BLE001
+                logger.debug("settings panel close on shutdown failed: %s", e)
         # 2026-05-19 Tracks 1c-1e: cancel any in-flight background
         # summarizer so the worker exits cleanly. The thread is daemon
         # so it would be reaped anyway, but the cancel lets the in-flight
