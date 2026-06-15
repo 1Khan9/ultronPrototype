@@ -3174,9 +3174,14 @@ def _literal_relay(payload: str, recent_lines: Optional[Sequence[str]] = None,
             # -> serene command register, NEVER enemy contempt -- even when the
             # line carries a location ('planted for CT', 'hold near spike').
             out = _flavor_ctx(out, "command", recent_lines, **ff)
-        elif ff.get("agents") or ff.get("loc"):
-            # a bare position / named-agent callout ('cypher main', 'three b
-            # long') describes the ENEMY -> enemy contempt (no pronoun present).
+        elif ff.get("agents"):
+            # a bare named-agent callout ('cypher main') describes the ENEMY.
+            out = _flavor_ctx(out, "enemy", recent_lines, **ff)
+        elif ff.get("loc") and len(p.split()) <= 7:
+            # a SHORT bare position callout ('three b long', 'two heaven')
+            # describes the enemy; a longer info/opinion sentence that merely
+            # contains a place name ('Jenny is slang for a corner near spawn')
+            # is NOT a spotting -> no contempt.
             out = _flavor_ctx(out, "enemy", recent_lines, **ff)
         elif ff.get("count") and len(p.split()) <= 4:
             # a SHORT bare count ('two left', 'one down') is an enemy report; a
