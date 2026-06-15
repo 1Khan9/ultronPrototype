@@ -1233,6 +1233,22 @@ class Orchestrator:
         except Exception as e:                                       # noqa: BLE001
             logger.debug("runtime-overrides clear skipped: %s", e)
 
+        # Record the settings hot-reload signal's mtime EAGERLY at boot so the
+        # FIRST post-boot GUI "Apply" triggers a reload. (The lazy first-sight
+        # guard in _maybe_reload_config swallowed the first apply when no signal
+        # file existed at startup -> a single Apply silently did nothing.) Absent
+        # file -> -1.0 so any later write fires; a stale file -> its own mtime so
+        # a leftover signal from a previous session never auto-fires.
+        try:
+            import os as _os
+            from kenning.config import PROJECT_ROOT as _PR
+
+            _sig = _os.path.join(str(_PR), "data", "config_reload.signal")
+            self._config_reload_seen = (
+                _os.path.getmtime(_sig) if _os.path.exists(_sig) else -1.0)
+        except Exception:                                            # noqa: BLE001
+            self._config_reload_seen = -1.0
+
         # 2026-05-14 VRAM-relief pass: with the 4B abliterated default
         # the post-init working set is ~7.4 GB instead of ~10 GB. Empty
         # the CUDA allocator's cache once everything is loaded so any
