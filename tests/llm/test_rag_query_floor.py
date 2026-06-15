@@ -62,13 +62,20 @@ def test_no_think_marker_only_for_qwen_presets(monkeypatch) -> None:
 
     msgs = [{"role": "user", "content": "hello there"}]
 
+    # 2026-06-15: the check reads the LIVE ``self.model_path`` first and only
+    # falls back to config when it is empty/None (the HTTP runtime case). Use an
+    # engine with model_path=None to exercise the config-fallback this test
+    # covers; the live-model precedence is covered in test_llm_enable_thinking.
+    eng = LLMEngine.__new__(LLMEngine)
+    eng.model_path = None
+
     monkeypatch.setattr(
         config_mod, "get_config",
         lambda: SimpleNamespace(llm=SimpleNamespace(
             preset="qwen3.5-4b", model_path="models/Qwen3.5-4B-Q4_K_M.gguf",
         )),
     )
-    out = LLMEngine._apply_no_think_marker(msgs, False)
+    out = eng._apply_no_think_marker(msgs, False)
     assert out[-1]["content"].endswith("/no_think")
 
     monkeypatch.setattr(
@@ -78,9 +85,9 @@ def test_no_think_marker_only_for_qwen_presets(monkeypatch) -> None:
             model_path="models/Llama-3.2-3B-Instruct-abliterated.Q4_K_M.gguf",
         )),
     )
-    out = LLMEngine._apply_no_think_marker(msgs, False)
+    out = eng._apply_no_think_marker(msgs, False)
     assert "/no_think" not in out[-1]["content"]
 
     # enable_thinking None/True: never appended regardless of preset.
-    out = LLMEngine._apply_no_think_marker(msgs, None)
+    out = eng._apply_no_think_marker(msgs, None)
     assert "/no_think" not in out[-1]["content"]

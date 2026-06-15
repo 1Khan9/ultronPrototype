@@ -71,6 +71,11 @@ class BroadcastSink:
             maxsize=_QUEUE_MAXSIZE
         )
         self._thread: Optional[threading.Thread] = None
+        # Set by ``cancel_current()`` ("Ultron, stop" barge-in) to abort the
+        # clip currently being written at the next 50 ms block boundary and to
+        # drop everything still queued. Cleared on the next ``submit`` so a
+        # later clip plays normally.
+        self._cancel = threading.Event()
         self._stream = None
         self._stream_sr: Optional[int] = None
         # Generation counter bumped on every reconfigure so the consumer knows
@@ -126,6 +131,8 @@ class BroadcastSink:
             return
         if pcm is None:
             return
+        # A fresh clip clears any prior "stop" so it plays normally.
+        self._cancel.clear()
         try:
             data = np.asarray(pcm)
             if data.size == 0:
@@ -150,6 +157,23 @@ class BroadcastSink:
                 self._queue.put_nowait((data, int(sample_rate)))
             except queue.Full:
                 pass
+
+    def cancel_current(self) -> None:
+        """Abort the clip being written NOW and drop everything still queued.
+
+        Used by the "Ultron, stop" barge-in to silence this mirror immediately.
+        The consumer stays alive (device unchanged); the next ``submit`` clears
+        the flag and resumes normal playback. Best-effort, never raises.
+        """
+        self._cancel.set()
+        # Drain anything queued so a backlog doesn't resume after the cut.
+        while True:
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                break
+            except Exception:                                    # noqa: BLE001
+                break
 
     def close(self) -> None:
         """Stop the consumer and release the device. Best-effort/idempotent."""
@@ -222,16 +246,14 @@ class BroadcastSink:
             logger.debug("broadcast device %r unresolved", spec)
             return None
         try:
-            if self._stream_factory is not None:
-                stream = self._stream_factory(
-                    samplerate=sr, channels=2, dtype="int16", device=idx,
-                )
-            else:
-                import sounddevice as sd
+            # Lowest-latency stream for this mirror device: WASAPI low-latency
+            # + auto-convert (OBS/Voicemeeter AUX) when available, else MME
+            # latency='low'. ``_stream_factory`` (test seam) is honoured.
+            from kenning.audio.devices import make_output_stream
 
-                stream = sd.OutputStream(
-                    samplerate=sr, channels=2, dtype="int16", device=idx,
-                )
+            stream = make_output_stream(
+                idx, sr, 2, "int16", stream_factory=self._stream_factory,
+            )
             stream.start()
         except Exception as e:  # noqa: BLE001
             logger.debug("broadcast stream open failed for device %r (%s)", spec, e)
@@ -258,8 +280,9 @@ class BroadcastSink:
             stereo = np.ascontiguousarray(pcm.astype(np.int16, copy=False))
         block = max(1, int(sr * 0.05))
         for start in range(0, stereo.shape[0], block):
-            # Drop mid-clip if the device was cleared (fast reaction to GUI off).
-            if self._device_spec is None:
+            # Drop mid-clip if the device was cleared (fast reaction to GUI off)
+            # OR an "Ultron, stop" barge-in cancelled playback.
+            if self._device_spec is None or self._cancel.is_set():
                 return
             stream.write(stereo[start: start + block])
 
@@ -304,6 +327,21 @@ def submit(pcm: np.ndarray, sample_rate: int) -> None:
     if sink is None or sink._device_spec is None:  # noqa: SLF001 - fast path
         return
     sink.submit(pcm, sample_rate)
+
+
+def cancel_current() -> None:
+    """Module-level "stop" hook: abort the broadcast mirror's current clip.
+
+    No-op when the mirror was never created/configured. Used by the
+    "Ultron, stop" barge-in to silence the OBS feed mid-callout.
+    """
+    sink = _SINK
+    if sink is None:
+        return
+    try:
+        sink.cancel_current()
+    except Exception:                                            # noqa: BLE001
+        pass
 
 
 def configure_from_config() -> None:

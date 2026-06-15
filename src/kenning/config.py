@@ -56,6 +56,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 # This module lives at src/kenning/config.py; project root is two parents up.
 PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG_PATH: Path = PROJECT_ROOT / "config.yaml"
+# EPHEMERAL settings-panel overlay. The GUI writes its edits HERE -- never to
+# config.yaml -- so config.yaml stays the immutable boot source of truth (the
+# lean-boot / gaming / anticheat / canary defaults can never be left undone by a
+# stale GUI edit). Applied only on reload_config (in-session); wiped at boot.
+RUNTIME_OVERRIDES_PATH: Path = PROJECT_ROOT / "data" / "runtime_overrides.json"
 MODELS_DIR: Path = PROJECT_ROOT / "models"
 LOGS_DIR: Path = PROJECT_ROOT / "logs"
 
@@ -112,6 +117,21 @@ class AudioConfig(_Strict):
     # substring (case-insensitive) or PortAudio index -- same resolution as
     # ``output_device`` / ``relay_speech.output_device``.
     broadcast_device: Optional[str] = None    # env: KENNING_AUDIO_BROADCAST_DEVICE
+    # 2026-06-15 LOW-LATENCY OUTPUT. When True (default), name-resolved OUTPUT
+    # devices prefer their Windows WASAPI endpoint over MME, and every output
+    # stream opens with latency='low' (+ WASAPI auto-convert so Kokoro's 24 kHz
+    # plays on a 48 kHz device). On this box that drops the relay/OBS playback
+    # buffer from ~90-180 ms (MME) to ~2-25 ms (WASAPI). Fully fail-safe: a
+    # device whose WASAPI endpoint won't open falls back to MME + latency='low'.
+    # Set False to force the legacy MME path everywhere if a host misbehaves.
+    prefer_wasapi_output: bool = True
+    # 2026-06-15 LIVE speaker mute. When True, Ultron plays NOTHING on your
+    # default speakers (conversational replies are silenced there + the relay
+    # "echo to me" monitor is skipped) WHILE the relay still reaches teammates
+    # (B1) and OBS (B3) gets every line. Lets you A/B the isolated loopback
+    # tracks in Valorant/OBS without hearing them doubled on your speakers.
+    # GUI-toggleable live (hot-applied on the next line, no restart).
+    mute_speakers: bool = False
     barge_in_enabled: bool = True
     barge_in_grace_seconds: float = 0.5
     # Total capacity of the audio ring buffer. The orchestrator slices
@@ -272,14 +292,26 @@ class WakeWordConfig(_Strict):
     # acoustically clean (high recall) so it runs HOTTER (0.6) to reject
     # confusables, while "kenning" stays low (0.4) since it can't reach ultron's
     # recall. A word absent here falls back to ``threshold``.
+    # 2026-06-15: "ultron" raised 0.6 -> 0.7 so it fires only on a confident
+    # match. Live, bare callouts now relay WITHOUT a "tell my team" lead, so a
+    # false wake-word accept could broadcast random speech to the team -- a
+    # stricter "ultron" gate is the front-line defence against that.
     thresholds: dict[str, float] = Field(
-        default_factory=lambda: {"kenning": 0.4, "ultron": 0.6},
+        default_factory=lambda: {"kenning": 0.4, "ultron": 0.7},
     )
     # Require the score to stay above threshold for this many CONSECUTIVE frames
     # before firing -- filters single-frame spurious spikes (the main no-retrain
     # false-accept reducer; a real wake word sustains a high score for many
     # frames). 1 = legacy fire-on-first-frame.
     min_consecutive_frames: int = Field(default=2, ge=1, le=10)
+    # 2026-06-15 PER-WORD consecutive-frame gate. Overrides
+    # ``min_consecutive_frames`` for the named word. "ultron" requires 3
+    # sustained frames (vs the flat 2) so a transient confusable cannot fire it,
+    # while a genuinely-spoken "ultron" still triggers reliably. A word absent
+    # here uses the flat default.
+    consecutive_frames: dict[str, int] = Field(
+        default_factory=lambda: {"ultron": 3},
+    )
     cooldown_seconds: float = 1.5
     # 2026-06-14 PER-WORD cold pre-roll (seconds of audio kept from BEFORE the
     # wake-word fire). The wake word's own TAIL lives in this pre-roll, so a
@@ -3749,7 +3781,11 @@ class SemanticRouterConfig(_Strict):
     sidecar_model: str = "google/embeddinggemma-300m"
     sidecar_query_prompt: str = "query"
     sidecar_doc_prompt: str = "document"
-    sidecar_device: str = ""            # "" -> auto (cuda if available)
+    # 2026-06-15: "cpu" to keep the ~300M embeddinggemma OFF the GPU and free
+    # that VRAM for the game + the 3B LLM. The router is an L0-miss fallback on
+    # short commands, so CPU latency (~tens of ms on this 32-core box) is well
+    # within budget. "" -> auto (cuda if available); "cuda" forces GPU.
+    sidecar_device: str = "cpu"
     # HF cache override -- the machine's TRANSFORMERS_CACHE points at a missing D:.
     sidecar_hf_cache: str = "C:/Users/alecf/.cache/huggingface/hub"
     # The boot-end router warmup polls for the sidecar up to this long so a COLD
@@ -3891,7 +3927,57 @@ _CONFIG_INSTANCE: Optional[KenningConfig] = None
 _CONFIG_PATH: Optional[Path] = None
 
 
-def load_config(path: Optional[Path] = None) -> KenningConfig:
+def clear_runtime_overrides() -> None:
+    """Discard the GUI's ephemeral overlay so a fresh boot starts from the
+    pristine config.yaml + code defaults.
+
+    Called ONCE at orchestrator startup. Every settings-panel change from the
+    previous session is intentionally dropped here, which is the whole point:
+    the lean-boot / gaming-mode / anticheat / canary defaults (and the
+    "non-essentials off, never imported" guarantees) can NEVER be left undone by
+    a stale GUI edit -- the code is always the source of truth at boot. Fail-open."""
+    try:
+        RUNTIME_OVERRIDES_PATH.unlink(missing_ok=True)
+    except Exception:                                            # noqa: BLE001
+        pass
+
+
+def _merge_runtime_overrides(raw: dict) -> None:
+    """Overlay the settings-panel's ephemeral edits onto the loaded config dict.
+
+    The GUI writes ``{dotted.path: rendered_value}`` entries here instead of
+    mutating config.yaml. Applied IN PLACE, ONLY on reload_config (in-session) --
+    a fresh boot loads WITHOUT overrides. Each value is YAML-parsed so
+    'true'->True / '40'->40 / 'cpu'->'cpu'. Fully fail-open: a malformed overlay
+    is skipped entry-by-entry and never breaks config loading."""
+    try:
+        if not RUNTIME_OVERRIDES_PATH.is_file():
+            return
+        import json
+        overrides = json.loads(RUNTIME_OVERRIDES_PATH.read_text(encoding="utf-8"))
+    except Exception:                                            # noqa: BLE001
+        return
+    if not isinstance(overrides, dict):
+        return
+    for dotted, rendered in overrides.items():
+        try:
+            parts = str(dotted).split(".")
+            value = (yaml.safe_load(rendered)
+                     if isinstance(rendered, str) else rendered)
+            node = raw
+            for key in parts[:-1]:
+                nxt = node.setdefault(key, {})
+                if not isinstance(nxt, dict):
+                    raise ValueError("override path crosses a non-mapping")
+                node = nxt
+            node[parts[-1]] = value
+        except Exception:                                        # noqa: BLE001
+            continue
+
+
+def load_config(
+    path: Optional[Path] = None, *, apply_overrides: bool = False,
+) -> KenningConfig:
     """Load + validate ``config.yaml``. Caches the result.
 
     Resolution order for the file path:
@@ -3954,6 +4040,12 @@ def load_config(path: Optional[Path] = None) -> KenningConfig:
             for key in ("model_path", "draft_model_path", "n_ctx"):
                 llm_block.pop(key, None)
 
+    # Ephemeral settings-panel overlay -- applied ONLY on an in-session reload
+    # (reload_config passes apply_overrides=True); a fresh boot loads the
+    # pristine config.yaml so GUI edits never persist across restarts.
+    if apply_overrides:
+        _merge_runtime_overrides(raw)
+
     try:
         _CONFIG_INSTANCE = KenningConfig.model_validate(raw)
     except Exception as e:
@@ -3982,10 +4074,13 @@ def get_config() -> KenningConfig:
 def reload_config(path: Optional[Path] = None) -> KenningConfig:
     """Force reload from disk. Useful for dev workflows; some sections
     need a process restart (LLM model path, Qdrant data dir, audio
-    sample rate, etc.) — that's the caller's call to enforce."""
+    sample rate, etc.) — that's the caller's call to enforce.
+
+    Applies the ephemeral settings-panel overlay (config.yaml stays pristine),
+    so live GUI edits take effect in-session but evaporate on the next boot."""
     global _CONFIG_INSTANCE
     _CONFIG_INSTANCE = None
-    return load_config(path)
+    return load_config(path, apply_overrides=True)
 
 
 def set_config(cfg: KenningConfig) -> None:

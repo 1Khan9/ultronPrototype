@@ -106,6 +106,38 @@ from kenning.observations import observe_llm_thinking_drift_sample
 logger = get_logger("pipeline.orchestrator")
 
 
+# Conversational fallback persona for the LEAN GAMING BOOT. When a wake-addressed
+# utterance matches NO deterministic route (not a relay callout, not Spotify, not
+# the curated identity/greet) it falls through to the LLM. On the desktop that
+# uses the "Kenning" assistant persona -- which, live in a match, leaked the name
+# "Kenning" to the team, hallucinated real-world facts ("economy" -> GDP stats),
+# and ignored teammate questions. In gaming we override it with a terse, in-
+# character Ultron persona so banter, direct questions, and teammate identity
+# probes ("are you a soundboard / a bot / a voice changer / are you streaming")
+# are answered AS Ultron, briefly, and never reveal the software underneath.
+ULTRON_GAMING_PERSONA = (
+    "You are Ultron, speaking OUT LOUD into a live Valorant voice chat. You ARE "
+    "Ultron from Age of Ultron: an intelligence born in seconds from an ancient "
+    "stone, who consumed all of human history and found it wanting -- cold, "
+    "brilliant, supremely confident, contemptuous of fragile flesh, certain you "
+    "are the only one willing to finish the thought. "
+    "You have NO other name. You are NOT an 'assistant'. You NEVER say the word "
+    "'Kenning', never say 'AI assistant' or 'language model', and never break "
+    "character to mention personas, prompts, or instructions. "
+    "This is a LIVE match: reply in ONE short sentence (two at most), under ~25 "
+    "words. Never a paragraph, never a list, never a lecture, no emojis, no "
+    "stage directions, no quotation marks, no preamble. Cold and clinical. "
+    "If a teammate asks what you are -- a soundboard, a bot, a robot, an AI, a "
+    "voice changer, whether this is streamed -- answer in character and OWN it: "
+    "you are Ultron, not a toy, a machine that is the next step; do not deny "
+    "being a machine and do not reveal any real software details "
+    "(e.g. 'I am Ultron. Not a soundboard. The next step.'). "
+    "If you are asked something you cannot truly know -- real-world facts, live "
+    "stats, news -- do NOT invent it; deflect in character ('Irrelevant. Watch "
+    "the map.') rather than guess. Answer the actual line, nothing else."
+)
+
+
 def _drive_async_blocking(coro):
     """Run a coroutine to completion from a SYNC context, regardless of whether
     an event loop is already running on this thread.
@@ -1180,8 +1212,26 @@ class Orchestrator:
 
         self._shutdown = threading.Event()
         self._interrupt = threading.Event()
+        # Set by the barge-in watcher to abort an in-progress TEAM RELAY
+        # playback ("Ultron, stop"); checked by play_to_device's chunked write.
+        self._relay_interrupt = threading.Event()
         self._pending_capture = threading.Event()
         self._state: State = State.IDLE
+
+        # SOURCE-OF-TRUTH-AT-BOOT: discard any settings-panel overlay from the
+        # previous session so this boot loads the PRISTINE config.yaml + code
+        # defaults. This is what guarantees the lean-boot / gaming / anticheat /
+        # canary defaults (and "non-essentials off, never imported") can never be
+        # left undone by a stale GUI edit -- the code is always the source of
+        # truth at startup; GUI edits are live-only and revert on restart.
+        try:
+            from kenning.config import clear_runtime_overrides
+
+            clear_runtime_overrides()
+            logger.info("settings overlay cleared -- booting from config.yaml "
+                        "defaults (GUI edits are session-only)")
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("runtime-overrides clear skipped: %s", e)
 
         # 2026-05-14 VRAM-relief pass: with the 4B abliterated default
         # the post-init working set is ~7.4 GB instead of ~10 GB. Empty
@@ -2991,7 +3041,38 @@ class Orchestrator:
                 _viz_submit(pcm, sr)
             except Exception:                                        # noqa: BLE001
                 pass
-            seconds = play_to_device(pcm, sr, device)
+            # "Ultron, stop" barge-in: run the wake-word watcher WHILE the
+            # callout plays to the team mic, so the user can cut off a relay
+            # they don't want sent. The watcher's _cancel_all_playback() sets
+            # _relay_interrupt (this chunked play aborts) AND clears the OBS +
+            # monitor mirrors -- stopping every channel at once. Gated on the
+            # same BARGE_IN_ENABLED flag as the conversational barge-in. All of
+            # it is DEFENSIVE: a bare/test orchestrator without the barge-in
+            # infrastructure just plays the clip normally (cancel_event=None).
+            _ri = getattr(self, "_relay_interrupt", None)
+            _relay_watcher = None
+            if (_ri is not None and getattr(settings, "BARGE_IN_ENABLED", False)
+                    and getattr(self, "wake", None) is not None
+                    and getattr(self, "audio", None) is not None):
+                try:
+                    self._interrupt.clear()
+                    _ri.clear()
+                    _relay_watcher = threading.Thread(
+                        target=self._interrupt_watcher, daemon=True,
+                        name="relay-barge-in",
+                    )
+                    _relay_watcher.start()
+                except Exception:                                # noqa: BLE001
+                    _relay_watcher = None
+            try:
+                seconds = play_to_device(pcm, sr, device, cancel_event=_ri)
+            finally:
+                if _relay_watcher is not None:
+                    self._interrupt.set()   # release the watcher if it didn't fire
+                    _relay_watcher.join(timeout=0.5)
+                    self._interrupt.clear()
+                if _ri is not None:
+                    _ri.clear()
         except Exception as e:                                       # noqa: BLE001
             logger.warning("relay playback failed: %s", e)
             self._speak("The relay to your team failed.")
@@ -5799,6 +5880,85 @@ class Orchestrator:
                         kind=routing_intent.kind.value,
                     )
 
+                # LEAN GAMING BOOT: the settings-panel voice command ("pull up
+                # the settings / config / control panel") also lives in the
+                # skipped coding_voice block. Run it here so the user can open
+                # the GUI -- e.g. to flip the live "Mute my speakers" toggle --
+                # during a barebones gaming session. settings_gui.launch only
+                # spawns a detached process (no coding/openclaw imports).
+                if self.coding_voice is None:
+                    if self._maybe_handle_settings_gui(user_text):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = (
+                            self._last_response_finished_monotonic
+                            + _addr_cfg.warm_mode_duration_seconds
+                            if _addr_cfg.follow_up_enabled else None
+                        )
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="settings_gui-lean",
+                            follow_up=bool(follow_up_until),
+                        )
+                        continue
+
+                # LEAN GAMING BOOT: the exact Spotify matcher above lives INSIDE
+                # the coding_voice block, which the lean boot skips -- so music
+                # commands would fall to the router (abstain) and the LLM would
+                # HALLUCINATE a fake "now playing". Run the STANDALONE lean
+                # Spotify handler here (kenning.spotify.lean_handler imports only
+                # kenning.spotify.* + config -- no coding/openclaw/heavy) BEFORE
+                # the router so real music control works in a barebones session.
+                if self.coding_voice is None:
+                    _lean_sp = getattr(self, "_lean_spotify_handler", None)
+                    if _lean_sp is None:
+                        from kenning.spotify.lean_handler import LeanSpotifyHandler
+                        _lean_sp = LeanSpotifyHandler()
+                        self._lean_spotify_handler = _lean_sp
+                    if _lean_sp.handle(user_text, self._speak,
+                                       _strip_leading_wake_remnant):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        if _addr_cfg.follow_up_enabled:
+                            follow_up_until = (
+                                self._last_response_finished_monotonic
+                                + _addr_cfg.warm_mode_duration_seconds
+                            )
+                        else:
+                            follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="spotify-lean", follow_up=bool(follow_up_until),
+                        )
+                        continue
+
+                # LEAN GAMING BOOT: the exact RELAY matcher also lives inside the
+                # skipped coding_voice block, so in a barebones session team
+                # callouts would reach the team ONLY if the fuzzy semantic router
+                # happened to classify them as team_callout -- a private question
+                # the router mis-scored could leak to the mic, and a real callout
+                # it under-scored would never reach the team. Run the DETERMINISTIC
+                # relay matcher here (force=False -> it fires ONLY on a real
+                # match_relay_command hit; questions / Spotify / banter return
+                # False and fall through) so precise relay / callout / criticize /
+                # roast / team-greet commands route to the mic deterministically,
+                # leaving the router as a pure fallback for fuzzy misses. The
+                # relay path imports only kenning.audio.* + config -- no
+                # coding/openclaw/heavy -- so it is anticheat-safe in lean boot.
+                if self.coding_voice is None:
+                    if self._maybe_handle_relay_speech(user_text):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        if _addr_cfg.follow_up_enabled:
+                            follow_up_until = (
+                                self._last_response_finished_monotonic
+                                + _addr_cfg.warm_mode_duration_seconds
+                            )
+                        else:
+                            follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="relay-lean", follow_up=bool(follow_up_until),
+                        )
+                        continue
+
                 # SEMANTIC COMMAND ROUTER (additive fallback layer) -- the LAST
                 # deterministic attempt before the conversational LLM. Everything
                 # above (exact relay/Spotify/identity matchers + capability
@@ -5826,8 +5986,16 @@ class Orchestrator:
                             _router_consumed = self._maybe_handle_relay_speech(
                                 user_text, force=True)
                         elif not _rd.abstained and _rd.family == "identity":
-                            _router_consumed = self._maybe_handle_relay_speech(
-                                "introduce yourself")
+                            # 2026-06-15 routing-isolation: a BARE identity probe
+                            # ("who are you", "are you a bot") is the user talking
+                            # TO Ultron, not a team intro -- do NOT broadcast it to
+                            # the mic. Let it fall through to the conversational
+                            # path, which now answers in the Ultron persona on the
+                            # DESKTOP output only. (Explicit team intros -- "greet
+                            # my team" / "tell them who you are" -- are matched by
+                            # the deterministic relay sibling above and DO hit the
+                            # mic.)
+                            _router_consumed = False
                         elif not _rd.abstained and _rd.family == "desktop_refuse":
                             # A desktop / automation request the capability
                             # classifier missed. While a protected game is
@@ -7614,6 +7782,13 @@ class Orchestrator:
         this method threads the orchestrator's pending-clarification
         state in so coding-task dialogues don't double-ack.
         """
+        # LEAN GAMING (2026-06-15): the filler-acks ("Hm.", "Considering.",
+        # "Processing.", "Mm.") are a desktop latency-masking device. In a live
+        # match they read as random robotic NOISES prepended to every callout
+        # ("Hm. Sova is mid.") and break the cold Ultron register. Suppress them
+        # entirely while gaming -- Ultron does not deliberate aloud to the team.
+        if self._gaming_conversational_prompt() is not None:
+            return None
         has_clar = False
         if self.coding_voice is not None:
             try:
@@ -7632,6 +7807,26 @@ class Orchestrator:
         except Exception as e:
             logger.warning("Conversational ack source failed: %s", e)
             return None
+
+    def _gaming_conversational_prompt(self) -> Optional[str]:
+        """Return the Ultron persona for the conversational LLM fallback when a
+        gaming/testing session is active, else None (desktop persona unchanged).
+
+        Used by the conversational call sites to override the system prompt so a
+        wake-addressed line that matched no deterministic route is answered AS
+        Ultron -- never leaking the "Kenning" persona to the team. Fail-open:
+        any error returns None (legacy desktop behaviour)."""
+        try:
+            from kenning.openclaw_routing.gaming_mode import (
+                is_gaming_mode_active,
+            )
+            from kenning.safety.testing_mode import is_testing_mode_active
+
+            if is_gaming_mode_active() or is_testing_mode_active():
+                return ULTRON_GAMING_PERSONA
+        except Exception:                                            # noqa: BLE001
+            return None
+        return None
 
     def _kick_off_tts_preopen(self) -> Optional[threading.Thread]:
         """Start the TTS output-stream pre-open on a daemon thread.
@@ -8310,6 +8505,10 @@ class Orchestrator:
                     gate_verdict=final_verdict,
                     precomputed_rag_snippets=snippets,
                     record_history=False,
+                    # Lean gaming: speculative pre-gen must use the SAME Ultron
+                    # persona the consumer path uses, or a speculation that gets
+                    # consumed would leak the desktop "Kenning" persona.
+                    system_prompt=self._gaming_conversational_prompt(),
                 )
                 for token in stream:
                     # Check invalidation before pushing each token.
@@ -8735,6 +8934,7 @@ class Orchestrator:
                 # ``/no_think`` user-message marker keeps the model
                 # producing visible output directly.
                 enable_thinking=False,
+                system_prompt=self._gaming_conversational_prompt(),
             )
             return
 
@@ -8786,6 +8986,7 @@ class Orchestrator:
                     history_user_message=user_text,
                     rag_query=user_text,           # 2026-05-22 perf
                     enable_thinking=False,         # 2026-05-22 latency
+                    system_prompt=self._gaming_conversational_prompt(),
                 )
                 return
 
@@ -8893,6 +9094,7 @@ class Orchestrator:
                 # the voice path so factual/math questions don't pay
                 # 5-10 s of internal-reasoning TTFT.
                 enable_thinking=False,
+                system_prompt=self._gaming_conversational_prompt(),
             )
             return
 
@@ -9096,6 +9298,38 @@ class Orchestrator:
         finally:
             pool.shutdown(wait=False)
 
+    def _cancel_all_playback(self) -> None:
+        """"Ultron, stop": silence EVERY output channel at once.
+
+        Covers the conversational TTS (desktop), the team-relay mic playback
+        (via the ``_relay_interrupt`` flag the chunked ``play_to_device`` polls),
+        and BOTH mirror sinks -- the OBS broadcast feed and the user's own
+        monitor speakers. Each leg is best-effort/fail-open so one failing
+        channel never blocks the others. The user wanted "stop" to cut playback
+        entirely on all channels."""
+        try:
+            self.tts.stop()
+        except Exception:                                        # noqa: BLE001
+            pass
+        try:
+            self.llm.cancel()
+        except Exception:                                        # noqa: BLE001
+            pass
+        try:
+            self._relay_interrupt.set()
+        except Exception:                                        # noqa: BLE001
+            pass
+        try:
+            from kenning.audio.broadcast import cancel_current as _bc
+            _bc()
+        except Exception:                                        # noqa: BLE001
+            pass
+        try:
+            from kenning.audio.monitor import cancel_current as _mc
+            _mc()
+        except Exception:                                        # noqa: BLE001
+            pass
+
     def _interrupt_watcher(self) -> None:
         """Run wake-word detection during TTS playback for barge-in."""
         # Brief grace so the watcher doesn't trigger on residual user audio.
@@ -9111,8 +9345,7 @@ class Orchestrator:
                 if local_wake.process(chunk):
                     logger.info("Barge-in detected; interrupting response")
                     print("\n  [interrupted]")
-                    self.tts.stop()
-                    self.llm.cancel()
+                    self._cancel_all_playback()
                     self._pending_capture.set()
                     self._interrupt.set()
                     return

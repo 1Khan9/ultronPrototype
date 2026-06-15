@@ -116,10 +116,10 @@ _LEADING_ARTIFACT = re.compile(
 # addressee is normalised to "team" wording for the rephrase prompt.
 _RELAY_PATTERNS: tuple[re.Pattern[str], ...] = (
     # "tell my teammates (that|to) X" / "tell our team X" / "tell my team, X"
-    # ([\s,:]+ after the addressee tolerates the pause-comma/colon live
-    # transcripts insert: "tell my team, two B" / "let my team know: X").
+    # ([\s,:.]+ after the addressee tolerates the pause-comma/colon/period live
+    # transcripts insert: "tell my team, two B" / "tell my team. I'm one shot").
     re.compile(
-        rf"^(?:please\s+)?tell\s+{_GROUP}[\s,:]+"
+        rf"^(?:please\s+)?tell\s+{_GROUP}[\s,:.]+"
         rf"(?:that\s+|to\s+)?(?P<payload>.+)$",
         re.IGNORECASE,
     ),
@@ -241,7 +241,7 @@ _COMPOSE_PATTERNS: tuple[re.Pattern[str], ...] = (
 # Roast requests: spoken VERBATIM from the user-curated lines file
 # (never LLM-authored) -- "Kenning, roast my team".
 _ROAST_RE = re.compile(
-    rf"^(?:please\s+)?(?:roast|flame)\s+(?:{_GROUP}|them|everyone"
+    rf"^(?:please\s+)?(?:roast|flame)[\s,]+(?:{_GROUP}|them|everyone"
     rf"|the\s+lobby|chat)\s*[.!?]?$",
     re.IGNORECASE,
 )
@@ -258,26 +258,35 @@ _FUN_FACT_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Greeting requests -- a curated Ultron TEAM INTRO at agent select / round
-# one ("greet my team", "introduce yourself to my team", "say hi to the
-# squad and introduce yourself"). Addresses the whole team, names himself
-# Ultron, and assures victory so long as they comply.
+# Greeting requests -- a curated Ultron TEAM INTRO at agent select / round one
+# ("greet my team", "introduce yourself to my team", "say hi to the squad").
+# Addresses the whole team -> spoken on the MIC. A TEAM REFERENCE is now
+# REQUIRED (2026-06-15 routing-isolation hardening): a BARE identity question
+# ("who are you", "are you a bot") is the user "just talking to him", so it must
+# fall to the conversational path (DESKTOP only, Ultron persona) and NOT broadcast
+# to the team mic. Relaying the answer to teammates is done explicitly
+# ("tell them who you are" / "respond to them ...") via the pronoun-group form.
 _GREET_RE = re.compile(
     rf"^(?:please\s+)?(?:.{{0,50}}?[,;.]\s+)?(?:"
+    # GREETING IMPERATIVES -- "do a team intro" -> MIC (outward by nature).
     rf"greet\s+(?:all\s+(?:of\s+)?)?{_GROUP}"
-    rf"|introduce\s+(?:yourself|us)(?:\s+to\s+(?:all\s+(?:of\s+)?)?{_GROUP})?"
-    rf"|say\s+(?:hi|hello|hey|what'?s\s+up)\s+to\s+(?:all\s+(?:of\s+)?)?{_GROUP}"
+    rf"|introduce\s+(?:yourself|us)(?:\s+to\s+(?:all\s+(?:of\s+)?)?"
+    rf"(?:{_GROUP}|{_GROUP_PRON}))?"
+    rf"|say\s+(?:hi|hello|hey|what'?s\s+up)\s+to\s+(?:all\s+(?:of\s+)?)?"
+    rf"(?:{_GROUP}|{_GROUP_PRON})"
     rf"(?:\s+and\s+introduce\s+yourself)?"
-    rf"|tell\s+{_GROUP}\s+who\s+you\s+are"
-    # Bare identity questions to Ultron himself -- so the in-game identity is
-    # ULTRON, never the conversational "Kenning" persona.
-    rf"|who\s+are\s+you|what\s+are\s+you"
-    rf"|state\s+your\s+name|what(?:'?s|\s+is)\s+your\s+name"
-    rf"|identify\s+yourself|tell\s+me\s+(?:about\s+yourself|who\s+you\s+are)"
-    rf"|introduce\s+yourself"
+    # EXPLICIT relay of the intro to teammates ("tell them who you are").
+    rf"|tell\s+(?:{_GROUP}|{_GROUP_PRON})\s+who\s+you\s+are"
     rf")\s*[.!?]*$",
     re.IGNORECASE,
 )
+# NOTE (2026-06-15 routing-isolation): bare identity QUESTIONS -- "who are you",
+# "what are you", "are you a bot", "state your name", "identify yourself", "tell
+# me about yourself" -- are deliberately NOT matched here. They are the user (or a
+# relayed teammate) talking TO Ultron, so they fall to the conversational path
+# and are answered in the Ultron persona on the DESKTOP output only, never the
+# team mic. To put the answer on the mic, the user relays it explicitly
+# ("tell them who you are" / "respond to them ...").
 
 # Farewell / closing requests -- a curated Ultron sign-off at match end
 # ("say bye to my team", "tell my team gg, we won", "say goodbye, we lost").
@@ -599,6 +608,26 @@ DEFAULT_ADDRESSEE_NAMES: tuple[str, ...] = (
 )
 
 
+# Criticize a SPECIFIC teammate's play. The user asks Ultron to AUTHOR a cutting
+# critique aimed at the named agent ("criticize Reyna for that", "rip into my
+# Sova", "call out Phoenix"). This is a COMPOSE directive -- Ultron delivers the
+# criticism itself; live, the model used to PARROT the command verbatim
+# ("Criticize Reyna for that. Deny her a soul.") because the plain relay path
+# treats it as a literal instruction. Distinct from _ROAST_RE, which roasts the
+# whole TEAM from the curated lines file (so it requires a GROUP word, never an
+# agent name -- the two are disjoint). Built from the closed agent roster.
+_CRITICIZE_NAME = "|".join(
+    re.escape(n.strip().lower()).replace(r"\ ", r"\s+")
+    for n in DEFAULT_ADDRESSEE_NAMES if n.strip()
+)
+_CRITICIZE_RE = re.compile(
+    rf"^(?:please\s+)?(?:criticize|criticise|critique|rip\s+into|tear\s+into|"
+    rf"chew\s+out|call\s+out|flame|roast)[\s,]+"
+    rf"(?:my\s+|our\s+|the\s+)?(?P<name>{_CRITICIZE_NAME})(?:'s)?\b.*$",
+    re.IGNORECASE,
+)
+
+
 # Conjunctions an ask-payload may open with. "to" is stripped after the
 # match; question words are KEPT so the rephrase delivers a question
 # ("ask my clove why she is not smoking window" -> "Clove, why aren't
@@ -619,14 +648,15 @@ def _named_patterns(names_key: tuple[str, ...]) -> tuple[re.Pattern[str], ...]:
     # to the teammate (my/our/the) or an enemy (their) by the agent they play.
     name = rf"(?:my\s+|our\s+|the\s+|their\s+)?(?P<name>{alts})\b"
     return (
-        # "tell clove (that|to) X" / "tell my sova X"
+        # "tell clove (that|to) X" / "tell my sova X" / "tell jett, X" -- the
+        # [\s,:]+ after the name tolerates the pause-comma live transcripts add.
         re.compile(
-            rf"^(?:please\s+)?tell\s+{name}\s+(?:that\s+|to\s+)?(?P<payload>.+)$",
+            rf"^(?:please\s+)?tell\s+{name}[\s,:]+(?:that\s+|to\s+)?(?P<payload>.+)$",
             re.IGNORECASE,
         ),
         # "ask (my) sage (to|for|if|whether|why|...) X"
         re.compile(
-            rf"^(?:please\s+)?ask\s+{name}\s+"
+            rf"^(?:please\s+)?ask\s+{name}[\s,:]+"
             rf"(?P<payload>{_ASK_LEAD}\s+.+)$",
             re.IGNORECASE,
         ),
@@ -965,6 +995,19 @@ def match_relay_command(
         return RelayCommand(
             payload="roast", raw_text=text,
             addressee="team", compose=True, roast=True,
+        )
+
+    # Criticize a SPECIFIC teammate ("criticize Reyna for that") -- Ultron
+    # AUTHORS the critique (compose), never echoes the literal command. Checked
+    # before the compose/relay patterns so the named-agent critique wins.
+    _mcrit = _CRITICIZE_RE.match(cleaned)
+    if _mcrit is not None:
+        _crit_agent = _canon_agent(_mcrit.group("name")) or (
+            _mcrit.group("name").strip().title()
+        )
+        return RelayCommand(
+            payload="criticize", raw_text=text, addressee="team",
+            compose=True, directive=f"criticize:{_crit_agent}",
         )
 
     # Fun-fact requests ("tell my team a fun fact") -- verbatim corpus.
@@ -1375,6 +1418,18 @@ _REPHRASE_PROMPT = (
 def _directive_task(directive: str) -> str:
     """Map a closed-vocabulary directive to a composition instruction."""
     d = directive.lower()
+    if d.startswith("criticize:"):
+        target = directive.split(":", 1)[1].strip() or "that teammate"
+        return (
+            f"AUTHOR a single cutting, SPECIFIC criticism of {target}'s play, "
+            f"spoken to the whole team in Ultron's cold clinical voice. Open "
+            f"with the name {target}, name a concrete failure (overextended, "
+            f"wasted the ult, fed first blood, missed the shot, wrong rotation), "
+            f"and land a short superior verdict. You ARE delivering the "
+            f"criticism -- do NOT say the words 'criticize' or 'for that' or "
+            f"announce what you are about to do. One or two sentences, never a "
+            f"monologue."
+        )
     if "calm" in d or "escalate" in d or "reassure" in d:
         return (
             "De-escalate with Ultron's cold, clinical superiority: speak TO "
@@ -1592,6 +1647,12 @@ def _fallback_line(command: RelayCommand) -> str:
     """Deterministic spoken line when the LLM rephrase is unavailable."""
     if command.compose and command.directive:
         d = command.directive.lower()
+        if d.startswith("criticize:"):
+            target = command.directive.split(":", 1)[1].strip() or "that one"
+            return (
+                f"{target}. That was beneath even your limits. "
+                f"Tighten up or step aside."
+            )
         if "calm" in d or "escalate" in d or "reassure" in d:
             return "We're good. Reset and focus -- next round is ours."
         if "acknowledge" in d or "agree" in d:
@@ -2485,6 +2546,21 @@ def _as_enemy_action(p: str) -> Optional[str]:
     return None
 
 
+# Own-team ult is an ASSET, not a threat, so the enemy agent-flavor pool (cold
+# contempt, written for the OPPONENT playing that agent) reads wrong on it. These
+# short confident tails carry the Ultron register for "our <agent> has ult"
+# without misapplying the enemy lines. Picked with anti-repeat like every pool.
+_OWN_ULT_TAILS: tuple[str, ...] = (
+    "A decisive tool. Use it well.",
+    "The advantage is ours.",
+    "Spend it on the round we close.",
+    "The path opens.",
+    "Hold it for the kill.",
+    "A resource I have already factored in.",
+    "Our edge widens.",
+)
+
+
 def _as_ult_callout(p: str) -> Optional[str]:
     """'<agent> has ult' / 'their <A>, <B> have ults' / '<agent> is one off' ->
     a clean ult callout, adding 'Their' ONLY when the input said their/enemy."""
@@ -2665,6 +2741,17 @@ def _as_snap_callout(
         if 1 <= len(rest.split()) <= 9:
             return flav(f"Careful, {rest}.", _FLAVOR_CAREFUL)
 
+    # --- death call: 'I died' / "I'm dead" / "I'm down" / 'I got killed' -> a
+    #     DETERMINISTIC self-status snap. Time-critical (the team needs to know
+    #     they are a player down NOW); live, the 3B rephrase returned "" and
+    #     "No." on these, so it must never round-trip the model. ---
+    if not _is_compound and re.match(
+        r"^i(?:\s*'?m)?\s+(?:died|dead|down|gone|out|"
+        r"got\s+(?:killed|domed|tagged|deleted|dropped))\b",
+        p, re.IGNORECASE,
+    ):
+        return fself("I'm dead.")
+
     # --- self status / possession / first person (stoic ATTITUDE flavor -- it
     #     adds register only, never a new tactical instruction, and never mocks
     #     the user whose status this is) ---
@@ -2819,12 +2906,18 @@ def _as_snap_callout(
                 return flav(f"{ag} hit {m.group('n')}, {loc}.", _FLAVOR_DAMAGE)
             return None   # long tail -> compound / LLM
 
-    # --- ults (BEFORE utility): 'their breach has ult' -> flavor; a teammate's
-    #     own ult info stays clean. ---
+    # --- ults (BEFORE utility): an ENEMY ult (explicit 'their' OR a BARE
+    #     'Sova has ult', which in callout convention means the enemy) gets the
+    #     agent-specific contempt tail; an OWN-team ult ('our Sova has ult') is
+    #     an asset, so it gets a short confident usage tail instead of the
+    #     enemy-perspective agent flavor (which reads wrong on a teammate). ---
     snap = _as_ult_callout(p)
     if snap:
-        return (flav(snap, _FLAVOR_ULT)
-                if snap.startswith("Their ") else snap)
+        if not flavor:
+            return snap
+        if snap.startswith("Our "):
+            return f"{snap} {pick_line(_OWN_ULT_TAILS, recent_lines=recent_lines)}"
+        return flav(snap, _FLAVOR_ULT)
 
     # --- agent utility report '[our/their/my] <agent> <ability-word> <rest>'
     #     ('our Sova darted A main', 'their Astra nova pulsed the angle') -- enemy
@@ -3970,6 +4063,8 @@ def play_to_device(
     device_index: int,
     *,
     stream_factory: Optional[Callable[..., object]] = None,
+    cancel_event: "object | None" = None,
+    chunk_ms: float = 100.0,
 ) -> float:
     """Play mono PCM synchronously on a specific output device.
 
@@ -3980,9 +4075,15 @@ def play_to_device(
         stream_factory: test seam -- called with the same kwargs as
             ``sounddevice.OutputStream`` and must return a context-less
             stream object with ``start() / write(data) / stop() / close()``.
+        cancel_event: optional ``threading.Event``; when it becomes set,
+            playback ABORTS at the next chunk boundary (used by the "Ultron,
+            stop" barge-in so a team relay can be cut off mid-sentence).
+        chunk_ms: write granularity when ``cancel_event`` is given. ~100 ms
+            keeps the cut latency low without underrunning the device.
 
     Returns:
-        Seconds of audio written (0.0 for empty input).
+        Seconds of audio actually written (0.0 for empty input; less than the
+        clip length if cancelled).
 
     Raises:
         Exception: whatever the audio backend raises; callers treat any
@@ -3996,28 +4097,40 @@ def play_to_device(
         data = (clipped * 32767.0).astype(np.int16)
     data = data.reshape(-1, 1)
 
-    if stream_factory is None:
-        import sounddevice as sd
+    # Lowest-latency stream for this device (WASAPI low-latency + auto-convert
+    # when available, else MME latency='low'). ``stream_factory`` (test seam)
+    # bypasses the host logic via make_output_stream.
+    from kenning.audio.devices import make_output_stream
 
-        stream_factory = sd.OutputStream
-
-    stream = stream_factory(
-        samplerate=sample_rate,
-        channels=1,
-        dtype="int16",
-        device=device_index,
+    stream = make_output_stream(
+        device_index, sample_rate, 1, "int16", stream_factory=stream_factory,
     )
     t0 = time.monotonic()
+    written = len(data)
     try:
         stream.start()
-        stream.write(data)
+        if cancel_event is None:
+            stream.write(data)
+        else:
+            # Chunked write so an "Ultron, stop" can abort the team relay
+            # mid-clip. Drop out the moment the cancel flag is set.
+            step = max(1, int(sample_rate * chunk_ms / 1000.0))
+            written = 0
+            for start in range(0, len(data), step):
+                if cancel_event.is_set():
+                    logger.info("relay playback cancelled at %.2fs (barge-in)",
+                                written / float(sample_rate))
+                    break
+                chunk = data[start:start + step]
+                stream.write(chunk)
+                written += len(chunk)
     finally:
         try:
             stream.stop()
             stream.close()
         except Exception:  # noqa: BLE001 - best-effort teardown
             pass
-    seconds = len(data) / float(sample_rate)
+    seconds = written / float(sample_rate)
     logger.debug(
         "relay playback: %.2fs audio to device %d in %.2fs",
         seconds, device_index, time.monotonic() - t0,

@@ -111,6 +111,15 @@ audio:
   # VoiceMeeter and capture "Voicemeeter Out B3" in OBS. Hot-swappable from the
   # settings panel (Voice -> Everything output (OBS)).
   broadcast_device: "Voicemeeter AUX Input"
+  # Prefer the Windows WASAPI endpoint (~2-25 ms) over MME (~90-180 ms) for all
+  # OUTPUT devices + open every output stream at latency='low'. Fail-safe: a
+  # device whose WASAPI endpoint won't open falls back to MME + latency='low'.
+  prefer_wasapi_output: true
+  # LIVE speaker mute (toggle in the settings panel: "Mute my speakers"). When
+  # true, Ultron is silent on your default speakers while the relay still
+  # reaches teammates (B1) + OBS (B3) -- lets you A/B the isolated loopback
+  # tracks. Hot-applied on the next line; no restart.
+  mute_speakers: false
   barge_in_enabled: true      # wake-word interrupts Kenning's own TTS
   barge_in_grace_seconds: 0.5
   # 2026-05-09 audio-quality pass: pre-amp applied to the captured
@@ -254,12 +263,18 @@ wake_word:
   # still false-fires; lower it toward 0.5 if it ever misses your real callout.
   thresholds:
     kenning: 0.4
-    ultron: 0.6
+    ultron: 0.7                 # 2026-06-15: 0.6 -> 0.7 (stricter; bare callouts
+                                # now relay without "tell my team", so a false
+                                # accept could broadcast random speech to the team)
   # Require this many CONSECUTIVE above-threshold frames before firing -- the
   # main no-retrain false-accept filter (a real wake word sustains a high score
-  # for many frames; a confusable spikes for one). 2 is a light filter; raise to
-  # 3 if ultron still triggers on non-wake words.
+  # for many frames; a confusable spikes for one). 2 is a light filter.
   min_consecutive_frames: 2
+  # PER-WORD consecutive-frame gate (2026-06-15): overrides min_consecutive_frames
+  # for the named word. "ultron" needs 3 sustained frames so a transient
+  # confusable can't fire it; a real "ultron" sustains the score and still fires.
+  consecutive_frames:
+    ultron: 3
   cooldown_seconds: 1.5         # debounce repeated triggers
 
 # ---------------------------------------------------------------------------
@@ -1590,8 +1605,22 @@ gaming_mode:
   # (Gaming / Anticheat -> Anticheat-safe mode) or by voice.
   anticheat_safe_mode: true            # PINNED ON -- safe to run with Vanguard
   engage_at_startup: true              # boot straight into bare-bones gaming mode (min GPU)
+  # LEAN BOOT (barebones) -- all ON by default: each keeps a NON-ESSENTIAL
+  # subsystem OUT of RAM (never imported) so nothing beyond core relay + Spotify
+  # + voice is loaded or visible to the Vanguard kernel anticheat. Explicit here
+  # so config.yaml is the complete source of truth the settings panel reflects.
   barebones_skip_retrieval: true       # gaming turns skip RAG memory + reranker (GPU/compute saver)
   barebones_skip_web_search: true      # gaming turns skip the web-search preflight + executor
+  barebones_skip_coding: true          # never import the coding stack (ProjectIndex/Supervisor/MCP/voice)
+  barebones_skip_openclaw: true        # never import the OpenClaw bridge runtime (+threads)
+  barebones_skip_docker_autostart: true  # skip Docker autostart
+  barebones_skip_evolution: true       # skip the evolution service
+  barebones_skip_events: true          # skip the events subsystem
+  barebones_skip_skills: true          # skip skills
+  barebones_skip_summarizer: true      # skip the background summarizer
+  barebones_skip_reranker_warmup: true # skip the cross-encoder reranker warmup
+  barebones_direct_gaming_llm: true    # construct the LLM directly as the 3B-CPU gaming preset (no 4B-on-GPU transient)
+  barebones_lazy_zero_shot_addressee: true  # lazy-load the flan-t5 addressee classifier
   llm_gpu_layers: 0                    # 0 = gaming LLM fully on CPU (no GPU spike on generation); -1 to keep it on GPU
   anticheat_with_gaming_mode: true     # (retained for back-compat; tie is unconditional)
   plugins_to_disable:

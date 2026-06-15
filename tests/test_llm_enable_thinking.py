@@ -71,8 +71,24 @@ def test_chat_completion_kwargs_never_emits_chat_template_kwargs() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _apply_no_think_marker -- pure function
+# _apply_no_think_marker -- instance method (2026-06-15: now reads the
+# LIVE-loaded ``self.model_path`` so the QWEN-only marker is never appended on
+# the llama-3.2-3b gaming preset, which parroted it aloud as "No think.").
 # ---------------------------------------------------------------------------
+
+
+def _qwen_engine() -> LLMEngine:
+    """Bare engine whose LIVE model is a Qwen GGUF (marker SHOULD apply)."""
+    eng = LLMEngine.__new__(LLMEngine)
+    eng.model_path = "C:/models/qwen3.5-4b-instruct.gguf"
+    return eng
+
+
+def _llama_engine() -> LLMEngine:
+    """Bare engine whose LIVE model is the llama gaming preset (NO marker)."""
+    eng = LLMEngine.__new__(LLMEngine)
+    eng.model_path = "C:/models/llama-3.2-3b-abliterated.gguf"
+    return eng
 
 
 def test_apply_no_think_marker_appends_when_false() -> None:
@@ -80,7 +96,7 @@ def test_apply_no_think_marker_appends_when_false() -> None:
         {"role": "system", "content": "S"},
         {"role": "user", "content": "what is X?"},
     ]
-    out = LLMEngine._apply_no_think_marker(msgs, False)
+    out = _qwen_engine()._apply_no_think_marker(msgs, False)
     assert out[-1]["content"].endswith("/no_think")
     # Original list untouched
     assert msgs[-1]["content"] == "what is X?"
@@ -89,13 +105,22 @@ def test_apply_no_think_marker_appends_when_false() -> None:
 def test_apply_no_think_marker_skips_when_none_or_true() -> None:
     msgs = [{"role": "user", "content": "what is X?"}]
     for et in (None, True):
-        out = LLMEngine._apply_no_think_marker(msgs, et)
+        out = _qwen_engine()._apply_no_think_marker(msgs, et)
         assert "/no_think" not in out[-1]["content"]
+
+
+def test_apply_no_think_marker_skips_for_non_qwen_live_model() -> None:
+    """2026-06-15: the llama-3.2-3b gaming preset does NOT consume the Qwen
+    marker -- it parrots it ("No think."). The live model_path is authoritative,
+    so even with enable_thinking=False the marker must NOT be appended."""
+    msgs = [{"role": "user", "content": "economy."}]
+    out = _llama_engine()._apply_no_think_marker(msgs, False)
+    assert "/no_think" not in out[-1]["content"]
 
 
 def test_apply_no_think_marker_idempotent_when_already_present() -> None:
     msgs = [{"role": "user", "content": "what is X? /no_think"}]
-    out = LLMEngine._apply_no_think_marker(msgs, False)
+    out = _qwen_engine()._apply_no_think_marker(msgs, False)
     # Must not append a second marker.
     assert out[-1]["content"].count("/no_think") == 1
 
@@ -108,13 +133,13 @@ def test_apply_no_think_marker_targets_last_user_only() -> None:
         {"role": "assistant", "content": "ack"},
         {"role": "user", "content": "second turn"},
     ]
-    out = LLMEngine._apply_no_think_marker(msgs, False)
+    out = _qwen_engine()._apply_no_think_marker(msgs, False)
     assert "/no_think" not in out[0]["content"]
     assert "/no_think" in out[2]["content"]
 
 
 def test_apply_no_think_marker_empty_messages() -> None:
-    assert LLMEngine._apply_no_think_marker([], False) == []
+    assert _qwen_engine()._apply_no_think_marker([], False) == []
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +154,9 @@ def _make_engine_with_mock_llm() -> LLMEngine:
     is called with."""
     eng = LLMEngine.__new__(LLMEngine)
     eng._runtime = "in_process"
+    # 2026-06-15: the marker check now reads the LIVE model_path; a Qwen GGUF
+    # means the /no_think marker still applies on the in-process path.
+    eng.model_path = "C:/models/qwen3.5-4b-instruct.gguf"
     eng._llm = MagicMock()
     eng._cancel = __import__("threading").Event()
     eng._history = __import__("collections").deque()

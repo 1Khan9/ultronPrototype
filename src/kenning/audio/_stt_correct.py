@@ -218,6 +218,14 @@ _PHRASE_MISHEARS: tuple[tuple[re.Pattern[str], object], ...] = (
     # owner-aware "our Sova" -> "Arsova" / "our selva".
     (re.compile(r"\bar+\s*sova\b", re.I), "our Sova"),
     (re.compile(r"\bour\s+(?:silva|selva|sofa|soda|saba|sovah)\b", re.I), "our Sova"),
+    # "roast my team" mis-heard as "toast my team" (STT swaps r->t before the
+    # rounded vowel). Only when a team/group reference follows, so a literal
+    # "toast" (rare) is untouched. Live: "Toast, my team" mis-routed to the long
+    # greeting because the un-corrected "toast" matched no relay verb.
+    (re.compile(
+        r"\btoast(?=[\s,]+(?:my\s+|our\s+|the\s+)?"
+        r"(?:team|teammates?|squad|guys|boys|mates|crew|them|everyone|chat)\b)",
+        re.I), "roast"),
     # "mic check" heard as "Mike check" / "my check".
     (re.compile(r"\b(?:mike|my)\s+check\b", re.I), "mic check"),
     # site letters heard as words.
@@ -256,6 +264,13 @@ _FUZZY_BLOCK = {
     "line", "mine", "point", "place", "thing", "lower", "raise", "volume",
     "music", "song", "track", "turn", "put", "throw", "song", "want", "need",
     "should", "would", "could", "about", "going", "coming",
+    # common words that JW snapped onto gazetteer terms in live logs:
+    #   are->Ares(weapon), you're->Yoru(agent), shot->short(loc),
+    #   greet->Corrode(map, both metaphone "KRT")
+    "are", "art", "you're", "youre", "yours", "shot", "shots", "shoot",
+    "sort", "war", "core", "more", "store", "wore", "ore", "her", "his",
+    "greet", "greets", "greeting", "greetings",
+    "last", "fast", "past", "blast",   # "last guy"->"blast" (last is a callout)
     # short agent names that ARE common words -> curated/phonetic only
     "raze", "sage", "fade", "neon", "iso", "omen", "clove", "viper", "skye",
 }
@@ -301,8 +316,20 @@ def _phonetic_fuzzy_snap(low: str) -> str | None:
     # Phonetic match must be corroborated by a HIGH edit-similarity (0.88), so
     # same-Metaphone-but-different-word pairs ("set"/"site", both "ST") never
     # snap. A fuzzy-only snap needs to be near-identical (0.92).
-    if phon_hit is not None and (fuzzy_hit == phon_hit or fuzzy_score >= 0.88):
-        return phon_hit
+    #
+    # 2026-06-15 fix: the corroborating edit-sim must be between the input and
+    # the PHONETIC CANDIDATE ITSELF -- not the GLOBAL best fuzzy score. The old
+    # code let an UNRELATED close word lend its score to a distant phonetic
+    # collision ("greet": metaphone KRT == "corrode", and "greet"~="green" at
+    # >=0.88 -> wrongly snapped "greet"->"Corrode"). Score phon_hit directly.
+    if phon_hit is not None:
+        phon_key = phon_hit.lower().replace("/", "")
+        if _rf_jw is not None:
+            phon_sim = float(_rf_jw.normalized_similarity(low, phon_key))
+        else:
+            phon_sim = difflib.SequenceMatcher(None, low, phon_key).ratio()
+        if fuzzy_hit == phon_hit or phon_sim >= 0.88:
+            return phon_hit
     if fuzzy_hit is not None and fuzzy_score >= 0.92:
         return fuzzy_hit
     return None

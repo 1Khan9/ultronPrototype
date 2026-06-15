@@ -92,13 +92,32 @@ def _stub_load(self, path, fb):
     return _ScoreModel()
 
 
-def _scored(monkeypatch, word="ultron", thresholds=None, min_consec=2):
+def _scored(monkeypatch, word="ultron", thresholds=None, min_consec=2,
+            consec_by_word=None):
     monkeypatch.setattr(WakeWordDetector, "_load_model", _stub_load)
     d = WakeWordDetector(model_path=None, name=word)
     d._thresholds = thresholds or {"kenning": 0.4, "ultron": 0.6}  # noqa: SLF001
     d._min_consecutive = min_consec  # noqa: SLF001
+    # Default to NO per-word override so ``min_consec`` is authoritative in the
+    # generic gate tests; pass ``consec_by_word`` to exercise the override.
+    d._consec_by_word = consec_by_word or {}  # noqa: SLF001
     d.threshold = d._threshold_for(word)
     return d
+
+
+def test_per_word_consecutive_overrides_flat(monkeypatch):
+    """Per-word consecutive-frame gate overrides the flat default (2026-06-15:
+    "ultron" requires 3 sustained frames so a transient confusable can't fire
+    it)."""
+    d = _scored(monkeypatch, word="ultron", min_consec=2,
+                consec_by_word={"ultron": 3})
+    frame = np.zeros(1280, dtype=np.float32)
+    d._model.score = 0.7  # noqa: SLF001 - above ultron threshold
+    assert d.process(frame) is False           # consec 1 < 3
+    assert d.process(frame) is False           # consec 2 < 3
+    assert d.process(frame) is True            # consec 3 >= 3 -> fire
+    assert d._consec_for("ultron") == 3        # noqa: SLF001
+    assert d._consec_for("kenning") == 2       # noqa: SLF001 - flat fallback
 
 
 def test_per_word_threshold_overrides_flat(monkeypatch):

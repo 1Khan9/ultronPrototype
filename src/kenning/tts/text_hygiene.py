@@ -27,7 +27,8 @@ _STAGE_DIRECTION = re.compile(r"\*[^*\n]{1,200}\*|\[[^\]\n]{1,80}\]")
 # Chat-template / thinking-control tokens a non-native model may parrot.
 _CONTROL_TOKENS = re.compile(
     r"<think>.{0,400}?</think>"
-    r"|/\s*no_?think\b|/\s*think\b|<\|[a-zA-Z0-9_]+\|>|</?think>",
+    r"|/\s*no_?think\b|/\s*think\b|\bno_think\b"  # marker, with or without slash
+    r"|<\|[a-zA-Z0-9_]+\|>|</?think>",
     re.IGNORECASE | re.DOTALL,
 )
 _HAS_SPEAKABLE = re.compile(r"[A-Za-z0-9]")

@@ -48,14 +48,19 @@ _WAKE_HOMOPHONES = (
     r"ultron|altron|voltron|ultra|ultro|tron|ron|run|rons"
 )
 _FILLER = (
-    r"hey|ok|okay|um+|uh+|er+|hmm+|so|well|like|yeah|yep|yup|now|and|then|"
+    r"hey|ok|okay|um+|uh+|er+|hmm+|so|well|yeah|yep|yup|now|and|then|"
     r"please|alright|right|i\s+mean|i\s+think|i\s+hope|i\s+guess|i\s+wanna|"
     r"i\s+want\s+to|let'?s\s+see|you\s+know|basically|just"
 )
+# "like" is filler ("like, tell my team X") BUT also the Spotify verb
+# ("like this song" / "like it"). Strip it as filler ONLY when it is NOT
+# immediately followed by a Spotify object -- otherwise the leading-junk pass
+# turned "like this song" into "this song", which then matched "now playing".
+_LIKE_FILLER = r"like(?!\s+(?:this|that|it|the|some|my)\b)"
 # A leading token run: wake homophone(s) and/or filler, each optionally
 # followed by light punctuation. Anchored at start, case-insensitive.
 _LEADING_JUNK = re.compile(
-    rf"^(?:\s*(?:{_WAKE_HOMOPHONES}|{_FILLER})\b[\s,.:;!?-]*)+",
+    rf"^(?:\s*(?:{_WAKE_HOMOPHONES}|{_LIKE_FILLER}|{_FILLER})\b[\s,.:;!?-]*)+",
     re.IGNORECASE,
 )
 
@@ -73,7 +78,8 @@ def _strip_leading_junk(s: str) -> str:
 _HAS_RELAY_LEAD = re.compile(
     r"^\s*(?:please\s+)?(?:tell|say|let|warn|inform|remind|wish|ask|relay|"
     r"repeat|echo|yell|shout|announce|broadcast|call\s+out|encourage|hype|"
-    r"roast|flame|give|share|drop)\b",
+    r"roast|flame|give|share|drop|"
+    r"criticize|criticise|critique|rip\s+into|tear\s+into|chew\s+out)\b",
     re.IGNORECASE,
 )
 
@@ -81,6 +87,29 @@ _HAS_RELAY_LEAD = re.compile(
 _TEAM_LEAD = re.compile(
     r"^\s*(?:my\s+|our\s+|the\s+)?"
     r"(?:team|teammates?|squad|boys|guys|mates|homies|fellas|crew)\b[\s,:]*",
+    re.IGNORECASE,
+)
+
+# A no-VERB team lead: "on my team X" / "to the squad X" -- the streamer addresses
+# the team with a preposition instead of "tell". Strip the prep+addressee and
+# prepend the canonical "tell my team" so the payload (X) isn't leaked with the
+# "on my team" lead glued to the front of the relayed line.
+_TEAM_LEAD_NOVERB = re.compile(
+    r"^\s*(?:on|to)\s+(?:my\s+|our\s+|the\s+)?"
+    r"(?:team(?:mates?)?|squad|boys|guys|mates|crew)\b[\s,:.]*",
+    re.IGNORECASE,
+)
+
+# A TRAILING relay command ("Viper wall is up, tell my team." / "they're pushing
+# B, let the squad know."). The command sits at the END; without stripping it,
+# recover_relay_lead would prepend a fresh "tell my team" and DUPLICATE the
+# trailing command into the relayed payload. Matched only as a bare tail (no
+# payload after the addressee) so a real "tell my team to push" is untouched.
+_TRAILING_RELAY_TAIL = re.compile(
+    r"[\s,.;:!?-]+\b(?:tell|say(?:\s+to)?|let|warn|remind|inform|relay(?:\s+to)?)\s+"
+    r"(?:my\s+|our\s+|the\s+)?"
+    r"(?:team(?:mates?)?|squad|boys|guys|mates|crew|everyone|everybody|'?em|them)"
+    r"(?:\s+know)?\s*[.!?]*$",
     re.IGNORECASE,
 )
 
@@ -104,7 +133,8 @@ _NOT_A_CALLOUT = re.compile(
     r"|play\b|pause\b|resume\b|unpause\b|skip\b|next\b|previous\b|prev\b|"
     r"stop\b|mute\b|unmute\b|shuffle\b|repeat\b|loop\b|volume\b|louder\b|"
     r"quieter\b|softer\b|turn\s+it\b|turn\s+the\s+volume\b|crank\b|"
-    r"like\s+this\b|love\s+this\b|unlike\b|thumbs\b|save\s+this\b|"
+    r"like\s+this\s+(?:song|track|one)\b|love\s+this\s+(?:song|track|one)\b|"
+    r"unlike\b|thumbs\b|save\s+this\s+(?:song|track|one)\b|"
     r"what'?s\s+playing\b|who\s+sings\b|what\s+song\b|now\s+playing\b|"
     r"throw\s+on\b|put\s+on\b|queue\b|start\s+playing\b|keep\s+playing\b|"
     r"go\s+back\b|restart\b|start\s+it\s+over\b|i\s+wanna\s+hear\b"
@@ -117,6 +147,29 @@ _NOT_A_CALLOUT = re.compile(
     # control toggles
     r"|mute\s+the\s+team\b|gaming\s+mode\b|anticheat\b"
     r")",
+    re.IGNORECASE,
+)
+
+# Context+directive shape: a reported-speech clause ("<teammate/agent> asked /
+# said / is flaming me ...") followed by a directive to ANSWER ("respond",
+# "reply", "calm him down", "clap back", ...). Ultron should AUTHOR an
+# in-character answer (the relay's context+directive matcher handles it, incl.
+# Marvel/Avengers questions answered as Ultron). Detected here so recover_relay_lead
+# does NOT blindly prepend "tell my team" -- which turned "Jett asked you about
+# Tony Stark, respond" into a LITERAL relay of the question instead of an
+# in-character reply (the "teammate asked" form already escaped via _NOT_A_CALLOUT;
+# a NAMED agent did not). Conjunctive: a reported-speech verb AND a closing
+# answer-directive, so ordinary callouts never trip it.
+_REPORTED_RESPOND_RE = re.compile(
+    r"\b(?:asked|asking|asks|said|saying|says|told|wants?|wanted|wondering|"
+    r"thinks?|thinking|typed|wrote|complain\w*|crying|flam\w*|tilted|raging|"
+    r"malding|mock\w*|teas\w*|roast\w*|clown\w*|diss\w*|ridicul\w*|insult\w*|"
+    r"bully\w*|making\s+fun|trash[\s-]?talk\w*|calling\s+(?:me|you|us))\b.*"
+    r"\b(?:respond|reply|answer|acknowledge|agree|clap\s+back|back\s+me\s+up|"
+    r"defend\s+me|set\s+(?:him|her|them)\s+straight|calm\s+(?:him|her|them)\s+down|"
+    r"de[\s-]?escalate|shut\s+(?:him|her|them|it)\s+down|"
+    r"say\s+something|handle\s+(?:it|that|him|her|them)|"
+    r"deal\s+with\s+(?:it|that|him|her|them))\b\s*[.!?]*$",
     re.IGNORECASE,
 )
 
@@ -144,18 +197,33 @@ _CALLOUT_SIGNAL = re.compile(
     r"ult|ulted|ulting|ultimate|turret|wall|walled|smoke|smokes|smoked|"
     r"flash|flashed|flashing|molly|molotov|drone|dart|cage|cages|trip|"
     r"tripwire|nanoswarm|stun|stunned|knife|blade|spike|orb|recon|"
+    # count + position ("two on B", "one mid", "three a", "two pushing")
+    r"(?:one|two|three|four|five|six)\s+(?:on|in|at|pushing|coming|rushing|"
+    r"rotating|left|right|mid|main|here|there|a\b|b\b|c\b)|"
     # locations
     r"heaven|hell|main|mid|middle|long|short|window|site|spawn|market|"
     r"garage|hookah|connector|tree|elbow|ramp|pit|rafters|generator|"
+    r"cubby|catwalk|alley|courtyard|stairs|lamps|showers|kitchen|dish|"
+    r"snowman|tube|tubes|vents|tower|boathouse|link|lobby|default\b|logs|"
     # self status
     r"low|one\s+shot|one-shot|reloading|i\s+died|i'?m\s+dead|i'?m\s+low|"
     r"i'?m\s+planting|i'?m\s+flanking|i'?m\s+pushing|i'?m\s+rotating|"
     r"i'?m\s+holding|i'?m\s+going|i\s+have\s+(?:a|b|c|site|the\s+spike)|"
     # orders / morale / social
-    r"save|eco|force|retake|default|stack|group\s+up|fall\s+back|lock\s+in|"
+    r"save|eco|force|retake|default|stack|stacked|stacking|group\s+up|"
+    r"fall\s+back|lock\s+in|split|execute|executing|rush|rushing|rushed|"
     r"good\s+game|gg|nice|great\s+play|well\s+played|let'?s\s+go|we\s+got\s+this|"
     r"good\s+luck|my\s+bad|nice\s+shot|clutch|careful|watch\s+the|"
-    r"winning|we'?re\s+winning|we\s+lost|good\s+round|nice\s+round"
+    r"winning|we'?re\s+winning|we\s+lost|good\s+round|great\s+round|nice\s+round|"
+    # 2026-06-15 expanded callout coverage (relay without an explicit "tell my
+    # team" lead): counts/kills, weapons, movement, requests, clears.
+    r"down|left|clear|cleared|going|crossing|crossed|behind|boost|boosting|"
+    r"anchor|anchoring|switch|switching|cover|covering|picks|trade|traded|"
+    r"kill(?:ed|ing|s)?|got\s+(?:one|him|her|two|the\s+kill)|"
+    r"op|operator|awp|odin|sheriff|guardian|vandal|phantom|judge|bucky|"
+    r"marshal|outlaw|shorty|"
+    r"need\s+(?:a\s+|an\s+|some\s+)?(?:drop|heal|heals|backup|back\s+up|rifle|"
+    r"gun|smoke|smokes|flash|util|pickup|res|revive|trade|orb|orbs)|drop\s+me"
     r")\b",
     re.IGNORECASE,
 )
@@ -178,6 +246,24 @@ def recover_relay_lead(text: str) -> str:
         return text  # already a valid relay/compose/soundboard lead
     if _NOT_A_CALLOUT.match(s):
         return text  # question / Spotify / identity / desktop -> leave verbatim
+    if _REPORTED_RESPOND_RE.search(s):
+        # "<agent> asked you about X, respond" -> the relay's context+directive
+        # matcher AUTHORS an in-character Ultron answer. Do NOT prepend
+        # "tell my team" (that would relay the QUESTION literally).
+        return text
+    # Trailing relay command ("Viper wall is up, tell my team.") -> strip the
+    # tail and prepend the canonical lead so the payload isn't duplicated.
+    mt = _TRAILING_RELAY_TAIL.search(s)
+    if mt:
+        head = s[:mt.start()].strip(" ,.;:!?-")
+        if head:
+            return "tell my team " + head
+    # No-verb team lead ("on my team X" / "to the squad X") -> restore "tell".
+    mn = _TEAM_LEAD_NOVERB.match(s)
+    if mn:
+        rest = s[mn.end():].strip()
+        if rest:
+            return "tell my team " + rest
     if _TEAM_LEAD.match(s):
         # "my team X" / "the squad X" -> the verb was dropped; restore "tell".
         # Liberal here: a wake-addressed utterance that opens with the team is

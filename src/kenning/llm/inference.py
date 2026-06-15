@@ -871,6 +871,7 @@ class LLMEngine:
         suppress_memory_context: bool = False,
         precomputed_rag_snippets: Optional[List] = None,
         rag_query: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> List[dict]:
         """Assemble the chat-completion message list for one turn.
 
@@ -915,6 +916,19 @@ class LLMEngine:
                 user_message[:60],
             )
             suppress_memory_context = True
+
+        # Per-call system-prompt override (2026-06-15): when the caller passes
+        # an explicit ``system_prompt`` (the lean-gaming conversational path
+        # passes the Ultron persona so banter / teammate questions never leak
+        # the desktop "Kenning" persona), use it VERBATIM and skip the
+        # desktop-only skills / temperament augmentation -- it must stay a
+        # pure, terse in-character prompt. The relay rephrase path does NOT
+        # pass it, so its tuned behaviour is untouched.
+        if system_prompt is not None:
+            self.system_prompt = system_prompt
+            messages: List[dict] = [{"role": "system", "content": system_prompt}]
+            messages.append({"role": "user", "content": user_message})
+            return messages
 
         # Resolve the system prompt fresh each turn. When the persona
         # source is the workspace, this is what makes hot reload work:
@@ -1783,6 +1797,7 @@ class LLMEngine:
         record_history: bool = True,
         history_user_message: Optional[str] = None,
         rag_query: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> Iterator[str]:
         """Yield response tokens as they arrive.
 
@@ -1824,6 +1839,7 @@ class LLMEngine:
             suppress_memory_context=suppress_memory_context,
             precomputed_rag_snippets=precomputed_rag_snippets,
             rag_query=rag_query,
+            system_prompt=system_prompt,
         )
         # 2026-05-14: same /no_think handling as the blocking path.
         messages = self._apply_no_think_marker(messages, enable_thinking)
@@ -1974,9 +1990,8 @@ class LLMEngine:
             kwargs["stream"] = True
         return kwargs
 
-    @staticmethod
     def _apply_no_think_marker(
-        messages: list, enable_thinking: Optional[bool],
+        self, messages: list, enable_thinking: Optional[bool],
     ) -> list:
         """Append ``/no_think`` to the last user message when thinking
         is explicitly disabled.
@@ -2003,15 +2018,26 @@ class LLMEngine:
         # Other presets (the llama-3.2 gaming preset) don't consume it
         # -- the model PARROTS it and TTS speaks "No think" out loud
         # (observed live). Only append for Qwen-family models.
+        # 2026-06-15 live fix: check the LIVE-LOADED model (self.model_path)
+        # FIRST, not just config. In lean gaming the LLM is constructed
+        # DIRECTLY as the llama-3.2-3b preset while config.llm still names the
+        # qwen base, so the config-only check wrongly matched "qwen" and
+        # appended the marker -- llama then parroted it ("economy. /no_think"
+        # -> spoke "No think.", and a truncated "team asked if /no_think" made
+        # the model answer ABOUT the no_think token). The live path is
+        # authoritative; only fall back to config for the HTTP runtime
+        # (model_path is None there).
         try:
-            from kenning.config import get_config
+            ident = (getattr(self, "model_path", None) or "")
+            if not ident:
+                from kenning.config import get_config
 
-            llm_cfg = get_config().llm
-            ident = (
-                f"{getattr(llm_cfg, 'preset', '')} "
-                f"{getattr(llm_cfg, 'model_path', '')}"
-            ).lower()
-            if "qwen" not in ident:
+                llm_cfg = get_config().llm
+                ident = (
+                    f"{getattr(llm_cfg, 'preset', '')} "
+                    f"{getattr(llm_cfg, 'model_path', '')}"
+                )
+            if "qwen" not in ident.lower():
                 return messages
         except Exception:  # noqa: BLE001 - fail-open to legacy behavior
             pass

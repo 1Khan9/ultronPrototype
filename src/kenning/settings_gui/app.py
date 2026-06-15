@@ -34,12 +34,12 @@ import yaml
 from kenning.settings_gui.spec import (
     SECTIONS,
     Knob,
-    apply_updates,
     write_action,
     read_value,
     render_value,
     resolve_choices,
     write_reload_signal,
+    write_runtime_overrides,
 )
 
 # ---------------------------------------------------------------------------
@@ -266,11 +266,18 @@ class ControlPanel:
         bottom.pack(fill="x", padx=14, pady=(4, 12))
         # Gaming-mode live toggle (engages/disengages immediately; this
         # also drives anticheat, which is 100% tied to gaming mode).
-        self._gaming_on = False
+        # Reflect the BOOT state from config (engage_at_startup) so the panel
+        # accurately shows gaming + anticheat already ON in the lean default --
+        # the code is the source of truth at boot.
+        self._gaming_on = bool(
+            read_value(self._config_data, ("gaming_mode", "engage_at_startup")))
         ttk.Label(bottom, text="GAMING + ANTICHEAT:",
                   style="Status.TLabel").pack(side="left")
         self._gaming_btn = ttk.Button(
-            bottom, text="OFF — click to ENGAGE", style="Ghost.TButton",
+            bottom,
+            text=("ON — click to DISENGAGE" if self._gaming_on
+                  else "OFF — click to ENGAGE"),
+            style="Ghost.TButton",
             width=22, command=self._toggle_gaming)
         self._gaming_btn.pack(side="left", padx=8)
         self._status = ttk.Label(bottom, text="No pending changes.",
@@ -282,6 +289,14 @@ class ControlPanel:
             bottom, text="APPLY UPDATE", style="Accent.TButton",
             command=self._apply)
         self._apply_btn.pack(side="right", padx=8)
+        # Dedicated single-setting apply (safety net): flips ONLY the
+        # "Mute my speakers" knob, guaranteeing no other pending edit rides
+        # along. Lets the user isolate the loopback tracks with zero risk to the
+        # lean-boot / gaming / anticheat defaults.
+        self._mute_btn = ttk.Button(
+            bottom, text="APPLY MUTE ONLY", style="Ghost.TButton",
+            command=lambda: self._apply_one(("audio", "mute_speakers")))
+        self._mute_btn.pack(side="right", padx=8)
         self._tick_clock()
 
     def _toggle_gaming(self) -> None:
@@ -398,12 +413,14 @@ class ControlPanel:
                 self._status.configure(text="Nothing to apply.",
                                        foreground=DIM)
                 return
-            apply_updates(self._config_path, updates)
+            # EPHEMERAL: write to the runtime overlay, NEVER config.yaml. The
+            # orchestrator overlays it live and wipes it at boot, so config.yaml
+            # stays the immutable lean-boot source of truth and these edits
+            # revert on the next restart.
+            write_runtime_overrides(self._data_dir, updates)
             write_reload_signal(self._data_dir)
             # Fire runtime actions for knobs that aren't read call-time
-            # (LLM preset swap, Kokoro device move) so they take effect
-            # live, not on next restart. The config patch above also
-            # persists them.
+            # (LLM preset swap, Kokoro device move) so they take effect live.
             actions = 0
             for path in updates:
                 act = self._knobs[path].action
@@ -413,11 +430,36 @@ class ControlPanel:
             for path in updates:
                 self._initial[path] = str(self._vars[path].get())
             msg = f"Applied {len(updates)} change" \
-                  f"{'s' if len(updates) != 1 else ''} ✓ — hot-reloaded live."
+                  f"{'s' if len(updates) != 1 else ''} ✓ — live this session " \
+                  f"(reverts on restart)."
             if actions:
                 msg += f"  {actions} applied at next idle moment."
             self._status.configure(text=msg, foreground=OK)
         except Exception as e:  # noqa: BLE001 - surface, never crash
+            self._status.configure(text=f"Apply failed: {e}", foreground=ERR)
+
+    def _apply_one(self, path: tuple[str, ...]) -> None:
+        """Apply EXACTLY one knob -- a safety net so the user can flip a single
+        setting (e.g. "Mute my speakers") and be certain NOTHING else changes,
+        regardless of other pending edits. Writes only that knob's override."""
+        try:
+            var = self._vars.get(path)
+            knob = self._knobs.get(path)
+            if var is None or knob is None:
+                self._status.configure(text="That setting isn't available.",
+                                       foreground=ERR)
+                return
+            rendered = render_value(var.get(), knob.kind)
+            write_runtime_overrides(self._data_dir, {path: rendered})
+            write_reload_signal(self._data_dir)
+            if knob.action:
+                write_action(self._data_dir, knob.action, var.get())
+            self._initial[path] = str(var.get())
+            self._status.configure(
+                text=f"Applied only '{knob.label}' ✓ — nothing else touched.",
+                foreground=OK,
+            )
+        except Exception as e:  # noqa: BLE001
             self._status.configure(text=f"Apply failed: {e}", foreground=ERR)
 
     def _toggle_pause(self) -> None:

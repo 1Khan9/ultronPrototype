@@ -1325,11 +1325,14 @@ def test_named_calm_payload_uses_curated_pool():
     ("tell my team careful ramp", "Careful, ramp.", True),
     ("tell my team one a main", "One a main.", True),
     ("tell my team I am out of ammo", "I'm out of ammo.", True),
-    ("tell my team chamber is one off", "Chamber is one off ult.", False),
+    # Bare "<agent> has ult" means the ENEMY by callout convention -> it now
+    # carries the agent-specific contempt tail (2026-06-15: the user wanted the
+    # few-word agent tail on these, not a bare line). Enemy-facing -> flavored.
+    ("tell my team chamber is one off", "Chamber is one off ult.", True),
     ("tell my team their breach has ult", "Their Breach has ult.", True),
-    ("tell my team jett has ult", "Jett has ult.", False),
-    ("tell my team raze has her ult", "Raze has ult.", False),
-    ("tell my team viper ult is ready", "Viper has ult.", False),
+    ("tell my team jett has ult", "Jett has ult.", True),
+    ("tell my team raze has her ult", "Raze has ult.", True),
+    ("tell my team viper ult is ready", "Viper has ult.", True),
     ("tell my team sova hit 84", "Sova hit 84.", True),
     ("tell my sova to dart heaven", "Sova, dart heaven.", True),
     ("tell my yoru to hold flank", "Yoru, hold flank.", True),

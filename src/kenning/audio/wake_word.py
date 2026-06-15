@@ -64,6 +64,7 @@ class WakeWordDetector:
         # threshold frames filters single-frame spurious spikes.
         self._thresholds: dict = {}
         self._min_consecutive = 1
+        self._consec_by_word: dict = {}
         self._consec = 0
         try:
             from kenning.config import get_config
@@ -75,6 +76,15 @@ class WakeWordDetector:
             }
             self._min_consecutive = max(
                 1, int(getattr(ww, "min_consecutive_frames", 1)))
+            # Per-word consecutive-frame gate (no-retrain false-accept control):
+            # "ultron" requires MORE sustained frames than the flat default so a
+            # transient confusable (a word that briefly spikes the score) does
+            # not fire it, while a genuinely-spoken "ultron" -- which sustains a
+            # high score -- still triggers reliably.
+            self._consec_by_word = {
+                str(k).strip().lower(): max(1, int(v))
+                for k, v in (getattr(ww, "consecutive_frames", {}) or {}).items()
+            }
         except Exception:  # noqa: BLE001
             pass
         self._name = (name or "kenning").strip().lower()
@@ -90,6 +100,12 @@ class WakeWordDetector:
         self._model = self._load_model(model_path, self._fallback_name)
         # Apply the active word's per-word threshold (if configured).
         self.threshold = self._threshold_for(self._active_word)
+
+    def _consec_for(self, word: str) -> int:
+        """Per-word consecutive-frame requirement; falls back to the flat
+        ``min_consecutive_frames`` default."""
+        return self._consec_by_word.get(
+            (word or "").strip().lower(), self._min_consecutive)
 
     def _threshold_for(self, word: str) -> float:
         """Per-word detection threshold; falls back to the flat default."""
@@ -240,7 +256,8 @@ class WakeWordDetector:
             self._consec = 0
             return False
         self._consec += 1
-        if self._consec < self._min_consecutive:
+        _need = self._consec_for(self._active_word)
+        if self._consec < _need:
             return False
 
         now = time.monotonic()
@@ -251,7 +268,7 @@ class WakeWordDetector:
         self._consec = 0
         logger.info(
             "Wake word '%s' detected (score=%.2f, thr=%.2f, frames>=%d)",
-            self._active_word, score, self.threshold, self._min_consecutive)
+            self._active_word, score, self.threshold, _need)
         return True
 
     def reset(self) -> None:

@@ -32,6 +32,7 @@ __all__ = [
     "SECTIONS",
     "RELOAD_SIGNAL_RELPATH",
     "ACTION_RELPATH",
+    "RUNTIME_OVERRIDES_RELPATH",
     "read_value",
     "render_value",
     "resolve_choices",
@@ -39,6 +40,7 @@ __all__ = [
     "patch_config_text",
     "apply_updates",
     "write_reload_signal",
+    "write_runtime_overrides",
     "write_action",
 ]
 
@@ -49,6 +51,11 @@ RELOAD_SIGNAL_RELPATH = "config_reload.signal"
 # (gaming-mode toggle, LLM preset swap, Kokoro device move); the
 # orchestrator drains it at its idle poll point and applies each live.
 ACTION_RELPATH = "gui_action.jsonl"
+# EPHEMERAL settings overlay (relative to the repo data dir). The GUI writes its
+# edits HERE instead of config.yaml so config.yaml stays the immutable boot
+# source of truth; the orchestrator applies it on hot-reload and wipes it at
+# boot, so every GUI change is session-only and reverts on the next restart.
+RUNTIME_OVERRIDES_RELPATH = "runtime_overrides.json"
 
 
 @dataclass(frozen=True)
@@ -140,6 +147,12 @@ SECTIONS: tuple[Section, ...] = (
              action="broadcast_device",
              help="Mirror ALL of Kenning's audio to a capture device "
                   "(VoiceMeeter AUX → B3); blank = off"),
+        # LIVE speaker mute -- silences your default speakers so you can A/B the
+        # isolated B1 (Valorant loopback) + B3 (OBS) tracks. Hot-applied: relay
+        # still reaches teammates + OBS; only your speakers go quiet.
+        Knob(("audio", "mute_speakers"), "Mute my speakers (loopback)", "bool",
+             help="Silence playback on your default speakers; relay still plays "
+                  "to teammates (B1) + OBS (B3). Toggle live to isolate loopback"),
         # Separate OBS-capturable WINDOW with a live voice visualizer.
         Knob(("visualizer", "enabled"), "Waveform overlay", "bool",
              action="visualizer",
@@ -216,6 +229,41 @@ SECTIONS: tuple[Section, ...] = (
         Knob(("desktop", "click_preview", "enabled"), "Click preview",
              "bool"),
         Knob(("deep_research", "enabled"), "Deep research", "bool"),
+    )),
+    # Lean-boot posture, shown so the panel ACCURATELY reflects the default
+    # barebones state at boot: every non-essential subsystem is kept OUT of RAM
+    # (never imported) so nothing beyond core relay + Spotify + voice is loaded
+    # or visible to the anticheat. These are read at BOOT (config.yaml is the
+    # source of truth); a GUI edit is session-only and reverts on restart.
+    Section("Lean Boot (barebones — all ON)", (
+        Knob(("gaming_mode", "engage_at_startup"), "Engage at startup", "bool",
+             help="Boot straight into bare-bones gaming mode"),
+        Knob(("gaming_mode", "barebones_skip_coding"), "Skip coding stack",
+             "bool", help="Never import ProjectIndex/Supervisor/MCP/coding voice"),
+        Knob(("gaming_mode", "barebones_skip_openclaw"), "Skip OpenClaw bridge",
+             "bool", help="Never import the OpenClaw bridge runtime"),
+        Knob(("gaming_mode", "barebones_skip_docker_autostart"),
+             "Skip Docker autostart", "bool"),
+        Knob(("gaming_mode", "barebones_skip_evolution"), "Skip evolution",
+             "bool"),
+        Knob(("gaming_mode", "barebones_skip_events"), "Skip events", "bool"),
+        Knob(("gaming_mode", "barebones_skip_skills"), "Skip skills", "bool"),
+        Knob(("gaming_mode", "barebones_skip_summarizer"),
+             "Skip background summarizer", "bool"),
+        Knob(("gaming_mode", "barebones_skip_reranker_warmup"),
+             "Skip reranker warmup", "bool"),
+        Knob(("gaming_mode", "barebones_skip_retrieval"),
+             "Skip RAG retrieval", "bool"),
+        Knob(("gaming_mode", "barebones_skip_web_search"),
+             "Skip web search", "bool"),
+        Knob(("gaming_mode", "barebones_direct_gaming_llm"),
+             "Direct 3B-CPU LLM load", "bool",
+             help="Construct the gaming LLM directly (no 4B-on-GPU transient)"),
+        Knob(("gaming_mode", "barebones_lazy_zero_shot_addressee"),
+             "Lazy addressee classifier", "bool"),
+        Knob(("gaming_mode", "llm_gpu_layers"), "Gaming LLM GPU layers", "int",
+             minimum=-1, maximum=99,
+             help="0 = LLM fully on CPU (no GPU spike); -1 = keep on GPU"),
     )),
     Section("Gaming / Anticheat", (
         Knob(("gaming_mode", "enabled"), "Gaming mode voice trigger",
@@ -439,6 +487,34 @@ def write_reload_signal(data_dir: Path) -> Path:
     signal.parent.mkdir(parents=True, exist_ok=True)
     signal.write_text(str(time.time()), encoding="utf-8")
     return signal
+
+
+def write_runtime_overrides(
+    data_dir: Path, updates: dict[tuple[str, ...], str],
+) -> Path:
+    """Merge GUI edits into the EPHEMERAL overlay (never config.yaml).
+
+    Accumulates ``{dotted.path: rendered_value}`` across applies within a
+    session; the orchestrator overlays this on the next hot-reload and wipes the
+    file at boot, so config.yaml -- the lean-boot / gaming / anticheat source of
+    truth -- is never mutated and every edit reverts on restart. Atomic write.
+    """
+    path = data_dir / RUNTIME_OVERRIDES_RELPATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing: dict[str, Any] = {}
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                existing = loaded
+        except Exception:                                        # noqa: BLE001
+            existing = {}
+    for tpath, rendered in updates.items():
+        existing[".".join(tpath)] = rendered
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(existing, indent=2), encoding="utf-8", newline="")
+    tmp.replace(path)
+    return path
 
 
 def write_action(data_dir: Path, action: str, value: Any) -> Path:

@@ -49,6 +49,18 @@ from kenning.utils.logging import get_logger
 logger = get_logger("tts.kokoro")
 
 
+def _speakers_muted() -> bool:
+    """Live read of ``audio.mute_speakers`` (GUI-toggleable). When True, the
+    default-speaker output is silenced while the OBS/B3 tee stays full. Cheap
+    (get_config is cached); fail-open to NOT muted."""
+    try:
+        from kenning.config import get_config
+
+        return bool(getattr(get_config().audio, "mute_speakers", False))
+    except Exception:                                            # noqa: BLE001
+        return False
+
+
 def _broadcast_submit(pcm, sr) -> None:
     """Tee a spoken clip to the optional aux sinks: the broadcast mirror (OBS
     audio capture) and the waveform overlay (OBS window capture).
@@ -770,6 +782,12 @@ class KokoroSpeech:
                     # non-blocking, no-op when off, once per item.
                     _broadcast_submit(item.audio, sr)
                     audio = self._stereo_pcm(item.audio)
+                    # LIVE speaker mute: silence the DEFAULT-device output but
+                    # keep the B3/OBS tee (above) full, so the user can isolate
+                    # the loopback tracks. Zeroing (not skipping) preserves the
+                    # stream clock -> no clicks.
+                    if _speakers_muted():
+                        audio = np.zeros_like(audio)
                     for start in range(0, audio.shape[0], block_frames):
                         if self._stop_event.is_set():
                             return
@@ -919,7 +937,26 @@ class KokoroSpeech:
         if not audio_chunks:
             return np.zeros(0, dtype=np.int16), self._sample_rate
 
-        pcm_f32 = np.concatenate(audio_chunks)
+        # 2026-06-15 cadence fix: KPipeline yields one chunk PER SENTENCE and we
+        # used to concatenate them with ZERO gap, so a relay callout ran straight
+        # into its flavor tail ("Sova has ult.Three blasts for the slow.") -- the
+        # end of the line and the start of the tail blended together (reported
+        # live). The streaming playback path already inserts ~180 ms between
+        # sentences; mirror that here for the single-clip path (relay lines,
+        # greet/identity set-pieces) so multi-sentence clips have a clean breath
+        # between sentences. Single-sentence callouts are untouched (no gap).
+        if len(audio_chunks) > 1:
+            gap = np.zeros(
+                int(self._sample_rate * 0.16), dtype=np.float32,
+            )
+            spaced: list[np.ndarray] = []
+            for i, ch in enumerate(audio_chunks):
+                if i > 0:
+                    spaced.append(gap)
+                spaced.append(ch)
+            pcm_f32 = np.concatenate(spaced)
+        else:
+            pcm_f32 = np.concatenate(audio_chunks)
         # Keep the RAW (pre-DSP) Kokoro output so the spoken-blip check can tell
         # whether an artifact in the FINAL clip was introduced by the DSP/pause
         # pipeline ("the output does not match what Kokoro produced").
@@ -1076,6 +1113,10 @@ class KokoroSpeech:
             try:
                 # Stereo expand for the output stream.
                 stereo = np.column_stack((pcm, pcm)).astype(np.int16, copy=False)
+                # LIVE speaker mute: silence the default device (B3 tee above
+                # stays full).
+                if _speakers_muted():
+                    stereo = np.zeros_like(stereo)
                 stream = self._consume_preopened_stream(sr)
                 opened_here = False
                 if stream is None:

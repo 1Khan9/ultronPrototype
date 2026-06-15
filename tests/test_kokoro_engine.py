@@ -151,8 +151,10 @@ def test_synthesize_failure_raises_synth_error():
 
 
 def test_synthesize_concatenates_multiple_pipeline_chunks():
-    """Multi-sentence pipelines yield multiple chunks; the engine
-    concatenates them in order."""
+    """Multi-sentence pipelines yield multiple chunks; the engine concatenates
+    them in order WITH a short inter-sentence gap (2026-06-15 cadence fix) so a
+    relay callout doesn't blend into its flavor tail. Single-sentence clips get
+    no gap."""
 
     class _MultiChunk:
         def __call__(self, text, *, voice, speed):
@@ -162,9 +164,27 @@ def test_synthesize_concatenates_multiple_pipeline_chunks():
     engine = KokoroSpeech(model_path=Path("/stub"))
     engine._model = _MultiChunk()
     engine._loaded = True
+    # Isolate the concat+gap logic: disable the optional DSP passes (spectral
+    # smooth / trim-fade / runtime filter) that would otherwise reshape the clip.
+    engine.apply_spectral_smooth = False
+    engine.apply_trim_fade = False
+    engine.apply_runtime_filter = False
 
     pcm, _sr = engine._synthesize("Two sentences. Combined.")
-    assert pcm.size == 300
+    gap = int(engine._sample_rate * 0.16)
+    # chunk1 (100) + inter-sentence silence + chunk2 (200), in order.
+    assert pcm.size == 100 + gap + 200
+    assert not pcm[100:100 + gap].any()        # the inserted gap is silence
+    assert pcm[:100].any() and pcm[100 + gap:].any()   # both chunks survive
+
+    # Single chunk -> no gap inserted.
+    class _OneChunk:
+        def __call__(self, text, *, voice, speed):
+            yield ("g", "p", np.full(150, 0.05, dtype=np.float32))
+
+    engine._model = _OneChunk()
+    pcm1, _ = engine._synthesize("One sentence.")
+    assert pcm1.size == 150
 
 
 # ---------------------------------------------------------------------------

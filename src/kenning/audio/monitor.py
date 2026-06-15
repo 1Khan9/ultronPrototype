@@ -72,6 +72,10 @@ def maybe_submit(pcm: np.ndarray, sample_rate: int) -> None:
         cfg = get_config()
         if not bool(getattr(cfg.relay_speech, "echo_to_user", False)):
             return
+        # LIVE speaker mute: skip the relay echo on the default speakers (the
+        # callout still reaches teammates on B1 + OBS on B3). GUI-toggleable.
+        if bool(getattr(cfg.audio, "mute_speakers", False)):
+            return
         out_device = getattr(cfg.audio, "output_device", None)
     except Exception as e:  # noqa: BLE001
         logger.debug("monitor maybe_submit: config read failed (%s)", e)
@@ -83,6 +87,18 @@ def maybe_submit(pcm: np.ndarray, sample_rate: int) -> None:
     if sink._device_spec != idx:                       # noqa: SLF001
         sink.configure(idx)
     sink.submit(pcm, sample_rate)
+
+
+def cancel_current() -> None:
+    """Module-level "stop" hook: abort the monitor's current clip on the user's
+    own speakers. No-op when the monitor was never created. Fail-open."""
+    sink = _SINK
+    if sink is None:
+        return
+    try:
+        sink.cancel_current()
+    except Exception:                                  # noqa: BLE001
+        pass
 
 
 def configure_from_config() -> None:
