@@ -3115,6 +3115,19 @@ def _output_keeps_facts(payload: str, line: str) -> bool:
     return True
 
 
+# OUR-team actions/orders (we plant, defuse, hold, lurk, rotate, anchor...) --
+# their presence anywhere in a line marks it as our own callout/command, so it
+# gets the serene COMMAND register, never enemy contempt. (The enemy "pushes /
+# rushes / flanks"; we "plant / defuse / hold / anchor / retake".)
+_OUR_ACTION_RE = re.compile(
+    r"\b(?:plant(?:ed|ing)?|defus(?:e|es|ed|ing)|hold(?:ing|s)?|rotat(?:e|es|ed|ing)"
+    r"|lurk(?:ing|s)?|anchor(?:ing|s)?|cover(?:ing|s)?|sav(?:e|es|ing)|wait(?:ing|s)?"
+    r"|stack(?:ing|s)?|spread|commit(?:ting|s)?|retak(?:e|es|ing)|fall\s+back"
+    r"|over-?extend(?:ing)?|defend(?:ing|s)?|set\s+up)\b",
+    re.IGNORECASE,
+)
+
+
 def _literal_relay(payload: str, recent_lines: Optional[Sequence[str]] = None,
                    addressee: str = "team") -> str:
     """A clean, fact-perfect passthrough of the payload (the abstention output).
@@ -3138,7 +3151,12 @@ def _literal_relay(payload: str, recent_lines: Optional[Sequence[str]] = None,
         low = " " + out.lower() + " "
         ff = _payload_flavor_facts(p)
         first = p.split()[0].lower() if p.split() else ""
-        first_person = (re.search(r"\b(?:i'm|i am|i've|i have|my)\b", low)
+        # First person = the USER reporting their OWN action/status. Recognise a
+        # LEADING 'I' (I think / I can / I will / I killed / I defused), not only
+        # 'I'm'/'I have'/'my' -- so a self-report never falls through to the enemy
+        # loc/count fallback and gets contempt aimed at the user.
+        first_person = ((re.match(r"^\s+i\b", low)
+                         or re.search(r"\b(?:i'm|i am|i've|i have|my)\b", low))
                         and not re.search(r"\b(?:we|we're|our|they|their)\b", low))
         if (addressee or "team") != "team":
             # addressed to a named teammate -> command (or self for first person);
@@ -3150,7 +3168,11 @@ def _literal_relay(payload: str, recent_lines: Optional[Sequence[str]] = None,
         elif first_person:
             out = _flavor_ctx(out, "self", recent_lines, **ff)
         elif (re.search(r"\b(?:we|we're|our)\b", low)
-              or first in _TEAM_DIRECTIVE_VERBS or first in _IMPERATIVE_VERBS):
+              or first in _TEAM_DIRECTIVE_VERBS or first in _IMPERATIVE_VERBS
+              or _OUR_ACTION_RE.search(low)):
+            # OUR-team callout/order (we planted / hold / defuse / lurk / rotate)
+            # -> serene command register, NEVER enemy contempt -- even when the
+            # line carries a location ('planted for CT', 'hold near spike').
             out = _flavor_ctx(out, "command", recent_lines, **ff)
         elif ff.get("agents") or ff.get("loc"):
             # a bare position / named-agent callout ('cypher main', 'three b
