@@ -1218,6 +1218,22 @@ class Orchestrator:
         self._pending_capture = threading.Event()
         self._state: State = State.IDLE
 
+        # Auto push-to-talk: hold Valorant's TEAM-voice key (which is PTT-only)
+        # while a relay line plays, so Ultron's callouts actually transmit. The
+        # key is asserted by an EXTERNAL USB-HID microcontroller over serial --
+        # the host writes bytes ONLY, never synthetic input (the anticheat-clean
+        # design; see kenning.ptt). DEFAULT OFF + fail-safe: with the feature
+        # disabled or no device wired up this is a NullPttBackend that does
+        # nothing and adds zero latency. Constructed unconditionally (it is core
+        # relay infrastructure, not a lean-skippable subsystem) but gated on
+        # push_to_talk.enabled; never imports a synthetic-input lib.
+        try:
+            from kenning.ptt import build_ptt_controller
+            self._ptt = build_ptt_controller()
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("push-to-talk init failed (%s); PTT disabled", e)
+            self._ptt = None
+
         # SOURCE-OF-TRUTH-AT-BOOT: discard any settings-panel overlay from the
         # previous session so this boot loads the PRISTINE config.yaml + code
         # defaults. This is what guarantees the lean-boot / gaming / anticheat /
@@ -1555,9 +1571,13 @@ class Orchestrator:
         # The libraries a kernel anticheat-conscious build must keep cold:
         # input injection (pyautogui/SendInput), screen capture (mss/pyscreeze/
         # dxcam), UI automation (pywinauto/uiautomation), input hooks (pynput).
+        # "keyboard"/"pydirectinput" are here too as a tripwire for the auto-PTT
+        # path: PTT must assert keys via an EXTERNAL USB-HID device over serial,
+        # so an in-process keypress lib loading is a regression to catch.
         risky = [m for m in (
             "pyautogui", "mss", "pyscreeze", "dxcam",
             "pywinauto", "uiautomation", "pynput",
+            "keyboard", "pydirectinput",
             "playwright", "browser_use", "selenium",
         ) if m in _sys.modules]
         desktop_loaded = "kenning.desktop" in _sys.modules
@@ -3103,6 +3123,11 @@ class Orchestrator:
                 except Exception:                                # noqa: BLE001
                     _relay_watcher = None
             try:
+                # Auto-PTT: hold the team-voice key (external USB-HID, fail-safe
+                # no-op when disabled/no device) BEFORE the first team-mic sample.
+                # First line in the try so the paired finally ALWAYS releases it
+                # -- on a full clip, an "Ultron, stop"/barge cancel, or an error.
+                self._ptt_hold()
                 seconds = play_to_device(pcm, sr, device, cancel_event=_ri)
             finally:
                 if _relay_watcher is not None:
@@ -3111,6 +3136,10 @@ class Orchestrator:
                     self._interrupt.clear()
                 if _ri is not None:
                     _ri.clear()
+                # Release the team-PTT key after the clip drained (reverb tail is
+                # in-buffer). Returns immediately; the key drops after the codec
+                # tail. Runs on EVERY exit path incl. barge-cancel + error.
+                self._ptt_release()
         except Exception as e:                                       # noqa: BLE001
             logger.warning("relay playback failed: %s", e)
             self._speak("The relay to your team failed.")
@@ -5107,6 +5136,14 @@ class Orchestrator:
                 self._settings_gui_pid = None
             except Exception as e:                                  # noqa: BLE001
                 logger.debug("settings panel close on shutdown failed: %s", e)
+        # Release + close the push-to-talk link so the team-mic key can never be
+        # left held after Ultron exits (the hardware deadman also releases it).
+        _ptt = getattr(self, "_ptt", None)
+        if _ptt is not None:
+            try:
+                _ptt.close()
+            except Exception as e:                                  # noqa: BLE001
+                logger.debug("ptt close on shutdown failed: %s", e)
         # 2026-05-19 Tracks 1c-1e: cancel any in-flight background
         # summarizer so the worker exits cleanly. The thread is daemon
         # so it would be reaped anyway, but the cancel lets the in-flight
@@ -9379,6 +9416,20 @@ class Orchestrator:
             )
         finally:
             pool.shutdown(wait=False)
+
+    def _ptt_hold(self) -> None:
+        """Hold the team-PTT key for the relay about to play. Fail-safe: no-op
+        when PTT is disabled / no device (NullPttBackend), and never raises."""
+        ptt = getattr(self, "_ptt", None)
+        if ptt is not None:
+            ptt.hold()
+
+    def _ptt_release(self) -> None:
+        """Release the team-PTT key after the relay drained. Fail-safe no-op when
+        PTT is disabled / no device; returns immediately (tail handled async)."""
+        ptt = getattr(self, "_ptt", None)
+        if ptt is not None:
+            ptt.release()
 
     def _stop_watcher_enabled(self) -> bool:
         """Whether to run the wake-word interrupt watcher during playback.

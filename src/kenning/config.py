@@ -3829,10 +3829,44 @@ class SemanticRouterConfig(_Strict):
     sidecar_pidfile_path: str = ""   # "" -> ~/.kenning/embedder_sidecar.json
 
 
+class PushToTalkConfig(_Strict):
+    """Auto push-to-talk for Valorant TEAM voice chat (PTT-only in game).
+
+    Holds the in-game team-PTT key while a relay line plays so Ultron's callouts
+    transmit. The key is asserted by an EXTERNAL USB-HID microcontroller over a
+    serial port -- the host process writes bytes ONLY and never does synthetic
+    input (the anticheat-clean design; see :mod:`kenning.ptt`). DEFAULT OFF and
+    fail-safe: with no device / disabled it is completely inert.
+    """
+    # Master switch. Default OFF (no hardware assumed; binding no-default rule).
+    enabled: bool = False
+    # Serial (COM) port of the microcontroller, e.g. "COM5". Empty -> inert.
+    serial_port: str = ""
+    baud: int = Field(default=9600, ge=1200, le=2_000_000)
+    # The in-game TEAM-voice PTT key the microcontroller holds. Informational on
+    # the host side (the firmware presses this key); set your Valorant team-PTT
+    # bind + the firmware KEY to match.
+    key: str = "v"
+    # Pre-roll: hold the key this long BEFORE the first audio sample so the
+    # game's transmit channel is open and the first phoneme isn't clipped.
+    lead_ms: int = Field(default=120, ge=0, le=1000)
+    # Keep holding this long AFTER the clip drains (the reverb tail is already in
+    # the buffer; this covers the game's own transmit/codec tail).
+    release_tail_ms: int = Field(default=150, ge=0, le=2000)
+    # Keep-alive cadence: while held, the host sends a heartbeat byte this often
+    # to refresh the firmware's hardware deadman. Must be well under the firmware
+    # deadman window (recommend firmware deadman ~= 3-4x this).
+    heartbeat_ms: int = Field(default=50, ge=10, le=500)
+    # Host-side watchdog: force-release if a single continuous hold ever exceeds
+    # this (a second line of defense above the hardware deadman).
+    max_hold_seconds: float = Field(default=8.0, ge=0.5, le=30.0)
+
+
 class KenningConfig(_Strict):
     """Top-level configuration. Matches the structure of ``config.yaml``."""
     version: str = "1.0"
     audio: AudioConfig = Field(default_factory=AudioConfig)
+    push_to_talk: PushToTalkConfig = Field(default_factory=PushToTalkConfig)
     vad: VADConfig = Field(default_factory=VADConfig)
     wake_word: WakeWordConfig = Field(default_factory=WakeWordConfig)
     stt: STTConfig = Field(default_factory=STTConfig)

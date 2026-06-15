@@ -130,6 +130,15 @@ BARGE_IN_GRACE_SECONDS = _env_float(
     "KENNING_BARGE_IN_GRACE_SECONDS", _cfg.audio.barge_in_grace_seconds,
 )
 RING_BUFFER_SECONDS = _cfg.audio.ring_buffer_seconds
+# Auto push-to-talk (Valorant team chat): hold the in-game PTT key via an
+# external USB-HID microcontroller while a relay line plays. Default OFF;
+# host writes serial bytes only (never synthetic input). See kenning.ptt.
+PUSH_TO_TALK_ENABLED = _env_bool(
+    "KENNING_PTT_ENABLED", _cfg.push_to_talk.enabled,
+)
+PUSH_TO_TALK_SERIAL_PORT = (
+    os.getenv("KENNING_PTT_SERIAL_PORT") or _cfg.push_to_talk.serial_port
+)
 
 
 # ---------------------------------------------------------------------------

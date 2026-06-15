@@ -155,6 +155,24 @@ audio:
   warm_pre_roll_seconds: 0.5
 
 # ---------------------------------------------------------------------------
+# Auto push-to-talk (Valorant TEAM voice chat -- PTT only in game)
+# ---------------------------------------------------------------------------
+# Holds the in-game team-PTT key while a relay line plays so Ultron's callouts
+# transmit. The key is pressed by an EXTERNAL USB-HID microcontroller over a
+# serial port -- the host writes bytes ONLY, never synthetic input (the
+# anticheat-clean design). DEFAULT OFF + fail-safe: with no device / disabled it
+# is completely inert. To arm: flash the firmware, set enabled + serial_port.
+push_to_talk:
+  enabled: false             # master switch. Env: KENNING_PTT_ENABLED
+  serial_port: ""            # e.g. "COM5". Empty -> inert. Env: KENNING_PTT_SERIAL_PORT
+  baud: 9600
+  key: "v"                   # the in-game team-PTT key the device holds (match your bind + firmware)
+  lead_ms: 120               # hold the key this long BEFORE audio (open the channel; no clipped first phoneme)
+  release_tail_ms: 150       # keep holding this long AFTER the clip drains (game codec tail)
+  heartbeat_ms: 50           # keep-alive cadence refreshing the firmware hardware deadman
+  max_hold_seconds: 8.0      # host watchdog: force-release if a single hold runs longer than this
+
+# ---------------------------------------------------------------------------
 # Voice Activity Detection
 # ---------------------------------------------------------------------------
 

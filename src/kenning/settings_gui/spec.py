@@ -185,6 +185,10 @@ SECTIONS: tuple[Section, ...] = (
              "bool",
              help="Keep the all-channel stop available even when barge-in is "
                   "off; say the wake word during playback to cut everything"),
+        Knob(("push_to_talk", "enabled"), "Auto push-to-talk (team)", "bool",
+             help="Hold Valorant's team-PTT key (via external USB-HID device) "
+                  "while a relay line plays. Needs the microcontroller + a "
+                  "serial port set; inert without them"),
     )),
     Section("Brain", (
         # Preset swap is hot via reload_for_preset (the gaming-mode
