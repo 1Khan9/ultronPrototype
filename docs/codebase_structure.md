@@ -3773,7 +3773,7 @@ Converts a user voice command into a line Kenning speaks on a **separate** PortA
 - `load_roast_lines(path)`, `load_fun_facts(path)` — load user-curated verbatim pools from disk, fail-open to defaults.
 - `pick_roast_line(lines, recent_lines, rng) -> str` — anti-repeat pick from any verbatim pool; `pick_line` is an alias. Backed by `_pick_lru` (module-level `_LRU_COUNT`/`_LRU_SEEN`): serves the candidate gone LONGEST since last use (never-used first, ties random), comparing ONLY the passed candidate set so pools never cross-contaminate.
 - `resolve_relay_device(configured) -> Optional[int]` — resolve device name/index via `kenning.audio.devices.resolve_device`, fail-open.
-- `play_to_device(pcm, sample_rate, device_index, *, stream_factory, cancel_event=None) -> float` — synchronous playback via the WASAPI low-latency `make_output_stream` chokepoint (or test seam); returns seconds written. Writes the PCM in chunks and polls `cancel_event` between chunks so an "Ultron, stop" barge-in aborts mid-clip.
+- `play_to_device(pcm, sample_rate, device_index, *, stream_factory, cancel_event=None) -> float` — synchronous playback via the WASAPI low-latency `make_output_stream` chokepoint (or test seam); returns seconds written. **Pre-widens mono PCM to centered STEREO and opens a 2-channel stream** (matching the B3 BroadcastSink): the relay B1 device is a stereo VoiceMeeter VAIO endpoint, so a 1-channel stream forced WASAPI's auto-convert to up-mix 1→2 channels *on top of* the 24k→48k resample, which **statics/distorts on B1** (B3 was clean because it already fed stereo). Writes the PCM in chunks and polls `cancel_event` between chunks so an "Ultron, stop" barge-in aborts mid-clip.
 
 ---
 

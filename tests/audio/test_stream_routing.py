@@ -89,7 +89,9 @@ def test_team_path_plays_only_to_given_device():
             opened["started"] = True
 
         def write(self, data):
-            opened["wrote"] = len(np.asarray(data))
+            arr = np.asarray(data)
+            opened["wrote"] = len(arr)
+            opened["write_shape"] = arr.shape
 
         def stop(self):
             pass
@@ -106,3 +108,8 @@ def test_team_path_plays_only_to_given_device():
     assert opened["device"] == 19            # the team device, and only that
     assert opened.get("started") and opened.get("wrote")
     assert secs > 0
+    # Relay must feed the VoiceMeeter strip as STEREO -- a mono (1-channel)
+    # write makes WASAPI auto-convert up-mix 1->2 channels on top of the
+    # 24k->48k resample, which statics/distorts on the B1 VAIO endpoint.
+    assert opened["channels"] == 2
+    assert opened["write_shape"][1] == 2     # mono PCM was widened to stereo

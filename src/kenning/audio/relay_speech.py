@@ -4095,7 +4095,14 @@ def play_to_device(
     if data.dtype != np.int16:
         clipped = np.clip(data.astype(np.float32), -1.0, 1.0)
         data = (clipped * 32767.0).astype(np.int16)
-    data = data.reshape(-1, 1)
+    # Widen mono -> stereo (centered) BEFORE opening the stream. VoiceMeeter
+    # virtual inputs (the relay B1 strip) -- and effectively every output
+    # endpoint on this rig -- are STEREO. A 1-channel stream forces WASAPI's
+    # auto-convert to do a 1->2 channel up-mix ON TOP of the 24k->48k resample,
+    # and that channel conversion is what statics/distorts on the B1 VAIO
+    # endpoint. The OBS/B3 BroadcastSink already pre-widens to stereo and stays
+    # clean; mirror it here so WASAPI only has to resample, not also re-channel.
+    data = np.column_stack((data.reshape(-1), data.reshape(-1)))  # (-1, 2)
 
     # Lowest-latency stream for this device (WASAPI low-latency + auto-convert
     # when available, else MME latency='low'). ``stream_factory`` (test seam)
@@ -4103,7 +4110,7 @@ def play_to_device(
     from kenning.audio.devices import make_output_stream
 
     stream = make_output_stream(
-        device_index, sample_rate, 1, "int16", stream_factory=stream_factory,
+        device_index, sample_rate, 2, "int16", stream_factory=stream_factory,
     )
     t0 = time.monotonic()
     written = len(data)

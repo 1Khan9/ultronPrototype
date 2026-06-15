@@ -348,7 +348,7 @@ class _FakeStream:
         self.closed = True
 
 
-def test_play_to_device_writes_int16_mono() -> None:
+def test_play_to_device_writes_int16_stereo() -> None:
     streams: list[_FakeStream] = []
 
     def factory(**kwargs: Any) -> _FakeStream:
@@ -363,12 +363,16 @@ def test_play_to_device_writes_int16_mono() -> None:
     (stream,) = streams
     assert stream.kwargs["device"] == 7
     assert stream.kwargs["samplerate"] == 24000
-    assert stream.kwargs["channels"] == 1
+    # STEREO: mono PCM is widened to 2 channels so WASAPI auto-convert only has
+    # to resample (not also up-mix 1->2 channels, which statics on B1 VAIO).
+    assert stream.kwargs["channels"] == 2
     assert stream.kwargs["dtype"] == "int16"
     assert stream.started and stream.stopped and stream.closed
     (written,) = stream.written
     assert written.dtype == np.int16
-    assert written.shape == (24000, 1)
+    assert written.shape == (24000, 2)
+    # Centered: both channels carry the same mono signal.
+    assert np.array_equal(written[:, 0], written[:, 1])
 
 
 def test_play_to_device_converts_float32() -> None:
