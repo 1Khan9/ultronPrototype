@@ -134,6 +134,17 @@ class AudioConfig(_Strict):
     mute_speakers: bool = False
     barge_in_enabled: bool = True
     barge_in_grace_seconds: float = 0.5
+    # 2026-06-15 ALWAYS-ON "Ultron, stop". The wake-word interrupt watcher
+    # that powers the all-channel stop is normally gated on ``barge_in_enabled``
+    # -- but that flag is held OFF on this box (loopback hygiene), which also
+    # killed "Ultron, stop". This decouples the stop command: when True
+    # (default), the watcher runs whenever EITHER barge-in OR this flag is set,
+    # so "Ultron, stop" cuts every output channel regardless of barge-in.
+    # Self-trigger is bounded by the stricter wake gate (0.7 / 3 frames) +
+    # ``mute_speakers`` (no acoustic loopback) + relay output living on the
+    # virtual B-buses, not the physical mic. Set False to restore the legacy
+    # "stop only when barge-in is on" behaviour.
+    stop_command_enabled: bool = True
     # Total capacity of the audio ring buffer. The orchestrator slices
     # mode-specific pre-roll out of this -- see ``cold_pre_roll_seconds``
     # and ``warm_pre_roll_seconds``. Capacity should be >= max(cold, warm)

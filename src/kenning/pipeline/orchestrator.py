@@ -2045,7 +2045,7 @@ class Orchestrator:
                 "End the response when you have answered."
             )
 
-            if settings.BARGE_IN_ENABLED:
+            if self._stop_watcher_enabled():
                 watcher = threading.Thread(
                     target=self._interrupt_watcher, daemon=True,
                     name="wake-watcher",
@@ -2271,7 +2271,7 @@ class Orchestrator:
                 "character. End the response when you have answered."
             )
 
-            if settings.BARGE_IN_ENABLED:
+            if self._stop_watcher_enabled():
                 watcher = threading.Thread(
                     target=self._interrupt_watcher, daemon=True,
                     name="wake-watcher",
@@ -3084,15 +3084,14 @@ class Orchestrator:
             # callout plays to the team mic, so the user can cut off a relay
             # they don't want sent. The watcher's _cancel_all_playback() sets
             # _relay_interrupt (this chunked play aborts) AND clears the OBS +
-            # monitor mirrors -- stopping every channel at once. Gated on the
-            # same BARGE_IN_ENABLED flag as the conversational barge-in. All of
-            # it is DEFENSIVE: a bare/test orchestrator without the barge-in
-            # infrastructure just plays the clip normally (cancel_event=None).
+            # monitor mirrors -- stopping every channel at once. Runs whenever
+            # the always-on stop command OR general barge-in is enabled
+            # (_stop_watcher_enabled, which also requires the wake + audio
+            # infra). All of it is DEFENSIVE: a bare/test orchestrator without
+            # that infrastructure just plays the clip normally (cancel_event=None).
             _ri = getattr(self, "_relay_interrupt", None)
             _relay_watcher = None
-            if (_ri is not None and getattr(settings, "BARGE_IN_ENABLED", False)
-                    and getattr(self, "wake", None) is not None
-                    and getattr(self, "audio", None) is not None):
+            if _ri is not None and self._stop_watcher_enabled():
                 try:
                     self._interrupt.clear()
                     _ri.clear()
@@ -7681,13 +7680,13 @@ class Orchestrator:
         self._last_response_text = ""
         response_buf: list = []
         watcher: Optional[threading.Thread] = None
-        if settings.BARGE_IN_ENABLED:
+        if self._stop_watcher_enabled():
             watcher = threading.Thread(
                 target=self._interrupt_watcher, daemon=True, name="wake-watcher"
             )
             watcher.start()
         else:
-            logger.info("Barge-in wake watcher disabled")
+            logger.info("Interrupt watcher disabled (barge-in + stop both off)")
 
         # Catalog 09 batch G wiring: thread the intent through to the
         # engine BEFORE building the response stream so _build_messages
@@ -9381,6 +9380,25 @@ class Orchestrator:
         finally:
             pool.shutdown(wait=False)
 
+    def _stop_watcher_enabled(self) -> bool:
+        """Whether to run the wake-word interrupt watcher during playback.
+
+        The watcher is what powers "Ultron, stop" (and general barge-in). It
+        runs when EITHER the general barge-in feature is on OR the always-on
+        stop command is enabled (default) -- so "Ultron, stop" stays available
+        even while ``BARGE_IN_ENABLED`` is held off for loopback hygiene.
+
+        Requires the wake model + audio capture to exist: a bare/test
+        orchestrator built without that infra never spawns the watcher, which
+        is why the mock-based unit tests that disable barge-in stay watcher-free
+        without needing to know about this flag.
+        """
+        if getattr(self, "wake", None) is None or getattr(self, "audio", None) is None:
+            return False
+        return bool(getattr(settings, "BARGE_IN_ENABLED", False)) or bool(
+            getattr(settings, "STOP_COMMAND_ENABLED", True)
+        )
+
     def _cancel_all_playback(self) -> None:
         """"Ultron, stop": silence EVERY output channel at once.
 
@@ -9414,7 +9432,8 @@ class Orchestrator:
             pass
 
     def _interrupt_watcher(self) -> None:
-        """Run wake-word detection during TTS playback for barge-in."""
+        """Run wake-word detection during TTS playback for "Ultron, stop" /
+        barge-in. A wake fire cancels every output channel at once."""
         # Brief grace so the watcher doesn't trigger on residual user audio.
         time.sleep(settings.BARGE_IN_GRACE_SECONDS)
         self.audio.drain()
@@ -9426,7 +9445,7 @@ class Orchestrator:
             self.ring.write(chunk)
             try:
                 if local_wake.process(chunk):
-                    logger.info("Barge-in detected; interrupting response")
+                    logger.info("Stop/barge-in detected; interrupting response")
                     print("\n  [interrupted]")
                     self._cancel_all_playback()
                     self._pending_capture.set()

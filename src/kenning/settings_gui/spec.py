@@ -181,6 +181,10 @@ SECTIONS: tuple[Section, ...] = (
              "int", minimum=100, maximum=5000),
         Knob(("audio", "barge_in_enabled"), "Barge-in", "bool",
              help="Interrupt Kenning by speaking over him"),
+        Knob(("audio", "stop_command_enabled"), "\"Ultron, stop\" (always on)",
+             "bool",
+             help="Keep the all-channel stop available even when barge-in is "
+                  "off; say the wake word during playback to cut everything"),
     )),
     Section("Brain", (
         # Preset swap is hot via reload_for_preset (the gaming-mode

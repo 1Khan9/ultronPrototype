@@ -121,6 +121,11 @@ AUDIO_OUTPUT_DEVICE = (
     os.getenv("KENNING_AUDIO_OUTPUT_DEVICE") or _cfg.audio.output_device
 )
 BARGE_IN_ENABLED = _env_bool("KENNING_BARGE_IN_ENABLED", _cfg.audio.barge_in_enabled)
+# Always-on "Ultron, stop": the interrupt watcher runs when EITHER barge-in OR
+# this is set, so "stop" works even while BARGE_IN_ENABLED is held off.
+STOP_COMMAND_ENABLED = _env_bool(
+    "KENNING_STOP_COMMAND_ENABLED", _cfg.audio.stop_command_enabled,
+)
 BARGE_IN_GRACE_SECONDS = _env_float(
     "KENNING_BARGE_IN_GRACE_SECONDS", _cfg.audio.barge_in_grace_seconds,
 )

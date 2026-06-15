@@ -122,6 +122,10 @@ audio:
   mute_speakers: false
   barge_in_enabled: true      # wake-word interrupts Kenning's own TTS
   barge_in_grace_seconds: 0.5
+  # Always-on "Ultron, stop": run the interrupt watcher (all-channel stop)
+  # whenever EITHER barge-in OR this is on, so "stop" works even with
+  # barge_in_enabled held off for loopback hygiene. Env: KENNING_STOP_COMMAND_ENABLED.
+  stop_command_enabled: true
   # 2026-05-09 audio-quality pass: pre-amp applied to the captured
   # chunk BEFORE VAD / wake-word / Whisper. 0 dB = no-op (legacy).
   # Tune up when the mic is hot enough close-up but too quiet at
