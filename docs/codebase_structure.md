@@ -3582,8 +3582,10 @@ gaming session. Web API over HTTPS only: no GPU, no LLM, anticheat-safe.
 - `voice.py`: `match_spotify_command` — a WIDE-but-strict regex set
   (same discipline as the relay matcher) covering every action with many
   natural phrasings: play / queue / pause / resume / next / previous /
-  restart / now_playing / volume up·down·set / mute / unmute / shuffle /
-  repeat / like / unlike. Order-sensitive subtleties: "play X next" →
+  restart / now_playing / volume up·down·set·by-delta ("lower the volume
+  by 10%" → `_VOL_DELTA` carries the amount in `value`; fixed-step nudges
+  leave `value` 0) / mute / unmute / shuffle / repeat / like / unlike.
+  Order-sensitive subtleties: "play X next" →
   queue (not play), bare "play" / "play the music" → resume, "throw on
   X" → play while "throw X in the queue" → queue, "make the volume 40"
   (no "to/at") → volume_set. Replies live in `_REPLIES` — Ultron's cold
@@ -3601,14 +3603,15 @@ gaming session. Web API over HTTPS only: no GPU, no LLM, anticheat-safe.
   server catches the redirect, exchanges the code, saves the refresh
   token). Needs Spotify Premium + the redirect URI registered in the
   app dashboard.
-- Tests: `tests/spotify/test_spotify.py` (129 — auth refresh/cache/
+- Tests: `tests/spotify/test_spotify.py` (143 — auth refresh/cache/
   failure, client routes incl. search-then-play + device transfer +
   volume clamp + seek + save/unsave, the full expanded matcher matrix
-  incl. value checks + the routing subtleties + negatives, dispatch
-  incl. mute/unmute round-trip + restart + like/unlike + auth/no-device
-  error messages, orchestrator wiring; all HTTP faked).
-  `scripts/relay_test/spotify_matrix.py` is a 183-case manual command
-  matrix (every action × phrasings + negatives) for quick regression.
+  incl. value checks + relative volume deltas + the routing subtleties +
+  negatives, dispatch incl. mute/unmute round-trip + restart + like/
+  unlike + volume-delta math + auth/no-device error messages,
+  orchestrator wiring; all HTTP faked). `scripts/relay_test/spotify_matrix.py`
+  is a 195-case manual command matrix (every action × phrasings +
+  negatives) for quick regression.
 
 #### `src/kenning/audio/relay_speech.py` (Valorant teammate-relay)
 

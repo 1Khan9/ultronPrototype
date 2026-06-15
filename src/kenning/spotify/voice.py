@@ -114,6 +114,23 @@ _VOL_SET = re.compile(
     r")(?P<n>\d{1,3})\s*(?:percent|%)?\s*[.!?]*$",
     re.IGNORECASE,
 )
+# Relative nudge by an explicit amount: "lower the volume by 10%", "raise it
+# by 20", "turn it up by 15 percent", "volume down by 5". The "by N" is the
+# disambiguator vs the fixed-step _VOL_UP / _VOL_DOWN.
+_VOBJ = r"(?:\s+(?:it|the\s+(?:music|volume|sound)|volume))?"  # optional object
+_VOL_DELTA = re.compile(
+    r"^(?:please\s+)?(?:"
+    r"(?P<up>turn\s+(?:it|the\s+(?:music|volume|sound))\s+up"
+    r"|crank\s+(?:it|the\s+volume)(?:\s+up)?|bump\s+(?:it|the\s+volume)(?:\s+up)?"
+    r"|(?:pump|jack)\s+(?:it|the\s+volume)\s+up"
+    rf"|raise{_VOBJ}|increase{_VOBJ}|boost{_VOBJ}|up\s+the\s+volume|volume\s+up)"
+    r"|"
+    r"(?P<down>turn\s+(?:it|the\s+(?:music|volume|sound))\s+down"
+    r"|drop\s+(?:it|the\s+volume)(?:\s+down)?|knock\s+(?:it|the\s+volume)(?:\s+down)?"
+    rf"|lower{_VOBJ}|decrease{_VOBJ}|reduce{_VOBJ}|down\s+the\s+volume|volume\s+down)"
+    r")\s+by\s+(?P<n>\d{1,3})\s*(?:percent|%)?\s*[.!?]*$",
+    re.IGNORECASE,
+)
 _VOL_UP = re.compile(
     r"^(?:please\s+)?(?:turn\s+(?:it|the\s+(?:music|volume|sound))\s+up(?:\s+a\s+(?:bit|little))?"
     r"|volume\s+up|louder|crank\s+(?:it|the\s+(?:volume|music))(?:\s+up)?"
@@ -198,6 +215,11 @@ def match_spotify_command(text: str) -> Optional[SpotifyCommand]:
         return SpotifyCommand("previous")
     if _NEXT.match(t):
         return SpotifyCommand("next")
+    m = _VOL_DELTA.match(t)
+    if m:
+        up = bool(m.group("up"))
+        return SpotifyCommand(
+            "volume_up" if up else "volume_down", value=int(m.group("n")))
     m = _VOL_SET.match(t)
     if m:
         return SpotifyCommand("volume_set", value=int(m.group("n")))
@@ -310,7 +332,8 @@ def handle_spotify_command(command: SpotifyCommand, client) -> str:
         if action in ("volume_up", "volume_down"):
             cur = client.current_volume()
             cur = 50 if cur is None else cur
-            step = VOLUME_STEP if action == "volume_up" else -VOLUME_STEP
+            mag = command.value if command.value else VOLUME_STEP   # explicit "by N" else fixed step
+            step = mag if action == "volume_up" else -mag
             new = max(0, min(100, cur + step))
             client.set_volume(new)
             return f"Volume at {new} percent."

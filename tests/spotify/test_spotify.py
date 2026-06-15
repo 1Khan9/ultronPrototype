@@ -503,6 +503,54 @@ def test_match_throw_on_is_play_not_queue() -> None:
     assert cmd is not None and cmd.action == "play"
 
 
+@pytest.mark.parametrize("text,action,value", [
+    ("lower the volume by 10%", "volume_down", 10),
+    ("raise the volume by 20", "volume_up", 20),
+    ("turn it up by 15%", "volume_up", 15),
+    ("turn the volume down by 10 percent", "volume_down", 10),
+    ("increase the volume by 5", "volume_up", 5),
+    ("decrease volume by 10%", "volume_down", 10),
+    ("bump it up by 10", "volume_up", 10),
+    ("drop the volume by 20%", "volume_down", 20),
+    ("volume up by 15", "volume_up", 15),
+    ("volume down by 10", "volume_down", 10),
+    ("lower it by 25 percent", "volume_down", 25),
+    ("raise it by 10", "volume_up", 10),
+])
+def test_match_volume_delta(text, action, value) -> None:
+    cmd = match_spotify_command(text)
+    assert cmd is not None and cmd.action == action and cmd.value == value, text
+
+
+def test_match_plain_volume_has_no_delta() -> None:
+    # fixed-step (no "by N") keeps value 0 so the handler uses VOLUME_STEP
+    for text in ("turn it up", "louder", "turn it down", "volume up"):
+        cmd = match_spotify_command(text)
+        assert cmd is not None and cmd.value == 0, text
+
+
+def test_handle_volume_delta_applies_explicit_step() -> None:
+    class _Vol:
+        def __init__(self, start):
+            self.v = start
+
+        def current_volume(self):
+            return self.v
+
+        def set_volume(self, n):
+            self.v = max(0, min(100, n))
+
+    c = _Vol(50)
+    line = handle_spotify_command(SpotifyCommand("volume_down", value=10), c)
+    assert c.v == 40 and "40" in line
+    c = _Vol(50)
+    handle_spotify_command(SpotifyCommand("volume_up", value=20), c)
+    assert c.v == 70
+    c = _Vol(95)
+    handle_spotify_command(SpotifyCommand("volume_up", value=20), c)
+    assert c.v == 100  # clamps
+
+
 # ---------------------------------------------------------------------------
 # client -- seek + library (save/unsave)
 # ---------------------------------------------------------------------------
