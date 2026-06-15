@@ -254,6 +254,10 @@ SECTIONS: tuple[Section, ...] = (
              "Skip reranker warmup", "bool"),
         Knob(("gaming_mode", "barebones_skip_retrieval"),
              "Skip RAG retrieval", "bool"),
+        Knob(("gaming_mode", "barebones_skip_memory"),
+             "Skip conversation memory", "bool",
+             help="Don't build Qdrant + the bge-small/bm25 encoders (retrieval "
+                  "is off in gaming, so recording is never read back)"),
         Knob(("gaming_mode", "barebones_skip_web_search"),
              "Skip web search", "bool"),
         Knob(("gaming_mode", "barebones_direct_gaming_llm"),

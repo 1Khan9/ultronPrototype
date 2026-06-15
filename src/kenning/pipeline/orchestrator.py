@@ -4775,14 +4775,25 @@ class Orchestrator:
             zero_shot_addressed_min_confidence=addr_cfg.zero_shot_addressed_min_confidence,
         )
 
-    @staticmethod
-    def _load_memory_if_enabled():
+    def _load_memory_if_enabled(self):
         """Build a Qdrant-backed :class:`ConversationMemory` if enabled.
 
         Failures degrade gracefully: missing deps -> memory disabled. The
         hybrid embedder loads eagerly at construction so the first hot-path
         write doesn't pay the model-load cost.
         """
+        # Lean gaming boot: skip the whole memory stack (Qdrant + the
+        # bge-small/bm25 FastEmbed encoders). RAG retrieval is already off in
+        # gaming, so recording+embedding turns is never read back -- don't build
+        # it at all. self.memory=None is an already-supported state (every call
+        # site guards it), so within-session context still works via the LLM's
+        # own history deque; only cross-session memory is dropped while gaming.
+        if self._skip_for_lean_gaming("barebones_skip_memory"):
+            logger.info(
+                "lean gaming boot: conversation memory skipped (Qdrant + "
+                "bge-small/bm25 encoders NOT loaded; retrieval is off in gaming)"
+            )
+            return None
         if not settings.MEMORY_ENABLED:
             return None
         try:

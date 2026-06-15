@@ -3044,6 +3044,14 @@ class GamingModeConfig(_Strict):
     barebones_skip_skills: bool = True            # skills registry walk + per-turn prompt injection
     barebones_skip_events: bool = True            # JSONL bus event sink
     barebones_skip_summarizer: bool = True        # idle background LLM summarization pass (competes with relay latency)
+    # Skip the ENTIRE conversation-memory store (Qdrant + the bge-small/bm25
+    # FastEmbed encoders) in lean gaming. Retrieval is already skipped
+    # (barebones_skip_retrieval), so recording+embedding turns is pure overhead
+    # that is never read back while gaming -> don't build it at all. Trade-off:
+    # no cross-session memory while gaming (in-session recent-turn context still
+    # works via the LLM's own history deque). self.memory=None is an
+    # already-supported state, so every call site is guarded.
+    barebones_skip_memory: bool = True
     barebones_lazy_zero_shot_addressee: bool = True  # defer the flan-t5 addressee model load until first ambiguous follow-up
     # GPU layers for the gaming LLM. 0 = fully on CPU (no GPU compute during
     # generation), forced regardless of the env/config gpu_layers override.
