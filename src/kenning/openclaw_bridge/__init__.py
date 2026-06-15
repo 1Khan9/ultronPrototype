@@ -31,15 +31,18 @@ Public surface (Phase 3 complete):
   for inbound voice handoff.
 """
 
-from kenning.openclaw_bridge.browser import (
-    ActionResult,
-    BrowserTool,
-    NavigateResult,
-    PageTextResult,
-    ScreenshotResult,
-    Snapshot,
-    SnapshotMode,
-)
+# Browser-tool names are resolved LAZILY (PEP 562, see __getattr__ below) so
+# importing this PACKAGE does NOT pull the browser-automation stack into the
+# process. The anticheat import firewall (safety/import_firewall.py) blocks
+# kenning.openclaw_bridge.browser while a protected game is running, and the boot
+# path imports this package (orchestrator -> OpenClawBridge); an EAGER browser
+# import here crashed the boot under anticheat. Browser names resolve only on
+# first ACCESS -- and the dispatcher imports kenning.openclaw_bridge.browser
+# directly when a browser action is actually dispatched (never under anticheat).
+_LAZY_BROWSER_NAMES = frozenset({
+    "ActionResult", "BrowserTool", "NavigateResult", "PageTextResult",
+    "ScreenshotResult", "Snapshot", "SnapshotMode",
+})
 from kenning.openclaw_bridge.client import (
     AgentRunResult,
     CliResult,
@@ -135,3 +138,17 @@ __all__ = [
     "WorkspaceWriter",
     "WriteResult",
 ]
+
+
+def __getattr__(name: str):
+    # PEP 562: resolve the browser-tool names lazily so the automation stack is
+    # imported only when actually accessed -- never at package-import / boot
+    # time, where the anticheat import firewall would (correctly) refuse it.
+    if name in _LAZY_BROWSER_NAMES:
+        from kenning.openclaw_bridge import browser as _browser
+        return getattr(_browser, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted(set(globals()) | _LAZY_BROWSER_NAMES)
