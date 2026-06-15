@@ -3492,17 +3492,22 @@ process).
   shared-mode audio, the LLM, and file/network IO.
 - **NEVER-LOAD hardening (2026-06-14):** beyond stopping running
   surfaces, the OS-interaction stack is kept ENTIRELY OUT of RAM under
-  anticheat — never imported, not merely call-gated. The ONLY boot-time
-  importer of `kenning.desktop` was the UIA `DialogPoller`
-  (importing it pulls the whole package `__init__` → pyautogui/SendInput
-  + mss/GDI-capture + pywinauto/UIA into the process). `Orchestrator.
-  _start_dialog_poller()` now SKIPS it outright when `anticheat_active()`
-  (boot log: "desktop-automation stack NOT loaded … kept out of RAM"),
-  and the capture-singleton hook clears via `sys.modules.get(...)` so it
-  never IMPORTS the stack just to release it. A boot-time
-  `_audit_anticheat_posture()` self-check logs every restart that
-  pyautogui/mss/pywinauto/`kenning.desktop` are unloaded (and a loud
-  `ANTICHEAT POSTURE CANARY` WARNING if any are present while active).
+  anticheat — never imported, not merely call-gated. Importing ANY
+  `kenning.desktop` submodule runs the package `__init__`, which pulls
+  pyautogui/SendInput + mss/GDI-capture + pywinauto/UIA into the process;
+  several boot/hot paths did so. ALL now gated on `anticheat_active()`:
+  `_start_dialog_poller` (the UIA poller), `_load_desktop_vlm_if_enabled`
+  (moondream2 lives in `kenning.desktop.vlm`), `_load_browser_use_if_enabled`,
+  the click-preview gate, `_build_engage_deps` (engage-time VLM unload), and
+  — the subtle one fired on EVERY LLM message build by warmup + each turn —
+  `inference._resolve_vlm_loaded_for_skills` (now reads `sys.modules.get(
+  "kenning.desktop.vlm")`: module-absent ⇒ VLM-not-loaded ⇒ no import). The
+  capture-singleton hook likewise clears via `sys.modules.get(...)`, never
+  importing to release. A boot-time `_audit_anticheat_posture()` self-check
+  logs every restart that pyautogui/mss/pywinauto/`kenning.desktop` are
+  unloaded ("anticheat posture OK … loaded=none"), and a loud
+  `ANTICHEAT POSTURE CANARY` WARNING if any are present while active — it
+  is the regression canary that surfaced the warmup/skills path above.
   `gaming_mode.anticheat_safe_mode` + `relay_speech.echo_to_user` now
   default True at the dataclass level (safe-by-default: a lost config
   can't silently unblock input/capture, and the user hears their own

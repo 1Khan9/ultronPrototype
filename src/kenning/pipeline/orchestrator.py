@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import os
 import random
+import re
 import threading
 import time
 from enum import Enum
@@ -156,6 +157,49 @@ class State(Enum):
 # Sentinel values returned by :meth:`Orchestrator._follow_up_listen`.
 _FU_TIMEOUT = "timeout"
 _FU_WAKE = "wake"
+
+# LIVE STT FIX (2026-06-14): the wake word "Ultron" is frequently mis-transcribed
+# and PREPENDED to the command when the user says it in one breath -- Moonshine
+# renders it "Run," / "Ron," / "Tron" / "front" / "One" / "Ultra" + an optional
+# connector ("to"/"and"/"then"). The leading remnant breaks the strict relay /
+# Spotify matchers (which the corpus harness only ever feeds CLEAN text), so every
+# command fell through to the conversational LLM. This strips that remnant. It is
+# applied as a FALLBACK ONLY (retry after the clean text fails to match), so it
+# can never corrupt a legitimate match and the harness is unaffected.
+# Mis-transcribed "Ultron" tokens + harmless leading fillers/false-starts that
+# Moonshine prepends ("Yeah.", "So", "Um"). Either breaks the strict matchers.
+_WAKE_MISHEAR = (
+    r"(?:ultron|ultra(?:n|m)?|altron|all[\s-]*tron|"
+    r"run|ron|tron|trond|front|fron|one|won|wun|ulton|olt?ron|elt?ron|"
+    r"yeah|yep|yes|yup|ok|okay|so|well|um|uh|hey|alright|nah|now)"
+)
+_WAKE_REMNANT_RE = re.compile(
+    r"^\s*" + _WAKE_MISHEAR + r"[\s.,!?:;]*"
+    r"(?:(?:to|and|then|and\s+then|um|uh)[\s,]+)?",
+    re.IGNORECASE,
+)
+
+
+def _strip_leading_wake_remnant(text: str) -> str:
+    """Strip leading mis-transcribed wake words / fillers ("Yeah. Run, …" -> "…").
+
+    Iterates so a stacked prefix ("Yeah." + "Run,") is fully removed. Returns
+    ``text`` unchanged when there is nothing to strip or stripping would empty
+    it. Used as a FALLBACK only (retry after the clean text fails to match), so
+    it can never corrupt a legitimate match.
+    """
+    if not text:
+        return text
+    cur = text
+    for _ in range(3):                       # at most a few stacked prefixes
+        m = _WAKE_REMNANT_RE.match(cur)
+        if not m or m.end() == 0:
+            break
+        rest = cur[m.end():].lstrip()
+        if not rest:
+            break
+        cur = rest
+    return cur
 
 
 class Orchestrator:
@@ -897,7 +941,12 @@ class Orchestrator:
             cp_cfg = getattr(getattr(get_config(), "desktop", None), "click_preview", None)
         except Exception:                                              # noqa: BLE001
             cp_cfg = None
-        if cp_cfg is not None and bool(getattr(cp_cfg, "enabled", False)):
+        # ANTICHEAT HARDENING: the click-preview gate imports the desktop VLM +
+        # capture + input_control (the whole stack). Never under anticheat-safe
+        # mode -- input injection is hard-blocked there anyway.
+        from kenning.safety.anticheat import anticheat_active as _ac_cp
+        if (cp_cfg is not None and bool(getattr(cp_cfg, "enabled", False))
+                and not _ac_cp()):
             try:
                 from kenning.desktop.vlm import get_vlm
                 from kenning.desktop.capture import get_screen_capture
@@ -1077,7 +1126,14 @@ class Orchestrator:
                 manager = self._resolve_gaming_mode_manager()
                 if manager is not None:
                     import asyncio
-                    asyncio.run(manager.engage())
+                    # Startup engage is SILENT (no per-substep voice acks) --
+                    # the flag is read by _gaming_voice_ack. Reset afterwards so
+                    # a later VOICE "gaming mode" still announces its progress.
+                    self._gaming_engage_silent = True
+                    try:
+                        asyncio.run(manager.engage())
+                    finally:
+                        self._gaming_engage_silent = False
                     logger.info(
                         "gaming mode: auto-engaged at startup (bare-bones, "
                         "minimal-GPU profile)")
@@ -1106,9 +1162,11 @@ class Orchestrator:
         safe mode we keep that stack ENTIRELY OUT of the process: never imported,
         never a running thread -- not merely call-gated. So skip the poller
         outright when the mode is active; a kernel anticheat then observes zero
-        input/capture/UIA surface at all. (This is the ONLY boot-time importer of
-        ``kenning.desktop`` -- pinned by tests -- so gating it here is sufficient
-        to keep the whole stack cold.)
+        input/capture/UIA surface at all. (One of several boot/hot paths that
+        import ``kenning.desktop``; the others -- VLM loader, browser-use loader,
+        click-preview, engage-deps, and inference's per-message VLM-loaded check
+        -- are all gated the same way. The boot ``_audit_anticheat_posture``
+        canary + clean-subprocess tests pin that the whole stack stays cold.)
         """
         from kenning.safety.anticheat import anticheat_active
 
@@ -1260,7 +1318,22 @@ class Orchestrator:
         weights on disk, etc.) leaves the singleton unset and
         screen_context falls back to text-only context (window title +
         UIA tree + foreground app). The voice path is never blocked.
+
+        ANTICHEAT HARDENING (2026-06-14): the VLM lives in
+        ``kenning.desktop.vlm`` -- importing it triggers the desktop package
+        ``__init__`` and pulls pyautogui + mss into RAM. It is a SCREEN
+        understanding feature (needs capture, which is hard-blocked under
+        anticheat) and gaming mode unloads it anyway, so under anticheat-safe
+        mode we skip CONSTRUCTING it entirely -- it is never even imported.
         """
+        from kenning.safety.anticheat import anticheat_active
+
+        if anticheat_active():
+            logger.info(
+                "desktop VLM NOT constructed (kenning.desktop kept out of RAM): "
+                "anticheat-safe mode active"
+            )
+            return
         try:
             from kenning.desktop.vlm import build_vlm_from_config, set_vlm
 
@@ -1291,7 +1364,20 @@ class Orchestrator:
 
         The session manager's cap is wired from ``browser_use.max_sessions``
         so the config knob drives the runtime limit.
+
+        ANTICHEAT HARDENING (2026-06-14): browser_use lives under
+        ``kenning.desktop`` (importing it loads pyautogui + mss) and CDP
+        browser automation is a blocked desktop surface, so under anticheat-safe
+        mode it is never constructed -- never imported.
         """
+        from kenning.safety.anticheat import anticheat_active
+
+        if anticheat_active():
+            logger.info(
+                "browser-use tier NOT constructed (kenning.desktop kept out of "
+                "RAM): anticheat-safe mode active"
+            )
+            return
         try:
             from kenning.config import get_config
 
@@ -2155,6 +2241,12 @@ class Orchestrator:
             if not getattr(get_config().spotify, "enabled", False):
                 return False
             command = match_spotify_command(user_text)
+            if command is None:
+                # Fallback: retry after stripping a mis-transcribed leading
+                # wake word ("Tron like this song" -> "like this song").
+                cleaned = _strip_leading_wake_remnant(user_text)
+                if cleaned != user_text:
+                    command = match_spotify_command(cleaned)
         except Exception as e:                                       # noqa: BLE001
             logger.debug("spotify matcher unavailable: %s", e)
             return False
@@ -2362,9 +2454,19 @@ class Orchestrator:
             return False
         if not getattr(cfg, "enabled", False):
             return False
-        command = match_relay_command(
-            user_text, names=getattr(cfg, "addressee_names", None) or None,
-        )
+        names = getattr(cfg, "addressee_names", None) or None
+        command = match_relay_command(user_text, names=names)
+        if command is None:
+            # Fallback: retry after stripping a mis-transcribed leading wake
+            # word ("Run, tell my team ..." -> "tell my team ...").
+            cleaned = _strip_leading_wake_remnant(user_text)
+            if cleaned != user_text:
+                command = match_relay_command(cleaned, names=names)
+                if command is not None:
+                    logger.info(
+                        "relay: matched after wake-remnant strip %r -> %r",
+                        user_text[:60], cleaned[:60],
+                    )
         if command is None:
             return False
         # Session mute (streaming safety): a matched relay command while
@@ -3729,9 +3831,15 @@ class Orchestrator:
                 except Exception:
                     start_parakeet_server = None
                     stop_parakeet_server = None
+                # ANTICHEAT HARDENING: engage may UNLOAD the VLM, but only if one
+                # was ever loaded. Never IMPORT kenning.desktop.vlm here (it pulls
+                # pyautogui + mss into RAM) -- if the module isn't already
+                # resident there is no VLM to unload, so pass None.
                 try:
-                    from kenning.desktop.vlm import get_vlm as _get_vlm
-                except Exception:
+                    import sys as _sys
+                    _vlm_mod = _sys.modules.get("kenning.desktop.vlm")
+                    _get_vlm = _vlm_mod.get_vlm if _vlm_mod is not None else None
+                except Exception:                                    # noqa: BLE001
                     _get_vlm = None
                 return GamingEngageDeps(
                     llm=getattr(self, "llm", None),
@@ -3753,6 +3861,12 @@ class Orchestrator:
                 for each substep so the user hears the progress. Fail-
                 open: any TTS failure leaves the state machine running."""
                 if not task.detail:
+                    return
+                # STARTUP engage is automatic + silent: the user did not ask
+                # for it, so do not announce "swapping language model / stopping
+                # Parakeet / moving voice engine / unloading vision model" on
+                # every boot. Only the VOICE-COMMANDED "gaming mode" speaks.
+                if getattr(self, "_gaming_engage_silent", False):
                     return
                 tts = getattr(self, "tts", None)
                 if tts is None or not hasattr(tts, "speak"):

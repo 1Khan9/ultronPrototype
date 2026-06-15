@@ -618,6 +618,16 @@ class KokoroSpeech:
         """Synth + play synchronously. Mirrors XttsV3Speech.speak()."""
         if not text.strip():
             return
+        # SPOKEN-AUDIO LOG (2026-06-14): record EVERY spoken line so the exact
+        # audio output is auditable from the log alone (the operator can't
+        # always hear it). Gated by the operator diagnostics toggle (OFF during
+        # a live stream); see kenning.diagnostics. Anticheat-neutral (own log).
+        try:
+            from kenning.diagnostics import audio_diagnostics_enabled
+            if audio_diagnostics_enabled():
+                logger.info("SPOKEN(speak): %r", text.strip()[:200])
+        except Exception:                                     # noqa: BLE001
+            pass
         self._stop_event.clear()
         clip = self._synthesize(text)
         if clip[0].size > 0 and not self._stop_event.is_set():
@@ -666,6 +676,17 @@ class KokoroSpeech:
         fragment the audio.
         """
         self._stop_event.clear()
+        # SPOKEN-AUDIO LOG (2026-06-14): materialise the fragments so the exact
+        # spoken text is auditable from the log (the operator can't always hear
+        # it). Keep them for synthesis. Logging gated by the diagnostics toggle.
+        fragments = list(fragments)
+        try:
+            from kenning.diagnostics import audio_diagnostics_enabled
+            if audio_diagnostics_enabled():
+                logger.info(
+                    "SPOKEN(stream): %r", ("".join(fragments)).strip()[:200])
+        except Exception:  # noqa: BLE001
+            pass
 
         try:
             from kenning.config import get_config
@@ -899,6 +920,10 @@ class KokoroSpeech:
             return np.zeros(0, dtype=np.int16), self._sample_rate
 
         pcm_f32 = np.concatenate(audio_chunks)
+        # Keep the RAW (pre-DSP) Kokoro output so the spoken-blip check can tell
+        # whether an artifact in the FINAL clip was introduced by the DSP/pause
+        # pipeline ("the output does not match what Kokoro produced").
+        _raw_int16 = (np.clip(pcm_f32, -1.0, 1.0) * 32767.0).astype(np.int16)
 
         # Spectral magnitude smoothing for under-trained fine-tunes.
         # Lightweight (~10 ms/sec audio); masks pitch wobble without
@@ -965,20 +990,69 @@ class KokoroSpeech:
             except Exception:                                 # noqa: BLE001
                 pass
 
-        # Output-quality watcher: non-blocking enqueue for blip analysis
-        # on a daemon thread (hard onsets/tails, boundary noise bursts,
-        # join discontinuities, dropouts, clipping). Cost here is a
-        # try/except + queue put -- the locked synth hot path is
-        # otherwise untouched, and ack-cache hits above (static,
-        # pre-rendered clips) deliberately skip analysis.
+        # SPOKEN-BLIP CHECK (2026-06-14): analyze the FINAL played clip and
+        # compare to the RAW pre-DSP Kokoro output, so the operator can read
+        # from the log exactly where the audio waveform DIVERGED from what
+        # Kokoro produced. An artifact present in the final but NOT in the raw
+        # was introduced by the DSP / pause pipeline (logged at WARNING); one
+        # present in both is the model's own (logged at INFO). Correlated with
+        # the SPOKEN text so every utterance's audio quality is auditable.
+        # Gated by the diagnostics toggle: when OFF the analysis does not even
+        # run (no log noise, no per-utterance CPU cost).
         try:
-            from kenning.audio.output_quality import get_output_watcher
-
-            watcher = get_output_watcher()
-            if watcher is not None:
-                watcher.submit(out_pcm, self._sample_rate, label=text[:60])
+            from kenning.diagnostics import audio_diagnostics_enabled
+            _blip_on = audio_diagnostics_enabled()
         except Exception:                                     # noqa: BLE001
-            pass
+            _blip_on = False
+        if _blip_on:
+            try:
+                from kenning.audio.output_quality import analyze_clip
+
+                final_rep = analyze_clip(
+                    out_pcm, self._sample_rate, label=text[:40])
+                if not final_rep.clean:
+                    raw_rep = analyze_clip(
+                        _raw_int16, self._sample_rate, label="raw")
+                    raw_kinds = {f.kind for f in raw_rep.findings}
+                    introduced = sorted({
+                        f.kind for f in final_rep.findings
+                        if f.kind not in raw_kinds})
+                    blips = "; ".join(
+                        f"{f.kind}@{int(f.position_ms)}ms({f.detail})"
+                        for f in final_rep.findings)
+                    if introduced:
+                        logger.warning(
+                            "SPOKEN-BLIP dsp-introduced %s | text=%r | %s",
+                            introduced, text.strip()[:80], blips,
+                        )
+                    else:
+                        logger.info(
+                            "SPOKEN-BLIP in-raw | text=%r | %s",
+                            text.strip()[:80], blips,
+                        )
+                else:
+                    logger.debug(
+                        "SPOKEN-AUDIO clean (%.2fs peak=%.2f) %r",
+                        final_rep.duration_s, final_rep.peak,
+                        text.strip()[:50],
+                    )
+            except Exception as e:                            # noqa: BLE001
+                logger.debug("spoken-blip check failed (%s)", e)
+
+        # Output-quality watcher: daemon-thread blip/dead-air analysis. This is
+        # MONITORING, so it is gated by the same operator diagnostics toggle and
+        # is NEVER imported/loaded unless diagnostics is on (the audio waveform
+        # OVERLAY has its own self-contained analysis in kenning.audio.waveform
+        # and does not depend on this). ack-cache hits (static clips) skip it.
+        if _blip_on:
+            try:
+                from kenning.audio.output_quality import get_output_watcher
+
+                watcher = get_output_watcher()
+                if watcher is not None:
+                    watcher.submit(out_pcm, self._sample_rate, label=text[:60])
+            except Exception:                                 # noqa: BLE001
+                pass
 
         return out_pcm, self._sample_rate
 

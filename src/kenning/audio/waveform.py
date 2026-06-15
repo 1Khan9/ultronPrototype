@@ -589,7 +589,9 @@ class _RenderState:
         self.cx = size / 2.0
         self.cy = size / 2.0
         self.r0 = size * 0.20          # inner ring radius
-        self.r_max = size * 0.46       # max bar tip
+        # Max bar tip: tightened 0.46 -> 0.40 so the pulse stays close to the
+        # rings instead of fanning out across the whole canvas.
+        self.r_max = size * 0.40       # max bar tip
         # The nameplate sits at this y (top of the plate band). Raised well into
         # the lower square -- the speaking bars fan out everywhere EXCEPT
         # straight down (see dir_gain in render), so the plate can ride high
@@ -705,15 +707,26 @@ class _RenderState:
             outer = r0 + 6.0 + amp * (r_max - r0) * dir_gain
             x0, y0 = cx + ca * inner, cy + sa * inner
             x1, y1 = cx + ca * outer, cy + sa * outer
-            col = _lerp_color(accent, tip, min(1.0, amp * 1.1))
+            # Travelling shimmer highlight sweeps around the ring (a spectrum
+            # glint), and peaks flash white-hot -- cool motion without clutter.
+            shimmer = 0.5 + 0.5 * math.sin(ang * 2.0 - self.angle * 3.2)
+            hot = min(1.0, amp * 1.2 + 0.22 * shimmer * level)
+            col_rgb = _lerp_rgb(accent, tip, hot)
+            if amp > 0.62:
+                col_rgb = _lerp_rgb(col_rgb, (255, 255, 255), (amp - 0.62) * 0.9)
+            col = _rgb_to_hex(col_rgb)
+            # Loud bars get a touch thicker -> the energy reads as "fatter".
+            bw = max(2, int(self.size * (0.011 + 0.006 * min(1.0, amp))))
             c.coords(self.bar_items[i], x0, y0, x1, y1)
-            c.itemconfigure(self.bar_items[i], fill=col,
-                            width=max(2, int(self.size * 0.012)))
-        # Pulsing core.
-        cr = r0 * (0.62 + 0.5 * level)
-        core_col = _lerp_color((40, 12, 16), accent, 0.35 + 0.65 * level)
+            c.itemconfigure(self.bar_items[i], fill=col, width=bw)
+        # Pulsing core: snappier swell + a hotter centre that flashes toward
+        # white as he speaks (the "arc reactor" pulse).
+        cr = r0 * (0.60 + 0.58 * level)
+        core_rgb = _lerp_rgb((40, 12, 16), accent, 0.30 + 0.70 * level)
+        if level > 0.55:
+            core_rgb = _lerp_rgb(core_rgb, (255, 236, 238), (level - 0.55) * 0.8)
         c.coords(self.core, cx - cr, cy - cr, cx + cr, cy + cr)
-        c.itemconfigure(self.core, fill=core_col)
+        c.itemconfigure(self.core, fill=_rgb_to_hex(core_rgb))
         # Glow rings expand with level. Fade from the DARK art_base (not the
         # chroma bg) -> accent, so on a green key background the rings never go
         # olive (un-keyable); only the empty canvas stays pure green.

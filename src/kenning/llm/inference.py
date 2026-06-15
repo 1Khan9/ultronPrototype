@@ -435,16 +435,23 @@ def _resolve_vlm_loaded_for_skills() -> bool:
     Used by ``_build_messages`` to thread the VLM availability
     context into ``maybe_get_skills_block`` so the catalog 07 T4
     filter can drop skills tagged :attr:`REQUIRES_VLM` when the
-    moondream2 weights aren't resident. Fail-open: any import or
-    lookup error returns True so the legacy "skills load
-    unconditionally" path stays the default.
+    moondream2 weights aren't resident.
+
+    ANTICHEAT HARDENING (2026-06-14): this runs on EVERY message build, and
+    importing ``kenning.desktop.vlm`` triggers the desktop package ``__init__``
+    -> pyautogui (SendInput) + mss (GDI capture) into RAM. So NEVER import it
+    here: if the module is not already resident, the VLM cannot be loaded ->
+    return False (VLM-requiring skills are correctly dropped) without importing
+    a thing. Only inspect the holder when the module is ALREADY loaded. (This
+    was the last boot/runtime path pulling the desktop stack in under anticheat.)
     """
+    import sys
+
+    mod = sys.modules.get("kenning.desktop.vlm")
+    if mod is None:
+        return False  # never imported -> no VLM -> keep the desktop stack cold
     try:
-        from kenning.desktop.vlm import get_vlm
-    except Exception:  # noqa: BLE001
-        return True
-    try:
-        vlm = get_vlm()
+        vlm = mod.get_vlm()
     except Exception:  # noqa: BLE001
         return True
     if vlm is None:

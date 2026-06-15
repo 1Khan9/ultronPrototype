@@ -520,7 +520,10 @@ def test_anticheat_keeps_desktop_stack_out_of_ram() -> None:
         assert anticheat_active(), "expected anticheat active from shipped config"
         from kenning.pipeline.orchestrator import Orchestrator
         o = Orchestrator.__new__(Orchestrator)
+        # Every boot step that could import kenning.desktop must stay gated.
         o._start_dialog_poller()
+        o._load_desktop_vlm_if_enabled()
+        o._load_browser_use_if_enabled()
         assert o._dialog_poller is None, "dialog poller started under anticheat"
         risky = [m for m in (
             "pyautogui", "mss", "pyscreeze", "pywinauto", "uiautomation",
