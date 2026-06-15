@@ -1955,22 +1955,22 @@ For the current decisions and Foundation phase status see
 │       │
 │       ├── audio/                  ← Audio capture, VAD, wake-word
 │       │   ├── capture.py          ← AudioCapture (sounddevice callback thread). 2026-06-12: per-session PortAudio status-flag counter + throttled warning (1st + every 50th; replaces the warn-once-forever latch that hid recurrence) + queue-full drop-oldest counter reported from drain(); read-only properties status_flag_count / dropped_blocks; counters reset in start()
-│       │   ├── devices.py          ← Device-resolution helpers (resolve_device, describe_device)
+│       │   ├── devices.py          ← Device-resolution helpers (resolve_device — output prefers the WASAPI endpoint, describe_device) + make_output_stream: the single WASAPI low-latency output chokepoint (WasapiSettings auto_convert + latency='low'; MME latency='low' fallback); gated by audio.prefer_wasapi_output (default true)
 │       │   ├── output_quality.py   ← TTS blip watcher: per-clip artifact analysis (edge bursts, join clicks, dropouts, clipping) on a daemon thread → WARN + logs/audio_quality.jsonl
-│       ├── settings_gui/           ← Voice-launched control panel (DETACHED process): spec.py knob catalogue + comment-preserving YAML patcher; launch.py strict matcher + spawn/close; app.py tkinter dark-theme UI + live log stream
-│       │   ├── relay_speech.py     ← Voice relay: "tell my teammates X" matcher + deterministic-first callout pipeline + owner-aware CONTEXTUAL Ultron flavor selection (_flavor_ctx) + curated-COMMAND intent (_as_curated_command) + verbatim "repeat to my team X" (_match_repeat_command) + contextual enemy inference (_as_enemy_action) + LRU pool selection (_pick_lru) + LLM rephrase (film-canon _REPHRASE_PROMPT) + playback on a secondary output device (VoiceMeeter strip → mic bus). LIVE-STT REPAIR (2026-06-14) in the orchestrator handler: tries [user_text, correct(stripped), correct(full), stripped] — `_strip_leading_wake_remnant` drops a mis-heard wake word ("Run, tell my team"), `_stt_correct.correct_callout_stt` snaps mis-transcribed agents/terms to canon (Silva→Sova, Royal→Reyna, jet→Jett, sold→ult; curated map + difflib fuzzy) so a garbled callout is relayed with fixed words; clean text matches first (never over-corrected)
+│       ├── settings_gui/           ← Voice-launched control panel (DETACHED process): spec.py knob catalogue + write_runtime_overrides (ephemeral data/runtime_overrides.json overlay — no longer mutates config.yaml); launch.py strict matcher + spawn/close; app.py tkinter dark-theme UI + live log stream + Lean Boot section (engage_at_startup + 12 barebones_* + llm_gpu_layers) + _apply_one(path) single-knob apply
+│       │   ├── relay_speech.py     ← Voice relay: "tell my teammates X" matcher + deterministic-first callout pipeline + owner-aware CONTEXTUAL Ultron flavor selection (_flavor_ctx) + curated-COMMAND intent (_as_curated_command) + verbatim "repeat to my team X" (_match_repeat_command) + contextual enemy inference (_as_enemy_action) + LRU pool selection (_pick_lru) + LLM rephrase (film-canon _REPHRASE_PROMPT) + playback on a secondary output device (VoiceMeeter strip → mic bus). LIVE-STT REPAIR (2026-06-14) in the orchestrator handler: tries [user_text, correct(stripped), correct(full), stripped] — `_strip_leading_wake_remnant` drops a mis-heard wake word ("Run, tell my team"), `_stt_correct.correct_callout_stt` snaps mis-transcribed agents/terms to canon (Silva→Sova, Royal→Reyna, jet→Jett, sold→ult; curated map + difflib fuzzy) so a garbled callout is relayed with fixed words; clean text matches first (never over-corrected). 2026-06-15 test-drive fixes: relay lead-leak fixes; criticize/roast compose; consistent agent ult tails; a deterministic "I died" callout; widened bare-callout coverage (counts/requests/weapons/movement/locations); "X asked about Y, respond" → in-character context+directive relay; greet/identity split (team-directed greet → mic; bare identity question → conversational desktop in the Ultron persona)
 │       │   ├── _stt_correct.py      ← Valorant STT correction (negligible latency, ~0.045 ms/callout, pure string work): (1) CONTEXT rules disambiguate words that are also real English ("has/their/popped old/sold/vault" → "...ult", but literal "fall back to old" untouched; "site a"→"A site", "amen"→"A main"); (2) curated agent + tactical-term mishear maps; (3) difflib fuzzy agent-snap (cutoff 0.82, _FUZZY_BLOCK). Relay fallback only; clean callouts idempotent
 │       │   ├── _ultron_pools.py    ← Movie-Ultron snap-tail register pools (_FLAVOR_ENEMY/_ULT/_DAMAGE/_UTILITY/_CAREFUL/_COMMAND/_SELF); ENEMY=contempt, COMMAND/SELF/CAREFUL=serene/stoic (never contempt at allies). Audited.
 │       │   ├── _agent_flavor.py    ← AGENT_FLAVOR[agent][situation]: per-agent character-tailored tails for ALL 29 agents (correct canonical gender), recasting each kit/lore as Ultron contempt. SOLE tail source when one enemy agent is named.
 │       │   ├── _multi_flavor.py    ← MULTI_FLAVOR[situation]: plural group tails for callouts naming 2+ enemy agents
 │       │   ├── _ultron_commands.py ← NEW: COMMAND_RESPONSES/COMMAND_SCOPE/COMMAND_SLOT — 73 explicit user commands × up to 40 curated full-Ultron responses (refuse/dismiss/criticize/praise/ask/status/strategy/yes-no-agree), {site}/{agent}/{name} slots; LRU-selected by _as_curated_command in relay_speech.py
-│       │   ├── _ultron_setpieces.py ← DEFAULT_{GREETING,VICTORY,DEFEAT,FAREWELL,IDENTITY,CONSOLATION,PRAISE,ENCOURAGEMENT}_LINES (board-expanded ~5x; every greeting names Ultron AND identifies as "your AI teammate for this game", person-aware grammar); imported by relay_speech.py
+│       │   ├── _ultron_setpieces.py ← DEFAULT_{GREETING,VICTORY,DEFEAT,FAREWELL,IDENTITY,CONSOLATION,PRAISE,ENCOURAGEMENT}_LINES (board-expanded ~5x; every greeting names Ultron AND identifies as "your AI teammate for this game", person-aware grammar); imported by relay_speech.py. 2026-06-15: greet/identity set-pieces trimmed to ~6-7 s spoken length
 │       │   ├── ring_buffer.py      ← Pre-speech audio buffer
 │       │   ├── smart_turn.py       ← Smart Turn V3 ONNX wrapper (NEW 2026-05-12; CPU-only end-of-turn confirmation)
 │       │   ├── vad.py              ← Silero-VAD wrapper
-│       │   ├── wake_word.py        ← openWakeWord (custom ultron.onnx default + kenning; per-word thresholds + min_consecutive_frames consecutive-frame gate; reload_for_word hot-swap). 2026-06-14 per-word `cold_pre_roll` {ultron:0.05}: the wake word's own TAIL lives in the cold pre-roll, so "ultron"'s hard "-tron" bled into the transcript -- it now runs a shorter pre-roll than the audio default (orchestrator capture looks it up by `wake.active_word`). LIVE-IDENTITY: bare "who/what are you", "introduce yourself", "state your name" route to the Ultron greeting (relay `_GREET_RE`), never the conversational "Kenning" persona; the to/too/two wake-mishears (+\b boundary) handle "Ultron,…"→"to …"
-│       │   ├── broadcast.py        ← BroadcastSink: daemon tee of ALL Kenning speech (normal + relay) to audio.broadcast_device for an isolated OBS capture source (drop-oldest, mono→stereo, zero speaker-path latency); name-parametrized so a 2nd instance backs the local monitor
-│       │   ├── monitor.py          ← Local monitor: reuses BroadcastSink to tee RELAY callouts to the user's OWN default output (audio.output_device, None→system default) so they hear their own callouts (relay otherwise plays only on the mic B-bus + OBS); gated by relay_speech.echo_to_user read LIVE per callout (GUI toggle hot-applies, no re-synth)
+│       │   ├── wake_word.py        ← openWakeWord (custom ultron.onnx default + kenning; per-word thresholds + min_consecutive_frames consecutive-frame gate; reload_for_word hot-swap). 2026-06-15 made STRICTER: ultron threshold 0.6→0.7 + min_consecutive_frames 2→3 to reject confusables. 2026-06-14 per-word `cold_pre_roll` {ultron:0.05}: the wake word's own TAIL lives in the cold pre-roll, so "ultron"'s hard "-tron" bled into the transcript -- it now runs a shorter pre-roll than the audio default (orchestrator capture looks it up by `wake.active_word`). LIVE-IDENTITY: bare "who/what are you", "introduce yourself", "state your name" route to the Ultron greeting (relay `_GREET_RE`), never the conversational "Kenning" persona; the to/too/two wake-mishears (+\b boundary) handle "Ultron,…"→"to …"
+│       │   ├── broadcast.py        ← BroadcastSink: daemon tee of ALL Kenning speech (normal + relay) to audio.broadcast_device for an isolated OBS capture source (drop-oldest, mono→stereo, WASAPI low-latency via make_output_stream); name-parametrized so a 2nd instance backs the local monitor; cancel_current() aborts the in-flight clip + drains its queue for "Ultron, stop" barge-in
+│       │   ├── monitor.py          ← Local monitor: reuses BroadcastSink to tee RELAY callouts to the user's OWN default output (audio.output_device, None→system default) so they hear their own callouts (relay otherwise plays only on the mic B-bus + OBS); gated by relay_speech.echo_to_user read LIVE per callout (GUI toggle hot-applies, no re-synth); the mirror is also skipped when audio.mute_speakers is on (isolate-loopback)
 │       │   └── waveform.py         ← WaveformSink: borderless Tk overlay (radial waveform + glowing PIL nameplate, downward-suppressed bars, hide-behind that OBS still captures, green chroma); fed by ALL speech via _broadcast_submit/_viz_submit; 2026-06-14 polish: tightened pulse (r_max 0.46→0.40), travelling shimmer + white-hot peaks + dynamic bar width + arc-reactor core, BLACK outlines on bars + core rim (pop off gameplay), SMOKED-GLASS nameplate (transparent-black plate, alpha 150) + neon/Gaussian glow driven by target_level (every clip); fail-open
 │       │
 │       ├── addressing/             ← Phase 2 addressing classifier (CPU)
@@ -1986,7 +1986,7 @@ For the current decisions and Foundation phase status see
 │       │
 
 │       ├── llm/
-│       │   ├── inference.py        ← LLMEngine (llama-cpp-python; qwen3.5-4b Q4_K_M active default, n_ctx=8192; reload_for_preset for hot swap to llama-3.2-3b on gaming engage; LlamaPromptLookupDecoding (PLD) wired but disabled by default after three repair attempts; _apply_no_think_marker for Qwen3's /no_think); voice path passes enable_thinking=False on all 5 generate_stream sites
+│       │   ├── inference.py        ← LLMEngine (llama-cpp-python; qwen3.5-4b Q4_K_M active default, n_ctx=8192; reload_for_preset for hot swap to llama-3.2-3b on gaming engage; LlamaPromptLookupDecoding (PLD) wired but disabled by default after three repair attempts; _apply_no_think_marker for Qwen3's /no_think — 2026-06-15 made MODEL-AWARE so the marker is only emitted for Qwen presets, never the 3B gaming model that would speak it); voice path passes enable_thinking=False on all 5 generate_stream sites
 │       │   ├── compression.py      ← 4B plan Item 4: heuristic + perplexity-scorer-hook compressor for RAG/web/history (default OFF)
 │       │   ├── context_scoring.py  ← 2026-05-18 Phase 1: adaptive context-window heuristic (default-OFF; ContextRecommendation)
 │       │   ├── draft_model.py      ← 2026-05-22: make_qwen08b_draft_model factory + prefix-cached state machine; llm.draft_kind: "none"|"pld"|"model" selector (default "none")
@@ -2889,10 +2889,13 @@ the loader path so llama-cpp / ctranslate2 find `cudart64_12.dll`,
   `NotificationsConfig`, `HeartbeatConfig`, `BrowserConfig`,
   `MediaGenerationConfig`
 - `KenningConfig` — top-level model
-- `load_config(path=None) -> KenningConfig` — explicit load (raises `ConfigurationError`)
+- `load_config(path=None, *, apply_overrides=False) -> KenningConfig` — explicit load (raises `ConfigurationError`). When `apply_overrides=True`, merges the ephemeral runtime overlay (`_merge_runtime_overrides`) on top of the parsed `config.yaml`.
 - `get_config() -> KenningConfig` — singleton, lazy-load on first call
-- `reload_config(path=None) -> KenningConfig` — clear cache, reload
+- `reload_config(path=None) -> KenningConfig` — clear cache, reload **with the runtime overlay applied** (`load_config(apply_overrides=True)`), so a GUI edit takes effect in-session.
+- `clear_runtime_overrides() -> None` — wipes `data/runtime_overrides.json`; called at orchestrator boot so the overlay is always empty at startup.
 - `set_config(cfg) -> None` — test injection
+
+**Runtime-overrides overlay (NEW 2026-06-15 — config.yaml is the immutable boot source of truth):** the settings panel no longer writes `config.yaml`. It writes an EPHEMERAL overlay file `data/runtime_overrides.json` (`settings_gui/spec.py: write_runtime_overrides`, const `RUNTIME_OVERRIDES_RELPATH`). `reload_config()` merges that overlay in-session via `_merge_runtime_overrides`, and `clear_runtime_overrides()` wipes it at orchestrator boot. Net effect: GUI edits are session-only and revert on restart, so the lean-boot / gaming / anticheat / posture-canary defaults can never be left undone by a stale GUI edit — the code in `config.yaml` is always the source of truth at boot.
 - `current_config_path() -> Path | None`
 - `LLM_PRESETS: dict[str, dict]` (4B plan Stage A) — preset table for
   `LLMConfig.preset`. Current default `qwen3.5-4b` (Qwen 3.5 4B Q4_K_M
@@ -3365,8 +3368,9 @@ User-preference persistence so "open YouTube" picks up "monitor 2 + maximize" th
 
 #### `audio/devices.py`
 - `class AudioDeviceError(ValueError)`
-- `resolve_device(configured, kind) -> Optional[int]` — substring match on device name
+- `resolve_device(configured, kind) -> Optional[int]` — substring match on device name. For `kind="output"` it prefers the WASAPI endpoint among name matches (so a low-latency shared-mode stream can be opened).
 - `describe_device(device, kind) -> str`
+- `make_output_stream(...) -> sounddevice.OutputStream` (NEW 2026-06-15 — WASAPI low-latency chokepoint) — the single factory every spoken-audio output path opens its stream through. When the resolved device is a WASAPI endpoint it opens a WASAPI stream with `WasapiSettings(auto_convert=True)` + `latency='low'`; otherwise it falls back to MME with `latency='low'`. Gated by `audio.prefer_wasapi_output` (default `true`). Effect on the reference rig: the team-relay (B1) and `BroadcastSink` (B3/OBS + monitor) buses drop from ~90–180 ms (MME) to ~22–25 ms (WASAPI); the default Realtek speakers stay on MME + `latency='low'` (~90 ms) because their WASAPI endpoint will not open. Used by `relay_speech.play_to_device` and `BroadcastSink`.
 
 #### `tts/text_hygiene.py` (NEW 2026-06-11 — pre-synthesis hygiene)
 
@@ -3448,7 +3452,8 @@ not-a-callout + Spotify-signal so conversational/music text is left
 alone. `normalize_command(text) -> str` is the entry point; it gates
 conversational + Spotify text OUT of correction so there is ZERO
 over-correction. The orchestrator logs BOTH the raw STT and the
-normalized text (tlog `routing:normalized`).
+normalized text (tlog `routing:normalized`). 2026-06-15 test-drive
+fixes: additional over-correction guards and a phonetic-snap logic fix.
 
 #### `audio/_stt_correct.py` (EXPANDED 2026-06-15 — Valorant gazetteer + phonetic snap)
 
@@ -3621,7 +3626,12 @@ byte-for-byte restored when it closes — zero residual resources.
   `apply_updates` patches + re-parses + verifies the parsed data
   changed ONLY at the requested paths, then writes atomically
   (tmp + replace). `write_reload_signal` touches
-  `data/config_reload.signal`.
+  `data/config_reload.signal`. **`write_runtime_overrides` (NEW
+  2026-06-15)** is now the actual persistence path the panel uses: it
+  writes the ephemeral overlay `data/runtime_overrides.json` (const
+  `RUNTIME_OVERRIDES_RELPATH`) instead of mutating `config.yaml`, so GUI
+  edits are session-only and revert on the next boot (see "Runtime-overrides
+  overlay" under `config.py`).
 - `launch.py`: `match_settings_command` (strict open/close phrasings;
   "what are your settings?" never matches), `launch_gui` (detached
   spawn, fail-open None), `close_gui` (kill_process_tree, fail-open).
@@ -3647,7 +3657,15 @@ byte-for-byte restored when it closes — zero residual resources.
   engine, mic device, voicepack) were removed from the panel rather
   than marked restart, so nothing in the GUI needs a restart. The
   bottom bar has a live **GAMING + ANTICHEAT** toggle that writes the
-  gaming action immediately (engage/disengage within one idle tick).
+  gaming action immediately (engage/disengage within one idle tick); it now
+  reflects the boot default by reading `gaming_mode.engage_at_startup` (so it
+  shows ON at startup). **GUI reflects boot defaults (NEW 2026-06-15):** a
+  new **"Lean Boot (barebones — all ON)"** section surfaces
+  `engage_at_startup` + all 12 `barebones_*` flags + `llm_gpu_layers`
+  (config.yaml now lists every `barebones_*` flag explicitly). New `app.py`
+  method `_apply_one(path)` applies a single knob on its own (backing the
+  per-row apply buttons, including "APPLY MUTE ONLY" for
+  `audio.mute_speakers`).
 - Tests: `tests/settings_gui/test_spec_and_launch.py` (46 — patcher
   matrix incl. comment/blank-block edges, render/read, TWO drift
   guards against the REAL config.yaml (every knob path exists; every
@@ -3705,6 +3723,10 @@ gaming session. Web API over HTTPS only: no GPU, no LLM, anticheat-safe.
   gaming/anticheat), so music control is always live. `_get_spotify_client`
   lazily builds + caches the client; a missing/unauthorized credentials
   state speaks a setup hint, never crashes.
+- `lean_handler.py` (NEW 2026-06-15): a standalone lean Spotify handler
+  so full music control runs as a lean-boot sibling (alongside the
+  deterministic relay matcher and the settings-GUI command) when only the
+  fuzzy semantic router would otherwise fire in a lean gaming session.
 - `scripts/spotify_setup.py`: one-time browser OAuth (tiny localhost
   server catches the redirect, exchanges the code, saves the refresh
   token). Needs Spotify Premium + the redirect URI registered in the
@@ -3739,7 +3761,7 @@ Converts a user voice command into a line Kenning speaks on a **separate** PortA
 - `load_roast_lines(path)`, `load_fun_facts(path)` — load user-curated verbatim pools from disk, fail-open to defaults.
 - `pick_roast_line(lines, recent_lines, rng) -> str` — anti-repeat pick from any verbatim pool; `pick_line` is an alias. Backed by `_pick_lru` (module-level `_LRU_COUNT`/`_LRU_SEEN`): serves the candidate gone LONGEST since last use (never-used first, ties random), comparing ONLY the passed candidate set so pools never cross-contaminate.
 - `resolve_relay_device(configured) -> Optional[int]` — resolve device name/index via `kenning.audio.devices.resolve_device`, fail-open.
-- `play_to_device(pcm, sample_rate, device_index, *, stream_factory) -> float` — synchronous playback via `sounddevice.OutputStream` (or test seam); returns seconds written.
+- `play_to_device(pcm, sample_rate, device_index, *, stream_factory, cancel_event=None) -> float` — synchronous playback via the WASAPI low-latency `make_output_stream` chokepoint (or test seam); returns seconds written. Writes the PCM in chunks and polls `cancel_event` between chunks so an "Ultron, stop" barge-in aborts mid-clip.
 
 ---
 
@@ -3861,8 +3883,13 @@ Single large format-string injected with `{task}`, `{addressee}`, `{by_name}`, `
 
 - `relay_tts_text(line) -> str`: context-aware TTS pronunciation fix — replaces uppercase `A` before a location token with `eigh` so the site letter is not pronounced as the indefinite article (feeds into the Kokoro `_play` path).
 - `resolve_relay_device(configured)` → PortAudio index (via `kenning.audio.devices.resolve_device`, fail-open).
-- `play_to_device(pcm, sample_rate, device_index, *, stream_factory)` → opens a `sounddevice.OutputStream` per-relay, writes int16 mono PCM synchronously, always closes the stream, returns seconds played.
+- `play_to_device(pcm, sample_rate, device_index, *, stream_factory, cancel_event)` → opens a WASAPI low-latency stream per-relay via `make_output_stream`, writes int16 mono PCM synchronously in chunks (polling `cancel_event` between chunks for barge-in cancellation), always closes the stream, returns seconds played.
 - `_fallback_line(command)` → deterministic spoken line when the LLM is unavailable (directive-keyed stock phrases or clean literal of payload; no `"Team:"` label prefix).
+
+**Playback cancellation + speaker mute (NEW 2026-06-15):**
+- **"Ultron, stop" cancels all channels** — `_cancel_all_playback()` on the orchestrator stops conversational TTS, the relay mic bus (B1), the OBS broadcast (B3), and the monitor mirror at once. `play_to_device` is chunked + `cancel_event`-aware; `BroadcastSink.cancel_current()` aborts the in-flight clip and drains its queue; a barge-in watcher runs for the duration of relay playback.
+- **Inter-sentence gap** — single-clip Kokoro synthesis inserts a ~160 ms gap between sentences so a callout does not blend into its flavor tail.
+- **"Mute my speakers" (`audio.mute_speakers`, default `false`)** — when on, the default-speaker path is silenced: conversational Kokoro output is zeroed and the relay monitor mirror is skipped, while the relay still reaches teammates (B1) and OBS (B3) — for isolating loopback tracks. Read live; the GUI "Mute my speakers (loopback)" knob and its dedicated "APPLY MUTE ONLY" button hot-apply just that one setting.
 
 
 #### `audio/ring_buffer.py`
@@ -5129,6 +5156,10 @@ pipeline is unaffected when OpenClaw is unreachable (`fail_open: true`).
 - **2026-06-15 NEVER-LEXICAL:** the boot router warmup respawns the sidecar and rebuilds the router ONCE if the router came up lexical (logged as ERROR, not silently accepted). `_maybe_recover_embedding()` runs throttled (~60 s) in the idle wake-loop to re-enable the hybrid backend if the sidecar returns mid-session via `HybridBackend.try_recover()`.
 
 - **2026-06-15 DIRECT 3B LLM:** in a lean gaming boot the LLM is constructed directly as the gaming preset (3B on CPU, `n_gpu_layers=0`) so the base Qwen-4B never loads on the GPU only to be swapped out on engage. Controlled by `barebones_direct_gaming_llm` (default True).
+
+- **2026-06-15 LEAN SIBLINGS (deterministic relay + GUI + Spotify in lean boot):** the lean boot previously ran ONLY the fuzzy semantic router for L0 misses. It now also runs, as siblings, the deterministic relay matcher (`match_relay_command`), the settings-GUI voice command ("pull up the config/settings/control panel"), and a standalone lean Spotify handler (`kenning/spotify/lean_handler.py`) so full music control and the deterministic callout path work in a lean session, not just the embedding router. Greet/identity split: a team-directed greet routes to the mic relay, while a bare identity question ("who are you", "what are you") routes to the conversational desktop path in the Ultron persona. Bare-callout relay coverage was widened (counts, requests, weapons, movement, locations), and "X asked about Y, respond" now routes to the in-character context+directive relay.
+
+- **2026-06-15 SIDECAR ON CPU:** the embeddinggemma router sidecar now runs on CPU (`semantic_router.sidecar_device: "cpu"`) to free GPU VRAM.
 
 **In:** mic input (sounddevice), config.yaml, models on disk.
 **Out:** speaker output (sounddevice), all audit logs.
@@ -6419,6 +6450,8 @@ Splits a rephrase JSONL into per-agent audit `chunk_NN.txt` files for human line
 - **`cadence_check.py`** — compares actual vs. ideal Ultron cadence (target 4.2 syll/s, `IDEAL_PAUSE_MS` per punctuation mark) for 6 representative lines; prints per-clause verdict (TOO FAST / MISSING pauses / short pause / reverb tail thin / ok). Utilities `syllables(word) -> int` and `clause_split(text) -> list[(clause_text, trailing_punct)]` are imported by `cadence_actual.py`.
 - **`flow_check.py`** — inter-sentence dead-space and reverb audit: measures RAW per-sentence Kokoro chunks (trailing silence + blips) and the FINAL production clip's internal gaps (≥ 150 ms) + reverb decay tail. Distinguishes real dead space from continuous reverb decay. Informational; no code changes.
 - **`validate_pipeline.py`** — 30-case manual full-pipeline validator: matcher → `build_relay_line` (3B + deterministic repair) → Kokoro synth → `analyze_clip` → waveform gap/tail check → dual-ASR (Whisper + Moonshine) word-recall and char-similarity scoring. Flags cases where both ASRs miss ≥ 15% of content words AND char similarity < 0.78 (clipped audio, not jargon mishear).
+- **`transcript_replay.py`** (NEW 2026-06-15) — replays real STT transcripts through the dispatch path and flags any private→mic routing leaks (a callout the user meant to keep off-comms that would have gone to the team bus).
+- **`audio_channel_test.py`** (NEW 2026-06-15) — plays real tones through the B1 (team), B3 (OBS broadcast), and default-speaker outputs to verify routing + playback end-to-end.
 - **`probe.py`** (standalone), **`reprobe.py`**, **`waveform_check.py`**, **`burst_diag.py`** — earlier one-off probes for matcher/rephrase smoke-testing and trailing-burst diagnosis (superseded by the harness for systematic use; kept for quick spot checks).
 
 ---
@@ -6612,6 +6645,18 @@ gaming_mode:
 In `SemanticRouterConfig` (2026-06-15 NEW fields):
 - `sidecar_orphan_sweep_enabled: bool` (default `True`) — enables `sidecar_lock.sweep()` at boot before spawning the embedder sidecar.
 - `sidecar_pidfile_path: str` (default `~/.kenning/embedder_sidecar.json`) — path for the atomic-write pidfile that records pid+port+model+owner.
+- `sidecar_device: str` (default `"cpu"`, NEW 2026-06-15) — device the embeddinggemma router sidecar runs on; CPU keeps GPU VRAM free for the game.
+
+#### `audio` block (output keys)
+
+```yaml
+audio:
+  prefer_wasapi_output: true   # NEW 2026-06-15 — open spoken-audio output via the WASAPI low-latency chokepoint (MME latency='low' fallback)
+  mute_speakers: false         # NEW 2026-06-15 — silence the default-speaker path (Kokoro zeroed, monitor mirror skipped) while relay still reaches B1/B3
+```
+
+- `prefer_wasapi_output` — read by `audio.devices.make_output_stream`; when true and the device is a WASAPI endpoint, opens a `WasapiSettings(auto_convert=True)` + `latency='low'` stream (B1/B3 ~22–25 ms vs ~90–180 ms MME); non-WASAPI devices fall back to MME `latency='low'`.
+- `mute_speakers` — read live; zeroes conversational Kokoro output and skips the relay monitor mirror on the default speakers, leaving the team relay (B1) and OBS broadcast (B3) untouched. The GUI "Mute my speakers (loopback)" knob + "APPLY MUTE ONLY" button apply just this key via `app._apply_one("audio.mute_speakers")`.
 
 #### `testing_mode` block
 
@@ -6630,8 +6675,8 @@ wake_word:
   fallback_model: "kenning"  # custom kenning.onnx; never hey_jarvis
   thresholds:             # per-word overrides; active word's value replaces the flat threshold on swap
     kenning: 0.4
-    ultron: 0.6
-  min_consecutive_frames: 2  # score must stay >= threshold for N consecutive frames before firing
+    ultron: 0.7         # 2026-06-15: raised 0.6 → 0.7 to reject confusables
+  min_consecutive_frames: 3  # 2026-06-15: 2 → 3; score must stay >= threshold for N consecutive frames before firing
 ```
 
 - `thresholds` — read by `WakeWordDetector._threshold_for(word)`; applied on construction and on `reload_for_word()`.
