@@ -470,14 +470,16 @@ class MoonshineEngine:
             text = self._collector.get_text(completed_only=False)
         events = self._collector.event_count
         if events == 0 and not text:
-            # Listener never fired during this session. Mark cache
-            # miss so the downstream ``transcribe(buffer)`` call
-            # re-runs synchronously on the full audio buffer instead
-            # of returning a misleading empty string.
-            logger.warning(
-                "Moonshine stop_stream: 0 listener events fired during "
-                "session. Cache miss -> post-capture transcribe will "
-                "re-run synchronously on the buffer.",
+            # EXPECTED for Moonshine: the orchestrator deliberately does NOT
+            # drive mid-stream update_transcription during capture (it would
+            # block the capture loop on CPU), so the streaming listener fires no
+            # events and the engine transcribes the FULL audio buffer once,
+            # post-capture -- accurate, and fast now that the CPU is free (the
+            # voice model runs on the GPU). DEBUG, not WARNING: this is the
+            # normal, intended path, not an error.
+            logger.debug(
+                "Moonshine stop_stream: no mid-stream events (expected) -> "
+                "one-shot post-capture transcribe on the full buffer.",
             )
             self._last_streaming_text = None
             return ""

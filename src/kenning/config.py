@@ -281,6 +281,16 @@ class WakeWordConfig(_Strict):
     # frames). 1 = legacy fire-on-first-frame.
     min_consecutive_frames: int = Field(default=2, ge=1, le=10)
     cooldown_seconds: float = 1.5
+    # 2026-06-14 PER-WORD cold pre-roll (seconds of audio kept from BEFORE the
+    # wake-word fire). The wake word's own TAIL lives in this pre-roll, so a
+    # word that ends in a hard, transcribable sound bleeds into the command
+    # transcript ("Ultron" -> the "...tron" prefix). The active word's value
+    # here OVERRIDES ``audio.cold_pre_roll_seconds``: "ultron" runs SHORTER so
+    # its tail doesn't enter the transcript, while "kenning" (soft "-ning")
+    # keeps the default. A word absent here uses the audio default.
+    cold_pre_roll: dict[str, float] = Field(
+        default_factory=lambda: {"ultron": 0.05},
+    )
 
 
 class STTConfig(_Strict):

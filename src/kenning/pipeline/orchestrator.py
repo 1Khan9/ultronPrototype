@@ -171,10 +171,16 @@ _FU_WAKE = "wake"
 _WAKE_MISHEAR = (
     r"(?:ultron|ultra(?:n|m)?|altron|all[\s-]*tron|"
     r"run|ron|tron|trond|front|fron|one|won|wun|ulton|olt?ron|elt?ron|"
+    # "Ultron" is also frequently heard as "to/too/two" before a verb
+    # ("to introduce yourself" = "Ultron, introduce yourself").
+    r"to|too|two|"
     r"yeah|yep|yes|yup|ok|okay|so|well|um|uh|hey|alright|nah|now)"
 )
+# NB: the \b after the mishear is essential -- without it "to" would eat the
+# front of "tomorrow"/"today" and "run" the front of "running". With it, only a
+# whole leading token is stripped.
 _WAKE_REMNANT_RE = re.compile(
-    r"^\s*" + _WAKE_MISHEAR + r"[\s.,!?:;]*"
+    r"^\s*" + _WAKE_MISHEAR + r"\b[\s.,!?:;]*"
     r"(?:(?:to|and|then|and\s+then|um|uh)[\s,]+)?",
     re.IGNORECASE,
 )
@@ -5425,12 +5431,21 @@ class Orchestrator:
         # too (speak_stream consumes-and-clears the cache per turn).
         self._kick_off_tts_preopen()
         # Pre-roll: take the COLD slice (short) from the ring so the
-        # wake-word "Kenning" tail does not bleed into Whisper as a
-        # "Tron" prefix. The full ring is sized for the larger WARM
-        # slice; the COLD path explicitly limits how much it consumes.
-        cold_pre_roll_samples = int(
-            self._cold_pre_roll_seconds * settings.SAMPLE_RATE
-        )
+        # wake-word tail does not bleed into the transcript as a "Tron" prefix.
+        # PER-WAKE-WORD (2026-06-14): the active word can override the cold
+        # pre-roll -- "ultron" ends in a hard, transcribable "-tron" so it runs
+        # SHORTER than the audio default. Falls back to _cold_pre_roll_seconds.
+        cold_pre_roll_s = self._cold_pre_roll_seconds
+        try:
+            _aw = getattr(getattr(self, "wake", None), "active_word", None)
+            if _aw:
+                from kenning.config import get_config as _gc
+                _per = getattr(_gc().wake_word, "cold_pre_roll", {}) or {}
+                if _aw in _per:
+                    cold_pre_roll_s = float(_per[_aw])
+        except Exception:                                            # noqa: BLE001
+            pass
+        cold_pre_roll_samples = int(cold_pre_roll_s * settings.SAMPLE_RATE)
         chunks: list[np.ndarray] = [self.ring.snapshot(cold_pre_roll_samples)]
         # 2026-05-22: streaming STT integration. When the engine supports
         # live partials (Moonshine v2 streaming variants), kick off the

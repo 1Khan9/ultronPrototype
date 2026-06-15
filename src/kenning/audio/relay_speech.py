@@ -269,6 +269,12 @@ _GREET_RE = re.compile(
     rf"|say\s+(?:hi|hello|hey|what'?s\s+up)\s+to\s+(?:all\s+(?:of\s+)?)?{_GROUP}"
     rf"(?:\s+and\s+introduce\s+yourself)?"
     rf"|tell\s+{_GROUP}\s+who\s+you\s+are"
+    # Bare identity questions to Ultron himself -- so the in-game identity is
+    # ULTRON, never the conversational "Kenning" persona.
+    rf"|who\s+are\s+you|what\s+are\s+you"
+    rf"|state\s+your\s+name|what(?:'?s|\s+is)\s+your\s+name"
+    rf"|identify\s+yourself|tell\s+me\s+(?:about\s+yourself|who\s+you\s+are)"
+    rf"|introduce\s+yourself"
     rf")\s*[.!?]*$",
     re.IGNORECASE,
 )
