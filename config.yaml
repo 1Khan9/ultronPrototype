@@ -166,7 +166,7 @@ push_to_talk:
   enabled: false             # master switch. Env: KENNING_PTT_ENABLED
   serial_port: "auto"        # "auto" -> detect Arduino by USB id; or "COM5". Env: KENNING_PTT_SERIAL_PORT
   baud: 9600
-  key: "v"                   # the in-game team-PTT key the device holds (match your bind + firmware)
+  key: "6"                   # the in-game team-PTT key the device holds (match your bind + firmware)
   lead_ms: 120               # hold the key this long BEFORE audio (open the channel; no clipped first phoneme)
   release_tail_ms: 150       # keep holding this long AFTER the clip drains (game codec tail)
   heartbeat_ms: 50           # keep-alive cadence refreshing the firmware hardware deadman

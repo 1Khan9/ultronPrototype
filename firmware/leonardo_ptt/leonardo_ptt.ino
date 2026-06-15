@@ -41,7 +41,8 @@
 #include <Keyboard.h>
 
 // The in-game TEAM-voice push-to-talk key. Match your Valorant bind + config.
-const char KEY = 'v';
+// '6' = this rig's Valorant Team Voice push-to-talk bind.
+const char KEY = '6';
 
 // Auto-release if no byte arrives for this long while holding (ms).
 // Must be > host heartbeat interval (config push_to_talk.heartbeat_ms) with margin.

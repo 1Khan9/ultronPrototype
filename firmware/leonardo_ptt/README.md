@@ -22,16 +22,18 @@ yanked USB cable can never jam your mic open mid-match.
 ## Slot-in steps (when you find the Leonardo)
 
 1. In `leonardo_ptt.ino`, set `KEY` to the key you bind to **Team Voice** PTT in
-   Valorant (Settings → Audio → Voice Chat). Default `'v'`.
-2. Flash with the Arduino IDE — board: **Arduino Leonardo** (or your ATmega32u4
-   board: Pro Micro, etc.).
-3. Note the COM port it enumerates as (Device Manager → Ports).
-4. In Ultron's config (`config.yaml` or the settings panel), set:
-   - `push_to_talk.enabled: true`
-   - `push_to_talk.serial_port: "COM5"` (whatever it enumerated as)
-   - `push_to_talk.key: "v"` (match the firmware `KEY` + your Valorant bind)
+   Valorant (Settings → Audio → Voice Chat). **This rig: `'6'`.**
+2. Flash with the Arduino IDE — board: **Arduino Leonardo** — or with
+   `arduino-cli compile/upload --fqbn arduino:avr:leonardo firmware/leonardo_ptt`
+   (needs the `Keyboard` library: `arduino-cli lib install Keyboard`).
+3. Note the COM port (Device Manager → Ports). It can **drift across flashes**,
+   so config defaults to `"auto"` (detect by USB id) rather than a fixed port.
+4. Arm it — either the settings panel, or `.env` on this machine:
+   - `KENNING_PTT_ENABLED=true`
+   - `KENNING_PTT_SERIAL_PORT=auto`  (or an explicit `COM5`)
+   - keep `push_to_talk.key` (`"6"`) == the firmware `KEY` == your Valorant bind
 5. Reboot Ultron. The boot log will show
-   `push-to-talk ARMED via external USB-HID on COM5 …`.
+   `push-to-talk: auto-detected Arduino on COMx` → `… ARMED via external USB-HID …`.
 
 Until then it stays **inert** (a `NullPttBackend` that does nothing). If the
 port is wrong or the device is unplugged, PTT fails **safe** — it simply doesn't
