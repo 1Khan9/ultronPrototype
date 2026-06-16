@@ -10,7 +10,68 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD: relay COMMAND-INTENT + comms-realism campaign** (2026-06-14, 15
+> **Validating HEAD: FLAVOR COHERENCE-AUDIT + routing/normalization pass** (2026-06-16,
+> follows the deep-expansion campaign below). The deep-expansion library was big but loose;
+> this pass made it ruthlessly KIT-ACCURATE and concise by HAND. `_agent_flavor.py` was
+> RE-AUTHORED down from ~4,147 to **~1,628 tight `TailEntry` entries** (~5 per cell): every
+> agent's `ult` cell is now its REAL ultimate (Jett → Blade Storm, Viper → her Pit, Raze →
+> the rocket, Sova → blind shock, KAY/O → NULL//cmd, Killjoy → Lockdown), every `utility`
+> cell is ability-TAGGED (`ability:<canon>`, incl. agent-unique abilities — Jett `updraft`,
+> Raze `boombot`/`blastpack`/`paintshells`, Killjoy `alarmbot`/`turret`), and filler /
+> off-topic / wrong-kit lines were cut. The curation is a hand-written CURATED dict
+> (`scripts/flavor_gen/curated_overrides.py`) applied by `scripts/flavor_gen/apply_curated.py`
+> and verified by a deterministic lint GATE (`scripts/flavor_audit/lint_tails.py` —
+> word-count / gender-vs-`AGENT_GENDER` / surrounding-quotes / per-cell floor). All three
+> are OFFLINE build-time scripts, NEVER imported by the runtime. `_ultron_setpieces.py` was
+> DE-BIBLICALIZED: ~18 flood/Noah/ark/sacrament/God/church/abstract lines were replaced with
+> the tightened machine / evolution / immortal / superior register (only the canonical
+> meteor + evolution beats kept). Routing/normalization gains: `_tail_schema.py` added
+> `_VERB_TO_ABILITY` (a callout verb/token → canonical ability category — mollied→molly,
+> walled→wall, darted→dart) so `ability_tag` routes a verb to the right per-ability cell;
+> `relay_speech.py` `_situation_for` now LIFTS the situation to `ult` on an ult keyword (so
+> "their Viper ulted" reaches the agent's ULT cell, not utility) and `_flavor_ctx` SKIPS the
+> semantic selector for small (<5) candidate cells (deterministic LRU pick instead — no
+> per-callout sidecar embed for curated cells, a latency win); `_stt_correct.py` added a
+> context SLOT-confirmation pass (`_slot_agent_correct` + `_closest_agent`, Stage 1.5 of
+> `correct_callout_stt`) that corrects a common-word token sitting in an agent SLOT
+> ("raise hit 18" → "Raze hit 18") while leaving non-slot uses ("raise your crosshair") and
+> known terms ("their cage") untouched — the only place the common-word protection is
+> overridden, gated by slot grammar; and `transcription/whisper_engine.py` added decode-time
+> DOMAIN BIASING (passes `initial_prompt = _DOMAIN_PROMPT`, the closed Valorant vocabulary,
+> to faster-whisper, gated by `WHISPER_DOMAIN_BIAS` default-on / overridable via
+> `WHISPER_INITIAL_PROMPT`) to cut mishears at the source. Selection architecture is
+> UNCHANGED in shape — a HYBRID coarse-keyed route (agent → side → situation/ability via the
+> verb lift) → small-cell LRU or (large cell) semantic fine-select, fail-open at every stage
+> — but the curated content is now kit-accurate and concise. All ML still lives in the
+> loopback sidecar / build-time scripts.
+>
+> **Earlier validating HEAD: FLAVOR-LIBRARY DEEP EXPANSION + semantic selection campaign** (2026-06-16).
+> The Ultron relay flavor library grew from ~928 to **~4,147 audited tails** and tail
+> selection became a HYBRID **keyed-coarse + tagged-pool + semantic-fine-select** system,
+> **fail-open at every stage** (worst case = the prior deterministic behavior), with **all ML
+> kept in the loopback embedder sidecar / build-time scripts** — the anticheat-pinned main
+> process imports only numpy + urllib for this path. NEW modules under `src/kenning/audio/`:
+> `_tail_schema.py` (the `TailEntry(text, tags)` schema + `as_entry` legacy-str migration +
+> the expanded 16-key enemy situation taxonomy + machine-readable `AGENT_GENDER` + the
+> `loc_class`/`dmg_level_tag`/`ability_tag`/`situation_for_payload`/`build_active_tags` fact→tag
+> folding), `_tail_selector.py` (`select_tail` — semantic fine-select over the sidecar with MMR
+> diversity + a hard recent-mask + a per-pool abstain threshold; strictly fail-open),
+> `_common_words.py` (a baked frequency-ranked common-English frozenset that protects real words
+> from the gazetteer snapper), and `_relay_intent.py` (a semantic relay-intent gate that vetoes
+> the bare-callout "tell my team" prepend for narration/banter/questions; fail-open). CHANGED:
+> `_agent_flavor.py` rewritten as `dict[agent][situation] = list[TailEntry]` (agent × situation ×
+> sub-context with `loc:`/`dmg:` tags); `relay_speech.py` `_flavor_ctx` two-stage hybrid select
+> (coarse route → `_tier_filter` 4-tier TAG filter → `select_tail`, fail-open to `_pick_flavor`)
+> plus a `_CRITICIZE_RE` "call out" fix (105 owner-inversions) and an "I hit `<agent>` for `<n>`"
+> damage pattern; `_stt_correct.py` common-word + inflection + OOV-superstring guards + a
+> `_MISHEAR_FORCE` allow-list; `command_normalizer.py` narration/hedge + disfluency +
+> lead-filler stripping + relay-intent-gate wiring; `command_router.py` a `get_embedding_backend()`
+> accessor (the shared sidecar client for the tail selector + the intent gate). NEW offline
+> build/audit scripts (never imported by the runtime): `scripts/build_common_words.py`,
+> `scripts/relay_test/{trace_corpus,analyze_outputs}.py`, `scripts/flavor_gen/{integrate_tails,
+> apply_cuts}.py`, `scripts/flavor_audit/lint_tails.py`.
+>
+> **Earlier validating HEAD: relay COMMAND-INTENT + comms-realism campaign** (2026-06-14, 15
 > commits on `main` over `46731a9` — `172ec27..c8a7802`, plus this docs commit). **Test
 > count: ~10,133 collected** (359 relay unit tests in `tests/audio/test_relay_speech*.py`).
 > This campaign added explicit COMMAND intents the user can fall back on when Ultron can't
@@ -1705,7 +1766,8 @@ result of every row. Deep narrative lives in the corresponding
 
 | Date | HEAD | Summary | Tests | Memory file |
 |------|------|---------|-------|-------------|
-| 2026-06-15 | (this session) | **Movie-Ultron identity/relay polish + anticheat audit hardening.** Relay/TTS: NEW `audio/_ultron_identity.py` — 7 categorized in-character identity-answer pools (~30 lines each: bot / soundboard / streamer / real-person / puppet / voice-changer / recording) + `classify_identity_question`; relay_speech now routes "X asked about/if Y" (`_match_reported_question`) to an in-character ANSWER even without an explicit "respond", picks identity answers from the category pools, and `_is_identity_question` is broadened (who's-controlling-you / strings / off-switch / pre-recorded). Curated `DEFAULT_CRITICIZE_LINES` replaces the 3B for "criticize `<agent>`". Verbatim family widened ("word for word", `Pete`/`Heat`→repeat, `my team's` stripping). `_stt_correct`: `silver`→Sova, drop "hey-agent"→"Hellagent" blend, protect count words from→"tree". `_join_tail` + a period-length kokoro inter-sentence gap (`KENNING_TTS_SENTENCE_PAUSE_MS`) stop the callout slurring into its flavor tail. "JARVIS"→"Jarvis" (text_hygiene). Fixed a `/no_think` marker leak (`.lower()` on a `Path` raised + was swallowed → marker appended to the llama gaming model, which parroted "no_think"; fixed via `str()`). PTT buffers widened (`lead_ms` 120→200, `release_tail_ms` 150→300). Waveform spin-freeze/change-detection reverted (continuous 60fps spin). NEW `audio/stop_button.py` — a loopback-immune click kill-switch (in-process tkinter STOP window firing `_cancel_all_playback`; `StopButtonConfig`). Anticheat: import-firewall blocklist expanded (`keyboard`/`mouse`/`pydirectinput`/`d3dshot` + stale `ultron.*` mirror prefixes), firewall installed in `__main__` BEFORE the Orchestrator constructs, `GamingModeConfig.enabled`/`engage_at_startup` defaults flipped True (safe-by-default), the posture canary now derives its tripwire from `blocked_module_names()` and both canaries log at ERROR, the OpenClaw MCP runner hard-refuses under anticheat, and the dead `BlockInput` helper refuses while anticheat is active. | (uncommitted) | (this session) |
+| 2026-06-16 | 0b9c4f1 (main) | **Corpus-loop matcher hardening + flavor library deep expansion + coherence audit.** Three phases, all on the MAIN checkout `C:\STC\ultronPrototype`. **(1) CORPUS-LOOP MATCHER HARDENING** (iter 1: 92.7% → 99.4% clean on 20k seed-0 corpus): NEW `audio/_common_words.py` (GENERATED frozenset of top-~5000 English words, baked by `scripts/build_common_words.py`; gates `_stt_correct._phonetic_fuzzy_snap` + the curated `_fix_token` layer so real English is never corrupted — "let"/"mean"/"yet" stay as-is); NEW `audio/_relay_intent.py` (`RelayIntentGate` — semantic margin gate over the embeddinggemma sidecar, positive vs negative exemplar clouds, threshold 0.06, FAIL-OPEN; vetoes `recover_relay_lead`'s bare-callout prepend, the source of ~97% of corpus false-relays, cutting them 674→~70); `command_normalizer.py` additions: narration/epistemic-hedge regex fast-path (zero-cost, runs before embed), lead-preserving disfluency resolution (`_resolve_disfluency`: `_DISFLUENCY_CUE_RE`/`_DISFLUENCY_SPLIT_RE`, negation-safe, preserves relay lead), conversational lead-filler strip, relay-intent gate wiring; `_stt_correct.py` additions: common-word protection gate, inflection guard (`-ed`/`-ing`/`-ers` never snapped onto a base term), OOV agent-superstring guard (snap target may not be a superstring of heard token), `_MISHEAR_FORCE` allow-list; `command_router.py` `get_embedding_backend()` exposes the shared sidecar client for reuse; NEW `scripts/relay_test/trace_corpus.py` (full-pipeline tracer) + `analyze_outputs.py` (triage bucketer). Sidecar must be UP on 8772 for the gate to be exercised. **(2) FLAVOR LIBRARY DEEP EXPANSION**: `_tail_schema.py` (NEW): `TailEntry(text, tags)` schema + `as_entry`/`entries` coercion (zero-rewrite legacy migration); expanded 16-key enemy situation taxonomy (`Sit`, `ENEMY_SITUATIONS`); machine-readable `AGENT_GENDER` (pronoun per agent); `loc_class`/`dmg_level_tag`/`ability_tag`/`situation_for_payload`/`build_active_tags` fact-folding helpers. `_tail_selector.py` (NEW): semantic fine-selector (query embed → doc-matrix cosine → MMR + recent-mask → per-pool abstain threshold → fail-open to `_pick_flavor`); OFF by default (`KENNING_ENABLE_TAIL_SELECTOR` opt-in). `relay_speech._flavor_ctx` rewritten as HYBRID two-stage (coarse route → 4-tier `_tier_filter` → opt-in `select_tail`). `_CRITICIZE_RE` fixed: "call out" no longer treated as a criticism verb (fixed 105/106 owner-inversions of factual callouts). "I hit/tagged/cracked `<agent>` for `<n>`" pattern routes to that enemy's damaged pool with the right dmg tag. NEW offline generation pipeline: `scripts/flavor_gen/{integrate_tails,apply_cuts}.py`. **(3) COHERENCE AUDIT** (by-hand, every line): `_agent_flavor.py` RE-AUTHORED 4,147 → **1,628 tight TailEntry entries** (~5/cell): every ult = the REAL ultimate, every utility ability-tagged (`ability:<canon>`), filler/wrong-kit/off-topic cut; CURATED dict (`scripts/flavor_gen/curated_overrides.py`) applied by `apply_curated.py`; verified by `scripts/flavor_audit/lint_tails.py` (0 hard/0 soft/0 thin). `_ultron_setpieces.py` de-biblicalized (~18 flood/Noah/ark/God/church lines → machine/evolution/immortal register). Routing fixes: `_situation_for` lifts situation to `ult` on ult keyword; `_flavor_ctx` skips semantic selector for small (<5) candidate cells (LRU, zero sidecar cost). Normalization: `_tail_schema._VERB_TO_ABILITY` (mollied→molly, walled→wall, darted→dart…); `_stt_correct._slot_agent_correct` context SLOT-confirmation pass (Stage 1.5, "raise hit 18"→"Raze hit 18"; slots only, non-slot uses untouched); `whisper_engine.py` decode-time domain biasing (`initial_prompt = _DOMAIN_PROMPT`, gated `WHISPER_DOMAIN_BIAS` default-on). **All ML in loopback sidecar / build-time scripts; anticheat firewall intact.** 964 audio+safety tests green; lint 0/0/0. | 964 | [project_corpus_loop_2026_06_16.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_corpus_loop_2026_06_16.md) |
+| 2026-06-15 | (this session) | **Movie-Ultron identity/relay polish + anticheat audit hardening.** Relay/TTS: NEW `audio/_ultron_identity.py` — 7 categorized in-character identity-answer pools (~30 lines each: bot / soundboard / streamer / real-person / puppet / voice-changer / recording) + `classify_identity_question`; relay_speech now routes "X asked about/if Y" (`_match_reported_question`) to an in-character ANSWER even without an explicit "respond", picks identity answers from the category pools, and `_is_identity_question` is broadened (who's-controlling-you / strings / off-switch / pre-recorded). Curated `DEFAULT_CRITICIZE_LINES` replaces the 3B for "criticize `<agent>`". Verbatim family widened ("word for word", `Pete`/`Heat`→repeat, `my team's` stripping). `_stt_correct`: `silver`→Sova, drop "hey-agent"→"Hellagent" blend, protect count words from→"tree". `_join_tail` + a period-length kokoro inter-sentence gap (`KENNING_TTS_SENTENCE_PAUSE_MS`) stop the callout slurring into its flavor tail. "JARVIS"→"Jarvis" (text_hygiene). Fixed a `/no_think` marker leak (`.lower()` on a `Path` raised + was swallowed → marker appended to the llama gaming model, which parroted "no_think"; fixed via `str()`). PTT buffers widened (`lead_ms` 120→200, `release_tail_ms` 150→300). Waveform spin-freeze/change-detection reverted (continuous 60fps spin). NEW `audio/stop_button.py` — a loopback-immune click kill-switch (in-process tkinter STOP window firing `_cancel_all_playback`; `StopButtonConfig`). Anticheat: import-firewall blocklist expanded (`keyboard`/`mouse`/`pydirectinput`/`d3dshot` + stale `ultron.*` mirror prefixes), firewall installed in `__main__` BEFORE the Orchestrator constructs, `GamingModeConfig.enabled`/`engage_at_startup` defaults flipped True (safe-by-default), the posture canary now derives its tripwire from `blocked_module_names()` and both canaries log at ERROR, the OpenClaw MCP runner hard-refuses under anticheat, and the dead `BlockInput` helper refuses while anticheat is active. | d86e0bd | (committed) |
 | 2026-06-15 | `3447cdb` | **Lean-by-default gaming boot + bulletproof lifecycle** (commits `26d502d`, `3447cdb`). Gaming boots initialize+import ONLY relay+Spotify+core-voice (worker RSS is noisy ~3.5-6 GB so no fixed delta; the clear win is eliminating the ~4-5 GB 4B-on-GPU VRAM boot transient), proven by a `_audit_anticheat_posture` "lean boot OK" sys.modules assertion (canary logs loud WARNING on regression). `coding/` and `openclaw_bridge/` package `__init__` made PEP-562 lazy so importing the package no longer eager-loads heavy submodules. NEW `subprocess/sidecar_lock.py`: pidfile+orphan-sweep (`sweep()` with `reuse`/`killed`/`killed-zombie`/`killed-unknown`/`spawn` verdicts) makes the embedder a singleton and reaps `taskkill /F` orphans at next boot. SIGTERM+atexit+`kill_process_tree` clean shutdown (was SIGINT-only). `AuditLog.repair_if_needed()` self-heals fsync-torn-tail corruption at boot (archives rather than deletes). Never-lexical router: boot respawns+rebuilds if lexical (ERROR), idle `_maybe_recover_embedding()` via `try_recover()`. Direct 3B-CPU LLM load avoids the 4B-on-GPU boot transient. New `barebones_*` flags in `GamingModeConfig` (all default True). `SemanticRouterConfig` gains `sidecar_orphan_sweep_enabled` + `sidecar_pidfile_path`. 903 safety/audio + 906 coding tests green; live boot verified. | 906 | (this session) |
 | 2026-06-15 | `e3df7d3` | **Semantic command router + embeddinggemma sidecar + turbo STT + anticheat import firewall** (commit e3df7d3). Added an additive similarity-based router beneath the exact matchers (command_router/_router_backends/_command_exemplars) with a hybrid lexical+embedding backend and an OOS abstention gate to the LLM; the embedding model (google/embeddinggemma-300m) runs in an isolated-venv loopback sidecar (scripts/embedder_server.py) so no heavy dep enters the anticheat-pinned main process. Added a pre-routing STT normalizer (command_normalizer + expanded _stt_correct), swapped STT to faster-whisper large-v3-turbo on CUDA with a hallucination filter, added a loader-level anticheat import firewall (safety/import_firewall), a gaming capability-refusal gate, and overlay GPU optimizations. 903 audio+safety tests green; a 6-facet Sonnet audit confirmed no regression. | 903 | (this session) |
 | 2026-06-12 | `2a2a871` | **Wake word SHIPPED + relay 29-agent roster** (supersedes the "wake-word NOT deployed" note in the rename row below). Commits `58120cf` (fallback + dropdown), `c76b597` (agents + harness), `2a2a871` (model + threshold), pushed. **Wake word now LIVE = "kenning"**: `models/openwakeword/kenning.onnx` deployed (v8 from an 11-candidate sweep v1-v11, gitignored like all weights; ~88% recall @ ~1.6% adversarial FAR on synth clips via the runtime frame path). "kenning" is acoustically confusable (kennel/canning/kenneth) so it can't match ultron's 100% at that FAR; v8 (layer 32, 50k steps, recall-favorable auto-tune targets) beat every layer-64 / higher-neg-weight variant. **Fallback is `ultron`, NEVER hey_jarvis** -- `WakeWordDetector._load_model` is now PATH-based (loads the side-by-side custom `ultron.onnx`; a pretrained word only if neither custom ONNX exists). NEW `reload_for_word()` hot-swaps the live model; settings-panel "Wake word" dropdown (kenning/ultron) fires the `wake_word` gui_action. Threshold 0.40 (config + .env, recall-favoring; ultron ~100% there too). `config.py` `WakeWordConfig.fallback_model` default `hey_jarvis` -> `ultron`. **Relay**: `DEFAULT_ADDRESSEE_NAMES` now the full 29-agent VALORANT roster (+ Miks, Veto) + STT homophones (cipher->Cypher, gecko->Gekko, mix->Miks, way lay->Waylay) via `_NAME_CANON`; rephrase prompt lists the roster so the LLM treats the newest agents as teammates. NEW `scripts/relay_test/` (547-command corpus + staged full-pipeline harness: matcher -> rephrase -> audio blip analysis -> ASR-reconstruction-vs-intended -> spoken->STT). NEW `training/compare_wake_models.py` (recall/FAR threshold-sweep tool, auto-discovers `kenning_v*.onnx`). Cleanup: ~2.3 GB of regenerable train clips/features + redundant candidate onnx deleted (test clips + the 17 GB ACAV100M corpus KEPT for retraining). **Sweep 9818 / 39 / 0, ~151 s** + `validate_config` clean. | 9818 | (this session) |
@@ -1959,13 +2021,17 @@ For the current decisions and Foundation phase status see
 │       │   ├── devices.py          ← Device-resolution helpers (resolve_device — output prefers the WASAPI endpoint, describe_device) + make_output_stream: the single WASAPI low-latency output chokepoint (WasapiSettings auto_convert + latency='low'; MME latency='low' fallback); gated by audio.prefer_wasapi_output (default true)
 │       │   ├── output_quality.py   ← TTS blip watcher: per-clip artifact analysis (edge bursts, join clicks, dropouts, clipping) on a daemon thread → WARN + logs/audio_quality.jsonl
 │       ├── settings_gui/           ← Voice-launched control panel (DETACHED process): spec.py knob catalogue + write_runtime_overrides (ephemeral data/runtime_overrides.json overlay — no longer mutates config.yaml); launch.py strict matcher + spawn/close; app.py tkinter dark-theme UI + live log stream + Lean Boot section (engage_at_startup + 12 barebones_* + llm_gpu_layers) + _apply_one(path) single-knob apply
-│       │   ├── relay_speech.py     ← Voice relay: "tell my teammates X" matcher + deterministic-first callout pipeline + owner-aware CONTEXTUAL Ultron flavor selection (_flavor_ctx) + curated-COMMAND intent (_as_curated_command) + verbatim "repeat to my team X" (_match_repeat_command) + contextual enemy inference (_as_enemy_action) + LRU pool selection (_pick_lru) + LLM rephrase (film-canon _REPHRASE_PROMPT) + playback on a secondary output device (VoiceMeeter strip → mic bus). LIVE-STT REPAIR (2026-06-14) in the orchestrator handler: tries [user_text, correct(stripped), correct(full), stripped] — `_strip_leading_wake_remnant` drops a mis-heard wake word ("Run, tell my team"), `_stt_correct.correct_callout_stt` snaps mis-transcribed agents/terms to canon (Silva→Sova, Royal→Reyna, jet→Jett, sold→ult; curated map + difflib fuzzy) so a garbled callout is relayed with fixed words; clean text matches first (never over-corrected). 2026-06-15 test-drive fixes: relay lead-leak fixes; criticize/roast compose; consistent agent ult tails; a deterministic "I died" callout; widened bare-callout coverage (counts/requests/weapons/movement/locations); "X asked about Y, respond" → in-character context+directive relay; greet/identity split (team-directed greet → mic; bare identity question → conversational desktop in the Ultron persona)
-│       │   ├── _stt_correct.py      ← Valorant STT correction (negligible latency, ~0.045 ms/callout, pure string work): (1) CONTEXT rules disambiguate words that are also real English ("has/their/popped old/sold/vault" → "...ult", but literal "fall back to old" untouched; "site a"→"A site", "amen"→"A main"); (2) curated agent + tactical-term mishear maps; (3) difflib fuzzy agent-snap (cutoff 0.82, _FUZZY_BLOCK). Relay fallback only; clean callouts idempotent
+│       │   ├── relay_speech.py     ← Voice relay: "tell my teammates X" matcher + deterministic-first callout pipeline + owner-aware CONTEXTUAL Ultron flavor selection (_flavor_ctx) + curated-COMMAND intent (_as_curated_command) + verbatim "repeat to my team X" (_match_repeat_command) + contextual enemy inference (_as_enemy_action) + LRU pool selection (_pick_lru) + LLM rephrase (film-canon _REPHRASE_PROMPT) + playback on a secondary output device (VoiceMeeter strip → mic bus). LIVE-STT REPAIR (2026-06-14) in the orchestrator handler: tries [user_text, correct(stripped), correct(full), stripped] — `_strip_leading_wake_remnant` drops a mis-heard wake word ("Run, tell my team"), `_stt_correct.correct_callout_stt` snaps mis-transcribed agents/terms to canon (Silva→Sova, Royal→Reyna, jet→Jett, sold→ult; curated map + difflib fuzzy) so a garbled callout is relayed with fixed words; clean text matches first (never over-corrected). 2026-06-15 test-drive fixes: relay lead-leak fixes; criticize/roast compose; consistent agent ult tails; a deterministic "I died" callout; widened bare-callout coverage (counts/requests/weapons/movement/locations); "X asked about Y, respond" → in-character context+directive relay; greet/identity split (team-directed greet → mic; bare identity question → conversational desktop in the Ultron persona). 2026-06-16: `_flavor_ctx` now does HYBRID two-stage tail selection — coarse route (register+payload → fine situation via `_situation_for`, then the agent or multi pool) → 4-tier TAG filter (`_tier_filter`, falls back to the agent's spotted pool then the generic register pool) → semantic `select_tail` (fail-open to `_pick_flavor`); `_CRITICIZE_RE` no longer treats "call out" as a criticism verb (fixed 105 owner-inversions of factual callouts); a new "I hit/tagged/cracked <agent> for <n>" pattern routes to the named enemy's damaged pool with the right dmg tag
+│       │   ├── _stt_correct.py      ← Valorant STT correction (negligible latency, ~0.045 ms/callout, pure string work): (1) CONTEXT rules disambiguate words that are also real English ("has/their/popped old/sold/vault" → "...ult", but literal "fall back to old" untouched; "site a"→"A site", "amen"→"A main"); (2) curated agent + tactical-term mishear maps; (3) difflib fuzzy agent-snap (cutoff 0.82, _FUZZY_BLOCK). Relay fallback only; clean callouts idempotent. 2026-06-16: common-word PROTECTION gate (a token in _common_words.COMMON_WORDS is never snapped) + an INFLECTION guard (never snaps an -ed/-ing/-ers form or a real/gazetteer plural onto a base gazetteer term) + an OOV agent-SUPERSTRING guard (a snap target may not be a superstring of the heard token) + a _MISHEAR_FORCE allow-list (curated mishears that fire even though they are common words)
+│       │   ├── _common_words.py     ← NEW (2026-06-16): GENERATED frozenset COMMON_WORDS (top-~5000 frequency-ranked English words, alpha-only len≥3, from scripts/build_common_words.py over the public-domain google-10000-english list); imported by _stt_correct to PROTECT real words from the phonetic/fuzzy gazetteer snapper. Pure data, no deps. Regenerate, do not hand-edit
+│       │   ├── _tail_schema.py      ← NEW (2026-06-16): flavor TAIL schema + tagging primitives (pure-python, stdlib only → anticheat-safe). TailEntry(text, tags) dataclass + as_entry/entries coercion (lossless migration of legacy str pools → tagless TailEntry, zero behavior change); the expanded 16-key enemy situation taxonomy (Sit / ENEMY_SITUATIONS: spotted/ult/damaged/utility + moving/planting/defusing/rotating/saving/falling_back/peeking/holding/lurking/trading/last_alive/near_death); machine-readable AGENT_GENDER (was code comments) + GENDER_PRONOUNS; and loc_class / dmg_level_tag / ability_tag / situation_for_payload / build_active_tags that fold noisy callout facts (location, hp/damage, ability, action words) into COARSE tags (loc:high_ground/long_range/site_area/flank_route/mid/choke · dmg:one_shot/low/minor · ability:*). Tags only ever fine-select WITHIN an already-correct cell, so a mis-parsed tag can never produce a wrong-character tail
+│       │   ├── _tail_selector.py    ← NEW (2026-06-16): SEMANTIC tail selection over the embeddinggemma sidecar. select_tail() builds a structured query (agent+situation+tags), embeds it (kind=query), scores it against a cached doc matrix of the candidate tails, applies MMR diversity + a HARD recent-mask (anti-repeat across a round) + a per-pool-kind abstain threshold, and is strictly FAIL-OPEN (returns None on ANY failure → caller uses the deterministic _pick_flavor). numpy-only (firewall-legal — a faster-whisper transitive dep; torch/transformers stay blocked); the only network is the existing loopback sidecar client. OFF BY DEFAULT — opt-in via KENNING_ENABLE_TAIL_SELECTOR (the deterministic hierarchy routes contextually at zero latency; the selector adds sidecar latency only for large ambiguous pools)
+│       │   ├── _relay_intent.py     ← NEW (2026-06-16): semantic relay-intent GATE (embedder sidecar). Scores a bare utterance against curated POSITIVE (real callouts) vs NEGATIVE (narration/banter/questions/Marvel-identity) exemplar clouds; vetoes recover_relay_lead's bare-callout "tell my team" prepend (the source of ~97% of corpus false-relays) when the positive margin does not clear a threshold. Biased to ABSTAIN (a missed callout costs a re-say; a false relay broadcasts garbage). FAIL-OPEN (sidecar down → None → caller keeps keyword behavior). urllib-only client, shares the router's per-turn embed cache
 │       │   ├── _ultron_pools.py    ← Movie-Ultron snap-tail register pools (_FLAVOR_ENEMY/_ULT/_DAMAGE/_UTILITY/_CAREFUL/_COMMAND/_SELF); ENEMY=contempt, COMMAND/SELF/CAREFUL=serene/stoic (never contempt at allies). Audited.
-│       │   ├── _agent_flavor.py    ← AGENT_FLAVOR[agent][situation]: per-agent character-tailored tails for ALL 29 agents (correct canonical gender), recasting each kit/lore as Ultron contempt. SOLE tail source when one enemy agent is named.
+│       │   ├── _agent_flavor.py    ← AGENT_FLAVOR[agent][situation] = list[TailEntry]: per-agent character-tailored tails for ALL 29 agents (canonical gender, kit/lore recast as Ultron contempt). REWRITTEN 2026-06-16 as TailEntry(text, tags) with loc:/dmg:/ability: tags — agent × situation × sub-context. COHERENCE PASS (2026-06-16): RE-AUTHORED down to ~1,628 tight TailEntry entries (~5/cell); every ult = the REAL ultimate, every utility ability-tagged (ability:<canon>), filler/wrong-kit cut. SOLE tail source when one enemy agent is named. Content lives in scripts/flavor_gen/curated_overrides.py (hand-written) applied by apply_curated.py, verified by scripts/flavor_audit/lint_tails.py (0 hard/0 soft/0 thin). Regenerate via those scripts, do not hand-edit
 │       │   ├── _multi_flavor.py    ← MULTI_FLAVOR[situation]: plural group tails for callouts naming 2+ enemy agents
 │       │   ├── _ultron_commands.py ← NEW: COMMAND_RESPONSES/COMMAND_SCOPE/COMMAND_SLOT — 73 explicit user commands × up to 40 curated full-Ultron responses (refuse/dismiss/criticize/praise/ask/status/strategy/yes-no-agree), {site}/{agent}/{name} slots; LRU-selected by _as_curated_command in relay_speech.py
-│       │   ├── _ultron_setpieces.py ← DEFAULT_{GREETING,VICTORY,DEFEAT,FAREWELL,IDENTITY,CONSOLATION,PRAISE,ENCOURAGEMENT}_LINES (board-expanded ~5x; every greeting names Ultron AND identifies as "your AI teammate for this game", person-aware grammar); imported by relay_speech.py. 2026-06-15: greet/identity set-pieces trimmed to ~6-7 s spoken length
+│       │   ├── _ultron_setpieces.py ← DEFAULT_{GREETING,VICTORY,DEFEAT,FAREWELL,IDENTITY,CONSOLATION,PRAISE,ENCOURAGEMENT}_LINES (board-expanded ~5x; every greeting names Ultron AND identifies as "your AI teammate for this game", person-aware grammar); imported by relay_speech.py. 2026-06-15: greet/identity set-pieces trimmed to ~6-7 s spoken length. 2026-06-16 (coherence pass): DE-BIBLICALIZED — ~18 flood/Noah/ark/sacrament/God/church/abstract lines replaced with the machine/evolution/immortal/superior register (only canonical meteor + evolution beats kept)
 │       │   ├── ring_buffer.py      ← Pre-speech audio buffer
 │       │   ├── smart_turn.py       ← Smart Turn V3 ONNX wrapper (NEW 2026-05-12; CPU-only end-of-turn confirmation)
 │       │   ├── vad.py              ← Silero-VAD wrapper
@@ -2353,11 +2419,21 @@ For the current decisions and Foundation phase status see
 │   ├── bench_llm_prefix_cache.py  ← 2026-05-16 latency 2: cold-vs-warm TTFT bench for LlamaRAMCache (writes baselines.json:llm_prefix_cache_bench; result: -15 ms regression on this stack -> Phase 2 default flipped to disabled)
 │   ├── eval_harness.py            ← 2026-05-18 Phase 0: classifier-only eval harness (routing + addressing + web_gate); reads tests/eval/corpus.jsonl; writes logs/eval_runs/<ts>.json; exit codes 0/1/2 for CI
 │   ├── stream_check.py            ← 2026-06-12: pre-stream device-routing check (default speakers / relay mic bus / OBS capture / mic untouched)
+│   ├── build_common_words.py      ← NEW (2026-06-16, OFFLINE build-time): download/parse the public-domain google-10000-english list → emit src/kenning/audio/_common_words.py (top-~5000 frequency-ranked, alpha-only len≥3). Never imported by the runtime
+│   ├── flavor_gen/                ← NEW (2026-06-16, OFFLINE build-time codegen): build the flavor library; never imported by the runtime
+│   │   ├── integrate_tails.py     ← codegen + lint + dedup → src/kenning/audio/_agent_flavor.py (the TailEntry table)
+│   │   ├── apply_cuts.py          ← apply the audit cuts (drop the lines the lint/audit pass flagged) back into the library
+│   │   ├── curated_overrides.py   ← NEW (2026-06-16, coherence pass): the hand-written CURATED dict — per agent×situation kit-accurate TailEntry lists (text + tags), ~5/cell, every ult = the real ultimate, every utility = ability-tagged. Pure data
+│   │   └── apply_curated.py       ← NEW (2026-06-16, coherence pass): REPLACE each agent/situation cell present in CURATED with its curated TailEntry list, re-emit _agent_flavor.py (idempotent); run the lint gate after
+│   ├── flavor_audit/              ← NEW (2026-06-16, OFFLINE build-time audit): never imported by the runtime
+│   │   └── lint_tails.py          ← deterministic lint GATE over the tails (HARD: word-cap / wrong-gender-vs-AGENT_GENDER / surrounding-quotes / per-cell floor; SOFT: leading-tactical-verb / missing terminal punctuation)
 │   └── relay_test/                ← Valorant relay test harness + 20k corpus + scorecard (see the "2026-06 relay/gaming campaign" section below)
 │       ├── harness.py             ← staged matcher/rephrase/audio/asr/full pipeline test (GAMING_PRESET 3B, testing-mode parity, RELAY_TEST_GPU_LAYERS)
 │       ├── corpus.py              ← original build_corpus() base cases + _GROUP_PREFIXES
 │       ├── corpus_packs.py        ← build_corpus(seed, target=20000): auto-discover packs by kind (relay/question/NEGATIVE) + _split_compound/_compound_cases + stratified cap; build_corpus_10k/_20k aliases
 │       ├── scorecard.py           ← reliability scorecard: fact-token extractor, classify_route (by LLM-invocation), per-category retention p50/p95/p99, inversion/hallucination, deterministic coverage, matcher/false-relay, flavor TTR, --bench (CPU-3B latency+RSS), no-regression diff
+│       ├── trace_corpus.py        ← NEW (2026-06-16): full-pipeline corpus TRACER — runs the corpus through the live normalize→route→relay pipeline and records each stage's output for triage
+│       ├── analyze_outputs.py     ← NEW (2026-06-16): output TRIAGE over a trace/rephrase JSONL (bucket + flag the lines worth a human/audit look)
 │       ├── make_audit_chunks.py   ← split the LLM-routed lines of a rephrase JSONL into per-agent audit chunks
 │       ├── vocab_packs/           ← 48 packs (~29.4k payloads): 8 base + var_* variety + stress_* metric-stress + persona_flavor (OUTPUT pool, excluded from inputs)
 │       ├── refs/                  ← 20 web-grounded Valorant reference docs (agents/abilities/maps/callouts/economy/slang/meta/Marvel) used to ground generation
@@ -3465,6 +3541,84 @@ relay form; STT mis-hears of the verbatim verb "repeat" as "Pete"/"Heat"
 "to"/"after" + an addressee (so a literal name "Pete" or the word "heat" is
 never rewritten); and a possessive on the team addressee ("my team's X",
 "the squad's X") has its trailing "'s" stripped so the relay lead-strip works.
+**2026-06-16 additions:** narration / epistemic-hedge regex (a first-person
+musing that merely MENTIONS relaying is not a relay), lead-preserving disfluency
+resolution (`_resolve_disfluency`: "tell my — no wait, tell the whole team to X"
+collapses to the corrected lead without losing the payload), conversational
+lead-filler stripping (`bro`/`yo`/`dude`/`bruh`/…), and **relay-intent gate
+wiring** — `recover_relay_lead` now consults `_relay_intent.relay_intent_ok`
+(the semantic gate) before prepending the bare-callout "tell my team" lead, so a
+muttered narration / banter / question / Marvel-identity line is no longer
+broadcast (fail-open: gate down → keyword behavior).
+
+#### `audio/_relay_intent.py` (NEW 2026-06-16 — semantic relay-intent gate)
+
+The single weakest joint in the routing cascade — `recover_relay_lead`'s
+bare-callout prepend — promoted from a keyword trigger to a semantic DECISION
+gate. A bare utterance that merely contains a callout keyword ("eco", "rotate",
+an agent name) is just as often narration ("I should tell them to eco"), banter
+aimed at Ultron, a question for advice, or Marvel/identity talk. `RelayIntentGate`
+scores the utterance against curated POSITIVE (`RELAY_POSITIVE_EXEMPLARS`) and
+NEGATIVE (`RELAY_NEGATIVE_EXEMPLARS`) exemplar clouds via the shared
+EmbeddingBackend and `decide(text) -> True | False | None` returns True only when
+`max(pos) - max(neg)` clears a calibrated threshold (default 0.06). **Biased to
+ABSTAIN** (a missed callout costs the streamer a re-say; a false relay broadcasts
+garbage to teammates). FAIL-OPEN: sidecar down → `None` → caller keeps today's
+keyword behavior (never a new blocking dependency); never prepares against a
+down/unavailable sidecar (no latch, so it recovers when the sidecar returns).
+Lazy process-wide singleton (`get_relay_intent_gate` / `set_relay_intent_gate` /
+`relay_intent_ok`); holds only exemplar strings + a urllib client.
+
+#### `audio/_tail_schema.py` (NEW 2026-06-16 — flavor tail schema + tag folding)
+
+The pure-python (stdlib-only → anticheat-safe) FOUNDATION for the deep flavor
+expansion. `TailEntry(text, tags)` dataclass + `as_entry`/`entries` coercion
+(lossless migration of the legacy `str` pools → tagless `TailEntry`, ZERO rewrite,
+ZERO behavior change — a tagless tail is the base / Tier-3 fallback). The expanded
+enemy situation taxonomy (`Sit`, `ENEMY_SITUATIONS`, 4 → 16:
+spotted/ult/damaged/utility + moving/planting/defusing/rotating/saving/
+falling_back/peeking/holding/lurking/trading/last_alive/near_death). Machine-readable
+`AGENT_GENDER` (was a code comment; now a hard-auditable per-agent pronoun map) +
+`GENDER_PRONOUNS`. Fact-folding helpers that turn noisy callout facts into the
+COARSE tag vocabulary: `loc_class` (≈130 location tokens →
+high_ground/long_range/site_area/flank_route/mid/choke), `dmg_level_tag` (hp
+number / damage keyword → one_shot/low/minor), `ability_tag`, `situation_for_payload`
+(action words refine the 'spotted' base → a finer situation), and `build_active_tags`
+(the Tier-1 target set). The COARSE route stays a plain dict; tags only ever
+fine-select WITHIN an already-correct cell, so a mis-parsed tag can never produce a
+wrong-character tail — it just relaxes to a less-specific tier.
+**2026-06-16 (coherence pass):** added `_VERB_TO_ABILITY` — a verb/token →
+canonical ability CATEGORY map (mollied/nade → molly, walled → wall, darted/shocked →
+dart, smoked → smoke, flashed/blinded → flash, caged → cage, stunned/concussed → stun,
+…) so `ability_tag` folds a callout VERB to the same `ability:<canon>` tag the curated
+`utility` cells carry; a standard category routes straight to the matching ability cell,
+an agent-unique ability falls through to the semantic selector.
+
+#### `audio/_tail_selector.py` (NEW 2026-06-16 — semantic fine-selector)
+
+The embeddinggemma sidecar promoted to a fine-SELECTOR. `select_tail(cands,
+recent_lines, *, agent, situation, active_tags, pool_kind)` builds a short
+structured query (agent + situation + folded tags), embeds it (`kind=query`),
+scores it against a session-cached doc matrix of the candidate tails (`prepare`,
+`kind=document`), applies MMR diversity against a rolling window of recently-chosen
+vectors + a HARD mask of tails already spoken this round (`recent_lines`) + a
+per-`pool_kind` abstain floor (`agent` 0.30 / `multi` 0.26 / `generic` 0.20), and
+returns the best-fit tail text — or **None for ANY reason** (numpy missing /
+sidecar down / latched / empty / low-confidence / exception), in which case the
+caller falls back to the deterministic `_pick_flavor`. Strictly ADDITIVE — it only
+re-ranks within an already-correct cell, so it can never change the character or
+situation. numpy is in-process-legal (a faster-whisper transitive dep — the
+firewall blocks only torch/transformers); the only network is the existing loopback
+sidecar client. `KENNING_ENABLE_TAIL_SELECTOR` opt-in enables it; absent (default) = OFF, because the deterministic coarse-keyed route already routes contextually at zero latency and the semantic re-ranker adds a sidecar embed only worth paying for large, ambiguous pools.
+
+#### `audio/_common_words.py` (NEW 2026-06-16 — common-word protection set)
+
+A GENERATED frozenset `COMMON_WORDS` — the top-~5000 frequency-ranked English
+words (alpha-only, len ≥ 3) from the public-domain google-10000-english list, baked
+by `scripts/build_common_words.py`. Imported by `_stt_correct` so the
+phonetic/fuzzy gazetteer snapper only ever rewrites OOV / misheard tokens and never
+corrupts a real English word. Pure data, no deps; regenerate via the script, do not
+hand-edit.
 
 #### `audio/_stt_correct.py` (EXPANDED 2026-06-15 — Valorant gazetteer + phonetic snap)
 
@@ -3481,6 +3635,25 @@ Risky 1:1 maps removed to avoid over-correction. **2026-06-15 additions:**
 (three/four/five/six/won) are protected from corruption to the location
 "tree" — the `tree`→`three` repair is gated to a following push/site token so
 the real location "tree" ("split through tree") and "we won" stay safe.
+**2026-06-16 additions:** a **common-word protection gate** (a token in
+`_common_words.COMMON_WORDS` is never snapped, so real English survives the
+gazetteer); an **inflection guard** (an `-ed`/`-ing`/`-ers` form or a real /
+gazetteer plural is never snapped onto a base gazetteer term — "walled"/"orbs"
+keep their grammar); an **OOV agent-superstring guard** (a snap target may not be
+a superstring of the heard token — a genuine mishear is same-length-ish, "jet" →
+Jett, not the other way); and a **`_MISHEAR_FORCE` allow-list** (curated mishears
+that fire even though they are common words).
+**2026-06-16 (coherence pass) — context SLOT-confirmation pass** (`_slot_agent_correct`
++ `_closest_agent`, run as **Stage 1.5** of `correct_callout_stt`, between the context
+rules and the token-level snap): an agent name sits in characteristic SLOTS — subject of
+a damage report ("`<x>` hit 18"), object of one ("hit the `<x>` for 18"), or after a
+side word before a state/ability verb ("their/enemy/our `<x>` ulted/mollied/…"). A token
+in one of those slots that is a common English word but PHONETICALLY an agent (Jaro-Winkler
+≥ 0.82, with `_GAZ_LOWER` terms skipped so an ability word like "cage"/"wall" is never read
+as an agent) is corrected to that agent — "raise hit 18" → "Raze hit 18". This is the
+ONLY place the common-word protection is overridden, and only when the slot grammar
+supplies the confidence; non-slot uses ("raise your crosshair", "raise the volume") have
+no agent slot and are left untouched. Purely additive, pure-python, ~microseconds.
 
 #### `audio/command_router.py` (NEW 2026-06-15 — semantic command router)
 
@@ -3494,7 +3667,11 @@ margin, OR it is not a deterministic family). `RoutingDecision` dataclass
 (family / abstained / confidence / margin / reason / scores).
 `get_command_router()` is a lazy, FAIL-OPEN singleton (returns None on
 any build error so a router fault can never break the voice loop). Imports
-no heavy ML.
+no heavy ML. **2026-06-16:** `get_embedding_backend()` exposes the router's
+shared `EmbeddingBackend` (the sidecar client) so the relay flavor layer's
+semantic tail selector (`_tail_selector`) and the relay-intent gate
+(`_relay_intent`) reuse the same per-turn embed cache — one sidecar instance,
+one cache, one client; fail-soft (None when the sidecar/router is unavailable).
 
 #### `audio/_router_backends.py` (NEW 2026-06-15 — pluggable similarity backends)
 
@@ -3811,6 +3988,10 @@ Converts a user voice command into a line Kenning speaks on a **separate** PortA
 
 **Flavor architecture (2026-06-14):** personality is owner-aware and fact-additive — the actionable callout is built deterministically and a short (≤6-word) Ultron tail is appended, with the register matched to the owner (ENEMY contempt / our-team COMMAND / user-status SELF). `_flavor_ctx`/`_ctx_candidates` select the tail FOR the callout: one named enemy agent → that agent's pool in `_agent_flavor.py` is the SOLE source; 2+ agents → `_multi_flavor.py`; no agent → loc/count templates + the register pools in `_ultron_pools.py`. Curated set-pieces live in `_ultron_setpieces.py`. The canonical character brief is `scripts/relay_test/refs/ultron_voice.md`; all pools were board-generated, hand-curated, and passed through a 48-judge adversarial character-gate audit. See memory `reference_ultron_flavor_architecture.md`.
 
+**Flavor architecture — deep expansion (2026-06-16):** the library grew from ~928 to **~4,147 audited tails** and selection became a HYBRID keyed-coarse + tagged-pool + semantic-fine-select system, **fail-open at every stage** (worst case = the prior deterministic behavior). `_agent_flavor.py` is now `dict[agent][situation] = list[TailEntry]` (each tail carries `loc:`/`dmg:`/`ability:` tags), agent × situation × sub-context, over the 16-key situation taxonomy in `_tail_schema.py`. `_flavor_ctx` runs two stages: (1) **COARSE ROUTE** — register + payload → the fine enemy situation (`_situation_for` / `situation_for_payload`), then the agent or multi pool; (2) **TAGGED-POOL + FINE-SELECT** — a 4-tier TAG filter (`_tier_filter`: tags-subset-of-active → share-most-specific-tag → tagless base → whole cell, each tier needing ≥3 survivors, then relaxing; a missing finer situation falls back to the agent's `spotted` pool, then the generic register pool) narrows the cell to the tails that FIT this exact callout, then the semantic `select_tail` (`_tail_selector.py`, embedder sidecar, MMR + recent-mask) re-ranks within it — fail-open to the deterministic `_pick_flavor`. **All ML stays in the loopback sidecar / build-time scripts**; the anticheat-pinned main process imports only numpy + urllib for this path. The library is GENERATED + audited via the `scripts/flavor_gen` (codegen/lint/dedup, apply-cuts) and `scripts/flavor_audit` (deterministic lint gate) pipelines. Two routing fixes shipped alongside: `_CRITICIZE_RE` no longer treats "call out" as a criticism verb (it is the primary Valorant RELAY verb — including it had inverted 105/106 factual callouts into criticisms of the named agent), and a new "I hit/tagged/cracked `<agent>` for `<n>`" pattern routes the damaged OBJECT to that enemy's damaged pool with the right `dmg:` tag.
+
+**Flavor architecture — coherence audit + routing fixes (2026-06-16):** a by-hand curation pass made the deep-expansion library ruthlessly KIT-ACCURATE and concise. `_agent_flavor.py` was RE-AUTHORED down to **~1,628 tight `TailEntry` entries** (~5 per cell): every agent's `ult` cell is now its REAL ultimate (Jett → Blade Storm, Viper → her Pit, Raze → the rocket, Sova → blind shock, KAY/O → NULL//cmd, Killjoy → Lockdown), every `utility` cell is ability-TAGGED (`ability:<canon>`, incl. agent-unique abilities like Raze `boombot`/`paintshells` or Killjoy `alarmbot`/`turret`), and filler / off-topic / wrong-kit lines were cut. The content lives in a hand-written CURATED dict (`scripts/flavor_gen/curated_overrides.py`) applied by `scripts/flavor_gen/apply_curated.py` and verified by the deterministic lint gate (`scripts/flavor_audit/lint_tails.py`). `_ultron_setpieces.py` was de-biblicalized (~18 flood/Noah/ark/sacrament/God/church/abstract lines replaced with the machine / evolution / immortal / superior register; only the canonical meteor + evolution beats kept). Two selection changes: `_situation_for` now LIFTS the situation to `ult` whenever the payload carries an ult keyword (so "their Viper ulted B" reaches her curated ULT pool, not utility) before refining the `spotted` base; and `_flavor_ctx` SKIPS the semantic `select_tail` entirely for a small (<5) candidate cell — a curated/tag-filtered cell is already a tight fit, so the deterministic LRU `_pick_flavor` is as good as a cosine re-rank and avoids the per-callout sidecar embed (a latency win); the semantic selector now only earns its cost on a large ambiguous pool. The verb→ability routing relies on `_tail_schema._VERB_TO_ABILITY` (mollied→molly, walled→wall, darted→dart) folding a callout verb to the same `ability:` tag the curated `utility` cells carry. Selection ARCHITECTURE is unchanged in shape (coarse-keyed route → small-cell LRU or large-cell semantic fine-select, fail-open); the curated content is just kit-accurate and concise now.
+
 ---
 
 #### Public API (`__all__`)
@@ -3925,7 +4106,7 @@ Converts a user voice command into a line Kenning speaks on a **separate** PortA
 | `DEFAULT_FUN_FACTS` | Fallback fun facts (3 lines; corpus ships at `data/relay_fun_facts.txt`, 1014+ lines) |
 | `_DIRECTIVE_POOLS` | dict mapping directive key → pool for set-piece composes |
 
-Flavor pools appended to snap callouts via `_pick_flavor` (anti-soundboard, avoids recent 8-line window): `_FLAVOR_ENEMY`, `_FLAVOR_CAREFUL`, `_FLAVOR_ULT`, `_FLAVOR_DAMAGE`, `_FLAVOR_UTILITY`. `_flavored(callout, pool, recent_lines)` appends a picked tag; `_pick_flavor` excludes tags seen in recent output. **Tail spacing (NEW 2026-06-15):** `_join_tail(head, tail)` is the single join helper — it guarantees a sentence terminator between the callout and its flavor tail (so the callout never slurs into the tail), then the TTS path honours it (see the kokoro inter-sentence gap below). Multi-fact callouts still flow as one sentence (the per-fact joins do not add a terminator).
+Flavor pools appended to snap callouts via `_pick_flavor` (anti-soundboard, avoids recent 8-line window): `_FLAVOR_ENEMY`, `_FLAVOR_CAREFUL`, `_FLAVOR_ULT`, `_FLAVOR_DAMAGE`, `_FLAVOR_UTILITY`. `_flavored(callout, pool, recent_lines)` appends a picked tag; `_pick_flavor` excludes tags seen in recent output. **2026-06-16:** for an agent / multi callout the tail is now chosen through the hybrid path (`_flavor_ctx` → `_tier_filter` tag filter → semantic `select_tail`), and `_pick_flavor` is the fail-open floor at every stage — so the worst case is exactly this prior deterministic anti-repeat behavior. **Tail spacing (NEW 2026-06-15):** `_join_tail(head, tail)` is the single join helper — it guarantees a sentence terminator between the callout and its flavor tail (so the callout never slurs into the tail), then the TTS path honours it (see the kokoro inter-sentence gap below). Multi-fact callouts still flow as one sentence (the per-fact joins do not add a terminator).
 
 ---
 
@@ -4067,6 +4248,15 @@ VAD" rather than misclassifying.
   (`_is_whisper_hallucination`) to stop "thank you"-type transcriptions on
   non-speech. STT defaults are hardened so the turbo engine always loads at
   startup.
+- **2026-06-16 (coherence pass) — decode-time DOMAIN BIASING:** `transcribe`
+  primes the decoder with `initial_prompt = _DOMAIN_PROMPT` — the closed Valorant
+  vocabulary (the agent roster + callout terms, ≤200 tokens, most-confusable proper
+  nouns first) — so agent names and tactical terms are recognised at the SOURCE,
+  cutting mishears before the downstream `_stt_correct` snapper sees them. Additive
+  and reversible: gated by `WHISPER_DOMAIN_BIAS` (default on), overridable with a
+  custom `WHISPER_INITIAL_PROMPT`; reset per turn (`condition_on_previous_text`
+  stays off for command STT). `initial_prompt` is supported by every faster-whisper
+  version.
 
 ### `src/kenning/llm/inference.py`
 
