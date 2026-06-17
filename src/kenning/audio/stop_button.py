@@ -45,16 +45,26 @@ _BUTTON_WORDS = (
     r"(?:stop\s+(?:button|panel|control|switch|window)"
     r"|panic\s+button|kill\s+switch|stop\s+sign)"
 )
-_OPEN_RE = re.compile(
-    r"^(?:please\s+)?"
-    r"(?:open|show(?:\s+me)?|pull\s+up|bring\s+up|give\s+me|launch|summon|put\s+up)"
-    rf"\s+(?:the\s+|your\s+|my\s+|a\s+)?{_BUTTON_WORDS}\s*[.!?]?$",
+# Keyword-based matching (robust to STT mangling): "stop button" / "kill switch"
+# / "panic button" is an unambiguous phrase -- nothing in the game is called that
+# -- so ANY short utterance referencing it is a stop-button command. The STT
+# mangles the verb ("show me the stop button" -> "hit / call me the stop
+# button"), so we key off the NOUN PHRASE, not the verb.
+_BUTTON_RE = re.compile(_BUTTON_WORDS, re.IGNORECASE)
+# Close-intent keywords. NB: bare "kill" is intentionally EXCLUDED -- it collides
+# with the "kill switch" button phrase ("show me the kill switch" must OPEN).
+_CLOSE_KW_RE = re.compile(
+    r"\b(?:close|hide|dismiss|get\s+rid|take\s+down|tear\s+down|put\s+away|"
+    r"go\s+away|remove|stash|minimi[sz]e|make\s+it\s+go)\b",
     re.IGNORECASE,
 )
-_CLOSE_RE = re.compile(
-    r"^(?:please\s+)?"
-    r"(?:close|hide|dismiss|get\s+rid\s+of|take\s+down|put\s+away)"
-    rf"\s+(?:the\s+|your\s+|my\s+)?{_BUTTON_WORDS}\s*[.!?]?$",
+# A leading QUESTION word or SUBJECT pronoun means narration / a question about
+# the button ("where is the stop button", "i hit the stop button earlier"), NOT
+# a command -- leave those to the LLM. A mangled imperative ("Hit/Call me/Show me
+# the stop button") leads with a VERB, so it is unaffected.
+_NONCOMMAND_LEAD_RE = re.compile(
+    r"^\s*(?:where|what'?s?|how|why|who|when|which|is|are|was|were|does|do|did|"
+    r"has|have|i|we|he|she|they|you|it|that|this|there)\b",
     re.IGNORECASE,
 )
 
@@ -72,11 +82,19 @@ def match_stop_button_command(text: str) -> Optional[str]:
     if not text:
         return None
     cleaned = text.strip()
-    if _OPEN_RE.match(cleaned):
-        return "open"
-    if _CLOSE_RE.match(cleaned):
+    # Must REFERENCE the button phrase, and be a SHORT command (a long sentence
+    # that merely mentions a stop button -- "what does the stop button on a
+    # controller do" -- is not a command and is left to the LLM).
+    if _BUTTON_RE.search(cleaned) is None or len(cleaned.split()) > 8:
+        return None
+    # A question / narration lead ("where is...", "i hit ... earlier") is not a
+    # command -> fall through to the LLM.
+    if _NONCOMMAND_LEAD_RE.match(cleaned):
+        return None
+    # A close-intent keyword anywhere -> close; otherwise it is a summon.
+    if _CLOSE_KW_RE.search(cleaned):
         return "close"
-    return None
+    return "open"
 
 
 class StopButtonOverlay:

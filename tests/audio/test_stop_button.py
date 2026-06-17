@@ -39,6 +39,16 @@ from kenning.pipeline.orchestrator import Orchestrator
         "show the stop panel",
         "Show The Stop Button.",
         "please show the stop button",
+        # STT mangles "show me the stop button" into these imperatives -- a
+        # mangled leading verb must still summon it (the live bug 2026-06-16).
+        "Hit the stop button.",
+        "Call me the stop button.",
+        "tap the stop button",
+        "press the stop button",
+        # bare / trailing-politeness noun phrase
+        "stop button",
+        "the stop button please",
+        "gimme the kill switch",
     ],
 )
 def test_open_phrasings_match(text: str) -> None:
