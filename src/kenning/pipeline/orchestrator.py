@@ -3018,6 +3018,54 @@ class Orchestrator:
         )
         return True
 
+    def _trace_turn_flow(self, *, raw: str, route: str, reason: str = "",
+                         final: str = "", channel: str = "",
+                         normalized: Optional[str] = None,
+                         payload: Optional[str] = None,
+                         addressee: Optional[str] = None,
+                         directive: Optional[str] = None,
+                         subtype: Optional[str] = None,
+                         **extra) -> None:
+        """Full-flow usage capture for TESTING mode (2026-06-16): record the whole
+        pipeline for a turn -- raw STT -> normalized -> route+reason -> spoken line
+        + channel -- to both kenning.log (``turn:flow``) AND a durable historical
+        JSONL (``logs/usage_trace.jsonl``), so the historical logs carry every
+        transcription, how it routed, and what was actually said. No-op outside
+        testing mode; fail-open (a logging error never affects a turn)."""
+        try:
+            from kenning.safety.testing_mode import is_testing_mode_active
+            if not is_testing_mode_active():
+                return
+        except Exception:                                            # noqa: BLE001
+            return
+        try:
+            from kenning import trace
+            trace.tlog(
+                logger, "turn:flow", route=route, channel=channel,
+                raw=(raw or "")[:120],
+                norm=((normalized or "")[:120] if normalized and normalized != raw
+                      else ""),
+                final=(final or "")[:160], reason=reason)
+        except Exception:                                            # noqa: BLE001
+            pass
+        try:
+            import json
+            import time as _t
+            from pathlib import Path
+            rec = {
+                "ts": round(_t.time(), 3), "raw": raw, "normalized": normalized,
+                "route": route, "reason": reason, "subtype": subtype,
+                "payload": payload, "addressee": addressee, "directive": directive,
+                "channel": channel, "final": final,
+            }
+            rec.update(extra)
+            p = Path("logs") / "usage_trace.jsonl"
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with p.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except Exception:                                            # noqa: BLE001
+            pass
+
     def _maybe_handle_relay_speech(self, user_text: str, *, force: bool = False) -> bool:
         """Voice relay -- "tell my teammates X" speaks a rephrased line on
         the configured secondary output device (a VoiceMeeter virtual
@@ -3038,6 +3086,7 @@ class Orchestrator:
                 build_relay_line,
                 match_relay_command,
                 play_to_device,
+                relay_route_info,
                 relay_tts_text,
                 resolve_relay_device,
             )
@@ -3234,6 +3283,21 @@ class Orchestrator:
             "relay:spoken | device=%d | seconds=%.2f | chars=%d | line=%r",
             device, seconds, len(line), line[:120],
         )
+        # Full-flow usage capture (testing mode): raw STT -> matched payload ->
+        # route+reason -> spoken line, on the team-mic channel.
+        try:
+            _ri = relay_route_info(command)
+            self._trace_turn_flow(
+                raw=user_text, normalized=getattr(command, "payload", None),
+                route=_ri.get("route", "relay"), reason=_ri.get("reason", ""),
+                subtype=_ri.get("subtype"),
+                payload=getattr(command, "payload", None),
+                addressee=getattr(command, "addressee", None),
+                directive=getattr(command, "directive", None),
+                final=line, channel="team_mic",
+                forced=bool(force), seconds=round(float(seconds), 2))
+        except Exception:                                            # noqa: BLE001
+            pass
         ring.append(line)
         # Keep the conversation open: the run-loop relay branch extends
         # the follow-up window by this much, so consecutive callouts
@@ -6267,8 +6331,19 @@ class Orchestrator:
                                     _pool = (IDENTITY_POOLS.get(_cat)
                                              if _cat else None)
                                     if _pool:
-                                        self._speak(pick_line(_pool))
+                                        _ans = pick_line(_pool)
+                                        self._speak(_ans)
                                         _router_consumed = True
+                                        # full-flow capture: a model-leak/identity
+                                        # probe answered from the curated DESKTOP
+                                        # pool (never the LLM).
+                                        self._trace_turn_flow(
+                                            raw=user_text,
+                                            route=f"identity:{_cat}",
+                                            reason="identity/leak probe -> curated "
+                                                   "desktop pool",
+                                            subtype=_cat, final=_ans,
+                                            channel="desktop")
                             except Exception as e:                   # noqa: BLE001
                                 logger.debug("identity-pool answer skipped: %s", e)
                         elif not _rd.abstained and _rd.family == "desktop_refuse":
@@ -7924,6 +7999,13 @@ class Orchestrator:
             # Record the assistant response for "what did you say earlier?"
             # verbatim recall. Fail-open + a no-op when the store is absent.
             self._record_dialogue_turn("assistant", self._last_response_text)
+            # Full-flow usage capture (testing mode): the conversational LLM turn
+            # -- raw STT -> persona LLM -> spoken line, on the desktop channel.
+            self._trace_turn_flow(
+                raw=user_text, route="conversational_llm",
+                reason=f"intent={routing_intent_kind or 'none'} -> persona LLM",
+                subtype=routing_intent_kind, final=self._last_response_text,
+                channel="desktop")
 
             # 2026-05-22: enable_thinking=False is the active voice-path
             # default (saves 5-10 s TTFT on factual / math turns via the

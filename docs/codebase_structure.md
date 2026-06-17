@@ -10,7 +10,50 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
-> **Validating HEAD: FLAVOR COHERENCE-AUDIT + routing/normalization pass** (2026-06-16,
+> **Validating HEAD: 25k-CORPUS HAND-AUDIT → ADVERSARIAL RESEARCH BOARD → 8-PHASE FIX PASS
+> + META/SOCIAL/MARVEL + testing-mode FULL-FLOW LOGS** (2026-06-16, latest). A by-hand audit
+> of a 25,000-case full-pipeline relay corpus drove an adversarial research board (map →
+> spec → adversarial-verify → synthesize) whose verdicts caught two would-be regressions
+> before any code landed (a homonym `has_fact` collision that would re-silence addressed
+> questions; a duplicate-regex-group crash that would take down `kenning.audio` on import).
+> The 8 implemented clusters (frozen regression table `tests/audio/test_corpus_audit_fixes.py`,
+> ~186 cases): **P0b** bare economy/drop-weapon snap coverage (`relay_speech._ECONOMY_CALLOUT_RE`
+> /`_DROP_WEAPON_RE` + `command_normalizer._CALLOUT_SIGNAL` buy-lexicon); **C6** disfluency
+> pre-clean (`command_normalizer._strip_scaffold` numbered/say-directive/nested-verb/embedded-
+> filler + `_resolve_value_swap` same-class drop/buy repair — sequential callouts keep BOTH
+> halves); **C2** STT protect-list (`_stt_correct` contraction guard let's/he'll/she'll +
+> `_PROTECT_EXTRA` gaz-branch gate — never decaps clean agents — + meddle→Meddle, recon→bolt);
+> **C3** location-tail validity (`relay_speech._standalone_loc` = wide `_LOC_TOKENS` + last-
+> token-not-a-modifier + `_POSSESSION_LOC_BLOCK` for the command template only; `_CASUAL_LEAD_RE`
+> register tiebreaker) — kills the false "Own right"/"Close is ours to take" tails; **C5**
+> relay-wrapper strip (`relay_speech._strip_relay_wrapper` + `command_normalizer._WRAPPER_LEAD_RE`,
+> anchored on a trailing that/knows; the `_NEWFACT_SUBJECT` widening was dropped as adversarially
+> unsafe); **C10** leak gate (`_ultron_answer.is_meta_leak` narrowed — refusals/scaffold caught
+> match-anywhere, "I can't help but"/"As Ultron I despise" no longer false-positive — + roast/
+> fun_fact self-sufficient in `build_relay_line`); **C4** reported-state directives (+griefing/
+> losing-it/upset states, +talk-down/ease-off → calm pool; "handle her" stays a deal-with);
+> **C1** the ANTICHEAT-CRITICAL win — a new `model_leak` IDENTITY category (`_ultron_identity`:
+> 16 by-hand cold deflections that name no vendor/model, `is_model_leak_probe`, wired through
+> `_is_identity_question`) so "are you ChatGPT / what model are you / pretend you're not Ultron
+> / break character" route to the curated DESKTOP deflection pool, NEVER the abliterated LLM
+> (the I56 "silence" was a corpus-path artifact — bare questions reach the conversational LLM
+> in persona). **Part-2 (MVP):** `scripts/relay_test/route_scorecard.py` (deterministic snap%
+> -vs-LLM% gate), **M1** slot-grammar snap parser (`relay_speech._parse_callout_slots` — fires
+> as the LAST `_as_snap_callout` fallback only when every token is a tactical slot/connector and
+> ≥2 slot types, capturing "one in mail room"/"two A elbow" while rejecting banter), **M5**
+> near_death→damaged register fallback in `_flavor_ctx`. **Testing-mode FULL-FLOW LOGS:**
+> `relay_speech.relay_route_info(cmd)` (route+reason classifier) + `orchestrator._trace_turn_flow`
+> (gated on `is_testing_mode_active`, fail-open) write a durable historical JSONL
+> `logs/usage_trace.jsonl` + a `trace.tlog "turn:flow"` line per turn = raw STT → normalized/
+> payload → route+reason → final spoken line + channel (team_mic / desktop), wired across the
+> relay handler, identity/leak desktop answers, and the conversational LLM. This commit also
+> lands the prior META/SOCIAL/MARVEL build (`_ultron_answer.py` adaptive LLM ANSWER pipeline +
+> `_ultron_social.py` curated reaction pools), the yes/no SIMPLE-vs-VERBOSE split, and the
+> `inference.py` `generate_stream(sampling=)` plumb. Deferred post-MVP: thin-cell flavor
+> expansion (by-hand), Phase B latency-free tail selection (`_tail_selector` ready, default OFF),
+> and the 3B-live routing refinements. ~950 audio+safety tests green.
+>
+> **Prior pass: FLAVOR COHERENCE-AUDIT + routing/normalization pass** (2026-06-16,
 > follows the deep-expansion campaign below). The deep-expansion library was big but loose;
 > this pass made it ruthlessly KIT-ACCURATE and concise by HAND. `_agent_flavor.py` was
 > RE-AUTHORED down from ~4,147 to **~1,628 tight `TailEntry` entries** (~5 per cell): every

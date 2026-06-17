@@ -205,7 +205,10 @@ def test_compose_prompt_has_no_reported_speech() -> None:
         captured.append(prompt)
         return iter(["Jett, your insolence amuses me."])
 
-    cmd = match_relay_command("jett is making fun of me, respond")
+    # NB: social insults ("making fun of you") now route to the curated reaction
+    # pools (bypassing the LLM), so this uses a NON-social reported clause that
+    # still reaches the LLM compose path.
+    cmd = match_relay_command("jett told me the plan, respond")
     assert cmd is not None and cmd.compose
     line = build_relay_line(cmd, generate_fn=fake_generate)
     assert line == "Jett, your insolence amuses me."

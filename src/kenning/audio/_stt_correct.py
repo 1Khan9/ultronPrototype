@@ -211,7 +211,11 @@ _TERM_MISHEARS = {
     "diffuse": "defuse", "diffusing": "defusing", "diffused": "defused",
     "molotov": "molly", "incendiary": "molly", "mollie": "molly", "mali": "molly",
     "trip wire": "tripwire", "nano swarm": "nanoswarm", "alarm bot": "alarmbot",
-    "recon dart": "recon dart", "owl drone": "drone",
+    "recon dart": "recon bolt", "owl drone": "drone",
+    # Clove's ability -- was phonetically snapping to the location "middle".
+    # Delivered as a curated CAPITALIZED mishear (not via _ABILITIES, which
+    # lowercases) and force-applied so the common-word reading never wins.
+    "meddle": "Meddle",
     "the spike": "the spike", "operator": "Operator", "op": "Operator",
 }
 
@@ -225,7 +229,7 @@ _MISHEARS = {**_AGENT_MISHEARS, **_TERM_MISHEARS}
 # "sky"/"ski"->Skye, "silver"->Sova, "euro"->Yoru, "que"->KAY/O, "mix"->Miks).
 _MISHEAR_FORCE = frozenset({
     "jet", "race", "sky", "ski", "silver", "euro", "que", "mix",
-    "operator", "op", "ultimate", "ultima", "ulta",
+    "operator", "op", "ultimate", "ultima", "ulta", "meddle",
     # intended callout-context overrides (asserted by tests) despite the source
     # also being an English word:
     "royal", "wise", "vice",
@@ -299,7 +303,9 @@ _PHRASE_MISHEARS: tuple[tuple[re.Pattern[str], object], ...] = (
     # multi-word abilities the STT splits.
     (re.compile(r"\b(?:cale|kayo|kayle|kio)\s+knife\b", re.I), "KAY/O knife"),
     (re.compile(r"\bspikes\s+down\b", re.I), "spike is down"),
-    (re.compile(r"\brecon\s+(?:dart|bolt)\b", re.I), "recon dart"),
+    # Sova's real ability name is "Recon Bolt" (the flavor/TailEntry kit data uses
+    # "recon bolt") -- never mangle it back to the legacy "recon dart".
+    (re.compile(r"\brecon\s+(?:dart|bolt)\b", re.I), "recon bolt"),
     (re.compile(r"\bowl\s+drone\b", re.I), "drone"),
     (re.compile(r"\bnano\s*swarm\b", re.I), "nanoswarm"),
     (re.compile(r"\balarm\s*bot\b", re.I), "alarmbot"),
@@ -340,6 +346,19 @@ _FUZZY_BLOCK = {
     "raze", "sage", "fade", "neon", "iso", "omen", "clove", "viper", "skye",
 }
 
+# 2026-06-16 (C2): real English / kit words the snapper or the _GAZ_LOWER-direct
+# branch corrupted (live-confirmed). Consulted ONLY for the gaz-direct branch and
+# the snap guard -- NOT folded into the gaz-branch as _FUZZY_BLOCK (that would
+# decap clean agents raze/sage/neon which are in _FUZZY_BLOCK but must stay
+# canonical) and NOT _COMMON_WORDS (that would decap Chamber/Ghost/Judge). The
+# _MISHEAR_FORCE escape hatch still overrides these. Deliberately EXCLUDES "ego"
+# (ego->eco is a useful STT fix) and "incendiary" (incendiary->molly is the
+# colloquial kit name) -- both are live-verify trade-offs, kept as corrections.
+_PROTECT_EXTRA = frozenset({
+    "veto", "flush", "dash", "smack", "plat", "lurker", "rotation", "rotates",
+    "doable", "marker", "ascend", "drift", "breath", "drain", "trap", "split",
+})
+
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z'/]*")
 
 
@@ -350,7 +369,8 @@ def _phonetic_fuzzy_snap(low: str) -> str | None:
     """Snap a token onto the gazetteer by Metaphone + Jaro-Winkler. Conservative:
     requires a phonetic-code match OR a very high edit-similarity, so real words
     are not corrupted. Returns the canonical form or None."""
-    if len(low) < 3 or low in _FUZZY_BLOCK or low in _COMMON_WORDS:
+    if (len(low) < 3 or low in _FUZZY_BLOCK or low in _COMMON_WORDS
+            or low in _PROTECT_EXTRA):
         return None
     # An INFLECTED real word is a genuine usage, not a mishear of a base gazetteer
     # noun: snapping "walled"->wall, "haunted"->haunt, "darted"->dart, "prowlers"
@@ -423,9 +443,24 @@ def _phonetic_fuzzy_snap(low: str) -> str | None:
 
 def _fix_token(tok: str) -> str:
     low = tok.lower()
-    if low in _MISHEARS and (low not in _COMMON_WORDS or low in _MISHEAR_FORCE):
+    # CONTRACTION guard (C2 FIX-C1): a token carrying an apostrophe that is NOT a
+    # curated possessive mishear (sova's->Sova, handled by _MISHEARS below) is a
+    # contraction (he'll/she'll/let's/we're) -- never a gazetteer term. Keep it
+    # literal so it is never snapped (let's->Lotus, he'll->hell, she'll->shells).
+    # No gazetteer canonical contains an apostrophe, so this is strictly safe.
+    if "'" in low and low not in _MISHEARS:
+        return tok
+    forced = low in _MISHEAR_FORCE
+    if low in _MISHEARS and (low not in _COMMON_WORDS or forced):
         return _MISHEARS[low]
     if low in _GAZ_LOWER:                         # already canonical (any group)
+        # A PROTECTED verb/payload word (veto/split/dash/drift/...) that is ALSO a
+        # gazetteer canonical must stay LITERAL -- the map/agent reading mangles
+        # the relayed message. Gated on _PROTECT_EXTRA ONLY (not _FUZZY_BLOCK,
+        # which holds clean agents that must keep canonical case); _MISHEAR_FORCE
+        # still overrides.
+        if low in _PROTECT_EXTRA and not forced:
+            return tok
         return _GAZ_LOWER[low]
     snap = _phonetic_fuzzy_snap(low)
     if snap is not None:

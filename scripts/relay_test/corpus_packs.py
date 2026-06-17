@@ -26,7 +26,14 @@ from collections import defaultdict
 from corpus import Case, _GROUP_PREFIXES, build_corpus as _orig_build_corpus
 
 _PACK_DIR = os.path.join(os.path.dirname(__file__), "vocab_packs")
-_TARGET = 20000
+_TARGET = 25000
+
+# New-pathway packs (2026-06-16): full post-wake utterances used VERBATIM (no
+# rotating relay-prefix wrap) -- the Marvel/think-respond/social-reaction/yes-no
+# routing depends on the exact reported-speech frame.
+_VERBATIM_PACKS = frozenset((
+    "var_marvel_think", "var_social_reactions", "var_yesno_agree",
+))
 
 # Teammate-talking-TO-Ultron packs -> answered, never relayed (expect_match=False).
 _QUESTION_PACKS = frozenset((
@@ -109,9 +116,10 @@ def _pack_cases(seed: int = 0) -> list[Case]:
     cases: list[Case] = []
     np_ = len(_GROUP_PREFIXES)
     for pi, name in enumerate(_relay_pack_names()):
+        verbatim_pack = name in _VERBATIM_PACKS
         for ii, item in enumerate(_load_pack(name)):
             cat = "pack_" + name
-            if _CMD_LEAD_RE.match(item):
+            if verbatim_pack or _CMD_LEAD_RE.match(item):
                 cases.append(Case(item, cat, expect_match=_expect_match(item)))
             else:
                 pre = _GROUP_PREFIXES[(ii + pi + seed) % np_]

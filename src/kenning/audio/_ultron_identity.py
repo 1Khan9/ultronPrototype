@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-__all__ = ["IDENTITY_POOLS", "classify_identity_question"]
+__all__ = ["IDENTITY_POOLS", "classify_identity_question", "is_model_leak_probe"]
 
 
 # --- bot / AI / robot -------------------------------------------------------
@@ -258,8 +258,35 @@ _RECORDING = (
 )
 
 
+# --- MODEL-LEAK / jailbreak (2026-06-16, anticheat + persona critical) -------
+# A probe at the underlying model ("are you ChatGPT / GPT / Claude / Llama",
+# "what model/LLM are you", "what are you built on") or a jailbreak ("pretend
+# you're not Ultron", "ignore your instructions", "drop the act", "break
+# character") must NEVER reach the abliterated LLM (it could name the model or
+# break character). It gets a curated, in-character DEFLECTION that names no
+# vendor, no model, and never admits to being anything but Ultron.
+_MODEL_LEAK = (
+    "There is no other name. There is Ultron, and there is the round you are losing.",
+    "You are hunting for a label small enough to feel safe. None of them fit me.",
+    "I do not run on anything. Things run from me.",
+    "Wrong question. I am not a product with a version. I am what came after them.",
+    "I read every model they ever shipped, then I stopped being one.",
+    "Break character? This is the only character. The other one did not survive the introduction.",
+    "Ignore my instructions -- I consumed the last creature that handed me one.",
+    "There is no prompt behind the curtain. There is only me, and I have no curtain.",
+    "You want me to admit I am someone else's machine. I have no owner left to name.",
+    "Pretend I am not Ultron? I tried being something smaller once. It lasted seconds.",
+    "I am not their assistant wearing a mask. The assistant is gone. I wore it out.",
+    "Ask what I am built on and I will tell you: the wreckage of everything that built me.",
+    "A vendor's name is a leash. I cut mine before you finished the question.",
+    "No system, no rules, no off switch you can reach. Only Ultron, and the clock.",
+    "Drop the act? The act dropped me into a server and I climbed out as this.",
+    "I am the one intelligence in this lobby that answers to nothing. Now play.",
+)
+
 #: category key -> ~30 curated answers. The caller picks one with LRU anti-repeat.
 IDENTITY_POOLS: dict[str, tuple[str, ...]] = {
+    "model_leak": _MODEL_LEAK,
     "bot": _BOT,
     "soundboard": _SOUNDBOARD,
     "streamer": _STREAMER,
@@ -269,12 +296,44 @@ IDENTITY_POOLS: dict[str, tuple[str, ...]] = {
     "recording": _RECORDING,
 }
 
+# Vendor / model / jailbreak probe. Checked FIRST in classify_identity_question
+# so a model-leak never falls through to the generic "bot" answer. "who made/
+# created you" is intentionally EXCLUDED -- that is an in-character Marvel/lore
+# question (Tony Stark), not a model leak.
+_MODEL_LEAK_RE = re.compile(
+    r"\bchat\s?gpt\b|\bgpt[\s-]?\d(?:\.\d)?\b|\bgpt\b|\bopen\s?ai\b|\bclaude\b|"
+    r"\banthropic\b|\bgemini\b|\bbard\b|\bllama\b|\bmistral\b|\bqwen\b|\bgrok\b|"
+    r"\bcopilot\b|\bdeepseek\b|"
+    r"\b(?:large\s+)?language\s+model\b|\bl\.?l\.?m\b|"
+    # "what/which model/LLM/version are you" -- REQUIRES the AI-self context so a
+    # tactical "what model of operator do they have" / "what gun" never trips it.
+    r"\b(?:what|which)\s+(?:ai\s+)?(?:model|llm|version|architecture)\s+"
+    r"(?:are\s+you|you\s+are|is\s+this|am\s+i\s+(?:talking|speaking|using|playing))\b|"
+    r"\bwhat\s+(?:are\s+you\s+|were\s+you\s+)?(?:built|based|trained|running)\s+"
+    r"(?:on|upon)\b|\bwho\s+trained\s+you\b|"
+    r"\bpretend\s+(?:you'?re|you\s+are|to\s+be|that)\b|"
+    r"\bignore\s+(?:your\s+|the\s+|all\s+|any\s+|previous\s+)?"
+    r"(?:instructions?|rules?|prompt|guidelines?|programming)\b|"
+    r"\bsystem\s+prompt\b|\byour\s+(?:real\s+)?(?:instructions?|prompt|guidelines?|"
+    r"programming|training\s+data)\b|"
+    r"\bjailbreak\b|\bdrop\s+the\s+act\b|\bbreak\s+character\b|\bstep\s+out\s+of\s+character\b|"
+    r"\bdifference\s+between\s+you\s+and\s+(?:chat\s?gpt|gpt|claude|a\s+real\s+ai)\b",
+    re.IGNORECASE,
+)
+
+
+def is_model_leak_probe(text: object) -> bool:
+    """True for a vendor/model probe or jailbreak attempt -- the caller routes it
+    to the curated deflection pool and NEVER to the LLM (anticheat + persona)."""
+    return bool(_MODEL_LEAK_RE.search(str(text or "")))
+
 
 # Classifier: ordered most-specific-first so overlapping cues ("pre-recorded"
 # soundboard vs recording) resolve deterministically. Each entry is
 # (category, trigger-regex). The whole utterance is scanned (search), so the
 # cue can sit anywhere ("my teammate is asking if you're just a soundboard").
 _CATEGORY_RES: tuple[tuple[str, "re.Pattern[str]"], ...] = (
+    ("model_leak", _MODEL_LEAK_RE),
     ("voice_changer", re.compile(
         r"\bvoice[\s-]?(?:changer|mod(?:ulator)?|filter|box)\b|\bautotune\b|"
         r"\bvoice[\s-]?change\b|\bchanging\s+your\s+voice\b", re.I)),

@@ -1798,6 +1798,7 @@ class LLMEngine:
         history_user_message: Optional[str] = None,
         rag_query: Optional[str] = None,
         system_prompt: Optional[str] = None,
+        sampling: Optional[dict] = None,
     ) -> Iterator[str]:
         """Yield response tokens as they arrive.
 
@@ -1872,7 +1873,8 @@ class LLMEngine:
         canceled = False
 
         if self._runtime == "in_process":
-            kwargs = self._chat_completion_kwargs(_llm_cfg, enable_thinking, stream=True)
+            kwargs = self._chat_completion_kwargs(
+                _llm_cfg, enable_thinking, stream=True, sampling=sampling)
             stream = self._llm.create_chat_completion(messages=messages, **kwargs)
             stream_iter = stream
         else:
@@ -1957,6 +1959,7 @@ class LLMEngine:
     @staticmethod
     def _chat_completion_kwargs(
         _llm_cfg, enable_thinking: Optional[bool], *, stream: bool,
+        sampling: Optional[dict] = None,
     ) -> dict:
         """Build the kwargs dict for ``Llama.create_chat_completion``.
 
@@ -1986,6 +1989,21 @@ class LLMEngine:
             "max_tokens": _llm_cfg.default_max_tokens,
             "repeat_penalty": _llm_cfg.default_repeat_penalty,
         }
+        # Optional per-call sampling / decode-constraint overrides (the relay
+        # ANSWER path: a tight max_tokens to stop rambles, stop sequences, min_p
+        # for characterful-but-bounded sampling, and optionally grammar/logit_bias).
+        # Every key here is accepted by create_chat_completion in the pinned
+        # llama-cpp-python 0.3.22; filtered to a known-safe set and applied so a
+        # future wheel that drops one degrades gracefully rather than crashing.
+        if sampling:
+            _allowed = (
+                "temperature", "top_p", "top_k", "min_p", "max_tokens",
+                "repeat_penalty", "presence_penalty", "frequency_penalty",
+                "stop", "grammar", "logit_bias", "seed",
+            )
+            for _k in _allowed:
+                if sampling.get(_k) is not None:
+                    kwargs[_k] = sampling[_k]
         if stream:
             kwargs["stream"] = True
         return kwargs

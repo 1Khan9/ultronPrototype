@@ -1166,7 +1166,9 @@ def test_build_relay_line_repairs_first_person_via_stub_llm():
 def test_build_relay_line_does_not_repair_character_lines():
     """A compose/context character line is NEVER touched by the literal-callout
     repair (it has no payload invariant to preserve)."""
-    cmd = match_relay_command("reyna is making fun of you, respond")
+    # NB: social insults now route to the curated reaction pools; use a NON-social
+    # reported clause so this still exercises the LLM character-line path.
+    cmd = match_relay_command("reyna told me the plan, respond")
     assert cmd is not None and cmd.context is not None
 
     def _stub(prompt):

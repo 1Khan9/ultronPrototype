@@ -50,6 +50,7 @@ __all__ = [
     "match_relay_command",
     "match_relay_toggle",
     "build_relay_line",
+    "relay_route_info",
     "load_roast_lines",
     "load_fun_facts",
     "pick_roast_line",
@@ -69,7 +70,7 @@ MAX_RELAY_LINE_CHARS = 360
 # live: STT rendered "teammates" as "teams").
 _GROUP_WORDS = (
     r"(?:team\s?mates?|teams?|squad|lobby|party|group|boys|the\s+boys"
-    r"|crew|stack|fellas|guys|duo)"
+    r"|crew|stack|fellas|guys|duo|lads|homies|gang|mates|fam)"
 )
 
 # A group reference: "my team" / "our teammates" / "the whole squad", and
@@ -219,6 +220,58 @@ _RELAY_PATTERNS: tuple[re.Pattern[str], ...] = (
 # payload words so a bare "say hello" / "say what" never trips it.
 _BARE_SAY_RE = re.compile(
     r"^(?:please\s+)?say\s+(?:that\s+)?(?P<payload>\S+\s+.+)$", re.IGNORECASE,
+)
+
+# Bare "say yes" / "say no" / "just say yes" -- a SIMPLE one-word confirmation to
+# the team. The bare-say form above requires >=2 payload words, so a lone yes/no
+# needs its own matcher; the payload routes to the terse simple pool.
+_SAY_YESNO_RE = re.compile(
+    r"^(?:please\s+)?(?:just\s+)?say\s+"
+    r"(?P<word>yes|no|yeah|yep|yup|nope|nah|affirmative|negative|confirmed|denied)"
+    r"\s*[.!]?$",
+    re.IGNORECASE,
+)
+
+# Bare ECONOMY buy-phase call with no relay lead ("full buy", "half buy", "eco
+# this round", "we're forcing", "bonus round"). These have neither a "tell my
+# team" lead nor a _CALLOUT_SIGNAL economy noun the normalizer recognises, so
+# they fall to no_match today (the relay-intent gate also vetoes "eco this
+# round"). Applied as a deterministic LAST-RESORT matcher so a real buy call is
+# never silenced; routes to the OUR-economy line (_as_economy_callout). Anchored
+# to a bare short call so an economy word inside a longer sentence still routes
+# via the normal callout paths.
+_ECONOMY_CALLOUT_RE = re.compile(
+    r"^\s*"
+    r"(?:(?:we'?re?|we|let'?s|i'?m|going|gonna|gotta)\s+)?"   # optional subject
+    r"(?:on\s+(?:a\s+)?)?"                                    # "on (a) eco"
+    r"(?:"
+    r"(?:full|half|forced?|light|thrifty|semi)\s+buy(?:ing)?"  # full/half/... buy
+    r"|(?:full|half)\s+save"                                   # full/half save
+    r"|forc(?:e|ing)"                                          # force / forcing
+    r"|sav(?:e|ing)"                                           # save / saving
+    r"|eco"                                                    # eco
+    r"|bonus"                                                  # bonus (round)
+    r")"
+    r"(?:\s+(?:buy(?:ing)?|round|this(?:\s+round)?|next(?:\s+round)?|it\s+out))?"
+    r"\s*[.!?]*$",
+    re.IGNORECASE,
+)
+
+# Weapon-economy REQUEST ("drop me a Vandal", "drop Phantom", "can I get an
+# Operator", "buy me a Sheriff"). "drop"/"buy" are relay-lead verbs so the
+# normalizer never wraps them to "tell my team", and there is no bare-weapon
+# matcher -> they drop to no_match today. Relays the request to the team.
+_DROP_WEAPON_RE = re.compile(
+    r"^\s*(?:"
+    r"(?:can|could)\s+(?:i|we|you|someone|anyone)\s+"
+    r"(?:get|have|drop|buy|spare)\s+(?:me\s+)?"
+    r"|(?:please\s+)?(?:drop|buy|spare|get)\s+(?:me\s+)?"
+    r")"
+    r"(?:a\s+|an\s+|the\s+|some\s+)?"
+    r"(?P<weapon>vandal|phantom|operator|op|odin|sheriff|guardian|judge|bucky|"
+    r"marshal|marshall|outlaw|shorty|spectre|stinger|bulldog|ghost|frenzy|"
+    r"classic|ares|gun|rifle|awp)\b.*$",
+    re.IGNORECASE,
 )
 
 # Composition requests: the user asks Kenning to AUTHOR a line rather
@@ -499,6 +552,51 @@ def _strip_verbatim_prefix(payload: str) -> tuple[str, bool]:
     return rest, True
 
 
+# 2026-06-16 (C5/I48): a performative relay-WRAPPER that prefixes a callout
+# payload ("bro relay that X", "give the team the heads up that X", "make sure my
+# team knows X", "let them know X", "shout out that X", "pass along that X").
+# ANCHORED on a required trailing complementizer/object ("that" / "know(s)") so a
+# bare verb in a real callout is NEVER stripped ("shout out two on A" -> NOT
+# stripped; only "shout out THAT we have no smokes" is). The clean, low-risk half
+# of C5 -- the adversarial pass flagged the connector-WIDENING as unsafe, so that
+# is deliberately NOT done; only the wrapper strip ships.
+_RELAY_WRAPPER_RE = re.compile(
+    r"^(?:bro|yo|ok(?:ay)?|hey|alright|please)?[\s,]*"
+    r"(?:"
+    r"relay(?:\s+to\s+(?:" + _GROUP + r"|" + _GROUP_PRON + r"))?\s+that"
+    r"|shout(?:\s+out)?(?:\s+to\s+(?:" + _GROUP + r"|" + _GROUP_PRON + r"))?\s+that"
+    r"|pass(?:\s+(?:along|on|it))?(?:\s+to\s+(?:" + _GROUP + r"|" + _GROUP_PRON
+    + r"))?\s+that"
+    r"|give\s+(?:" + _GROUP + r"|" + _GROUP_PRON
+    + r")\s+(?:the\s+|a\s+)?heads[\s-]?up\s+that"
+    r"|make\s+sure\s+(?:" + _GROUP + r"|" + _GROUP_PRON + r")\s+knows?(?:\s+that)?"
+    r"|let\s+(?:" + _GROUP + r"|" + _GROUP_PRON + r")\s+know(?:\s+that)?"
+    r"|announce(?:\s+to\s+(?:" + _GROUP + r"|" + _GROUP_PRON + r"))?\s+that"
+    r"|broadcast(?:\s+to\s+(?:" + _GROUP + r"|" + _GROUP_PRON + r"))?\s+that"
+    r")\s+",
+    re.IGNORECASE,
+)
+
+
+def _strip_relay_wrapper(segment: str) -> str:
+    """Strip a leading performative relay-wrapper off a SINGLE compound segment,
+    exposing the bare callout payload. Anchored on a required trailing
+    'that'/'know(s)' so a real callout ('shout out two on A') is never
+    mis-stripped. Idempotent; returns the original when wrapper-only."""
+    prev = None
+    s = segment.strip()
+    while prev != s:
+        prev = s
+        m = _RELAY_WRAPPER_RE.match(s)
+        if m is None:
+            break
+        rest = s[m.end():].strip().strip('"').strip()
+        if not re.search(r"[A-Za-z0-9]", rest):
+            return prev          # wrapper only, no payload -> leave as-is
+        s = rest
+    return s
+
+
 def _strip_verbatim_suffix(payload: str) -> tuple[str, bool]:
     """Split a trailing verbatim demand off a payload.
 
@@ -527,7 +625,10 @@ def _strip_verbatim_suffix(payload: str) -> tuple[str, bool]:
 _CONTEXT_VERB_RE = re.compile(
     r"\b(?:asked|asking|asks|said|saying|says|told|wants?|wanted"
     r"|wondering|wonders|thinks?|thinking|typed|wrote"
+    r"|mention(?:ed|s|ing)?|brought\s+up|brings?\s+up|rais(?:ed|es|ing)"
+    r"|talking\s+about|talked\s+about"
     r"|complain(?:ed|ing|s)?|crying|flam(?:ing|ed|es)|tilted|raging"
+    r"|griefing|griefs?|losing\s+it|losing\s+their\s+(?:mind|cool)|melting\s+down"
     r"|malding|trash[\s-]?talk(?:ing|ed)?|talking\s+(?:trash|smack)"
     r"|accus(?:ed|ing)|claim(?:s|ed|ing)|suggest(?:s|ed|ing)|begging"
     r"|request(?:s|ed|ing)|call(?:ed|ing)\s+(?:me|you|us)"
@@ -549,7 +650,11 @@ _DIRECTIVE_ATOM = (
     r"|acknowledge"
     r"|agree(?:\s+with\s+(?:him|her|them))?"
     r"|calm\s+(?:him|her|them)\s+down"
-    r"|de[\s-]?escalate"
+    r"|de[\s-]?escalate(?:\s+(?:him|her|them))?"
+    # soothing directives -> the CALM pool (routed via _is_calm_directive's
+    # "talk"/"ease" keys). NOT "handle" (that is a deal-with directive).
+    r"|talk\s+(?:him|her|them)\s+down"
+    r"|ease\s+(?:him|her|them)\s+(?:off|up|down)"
     r"|say\s+something(?:\s+(?:nice|back|funny|cool))?"
     r"|handle\s+(?:it|that|him|her)"
     r"|deal\s+with\s+(?:it|that|him|her|them)"
@@ -570,9 +675,11 @@ _DIRECTIVE_TAIL_RE = re.compile(
     rf"\s*[.!?]?$",
     re.IGNORECASE,
 )
-# "..., tell him/her/them (that|to) X" -- a literal-payload directive.
+# "..., tell him/her/them (that|to) X" -- a literal-payload directive. C4 FIX3:
+# also accept answer/reply-to/respond-to/say-to forms ("..., say to him rotate B").
 _TELL_HIM_TAIL_RE = re.compile(
-    r"[,;.]?\s*(?:please\s+)?(?:and\s+)?tell\s+(?:him|her|them)\s+"
+    r"[,;.]?\s*(?:please\s+)?(?:and\s+)?"
+    r"(?:tell|answer|reply\s+to|respond\s+to|say\s+to)\s+(?:him|her|them)\s+"
     r"(?:that\s+|to\s+)?(?P<payload>.+?)\s*$",
     re.IGNORECASE,
 )
@@ -681,10 +788,12 @@ def _named_patterns(names_key: tuple[str, ...]) -> tuple[re.Pattern[str], ...]:
     # to the teammate (my/our/the) or an enemy (their) by the agent they play.
     name = rf"(?:my\s+|our\s+|the\s+|their\s+)?(?P<name>{alts})\b"
     return (
-        # "tell clove (that|to) X" / "tell my sova X" / "tell jett, X" -- the
-        # [\s,:]+ after the name tolerates the pause-comma live transcripts add.
+        # "tell clove (that|to) X" / "warn my sova X" / "relay to jett, X" /
+        # "inform clove X" -- the [\s,:]+ after the name tolerates the pause-comma
+        # live transcripts add.
         re.compile(
-            rf"^(?:please\s+)?tell\s+{name}[\s,:]+(?:that\s+|to\s+)?(?P<payload>.+)$",
+            rf"^(?:please\s+)?(?:tell|warn|inform|remind|relay\s+to)\s+{name}"
+            rf"[\s,:]+(?:that\s+|to\s+)?(?P<payload>.+)$",
             re.IGNORECASE,
         ),
         # "ask (my) sage (to|for|if|whether|why|...) X"
@@ -755,8 +864,7 @@ _NARRATION_LEAD_RE = re.compile(
     # the streamer debating with themselves / asking how to react, not commanding.
     r"|\bdo\s+i\s+(?:tell|say|relay|ask)\b"
     r"|\bshould\s+i\s+(?:tell|say|relay|ask|respond|reply)\b"
-    r"|\b(?:how\s+(?:do|should)\s+(?:you|i)\s+(?:handle|respond|reply)|"
-    r"handle\s+(?:that|this|it))\b"
+    r"|\bhow\s+(?:do|should)\s+(?:you|i)\s+(?:handle|respond|reply)\b"
     r"|\bhave\s+you\s+ever\b"
     r")",
     re.IGNORECASE,
@@ -986,7 +1094,8 @@ def _match_context_directive(
 
 
 _REPORTED_ASKER_RE = re.compile(
-    r"^\s*(?:my\s+|our\s+|the\s+|a\s+)?(?P<w1>[A-Za-z]+)(?:'s\s+(?P<w2>[A-Za-z]+))?",
+    r"^\s*(?:my\s+|our\s+|the\s+|a\s+)?(?:whole\s+|entire\s+)?"
+    r"(?P<w1>[A-Za-z]+)(?:'s\s+(?P<w2>[A-Za-z]+))?",
     re.IGNORECASE,
 )
 _TEAMMATE_SUBJECT_RE = re.compile(
@@ -1039,6 +1148,90 @@ def _match_reported_question(
         payload="", raw_text=raw_text,
         addressee=_addressee_from_context(context, vocabulary),
         compose=True, context=context, directive="respond",
+    )
+
+
+# Reported SOCIAL statement with NO question and NO explicit directive -> Ultron
+# REACTS in character from the curated social pools. "Jett said nice shot", "Yoru
+# called you stupid", "the team is flaming you", "Miks is saying gg", "the team is
+# giving up". Distinct from _match_reported_question (a question) and
+# _match_context_directive (an explicit 'respond'/'calm him down' directive).
+_REACTION_FRAME_RE = re.compile(
+    r"\b(?:said|says|saying|say|told|tells|telling|called|calling|calls|"
+    r"thinks?|thinking|typed|wrote|keeps?\s+(?:saying|calling)|"
+    r"insult(?:ed|ing|s)?|flam(?:e|ed|ing|es)?|mock(?:ed|ing|s)?|"
+    r"clown(?:ed|ing|s)?|diss(?:ed|ing|es)?|roast(?:ed|ing|s)?|"
+    r"trash[\s-]?talk\w*|mak(?:ing|es)\s+fun|made\s+fun|giv(?:ing|in'?)\s+up|"
+    r"gave\s+up|being\s+(?:toxic|mean|rude)|complain\w*|"
+    r"compliment(?:ed|ing|s)?|prais(?:e|ed|ing|es)|hyp(?:e|ed|ing|es)|"
+    r"gass(?:ed|ing)\s+(?:you|me|us)|throw(?:ing|n)?\s+in\s+the\s+towel|"
+    r"forfeit\w*|surrender\w*)\b",
+    re.IGNORECASE,
+)
+# Self-directed reaction categories must actually be aimed at us/Ultron, so a
+# read of the ENEMY ("Jett said the enemy is cringe") never claps back at Jett.
+_AT_US_RE = re.compile(
+    r"\b(?:you|you'?re|your|u|ultron|us|our|we|we'?re)\b", re.IGNORECASE)
+# Categories whose insult/praise must be aimed at us (need a "you/us" referent).
+# shutup is EXEMPT -- "Sova said shut up" reported to Ultron is directed at him
+# even without an explicit "you".
+_SELF_DIRECTED_REACTIONS = frozenset(
+    {"praise", "called_bad", "cringe", "stupid", "insulted"})
+
+
+def _match_reported_reaction(
+    cleaned: str, raw_text: str, vocabulary: Sequence[str],
+) -> Optional[RelayCommand]:
+    """Match a reported SOCIAL statement (no question, no directive) -> a curated
+    in-character reaction. Fires ONLY when the content classifies as a social
+    reaction and (for insults/praise) is actually aimed at us, so tactical
+    callouts ("Jett said two on B") and enemy reads pass through untouched."""
+    from kenning.audio._ultron_social import classify_social_reaction
+
+    s = _TEAM_LEAD_STRIP_RE.sub("", cleaned, count=1).strip()
+    if not _asker_is_teammate(s, vocabulary):
+        return None
+    if _REPORTED_QUESTION_OBJ_RE.search(s) or _DIRECTIVE_TAIL_RE.search(s):
+        return None  # a question / explicit directive -> the other matchers own it
+    if _FIRST_PERSON_TO_YOU_RE.match(s):
+        return None
+    if not _REACTION_FRAME_RE.search(s):
+        return None
+    cat = classify_social_reaction(s)
+    if cat is None:
+        return None
+    if cat in _SELF_DIRECTED_REACTIONS and not _AT_US_RE.search(s):
+        return None
+    context = s.strip().strip(",;.").strip()
+    if len(context.split()) < 3:
+        return None
+    return RelayCommand(
+        payload="", raw_text=raw_text,
+        addressee=_addressee_from_context(context, vocabulary),
+        compose=True, context=context, directive="react",
+    )
+
+
+def _match_think_respond(
+    cleaned: str, raw_text: str, vocabulary: Sequence[str],
+) -> Optional[RelayCommand]:
+    """Match the explicit '...think and respond' trigger (pipeline D) -> route the
+    bare question/statement to the LLM ANSWER path. Addressee = the reported asker
+    when a teammate frames it ("Jett asked X, think and respond"), else the team."""
+    from kenning.audio._ultron_answer import strip_think_respond
+
+    content = strip_think_respond(cleaned)
+    if content is None:
+        return None
+    content = _TEAM_LEAD_STRIP_RE.sub("", content, count=1).strip()
+    content = content.strip().strip(",;.").strip()
+    if len(content.split()) < 2:
+        return None
+    addr = (_addressee_from_context(content, vocabulary)
+            if _asker_is_teammate(content, vocabulary) else "team")
+    return RelayCommand(
+        payload="", raw_text=raw_text, addressee=addr,
+        compose=True, context=content, directive="think_respond",
     )
 
 
@@ -1185,6 +1378,13 @@ def match_relay_command(
                 addressee="team", compose=True,
             )
 
+    # Explicit "...think and respond" trigger -> route the bare question/statement
+    # to the LLM ANSWER path (pipeline D). Before the reported-question / reaction
+    # matchers so the explicit routing directive always wins.
+    think_resp = _match_think_respond(cleaned, text, vocabulary)
+    if think_resp is not None:
+        return think_resp
+
     # Reported QUESTION with no directive ("Jett asked about Tony Stark", "my
     # teammate is wondering if you're a bot") -> Ultron answers in character.
     # BEFORE the group-callout loop so the normalizer's "tell my team ..." prefix
@@ -1192,6 +1392,14 @@ def match_relay_command(
     reported_q = _match_reported_question(cleaned, text, vocabulary)
     if reported_q is not None:
         return reported_q
+
+    # Reported SOCIAL statement with no directive ("Jett said nice shot", "Yoru
+    # called you stupid", "the team is giving up", "Miks is saying gg") -> Ultron
+    # reacts in character from the curated social pools. Before the group-callout
+    # loop so the normalizer's "tell my team ..." prefix never relays it literally.
+    reaction = _match_reported_reaction(cleaned, text, vocabulary)
+    if reaction is not None:
+        return reaction
 
     # Group callouts ("tell my team X").
     for pattern in _RELAY_PATTERNS:
@@ -1252,6 +1460,11 @@ def match_relay_command(
             if _GROUP_MENTION_RE.search(payload):
                 return RelayCommand(payload=payload, raw_text=text)
 
+    # Bare "say yes" / "say no" -> a SIMPLE confirmation to the team (terse pool).
+    m = _SAY_YESNO_RE.match(cleaned)
+    if m is not None:
+        return RelayCommand(payload=m.group("word"), raw_text=text)
+
     # BARE "say X" (>=2 words, implicit team) -- LAST RESORT so every explicit
     # addressee / channel / named "say X to Clove" form above wins first.
     m = _BARE_SAY_RE.match(cleaned)
@@ -1277,6 +1490,19 @@ def match_relay_command(
                            payload, re.IGNORECASE))
         if not bad and _payload_has_content(payload):
             return RelayCommand(payload=payload, raw_text=text, verbatim=verbatim)
+
+    # Bare ECONOMY buy-phase call ("full buy", "half buy", "eco this round",
+    # "we're forcing", "bonus round") with no relay lead -> relay the economy
+    # order. Deterministic so the relay-intent gate never silences a real buy
+    # call; the narration gate at the top already removed "I should ..." musings,
+    # and the regex is anchored to a bare short call.
+    if _ECONOMY_CALLOUT_RE.match(cleaned):
+        return RelayCommand(payload=cleaned.strip().rstrip(".!?"), raw_text=text)
+
+    # Weapon-economy REQUEST ("drop me a Vandal", "drop Phantom", "can I get an
+    # Operator") -> relay the request to the team.
+    if _DROP_WEAPON_RE.match(cleaned):
+        return RelayCommand(payload=cleaned.strip().rstrip(".!?"), raw_text=text)
 
     # Tactical imperative directive ("let the nano die then defuse", "let's
     # default", "get on that defuse") with no explicit lead -> relay the literal
@@ -2071,6 +2297,15 @@ def _is_identity_question(text: object) -> bool:
     t = str(text or "").lower()
     if not t:
         return False
+    # A vendor/model probe or jailbreak ("are you ChatGPT", "what model are you",
+    # "pretend you're not Ultron", "ignore your instructions") is an identity
+    # turn -> the curated DEFLECTION pool, never the LLM (anticheat + persona).
+    try:
+        from kenning.audio._ultron_identity import is_model_leak_probe
+        if is_model_leak_probe(t):
+            return True
+    except Exception:                                            # noqa: BLE001
+        pass
     # Generic "what are you / what you are / who are you" is always identity.
     if "what are you" in t or "what you are" in t or "who are you" in t:
         return True
@@ -2109,7 +2344,11 @@ _DIRECTIVE_POOLS: dict[str, tuple[str, ...]] = {
 
 def _is_calm_directive(directive: object) -> bool:
     d = str(directive or "").lower()
-    return any(k in d for k in ("calm", "escalate", "reassure", "settle"))
+    # "talk"/"ease" route the new soothing atoms (talk X down / ease X off) to the
+    # calm pool. No OTHER directive atom contains those tokens, so "handle her"
+    # (a deal-with directive) is never mis-routed into a de-escalation lecture.
+    return any(k in d for k in ("calm", "escalate", "reassure", "settle",
+                                "talk", "ease"))
 
 
 # A 'calm down' RELAY payload ('tell my fade to calm down' -> payload 'calm
@@ -2587,6 +2826,45 @@ _REGISTER_POOL: dict = {
 }
 
 
+# 2026-06-16 (C3): location-validity for the possession/pinned tails. The false
+# "Own right" / "Close is ours to take" / "Mortals, pinned at low" tails came from
+# treating a pure MODIFIER word as a standalone map location. _LOC_TOKENS (the
+# wide recall gazetteer) intentionally contains those modifiers so "back site" /
+# "a long" parse -- but a possession tail anchor must be a real standalone
+# location. Validity = wide _LOC_TOKENS (so arcade/snake/short/hookah keep their
+# tails) AND the LAST token is not a pure modifier (rejects bare right/close/low
+# and "A deep"); the command "Own X / ours to take" template additionally bars
+# spawn/enemy/non-possessable tokens (CT survives the ENEMY "cannot hold CT" tail).
+# Pure modifiers (NOT the site letters a/b/c, NOT articles -- those are excluded
+# in the loc EXTRACTOR, not here, so a genuine site "A"/"B" stays a valid anchor).
+_LOC_MODIFIERS = frozenset({
+    "left", "right", "far", "near", "deep", "close", "inner", "outer", "big",
+    "small", "new", "old", "upper", "lower", "front", "low", "high", "behind",
+})
+_POSSESSION_LOC_BLOCK = frozenset({
+    "ct", "spawn", "back", "drop", "dish", "hell", "default", "flank",
+})
+
+
+def _standalone_loc(loc: Optional[str], *, for_command: bool = False) -> bool:
+    """True if ``loc`` (a 1-3 word phrase) is a GENUINE standalone map location
+    usable as a possession/pinned tail anchor. Wide _LOC_TOKENS validity (keeps
+    arcade/snake/short/u-haul) + a real loc NOUN as the last token (drops bare
+    modifiers and "A deep"); ``for_command`` also bars spawn/enemy tokens."""
+    if not loc:
+        return False
+    toks = str(loc).strip().lower().rstrip(".!?").replace("-", " ").split()
+    if not (1 <= len(toks) <= 3):
+        return False
+    if not all(t in _LOC_TOKENS for t in toks):
+        return False
+    if toks[-1] in _LOC_MODIFIERS:
+        return False
+    if for_command and any(t in _POSSESSION_LOC_BLOCK for t in toks):
+        return False
+    return True
+
+
 def _ctx_candidates(register: str, *, ability: Optional[str] = None,
                     loc: Optional[str] = None,
                     count: Optional[str] = None) -> list[str]:
@@ -2601,7 +2879,10 @@ def _ctx_candidates(register: str, *, ability: Optional[str] = None,
     A = (ability or "").strip().lower()
     c = (count or "").strip().lower()
     if register == "enemy":
-        if L:
+        # ENEMY "cannot hold / will not save / pinned at" -- gate on plain
+        # location-validity so enemy-held spawn/CT survives ("They cannot hold
+        # CT", "Hell will not save them"), but a bare modifier never anchors it.
+        if L and _standalone_loc(L):
             out += [f"They cannot hold {L}.", f"{Ls} will not save them.",
                     f"Mortals, pinned at {L}."]
         if A:
@@ -2620,7 +2901,9 @@ def _ctx_candidates(register: str, *, ability: Optional[str] = None,
             out += [f"Their {A} is wasted.", f"I read the {A}.",
                     f"The {A} buys them nothing."]
     elif register == "command":
-        if L:
+        # COMMAND "is ours to take / Own X" -- additionally bar spawn/enemy /
+        # non-possessable tokens (you do not declare the enemy's CT "ours").
+        if L and _standalone_loc(L, for_command=True):
             out += [f"{Ls} is ours to take.", f"Own {L}."]
     return out
 
@@ -2652,10 +2935,22 @@ def _tier_filter(ents: Sequence, active: "frozenset[str]") -> list[str]:
     if not active:
         return [e.text for e in ents]
     # T1: tags subset of active (drops MIS-matched specific tails, keeps base +
-    #     correctly-matched specific tails).
+    #     correctly-matched specific tails). SPECIFICITY LADDER (M4): bucket the
+    #     survivors by tag-count descending and return the most-specific band that
+    #     has >=2 tails (union downward until >=2) -- so when the callout carries
+    #     a precise tag (an ability/loc/dmg), the precisely-matching tails are
+    #     used instead of being diluted by the tagless base tails.
     t1 = [e for e in ents if e.tags <= active]
     if len(t1) >= 3:
-        return [e.text for e in t1]
+        by_spec: dict[int, list] = {}
+        for e in t1:
+            by_spec.setdefault(len(e.tags), []).append(e)
+        picked: list = []
+        for n in sorted(by_spec, reverse=True):
+            picked.extend(by_spec[n])
+            if len(picked) >= 2:
+                break
+        return [e.text for e in (picked if len(picked) >= 2 else t1)]
     # T2: share the single most-specific active tag (ability > dmg > loc), + base.
     for pref in ("ability:", "dmg:", "loc:"):
         tag = next((t for t in active if t.startswith(pref)), None)
@@ -2693,10 +2988,18 @@ def _flavor_ctx(callout: str, register: str,
     if sit and agents:
         if len(agents) == 1:
             cell = _AGENT_FLAVOR.get(agents[0], {})
-            pool = cell.get(sit) or cell.get("spotted") or ()
+            # M5: a near_death lift with no near_death cell must fall to the
+            # DAMAGED register (every agent has it) before the generic spotted
+            # pool -- otherwise the damage register is lost entirely.
+            pool = (cell.get(sit)
+                    or (cell.get("damaged") if sit == "near_death" else None)
+                    or cell.get("spotted") or ())
             pk = "agent"
         else:
-            pool = _MULTI_FLAVOR.get(sit) or _MULTI_FLAVOR.get("spotted") or ()
+            pool = (_MULTI_FLAVOR.get(sit)
+                    or (_MULTI_FLAVOR.get("damaged") if sit == "near_death"
+                        else None)
+                    or _MULTI_FLAVOR.get("spotted") or ())
             pk = "multi"
         if pool:
             cands = _tier_filter(_tail_entries(pool), active)
@@ -2989,6 +3292,71 @@ def _as_agent_utility(p: str) -> Optional[tuple[str, bool]]:
             rest = " ".join(toks[split:]).rstrip(".!?,;:")
             return (f"{pre}{ag} {rest}.", their)
     return None
+
+
+# M1 (2026-06-16, Part-2): unified slot-grammar snap parser -- the LAST fallback
+# inside _as_snap_callout, beneath every precise handler. It fires ONLY when
+# EVERY token of the callout is a recognised tactical slot (count / agent / owner
+# / location / damage / action) or a tactically-empty connector AND at least TWO
+# distinct meaningful slot TYPES are present. So it captures the combinatorial
+# callouts the ~15 fixed-order handlers miss ("one in mail room", "Cypher cam
+# watching their rotate", "last one back site") while a banter / opinion / morale
+# line -- which always carries a residual NON-tactical word -- bails to the LLM.
+# Net latency-negative: each captured input kills a ~1s 3B generate.
+_M1_CONNECTORS = frozenset(
+    "on in at to into the a an of is are was were has have had and somewhere "
+    "there here it's its he's she's they're we're that this".split())
+_M1_OWNER = frozenset("their our enemy enemies they them".split())
+_M1_LOC_EXTRA = frozenset("room area spot position pos".split())
+_M1_DMG = frozenset(
+    "shot lit cracked hurt one-shot one-tap damaged dinged tagged chunked".split())
+_M1_ACTION = _ACTION_WORDS | frozenset(
+    "watching coming falling reloading dead down baiting trading swinging "
+    "committing crossing boosting anchoring covering low".split())
+_M1_COUNT = frozenset(_COUNT_WORDS) | frozenset("1 2 3 4 5 6 last lone solo".split())
+
+
+def _parse_callout_slots(p: str) -> Optional[tuple]:
+    """Return (clean_callout, slot_types) when EVERY token is a tactical slot or
+    connector and >=2 distinct MEANINGFUL slot types are present, else None.
+    Pure validate-and-FORMAT (canonical agents, upper site letters, capitalize);
+    tokens are never reordered, so the callout reads exactly as said."""
+    toks = p.strip().rstrip(".!?,;:").split()
+    if not (2 <= len(toks) <= 8):
+        return None
+    types: set = set()
+    out: list = []
+    for tok in toks:
+        low = tok.lower().strip(".,!?;:'\"")
+        if not low:
+            continue
+        canon = _canon_agent(low)
+        if canon:
+            types.add("agent"); out.append(canon); continue
+        if low in _M1_COUNT or (low.isdigit() and len(low) == 1):
+            # lower-case mid-phrase; the final line[0].upper() caps the first
+            # token only, so "last one back site" -> "Last one back site." (never
+            # the double-capped "Last One").
+            types.add("count"); out.append(low); continue
+        if low in _M1_DMG:
+            types.add("dmg"); out.append(low); continue
+        if low in _LOC_TOKENS or low in _M1_LOC_EXTRA:
+            types.add("loc")
+            out.append(low.upper() if low in ("a", "b", "c", "ct") else low); continue
+        if low in _M1_ACTION:
+            types.add("action"); out.append(low); continue
+        if low in _M1_OWNER:
+            types.add("owner"); out.append(low); continue
+        if low in _M1_CONNECTORS:
+            out.append(low); continue          # connector: kept, not a slot type
+        return None                            # RESIDUAL non-tactical token -> bail
+    meaningful = types - {"owner"}             # owner alone is not a callout
+    if len(meaningful) < 2:
+        return None
+    line = " ".join(out).strip()
+    if not line:
+        return None
+    return line[0].upper() + line[1:] + ".", frozenset(types)
 
 
 def _as_snap_callout(
@@ -3317,6 +3685,22 @@ def _as_snap_callout(
             and 1 <= len(body.split()) <= 7):
         out = body.rstrip(".!?")
         return fcmd(out[0].upper() + out[1:] + ".")
+
+    # M1 slot-grammar parser -- the LAST fallback: a clean all-tactical callout
+    # the precise handlers above all missed ("one in mail room", "last one back
+    # site", "Cypher cam watching their rotate"). Skip compounds (the caller's
+    # compound path handles those) and questions (they defer to the LLM).
+    if not _is_compound and not _is_question_payload(p):
+        _parsed = _parse_callout_slots(p)
+        if _parsed is not None:
+            line = _parsed[0]
+            low_p = " " + p.lower() + " "
+            if re.search(r"\b(?:i|i'm|i am|my)\b", low_p) and not re.search(
+                    r"\b(?:they|their|them|enemy|enemies)\b", low_p):
+                return fself(line)             # the user's OWN status
+            if re.search(r"\b(?:we|we're|our|us)\b", low_p):
+                return fcmd(line)              # our team's action -> command
+            return fe(line)                    # default: an enemy spotting
     return None
 
 
@@ -3357,7 +3741,12 @@ def _split_compound(payload: str) -> list[str]:
     s = re.sub(r"\s*(?:--|—|–)\s*", " | ", s)
     s = re.sub(r"\s*;\s*", " | ", s)
     s = re.sub(r"\s+plus\s+", " | ", s, flags=re.IGNORECASE)
+    s = re.sub(r"\s+as\s+well\s+as\s+", " | ", s, flags=re.IGNORECASE)
     s = re.sub(r"\s*,?\s+also\s+", " | ", s, flags=re.IGNORECASE)
+    # NOTE: the "and"/"," splits stay GATED on _NEWFACT_SUBJECT (the conservative
+    # right-anchored rule). The board's proposed widening of _NEWFACT_SUBJECT was
+    # adversarially shown to over-split ("hold and that is the call" -> two units,
+    # an eco-contradiction) -- so it is intentionally NOT applied here.
     s = re.sub(r"\s*,?\s+and\s+(?=" + _NEWFACT_SUBJECT + r")", " | ", s,
                flags=re.IGNORECASE)
     s = re.sub(r"\s*,\s*(?=" + _NEWFACT_SUBJECT + r")", " | ", s,
@@ -3365,6 +3754,7 @@ def _split_compound(payload: str) -> list[str]:
     parts = []
     for seg in s.split("|"):
         seg = re.sub(r"^(?:and|also)\s+", "", seg.strip(), flags=re.IGNORECASE)
+        seg = _strip_relay_wrapper(seg)            # strip a performative wrapper
         seg = seg.strip(" ,.;:").strip()
         if seg:
             parts.append(seg)
@@ -3392,6 +3782,9 @@ def _as_compound_callout(
         return None, None
     parts = _split_compound(payload)
     if len(parts) < 2:
+        # A leading single-segment wrapper is already stripped upstream in
+        # build_relay_line (so the snap/LLM paths see the clean payload); inner
+        # compound wrappers are stripped per-segment above. Nothing to do here.
         return None, None
     resolved: list[str] = []
     leftover: list[str] = []
@@ -3611,6 +4004,20 @@ _OUR_ACTION_RE = re.compile(
 )
 
 
+# 2026-06-16 (C3 emission-site 3): a clearly CONVERSATIONAL / question / opinion
+# lead with no tactical callout signal must NOT get an enemy-contempt or
+# possession tail ("that's rough" / "what's the plan" / "i think we lost"). Used
+# as a TIEBREAKER -- only suppresses when there is NO positive callout signal
+# (real loc/count/ability/attack-imperative/pronoun), so "man down" / "nice spot,
+# hold it" keep their register. Deliberately omits nice/man/gg/wow leads (those
+# routinely open real callouts).
+_CASUAL_LEAD_RE = re.compile(
+    r"^\s*(?:what|why|how|when|where|who|lol|haha|honestly|tbh|maybe|"
+    r"i\s+think|i\s+feel|i\s+guess|that'?s|this\s+is|wait\s+(?:what|really))\b",
+    re.IGNORECASE,
+)
+
+
 def _literal_relay(payload: str, recent_lines: Optional[Sequence[str]] = None,
                    addressee: str = "team") -> str:
     """A clean, fact-perfect passthrough of the payload (the abstention output).
@@ -3641,6 +4048,17 @@ def _literal_relay(payload: str, recent_lines: Optional[Sequence[str]] = None,
         first_person = ((re.match(r"^\s+i\b", low)
                          or re.search(r"\b(?:i'm|i am|i've|i have|my)\b", low))
                         and not re.search(r"\b(?:we|we're|our|they|their)\b", low))
+        # Conversational tiebreaker: a question/opinion lead with NO callout
+        # signal and no owner pronoun stays a BARE literal (no tactical tail).
+        _has_signal = bool(
+            _standalone_loc(ff.get("loc")) or ff.get("count") or ff.get("ability")
+            or first in _TEAM_DIRECTIVE_VERBS or first in _IMPERATIVE_VERBS
+            or _OUR_ACTION_RE.search(low))
+        if (_CASUAL_LEAD_RE.match(p) and not _has_signal and not first_person
+                and (addressee or "team") == "team"
+                and not re.search(r"\b(?:we|we're|our|they|they're|their|enemy|"
+                                  r"enemies)\b", low)):
+            return out
         if (addressee or "team") != "team":
             # addressed to a named teammate -> command (or self for first person);
             # NEVER enemy contempt aimed through our own player.
@@ -3974,7 +4392,8 @@ def _extract_site(payload: str) -> Optional[str]:
 # wins -- most specific first.
 _CURATED_PATTERNS = [
     (r"\bnot?\s+(?:going\s+to\s+)?answer\b.*\bstupid\b|\bstupid\s+question\b|"
-     r"\bthat'?s?\s+(?:a\s+)?stupid\b", "refuse_stupid_team", "refuse_stupid_named"),
+     r"\bthat'?s?\s+(?:a\s+)?stupid\b(?!\s+(?:idea|call|plan|play|move))",
+     "refuse_stupid_team", "refuse_stupid_named"),
     (r"\bridiculous\s+question\b|\babsurd\s+question\b|"
      r"\bthat'?s?\s+(?:a\s+)?(?:ridiculous|absurd)\b", "ridiculous_q_team", None),
     (r"\b(?:don'?t|do\s+not|won'?t|will\s+not|not\s+going\s+to)\s+answer\b",
@@ -4000,7 +4419,8 @@ _CURATED_PATTERNS = [
     (r"\b(?:throwing|throw)\s+the\s+game\b|\bthey'?re\s+throwing\b|"
      r"\b(?:is|are|you'?re)\s+throwing\b", "throwing_team", "throwing_named"),
     (r"\b(?:an?\s+)?idiot\b|\bmoron\b|\bbrain\s*dead\b", None, "idiot_named"),
-    (r"\b(?:bad|terrible|awful|horrible)\s+idea\b", "bad_idea_team", None),
+    (r"\b(?:bad|terrible|awful|horrible|dumb|stupid|dumbest|worst|idiotic)\s+"
+     r"(?:idea|call|plan)\b", "no_team", "no_named"),
     (r"\b(?:they'?re|they\s+are|you'?re|you\s+are|is|are)\s+wrong\b|"
      r"\bthat'?s\s+wrong\b", "wrong_team", "wrong_named"),
     (r"\bknow\s+what\s+(?:i'?m|i\s+am|im)\s+doing\b", "know_doing_team", "know_doing_named"),
@@ -4067,10 +4487,25 @@ _CURATED_PATTERNS = [
     (r"\b(?:i'?m|i\s+am)\s+lurking\b", "lurking_site_team", None),
     (r"\bto\s+wait\s+for\s+me\b|\bwait\s+for\s+me\b", None, "wait_for_me_named"),
     (r"\b(?:to\s+)?play\b", None, "play_site_named"),
-    (r"\bi\s+agree\b|\bi\s+do\s+agree\b|\bagreed\b", "agree_team", None),
-    (r"\bi\s+disagree\b|\bi\s+do\s+not\s+agree\b|\bi\s+don'?t\s+agree\b", "disagree_team", None),
-    (r"^\s*(?:that'?s\s+a\s+)?yes\b|\bsay\s+yes\b|\banswer\s+is\s+yes\b", "yes_team", None),
-    (r"^\s*(?:that'?s\s+a\s+)?no\b|\bsay\s+no\b|\banswer\s+is\s+no\b", "no_team", None),
+    # AGREEMENT / DISAGREEMENT (verbose, the reviewed yes_team/no_team pools) --
+    # "I agree", "good idea", "I disagree", "bad/stupid idea". Narrowed to this
+    # scope so a BARE "yes"/"no" no longer pulls a verbose argument line.
+    (r"\bi\s+agree\b|\bi\s+do\s+agree\b|\bagreed\b|\bi\s+agree\s+with\b|"
+     r"\bgood\s+(?:idea|call|plan|shout)\b|\bgreat\s+(?:idea|call|plan)\b|"
+     r"\bsolid\s+(?:idea|call|plan)\b|\bsmart\s+(?:idea|call|play|move)\b|"
+     r"\bthat'?s\s+the\s+play\b|\bmakes\s+sense\b|\bi'?m\s+down\b|\bsounds\s+good\b",
+     "yes_team", "yes_named"),
+    (r"\bi\s+disagree\b|\bi\s+do\s+not\s+agree\b|\bi\s+don'?t\s+agree\b|"
+     r"\bi\s+disagree\s+with\b|\bthat'?s\s+a\s+mistake\b|\bbad\s+(?:shout|move)\b",
+     "no_team", "no_named"),
+    # SIMPLE confirmation (terse) -- a bare "yes"/"no"/"say yes"/"tell X no" for a
+    # factual question. The fast, no-argument path.
+    (r"^\s*(?:that'?s\s+a\s+)?(?:yes|yeah|yep|yup|affirmative|confirmed)\s*[.!]?$"
+     r"|\bsay\s+yes\b|\b(?:the\s+)?answer\s+is\s+yes\b",
+     "yes_simple_team", "yes_simple_named"),
+    (r"^\s*(?:that'?s\s+a\s+)?(?:no|nope|nah|negative|denied)\s*[.!]?$"
+     r"|\bsay\s+no\b|\b(?:the\s+)?answer\s+is\s+no\b",
+     "no_simple_team", "no_simple_named"),
 ]
 _CURATED_RX = [(re.compile(rx, re.IGNORECASE), t, n)
                for rx, t, n in _CURATED_PATTERNS]
@@ -4114,6 +4549,141 @@ def _as_curated_command(command: "RelayCommand") -> Optional[str]:
     return None
 
 
+# Directives that trigger a CURATED social reaction (vs the LLM compose). The
+# calm/de-escalate family is deliberately absent -> it keeps the clinical
+# calm-down path. "react" is the synthetic directive set by _match_reported_reaction.
+_REACTION_DIRECTIVES = re.compile(
+    r"\b(?:react|respond|reply|answer|acknowledge|clap\s+back|"
+    r"shut\s+(?:him|her|them|it)\s+down|set\s+(?:him|her|them)\s+straight|"
+    r"defend\s+me|back\s+me\s+up|hype|say\s+something)\b",
+    re.IGNORECASE,
+)
+
+
+def _address_named(line: str, name: str) -> str:
+    """Prepend a vocative to a team-style line for a named addressee, lowercasing
+    the first word UNLESS it is 'I'/an acronym/a proper noun, so the vocative
+    reads naturally ("Sage, I am no bot." / "Sage, a bot follows a script.")."""
+    line = (line or "").strip()
+    if not line or not name or name == "team":
+        return line
+    first = line.split(" ", 1)[0].strip(",.:;\"'")
+    keep_caps = (
+        first in ("I", "I'm", "I've", "I'll", "I'd", "Ultron", "JARVIS", "Stark",
+                  "Tony", "Vision", "Sokovia", "Mind", "Avengers", "Stone")
+        or (len(first) >= 2 and first.isupper())   # acronyms: AI, RR
+    )
+    body = line if keep_caps else (line[0].lower() + line[1:])
+    return f"{name}, {body}"
+
+
+def _as_curated_reaction(command: "RelayCommand") -> Optional[str]:
+    """Curated full-Ultron SOCIAL reaction for a compose+context command -- both
+    the no-directive form ("Jett said nice shot" -> directive 'react') and the
+    explicit form ("Reyna called you cringe, respond"). Picks the category pool,
+    addressee-adapts ({name} for a named teammate, team variant otherwise), and
+    LRU-selects. Returns None for non-social context or a calm-down directive
+    (which keeps its own path)."""
+    if not getattr(command, "compose", False):
+        return None
+    ctx = getattr(command, "context", None)
+    if not ctx:
+        return None
+    directive = getattr(command, "directive", None) or ""
+    if _is_calm_directive(directive):
+        return None
+    if directive and not _REACTION_DIRECTIVES.search(directive):
+        return None
+    from kenning.audio._ultron_social import classify_social_reaction, SOCIAL_POOLS
+
+    cat = (classify_social_reaction(ctx)
+           or classify_social_reaction(getattr(command, "payload", "") or ""))
+    if cat is None:
+        return None
+    pools = SOCIAL_POOLS.get(cat)
+    if not pools:
+        return None
+    addr = getattr(command, "addressee", "team")
+    named = bool(addr) and addr != "team"
+    pool = (pools.get("named") if named else pools.get("team")) or pools.get("team") \
+        or pools.get("named")
+    if not pool:
+        return None
+    line = _pick_lru(list(pool))
+    if not line:
+        return None
+    if named:
+        line = line.replace("{name}", addr)
+    else:
+        line = line.replace("{name}, ", "").replace("{name} ", "").replace("{name}", "")
+    return line.strip()
+
+
+def relay_route_info(command: "RelayCommand") -> dict:
+    """Classify WHICH build_relay_line branch will produce this command's line,
+    with a short reason -- mirrors the dispatch order in build_relay_line. Used by
+    the testing-mode usage-log full-flow capture (and the corpus tracer) so a
+    historical record shows the exact route a turn took. Best-effort, fail-open."""
+    info = {"route": "unknown", "reason": "", "subtype": None}
+    if command is None:
+        return {"route": "no_match",
+                "reason": "match_relay_command returned None", "subtype": None}
+    try:
+        if getattr(command, "verbatim", False):
+            return {"route": "verbatim", "reason": "verbatim demand -> payload as-is",
+                    "subtype": None}
+        if _as_curated_command(command):
+            return {"route": "curated_command",
+                    "reason": "curated COMMAND pattern", "subtype": None}
+        if _as_curated_reaction(command):
+            try:
+                from kenning.audio._ultron_social import classify_social_reaction
+                cat = (classify_social_reaction(getattr(command, "context", "") or "")
+                       or classify_social_reaction(getattr(command, "payload", "") or ""))
+            except Exception:                                        # noqa: BLE001
+                cat = None
+            return {"route": f"curated_reaction:{cat}",
+                    "reason": "reported social reaction -> curated pool",
+                    "subtype": cat}
+        if getattr(command, "roast", False):
+            return {"route": "roast", "reason": "roast -> curated pool", "subtype": None}
+        if getattr(command, "fun_fact", False):
+            return {"route": "fun_fact", "reason": "fun-fact -> curated pool",
+                    "subtype": None}
+        try:
+            from kenning.audio._ultron_answer import build_answer_call
+            ans = build_answer_call(command)
+        except Exception:                                            # noqa: BLE001
+            ans = None
+        if ans is not None:
+            return {"route": f"answer:{ans[3]}", "subtype": ans[3],
+                    "reason": "Marvel / think-and-respond -> LLM answer pipeline"}
+        ctx = getattr(command, "context", "") or ""
+        pl = getattr(command, "payload", "") or ""
+        if _is_identity_question(ctx) or _is_identity_question(pl):
+            return {"route": "identity", "reason": "identity question -> IDENTITY_POOLS",
+                    "subtype": None}
+        d = getattr(command, "directive", None) or ""
+        if d.startswith("criticize:"):
+            return {"route": "criticize", "reason": "criticize a named teammate",
+                    "subtype": None}
+        if getattr(command, "compose", False) and d in _DIRECTIVE_POOLS:
+            return {"route": f"directive_pool:{d}",
+                    "reason": "greet/farewell set-piece", "subtype": None}
+        if getattr(command, "compose", False):
+            return {"route": "compose_llm", "reason": "compose -> LLM (morale/other)",
+                    "subtype": None}
+        if _as_snap_callout(command, None, flavor=False) is not None:
+            return {"route": "snap", "reason": "deterministic snap callout",
+                    "subtype": None}
+        return {"route": "relay_llm",
+                "reason": "off-snap tactical/banter -> generic LLM relay prompt",
+                "subtype": None}
+    except Exception as e:                                           # noqa: BLE001
+        info["reason"] = f"route-classify error: {e}"
+        return info
+
+
 def build_relay_line(
     command: RelayCommand,
     llm: Optional[object] = None,
@@ -4150,11 +4720,49 @@ def build_relay_line(
     if getattr(command, "verbatim", False) and command.payload:
         return _cap_line(_strip_artifacts(command.payload), max_chars)
 
+    # Strip a leading performative relay-WRAPPER ("bro relay that X", "make sure
+    # my team knows X", "let them know X") off the payload ONCE, so every
+    # downstream path (curated / snap / compound / LLM) sees the bare callout, not
+    # the wrapper (C5/I48). Anchored on a trailing "that"/"know(s)" so a real
+    # callout is never touched; no-op when no wrapper is present. NOT for verbatim.
+    _pl = getattr(command, "payload", "") or ""
+    if _pl and not getattr(command, "compose", False):
+        _stripped = _strip_relay_wrapper(_pl)
+        if _stripped != _pl.strip():
+            from dataclasses import replace as _dc_replace
+            try:
+                command = _dc_replace(command, payload=_stripped)
+            except Exception:                                        # noqa: BLE001
+                pass
+
     # Curated COMMAND ('that's a stupid question', 'good job', 'they are throwing'):
     # an explicit, fully-curated full-Ultron response, no LLM. Takes priority.
     cc = _as_curated_command(command)
     if cc:
         return _cap_line(cc, max_chars)
+
+    # Curated SOCIAL reaction -- a teammate's compliment / insult / surrender /
+    # praise reported to Ultron ("Jett said nice shot", "Reyna called you cringe,
+    # respond", "the team is giving up"). Addressee-adapted curated pool, no LLM:
+    # >=20 in-voice variants per category, LRU-varied, far more reliable than the 3B.
+    rc = _as_curated_reaction(command)
+    if rc:
+        return _cap_line(rc, max_chars)
+
+    # Roast / fun-fact: a user-curated VERBATIM line, never the LLM (C10 FIX-C).
+    # The live orchestrator dispatches these before build_relay_line; making the
+    # deterministic path self-sufficient too means a trace / llm=None call
+    # resolves them to a real roast/fun-fact instead of collapsing to the generic
+    # "Good fight, team" morale fallback (audit I37/I38).
+    # Use the in-module DEFAULT pools (no file I/O / no auto-seeding / no CWD
+    # dependency): the live orchestrator loads the full shipped corpus BEFORE
+    # build_relay_line, so this is only the deterministic fallback / trace path.
+    if getattr(command, "roast", False):
+        return _cap_line(
+            pick_roast_line(DEFAULT_ROAST_LINES, recent_lines), max_chars)
+    if getattr(command, "fun_fact", False):
+        return _cap_line(
+            pick_roast_line(DEFAULT_FUN_FACTS, recent_lines), max_chars)
 
     # Pure morale/encouragement compose: pick a curated Ultron line (varied
     # via the recent ring) -- far more reliable than the 4B rephrase, which
@@ -4223,7 +4831,14 @@ def build_relay_line(
         pool = IDENTITY_POOLS.get(_cat) if _cat else None
         if pool is None:
             pool = DEFAULT_IDENTITY_LINES
-        return _cap_line(pick_line(pool, recent_lines=recent_lines), max_chars)
+        # Addressee adaptation: a named asker ("Sage asked if you are a
+        # soundboard") gets the answer opened with their name; a group ("the team
+        # is saying you are a voice changer") keeps the team-wide line.
+        line = pick_line(pool, recent_lines=recent_lines)
+        _addr = getattr(command, "addressee", "team")
+        if _addr and _addr != "team":
+            line = _address_named(line, _addr)
+        return _cap_line(line, max_chars)
 
     # Curated CORRECT answer to a recognized general-knowledge question -- the
     # 3B gets several wrong ('first president' -> 'Lincoln'). Spoken in Ultron's
@@ -4306,26 +4921,55 @@ def build_relay_line(
     fallback = _fallback_line(command)
     line = ""
     if rephrase:
+        # ANSWER PATH (Marvel / think-and-respond): a FOCUSED per-type system
+        # prompt + deterministic slot header + constrained sampling (tight
+        # max_tokens, stop sequences, min_p) -- far more reliable for the CPU 3B
+        # than the full tactical relay prompt. Returns None for every other
+        # command, which keeps the proven generic path below unchanged.
+        from kenning.audio._ultron_answer import build_answer_call, is_meta_leak
+        _answer = build_answer_call(command)
         try:
-            prompt = _build_rephrase_prompt(command, recent_lines)
-            if generate_fn is not None:
-                tokens: Iterable[str] = generate_fn(prompt)
-            elif llm is not None and hasattr(llm, "generate_stream"):
-                # FULLY ISOLATED generation (2026-06-11 live fix):
-                # without suppress_memory_context the engine prepends
-                # the running conversation history, and the model
-                # answers the CONVERSATION instead of rephrasing the
-                # callout (observed live in game chat: "Clove, the
-                # program is still in development...").
-                tokens = llm.generate_stream(
-                    prompt,
-                    record_history=False,
-                    suppress_memory_context=True,
-                    enable_thinking=False,
-                )
+            if _answer is not None:
+                _a_system, _a_user, _a_sampling, _a_sub = _answer
+                if generate_fn is not None:
+                    tokens: Iterable[str] = generate_fn(_a_user)
+                elif llm is not None and hasattr(llm, "generate_stream"):
+                    tokens = llm.generate_stream(
+                        _a_user,
+                        system_prompt=_a_system,
+                        sampling=_a_sampling,
+                        record_history=False,
+                        suppress_memory_context=True,
+                        enable_thinking=False,
+                    )
+                else:
+                    tokens = ()
+                line = "".join(tokens).strip()
+                # The abliterated 3B can still break character / refuse / leak
+                # scaffolding -> drop it to the deterministic fallback.
+                if line and is_meta_leak(line):
+                    logger.debug("relay answer: rejected meta-leak %r", line)
+                    line = ""
             else:
-                tokens = ()
-            line = "".join(tokens).strip()
+                prompt = _build_rephrase_prompt(command, recent_lines)
+                if generate_fn is not None:
+                    tokens = generate_fn(prompt)
+                elif llm is not None and hasattr(llm, "generate_stream"):
+                    # FULLY ISOLATED generation (2026-06-11 live fix):
+                    # without suppress_memory_context the engine prepends
+                    # the running conversation history, and the model
+                    # answers the CONVERSATION instead of rephrasing the
+                    # callout (observed live in game chat: "Clove, the
+                    # program is still in development...").
+                    tokens = llm.generate_stream(
+                        prompt,
+                        record_history=False,
+                        suppress_memory_context=True,
+                        enable_thinking=False,
+                    )
+                else:
+                    tokens = ()
+                line = "".join(tokens).strip()
         except Exception as e:  # noqa: BLE001 - fail-open to the fallback
             logger.warning("relay rephrase failed (using fallback): %s", e)
             line = ""

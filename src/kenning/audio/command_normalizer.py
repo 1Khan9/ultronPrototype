@@ -37,6 +37,8 @@ import re
 
 from kenning.audio._stt_correct import _AGENTS, correct_callout_stt
 from kenning.audio._relay_intent import relay_intent_ok
+from kenning.audio._ultron_social import classify_social_reaction
+from kenning.audio._ultron_answer import THINK_RESPOND_SUFFIX_RE
 
 # ---------------------------------------------------------------------------
 # 1. Leading junk: misheard wake word + conversational filler.
@@ -52,6 +54,13 @@ _FILLER = (
     r"hey|ok|okay|um+|uh+|er+|hmm+|so|well|yeah|yep|yup|now|and|then|"
     r"please|alright|right|i\s+mean|i\s+think|i\s+hope|i\s+guess|i\s+wanna|"
     r"i\s+want\s+to|let'?s\s+see|you\s+know|basically|just|"
+    # 2026-06-16 (C6): broadened edit-term / interregnum lexicon. These are
+    # FIXED-PHRASE disfluencies, never tactical content.
+    r"y'?know|ya\s+know|kind\s+of|kinda|sort\s+of|sorta|ugh+|mmk+|mhm+|hmph|"
+    r"like\s+i\s+said|i\s+want\s+to\s+say|i\s+wanna\s+say|i\s+gotta\s+say|"
+    # "man" is a discourse marker ONLY when comma/pause-followed ("man, we lost")
+    # -- NEVER strip the callout noun in "man down" / "man advantage" (C6 R5).
+    r"man(?=\s*,)|"
     # conversational address-fillers that leak before a relay lead ("bro relay X",
     # "dude tell them Y", "yo call out Z") -- safe to strip from the front.
     r"bro|bruh|dude|homie|fam|bud|buddy|guys|yo"
@@ -61,6 +70,45 @@ _FILLER = (
 # immediately followed by a Spotify object -- otherwise the leading-junk pass
 # turned "like this song" into "this song", which then matched "now playing".
 _LIKE_FILLER = r"like(?!\s+(?:this|that|it|the|some|my)\b)"
+
+# 2026-06-16 (C6 CHANGE 2): conversational SAY-DIRECTIVE lead-ins ("can you say
+# X", "might be worth saying X", "I want you to say X", "hurry say X"). These are
+# interregnum-class scaffolding that PRECEDE a real relay payload -- stripped and
+# RE-FRAMED to "tell my team X" by _strip_scaffold (3c), never blindly dropped.
+_SAY_DIRECTIVE = (
+    r"can\s+you\s+(?:please\s+)?(?:say|tell|relay)|"
+    r"could\s+you\s+(?:please\s+)?(?:say|tell|relay)|"
+    r"(?:might\s+be|it'?d\s+be|would\s+be)\s+worth\s+(?:saying|telling)|"
+    r"(?:you\s+)?(?:probably\s+)?should\s+(?:say|tell|relay|let)|"
+    r"i\s+want\s+you\s+to\s+(?:say|tell|relay|let)|"
+    r"i\s+need\s+you\s+to\s+(?:say|tell|relay|let)|"
+    r"hurry\s+(?:up\s+(?:and\s+)?)?(?:say|tell|relay)|"
+    r"make\s+sure\s+(?:to|you)\s+(?:say|tell|relay)|"
+    r"go\s+ahead\s+and\s+(?:say|tell|relay)|"
+    r"do\s+me\s+a\s+favor\s+and\s+(?:say|tell|relay)"
+)
+_SAY_DIRECTIVE_LEAD = re.compile(rf"^\s*(?:{_SAY_DIRECTIVE})\b[\s,:.]*", re.IGNORECASE)
+
+# 2026-06-16 (C5/I48): performative relay-WRAPPER leads that do NOT begin with a
+# recognised relay verb, so they otherwise fall to no_match ("make sure my team
+# knows X", "let them know X", "give the team the heads up that X", "pass along
+# that X", "shout out that X"). Reframed to "tell my team X" by _strip_scaffold
+# (3c) so the payload routes. ANCHORED on the trailing "knows/know/that" object so
+# a real callout ("make sure my team rotates") is never rewritten.
+_WG = (r"(?:my\s+|our\s+|the\s+)?(?:whole\s+|entire\s+)?(?:team|teammates?|squad|"
+       r"boys|guys|crew|fellas|lads|homies|gang|mates|fam|everyone|everybody|"
+       r"them|'?em)")
+_WRAPPER_LEAD_RE = re.compile(
+    r"^\s*(?:bro|yo|ok(?:ay)?|hey|alright|please)?[\s,]*"
+    r"(?:"
+    rf"make\s+sure\s+{_WG}\s+knows?(?:\s+that)?"
+    rf"|let\s+{_WG}\s+know(?:\s+that)?"
+    rf"|give\s+{_WG}\s+(?:the\s+|a\s+)?heads[\s-]?up\s+that"
+    r"|shout(?:\s+out)?\s+that"
+    r"|pass(?:\s+(?:along|on|it))?\s+that"
+    r")\s+",
+    re.IGNORECASE,
+)
 # A leading token run: wake homophone(s) and/or filler, each optionally
 # followed by light punctuation. Anchored at start, case-insensitive.
 _LEADING_JUNK = re.compile(
@@ -73,6 +121,110 @@ def _strip_leading_junk(s: str) -> str:
     """Strip a leading wake-remnant / filler run. Never empties the string."""
     out = _LEADING_JUNK.sub("", s, count=1).lstrip()
     return out if out else s
+
+
+# ---------------------------------------------------------------------------
+# 2026-06-16 (C6): scaffold strip -- numbered prefixes, say-directive lead-ins,
+# a nested relay verb, and embedded fillers. The discourse scaffolding that
+# leaks into the relayed line (often reordered to the END by the 3B). Runs
+# BEFORE the disfluency resolver and the ZERO-MISTAKES gate so questions /
+# Spotify / musings are still seen intact downstream.
+# ---------------------------------------------------------------------------
+_NUMBERED_PREFIX_RE = re.compile(
+    r"^\s*(?:"
+    r"(?:number\s+)?\d+\s*[.):,-]\s+"                  # "1. " "2) " "3, "
+    r"|(?:first(?:ly)?|second(?:ly)?|third(?:ly)?)\s*[,.:-]\s+"
+    r")",
+    re.IGNORECASE,
+)
+# Spelled "one,"/"two," prefix -- a comma is REQUIRED so the count callout
+# "two on B" (no comma) is never stripped. Only applied when the remainder is
+# clearly a relay (guarded at the call site).
+_NUMBERED_WORD_PREFIX_RE = re.compile(
+    r"^\s*(?:one|two|three)\s*,\s+(?=\w)", re.IGNORECASE,
+)
+# A nested relay verb inside an already-relay-framed utterance ("tell my team
+# that -- tell them -- rotate B"): strip the INNER verb, keep ONE outer frame.
+_NESTED_RELAY_VERB_RE = re.compile(
+    r"\b(?:tell|let|say(?:\s+to)?|relay(?:\s+to)?|inform|warn|remind|ask)\s+"
+    r"(?:to\s+)?(?:my\s+|our\s+|the\s+)?"
+    r"(?:team(?:mates?)?|squad|boys|guys|mates|crew|fellas|homies|'?em|them)"
+    r"(?:\s+know)?(?:\s+(?:that|to))?\s+",
+    re.IGNORECASE,
+)
+# Embedded standalone disfluencies that wedge mid-line. RESTRICTED to tokens
+# that are NEVER tactical content (no bare so/well/like/man/right/now). Applied
+# in a loop until stable so adjacent fillers ("-- so um -- kind of --") clear.
+_EMBEDDED_FILLER_RE = re.compile(
+    r"(?:^|[\s,;.-])\s*(?:--+\s*)?\b(?:uh+|um+|er+|erm|hmm+|ugh+|mmk+|y'?know|"
+    r"ya\s+know|kind\s+of|kinda|sort\s+of|sorta|like\s+i\s+said)\b\s*(?:--+)?[\s,;]*",
+    re.IGNORECASE,
+)
+
+
+def _is_protected_scaffold_remainder(remainder: str) -> bool:
+    """R2: a say-directive reframe must NOT fire when the remainder is itself a
+    question / reported-question / reaction / think-respond / Spotify / musing --
+    re-framing those to a literal "tell my team ..." relay would mangle them
+    (e.g. "can you say Reyna asked about Iron Man")."""
+    return bool(
+        _NOT_A_CALLOUT.match(remainder)
+        or _REPORTED_QUESTION_GATE.match(remainder)
+        or _REPORTED_RESPOND_RE.search(remainder)
+        or _REPORTED_REACTION_RE.match(remainder)
+        or THINK_RESPOND_SUFFIX_RE.search(remainder)
+        or _SPOTIFY_SIGNAL.search(remainder)
+        or _NARRATION_MUSING_RE.match(remainder)
+    )
+
+
+def _strip_scaffold(s: str) -> str:
+    """Strip numbered prefixes, say-directive lead-ins, a nested relay verb, and
+    embedded fillers. Idempotent on clean text (every sub-step no-ops when its
+    pattern is absent)."""
+    consumed_lead = False
+    # (3a) numbered prefix ("1. ", "2) ", "first, ")
+    new = _NUMBERED_PREFIX_RE.sub("", s, count=1)
+    if new != s:
+        s, consumed_lead = new.lstrip(), True
+    else:
+        m = _NUMBERED_WORD_PREFIX_RE.match(s)
+        if m:
+            rest = s[m.end():]
+            if (_HAS_RELAY_LEAD.match(rest) or _TEAM_LEAD.match(rest)
+                    or _SAY_DIRECTIVE_LEAD.match(rest)):
+                s, consumed_lead = rest.lstrip(), True
+    # (3c) say-directive / relay-wrapper lead-in -> reframe to a team relay
+    # (R2-gated so a reported-question / Spotify / musing is never mangled).
+    m = _SAY_DIRECTIVE_LEAD.match(s) or _WRAPPER_LEAD_RE.match(s)
+    if m:
+        remainder = s[m.end():].strip()
+        if remainder and not _is_protected_scaffold_remainder(remainder):
+            if _HAS_RELAY_LEAD.match(remainder) or _TEAM_LEAD.match(remainder):
+                s = remainder
+            else:
+                s = "tell my team " + remainder
+            consumed_lead = True
+    # (3b) nested relay verb -- only when an OUTER relay frame already exists, so
+    # a single legitimate "tell my team X" is never stripped to bare "X".
+    had_outer = consumed_lead or bool(
+        _HAS_RELAY_LEAD.match(s) or _TEAM_LEAD.match(s))
+    if had_outer:
+        lead_m = _HAS_RELAY_LEAD.match(s) or _TEAM_LEAD.match(s)
+        start = lead_m.end() if lead_m else 0
+        head, tail = s[:start], s[start:]
+        new_tail = _NESTED_RELAY_VERB_RE.sub("", tail, count=1)
+        if new_tail != tail:
+            s = (head + new_tail).strip()
+            if s and not _HAS_RELAY_LEAD.match(s) and not _TEAM_LEAD.match(s):
+                s = "tell my team " + s
+    # (3d) embedded fillers -- loop until stable (R4) so adjacent ones all clear.
+    for _ in range(4):
+        new = re.sub(r"\s{2,}", " ", _EMBEDDED_FILLER_RE.sub(" ", s)).strip(" ,;")
+        if new == s:
+            break
+        s = new
+    return s
 
 
 # Self-correction disfluency: "tell my -- no wait, tell the whole team to X" /
@@ -90,6 +242,9 @@ _DISFLUENCY_CUE_RE = re.compile(
     r"(?:--+\s*(?:no\s+)?wait\b|\bno\s+wait\b|\bno\s+no\b|\bscratch\s+that\b"
     r"|\bnever\s*mind\b|\bforget\s+it\b|\bactually\s+no\b|\bor\s+rather\b"
     r"|\bi\s+mean\b|--+\s*no\b|--+\s*actually\b|\blet\s+me\s+rephrase\b"
+    # 2026-06-16 (C6 CHANGE 4): MULTI-WORD self-correction edit-terms only --
+    # never bare "no"/"wait"/"not"/"or" (those are tactical and must survive).
+    r"|\bwell\s+no\b|\bno\s+actually\b|\bi\s+don'?t\s+know\b"
     r"|--+\s*to\s+(?:all|the)\b)",
     re.IGNORECASE,
 )
@@ -99,11 +254,50 @@ _DISFLUENCY_CUE_RE = re.compile(
 _DISFLUENCY_SPLIT_RE = re.compile(
     r"(?:--+\s*(?:no\s+)?wait\b|\bno\s+wait\b|\bno\s+no\b|\bscratch\s+that\b"
     r"|\bnever\s*mind\b|\bforget\s+it\b|\bactually\s+no\b|\bor\s+rather\b"
-    r"|\bi\s+mean\b|--+\s*to\s+(?:all|the)\s+\w+|--+\s*actually\b|--+\s*no\b"
+    r"|\bi\s+mean\b|\bwell\s+no\b|\bno\s+actually\b|\bi\s+don'?t\s+know\b"
+    r"|--+\s*to\s+(?:all|the)\s+\w+|--+\s*actually\b|--+\s*no\b"
     r"|--+)"
     r"[\s,.:;\-]*",
     re.IGNORECASE,
 )
+
+
+# 2026-06-16 (C6 CHANGE 4 + R1): bare same-class value-swap repair, with NO
+# explicit cue word. ONLY fires on a literal weapon-/item-request head-verb
+# repeat ("drop Vandal -- drop Phantom") or an economy buy-class repeat ("full
+# buy -- half buy", "eco -- save") across a "--" boundary. Deliberately does NOT
+# trigger on LOCATION or COUNT repetition (R1: "rotate mid -- then push main",
+# "two on A -- one on B", "one long -- watch short too" are legitimate
+# sequential split-info callouts, not corrections) -- those keep BOTH halves.
+_REPAIR_HEAD_VERBS = frozenset({"drop", "buy", "get", "grab", "pick"})
+_BUY_CLASS_RE = re.compile(
+    r"\b(?:full\s+buy|half\s+buy|light\s+buy|thrifty\s+buy|force(?:\s+buy)?"
+    r"|forcing|eco|save)\b",
+    re.IGNORECASE,
+)
+
+
+def _resolve_value_swap(s: str) -> str:
+    if "--" not in s:
+        return s
+    parts = [p.strip(" ,.;:-") for p in re.split(r"\s*--+\s*", s)
+             if p.strip(" ,.;:-")]
+    if len(parts) < 2:
+        return s
+    head0 = parts[0].lower().split()
+    headL = parts[-1].lower().split()
+    head_repeat = bool(
+        head0 and headL and head0[0] == headL[0]
+        and head0[0] in _REPAIR_HEAD_VERBS)
+    buy_repeat = bool(_BUY_CLASS_RE.search(parts[0])
+                      and _BUY_CLASS_RE.search(parts[-1]))
+    if not (head_repeat or buy_repeat):
+        return s
+    tail = parts[-1]
+    if (_HAS_RELAY_LEAD.match(parts[0]) or _TEAM_LEAD.match(parts[0])) and not (
+            _HAS_RELAY_LEAD.match(tail) or _TEAM_LEAD.match(tail)):
+        return "tell my team " + tail
+    return tail
 
 
 def _resolve_disfluency(s: str) -> str:
@@ -111,9 +305,10 @@ def _resolve_disfluency(s: str) -> str:
     preserving the relay lead. "call out Iso contract -- wait shield -- Double
     Tap, he has shield up" -> "tell my team Double Tap, he has shield up". Only
     fires when an explicit correction cue is present, so ordinary callouts (incl.
-    tactical "rotate B not A" / "wait for the molly") are never touched."""
+    tactical "rotate B not A" / "wait for the molly") are never touched. With NO
+    explicit cue, falls through to the bare same-class value-swap (C6 CHANGE 4)."""
     if not _DISFLUENCY_CUE_RE.search(s):
-        return s
+        return _resolve_value_swap(s)
     ms = list(_DISFLUENCY_SPLIT_RE.finditer(s))
     if not ms:
         return s
@@ -149,6 +344,25 @@ def _strip_possessive_names(s: str) -> str:
             sorted((re.escape(a.replace("/", "")) for a in _AGENTS),
                    key=len, reverse=True)) + r")\b",
         lambda m: f"and {m.group(1)}", s, flags=re.IGNORECASE)
+
+
+# Multi-addressee ("relay to Sage and Clove: X" / "tell Jett and Sova X") -- the
+# named matcher takes ONE teammate, so a two-name addressee was no_match. Since
+# the message goes to both, collapse a leading "<verb> [to] <name> and <name>"
+# to a team relay so the payload is delivered. Both sides must be ROSTER names so
+# "tell Sage and push B" (name + action) is untouched.
+_ROSTER_ALT = "|".join(sorted((re.escape(a.replace("/", "")) for a in _AGENTS),
+                              key=len, reverse=True))
+_MULTI_ADDR_RE = re.compile(
+    r"^(\s*(?:please\s+)?(?:tell|warn|inform|remind|relay\s+to|ask)\s+)"
+    r"(?:my\s+|our\s+|the\s+)?(?:" + _ROSTER_ALT + r")\s+and\s+"
+    r"(?:my\s+|our\s+|the\s+)?(?:" + _ROSTER_ALT + r")\b\s*[:,]?\s*",
+    re.IGNORECASE,
+)
+
+
+def _collapse_multi_addressee(s: str) -> str:
+    return _MULTI_ADDR_RE.sub(lambda m: f"{m.group(1)}my team ", s, count=1)
 
 
 # STT mis-hears the verbatim verb "repeat" as "Pete"/"Heat"/"repeete" when it
@@ -319,14 +533,39 @@ _NOT_A_CALLOUT = re.compile(
 # answer-directive, so ordinary callouts never trip it.
 _REPORTED_RESPOND_RE = re.compile(
     r"\b(?:asked|asking|asks|said|saying|says|told|wants?|wanted|wondering|"
-    r"thinks?|thinking|typed|wrote|complain\w*|crying|flam\w*|tilted|raging|"
+    r"thinks?|thinking|typed|wrote|mention\w*|brought\s+up|rais(?:ed|es|ing)|"
+    r"talking\s+about|talked\s+about|complain\w*|crying|flam\w*|tilted|raging|"
+    r"griefing|grief\w*|losing\s+it|losing\s+their\s+(?:mind|cool)|melting\s+down|"
+    r"upset|mad|angry|heated|"
     r"malding|mock\w*|teas\w*|roast\w*|clown\w*|diss\w*|ridicul\w*|insult\w*|"
-    r"bully\w*|making\s+fun|trash[\s-]?talk\w*|calling\s+(?:me|you|us))\b.*"
+    r"bully\w*|making\s+fun|trash[\s-]?talk\w*|call(?:ed|ing|s)\s+(?:me|you|us))\b.*"
     r"\b(?:respond|reply|answer|acknowledge|agree|clap\s+back|back\s+me\s+up|"
     r"defend\s+me|set\s+(?:him|her|them)\s+straight|calm\s+(?:him|her|them)\s+down|"
-    r"de[\s-]?escalate|shut\s+(?:him|her|them|it)\s+down|"
+    r"de[\s-]?escalate(?:\s+(?:him|her|them))?|talk\s+(?:him|her|them)\s+down|"
+    r"ease\s+(?:him|her|them)\s+(?:off|up|down)|"
+    r"shut\s+(?:him|her|them|it)\s+down|"
     r"say\s+something|handle\s+(?:it|that|him|her|them)|"
     r"deal\s+with\s+(?:it|that|him|her|them))\b\s*[.!?]*$",
+    re.IGNORECASE,
+)
+
+# A reported SOCIAL statement with no explicit directive ("Jett said nice shot",
+# "Yoru called you stupid", "the team is flaming you", "Miks is saying gg", "the
+# team is giving up") -- left VERBATIM (no "tell my team" prefix, no Valorant
+# vocab correction) so relay_speech._match_reported_reaction can author an
+# in-character reaction. CONJUNCTIVE with classify_social_reaction at the call
+# site, so a tactical callout that shares the frame ("Jett said two on B") is
+# NOT gated and relays normally.
+_REPORTED_REACTION_RE = re.compile(
+    r"^\s*(?:my\s+|our\s+|the\s+)?\w+(?:\s+\w+)?\s+"
+    r"(?:just\s+|is\s+|are\s+|was\s+|been\s+|keeps?\s+|wants?\s+to\s+)?"
+    r"(?:said|says|saying|say|told|tells|telling|called|calling|calls|"
+    r"thinks?|thinking|typed|wrote|insult(?:ed|ing|s)?|flam(?:e|ed|ing|es)?|"
+    r"mock(?:ed|ing|s)?|clown(?:ed|ing|s)?|diss(?:ed|ing|es)?|roast(?:ed|ing|s)?|"
+    r"trash[\s-]?talk\w*|mak(?:ing|es)\s+fun|made\s+fun|giv(?:ing|in'?)\s+up|"
+    r"gave\s+up|being\s+(?:toxic|mean|rude)|complain\w*|compliment(?:ed|ing|s)?|"
+    r"prais(?:e|ed|ing|es)|hyp(?:e|ed|ing|es)|throw(?:ing|n)?\s+in\s+the\s+towel|"
+    r"forfeit\w*|surrender\w*)\b",
     re.IGNORECASE,
 )
 
@@ -367,8 +606,9 @@ _CALLOUT_SIGNAL = re.compile(
     r"i'?m\s+planting|i'?m\s+flanking|i'?m\s+pushing|i'?m\s+rotating|"
     r"i'?m\s+holding|i'?m\s+going|i\s+have\s+(?:a|b|c|site|the\s+spike)|"
     # orders / morale / social
-    r"save|eco|force|retake|default|stack|stacked|stacking|group\s+up|"
-    r"fall\s+back|lock\s+in|split|execute|executing|rush|rushing|rushed|"
+    r"save|eco|force|forcing|retake|default|stack|stacked|stacking|group\s+up|"
+    r"buy|buying|bonus\s+round|fall\s+back|lock\s+in|split|execute|executing|"
+    r"rush|rushing|rushed|"
     r"good\s+game|gg|nice|great\s+play|well\s+played|let'?s\s+go|we\s+got\s+this|"
     r"good\s+luck|my\s+bad|nice\s+shot|clutch|careful|watch\s+the|"
     r"winning|we'?re\s+winning|we\s+lost|good\s+round|great\s+round|nice\s+round|"
@@ -512,6 +752,11 @@ def normalize_command(text: str) -> str:
     # its lead cleanly.
     s = _REPEAT_MISHEAR.sub(r"\1repeat", s, count=1)
     s = _TEAM_POSSESSIVE.sub(r"\1", s)
+    # Strip discourse scaffolding (numbered prefixes, say-directive lead-ins, a
+    # nested relay verb, embedded fillers) BEFORE the disfluency resolver and the
+    # ZERO-MISTAKES gate, so a clean payload reaches routing but questions /
+    # Spotify / musings are still seen intact downstream (C6).
+    s = _strip_scaffold(s)
     _wfw = _WORD_FOR_WORD.match(s)
     if _wfw and _wfw.group(1).strip():
         s = "say exactly to my team " + _wfw.group(1).strip()
@@ -520,6 +765,7 @@ def normalize_command(text: str) -> str:
     # both BEFORE routing.
     s = _resolve_disfluency(s)
     s = _strip_possessive_names(s)
+    s = _collapse_multi_addressee(s)
     # ZERO-MISTAKES GATE: conversational / Spotify / identity / desktop commands
     # are left VERBATIM -- the aggressive Valorant vocab correction (phonetic +
     # fuzzy) runs ONLY on callout-bound text, so a question or a song title is
@@ -527,8 +773,15 @@ def normalize_command(text: str) -> str:
     # those routes is treated as a team callout (the primary wake-addressed use)
     # and gets corrected + lead-recovered.
     if (_NOT_A_CALLOUT.match(s) or _SPOTIFY_SIGNAL.search(s)
-            or _REPORTED_QUESTION_GATE.match(s)):
+            or _REPORTED_QUESTION_GATE.match(s)
+            or (_REPORTED_REACTION_RE.match(s)
+                and classify_social_reaction(s) is not None)
+            or THINK_RESPOND_SUFFIX_RE.search(s)):
         return s
     s = correct_callout_stt(s)
+    # Collapse a "KAY/O O" artifact -- STT renders the agent as "Kay O" (two
+    # tokens) and the corrector snaps "Kay" -> "KAY/O", leaving a stray "O" that
+    # breaks the named-addressee matcher ("ask KAY/O O to knife" -> no match).
+    s = re.sub(r"\bKAY/O\s+[oO]\b", "KAY/O", s)
     s = recover_relay_lead(s)
     return s.strip()
