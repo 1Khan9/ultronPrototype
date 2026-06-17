@@ -138,7 +138,7 @@ _GAZ_KEYS = tuple(_GAZ_LOWER.keys())
 # ===========================================================================
 # 2. CONTEXT RULES (disambiguate words that are ALSO real English)
 # ===========================================================================
-_ULTISH = r"(?:old|sold|alt|oat|halt|vault|ault|ulta|ulte|ulti|olt|ault|aunt)"
+_ULTISH = r"(?:old|sold|alt|oat|halt|vault|ault|ulta|ulte|ulti|olt|ault|aunt|volt|volts)"
 _CONTEXT_RULES: tuple[tuple[re.Pattern[str], object], ...] = (
     (re.compile(
         r"\b(has|have|his|her|their|got|using|use|pop(?:ped|ping)?|"
@@ -310,6 +310,37 @@ _PHRASE_MISHEARS: tuple[tuple[re.Pattern[str], object], ...] = (
     (re.compile(r"\bnano\s*swarm\b", re.I), "nanoswarm"),
     (re.compile(r"\balarm\s*bot\b", re.I), "alarmbot"),
     (re.compile(r"\btrip\s*wire\b", re.I), "tripwire"),
+    # --- 2026-06-17 battery STT repairs (context-anchored; common words survive) ---
+    # "black window" -> the Marvel hero "Black Widow".
+    (re.compile(r"\bblack\s+window\b", re.I), "Black Widow"),
+    # "playoff site" / "playoff" <- "play off (site)" (post-plant off-site hold).
+    (re.compile(r"\bplay[\s-]?off\s+site\b", re.I), "play off site"),
+    (re.compile(r"\bplayoff\b", re.I), "play off"),
+    # "<agent>-Walt" / "<agent> Walt" <- "<agent> walled" (used their wall).
+    (re.compile(r"\b(sage|viper|harbor|clove|omen|astra|brimstone|phoenix)[\s-]+"
+                r"walt\b", re.I), lambda m: m.group(1).capitalize() + " walled"),
+    # "Mysawa" / "my sava" <- "my Sova".
+    (re.compile(r"\bmy\s*sawa\b|\bmysava\b|\bmysawa\b", re.I), "my Sova"),
+    # "flame jet" / "flamejet" <- "flame Jett" (roast a teammate).
+    (re.compile(r"\bflame[\s-]?jet\b", re.I), "flame Jett"),
+    # "Ruse said/asked/told/gg ..." <- the agent "Yoru".
+    (re.compile(r"\bruse\b(?=\s+(?:said|says|asked|told|tells|called|is|gg))", re.I),
+     "Yoru"),
+    # dropped first-person "I" on a sound callout: "Here's some <loc>" / "hear
+    # <count> <loc>" <- "I hear ...".
+    (re.compile(r"\bhere'?s\s+some\b", re.I), "I hear some"),
+    (re.compile(r"^\s*hear\s+(?=(?:one|two|three|four|five|lots|some|footsteps)\b)",
+                re.I), "I hear "),
+    # "raise ult(s)" <- the agent "Raze" + her ult.
+    (re.compile(r"\braise[ds]?\s+(ult|ulted|ults)\b", re.I),
+     lambda m: "Raze " + m.group(1)),
+    # "drop/buy me a share" <- the Sheriff pistol.
+    (re.compile(r"\b(drop|buy|get|need|grab)\s+(me\s+)?an?\s+share\b", re.I),
+     lambda m: m.group(1) + " " + (m.group(2) or "") + "a Sheriff"),
+    # "(could) be rapping" <- "wrapping" (the enemy wrapping around).
+    (re.compile(r"\bbe\s+rapping\b", re.I), "be wrapping"),
+    # "Tukat" / "too cat" <- "two cat" (two enemies at catwalk).
+    (re.compile(r"\btukat\b|\btoo\s*cat\b", re.I), "two cat"),
 )
 
 

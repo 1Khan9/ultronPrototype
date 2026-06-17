@@ -272,12 +272,18 @@ def test_build_relay_line_uses_generate_fn() -> None:
 
     def fake_generate(prompt: str):
         captured.append(prompt)
-        return iter(["Rotate ", "B ", "now, team."])
+        return iter(["They ", "are ", "outmatched."])
 
-    line = build_relay_line(_cmd(), generate_fn=fake_generate)
-    assert line == "Rotate B now, team."
-    assert len(captured) == 1
-    assert "they should rotate B" in captured[0]
+    # 2026-06-17: a tactical callout ("they should rotate B") now bypasses the
+    # model via the faithful-literal pre-route (any concrete count/loc/ability
+    # token -> literal, never the 3B). The generate_fn seam is exercised by an
+    # OFF-SNAP banter/opinion line (no tactical token), which is what genuinely
+    # reaches the model.
+    line = build_relay_line(_cmd("they think they can outplay us"),
+                            generate_fn=fake_generate)
+    assert captured, "generate_fn should be invoked for an off-snap banter line"
+    assert "they think they can outplay us" in captured[0]
+    assert "outmatched" in line.lower()
 
 
 def test_build_relay_line_fallback_on_llm_error() -> None:

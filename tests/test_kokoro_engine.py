@@ -171,7 +171,13 @@ def test_synthesize_concatenates_multiple_pipeline_chunks():
     engine.apply_runtime_filter = False
 
     pcm, _sr = engine._synthesize("Two sentences. Combined.")
-    gap = int(engine._sample_rate * 0.16)
+    # The inter-sentence gap honors KENNING_TTS_SENTENCE_PAUSE_MS (default 320ms
+    # as of the 2026-06-17 "tails still blend" fix); compute it the same way the
+    # engine does so this assertion tracks the configured pause.
+    import os as _os
+    _gap_ms = max(60, min(int(_os.getenv("KENNING_TTS_SENTENCE_PAUSE_MS", "320")
+                               or 320), 1000))
+    gap = int(engine._sample_rate * (_gap_ms / 1000.0))
     # chunk1 (100) + inter-sentence silence + chunk2 (200), in order.
     assert pcm.size == 100 + gap + 200
     assert not pcm[100:100 + gap].any()        # the inserted gap is silence

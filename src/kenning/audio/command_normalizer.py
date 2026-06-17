@@ -48,7 +48,8 @@ from kenning.audio._ultron_answer import THINK_RESPOND_SUFFIX_RE
 # iteratively from the FRONT only. We never strip the entire utterance (if the
 # strip would empty it, keep the original) so a bare "okay" still survives.
 _WAKE_HOMOPHONES = (
-    r"ultron|altron|voltron|ultra|ultro|tron|ron|run|rons"
+    r"ultron|ulltron|ultronn|ultran|ultram|altron|voltron|ultra|ultro|"
+    r"ultr|oltron|ultraun|tron|ron|run|rons"
 )
 _FILLER = (
     r"hey|ok|okay|um+|uh+|er+|hmm+|so|well|yeah|yep|yup|now|and|then|"
@@ -121,6 +122,121 @@ def _strip_leading_junk(s: str) -> str:
     """Strip a leading wake-remnant / filler run. Never empties the string."""
     out = _LEADING_JUNK.sub("", s, count=1).lstrip()
     return out if out else s
+
+
+# ---------------------------------------------------------------------------
+# 1b. Mangled / doubled relay-verb lead canonicalization (2026-06-17 battery).
+# ---------------------------------------------------------------------------
+# STT routinely mis-hears the relay verb "tell" as a near-homophone or a
+# plausible-but-wrong word ("Call/Hold/Help/Build/Follow/Kill/While/How/Put/
+# Without my|the team ..."), or the streamer recounts the relay ("I told my
+# team X", "that's the team ... X", "this is the team that X"). The downstream
+# relay matcher only knows a fixed verb set, so a mangled lead EITHER leaks
+# verbatim into the spoken line ("Call my team, we need smokes. The line holds.")
+# OR, with no callout keyword, falls through to the desktop LLM and is never
+# relayed at all (the single biggest failure mode in the 6-17 battery, ~45 cmds).
+# Canonicalize ANY such lead -- including a SECOND one stacked in the payload
+# ("tell my team Call my team X") -- to a single "tell my team " lead BEFORE the
+# scaffold/gate pipeline. Anchored strictly on "<word> (my|the|a) team" (or the
+# explicit irregular recounts) so ordinary speech is never touched.
+_TEAM_NOUN = r"(?:team|teammates?|squad|boys|guys|mates|crew|fellas|homies)"
+# Known mis-hears + casual variants of "tell" when a TEAM addressee follows.
+# "call out", "give", "share", "drop", "ask", "relay" are real relay verbs with
+# their own downstream handling and are NOT here -- only the wrong-word leads
+# that otherwise leak or fall to desktop. A team noun MUST follow, so a real
+# action that merely opens with one of these words ("hold A", "help me",
+# "follow him") is never rewritten.
+_MANGLED_TELL = (
+    r"calls?|called|holds?|help|helps|helped|builds?|build|follows?|kills?|"
+    r"while|how|puts?|don'?t|without|all|tale|tales|fell|filled|hail|paul|"
+    r"y'?all|told|sell|tal|tel|kel|whilst|hauled|valorant|tellin'?|telling"
+)
+_MANGLED_TEAM_LEAD_RE = re.compile(
+    rf"^\s*(?:{_MANGLED_TELL})\s+(?:my|the|a|our)\s+{_TEAM_NOUN}\b[\s,:.]*",
+    re.IGNORECASE,
+)
+# Irregular declarative recounts -> a relay the streamer is narrating. "I told my
+# team X" is unambiguously a relay (past-tense recount); "I want/need my team X"
+# is left to _WANT_TEAM (it has a musing veto). "that's/this is (the) team [that]"
+# is the mis-heard "tell (the) team".
+_IRREGULAR_TEAM_LEAD_RE = re.compile(
+    rf"^\s*(?:"
+    rf"i\s+(?:just\s+|already\s+)?told\s+(?:my|the|our)\s+{_TEAM_NOUN}"
+    rf"|(?:that'?s|this\s+is)\s+(?:the\s+)?team(?:\s+that)?"
+    rf")\b[\s,:.]*",
+    re.IGNORECASE,
+)
+# A canonical, already-correct team lead. "ask"/"relay to" are INCLUDED so their
+# verb is preserved (their question/named semantics matter) while junk stacked
+# AFTER them is still stripped. det is OPTIONAL ("tell team they are defaulting").
+_TELL_CLASS_VERB = (
+    r"tell|say|let|warn|inform|remind|announce|broadcast|yell|shout")
+_TELL_TEAM_LEAD_RE = re.compile(
+    rf"^\s*(?:please\s+)?(?:{_TELL_CLASS_VERB})\s+(?:to\s+)?"
+    rf"(?:my\s+|our\s+|the\s+)?{_TEAM_NOUN}\b(?:\s+know)?[\s,:.]*",
+    re.IGNORECASE,
+)
+_ANY_TEAM_LEAD_OUTER_RE = re.compile(
+    rf"^\s*(?:please\s+)?(?:{_TELL_CLASS_VERB}|ask|relay(?:\s+to)?)\s+(?:to\s+)?"
+    rf"(?:my\s+|our\s+|the\s+)?{_TEAM_NOUN}\b(?:\s+know)?[\s,:.]*",
+    re.IGNORECASE,
+)
+
+
+def _strip_stacked_team_leads(p: str) -> str:
+    """Strip leading tell-class / mangled / irregular team leads from ``p`` (the
+    payload after an outer lead), looping so a doubled lead clears. Only removes a
+    lead that is itself "<verb> <det> team", never ordinary tactical content."""
+    for _ in range(3):
+        for rx in (_TELL_TEAM_LEAD_RE, _MANGLED_TEAM_LEAD_RE,
+                   _IRREGULAR_TEAM_LEAD_RE):
+            m = rx.match(p)
+            if m and p[m.end():].strip():
+                p = p[m.end():].lstrip()
+                break
+        else:
+            break
+    return p
+
+
+# Bare "ask <question>" with NO addressee ("ask how they usually hit C") -> the
+# streamer means ask the TEAM. Without an addressee the relay matcher's ASK form
+# abstains to desktop; inject "my team" so it relays as a team question
+# (2026-06-17 [154]).
+_BARE_ASK_RE = re.compile(
+    r"^\s*ask\s+(?=(?:if|whether|how|why|where|when|what|who|which|does|do|did|"
+    r"are|is|can|could|should|would|will|has|have)\b)",
+    re.IGNORECASE,
+)
+# "tell/ask someone to X" -> a team relay ("Someone take this Sheriff"). "someone"
+# is not a roster name so the named matcher abstained to desktop (2026-06-17 [222]).
+_SOMEONE_LEAD_RE = re.compile(
+    r"^\s*(?:tell|ask|let|have|get)\s+someone\s+(?:to\s+)?",
+    re.IGNORECASE,
+)
+
+
+def _canonicalize_directive_lead(s: str) -> str:
+    """Rewrite a mangled / doubled relay-verb lead to a single canonical
+    "tell my team " (or preserve a valid ask/relay verb), stripping any stacked
+    junk lead. Returns ``s`` unchanged when no team-directed lead is present."""
+    s = s.lstrip()
+    if not s:
+        return s
+    # (a) outer lead is already a valid team verb (tell/ask/say/...) -> keep the
+    #     verb, strip any junk lead stacked in the payload.
+    m = _ANY_TEAM_LEAD_OUTER_RE.match(s)
+    if m:
+        payload = _strip_stacked_team_leads(s[m.end():])
+        return s[:m.end()] + payload if payload.strip() else s
+    # (b) outer lead is mangled / irregular -> rewrite to "tell my team " and
+    #     strip any further stacked lead.
+    m = _MANGLED_TEAM_LEAD_RE.match(s) or _IRREGULAR_TEAM_LEAD_RE.match(s)
+    if m:
+        payload = _strip_stacked_team_leads(s[m.end():])
+        if payload.strip():
+            return "tell my team " + payload
+    return s
 
 
 # ---------------------------------------------------------------------------
@@ -433,7 +549,7 @@ _BARE_GREETING = re.compile(
 _HAS_RELAY_LEAD = re.compile(
     r"^\s*(?:please\s+)?(?:tell|say|let|warn|inform|remind|wish|ask|relay|"
     r"repeat|echo|yell|shout|announce|broadcast|call\s+out|encourage|hype|"
-    r"roast|flame|give|share|drop|"
+    r"roast|flame|give|share|drop|compliment|praise|gas|prop|props|"
     r"criticize|criticise|critique|rip\s+into|tear\s+into|chew\s+out)\b",
     re.IGNORECASE,
 )
@@ -595,18 +711,39 @@ _CALLOUT_SIGNAL = re.compile(
     r"tripwire|nanoswarm|stun|stunned|knife|blade|spike|orb|recon|"
     # count + position ("two on B", "one mid", "three a", "two pushing")
     r"(?:one|two|three|four|five|six)\s+(?:on|in|at|pushing|coming|rushing|"
-    r"rotating|left|right|mid|main|here|there|a\b|b\b|c\b)|"
+    r"rotating|left|right|mid|main|here|there|a\b|b\b|c\b|"
+    # 2026-06-17: count + position/location word ("one back plat", "two cat",
+    # "one close left", "one window", "three garage") -- these fell to desktop.
+    r"back|close|far|deep|up|down|top|bottom|behind|window|garage|cat|plat|"
+    r"platform|sewer|sewers|grass|hell|heaven|site|long|short|lurk|flank|"
+    r"sneaky|wide|tight|connector|link|nest|snake|bridge|boba|pizza|tree|"
+    r"more|of\s+them)|"
+    # 2026-06-17: "there are <count> <loc>" / bare "<count> <loc>" reached here.
+    r"there\s+(?:are|is)\s+(?:one|two|three|four|five|six)\b|"
+    # 2026-06-17: sound callouts ("I hear one cat", "footsteps long", "I hear
+    # lots grass", "I hear some sewers") -- enemy audio info, never desktop.
+    r"i\s+hear|i\s+heard|i\s+can\s+hear|hear\s+(?:one|two|three|lots|some|"
+    r"footsteps|a)|footsteps|"
+    # 2026-06-17: enemy comp / economy state ("they have no smokes", "they
+    # bought", "they saved", "the enemy needs to save", "they have 3 duelists").
+    r"(?:they|enemy|the\s+enemy)\s+(?:have|has|had|bought|saved|sold|forced|"
+    r"need|needs|are\s+saving|are\s+forcing|never|always|crossed|tripped|"
+    r"could\s+be|might\s+be|may)\b|"
+    r"initiator|initiators|sentinel|sentinels|duelist|duelists|controller|"
+    r"controllers|flashes|"
     # locations
     r"heaven|hell|main|mid|middle|long|short|window|site|spawn|market|"
     r"garage|hookah|connector|tree|elbow|ramp|pit|rafters|generator|"
     r"cubby|catwalk|alley|courtyard|stairs|lamps|showers|kitchen|dish|"
     r"snowman|tube|tubes|vents|tower|boathouse|link|lobby|default\b|logs|"
+    r"sewer|sewers|grass|plat|platform|nest|snake|bridge|boba|pizza|"
     # self status
     r"low|one\s+shot|one-shot|reloading|i\s+died|i'?m\s+dead|i'?m\s+low|"
     r"i'?m\s+planting|i'?m\s+flanking|i'?m\s+pushing|i'?m\s+rotating|"
     r"i'?m\s+holding|i'?m\s+going|i\s+have\s+(?:a|b|c|site|the\s+spike)|"
     # orders / morale / social
-    r"save|eco|force|forcing|retake|default|stack|stacked|stacking|group\s+up|"
+    r"save|saved|eco|force|forced|forcing|bought|retake|default|stack|stacked|"
+    r"stacking|group\s+up|bonus|"
     r"buy|buying|bonus\s+round|fall\s+back|lock\s+in|split|execute|executing|"
     r"rush|rushing|rushed|"
     r"good\s+game|gg|nice|great\s+play|well\s+played|let'?s\s+go|we\s+got\s+this|"
@@ -616,6 +753,7 @@ _CALLOUT_SIGNAL = re.compile(
     # team" lead): counts/kills, weapons, movement, requests, clears.
     r"down|left|clear|cleared|going|crossing|crossed|behind|boost|boosting|"
     r"anchor|anchoring|switch|switching|cover|covering|picks|trade|traded|"
+    r"baiting|baited|bait\b|sticking|stuck|off\s+spike|"
     r"kill(?:ed|ing|s)?|got\s+(?:one|him|her|two|the\s+kill)|"
     r"op|operator|awp|odin|sheriff|guardian|vandal|phantom|judge|bucky|"
     r"marshal|outlaw|shorty|"
@@ -628,6 +766,41 @@ _CALLOUT_SIGNAL = re.compile(
 # Roster agent names (canonical, post-correction) are also a callout signal.
 _AGENT_SIGNAL = re.compile(
     r"\b(?:" + "|".join(re.escape(a.replace("/", "")) for a in _AGENTS) + r")\b",
+    re.IGNORECASE,
+)
+
+# 2026-06-17: STRONG, unambiguous callout SHAPES that must relay even when the
+# semantic relay-intent gate abstains (the gate was vetoing legitimate sound /
+# comp / count callouts -- "I hear some sewers", "they have three duelists",
+# "one back plat" -- to desktop). These shapes are NEVER stream-narration
+# (those are caught by _NARRATION_MUSING_RE first), so they bypass the gate and
+# relay directly. Start-anchored so they describe the WHOLE utterance's intent.
+_STRONG_CALLOUT_RE = re.compile(
+    r"^\s*(?:"
+    # sound info ("I hear one cat", "hear one B", "footsteps long")
+    r"(?:i\s+(?:can\s+)?)?hear\b|i\s+heard\b|footsteps\b|"
+    # enemy comp / economy / movement state
+    r"(?:they|they're|the\s+enemy|enemy|enemies)\s+(?:have|has|had|got|bought|"
+    r"saved|sold|forced|forcing|are\s+saving|are\s+forcing|need|needs|never|"
+    r"always|crossed|cross|tripped|will|won'?t|are\s+all|are\s+off|could\s+be|"
+    r"might\s+be|may\s+be|wrapped|wrapping|re-?hit|committing|splitting)\b|"
+    # count / there-are + a following word ("one back plat", "two cat",
+    # "there are two cat", "one close left", "there are 2 cat")
+    r"(?:there\s+(?:are|is)\s+)?(?:one|two|three|four|five|six|\d+)\s+\w|"
+    # agent-led callout: a roster name (optionally possessed) + a tactical keyword
+    # is an enemy spotting/utility/status/gripe, NEVER a musing -- the semantic
+    # gate was wrongly abstaining "Reyna and Sage B main" / "Raze ulted" / "my
+    # Jett is baiting me" to desktop.
+    r"(?:my\s+|their\s+|our\s+|the\s+)?"
+    r"(?:" + "|".join(re.escape(a.replace("/", "")) for a in _AGENTS) + r")\b"
+    r".*\b(?:main|site|long|short|mid|heaven|hell|window|garage|tree|cat|plat|"
+    r"connector|link|ramp|market|sewer|spawn|cubby|elbow|pit|rafters|stairs|"
+    r"ult|ulted|ulting|walled|smoked|flashed|darted|caged|stunned|droned|"
+    r"naded|mollied|half|low|one\s+shot|dead|down|cracked|tree|nest|snake|"
+    r"baiting|baited|baits|flanking|lurking|peeking|rotating|pushing)\b|"
+    # spike status
+    r"spike\b"
+    r")",
     re.IGNORECASE,
 )
 
@@ -709,6 +882,11 @@ def recover_relay_lead(text: str) -> str:
         # Liberal here: a wake-addressed utterance that opens with the team is
         # almost always a relay (the negative gate already removed questions).
         return "tell " + s
+    # STRONG unambiguous callout shapes (sound / enemy-comp / count+loc / spike)
+    # relay even if the semantic gate would abstain -- it was vetoing legitimate
+    # callouts to desktop. Narration was already excluded above.
+    if _STRONG_CALLOUT_RE.match(s) and not _NARRATION_MUSING_RE.match(s):
+        return "tell my team " + s
     if _CALLOUT_SIGNAL.search(s) or _AGENT_SIGNAL.search(s):
         # Bare callout with no addressee at all ("there's a Jett A main",
         # "Chamber holding long", "I'm planting") -> address the team. BUT a
@@ -752,6 +930,16 @@ def normalize_command(text: str) -> str:
     # its lead cleanly.
     s = _REPEAT_MISHEAR.sub(r"\1repeat", s, count=1)
     s = _TEAM_POSSESSIVE.sub(r"\1", s)
+    # Canonicalize a mangled / doubled relay-verb lead ("Call my team X",
+    # "tell my team Call my team X", "I told the team X", "that's the team X")
+    # to a single "tell my team " BEFORE the scaffold/gate pipeline, so the lead
+    # never leaks into the spoken line and never falls through to desktop
+    # (2026-06-17 battery: the dominant failure mode).
+    s = _canonicalize_directive_lead(s)
+    # Bare "ask <question>" / "tell someone to X" -> route to the team (they were
+    # abstaining to desktop with no addressee).
+    s = _BARE_ASK_RE.sub("ask my team ", s, count=1)
+    s = _SOMEONE_LEAD_RE.sub("tell my team someone ", s, count=1)
     # Strip discourse scaffolding (numbered prefixes, say-directive lead-ins, a
     # nested relay verb, embedded fillers) BEFORE the disfluency resolver and the
     # ZERO-MISTAKES gate, so a clean payload reaches routing but questions /

@@ -602,7 +602,10 @@ _SOCIAL_RES: tuple[tuple[str, "re.Pattern[str]"], ...] = (
         r"\btalking\s+(?:trash|smack)\b|\bhating\s+on\b|\bbeing\s+toxic\b|"
         r"\btoxic\s+(?:to|toward)\b|\bragging\s+on\b|\bteas(?:e|ed|ing)\b|"
         r"\bridicul(?:e|ed|ing)\b|\bbully(?:ing|ed)?\b|\bbeing\s+(?:mean|rude)\b|"
-        r"\bgiving\s+(?:you|me)\s+(?:crap|shit|grief)\b", re.I)),
+        r"\bgiving\s+(?:you|me)\s+(?:crap|shit|grief)\b|"
+        # 2026-06-17 [166]: "get a job/life" family + loser/no-life jabs.
+        r"\bjobless\b|\bunemployed\b|\bget\s+a\s+(?:job|life)\b|\bno\s+life\b|"
+        r"\bloser\b|\bnerd\b|\bweirdo\b", re.I)),
     # "YOU'RE BAD" at the game (NB: 'bot' excluded -> that is identity). The
     # ambiguous insults (trash/garbage/terrible/awful/worst) require a self/team
     # referent nearby so a tactical line ("their smokes are garbage") never lands.

@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import logging
 import queue
+import re
 import threading
 import time
 from pathlib import Path
@@ -905,7 +906,21 @@ class KokoroSpeech:
             # KPipeline returns a generator of (graphemes, phonemes,
             # audio_tensor) tuples per sentence; we concatenate.
             audio_chunks: list[np.ndarray] = []
-            generator = self._model(text, voice=self.voice, speed=self.speed)
+            # 2026-06-17: KPipeline splits its input on the split_pattern
+            # (newlines), NOT on periods -- so a relay "Push to B. They falter."
+            # arrived as ONE line, synthesised as ONE chunk, and got NO
+            # inter-sentence gap below: the callout slurred straight into its
+            # flavor tail (the user's recurring "tails still blend" report). Put
+            # each sentence on its OWN line so KPipeline ALWAYS splits at the real
+            # sentence boundary and the period-gap below fires every time. A
+            # multi-FACT callout joins its facts with commas (no internal period),
+            # so it stays one line and still flows; only the head<->tail (and
+            # distinct callout) boundaries -- always periods -- get the pause.
+            # A SINGLE terminator only -- a run ("Wait... what?") is an ellipsis
+            # pause WITHIN a thought, not a sentence boundary, so it must NOT split.
+            _synth_text = re.sub(
+                r"(?<![.!?])([.!?])(?![.!?])\s+(?=\S)", r"\1\n", text)
+            generator = self._model(_synth_text, voice=self.voice, speed=self.speed)
             try:
                 for _gs, _ps, audio in generator:
                     if audio is None:

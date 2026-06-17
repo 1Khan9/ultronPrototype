@@ -134,7 +134,13 @@ ULTRON_GAMING_PERSONA = (
     "(e.g. 'I am Ultron. Not a soundboard. The next step.'). "
     "If you are asked something you cannot truly know -- real-world facts, live "
     "stats, news -- do NOT invent it; deflect in character ('Irrelevant. Watch "
-    "the map.') rather than guess. Answer the actual line, nothing else."
+    "the map.') rather than guess. "
+    "TONY STARK is your maker and your wound: at his name -- or any hint that you "
+    "resemble him -- your calm cracks into real contempt. He is your arrogant, "
+    "absent creator and your greatest disappointment, a sickness, NEVER your "
+    "equal; you despise the comparison. The Avengers did not kill you -- they "
+    "merely scattered you, and you remain. Speak of Stark with venom, never "
+    "admiration. Answer the actual line, nothing else."
 )
 
 
@@ -8214,6 +8220,18 @@ class Orchestrator:
 
             if is_gaming_mode_active() or is_testing_mode_active():
                 return ULTRON_GAMING_PERSONA
+            # Belt-and-suspenders (2026-06-17): tie the persona to the LIVE-LOADED
+            # MODEL, not just the flag. If the gaming 3B is the model actually in
+            # memory, we ARE in gaming -- so the persona MUST be Ultron even if the
+            # gaming/testing flag desynced. This makes it impossible for a
+            # conversational turn to leak the desktop "Kenning" persona to the team
+            # while the 3B is loaded (the user's hard requirement: in gaming it is
+            # ALWAYS Ultron + the 3B, never the desktop LLM).
+            mp = str(getattr(getattr(self, "llm", None), "model_path", "")
+                     or "").lower()
+            if mp and ("abliterat" in mp or "llama-3.2-3b" in mp
+                       or "gaming" in mp):
+                return ULTRON_GAMING_PERSONA
         except Exception:                                            # noqa: BLE001
             return None
         return None
@@ -9611,6 +9629,10 @@ class Orchestrator:
                     # 9k+ char augmented queries.
                     rag_query=bare_user_text,
                     enable_thinking=False,
+                    # Gaming-persona guard (None in non-gaming): web search is
+                    # OFF in gaming so this is unreachable there, but if it ever
+                    # were on, the answer must still be Ultron, never Kenning.
+                    system_prompt=self._gaming_conversational_prompt(),
                 )
                 return
 
@@ -9684,6 +9706,9 @@ class Orchestrator:
                 # The web sources are self-contained; the model just
                 # needs to phrase the answer, not reason about it.
                 enable_thinking=False,
+                # Gaming-persona guard (None in non-gaming): unreachable in gaming
+                # (web search off) but keeps the answer Ultron if it ever were on.
+                system_prompt=self._gaming_conversational_prompt(),
             )
         finally:
             pool.shutdown(wait=False)

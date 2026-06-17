@@ -1,0 +1,240 @@
+# 2026-06-17 battery — the user's spoken commands (intent notes stripped).
+ultron, introduce yourself
+ultron, tell my team we need smokes
+ultron, tell my team we need an initiator
+ultron tell my team they have no initiator
+ultron tell my team they have no smokes
+ultron tell my team they have no sentinel so we should play to flank
+ultron, tell my team they have 3 duelists
+ultron tell my team they will play fast
+ultron tell my team they have a lot of flashes
+ultron, tell my team they have no initiator so we can play corners
+Ultron, sova hit 35
+Ultron, jett A main
+Ultron, chamber holding long with op
+Ultron, ask my breach to flash me in
+Ultron, ask my team where our smokes are
+Ultron, ask my team why they arent smoking
+Ultron, ask sova to carry the spike
+Ultron, reyna and sage B main
+Ultron, reyna is tree
+Ultron, tell the team I am planting C
+Ultron, one back plat
+Ultron, careful flank
+Ultron, tell the team I am flanking
+Ultron, tell jett to play her life
+Ultron, tell the team raze and breach have ult and to play off site
+Ultron, sage walled mid
+Ultron, astra is one shot
+Ultron, breach is half
+Ultron, phoenix no flashes
+Ultron, tell the team to rotate.
+Ultron, tell the team to push
+Ultron, tell the team to split the site through tree
+Ultron, there are 2 cat
+Ultron, tell the team we should save
+Ultron, tell the team to buy up
+Ultron, tell the team to force.
+Ultron, tell the team to default and look for guns
+Ultron, tell neon yes
+ultron, repeat to my team watermelon
+ultron, say spaghetti and meatballs word for word
+ultron, astra asked if you are an AI, think and respond
+ultron, killjoy complimented you
+ultron, killjoy said nice shot
+ultron, tell the team nice try
+ultron, tell the team good game
+ultron, tell my team im low
+ultron, Im one shot
+ultron, tell my team im low and to bait me
+ultron, tell my team to play together
+ultron, tell my team nice trade
+ultron, tell breach nice flash
+ultron, tell my jett hes cracked
+ultron, compliment my sage
+ultron, tell my team I like that plan
+ultron, tell my team that is not the problem
+Ultron, tell the team to walk, no noise.
+Ultron, tell the team no
+Ultron, tell the jett that is a bad idea
+Ultron, tell the team I disagree
+Ultron, tell the team we need to contest mid
+Ultron tell the team last garage
+Ultron, ask my clove to smoke window every round.
+Ultron, tell my team I am smoking A cross every round.
+Ultron, tell my team to ignore ramp and go straight to site.
+Ultron, tell my team they are rotating
+Ultron, tell my team I hear one rotating
+Ultron, tell my team I have a timing
+Ultron tell my team I have a flank
+ultron tell my team I have A site
+Ultron, tell my team I am saving for op
+Ultron, tell my team I am saving for op but I believe in them
+Ultron, jett just called you cringe, respond
+Ultron, breach asked if you are a soundboard
+Ultron, sage asked if you are a voice changer
+Ultron, astra just asked about tony stark
+Ultron, kayo asked what your favorite color is, think and respond
+Ultron, sage asked what your favorite animal is
+Ultron tell my team to smoke market
+ultron tell my team to wait for smokes to go down then hit the site
+ultron ask brimstone to drop me his pistol
+ultron, ask jett to drop me a gun
+ultron, reyna is flaming you
+Ultron, jett told you nice shot
+ultron, tell sage nice shot
+ultron, tell reyna well played
+ultron, tell the team nice try
+ultron, encourage the team
+ultron, chamber is asking to ff
+ultron, yoru said gg
+ultron, astra told you to shut up
+Ultron, tell neon you wont answer that question because it is stupid
+Ultron, tell miks you dont know
+Ultron, tell clove to smoke cat
+ultron tell the team to spit B through market
+Ultron, tell the team to play for exits
+Ultron, tell the team that the enemy is on eco and to play back and deny guns
+Ultron, tell the team to play slow and bait out utility
+ultron, tell the team I will anchor A site
+ultron, tell the team I hear one main
+ultron, tell the team they are coming A fast
+ultron, tell the team im holding flank
+ultron, tell the team they may have crossed to ramp
+ultron, tell the team they cut noise and may re hit the site
+ultron, tell the team cypher always lurks short A
+ultron, tell the team to open the door
+ultron, tell the team one is back site
+ultron, tell the team last is heaven
+ultron, tell the team one is rubble
+ultron, tell the team killjoy plays C
+ultron, tell the team they will probably go B this round
+ultron, tell the team breach has ult and to play off site
+ultron, flame jett
+ultron, flame my team
+ultron, tell reyna aimlabs is free
+ultron, tell the team we can win this
+ultron, tell the team to lock in
+ultron, one close left
+ultron, tell gekko to hold a crossfire with me
+ultron, gekko flash C
+ultron, tell the team that gekko has ult and I am playing off site
+ultron, tell the team they could be wrapping
+ultron, tell the team they might be faking
+ultron, tell the team they may re hit
+ultron, tell the team they have no time
+ultron, tell the team to play their life
+ultron, tell the team to play time
+ultron, tell the team that they tripped the flank
+ultron, tell the team that the enemy sucks and we have this
+ultron tell the team kayo ulted B
+ultron, viper ulted A
+ultron, tell the team killjoy will ult B
+ultron, I hear some sewers
+ultron, tell my team they forced
+ultron, tell my team they are forcing every round
+ultron, tell my team they bought
+ultron, tell my team they saved
+ultron, tell my team the enemy needs to save
+ultron, tell my team I hear cypher A
+ultron, cypher cam B
+ultron, tell my team I am mollied off
+ultron, tell my team I am smoked off
+ultron, tell my team I am going to die
+ultron, I am going to die
+ultron, tell my team breach wasted his ult
+ultron, tell my team phoenix should have no flashes
+ultron, tell my team breach should have 1 flash left
+ultron, tell my team kayo still has flashes
+ultron, tell my team they are waiting for sova dart
+ultron, ask my sova to drone sewers
+ultron, the team is talking about horror movies, think and respond
+ultron, the team is arguing
+ultron, tell sova I will do what he asked
+ultron, ask my team if sova darts long
+ultron, ask how they usually hit C
+ultron, ask my team if they usually flash garage
+Ultron, ask my team if they drone sewers
+Ultron, tell my team the enemy is on eco and to play together
+Ultron, tell my team the enemy is on eco and to be careful for shotguns
+Ultron, tell my team to go C because the enemy is on eco and we want to take longer angles
+ultron, tell my team to care for shotguns in hookah
+ultron, tell my team one always peeks ramp
+ultron, tell my team jett always peeks heaven
+ultron, tell my team to plant A
+ultron, the team is asking about black widow
+ultron, my team says you dont sound like ultron
+ulltron, jett called you jobless
+ultron, ask brimstone if he has any smokes
+ultron, tell my team to not greed for kills
+ultron, tell my team to play site
+ultron, tell my team to play long
+ultron, tell my team to plant for long
+ultron, tell my team to plant for off site
+ultron tell reyna its not planted for her
+ultron tell my team to plant for off site because breach has ult
+ultron, tell my team that they have fade, breach, and raze ults for retake
+ultron, tell my team we can play for retake with breach ult
+ultron, ask my sage for a heal
+ultron, ask my sage how long till her heal
+ultron, ask my skye if she has heal
+ultron, tell my skye she has dog
+ultron, tell my team they are sticking
+ultron, tell my team they are off spike
+ultron, ask my team if they are committing
+ultron, ask yoru if he can shoot dart for me
+ultron, raze ulted
+ultron, viper ult A
+ultron, two heaven, one hell, one graffiti, one C, sova hit 38
+ultron, cypher heaven, reyna and jett back site, sova short
+ultron, tell my team they are all there
+ultron, tell my team they crossed
+ultron, they crossed to sewer
+ultron, tell my team the enemy neon sucks
+ultron, tell my team to lock in
+ultron, tell my team they are defaulting
+ultron, tell my team they are playing slow
+ultron, tell my team they never rotate
+ultron, tell my team they are splitting the site
+ultron, the team is asking who the current president is, think and respond
+ultron, tell my team to cut noise and re hit.
+ultron, tell my team the problem is we are overrotating
+ultron, tell my team the problem is we are giving mid for free
+ultron, tell my team we need to fight for A main
+ultron, tell my team that iso is one point off ult and will go for orb
+ultron, tell my team that iso is one point off ult
+ultron, tell my team that iso is one point off ult and will go for orb long
+ultron, ask my reyna why she is baiting me
+ultron, my jett is baiting me
+ultron tell my team good half
+ultron, tell my team gg, we won
+ultron, tell my team gg, we lost
+ultron, tell my team gg and to go check me out at twitch.tv 1v9 Khan
+ultron, sage asked if you are streaming
+ultron, sage asked if I am a streamer
+ultron, sage asked if I'm streaming.
+ultron, ask brimstone to drop me an outlaw
+ultron, ask if someone can drop me a sheriff
+ultron, tell my team I can drop one
+ultron, tell my team jett can buy one
+ultron, tell my team jett has ult and can drop one
+ultron, tell my team I have ult and can drop one
+ultron, tell my team to take this vandal
+ultron, tell someone to take this sheriff
+ultron tell my team to rush B
+ultron, tell my team to force
+ultron, tell my team to bonus
+ultron, tell my team to buy up because they are broke
+ultron, tell my team I can buy next round
+ultron, tell my team I hear one garage
+ultron, one window
+ultron, tell my team I hear lots grass
+ultron, tell my team they could be garage
+ultron, tell my team care garage window
+ultron, tell my team one A link, one C connector.
+ultron, tell my team they are saving op
+ultron tell my team I hear one top mid
+ultron, I hear one cat
+ultron I hear one B
+ultron, footsteps long
+ultron, tell my team a fun fact

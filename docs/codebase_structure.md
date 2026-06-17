@@ -10,8 +10,53 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
+> **Validating HEAD: FULL-BATTERY COHERENCE FIX (≈239 cmds, 5 iterations → 239/239 relay,
+> 0 desktop) + GAMING-PERSONA GUARANTEE + SPECULATIVE-DECODING ASSESSMENT** (2026-06-17,
+> latest). Read all 275 turns of `logs/usage_trace.jsonl` line-by-line, then built a replay
+> harness (`scripts/relay_test/battery_replay.py` + `battery_cmds.txt`) that runs the user's
+> full ~239-command list through the REAL gaming dispatch + the live 3B; iterated 5× to
+> **239/239 relay, ZERO desktop fallbacks**, all in-character. Fix clusters:
+> **A — mangled/doubled relay leads** (`command_normalizer._canonicalize_directive_lead` +
+> `_MANGLED_TEAM_LEAD_RE`/`_IRREGULAR_TEAM_LEAD_RE`): rewrites every STT mangle of "tell my
+> team" (Call/Hold/Help/Build/Follow/Kill/While/Without/Put/How/"I told"/"that's the team"/
+> "this is the team that"…) to ONE canonical lead so it never leaks into the spoken line or
+> falls to desktop (the dominant failure, ~45 cmds). **B — snap/echo coverage**
+> (`command_normalizer._STRONG_CALLOUT_RE` gate-bypass for sound/comp/count/agent callouts the
+> semantic gate wrongly abstained; expanded `_CALLOUT_SIGNAL`; `relay_speech._as_literal_echo`
+> = faithful owner-aware echo of FACTUAL declaratives — kills the 3B's inversions
+> "they have no smokes"→"call smokes", "they bought"→"we have credits"). **C — LLM brevity +
+> no-LLM-for-tactical** (`_RELAY_SAMPLING` max_tokens=56, tightened `_REPHRASE_PROMPT`,
+> `_cap_sentences(2)`, and the `tactical>=1` pre-route → any line with a concrete count/loc/
+> ability token takes the faithful literal, never the 3B; "rush B"/"bonus"/"care … hookah"
+> stopped being hallucinated). **D — ask-form questions** (`relay_speech._as_question_relay`;
+> an aux lead needs a SUBJECT so "is not the problem"/"is arguing" stay declarative). **E —
+> persona** (Tony Stark venom in `orchestrator.ULTRON_GAMING_PERSONA` + Marvel routing even
+> with a mangled asker via `_match_reported_question`; identity brevity — were-you / streaming /
+> "don't sound like Ultron" → short curated pools; `DEFAULT_PROMO_LINES` = a TTS-phonetic
+> twitch.tv/1v9 Khan plug). **F — routing** (`_COMPLIMENT_RE`+`DEFAULT_COMPLIMENT_LINES`;
+> `_TEAM_ARGUING_RE`→clinical calm; `_FF_REQUEST_RE`→mic rally; `_NAMED_INFO_TOKEN_RE` so a
+> short named info-relay echoes instead of being hallucinated). **G — STT repairs**
+> (`_stt_correct` phrase fixes: black widow, play off, "<agent> walled", my Sova, flame Jett,
+> Yoru, Raze ult, volt→ult, Sheriff, "I hear …", two cat; `ulltron` wake homophone). **H —
+> infra** (`tts/kokoro_engine.py` pre-splits sentences onto their own lines so KPipeline's
+> inter-sentence GAP fires every time — the "tails still blend" fix; wake `ultron` 0.7→0.65;
+> `command_router` `KENNING_ROUTER_WAIT_SECONDS` env so unit tests fail-fast to lexical instead
+> of a 30 s cold-sidecar poll). **GAMING-PERSONA GUARANTEE (hard requirement):**
+> `orchestrator._gaming_conversational_prompt()` now returns the Ultron persona when gaming/
+> testing is active **OR the LIVE-LOADED model is the gaming 3B** (tied to `self.llm.model_path`)
+> — a flag desync can never leak the "Kenning" desktop persona while the 3B is in memory; the
+> web-search fallback call sites got belt-and-suspenders guards; deep-research/recall are
+> desktop-only and never load in lean gaming. So in gaming it is ALWAYS Ultron + the 3B, never
+> the desktop LLM. **SPECULATIVE DECODING:** the `llama-3.2-3b-abliterated` gaming preset
+> already ships a 1B draft GGUF + a `llm.draft_kind` knob ("none"/"pld"/"model"); left at
+> "none" — after this work ~85% of relays resolve deterministically (no LLM call) so the
+> addressable surface is small, the gaming 3B runs on CPU (a draft competes for the same
+> cores → marginal), and "pld"/"model" hit a known `llama_decode returned -1` crash. ~824
+> audio tests green (3 pre-existing env-only failures: local `testing_mode` + the gate
+> threshold). DETAIL → memory `project_battery_coherence_fix_2026_06_17.md`.
+>
 > **Validating HEAD: STOP-WINDOW PTT TOGGLE + ROBUST ORPHAN-PROCESS GUARDRAILS** (2026-06-16,
-> latest — follows the corpus-fix pass below). (1) The tiny STOP window
+> follows the corpus-fix pass below). (1) The tiny STOP window
 > (`audio/stop_button.py`) gained a **PTT toggle** below the STOP button:
 > green "PTT ON" = Ultron auto-holds the team-mic key for relays, grey "PTT OFF" = the
 > relay STILL plays but he never presses the key. Wired through a runtime

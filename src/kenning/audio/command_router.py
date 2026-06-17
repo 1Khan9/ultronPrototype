@@ -162,6 +162,17 @@ def get_command_router() -> Optional[CommandRouter]:
             # lexical-only. The sidecar is spawned EARLY, so this usually returns
             # after only a couple of seconds at the boot-end warmup.
             wait = float(getattr(rcfg, "sidecar_startup_timeout_seconds", 30.0)) if rcfg else 30.0
+            # Env override (tests/CI): KENNING_ROUTER_WAIT_SECONDS=0 fails fast to
+            # the lexical backend instead of blocking on the cold-sidecar poll, so
+            # a unit-test run never hangs 30s when no sidecar is up. Boot is
+            # unaffected (the env is unset in production).
+            import os as _os
+            _wenv = _os.environ.get("KENNING_ROUTER_WAIT_SECONDS")
+            if _wenv is not None:
+                try:
+                    wait = float(_wenv)
+                except ValueError:
+                    pass
             backend = get_backend(prefer, host=host, port=port,
                                   emb_weight=emb_w, wait_seconds=wait)
             _router = CommandRouter(backend)

@@ -288,9 +288,11 @@ wake_word:
   # still false-fires; lower it toward 0.5 if it ever misses your real callout.
   thresholds:
     kenning: 0.4
-    ultron: 0.7                 # 2026-06-15: 0.6 -> 0.7 (stricter; bare callouts
-                                # now relay without "tell my team", so a false
-                                # accept could broadcast random speech to the team)
+    ultron: 0.65                # 2026-06-17: 0.7 -> 0.65 (user wanted a SLIGHT
+                                # sensitivity bump -- it occasionally missed a real
+                                # "Ultron"). The 3-frame sustain gate below stays
+                                # the primary false-accept guard, so a modest
+                                # threshold drop is safe.
   # Require this many CONSECUTIVE above-threshold frames before firing -- the
   # main no-retrain false-accept filter (a real wake word sustains a high score
   # for many frames; a confusable spikes for one). 2 is a light filter.

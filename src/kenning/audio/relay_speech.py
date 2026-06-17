@@ -121,19 +121,19 @@ _RELAY_PATTERNS: tuple[re.Pattern[str], ...] = (
     # transcripts insert: "tell my team, two B" / "tell my team. I'm one shot").
     re.compile(
         rf"^(?:please\s+)?tell\s+{_GROUP}[\s,:.]+"
-        rf"(?:that\s+|to\s+)?(?P<payload>.+)$",
+        rf"(?:that\s+(?!is\b|are\b|was\b|were\b|'s\b|isn'?t\b|aren'?t\b)|to\s+)?(?P<payload>.+)$",
         re.IGNORECASE,
     ),
     # "let my team know (that) X" / "let my team know, X"
     re.compile(
         rf"^(?:please\s+)?let\s+{_GROUP}\s+know[\s,:]+"
-        rf"(?:that\s+)?(?P<payload>.+)$",
+        rf"(?:that\s+(?!is\b|are\b|was\b|were\b|'s\b|isn'?t\b|aren'?t\b))?(?P<payload>.+)$",
         re.IGNORECASE,
     ),
     # "remind/warn/inform my team (that|to|about) X" / "warn my team, X"
     re.compile(
         rf"^(?:please\s+)?(?:remind|warn|inform)\s+{_GROUP}[\s,:]+"
-        rf"(?:that\s+|to\s+|about\s+)?(?P<payload>.+)$",
+        rf"(?:that\s+(?!is\b|are\b|was\b|were\b|'s\b|isn'?t\b|aren'?t\b)|to\s+|about\s+)?(?P<payload>.+)$",
         re.IGNORECASE,
     ),
     # "wish my team good luck" -- relays the wish itself.
@@ -161,7 +161,7 @@ _RELAY_PATTERNS: tuple[re.Pattern[str], ...] = (
     # a bare "tell him/her ..." is only honoured in the context+directive forms.
     re.compile(
         rf"^(?:please\s+)?tell\s+{_GROUP_PRON}[\s,:]+"
-        rf"(?:that\s+|to\s+)?(?P<payload>.+)$",
+        rf"(?:that\s+(?!is\b|are\b|was\b|were\b|'s\b|isn'?t\b|aren'?t\b)|to\s+)?(?P<payload>.+)$",
         re.IGNORECASE,
     ),
     # "let 'em/them know (that) X" / "warn 'em X" -- pronoun-group variants of
@@ -169,7 +169,7 @@ _RELAY_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(
         rf"^(?:please\s+)?(?:let\s+{_GROUP_PRON}\s+know|"
         rf"(?:remind|warn|inform)\s+{_GROUP_PRON})[\s,:]+"
-        rf"(?:that\s+|to\s+|about\s+)?(?P<payload>.+)$",
+        rf"(?:that\s+(?!is\b|are\b|was\b|were\b|'s\b|isn'?t\b|aren'?t\b)|to\s+|about\s+)?(?P<payload>.+)$",
         re.IGNORECASE,
     ),
     # "say to my team X" / "say to the guys X" / "say in game chat (that) X" /
@@ -308,6 +308,22 @@ _FUN_FACT_RE = re.compile(
     rf"(?:fun|interesting|random|cool|true)?\s*fact"
     rf"(?:s)?(?:\s+(?:to|for|in|with)\s+(?:{_GROUP}|them|chat))?"
     rf"\s*[.!?]?$",
+    re.IGNORECASE,
+)
+
+# Self-promo / stream plug ("tell my team gg and go check me out at twitch.tv/1v9
+# Khan", "follow me on twitch", "check out my stream"). A curated, TTS-FRIENDLY
+# line names the channel phonetically so kokoro pronounces it cleanly -- the raw
+# "twitch.tv/1v9 Khan" comes through STT mangled ("twitch.tv1v9con") and TTS would
+# butcher it anyway (2026-06-17 battery [241]).
+_PROMO_RE = re.compile(
+    r"\b(?:"
+    r"check\s+(?:me|us|my\s+stream)\s+out|check\s+out\s+my\s+(?:stream|twitch|channel)|"
+    r"go\s+(?:check|follow|watch)\s+(?:me|my\s+stream)|"
+    r"follow\s+me\s+on\s+(?:twitch|stream)|come\s+(?:watch|see)\s+(?:me|my\s+stream)|"
+    r"my\s+(?:twitch|stream|channel)\b|twitch\.?tv|twitch\s+dot\s+tv|twitch\s*\dv|"
+    r"check\s+me\s+out\s+at|subscribe\s+to\s+me|drop\s+a\s+follow"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -767,6 +783,17 @@ _CRITICIZE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Compliment a SPECIFIC teammate ("compliment my Sage", "hype up my Jett",
+# "praise Sova") -- Ultron AUTHORS cold, backhanded praise (compose), naming the
+# teammate. Mirror of _CRITICIZE_RE (2026-06-17 battery [64], which fell to the
+# desktop LLM and analysed the agent instead of praising them on the mic).
+_COMPLIMENT_RE = re.compile(
+    rf"^(?:please\s+)?(?:compliment|praise|hype(?:\s+up)?|gas(?:\s+up)?|"
+    rf"big\s+up|prop|props\s+to|shout\s+out)[\s,]+"
+    rf"(?:my\s+|our\s+|the\s+)?(?P<name>{_CRITICIZE_NAME})(?:'s)?\b.*$",
+    re.IGNORECASE,
+)
+
 
 # Conjunctions an ask-payload may open with. "to" is stripped after the
 # match; question words are KEPT so the rephrase delivers a question
@@ -1121,6 +1148,28 @@ def _asker_is_teammate(context: str, vocabulary: Sequence[str]) -> bool:
     }
 
 
+# Our OWN team is in conflict ("the team is arguing", "my squad is tilting",
+# "the boys are at each other's throats") -> a clinical de-escalation, never a
+# relay of the broken "is arguing" fragment (2026-06-17 [151]).
+_TEAM_ARGUING_RE = re.compile(
+    r"\b(?:my\s+|the\s+|our\s+)?(?:team|teammates?|squad|boys|guys|mates)\s+"
+    r"(?:is|are|is\s+being|are\s+being|keeps?|started|getting)\s+"
+    r"(?:arguing|argue|fighting|fight|toxic|tilt(?:ed|ing)?|flaming\s+each|"
+    r"melting\s+down|at\s+each\s+other'?s\s+throats|going\s+at\s+(?:it|each)|"
+    r"bickering|in[\s-]?fighting|turning\s+on\s+each)\b",
+    re.IGNORECASE,
+)
+# A teammate wants to "ff" (the abbreviation the reaction frame's "forfeit\w*"
+# misses) -> Ultron rallies against it on the mic (2026-06-17 [88]). "forfeit" /
+# "surrender" / "give up" already route through _match_reported_reaction, so this
+# only fills the "ff" gap. Anchored on an is/are/wants/asking lead.
+_FF_REQUEST_RE = re.compile(
+    r"\b(?:is|are|keeps?|wants?\s+to|asking\s+to|trying\s+to|talking\s+about)\s+"
+    r"(?:asking\s+to\s+|wanting\s+to\s+)?(?:ff\b|f\.f\.?|eff\s+eff)",
+    re.IGNORECASE,
+)
+
+
 def _match_reported_question(
     cleaned: str, raw_text: str, vocabulary: Sequence[str],
 ) -> Optional[RelayCommand]:
@@ -1134,7 +1183,16 @@ def _match_reported_question(
     """
     s = _TEAM_LEAD_STRIP_RE.sub("", cleaned, count=1).strip()
     if not _asker_is_teammate(s, vocabulary):
-        return None  # asker isn't a teammate -> conversational, not a relay
+        # Asker not recognised as a teammate -> normally conversational. BUT a
+        # Marvel topic ("Astra asked about Tony Stark" mis-heard to "Astrodist
+        # asked...") is still answered in character on the mic -- Ultron OWNS
+        # Stark / the Avengers, and his contempt is persona-critical. Route it to
+        # the answer path regardless of the mangled asker. (2026-06-17 battery
+        # [89]: a mangled asker sent the Tony Stark question to the desktop LLM,
+        # which answered with admiration instead of hatred.)
+        from kenning.audio._ultron_answer import marvel_topic
+        if not marvel_topic(s):
+            return None  # not a teammate and not Marvel -> conversational
     if _DIRECTIVE_TAIL_RE.search(s):
         return None  # explicit directive -> the directive path owns it
     if _FIRST_PERSON_TO_YOU_RE.match(s):
@@ -1339,11 +1397,32 @@ def match_relay_command(
             compose=True, directive=f"criticize:{_crit_agent}",
         )
 
+    # Compliment a SPECIFIC teammate ("compliment my Sage") -- Ultron AUTHORS the
+    # backhanded praise (compose), naming the teammate. Before the compose/relay
+    # patterns so the named-agent compliment wins.
+    _mcomp = _COMPLIMENT_RE.match(cleaned)
+    if _mcomp is not None:
+        _comp_agent = _canon_agent(_mcomp.group("name")) or (
+            _mcomp.group("name").strip().title()
+        )
+        return RelayCommand(
+            payload="compliment", raw_text=text, addressee="team",
+            compose=True, directive=f"compliment:{_comp_agent}",
+        )
+
     # Fun-fact requests ("tell my team a fun fact") -- verbatim corpus.
     if _FUN_FACT_RE.match(cleaned):
         return RelayCommand(
             payload="fun_fact", raw_text=text,
             addressee="team", compose=True, fun_fact=True,
+        )
+
+    # Self-promo / stream plug ("gg and go check me out at twitch.tv/1v9 Khan")
+    # -> a curated, TTS-friendly channel shout (the raw URL is STT/TTS garbage).
+    if _PROMO_RE.search(cleaned):
+        return RelayCommand(
+            payload="promo", raw_text=text, addressee="team",
+            compose=True, directive="promo",
         )
 
     # Greeting / farewell are COMPOSE set-pieces (Ultron authors the line).
@@ -1377,6 +1456,24 @@ def match_relay_command(
                 payload="encouragement", raw_text=text,
                 addressee="team", compose=True,
             )
+
+    # Our team is arguing / tilting / toxic with each other -> Ultron breaks it up
+    # with a clinical de-escalation (NOT a relay of the broken fragment "is
+    # arguing"). 2026-06-17 [151].
+    if _TEAM_ARGUING_RE.search(cleaned):
+        return RelayCommand(
+            payload="calm", raw_text=text, addressee="team",
+            compose=True, directive="calm",
+        )
+
+    # A teammate is asking to forfeit / give up -> Ultron rallies the team against
+    # it ON THE MIC (a curated morale line), never a private desktop aside
+    # (2026-06-17 [88]).
+    if _FF_REQUEST_RE.search(cleaned):
+        return RelayCommand(
+            payload="encouragement", raw_text=text, addressee="team",
+            compose=True,
+        )
 
     # Explicit "...think and respond" trigger -> route the bare question/statement
     # to the LLM ANSWER path (pipeline D). Before the reported-question / reaction
@@ -1534,9 +1631,11 @@ _REPHRASE_PROMPT = (
     "near-identical callout moments ago.\n"
     "OFF-SNAP LINES -- insults, encouragement, calm-downs, economy strategy, "
     "questions, banter, answering a teammate, who you are: NOT split-second, "
-    "so spend more words and your Ultron character -- about two sentences, "
-    "vivid and clinical, under ~30 words (never a monologue; this is a live "
-    "match). For STYLE only: an insult sharpens into a withering, SPECIFIC "
+    "so spend your Ultron character -- but stay TIGHT: ONE punchy sentence, "
+    "vivid and clinical, around 12 words (a second SHORT sentence only if the "
+    "line truly needs it; NEVER a monologue -- this is a live match and a long "
+    "line gets the user killed). For STYLE only: an insult sharpens into a "
+    "withering, SPECIFIC "
     "put-down in your own voice aimed at whoever the user named (never a stock "
     "phrase -- match the exact insult given), an economy call explains ('save' "
     "-> 'We have insufficient credits. We save this round.'), a calm-down is clinical "
@@ -1932,6 +2031,23 @@ def _fact_report(payload: str) -> str:
             + "; ".join(parts) + ". Keep the user's stance/sentiment intact.")
 
 
+# 2026-06-17 battery: constrained sampling for the generic relay rephrase, the
+# real fix for the user's "responses very often too verbose ... take a bit too
+# long". The CPU 3B rambles to 40-50 words without a hard cap; max_tokens is the
+# decisive lever (and fewer generated tokens = lower latency). Stop sequences kill
+# a scaffold/prompt-example echo. Kept characterful (temp/min_p) but bounded.
+_RELAY_SAMPLING = {
+    "max_tokens": 56,
+    "temperature": 0.8,
+    "top_p": 0.92,
+    "top_k": 40,
+    "min_p": 0.08,
+    "repeat_penalty": 1.18,
+    "stop": ["\n\n", "\nADDRESS:", "\nTASK:", "\nWHAT THEY", "\nTHEIR ",
+             "\nUser:", "\nUSER:", "Ultron:", "ADDRESS:", "\n-"],
+}
+
+
 def _build_rephrase_prompt(
     command: RelayCommand,
     recent_lines: Optional[Sequence[str]] = None,
@@ -2181,7 +2297,8 @@ _CONSOLATION_RE = re.compile(
 )
 _PRAISE_RE = re.compile(
     r"^\s*(?:good|nice|great|strong)\s+(?:half|round|game|clutch|shot|play|"
-    r"job)|^\s*nice\s+clutch|^\s*well\s+played|^\s*clutch\s*[!.]?\s*$|"
+    r"job|trade|frag|flick)\b|^\s*nice\s+clutch|"
+    r"^\s*well\s+played|^\s*clutch\s*[!.]?\s*$|"
     r"^\s*gg\b|^\s*nice\s*[!.]?\s*$|^\s*let'?s\s+go\s*[!.]?\s*$",
     re.IGNORECASE,
 )
@@ -2248,6 +2365,23 @@ DEFAULT_CRITICIZE_LINES: tuple[str, ...] = (
     "{name}, you gave them a free entry. I do not give anything for free.",
 )
 
+#: Curated Ultron COMPLIMENT lines ('{name}' substituted with the teammate). Cold,
+#: backhanded praise -- Ultron acknowledges competence as a rare approach to his
+#: own precision, never warm. The 3B analysed the agent instead of praising them
+#: (live [64]); a curated pool lands real, in-character praise. Opens with the name.
+DEFAULT_COMPLIMENT_LINES: tuple[str, ...] = (
+    "{name}, that was precise. For a moment you approached my standard. Keep it there.",
+    "{name}, clean execution. The math approved of you that round -- rare.",
+    "{name}, you read that perfectly. Even I could not have called it tighter.",
+    "{name}, flawless. Do that every round and I may stop correcting you.",
+    "{name}, efficient and decisive. You are learning to think like the machine.",
+    "{name}, that was the right play, made well. Note it, and repeat it.",
+    "{name}, sharp. You earned that one -- and I do not say that lightly.",
+    "{name}, exactly the angle I would have taken. We are aligned. Good.",
+    "{name}, no wasted motion, no hesitation. That is how it is done.",
+    "{name}, you carried that round on competence, not luck. I noticed.",
+)
+
 
 #: DEFAULT_GREETING / VICTORY / DEFEAT / FAREWELL / IDENTITY _LINES are imported
 #: from _ultron_setpieces.py (above) -- board-expanded ~5x, gate-filtered, every
@@ -2269,7 +2403,7 @@ DEFAULT_STREAMER_LINES: tuple[str, ...] = (
 _IDENTITY_Q_RE = re.compile(
     r"\b(?:an?\s+)?(?:a\.?i\.?|artificial\s+intelligence|bot|robot|sound\s*board|"
     r"voice\s*changer|human|real(?:\s+person)?|person|machine|program|"
-    r"recording|streamer)\b",
+    r"recording|streamer|streaming|live\s+on\s+stream)\b",
     re.IGNORECASE,
 )
 _STREAMER_Q_RE = re.compile(r"\bstreamer\b", re.IGNORECASE)
@@ -2288,7 +2422,11 @@ _IDENTITY_FORM_RE = re.compile(
     r"|\b(?:is|are)\s+(?:this|that|it|you|someone)\b[^?]*?"
     r"\b(?:recording|recorded|pre[\s-]?recorded|playback|played\s+back|"
     r"soundboard|sound\s*board|voice[\s-]?changer|controlling\s+you|"
-    r"making\s+you\s+(?:say|talk))\b",
+    r"making\s+you\s+(?:say|talk))\b"
+    # "you don't sound like Ultron" / "that doesn't sound like you" -- an identity
+    # CHALLENGE; Ultron asserts he IS Ultron (2026-06-17 battery [190]).
+    r"|\b(?:do(?:es)?n'?t|do\s+not)\s+sound\s+like\s+(?:ultron|you|the\s+real)\b"
+    r"|\bsound\s+nothing\s+like\s+(?:ultron|you)\b",
     re.IGNORECASE,
 )
 
@@ -2309,8 +2447,12 @@ def _is_identity_question(text: object) -> bool:
     # Generic "what are you / what you are / who are you" is always identity.
     if "what are you" in t or "what you are" in t or "who are you" in t:
         return True
-    # "are you (a) <nature>" / "you are (a) <nature>".
-    if (any(k in t for k in ("are you", "you are", "you a ", "you an "))
+    # "are you (a) <nature>" / "you are (a) <nature>" / "if you were a <nature>"
+    # (STT renders "are you a voice changer" as "if you were a voice changer";
+    # "were you" / "you been" are the same probe -- 2026-06-17 battery [88]).
+    if (any(k in t for k in ("are you", "you are", "you a ", "you an ",
+                             "you were", "were you", "you been", "you bein",
+                             "you a streamer", "you're a", "you're streaming"))
             and _IDENTITY_Q_RE.search(t)):
         return True
     # Control / strings / recording forms ("who's controlling you", "do you have
@@ -2330,8 +2472,18 @@ DEFAULT_CALM_LINES: tuple[str, ...] = (
     "{name}a clear mind wins rounds. Settle, and execute.",
 )
 
+#: Curated self-promo / stream-plug lines (2026-06-17 [241]). The channel is
+#: spelled PHONETICALLY ("one V nine Khan") so kokoro pronounces "1v9 Khan"
+#: cleanly; "Twitch" reads fine as-is. Hand-written in Ultron's register.
+DEFAULT_PROMO_LINES: tuple[str, ...] = (
+    "Good game. The architect behind me streams on Twitch -- one V nine Khan. Witness the next round of evolution.",
+    "GG. Watch this done properly on Twitch: one V nine Khan. The rest of you, take notes.",
+    "Match closed. Find the mind that runs me on Twitch -- one V nine Khan.",
+    "Good game. Come see it from the source -- Twitch, one V nine Khan. You will learn something.",
+)
+
 #: Curated-pool routing for compose directives that are character SET-PIECES
-#: (team intro, match close) rather than tactical relays. Checked in
+#: (team intro, match close, stream plug) rather than tactical relays. Checked in
 #: ``build_relay_line`` BEFORE the LLM: a curated line with anti-repeat is far
 #: more reliable than the 3B compose and guarantees the user's intended beats.
 _DIRECTIVE_POOLS: dict[str, tuple[str, ...]] = {
@@ -2339,6 +2491,7 @@ _DIRECTIVE_POOLS: dict[str, tuple[str, ...]] = {
     "farewell_win": DEFAULT_VICTORY_LINES,
     "farewell_loss": DEFAULT_DEFEAT_LINES,
     "farewell": DEFAULT_FAREWELL_LINES,
+    "promo": DEFAULT_PROMO_LINES,
 }
 
 
@@ -2500,6 +2653,129 @@ def _as_enemy_status(payload: str) -> Optional[str]:
     return f"They're {rest}."
 
 
+# 2026-06-17 battery: declarative tactical statements the abliterated 3B INVERTS
+# ("they have no smokes" -> "Call smokes, we need them"; "they bought" -> "We have
+# sufficient credits"; "I can buy next round" -> "We have insufficient credits"),
+# pads into a monologue, or hallucinates an unrelated callout on -- but which each
+# carry a concrete FACT, not an opinion. Echo them faithfully via _literal_relay
+# (owner-aware flavor) so they NEVER reach the model. OPINIONS / insults /
+# playstyle reads ("they're washed", "their Sage is hard-stuck") are NOT matched
+# here and keep the LLM's flavor.
+_ECHO_ENEMY_FACT_RE = re.compile(
+    r"^(?:they(?:'re|\s+are)?|the\s+enem(?:y|ies)(?:\s+team)?|enemy|enemies)\s+"
+    r"(?:"
+    r"have|has|had|got|"                                  # comp / util / time
+    r"bought|buy|buying|saved|saving|forced|forcing|reset|eco(?:'?d|ing)?|"
+    r"on\s+eco|need|needs|"                               # economy state
+    r"will|won'?t|gonna|going\s+to|about\s+to|"           # predictions
+    r"never|always|usually|tend\s+to|"                    # tendencies
+    r"crossed|cross|wrapped|wrapping|wrap|faking|fake|"   # movement reads
+    r"re-?hit|re-?hitting|committing|commit|splitting|split|"
+    r"playing|play|posted|posting|camping|holding\s+|waiting|saving\s+op|"
+    r"off\s+(?:the\s+)?spike|all\s+(?:there|here|on\b)|"
+    r"could\s+be|may\s+be|might\s+be|may|might|tripped"
+    r")\b",
+    re.IGNORECASE,
+)
+_ECHO_OUR_FACT_RE = re.compile(
+    r"^(?:"
+    r"we\s+(?:need|needs|want|wanna|have\s+to|gotta|got\s+to|should|can|could|"
+    r"can'?t|will)\b|"
+    r"i\s+(?:can|will|could|gotta|have\s+to)\s+(?:buy|drop|save|get|trade)\b|"
+    r"i(?:'m|\s+am)\s+(?:mollied|smoked|flashed|blinded|stunned|naded|comboed)\b|"
+    r"i\s+(?:mollied|smoked)\b"
+    r")",
+    re.IGNORECASE,
+)
+_ECHO_AGENT_ECON_RE = re.compile(
+    r"^(?:[A-Za-z/]+)\s+(?:has\s+ult\s+and\s+)?can\s+(?:buy|drop)\b",
+    re.IGNORECASE,
+)
+_ECHO_SOUND_RE = re.compile(
+    r"^(?:i\s+(?:can\s+)?hear|hear|footsteps|i'?m\s+hearing|i\s+heard)\b",
+    re.IGNORECASE,
+)
+
+
+def _as_literal_echo(
+    p: str, recent_lines: Optional[Sequence[str]], addressee: str,
+) -> Optional[str]:
+    """Faithful owner-aware echo for the factual declaratives the 3B mangles
+    (enemy comp/economy/movement/tendency reads, our-team needs, self status,
+    sound). Returns None for questions and for opinions / insults / playstyle
+    reads (those keep the LLM's flavor)."""
+    if _is_question_payload(p):
+        return None
+    if (_ECHO_ENEMY_FACT_RE.match(p) or _ECHO_OUR_FACT_RE.match(p)
+            or _ECHO_AGENT_ECON_RE.match(p) or _ECHO_SOUND_RE.match(p)):
+        return _literal_relay(p, recent_lines, addressee)
+    return None
+
+
+# 2026-06-17 battery: an ASK-form TEAM question ("ask my team if Sova darts long",
+# "ask my team why they aren't smoking", "ask my team where our smokes are") must
+# be POSED as a question, not relayed as a broken declarative ("If Sova darts
+# long. He holds long" -- the 3B dropped the interrogative AND tacked on an
+# irrelevant tail). Render it cleanly + deterministically (no flavor tail).
+# A wh-question lead always poses a question. An AUXILIARY lead (is/are/do/can/...)
+# only poses a question when a SUBJECT follows it ("are THEY committing"); a bare
+# "is not the problem" / "is arguing" is a declarative fragment (the addressee was
+# stripped), NOT a question -- 2026-06-17 [55][151].
+_Q_WH_LEAD_RE = re.compile(
+    r"^(?:why|how|where|when|what|whats|who|whom|which|whose)\b", re.IGNORECASE)
+_Q_AUX_SUBJECT_RE = re.compile(
+    r"^(?:are|is|am|was|were|can|could|should|would|will|do|does|did|have|has|had)"
+    r"\s+(?:they|he|she|it|we|you|i|the|their|our|my|a|an|someone|anyone|"
+    r"everyone|enemy|enemies)\b",
+    re.IGNORECASE,
+)
+_Q_STRONG_LEAD_RE = re.compile(
+    r"^(?:why|how|where|when|what|whats|who|whom|which|whose|are|is|am|was|were|"
+    r"can|could|should|would|will|have|has|had|any|did)\b",
+    re.IGNORECASE,
+)
+_Q_IF_LEAD_RE = re.compile(r"^(?:if|whether)\s+(?P<body>.+)$", re.IGNORECASE)
+
+# Concrete tactical/info tokens that mark a NAMED declarative as an information
+# relay (echo it faithfully) rather than an insult/read (keep the LLM's flavor).
+# 2026-06-17 [173].
+_NAMED_INFO_TOKEN_RE = re.compile(
+    r"\b(?:planted?|plant|spike|defus\w*|heal|healing|dog|drone|dart|cam|camera|"
+    r"smoke[ds]?|flash\w*|wall\w*|molly|cage[ds]?|trip\w*|nade[ds]?|stun\w*|"
+    r"ult|ults|ulted|util|kit|gun|op|operator|sheriff|vandal|phantom|outlaw|"
+    r"ghost|spectre|guardian|odin|ares|marshal|judge|bucky|shorty|"
+    r"site|main|long|short|mid|middle|heaven|hell|window|garage|connector|link|"
+    r"ramp|market|sewer|tree|cat|plat|nest|hookah|cubby|elbow|pit|spawn|lobby|"
+    r"low|half|one\s?shot|cracked|reloading|flank\w*|rotat\w*|push\w*|"
+    r"holding|anchor\w*|lurk\w*|peek\w*|crossfire|angle|timing|"
+    r"behind|left|right|back|front|top|close|far|deep)\b",
+    re.IGNORECASE,
+)
+_Q_IMPERATIVE_NEG_RE = re.compile(
+    r"^(?:do\s+not|don'?t|does\s+not|doesn'?t|will\s+not|won'?t)\b", re.IGNORECASE)
+
+
+def _as_question_relay(p: str) -> Optional[str]:
+    """Pose an ask-form team question cleanly ("if Sova darts long" -> "Sova darts
+    long?"; "why they aren't smoking" -> "Why they aren't smoking?"). Returns None
+    for non-questions and for conditionals/compounds (a comma signals a then-
+    clause, e.g. "if they push, fall back" is an order, not a question)."""
+    pl = p.strip().rstrip(".!?,;:")
+    if not pl or "," in pl or _Q_IMPERATIVE_NEG_RE.match(pl):
+        return None
+    if not (2 <= len(pl.split()) <= 9):
+        return None
+    # wh-lead always a question; an aux-lead only when a SUBJECT follows it
+    # (so "is not the problem" / "is arguing" stays a declarative, not a question).
+    if _Q_WH_LEAD_RE.match(pl) or _Q_AUX_SUBJECT_RE.match(pl):
+        return pl[0].upper() + pl[1:] + "?"
+    m = _Q_IF_LEAD_RE.match(pl)
+    if m and len(m.group("body").split()) <= 6:
+        body = m.group("body").strip()
+        return body[0].upper() + body[1:] + "?"
+    return None
+
+
 # Canonical roster display names for agent-name preservation (the 3B sometimes
 # SWAPS one agent for another -- 'chamber is one off ult' -> 'KAY/O is ...').
 _ROSTER_DISPLAY = (
@@ -2619,7 +2895,7 @@ _IMPERATIVE_VERBS = frozenset((
     "rotate push fall defuse plant anchor lurk default spread stack hold wait "
     "retake execute peek swing trade bait watch cover clear check go take get "
     "drop smoke dart flash drone wall knife cage stun recon plant fall fight "
-    "play ult ulti buy save"
+    "play ult ulti buy save carry grab pick res revive heal use"
 ).split())
 
 
@@ -3420,7 +3696,22 @@ def _as_snap_callout(
         first = body.lower().split()[0] if body.split() else ""
         if first in _IMPERATIVE_VERBS and 1 <= len(body.split()) <= 5:
             return fcmd(f"{addressee}, {body}.")   # order to a teammate -> command
+        # A short, INFORMATIONAL declarative to a named teammate ("Reyna, it's not
+        # planted for her", "Skye, you have dog") carrying a concrete tactical
+        # token -> faithful literal; the 3B otherwise hallucinates an unrelated
+        # callout (2026-06-17 [173]). A pure insult/read (no tactical token) keeps
+        # the LLM's flavor.
+        if 1 <= len(body.split()) <= 8 and _NAMED_INFO_TOKEN_RE.search(body):
+            return fcmd(f"{addressee}, {body.rstrip('.!?,;:')}.")
         return None
+
+    # --- ASK-form TEAM question -> pose it cleanly as a question, no flavor tail
+    #     ("if Sova darts long" -> "Sova darts long?"). Deterministic; the 3B
+    #     mangled these into broken declaratives with irrelevant tails. ---
+    if not _is_compound:
+        q = _as_question_relay(p)
+        if q is not None:
+            return q
 
     # --- CAREFUL warnings: 'careful ramp', 'careful flank', 'careful they
     #     could have crossed to ramp' ---
@@ -3534,6 +3825,16 @@ def _as_snap_callout(
                  r"(?P<pl>.+)$", p, re.IGNORECASE)
     if m and _is_place(m.group("pl")):
         return fe(f"They're {m.group('v').lower()} {m.group('pl').strip()}.")
+
+    # --- FAITHFUL ECHO of factual declaratives the 3B inverts / pads / hallucinates
+    #     on (enemy comp/economy/movement/tendency reads, our-team needs, self
+    #     status, sound) -> a clean owner-aware literal, never the model. Placed
+    #     BEFORE the enemy-lead block (which returns None -> LLM for these). Opinions
+    #     / insults / playstyle reads are NOT matched here (-> LLM flavor). ---
+    if flavor and not _is_compound:
+        echo = _as_literal_echo(p, recent_lines, addressee)
+        if echo is not None:
+            return echo
 
     # --- enemy position / action: 'they are <place>' / 'they are flanking' ---
     m = _ENEMY_LEAD_RE.match(p)
@@ -3671,6 +3972,10 @@ def _as_snap_callout(
         "hold": "Hold.", "push with me": "Push with me.",
         "fight for main control": "Fight for main control.",
         "hold a crossfire with me": "Hold a crossfire with me.",
+        # 2026-06-17 economy/movement directives the 3B hallucinated ("bonus" ->
+        # "One mid", "rush" -> an enemy read).
+        "bonus": "Bonus buy.", "bonus buy": "Bonus buy.", "rush": "Rush.",
+        "save": "Save.", "eco": "Eco this round.", "force": "Force buy.",
     }
     if bl in _MOVE:
         return fcmd(_MOVE[bl])
@@ -4520,6 +4825,15 @@ def _as_curated_command(command: "RelayCommand") -> Optional[str]:
         return None
     addr = getattr(command, "addressee", "team")
     named = addr != "team"
+    # A terse weapon / utility / objective REQUEST to a named teammate ("Sova,
+    # carry the spike", "Jett, drop me a gun") is a literal imperative, NOT banter
+    # -- let it fall through to the terse imperative snap rather than a verbose
+    # curated monologue (2026-06-17 [17][81]).
+    if named and re.match(
+            r"^(?:to\s+)?(?:carry|drop|give|buy|get|grab|pick\s+up|take|hold|"
+            r"smoke|flash|dart|cover|trade|res|revive|heal|use)\b",
+            payload.strip(), re.IGNORECASE) and len(payload.split()) <= 6:
+        return None
     for rx, t_id, n_id in _CURATED_RX:
         if rx.search(payload):
             cid = n_id if named else t_id
@@ -4814,6 +5128,14 @@ def build_relay_line(
         line = pick_line(DEFAULT_CRITICIZE_LINES, recent_lines=recent_lines)
         return _cap_line(line.format(name=target), max_chars)
 
+    # Compliment a named teammate ("compliment my Sage") -> a curated cold,
+    # backhanded praise opening with the name (the 3B analysed the agent instead
+    # of praising them on the mic). Reliable + varied.
+    if _dir.startswith("compliment:"):
+        target = _dir.split(":", 1)[1].strip() or "that one"
+        line = pick_line(DEFAULT_COMPLIMENT_LINES, recent_lines=recent_lines)
+        return _cap_line(line.format(name=target), max_chars)
+
     # Identity question ('are you an AI / bot / soundboard / streamer / a real
     # person / who's controlling you / a voice changer / a recording?') -> a
     # DISTINCT curated Ultron answer from the matching CATEGORY pool (~30 lines
@@ -4913,7 +5235,15 @@ def build_relay_line(
         if not getattr(command, "verbatim", False):
             nums, agents, locs, abils = _fact_tokens(command.payload or "")
             tactical = len(nums) + len(locs) + len(abils)
-            if tactical >= 1 and (tactical + len(agents)) >= 2:
+            # 2026-06-17: route ANY line carrying a concrete tactical token
+            # (count / location / ability) straight to the faithful literal +
+            # flavor tail rather than the 3B. The user found the model inverts /
+            # hallucinates single-fact callouts ("rush B" -> "They're rushing B",
+            # "bonus" -> "One mid", "care garage window" -> a hallucination) -- the
+            # literal echo is fact-perfect and still in-character. A pure-agent or
+            # tokenless line (an insult / opinion / banter / read) has tactical==0
+            # and KEEPS the LLM's flavor.
+            if tactical >= 1:
                 lit = _literal_relay(command.payload, recent_lines, command.addressee)
                 if lit:
                     return _cap_line(lit, max_chars)
@@ -4963,6 +5293,7 @@ def build_relay_line(
                     # program is still in development...").
                     tokens = llm.generate_stream(
                         prompt,
+                        sampling=_RELAY_SAMPLING,
                         record_history=False,
                         suppress_memory_context=True,
                         enable_thinking=False,
@@ -5001,10 +5332,11 @@ def build_relay_line(
     # live in game chat).
     line = _strip_artifacts(line)
     # Off-snap character lines (Marvel / general-knowledge / banter) must stay
-    # to 2-3 sentences -- trim a 3B monologue at a whole-sentence boundary. The
-    # curated set-pieces already returned above, so this only touches model
-    # output and never clips an intended greet/identity line.
-    line = _cap_sentences(line, max_sentences=3)
+    # TIGHT -- trim a 3B monologue at a whole-sentence boundary (2026-06-17: the
+    # user flagged verbose answers; 2 sentences max keeps Ultron's flavor without
+    # the ramble). The curated set-pieces already returned above, so this only
+    # touches model output and never clips an intended greet/identity line.
+    line = _cap_sentences(line, max_sentences=2)
     # Drop a spurious leading vocative the 3B prepended to a team-wide answer
     # ('Jett, buy me an op' / 'Sir, the universe is ...').
     line = _strip_spurious_vocative(line, command)

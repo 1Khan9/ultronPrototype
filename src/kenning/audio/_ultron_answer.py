@@ -48,6 +48,9 @@ MARVEL_CANON: dict[str, str] = {
     "captain america": "Captain America", "steve rogers": "Captain America",
     "thor": "Thor", "hulk": "Hulk", "bruce banner": "Hulk",
     "black widow": "Black Widow", "natasha": "Black Widow",
+    # STT/phonetic snap turns "Widow" into the location "window" -- keep the
+    # Marvel topic detectable so the question still routes to the answer path.
+    "black window": "Black Widow",
     "hawkeye": "Hawkeye", "clint barton": "Hawkeye",
     "vision": "Vision", "the vision": "Vision",
     "scarlet witch": "Scarlet Witch", "wanda": "Scarlet Witch",
