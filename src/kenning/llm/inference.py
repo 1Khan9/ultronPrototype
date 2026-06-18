@@ -1642,8 +1642,15 @@ class LLMEngine:
         if getattr(self, "model_path", None) is None:
             return False, "no in-process model is loaded to move"
 
+        # No-op ONLY when already on the EXACT target profile. Compare the
+        # resolved n_gpu_layers against the profile's target, not just the
+        # coarse cpu/gpu label -- otherwise a PARTIAL-offload user (e.g. 20
+        # layers, labeled "gpu") saying "switch to the gpu" would no-op and
+        # never get the full-offload _DEVICE_PROFILES["gpu"] profile applied.
         current = getattr(self, "_device", None)
-        if current == target and not force:
+        target_gl = _DEVICE_PROFILES[target]["n_gpu_layers"]
+        current_gl = getattr(self, "_n_gpu_layers", None)
+        if current == target and current_gl == target_gl and not force:
             return True, f"already on {target}"
 
         if target == "gpu":

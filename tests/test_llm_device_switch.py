@@ -219,6 +219,45 @@ def test_device_switch_failure_keeps_old_engine(monkeypatch):
     assert not eng._cancel.is_set()
 
 
+def test_device_switch_partial_offload_reapplies_full_profile(monkeypatch):
+    # A user on PARTIAL GPU offload (label "gpu", but 20 layers) saying
+    # "switch to gpu" must NOT no-op -- it must reload to the full-offload
+    # profile (-1), because the no-op guard compares the resolved n_gpu_layers
+    # against the profile target, not just the coarse device label.
+    eng = _make_engine(device="gpu")
+    eng._n_gpu_layers = 20  # partial offload
+    new_llm = MagicMock(name="new_llm")
+    captured = {}
+
+    def fake_build(cfg, **kw):
+        captured.update(kw)
+        return new_llm, "models/x.gguf", kw["n_gpu_layers"], kw["n_ctx"]
+
+    fake_torch = MagicMock()
+    fake_torch.cuda.is_available.return_value = True
+    monkeypatch.setitem(__import__("sys").modules, "torch", fake_torch)
+    monkeypatch.setattr(eng, "_build_llama", fake_build)
+    with patch("kenning.llm.inference.get_config") as gc:
+        gc.return_value.llm = MagicMock()
+        ok, msg = eng.reload_for_device("gpu")
+
+    assert ok is True
+    assert msg == "moved to gpu", "partial offload must reload, not no-op"
+    assert captured["n_gpu_layers"] == -1  # full profile applied
+    assert eng._n_gpu_layers == -1
+
+
+def test_device_switch_exact_profile_noops(monkeypatch):
+    # Already on the EXACT full-GPU profile (-1) -> no-op.
+    eng = _make_engine(device="gpu")
+    eng._n_gpu_layers = -1
+    with patch.object(eng, "_build_llama") as build:
+        ok, msg = eng.reload_for_device("gpu")
+    assert ok is True
+    assert "already on gpu" in msg
+    build.assert_not_called()
+
+
 def test_device_switch_force_reloads_same_device(monkeypatch):
     eng = _make_engine(device="cpu")
     initial = eng._llm
