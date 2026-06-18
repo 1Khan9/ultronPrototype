@@ -220,6 +220,26 @@ def test_team_possessive_strips_lead():
     assert _routes_relay("my team's cypher cage on A")
 
 
+def test_hope_lead_recovered_but_musing_preserved():
+    # 2026-06-18: "hope"/"hoped" are observed STT mishears of "tell" before a team
+    # addressee ("hope my team nice try" == "tell my team nice try"). Tested on the
+    # PURE canonicalizer (no sidecar) so it's hermetic.
+    from kenning.audio.command_normalizer import _canonicalize_directive_lead
+
+    assert _canonicalize_directive_lead("hope my team nice try.") == (
+        "tell my team nice try.")
+    assert _canonicalize_directive_lead("hoped my team rotate B.") == (
+        "tell my team rotate B.")
+    # A genuine first-person musing opens with "I" -> the ^-anchored lead never
+    # fires, so it is left untouched (never relayed).
+    assert _canonicalize_directive_lead("I hope my team wins.") == (
+        "I hope my team wins.")
+    # "give my team ..." is a REAL relay verb (encouragement / fun-fact / roast)
+    # and must NOT be rewritten to "tell".
+    assert _canonicalize_directive_lead(
+        "give my team some encouragement").startswith("give ")
+
+
 def test_stt_agent_and_count_mishears():
     assert "Sova" in normalize_command("Silver has his ult")
     # "three" (a count) must NOT be corrupted to the location "tree"

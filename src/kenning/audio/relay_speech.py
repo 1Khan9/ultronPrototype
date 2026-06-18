@@ -933,6 +933,150 @@ def match_relay_toggle(text: str) -> Optional[bool]:
     return None
 
 
+# --- Flavor-tail runtime toggle ---------------------------------------------
+# Snap callouts normally carry a short in-character flavor TAIL ("Rotate B. On
+# my read."). Mid-game that can be too much, so the user can toggle it off by
+# voice ("disable the flavor", "flavor off") and back on. Process-global runtime
+# flag (resets to the env default on restart, like the relay mute). Gated at the
+# single tail chokepoint _join_tail, so EVERY appended tail (tactical flavor,
+# agent-select, thank-you) drops to the bare callout when off. 2026-06-18.
+import os as _os_flavor  # noqa: E402
+
+_flavor_tails_enabled: bool = _os_flavor.getenv(
+    "KENNING_FLAVOR_TAILS", "1").strip().lower() not in (
+    "0", "false", "no", "off", "")
+
+
+def set_flavor_tails_enabled(enabled: bool) -> None:
+    """Enable/disable the in-character flavor tails on snap callouts (runtime)."""
+    global _flavor_tails_enabled
+    _flavor_tails_enabled = bool(enabled)
+
+
+def flavor_tails_enabled() -> bool:
+    return _flavor_tails_enabled
+
+
+_FLAVOR_NOUN = (
+    r"(?:flavou?r|flair|tail|tails|flavou?r\s+tails?|extra\s+commentary|"
+    r"commentary|one[\s-]?liners?|quips?)")
+_FLAVOR_OFF_RE = re.compile(
+    r"^(?:please\s+)?(?:"
+    r"(?:disable|turn\s+off|stop|cut|kill|drop|silence|mute|remove|no\s+more)\s+"
+    rf"(?:the\s+|your\s+|all\s+)?{_FLAVOR_NOUN}"
+    rf"|turn\s+(?:the\s+|your\s+)?{_FLAVOR_NOUN}\s+off"
+    r"|(?:flavou?r|tails?)\s+off"
+    r"|no\s+(?:flavou?r|tails?)"
+    r")\s*[.!?]*$",
+    re.IGNORECASE,
+)
+_FLAVOR_ON_RE = re.compile(
+    r"^(?:please\s+)?(?:"
+    r"(?:enable|turn\s+on|bring\s+back|restore|re-?enable|give\s+me\s+back)\s+"
+    rf"(?:the\s+|your\s+)?{_FLAVOR_NOUN}"
+    rf"|turn\s+(?:the\s+|your\s+)?{_FLAVOR_NOUN}\s+(?:back\s+)?on"
+    r"|(?:flavou?r|tails?)\s+(?:back\s+on|on|back)"
+    r")\s*[.!?]*$",
+    re.IGNORECASE,
+)
+
+
+def match_flavor_toggle(text: str) -> Optional[bool]:
+    """Match the flavor-tail toggle voice command.
+
+    Returns True for "enable flavor" forms, False for "disable flavor" forms,
+    and None otherwise. Strict phrasings only -- ordinary speech falls through.
+    """
+    if not text:
+        return None
+    cleaned = text.strip()
+    if _FLAVOR_OFF_RE.match(cleaned):
+        return False
+    if _FLAVOR_ON_RE.match(cleaned):
+        return True
+    return None
+
+
+# --- Short "say hello" -> a brief greeting (NOT the long team intro) ---------
+# "say hello to my team" -> "Hello team." (a much shorter path than the
+# "introduce yourself" / "greet my team" team intro). "say hello to <agent>" ->
+# "Hello, <Agent>." Distinct from _GREET_RE: checked FIRST, and skipped when
+# "introduce" is present (that stays the long intro). 2026-06-18.
+_HELLO_RE = re.compile(
+    r"^(?:please\s+)?(?:say|give|send)\s+(?:a\s+|me\s+)?"
+    r"(?:hi|hello|hey|heya|hiya|greetings|what'?s\s+up|sup|a\s+(?:hello|"
+    r"hi|greeting))\s+to\s+(?P<target>.+?)\s*[.!?]*$",
+    re.IGNORECASE,
+)
+_HELLO_TEAM_WORDS = frozenset({
+    "team", "my team", "the team", "our team", "the whole team", "everyone",
+    "everybody", "squad", "my squad", "the squad", "boys", "the boys", "guys",
+    "the guys", "mates", "my mates", "crew", "the crew", "fellas", "homies",
+    "teammates", "my teammates", "the teammates", "all", "the lobby", "lobby",
+})
+
+
+def _resolve_hello_target(raw: str) -> Optional[str]:
+    """Resolve the "say hello to X" target to "team", a canonical AGENT name, or
+    None (not a recognized greet target -> fall through to other matchers)."""
+    s = (raw or "").strip().lower().strip(".!?,")
+    s = re.sub(r"^all\s+(?:of\s+)?", "", s)
+    s = re.sub(r"\b(?:my|the|our)\s+(?:whole\s+)?", "", s).strip()
+    if not s:
+        return None
+    if s in _HELLO_TEAM_WORDS or raw.strip().lower().strip(".!?,") in _HELLO_TEAM_WORDS:
+        return "team"
+    try:
+        from kenning.audio._stt_correct import _AGENT_LOWER
+        # Normalize away spaces / hyphens / slashes so "Kay-O", "kay o", "KAY/O"
+        # all resolve to the canonical agent.
+        _norm = lambda x: re.sub(r"[^a-z0-9]", "", x.lower())
+        _nmap = {_norm(k): v for k, v in _AGENT_LOWER.items()}
+        canon = _AGENT_LOWER.get(s) or _nmap.get(_norm(s))
+        if canon:
+            return canon
+    except Exception:                                            # noqa: BLE001
+        pass
+    return None
+
+
+# --- "ask how their day is going" -> a deterministic Ultron courtesy question -
+# "ask everyone how their day is going" -> a team-wide question; "ask Jett how
+# their day is going" -> a named question. The cold machine doing small talk;
+# kept clear and light. Distinct from the relay "ask my team for X" form (this
+# requires the "how their day / how they're doing / about their day" phrasing).
+# 2026-06-18.
+_ASK_DAY_RE = re.compile(
+    r"^(?:please\s+)?ask\s+(?P<target>.+?)\s+(?:"
+    r"how\s+(?:their|his|her|your|they'?re|the\s+team'?s|everyone'?s|the)\s+"
+    r"(?:day|morning|afternoon|evening|night)(?:'?s)?\s+"
+    r"(?:is|are|was|were|going|been|has\s+been|have\s+been|is\s+going|are\s+going)"
+    r"|how\s+(?:they'?re|they\s+are|she'?s|he'?s|you'?re|you\s+are|he\s+is|"
+    r"she\s+is|you\s+is|they\s+is)\s+(?:doing|holding\s+up|feeling)"
+    r"|about\s+(?:their|his|her|your)\s+day"
+    r")\b.*$",
+    re.IGNORECASE,
+)
+_ASK_DAY_TEAM_LINES: tuple[str, ...] = (
+    "How is everyone's day going?",
+    "Status report -- how is everyone's day?",
+    "I am required to ask: how is everyone's day going?",
+    "Before we begin, how is everyone holding up today?",
+    "How has the day treated all of you?",
+    "A moment of courtesy: how is everyone's day?",
+    "How is everyone doing today?",
+    "Tell me, how has your day been, all of you?",
+)
+_ASK_DAY_AGENT_TEMPLATES: tuple[str, ...] = (
+    "How is your day going, {name}?",
+    "{name}, how has your day been?",
+    "Status check, {name} -- how is your day?",
+    "A moment of courtesy, {name}: how is your day going?",
+    "{name}, how are you holding up today?",
+    "Tell me, {name}, how has your day been?",
+)
+
+
 @dataclass(frozen=True)
 class RelayCommand:
     """A parsed "speak to my teammates" instruction.
@@ -1432,6 +1576,33 @@ def match_relay_command(
     # ("tell my team good game, say it exactly like that" -> verbatim "good
     # game", not a farewell monologue).
     _is_verbatim_cmd = bool(_VERBATIM_SUFFIX_RE.search(cleaned))
+
+    # SHORT hello ("say hello to my team" -> "Hello team."; "say hello to Jett"
+    # -> "Hello, Jett.") -- a brief greeting, distinct from the long team intro
+    # below. Checked FIRST; skipped when "introduce" is present (that is the long
+    # intro). Only fires when the target resolves to "team" or a known agent.
+    if not _is_verbatim_cmd and "introduce" not in cleaned.lower():
+        _mh = _HELLO_RE.match(cleaned)
+        if _mh:
+            _tgt = _resolve_hello_target(_mh.group("target"))
+            if _tgt is not None:
+                return RelayCommand(
+                    payload="hello", raw_text=text, addressee=_tgt,
+                    directive="hello",
+                )
+
+    # SHORT social: "ask everyone how their day is going" / "ask Jett how their
+    # day is going" -> a deterministic Ultron courtesy question (no LLM). Only
+    # fires when the target resolves to "team" or a known agent.
+    if not _is_verbatim_cmd:
+        _ma = _ASK_DAY_RE.match(cleaned)
+        if _ma:
+            _tgt = _resolve_hello_target(_ma.group("target"))
+            if _tgt is not None:
+                return RelayCommand(
+                    payload="ask_day", raw_text=text, addressee=_tgt,
+                    directive="ask_day",
+                )
 
     # Greeting ("greet my team" / "introduce yourself to my team") -- a
     # curated Ultron team intro (names himself, assures victory on compliance).
@@ -2284,7 +2455,7 @@ DEFAULT_FUN_FACTS: tuple[str, ...] = (
 from kenning.audio._ultron_setpieces import (  # noqa: E402
     DEFAULT_ENCOURAGEMENT_LINES, DEFAULT_CONSOLATION_LINES, DEFAULT_PRAISE_LINES,
     DEFAULT_GREETING_LINES, DEFAULT_VICTORY_LINES, DEFAULT_DEFEAT_LINES,
-    DEFAULT_FAREWELL_LINES, DEFAULT_IDENTITY_LINES,
+    DEFAULT_FAREWELL_LINES, DEFAULT_IDENTITY_LINES, DEFAULT_CLUTCH_LINES,
 )
 
 # Consolation vs praise short-phrase triggers (off-snap but formulaic). Kept
@@ -2304,12 +2475,73 @@ _PRAISE_RE = re.compile(
 )
 
 
+# "nice try" / "good effort" -> a CRISP, recognizable consolation. The generic
+# DEFAULT_CONSOLATION_LINES pool is intentionally abstract ("A brief silence
+# before the correct note"); spoken to a team after a "tell my team nice try"
+# those koans don't read as the encouragement the user meant. So this subset
+# echoes the literal phrase ("Nice try.") + a SHORT Ultron tail -- same
+# head+tail shape as the thank-you snap. 2026-06-18.
+_NICE_TRY_RE = re.compile(
+    r"^\s*((?:nice|good|solid|great|valiant)\s+(?:try|effort|attempt))\b",
+    re.IGNORECASE,
+)
+_NICE_TRY_TAILS: tuple[str, ...] = (
+    "We take the next.",
+    "Recalibrate. The next is ours.",
+    "One round. The math is unmoved.",
+    "Adjust, and continue.",
+    "The design does not break on one loss.",
+    "Close. Now we correct.",
+    "Onward. They cannot hold.",
+    "We learn. They do not.",
+    "Next round, we end it.",
+    "A setback. Nothing more.",
+)
+
+
+# Clutch confidence ("tell my team I got this") -- Ultron assures he will close
+# the round. Tight: clutch VERBS require an explicit round-object (so a tactical
+# "I'll take A" / "I have ult" / "I got two" never trips it); only "clutch" is
+# unambiguous enough to stand alone. 2026-06-18.
+_CLUTCH_RE = re.compile(
+    r"^\s*(?:"
+    r"i\s+got\s+(?:this|it|us|the\s+round)"
+    r"|i'?ve\s+got\s+(?:this|it|us|the\s+round)"
+    r"|i\s+have\s+(?:this|it|us|the\s+round)"
+    r"|i(?:'?ll|'?m\s+gonna|'?m\s+going\s+to|\s+will|\s+can|\s+gonna)\s+"
+    r"(?:clutch|carry|win|take|close|handle|secure|get)\s+(?:this|it|us|the\s+round)"
+    r"|i(?:'?ll|'?m\s+gonna|'?m\s+going\s+to|\s+will|\s+can|\s+gonna)?\s*clutch(?:ing|\s+up)?\b"
+    r"|leave\s+it\s+to\s+me"
+    r"|this\s+(?:round\s+)?is\s+(?:all\s+)?mine"
+    r"|watch\s+(?:this|me)(?:\s+(?:work|clutch))?\s*[.!?]*$"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _as_clutch(
+    payload: str, recent_lines: Optional[Sequence[str]],
+) -> Optional[str]:
+    """"tell my team I got this" -> a curated Ultron round-clutch confidence line
+    (deterministic, no LLM). Returns None for anything else."""
+    if _CLUTCH_RE.match(payload or ""):
+        return pick_line(DEFAULT_CLUTCH_LINES, recent_lines=recent_lines)
+    return None
+
+
 def _as_consolation_or_praise(
     payload: str, recent_lines: Optional[Sequence[str]],
 ) -> Optional[str]:
-    if _CONSOLATION_RE.match(payload or ""):
+    text = payload or ""
+    m = _NICE_TRY_RE.match(text)
+    if m:
+        head = m.group(1).strip()
+        head = head[:1].upper() + head[1:].lower()      # "nice try" -> "Nice try"
+        tail = pick_line(_NICE_TRY_TAILS, recent_lines=recent_lines)
+        return f"{head}. {tail}"
+    if _CONSOLATION_RE.match(text):
         return pick_line(DEFAULT_CONSOLATION_LINES, recent_lines=recent_lines)
-    if _PRAISE_RE.match(payload or ""):
+    if _PRAISE_RE.match(text):
         return pick_line(DEFAULT_PRAISE_LINES, recent_lines=recent_lines)
     return None
 
@@ -3105,6 +3337,10 @@ def _join_tail(head: str, tail: str) -> str:
     """
     head = (head or "").rstrip()
     tail = (tail or "").strip()
+    # Flavor-tail toggle (voice command): when OFF, drop the tail and speak the
+    # bare callout -- the single chokepoint for every appended tail.
+    if not _flavor_tails_enabled:
+        return head or tail
     if not tail:
         return head
     if not head:
@@ -5150,6 +5386,25 @@ def build_relay_line(
     if getattr(command, "verbatim", False) and command.payload:
         return _cap_line(_strip_artifacts(command.payload), max_chars)
 
+    # SHORT hello -- a brief greeting, deterministic (no LLM), distinct from the
+    # long team intro (directive="greet"). "Hello team." for the team, "Hello,
+    # <Agent>." for a named agent. 2026-06-18.
+    if getattr(command, "directive", None) == "hello":
+        _tgt = getattr(command, "addressee", "team") or "team"
+        line = "Hello team." if _tgt == "team" else f"Hello, {_tgt}."
+        return _cap_line(line, max_chars)
+
+    # "ask everyone / <agent> how their day is going" -> a curated Ultron
+    # courtesy question (deterministic, no LLM); team pool or named template.
+    if getattr(command, "directive", None) == "ask_day":
+        _tgt = getattr(command, "addressee", "team") or "team"
+        if _tgt == "team":
+            return _cap_line(
+                pick_line(_ASK_DAY_TEAM_LINES, recent_lines=recent_lines),
+                max_chars)
+        _tmpl = pick_line(_ASK_DAY_AGENT_TEMPLATES, recent_lines=recent_lines)
+        return _cap_line(_tmpl.format(name=_tgt), max_chars)
+
     # Strip a leading performative relay-WRAPPER ("bro relay that X", "make sure
     # my team knows X", "let them know X") off the payload ONCE, so every
     # downstream path (curated / snap / compound / LLM) sees the bare callout, not
@@ -5296,6 +5551,12 @@ def build_relay_line(
                 pick_line(DEFAULT_ENCOURAGEMENT_LINES, recent_lines=recent_lines),
                 max_chars,
             )
+        # Clutch confidence ('tell my team I got this') -> curated Ultron round-
+        # clutch line. Before consolation/praise so "I'll clutch this" -> the
+        # clutch pool (a bare "clutch" after a teammate's play stays praise).
+        clutch = _as_clutch(getattr(command, "payload", ""), recent_lines)
+        if clutch is not None:
+            return _cap_line(clutch, max_chars)
         # Consolation ('nice try', 'unlucky') / praise ('good half', 'clutch')
         # -- short formulaic morale the 3B mangles; curated + varied.
         cp = _as_consolation_or_praise(getattr(command, "payload", ""), recent_lines)

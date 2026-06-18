@@ -571,6 +571,137 @@ class TestTeamShaping:
 
 
 # ---------------------------------------------------------------------------
+# consolation: crisp "nice try"
+# ---------------------------------------------------------------------------
+
+
+def test_nice_try_relays_crisp_recognizable_line() -> None:
+    import kenning.audio.relay_speech as relay_mod
+
+    # "nice try" / "good effort" -> crisp head + a short Ultron tail, NOT the
+    # abstract DEFAULT_CONSOLATION_LINES koans ("A brief silence before the...").
+    out = relay_mod._as_consolation_or_praise("nice try", None)
+    assert out is not None and out.startswith("Nice try. ")
+    assert any(out.endswith(t) for t in relay_mod._NICE_TRY_TAILS)
+    assert relay_mod._as_consolation_or_praise(
+        "good effort", None).startswith("Good effort. ")
+    assert relay_mod._as_consolation_or_praise(
+        "good try!", None).startswith("Good try. ")
+    # OTHER consolations still use the generic pool (behavior unchanged).
+    assert relay_mod._as_consolation_or_praise(
+        "unlucky", None) in relay_mod.DEFAULT_CONSOLATION_LINES
+    # Non-morale payload -> None (falls through to snap / LLM).
+    assert relay_mod._as_consolation_or_praise("rush B", None) is None
+
+
+def test_clutch_confidence_routes_deterministically() -> None:
+    import kenning.audio.relay_speech as relay_mod
+
+    # "tell my team I got this" -> a curated clutch line (no LLM).
+    for p in ("I got this", "I've got this", "I have this", "I got it",
+              "I'll clutch", "I can clutch this", "I'll carry this",
+              "I'll win this round", "leave it to me", "this round is mine",
+              "I'm gonna clutch", "watch this"):
+        out = relay_mod._as_clutch(p, None)
+        assert out in relay_mod.DEFAULT_CLUTCH_LINES, (p, out)
+    # tactical / unrelated payloads must NEVER trip it.
+    for p in ("I'll take A", "I have ult", "I got two", "I got walled",
+              "I'll take main", "watch the flank", "I have no smokes",
+              "rush B", "nice try"):
+        assert relay_mod._as_clutch(p, None) is None, p
+    # full route.
+    c = relay_mod.match_relay_command("tell my team I got this")
+    assert relay_mod.build_relay_line(c, None, rephrase=False) in \
+        relay_mod.DEFAULT_CLUTCH_LINES
+    assert len(relay_mod.DEFAULT_CLUTCH_LINES) == 20
+
+
+# ---------------------------------------------------------------------------
+# flavor-tail voice toggle + short hello snap
+# ---------------------------------------------------------------------------
+
+
+def test_flavor_toggle_matcher() -> None:
+    import kenning.audio.relay_speech as relay_mod
+
+    assert relay_mod.match_flavor_toggle("disable the flavor") is False
+    assert relay_mod.match_flavor_toggle("flavor off") is False
+    assert relay_mod.match_flavor_toggle("turn off the flavor tails") is False
+    assert relay_mod.match_flavor_toggle("no flavor") is False
+    assert relay_mod.match_flavor_toggle("turn the flavor back on") is True
+    assert relay_mod.match_flavor_toggle("flavor on") is True
+    assert relay_mod.match_flavor_toggle("enable flavor") is True
+    # ordinary callouts / speech never trip it.
+    assert relay_mod.match_flavor_toggle("rotate B") is None
+    assert relay_mod.match_flavor_toggle("tell my team nice try") is None
+
+
+def test_flavor_toggle_gates_tails() -> None:
+    import kenning.audio.relay_speech as relay_mod
+
+    saved = relay_mod.flavor_tails_enabled()
+    try:
+        relay_mod.set_flavor_tails_enabled(True)
+        assert relay_mod._join_tail("Rotate B", "On my read.") == \
+            "Rotate B. On my read."
+        assert relay_mod._flavored("Rotate B", ["On my read."], None) == \
+            "Rotate B. On my read."
+        relay_mod.set_flavor_tails_enabled(False)               # flavor OFF
+        assert relay_mod._join_tail("Rotate B", "On my read.") == "Rotate B"
+        assert relay_mod._flavored("Rotate B", ["On my read."], None) == \
+            "Rotate B"
+    finally:
+        relay_mod.set_flavor_tails_enabled(saved)
+
+
+def test_short_hello_team_and_agent() -> None:
+    import kenning.audio.relay_speech as relay_mod
+
+    c = relay_mod.match_relay_command("say hello to my team")
+    assert c is not None and getattr(c, "directive", None) == "hello"
+    assert relay_mod.build_relay_line(c, None, rephrase=False) == "Hello team."
+    c2 = relay_mod.match_relay_command("say hi to Jett")
+    assert relay_mod.build_relay_line(c2, None, rephrase=False) == "Hello, Jett."
+    c3 = relay_mod.match_relay_command("say hello to everyone")
+    assert relay_mod.build_relay_line(c3, None, rephrase=False) == "Hello team."
+
+
+def test_ask_day_snap_team_and_agent() -> None:
+    import kenning.audio.relay_speech as relay_mod
+
+    # team-wide -> a curated team courtesy question.
+    for t in ("ask everyone how their day is going",
+              "ask my team how their day is going",
+              "ask the team how their day was",
+              "ask everyone how the day is going"):
+        c = relay_mod.match_relay_command(t)
+        assert c is not None and getattr(c, "directive", None) == "ask_day", t
+        assert relay_mod.build_relay_line(c, None, rephrase=False) in \
+            relay_mod._ASK_DAY_TEAM_LINES, t
+    # named agent -> a template with the agent's name.
+    c = relay_mod.match_relay_command("ask Jett how their day is going")
+    out = relay_mod.build_relay_line(c, None, rephrase=False)
+    assert "Jett" in out and out.endswith("?"), out
+    # the real relay "ask my team for X" must NOT be hijacked.
+    c2 = relay_mod.match_relay_command("ask my team for smokes")
+    assert c2 is None or getattr(c2, "directive", None) != "ask_day"
+
+
+def test_short_hello_does_not_hijack_long_intro() -> None:
+    import kenning.audio.relay_speech as relay_mod
+
+    # "introduce yourself" stays the LONG team intro (directive='greet').
+    assert getattr(relay_mod.match_relay_command(
+        "introduce yourself to my team"), "directive", None) == "greet"
+    assert getattr(relay_mod.match_relay_command(
+        "say hello to my team and introduce yourself"), "directive", None) == \
+        "greet"
+    # a non-team, non-agent target is NOT a hello snap.
+    c = relay_mod.match_relay_command("say hello to the enemy")
+    assert c is None or getattr(c, "directive", None) != "hello"
+
+
+# ---------------------------------------------------------------------------
 # resolve_relay_device
 # ---------------------------------------------------------------------------
 

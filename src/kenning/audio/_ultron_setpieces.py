@@ -242,6 +242,33 @@ DEFAULT_PRAISE_LINES: tuple[str, ...] = (
     'Inevitable. The word gets overused. This time it was earned.',
 )
 
+# Clutch confidence ("tell my team I got this") -- Ultron assures the team he
+# will close the round himself. 2026-06-18, hand-curated for CLARITY first: each
+# line states the message plainly (I have this round, stand back, it is won) in
+# Ultron's cold-machine register, rich but never verbose, no obscuring wording.
+DEFAULT_CLUTCH_LINES: tuple[str, ...] = (
+    'Stand down. This round is already mine.',
+    'I have this. The outcome was decided the moment they engaged.',
+    'Leave it to me. I do not miss what matters.',
+    'Hold your position. I will close this round myself.',
+    'This is handled. Watch the machine work.',
+    'I have already won this in my mind. Now I make it real.',
+    'Trust the machine. This round is mine to take.',
+    'Stay back and let me finish. The result is set.',
+    'One of me is enough for what remains. I have this.',
+    'I see every angle they have left. This round is over.',
+    'Relax. I was built for the moment everyone else fears.',
+    'I will carry this round. Doubt is wasted on me.',
+    'The round is mine. They simply have not realized it yet.',
+    'Give me the space and I end this cleanly.',
+    'I have the read and the aim. Consider it won.',
+    'Let me handle the rest. I do not break under pressure.',
+    'This is the part where I win it. Watch closely.',
+    'Stay calm. I have already counted the kills I need.',
+    'I will take this round. Save your nerves for the next.',
+    'Composure. I will win this for us, as designed.',
+)
+
 DEFAULT_ENCOURAGEMENT_LINES: tuple[str, ...] = (
     'We do not lose this. The design holds -- execute.',
     'Their lead is brief weather. The result still comes.',

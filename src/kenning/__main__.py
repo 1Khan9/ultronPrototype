@@ -14,8 +14,46 @@ import sys
 from kenning.utils.logging import configure_logging, get_logger
 
 
+class _ResilientStream:
+    """Wrap a text stream so ``write()`` / ``flush()`` NEVER raise.
+
+    2026-06-18 fix: the orchestrator's run loop and response pipeline echo
+    progress to the console with ~30 plain ``print()`` calls ("kenning: ",
+    "you: ", state lines). When stdout is NOT a healthy console -- a
+    background/detached launch with stdout redirected to a file, a closed
+    parent shell, a ``pythonw`` windowless launch -- a write can throw
+    ``OSError: [Errno 22] Invalid argument``. Because the first ``print()`` in
+    the conversational branch (``_respond``) sits at the TOP of the try block,
+    that exception aborted the ENTIRE turn before TTS ever ran -- so every
+    command that routed to the conversational pipeline was silently DROPPED
+    (observed live as "auto-rejected" callouts). The console echo is a UX
+    nicety; the real output is TTS audio + the rotating log file, so a broken
+    stdout must degrade to silence, never crash a turn. (Companion to the
+    encoding guard below, which fixed the same crash class for cp1252
+    ``UnicodeEncodeError``.) Delegates everything else to the wrapped stream.
+    """
+
+    def __init__(self, wrapped: object) -> None:
+        self._w = wrapped
+
+    def write(self, s):  # noqa: ANN001, ANN201
+        try:
+            return self._w.write(s)
+        except Exception:  # noqa: BLE001 - a dead stdout must never crash a turn
+            return len(s) if isinstance(s, (str, bytes)) else 0
+
+    def flush(self) -> None:
+        try:
+            self._w.flush()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def __getattr__(self, name):  # noqa: ANN001, ANN204 - delegate isatty/fileno/encoding/...
+        return getattr(self._w, name)
+
+
 def _ensure_utf8_stdio() -> None:
-    """Reconfigure stdout / stderr to UTF-8 with ``errors='replace'``.
+    """Make stdout / stderr resilient: UTF-8 encoding AND crash-proof writes.
 
     2026-05-19 fix: on Windows the default console encoding is cp1252
     which cannot encode many characters that show up in source titles
@@ -29,20 +67,31 @@ def _ensure_utf8_stdio() -> None:
     call resilient: unencodable code points become ``?`` in the
     console instead of throwing. The audio pipeline is unaffected
     (TTS uses its own pipeline); only console output changes.
+
+    2026-06-18 fix: ALSO wrap each stream in :class:`_ResilientStream` so a
+    write to a broken/redirected/closed stdout (``OSError: [Errno 22]``)
+    degrades to a no-op instead of aborting the turn. See that class.
     """
     for stream_name in ("stdout", "stderr"):
         stream = getattr(sys, stream_name, None)
         if stream is None:
             continue
         reconfigure = getattr(stream, "reconfigure", None)
-        if reconfigure is None:
-            continue
-        try:
-            reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
-            # Best-effort: a non-reconfigurable stream (rare; tests
-            # sometimes wrap stdio) keeps its existing settings.
-            pass
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                # Best-effort: a non-reconfigurable stream (rare; tests
+                # sometimes wrap stdio) keeps its existing settings.
+                pass
+        # Wrap AFTER reconfigure so encoding settings are applied to the real
+        # stream; the wrapper just guards write/flush. Idempotent guard so a
+        # double call (or an already-wrapped stream) doesn't stack wrappers.
+        if not isinstance(stream, _ResilientStream):
+            try:
+                setattr(sys, stream_name, _ResilientStream(stream))
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def main() -> int:

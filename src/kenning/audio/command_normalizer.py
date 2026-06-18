@@ -149,7 +149,14 @@ _TEAM_NOUN = r"(?:team|teammates?|squad|boys|guys|mates|crew|fellas|homies)"
 _MANGLED_TELL = (
     r"calls?|called|holds?|help|helps|helped|builds?|build|follows?|kills?|"
     r"while|how|puts?|don'?t|without|all|tale|tales|fell|filled|hail|paul|"
-    r"y'?all|told|sell|tal|tel|kel|whilst|hauled|valorant|tellin'?|telling"
+    r"y'?all|told|sell|tal|tel|kel|whilst|hauled|valorant|tellin'?|telling|"
+    # 2026-06-18: "hope"/"hoped" observed as STT mishears of "tell" before a
+    # team addressee ("hope my team nice try" == "tell my team nice try"). Safe:
+    # there is no legitimate "hope (my|the) team X" COMMAND, and a genuine musing
+    # ("I hope my team wins") opens with "I", so the ^-anchored lead never fires.
+    # NOT added: "give" -- it is a real relay verb with its own encouragement /
+    # fun-fact / roast handlers ("give my team some encouragement").
+    r"hope|hopes|hoped"
 )
 _MANGLED_TEAM_LEAD_RE = re.compile(
     rf"^\s*(?:{_MANGLED_TELL})\s+(?:my|the|a|our)\s+{_TEAM_NOUN}\b[\s,:.]*",

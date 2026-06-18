@@ -254,6 +254,111 @@ def _strip_leading_wake_remnant(text: str) -> str:
     return cur
 
 
+def _trim_wake_from_capture(
+    buffer: "np.ndarray",
+    pre_roll_len: int,
+    speech_start_samples: int,
+    sample_rate: int,
+) -> "np.ndarray":
+    """Drop the leading wake-word region from a captured utterance so STT never
+    sees the wake word -- no phantom "Tron"/"Franz"/"Prong" leads, and the
+    command's first word is NOT clipped (2026-06-18 wake-capture fix).
+
+    The wake word "Ultron" lives in ``[0, pre_roll_len)`` -- the cold pre-roll
+    snapshot taken at fire time is audio from BEFORE the detector fired (the wake
+    word itself). The command begins at ``pre_roll_len + speech_start_samples``
+    -- the first VAD SPEECH_START in the live region after the fire. We trim to a
+    small ``guard`` before that onset (so VAD latency never clips the first
+    phoneme) but NEVER earlier than ``pre_roll_len``, so:
+
+      * user PAUSED after "Ultron" (the common case): the wake word AND the gap
+        are dropped, leaving a clean command -- zero leak, zero clip;
+      * user ran "Ultron command" together (no pause): the trim clamps to the
+        wake/command boundary -- the full wake word was consumed before the fire
+        and is excluded; any sub-frame residue at the boundary is caught by the
+        text-level wake strip (``_strip_leading_wake_remnant`` / normalizer).
+
+    Because the wake word always sits in ``[0, pre_roll_len)`` and the trim is
+    always ``>= pre_roll_len``, the pre-roll LENGTH no longer affects the output
+    -- this fixes the leak/clip without the brittle pre-roll tuning that broke it
+    before. Gated by ``KENNING_WAKE_TRIM_TO_SPEECH`` (default ON); fail-open: any
+    error or degenerate offset returns ``buffer`` unchanged.
+    """
+    try:
+        import os
+        if os.getenv("KENNING_WAKE_TRIM_TO_SPEECH", "1").strip().lower() in (
+            "0", "false", "no", "off",
+        ):
+            return buffer
+        n = int(buffer.shape[0])
+        if n <= 0 or pre_roll_len < 0:
+            return buffer
+        guard = int(
+            float(os.getenv("KENNING_WAKE_TRIM_GUARD_MS", "200"))
+            / 1000.0 * float(sample_rate)
+        )
+        command_start = int(pre_roll_len) + max(0, int(speech_start_samples))
+        trim_start = max(int(pre_roll_len), command_start - guard)
+        if 0 < trim_start < n:
+            return buffer[trim_start:]
+        return buffer
+    except Exception:                                            # noqa: BLE001
+        return buffer
+
+
+def _wake_command_cut(
+    segments,
+    n: int,
+    fire_point: int,
+    sample_rate: int,
+    guard_ms: int = 120,
+    margin_ms: int = 150,
+) -> int:
+    """Given VAD speech ``segments`` over a captured buffer (each a dict with int
+    ``start`` / ``end`` sample offsets, as returned by silero ``get_speech_
+    timestamps``), return the sample index where the COMMAND begins -- so the
+    leading wake-word audio can be dropped IN THE AUDIO DOMAIN (no text strip).
+
+    The wake word ends at ~the fire point (the cold-pre-roll boundary); the
+    command is the first speech segment that lives PAST it:
+
+      * a SEPARATE command segment after the wake (the user paused) -> cut at the
+        command's start minus a small guard: the wake word AND the gap are
+        dropped, the whole command kept (zero leak, zero clip);
+      * a segment that STARTS before the fire and extends past it (the user ran
+        "Ultron command" together, one continuous segment) -> cut at the fire
+        boundary (the pre-fire wake is dropped; this is the unavoidable no-pause
+        edge, still audio-domain, never text-stripping);
+      * no speech past the fire (bare "Ultron" / silence) -> cut at the fire so
+        the live region (silence) transcribes empty and the turn stands down.
+
+    Returns a clamped index in ``[0, n)``; ``0`` means "do not trim". Pure /
+    deterministic for unit testing.
+    """
+    if n <= 0:
+        return 0
+    margin = int(margin_ms / 1000.0 * sample_rate)
+    guard = int(guard_ms / 1000.0 * sample_rate)
+    fire = max(0, int(fire_point))
+    cmd = None
+    for seg in (segments or ()):
+        try:
+            if int(seg["end"]) > fire + margin:
+                cmd = seg
+                break
+        except Exception:                                        # noqa: BLE001
+            continue
+    if cmd is None:
+        cut = fire                                   # bare wake / silence
+    else:
+        s = int(cmd["start"])
+        if s >= fire - margin:
+            cut = max(0, s - guard)                  # paused -> clean cut
+        else:
+            cut = fire                               # continuous -> cut at fire
+    return cut if 0 < cut < n else 0
+
+
 class Orchestrator:
     """Wires up audio → wake → VAD → STT → LLM → TTS.
 
@@ -3125,6 +3230,29 @@ class Orchestrator:
             "Team relay is back on." if verdict else
             "Team relay muted. I won't speak to your team until you "
             "turn it back on."
+        )
+        return True
+
+    def _maybe_handle_flavor_toggle(self, user_text: str) -> bool:
+        """Voice toggle for the in-character flavor TAILS on snap callouts
+        ("disable the flavor" / "flavor off" vs "turn the flavor back on").
+        Mid-game the tails can be too much, so this strips them to the bare
+        callout. Runtime + process-global; resets to the env default on restart.
+        Strict matcher -> ordinary utterances fall through."""
+        try:
+            from kenning.audio.relay_speech import (
+                match_flavor_toggle, set_flavor_tails_enabled,
+            )
+            verdict = match_flavor_toggle(user_text)
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("flavor toggle probe failed: %s", e)
+            return False
+        if verdict is None:
+            return False
+        set_flavor_tails_enabled(verdict)
+        logger.info("relay:flavor_toggle | enabled=%s", verdict)
+        self._speak(
+            "Flavor on." if verdict else "Flavor off. Callouts only."
         )
         return True
 
@@ -6042,6 +6170,17 @@ class Orchestrator:
                             follow_up=bool(follow_up_until),
                         )
                         continue
+                    # Flavor-tail toggle: "disable the flavor" / "flavor off"
+                    # vs "flavor back on" -- strips the in-character tails to
+                    # bare callouts mid-game. Checked before the relay handler.
+                    if self._maybe_handle_flavor_toggle(user_text):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="flavor_toggle", follow_up=False,
+                        )
+                        continue
                     # Relay mute toggle: "mute the team chat" / "you can
                     # talk to my team again" -- session-scoped streaming
                     # safety switch. Checked BEFORE the relay handler.
@@ -6661,8 +6800,28 @@ class Orchestrator:
                     cold_pre_roll_s = float(_per[_aw])
         except Exception:                                            # noqa: BLE001
             pass
+        # 2026-06-18: when the audio-domain wake strip is on, capture a GENEROUS
+        # pre-roll so the FULL wake word is present in the buffer (as a VAD
+        # segment to drop) AND any command spoken before the detector fired is
+        # captured, not clipped. The strip removes the wake word in audio, so a
+        # long pre-roll no longer leaks a "...tron" tail into STT. Off -> the
+        # per-word cold pre-roll is used unchanged.
+        import os as _os_pr
+        if _os_pr.getenv("KENNING_WAKE_TRIM_TO_SPEECH", "1").strip().lower() \
+                not in ("0", "false", "no", "off"):
+            try:
+                _gen = float(_os_pr.getenv(
+                    "KENNING_WAKE_CAPTURE_PRE_ROLL_MS", "500")) / 1000.0
+                cold_pre_roll_s = max(cold_pre_roll_s, _gen)
+            except Exception:                                    # noqa: BLE001
+                pass
         cold_pre_roll_samples = int(cold_pre_roll_s * settings.SAMPLE_RATE)
         chunks: list[np.ndarray] = [self.ring.snapshot(cold_pre_roll_samples)]
+        # The wake word lives in chunks[0] (audio captured BEFORE the detector
+        # fired). The post-capture wake strip (_strip_wake_audio) drops it via
+        # VAD segmentation; pre_roll_len marks the fire boundary it keys off.
+        pre_roll_len = int(chunks[0].shape[0]) if (
+            chunks and chunks[0] is not None) else 0
         # 2026-05-22: streaming STT integration. When the engine supports
         # live partials (Moonshine v2 streaming variants), kick off the
         # session NOW and feed the COLD pre-roll. The capture loop below
@@ -6840,8 +6999,12 @@ class Orchestrator:
                     and consecutive_silence_chunks >= speculative_silence_kickoff_chunks
                 ):
                     speculative_kicked = True
-                    audio_so_far = np.concatenate(chunks).astype(
-                        np.float32, copy=False,
+                    # Trim the wake word BEFORE the speculative transcribe so its
+                    # result is already clean (no phantom lead) -- this keeps the
+                    # speculative speed-up instead of forcing a foreground re-run.
+                    audio_so_far = _trim_wake_from_capture(
+                        np.concatenate(chunks).astype(np.float32, copy=False),
+                        pre_roll_len, speech_start_samples, settings.SAMPLE_RATE,
                     )
                     self._kick_off_speculative_stt(audio_so_far)
 
@@ -6914,7 +7077,81 @@ class Orchestrator:
         # returns it instantly without re-running the model.
         if streaming_active:
             self._maybe_stop_stt_stream()
-        return np.concatenate(chunks).astype(np.float32, copy=False)
+        # Remove the leading wake-word audio (foreground path / speculative miss)
+        # via VAD SEGMENTATION over the full buffer -- now safe because the live
+        # capture loop is done. Drops the wake-word segment, keeps the command.
+        # Fail-open to the lighter onset-trim, then the raw buffer.
+        return self._strip_wake_audio(
+            np.concatenate(chunks).astype(np.float32, copy=False),
+            pre_roll_len, speech_start_samples,
+        )
+
+    def _get_wake_seg_model(self):
+        """Lazily load a DEDICATED Silero VAD model for post-capture wake-word
+        segmentation -- separate from ``self.vad`` so a segmentation pass can
+        never reset the streaming detector's state. Cached (incl. the failure
+        case as ``None``)."""
+        m = getattr(self, "_wake_seg_model", "unset")
+        if m != "unset":
+            return m
+        model = None
+        try:
+            from silero_vad import load_silero_vad
+            model = load_silero_vad(onnx=False)
+        except Exception as e:                                   # noqa: BLE001
+            logger.debug("wake-seg VAD model unavailable (%s)", e)
+            model = None
+        self._wake_seg_model = model
+        return model
+
+    def _strip_wake_audio(
+        self, buffer: np.ndarray, pre_roll_len: int, speech_start_samples: int,
+    ) -> np.ndarray:
+        """Remove the leading wake-word audio from a captured utterance IN THE
+        AUDIO DOMAIN via VAD segmentation (no text stripping -- the wake-tail can
+        mis-transcribe too many ways to enumerate). Drops the wake-word speech
+        segment and keeps the command. Fails open to the onset-based trim, then
+        the raw buffer. Gated by ``KENNING_WAKE_TRIM_TO_SPEECH`` (default ON)."""
+        import os
+        if os.getenv("KENNING_WAKE_TRIM_TO_SPEECH", "1").strip().lower() in (
+            "0", "false", "no", "off",
+        ):
+            return buffer
+        try:
+            if buffer is not None and buffer.shape[0] > 0:
+                model = self._get_wake_seg_model()
+                if model is not None:
+                    import torch
+                    from silero_vad import get_speech_timestamps
+                    thr = float(getattr(getattr(self, "vad", None),
+                                        "threshold", 0.5) or 0.5)
+                    segs = get_speech_timestamps(
+                        torch.from_numpy(
+                            np.ascontiguousarray(buffer, dtype=np.float32)),
+                        model,
+                        sampling_rate=settings.SAMPLE_RATE,
+                        threshold=thr,
+                        min_speech_duration_ms=80,
+                        min_silence_duration_ms=80,
+                    )
+                    cut = _wake_command_cut(
+                        segs, int(buffer.shape[0]), int(pre_roll_len),
+                        settings.SAMPLE_RATE,
+                    )
+                    if 0 < cut < buffer.shape[0]:
+                        logger.debug(
+                            "wake strip: VAD segmentation cut %d samples "
+                            "(%.2fs); %d segs", cut,
+                            cut / float(settings.SAMPLE_RATE), len(segs or []))
+                        return buffer[cut:]
+                    return buffer
+        except Exception as e:                                   # noqa: BLE001
+            logger.debug("wake-audio segmentation failed (%s); onset-trim "
+                         "fallback", e)
+        # Fallback: the lighter onset-based trim (clean for the pause case).
+        return _trim_wake_from_capture(
+            buffer, pre_roll_len, speech_start_samples, settings.SAMPLE_RATE,
+        )
 
     # --- phase: follow-up listening -----------------------------------------
 
