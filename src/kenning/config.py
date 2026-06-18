@@ -324,15 +324,20 @@ class WakeWordConfig(_Strict):
         default_factory=lambda: {"ultron": 3},
     )
     cooldown_seconds: float = 1.5
-    # 2026-06-14 PER-WORD cold pre-roll (seconds of audio kept from BEFORE the
-    # wake-word fire). The wake word's own TAIL lives in this pre-roll, so a
-    # word that ends in a hard, transcribable sound bleeds into the command
-    # transcript ("Ultron" -> the "...tron" prefix). The active word's value
-    # here OVERRIDES ``audio.cold_pre_roll_seconds``: "ultron" runs SHORTER so
-    # its tail doesn't enter the transcript, while "kenning" (soft "-ning")
-    # keeps the default. A word absent here uses the audio default.
+    # 2026-06-18 PER-WORD cold pre-roll (seconds of audio kept from BEFORE the
+    # wake-word fire). Sized to NEVER clip the first COMMAND word. At the old 0.05
+    # the word right after "Ultron" was lost: "Ultron tell my team ..." dropped
+    # "tell" (transcribed "my team ..." / "call my team ...") because the wake
+    # detection latency put "tell" in the un-captured gap -- user-reported, with a
+    # longer MANUAL pause as the only workaround. 0.35 reaches back past that gap
+    # so the leading word is always captured. The wake word's own "...tron" tail
+    # that now also enters the pre-roll is stripped RELIABLY on the primary path by
+    # ``command_normalizer.normalize_command`` (leading-wake-remnant strip --
+    # verified for "Ultron"/"tron"/"ultra" leads), so capturing it costs nothing.
+    # Keep <= ``audio.ring_buffer_seconds`` (0.5). A word absent here uses
+    # ``audio.cold_pre_roll_seconds``.
     cold_pre_roll: dict[str, float] = Field(
-        default_factory=lambda: {"ultron": 0.05},
+        default_factory=lambda: {"ultron": 0.35},
     )
 
 
@@ -3880,7 +3885,9 @@ class PushToTalkConfig(_Strict):
     # device first (vendor Raw-HID, no COM port), then the legacy serial/CDC
     # device. "rawhid" or "serial" pin one. The host writes bytes ONLY either way
     # (HID output reports or serial), never synthetic input.
-    backend: str = "auto"
+    # 2026-06-18: constrained to a Literal so a typo (e.g. "rawid") can't silently
+    # fall through to the serial/COM scan and defeat the no-serial-fallback intent.
+    backend: Literal["auto", "rawhid", "serial"] = "auto"
     # -- HID-only device (no COM port; the hardened build) --
     # USB VID + vendor usage page of the Raw-HID command collection. Defaults
     # match firmware/leonardo_ptt_hid (pid.codes 0x1209 + usage page 0xFFC0).

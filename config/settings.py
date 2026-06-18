@@ -178,6 +178,23 @@ WHISPER_CONDITION_ON_PREVIOUS_TEXT = _env_bool(
     _cfg.stt.condition_on_previous_text,
 )
 WHISPER_VAD_FILTER = _cfg.stt.vad_filter
+# 2026-06-18 mic-accuracy pass. These decode-time knobs were SET in .env but were
+# never read here, so they had NO effect on the transcribe() call (audit finding).
+# Now wired with safe defaults. compression_ratio / log_prob / no_speech are the
+# model-native confidence gates (improve PRECISION on the relay path -- fewer
+# bogus callouts from garbled/near-silent buffers). temperature_fallback re-arms
+# Whisper's canonical repetition/hallucination retry (the scalar 0.0 disabled it).
+WHISPER_COMPRESSION_RATIO_THRESHOLD = _env_float(
+    "KENNING_WHISPER_COMPRESSION_RATIO_THRESHOLD", 2.4)
+WHISPER_LOG_PROB_THRESHOLD = _env_float("KENNING_WHISPER_LOG_PROB_THRESHOLD", -1.0)
+WHISPER_NO_SPEECH_THRESHOLD = _env_float("KENNING_WHISPER_NO_SPEECH_THRESHOLD", 0.6)
+WHISPER_TEMPERATURE_FALLBACK = _env_bool("KENNING_WHISPER_TEMPERATURE_FALLBACK", True)
+# Zero/near-zero-latency in-process front-end on the captured utterance: DC-offset
+# removal -> per-utterance RMS loudness normalization (Whisper is NOT scale-
+# invariant; quiet input drives the "Thank you" hallucination) -> soft-limit. Each
+# step fails open to the raw audio. Default ON.
+WHISPER_PREPROCESSING = _env_bool("KENNING_WHISPER_PREPROCESSING", True)
+WHISPER_RMS_TARGET_DBFS = _env_float("KENNING_WHISPER_RMS_TARGET_DBFS", -24.0)
 
 
 # LLM block migrated to direct kenning.config use in src/kenning/llm/inference.py;

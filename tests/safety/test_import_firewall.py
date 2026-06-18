@@ -74,13 +74,30 @@ def test_is_blocked_module_benign():
 def test_find_spec_refuses_when_active(monkeypatch):
     monkeypatch.setattr(anticheat, "anticheat_active", lambda: True)
     finder = fw.AnticheatImportFirewall()
-    for m in ("kenning.desktop.launcher", "pyautogui", "playwright.sync_api",
-              "kenning.openclaw_bridge.browser", "mss"):
+    # 2026-06-18 PROBE-SAFE: find_spec hard-blocks (raises) a blocked module only
+    # when it is actually INSTALLED -- the case the anticheat guarantee cares about
+    # (a dangerous lib that could really load). These are all blocked AND present
+    # in the venv.
+    for m in ("pyautogui", "mss", "pyperclip", "win32clipboard"):
         with pytest.raises(ImportError):
             finder.find_spec(m)
     # Benign modules defer to the normal finders (return None) even when active.
     for m in ("win32gui", "PIL", "kenning.config", "numpy"):
         assert finder.find_spec(m) is None
+
+
+def test_find_spec_defers_for_absent_blocked_when_active(monkeypatch):
+    """2026-06-18 PROBE-SAFE regression test (would have caught the pytesseract
+    incident): a blocked module that is NOT installed must DEFER -- find_spec
+    returns None instead of raising -- so a library probing for an optional
+    dependency via ``importlib.util.find_spec`` is not broken by the firewall.
+    (transformers probes pytesseract at import time; the firewall raising there
+    cascaded and silenced Kokoro/Whisper/Smart-Turn.)"""
+    monkeypatch.setattr(anticheat, "anticheat_active", lambda: True)
+    finder = fw.AnticheatImportFirewall()
+    for m in ("interception", "vgamepad", "pyvjoy", "pydivert", "d3dshot"):
+        assert fw.is_blocked_module(m), f"{m} should be on the blocklist"
+        assert finder.find_spec(m) is None, f"absent {m} must DEFER, not raise"
 
 
 def test_find_spec_noop_when_inactive(monkeypatch):
@@ -99,12 +116,40 @@ def test_install_is_idempotent():
 
 
 def test_real_import_blocked_when_active(monkeypatch):
-    """End-to-end: an actual `import` of a not-yet-loaded blocked module raises
-    while anticheat is active (the firewall must be installed on sys.meta_path)."""
+    """End-to-end: an actual `import` of a not-yet-loaded blocked+INSTALLED module
+    raises the firewall's ImportError while anticheat is active (the firewall must
+    be installed on sys.meta_path)."""
+    import importlib
+    import sys
+    fw.install_import_firewall()
+    monkeypatch.setattr(anticheat, "anticheat_active", lambda: True)
+    # Evict any cached kenning.desktop[.*] so import_module actually runs find_spec
+    # (another test may have imported it earlier with anticheat OFF). It is
+    # prefix-blocked AND always installed, so the re-import is refused at the parent.
+    for _m in [k for k in list(sys.modules) if k == "kenning.desktop"
+               or k.startswith("kenning.desktop.")]:
+        sys.modules.pop(_m, None)
+    with pytest.raises(ImportError) as ei:
+        importlib.import_module("kenning.desktop")
+    assert "anticheat import firewall" in str(ei.value)
+
+
+def test_absent_blocked_real_import_is_natural_not_firewall(monkeypatch):
+    """A blocked-but-ABSENT module fails with the NATURAL ModuleNotFoundError, not
+    the firewall's -- the probe-safe defer, so optional-dependency resolution
+    behaves exactly as on a firewall-free machine."""
     import importlib
     fw.install_import_firewall()
     monkeypatch.setattr(anticheat, "anticheat_active", lambda: True)
-    # Use a blocked module that is NOT already in sys.modules so find_spec runs.
-    # `uiautomation` is a blocked prefix and not imported anywhere at import time.
-    with pytest.raises(ImportError):
-        importlib.import_module("uiautomation")
+    with pytest.raises(ImportError) as ei:
+        importlib.import_module("interception")
+    assert "anticheat import firewall" not in str(ei.value)
+
+
+def test_enforcement_self_check_passes_when_active(monkeypatch):
+    """assert_firewall_enforces() must verify via a blocked+INSTALLED sentinel
+    (kenning.desktop), NOT the old absent 'interception' which now correctly
+    defers. A False here would make __main__ refuse to start."""
+    fw.install_import_firewall()
+    monkeypatch.setattr(anticheat, "anticheat_active", lambda: True)
+    assert fw.assert_firewall_enforces() is True

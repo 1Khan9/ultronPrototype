@@ -54,6 +54,52 @@ def _is_whisper_hallucination(text: str) -> bool:
     return norm in _WHISPER_HALLUCINATIONS
 
 
+def _preprocess_utterance(audio: np.ndarray, *, target_dbfs: float = -24.0) -> np.ndarray:
+    """Zero-latency in-process front-end on the already-captured utterance.
+
+    Three guarded steps (each fails open to the input -- this never drops a clip):
+      1. DC-offset removal (``x -= x.mean()``) -- makes the RMS/peak estimates
+         exact; cannot blow up on a non-empty buffer.
+      2. Per-utterance RMS loudness normalization toward ``target_dbfs`` with a
+         finite-check and a HARD max-gain clamp (+24 dB). Whisper's log-mel is
+         NOT scale-invariant -- too-quiet input drives the "Thank you." stock-
+         phrase hallucination and inflates WER -- so leveling each utterance to a
+         consistent loudness is a real robustness win (sized as variance
+         reduction, not a precise mean-WER delta). MUST run AFTER the caller's
+         raw-peak silence gate so pure room tone is never amplified.
+      3. Soft-limit: a smooth tanh knee only when a sample is pushed hot (>0.95),
+         which beats hard clipping (clipping injects broadband harmonics that
+         smear the mel); finite for all finite inputs. A final clip is the
+         backstop. Rarely fires at a -24 dBFS target (peaks land ~0.25-0.5).
+    """
+    try:
+        x = audio if audio.dtype == np.float32 else audio.astype(np.float32)
+        if x.size == 0:
+            return x
+        try:
+            x = x - np.float32(x.mean())                       # 1) DC removal
+        except Exception:                                     # noqa: BLE001
+            pass
+        try:                                                  # 2) RMS normalize
+            rms = float(np.sqrt(np.mean(x * x)))
+            if np.isfinite(rms) and rms > 1e-6:
+                target_lin = float(10.0 ** (target_dbfs / 20.0))
+                gain = min(target_lin / rms, 16.0)            # +24 dB hard clamp
+                if np.isfinite(gain) and gain > 0:
+                    x = (x * np.float32(gain)).astype(np.float32)
+        except Exception:                                     # noqa: BLE001
+            pass
+        try:                                                  # 3) soft-limit
+            if x.size and float(np.max(np.abs(x))) > 0.95:
+                x = np.tanh(x).astype(np.float32)
+            np.clip(x, -1.0, 1.0, out=x)
+        except Exception:                                     # noqa: BLE001
+            pass
+        return x.astype(np.float32, copy=False)
+    except Exception:                                         # noqa: BLE001
+        return audio
+
+
 class WhisperEngine:
     """Speech-to-text via faster-whisper on CUDA.
 
@@ -124,6 +170,15 @@ class WhisperEngine:
         # also saves an inference when upstream VAD lets a quiet buffer through.
         if float(np.max(np.abs(audio))) < 0.008:
             return ""
+        # 2026-06-18 zero-latency front-end: DC removal -> RMS loudness normalize
+        # -> soft-limit. Runs AFTER the raw-peak gate above (so pure noise is never
+        # amplified) and BEFORE the GPU decode. Fail-open to the raw audio. Default
+        # ON; gated by stt preprocessing flag so it can be A/B'd.
+        if getattr(settings, "WHISPER_PREPROCESSING", True):
+            audio = _preprocess_utterance(
+                audio,
+                target_dbfs=getattr(settings, "WHISPER_RMS_TARGET_DBFS", -24.0),
+            )
 
         t0 = time.monotonic()
         try:
@@ -133,16 +188,43 @@ class WhisperEngine:
             # Additive + reversible: gated by WHISPER_DOMAIN_BIAS (default on);
             # initial_prompt is supported by every faster-whisper version. Reset
             # per turn (condition_on_previous_text stays off for command STT).
+            # 2026-06-18 mic-accuracy: re-arm the temperature FALLBACK tuple (a
+            # scalar 0.0 disabled Whisper's canonical repetition/hallucination
+            # retry) and pass the confidence gates (compression_ratio / log_prob /
+            # no_speech) that improve PRECISION on the relay path -- all were set in
+            # .env but never reached transcribe() before. suppress_blank +
+            # without_timestamps constrain the output toward the command grammar.
+            _temp_fallback = getattr(settings, "WHISPER_TEMPERATURE_FALLBACK", True)
             _kw = dict(
                 language=language,
                 beam_size=self.beam_size,
-                temperature=settings.WHISPER_TEMPERATURE,
+                temperature=((0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
+                             if _temp_fallback else settings.WHISPER_TEMPERATURE),
                 condition_on_previous_text=settings.WHISPER_CONDITION_ON_PREVIOUS_TEXT,
                 vad_filter=settings.WHISPER_VAD_FILTER,
+                compression_ratio_threshold=getattr(
+                    settings, "WHISPER_COMPRESSION_RATIO_THRESHOLD", 2.4),
+                log_prob_threshold=getattr(
+                    settings, "WHISPER_LOG_PROB_THRESHOLD", -1.0),
+                no_speech_threshold=getattr(
+                    settings, "WHISPER_NO_SPEECH_THRESHOLD", 0.6),
+                suppress_blank=True,
+                without_timestamps=True,
+                prompt_reset_on_temperature=0.5,
             )
             if getattr(settings, "WHISPER_DOMAIN_BIAS", True):
                 _kw["initial_prompt"] = (
                     getattr(settings, "WHISPER_INITIAL_PROMPT", "") or _DOMAIN_PROMPT)
+            # Drop any kwarg the installed faster-whisper doesn't accept, so a newer
+            # knob can't TypeError and (via the except below) silently break ALL
+            # transcription on an older library.
+            try:
+                import inspect as _inspect
+                _supported = set(
+                    _inspect.signature(self._model.transcribe).parameters)
+                _kw = {k: v for k, v in _kw.items() if k in _supported}
+            except Exception:                                     # noqa: BLE001
+                pass
             segments, info = self._model.transcribe(audio, **_kw)
             kept = []
             for seg in segments:

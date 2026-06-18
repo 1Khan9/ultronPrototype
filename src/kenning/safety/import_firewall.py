@@ -96,7 +96,14 @@ _BLOCK_EXACT = frozenset({
     "pygetwindow",    # window enumeration / geometry
     "pyperclip",      # clipboard read/write
     "win32clipboard", # pywin32 clipboard
-    "pytesseract",    # OCR
+    # NOTE: pytesseract (OCR) is DELIBERATELY NOT blocked here. `transformers`
+    # (pulled in by Kokoro TTS and Whisper) probes it at IMPORT time via
+    # `importlib.util.find_spec("pytesseract")`, which expects None for an absent
+    # module. A meta-path finder that RAISES during that probe breaks the entire
+    # transformers import -> Kokoro/Smart-Turn fail to load and Ultron goes silent.
+    # pytesseract is not installed anyway, and the OCR *capability* is already
+    # blocked via the `kenning.desktop` prefix (kenning.desktop.ocr), so omitting
+    # the bare name costs zero protection. 2026-06-17 live-stream hotfix.
     "ahk",            # AutoHotkey driver (synthetic input + hotkeys)
     "pyautoit",       # AutoIt driver (synthetic input)
     "autoit",         # AutoIt driver (synthetic input)
@@ -143,6 +150,21 @@ class AnticheatImportFirewall(MetaPathFinder):
             active = True   # fail-SAFE: uncertain -> block (anticheat-correct)
         if not active:
             return None  # firewall only bites while anticheat-safe mode is on
+        # 2026-06-18 PROBE-SAFE (kills the pytesseract class of bug): many
+        # libraries check for an OPTIONAL dependency at import time via
+        # ``importlib.util.find_spec(name)``, which expects None for an ABSENT
+        # module. A finder that RAISES inside that probe breaks the whole importing
+        # library -- ``pytesseract`` did exactly this (transformers probes it ->
+        # firewall raised -> Kokoro/Whisper/Smart-Turn import cascaded to failure,
+        # Ultron went silent). So for a blocked module that is NOT actually
+        # installed, DEFER (return None): the probe sees "absent" -- identical to a
+        # firewall-free machine -- and a genuine ``import X`` of the absent module
+        # still fails naturally with ModuleNotFoundError. ONLY a blocked module
+        # that IS installed (the case the anticheat guarantee actually cares about
+        # -- a dangerous lib that could really load) gets the hard block. Security
+        # is unchanged: nothing importable that is dangerous can slip through.
+        if not self._is_installed(fullname, path):
+            return None
         logger.error(
             "ANTICHEAT IMPORT FIREWALL: refused runtime import of %r -- "
             "input/capture/automation modules must never load into the "
@@ -154,6 +176,40 @@ class AnticheatImportFirewall(MetaPathFinder):
             f"anticheat-safe mode is active (no input/capture/automation code "
             f"may load into this process during a protected game)"
         )
+
+    # Reentrancy guard: _is_installed consults the OTHER meta_path finders, whose
+    # find_spec may itself trigger an import that re-enters THIS find_spec. The
+    # thread-local flag breaks that recursion (a nested check returns "not
+    # installed" -> defer, which is the safe direction for a probe).
+    _checking = threading.local()
+
+    def _is_installed(self, fullname, path) -> bool:
+        """True if a finder OTHER than this firewall can locate ``fullname``.
+
+        ``path`` is the parent package's ``__path__`` for a submodule import
+        (Python passes it through), so submodule blocks like ``kenning.desktop``
+        and ``comtypes.gen.*`` resolve correctly against the real package tree."""
+        if fullname in sys.modules:
+            return True
+        if getattr(self._checking, "active", False):
+            return False  # nested probe -> treat as absent (safe: defer)
+        self._checking.active = True
+        try:
+            for finder in list(sys.meta_path):
+                if finder is self or isinstance(finder, AnticheatImportFirewall):
+                    continue
+                find = getattr(finder, "find_spec", None)
+                if find is None:
+                    continue
+                try:
+                    spec = find(fullname, path, None)
+                except Exception:                                    # noqa: BLE001
+                    spec = None
+                if spec is not None:
+                    return True
+            return False
+        finally:
+            self._checking.active = False
 
 
 _INSTALLED = False
@@ -194,42 +250,52 @@ def is_firewall_installed() -> bool:
 def assert_firewall_enforces() -> bool:
     """Prove the firewall actually BITES (not just that it's installed).
 
-    When anticheat is active, attempt to import a module that is on the blocklist
-    but is NOT installed in the venv (so a clean machine never has it cached):
-    the firewall MUST raise ImportError. Returns True iff enforcement is verified
-    (or anticheat is inactive, where the firewall is intentionally a no-op).
-    Logged at ERROR if a blocked import unexpectedly succeeds -- that is a
-    loader-level regression that must be caught before going live.
+    Probes a module that is on the blocklist AND actually installed, via
+    ``importlib.util.find_spec`` (which never EXECUTES the module, so it can never
+    pollute ``sys.modules``): the firewall MUST raise its ImportError.
 
-    Uses ``interception`` (an input-injection driver, on the blocklist, not a
-    dependency) so the probe never collides with a real, importable module."""
+    2026-06-18: this MUST use an INSTALLED sentinel. The probe-safe ``find_spec``
+    now DEFERS for blocked-but-ABSENT names (so optional-dependency checks in
+    libraries like transformers don't break -- the pytesseract incident), which
+    means the old absent sentinel ``interception`` would no longer raise and this
+    check would FALSE-FAIL (-> ``__main__`` refuses to start, exit 4). We use the
+    always-present, blocklisted ``kenning.desktop`` package (with installed-leaf
+    fallbacks), so the firewall is guaranteed something to bite.
+
+    Returns True iff enforcement is verified (or anticheat is inactive, where the
+    firewall is intentionally a no-op). Returns False -- a loader-level regression
+    that must block going live -- only if NO blocked+installed sentinel is refused.
+    """
     try:
         from kenning.safety.anticheat import anticheat_active
         if not anticheat_active():
             return True  # firewall deliberately inert outside anticheat mode
     except Exception:                                                # noqa: BLE001
         pass  # uncertain -> still run the probe (the firewall fails safe anyway)
-    probe = "interception"  # blocked + not installed -> ImportError is the firewall's
-    try:
-        __import__(probe)
-    except ImportError as e:
-        if "anticheat import firewall" in str(e):
-            logger.info("anticheat import firewall ENFORCEMENT verified "
-                        "(blocked %r raised the firewall's ImportError)", probe)
-            return True
-        # ImportError, but NOT ours -> the module is merely absent and the
-        # firewall did not intercept it. Could mean the finder isn't biting.
-        if is_blocked_module(probe) and is_firewall_installed():
-            # Installed + the name IS blocked, yet a plain ModuleNotFound came
-            # back -> ambiguous; treat as verified only if the firewall is on
-            # meta_path[0]. Be conservative and log.
-            logger.warning("anticheat import firewall: probe %r returned a "
-                           "non-firewall ImportError (%s); finder present but "
-                           "did not intercept -- verify meta_path ordering.",
-                           probe, e)
-        return is_firewall_installed()
-    # The import SUCCEEDED -> a blocked module loaded. Loader-level regression.
-    logger.error("ANTICHEAT IMPORT FIREWALL REGRESSION: blocked probe %r "
-                 "imported WITHOUT being refused -- the loader-level block is "
-                 "NOT enforcing. DO NOT go live until fixed.", probe)
+    import importlib.util as _ilu
+    # Blocklisted AND installed, in preference order. ``kenning.desktop`` ships
+    # with this repo so it is ALWAYS present; the leaves are common fallbacks.
+    for probe in ("kenning.desktop", "pyperclip", "win32clipboard",
+                  "pyautogui", "mss"):
+        try:
+            _ilu.find_spec(probe)
+        except ImportError as e:
+            if "anticheat import firewall" in str(e):
+                logger.info("anticheat import firewall ENFORCEMENT verified "
+                            "(blocked %r raised the firewall's ImportError)",
+                            probe)
+                return True
+            continue  # non-firewall ImportError (e.g. a parent-import quirk)
+        except Exception:                                            # noqa: BLE001
+            continue  # unexpected find_spec error -> try the next sentinel
+        # find_spec returned WITHOUT raising -> the firewall did not bite this
+        # probe (it is either genuinely absent -> the defer is correct, or a
+        # regression). Move on to the next candidate either way.
+        continue
+    # No blocked+installed sentinel produced the firewall's ImportError -- and
+    # kenning.desktop is always installed + blocked, so the loader-level block is
+    # NOT enforcing. Real regression; caller (the boot path) must refuse to start.
+    logger.error("ANTICHEAT IMPORT FIREWALL REGRESSION: no blocked+installed "
+                 "sentinel was refused -- the loader-level block is NOT "
+                 "enforcing. DO NOT go live until fixed.")
     return False
