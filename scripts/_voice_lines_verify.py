@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -26,7 +27,13 @@ _SRC = _ROOT / "src"
 if _SRC.is_dir() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-_DIGEST = Path("logs/_voice_lines_digest.json")
+# Digest path. Defaults to the scratch location under logs/; the committed
+# GOLDEN gate (tests/test_voice_lines_golden.py) overrides it via
+# KENNING_VOICE_LINES_DIGEST to point at the version-controlled golden so the
+# same baseline/check machinery guards the aggregates in CI.
+_DIGEST = Path(
+    os.environ.get("KENNING_VOICE_LINES_DIGEST", "logs/_voice_lines_digest.json")
+)
 
 # Every module that holds voice-line / normalization / routing data or regexes.
 _MODULES = [
