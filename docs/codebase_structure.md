@@ -26,6 +26,19 @@
 >   `orchestrator._maybe_handle_llm_device_switch` (acks before the multi-second reload), wired into
 >   the lean dispatch. Anticheat-safe (only changes WHERE the model compute runs). Tests:
 >   `tests/test_llm_device_switch.py`.
+> - **GUI-action drain cadence fix** (`e32cba3`, the *real* mute-latency root cause): the minute-long
+>   mute/unmute lag was NOT the apply cost — `_drain_gui_actions()` (which consumes the `speaker_mute`
+>   action) ran from exactly one site, inside the `chunk is None` branch of `_wait_for_wake_word`,
+>   reached only when `audio.get_chunk(timeout=0.5)` TIMES OUT. But the mic callback enqueues a block
+>   every ~16ms unconditionally (silence is still blocks), so `get_chunk` almost never returns None
+>   during live capture — it only times out on a ≥0.5s PortAudio capture STALL, which is
+>   sporadic-to-unbounded (no capture-stall watchdog in this checkout). So a quick action was captive
+>   to the next stall. FIX: drain GUI actions on EVERY wake-loop iteration (monotonic-gated ~100ms);
+>   the byte-offset cursor consumes each appended line exactly once regardless of frequency (no
+>   double-fire), the no-new-data path early-outs on a single getsize, anticheat-clean. Now every
+>   panel action applies in ≤100ms while idle. Adversarially verified by a 4-agent workflow. Tests:
+>   `tests/test_gui_action_drain.py`. (The `395e2b3` live-override + auto-dismiss banner below reduced
+>   the per-apply *cost*; this fixes the *when-is-it-noticed* latency.)
 > - **Instant speaker mute + auto-dismiss banner** (`395e2b3`): the GUI quick MUTE/UNMUTE were slow
 >   (they wrote the reload signal → a full heavy config reload + a spoken "Settings updated." before
 >   the mute applied). Now they fire a dedicated `speaker_mute` action that flips a live override in
