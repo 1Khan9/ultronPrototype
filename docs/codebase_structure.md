@@ -10,6 +10,31 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
+> **Validating HEAD: VOICE-LINES AGGREGATE (Part B) + DATA-DRIVEN SNAP REGISTRY (Part C) + new
+> social snaps** (2026-06-18, latest). Three pushed, INDEPENDENTLY-REVERTIBLE git checkpoints:
+> - **Checkpoint 0 `21f3c7e`** (pre-refactor baseline): `__main__._ResilientStream` — a redirected/
+> dead stdout no longer aborts a turn (the `OSError [Errno 22]` that silently DROPPED conversational
+> commands); **audio-domain wake-word removal** via VAD segmentation (`orchestrator._strip_wake_audio`
+> + `_wake_command_cut` + `_get_wake_seg_model`, generous capture pre-roll `KENNING_WAKE_CAPTURE_PRE_ROLL_MS`,
+> master `KENNING_WAKE_TRIM_TO_SPEECH`) so the wake word never leaks into STT and the command is not
+> clipped — no text-stripping; **flavor-tail voice TOGGLE** (`relay_speech.set_flavor_tails_enabled` /
+> `match_flavor_toggle`, gated at `_join_tail`; `orchestrator._maybe_handle_flavor_toggle`; "flavor
+> off"/"flavor on"); short **HELLO** snap (team + per-agent); **ASK-DAY** snap (team + per-agent);
+> **CLUTCH** confidence snap ("tell my team I got this", 20 curated lines); crisp **"nice try"**
+> consolation; "hope"/"hoped" relay-lead recovery.
+> - **Checkpoint B `331400b`** (tag `checkpoint/voice-lines-externalized`): NEW **`audio/voice_lines.py`
+> AGGREGATE** — the single place where the social-snap regexes + pools live (relocated out of
+> `relay_speech`), each regex CO-LOCATED with its lines under a category→trigger→matcher→responses→tails
+> MAP; re-exports the curated `DEFAULT_*_LINES` + `AGENT_FLAVOR` so it is the pipeline's single voice-
+> line import surface. PURE relocation, ZERO logic/routing change, proven **byte-for-byte identical (238
+> symbols)** by `scripts/_voice_lines_verify.py` (`baseline`/`check`, PYTHONHASHSEED-pinned).
+> - **Checkpoint C `605c93e`** (tag `checkpoint/voice-lines-dynamic`): **DATA-DRIVEN snap registry** —
+> `voice_lines.SnapRule` + `SNAP_REGISTRY` consumed by `relay_speech._apply_snap_registry`, wired as the
+> FIRST pass in `build_relay_line`'s snap gate (`KENNING_SNAP_REGISTRY`, default on). Append ONE
+> `SnapRule` to add a "tell my team X" snap with NO pipeline code. Additive + flag-gated; the hardcoded
+> snap functions remain as the fallback (flag off → identical legacy path). ~140 relay tests + the verify
+> harness green. DETAIL → memory `project_voice_lines_aggregate_2026_06_18.md`.
+>
 > **Validating HEAD: WAKE WORD REQUIRED (follow-up window OFF)** (2026-06-18, latest, follows
 > 6740cb4). Live-log investigation of "Ultron responded without a wake word, and sometimes missed a
 > wake command." Read `logs/kenning.log` by hand: the **false positives** were the wake-free follow-up
