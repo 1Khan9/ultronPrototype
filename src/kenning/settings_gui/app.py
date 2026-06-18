@@ -410,12 +410,36 @@ class ControlPanel:
             foreground=(DIM if n == 0 else WARN),
         )
 
+    def _flash_status(self, text: str, fg: str, ms: int = 2500) -> None:
+        """Show a bottom-bar status that AUTO-CLEARS after ``ms`` ms.
+
+        The old behaviour left every apply confirmation pinned in the bar,
+        where a long line crowds the buttons. This shows the message briefly
+        then resets to the idle text. Cancels any previously-scheduled clear so
+        rapid applies don't wipe a newer message early."""
+        self._status.configure(text=text, foreground=fg)
+        prev = getattr(self, "_status_clear_id", None)
+        if prev is not None:
+            try:
+                self.root.after_cancel(prev)
+            except Exception:  # noqa: BLE001
+                pass
+
+        def _clear() -> None:
+            self._status_clear_id = None
+            try:
+                self._status.configure(text="No pending changes.",
+                                       foreground=DIM)
+            except Exception:  # noqa: BLE001
+                pass
+
+        self._status_clear_id = self.root.after(int(ms), _clear)
+
     def _apply(self) -> None:
         try:
             updates = self._pending()
             if not updates:
-                self._status.configure(text="Nothing to apply.",
-                                       foreground=DIM)
+                self._flash_status("Nothing to apply.", DIM, ms=2000)
                 return
             # EPHEMERAL: write to the runtime overlay, NEVER config.yaml. The
             # orchestrator overlays it live and wipes it at boot, so config.yaml
@@ -438,9 +462,9 @@ class ControlPanel:
                   f"(reverts on restart)."
             if actions:
                 msg += f"  {actions} applied at next idle moment."
-            self._status.configure(text=msg, foreground=OK)
+            self._flash_status(msg, OK, ms=4000)
         except Exception as e:  # noqa: BLE001 - surface, never crash
-            self._status.configure(text=f"Apply failed: {e}", foreground=ERR)
+            self._flash_status(f"Apply failed: {e}", ERR, ms=5000)
 
     def _apply_one(self, path: tuple[str, ...]) -> None:
         """Apply EXACTLY one knob -- a safety net so the user can flip a single
@@ -450,8 +474,8 @@ class ControlPanel:
             var = self._vars.get(path)
             knob = self._knobs.get(path)
             if var is None or knob is None:
-                self._status.configure(text="That setting isn't available.",
-                                       foreground=ERR)
+                self._flash_status("That setting isn't available.", ERR,
+                                   ms=3000)
                 return
             rendered = render_value(var.get(), knob.kind)
             write_runtime_overrides(self._data_dir, {path: rendered})
@@ -459,25 +483,48 @@ class ControlPanel:
             if knob.action:
                 write_action(self._data_dir, knob.action, var.get())
             self._initial[path] = str(var.get())
-            self._status.configure(
-                text=f"Applied only '{knob.label}' ✓ — nothing else touched.",
-                foreground=OK,
+            self._flash_status(
+                f"Applied only '{knob.label}' ✓ — nothing else touched.",
+                OK, ms=3000,
             )
         except Exception as e:  # noqa: BLE001
-            self._status.configure(text=f"Apply failed: {e}", foreground=ERR)
+            self._flash_status(f"Apply failed: {e}", ERR, ms=5000)
 
     def _apply_mute_value(self, mute: bool) -> None:
-        """Force the 'Mute my speakers' knob to ``mute`` and apply ONLY it live --
-        backs the dedicated quick MUTE / UNMUTE buttons. Pins the value first so
-        the user never has to flip the checkbox, then reuses _apply_one so still
-        exactly that one knob is written (no other pending edit rides along)."""
+        """FAST quick MUTE / UNMUTE: silence (or restore) the default-speaker
+        output essentially instantly.
+
+        Old path went through _apply_one, which wrote the reload signal -> the
+        orchestrator did a full (heavy) config reload AND spoke "Settings
+        updated." before the mute took effect = the "takes forever" lag. Now we
+        fire a dedicated ``speaker_mute`` action that flips a live override in
+        the TTS engine directly (no reload, no spoken confirmation). We still
+        merge the value into the ephemeral overlay (WITHOUT a reload signal) so
+        a later full reload preserves the mute state, and pin the checkbox +
+        baseline so the UI stays consistent."""
         var = self._vars.get(("audio", "mute_speakers"))
         if var is not None:
             try:
                 var.set(bool(mute))
             except Exception:  # noqa: BLE001
                 pass
-        self._apply_one(("audio", "mute_speakers"))
+        try:
+            # Instant live flip (no reload signal -> no heavy reload / no speak).
+            write_action(self._data_dir, "speaker_mute", bool(mute))
+            knob = self._knobs.get(("audio", "mute_speakers"))
+            if knob is not None:
+                write_runtime_overrides(
+                    self._data_dir,
+                    {("audio", "mute_speakers"):
+                         render_value(bool(mute), knob.kind)},
+                )
+                self._initial[("audio", "mute_speakers")] = str(bool(mute))
+            self._flash_status(
+                f"Speakers {'muted' if mute else 'unmuted'} ✓",
+                OK, ms=1800,
+            )
+        except Exception as e:  # noqa: BLE001
+            self._flash_status(f"Mute failed: {e}", ERR, ms=4000)
 
     def _toggle_pause(self) -> None:
         self._paused = not self._paused

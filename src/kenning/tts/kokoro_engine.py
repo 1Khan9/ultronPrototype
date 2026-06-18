@@ -50,10 +50,32 @@ from kenning.utils.logging import get_logger
 logger = get_logger("tts.kokoro")
 
 
+# Process-global LIVE mute override (tri-state): None = defer to config;
+# True/False = an instant override set by the GUI's quick MUTE / UNMUTE
+# buttons. This is the FAST path -- flipping it silences the next clip onward
+# immediately, with NO config reload (which is heavy + spoke a confirmation).
+# A full config hot-reload clears it back to None so config.yaml/overlay is
+# authoritative again (see orchestrator._maybe_reload_config).
+_live_speaker_mute: Optional[bool] = None
+
+
+def set_live_speaker_mute(value: Optional[bool]) -> None:
+    """Set (True/False) or clear (None) the instant speaker-mute override.
+
+    Atomic in CPython (single global rebind under the GIL); the playback thread
+    reads it via :func:`_speakers_muted` and the orchestrator's idle thread
+    writes it from the GUI action channel."""
+    global _live_speaker_mute
+    _live_speaker_mute = None if value is None else bool(value)
+
+
 def _speakers_muted() -> bool:
-    """Live read of ``audio.mute_speakers`` (GUI-toggleable). When True, the
-    default-speaker output is silenced while the OBS/B3 tee stays full. Cheap
-    (get_config is cached); fail-open to NOT muted."""
+    """Live read of the speaker-mute state. The instant GUI override wins when
+    set; otherwise fall back to ``audio.mute_speakers`` (config-driven). When
+    True, the default-speaker output is silenced while the OBS/B3 tee stays
+    full. Cheap (get_config is cached); fail-open to NOT muted."""
+    if _live_speaker_mute is not None:
+        return _live_speaker_mute
     try:
         from kenning.config import get_config
 

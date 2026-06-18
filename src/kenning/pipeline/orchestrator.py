@@ -2727,6 +2727,15 @@ class Orchestrator:
             from kenning.config import reload_config
 
             reload_config()
+            # A full reload merges the overlay (which the quick MUTE/UNMUTE
+            # buttons keep in sync), so the instant live override is no longer
+            # needed -- clear it back to None so the reloaded config is the
+            # single source of truth for the speaker-mute state.
+            try:
+                from kenning.tts.kokoro_engine import set_live_speaker_mute
+                set_live_speaker_mute(None)
+            except Exception:                                        # noqa: BLE001
+                pass
             logger.info("config hot-reloaded (settings panel update)")
             self._speak("Settings updated.")
         except Exception as e:                                       # noqa: BLE001
@@ -2828,6 +2837,19 @@ class Orchestrator:
                     and hasattr(tts, "move_to_device"):
                 tts.move_to_device(device)
                 logger.info("gui action: kokoro_device -> %s", device)
+        elif action == "speaker_mute":
+            # FAST speaker mute/unmute (the GUI quick buttons). Flip the live
+            # override directly -- NO config reload, NO spoken confirmation --
+            # so the default-speaker output silences from the next clip onward
+            # essentially instantly. The OBS/B3 tee is unaffected.
+            muted = str(value).strip().lower() in {"1", "true", "on", "yes"}
+            try:
+                from kenning.tts.kokoro_engine import set_live_speaker_mute
+
+                set_live_speaker_mute(muted)
+                logger.info("gui action: speaker_mute -> %s", muted)
+            except Exception as e:                                   # noqa: BLE001
+                logger.warning("speaker_mute apply failed: %s", e)
         elif action == "broadcast_device":
             # Second output (OBS capture) that mirrors ALL of Kenning's
             # speech. Apply live; config.yaml is patched separately by the
