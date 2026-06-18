@@ -51,6 +51,37 @@ logger = get_logger("llm.inference")
 
 Turn = Tuple[str, str]  # (role, content)
 
+# Sentinel distinguishing "caller did not override" from "caller explicitly
+# passed None" (n_batch/n_ubatch can legitimately be None = inherit llama.cpp's
+# own per-version defaults). Used by ``_build_llama`` device-override params.
+_UNSET = object()
+
+# Device-optimized llama.cpp kwargs for the CPU<->GPU hot-switch
+# (``reload_for_device``). Each profile targets the strengths of its hardware:
+#   * GPU: offload every layer (-1), CUDA flash-attention kernel, a quantized
+#     (q8_0) KV cache to keep VRAM small at quality parity, and large prefill
+#     batches so prompt eval saturates the card -> lowest latency.
+#   * CPU: zero GPU layers, flash-attention OFF (no CUDA kernel; F16 KV cache is
+#     REQUIRED when flash_attn is off), and a smaller micro-batch so the prefill
+#     compute spike does not contend with the game for cores -> low resource use.
+# kv_cache_type ints: 1 = F16, 8 = q8_0 (see config.LLMConfig.kv_cache_type).
+_DEVICE_PROFILES = {
+    "gpu": {
+        "n_gpu_layers": -1,
+        "flash_attn": True,
+        "kv_cache_type": 8,   # q8_0 -- valid only with flash_attn (GPU)
+        "n_batch": 512,
+        "n_ubatch": 512,
+    },
+    "cpu": {
+        "n_gpu_layers": 0,
+        "flash_attn": False,
+        "kv_cache_type": 1,   # F16 -- mandatory when flash_attn is off
+        "n_batch": 512,
+        "n_ubatch": 256,
+    },
+}
+
 
 import re as _re
 
@@ -579,9 +610,16 @@ class LLMEngine:
         n_ctx: Optional[int],
         n_gpu_layers: Optional[int],
     ) -> None:
-        llama, resolved_path = self._build_llama(cfg, model_path, n_ctx, n_gpu_layers)
+        llama, resolved_path, resolved_gl, resolved_ctx = self._build_llama(
+            cfg, model_path, n_ctx, n_gpu_layers,
+        )
         self._llm = llama
         self.model_path = resolved_path
+        # Track the live device + ctx so reload_for_device can no-op when the
+        # model is already where the user asked, and reload it on the SAME ctx.
+        self._n_gpu_layers: int = resolved_gl
+        self.n_ctx: int = resolved_ctx
+        self._device: str = "cpu" if resolved_gl == 0 else "gpu"
 
     def _build_llama(
         self,
@@ -589,14 +627,28 @@ class LLMEngine:
         model_path: Optional[Path],
         n_ctx: Optional[int],
         n_gpu_layers: Optional[int],
+        *,
+        flash_attn: Optional[bool] = None,
+        kv_cache_type: Optional[int] = None,
+        n_batch=_UNSET,
+        n_ubatch=_UNSET,
     ) -> "tuple":
         """Construct + return a fresh ``Llama`` instance per ``cfg``.
 
-        Returns ``(llama, resolved_model_path)``. Does NOT mutate
-        ``self`` — used by both ``_init_in_process`` (sets ``self._llm``
-        from the result) and ``reload_for_preset`` (constructs the new
-        instance before releasing the old one so VRAM is recoverable
-        on failure).
+        Returns ``(llama, resolved_model_path, resolved_n_gpu_layers,
+        resolved_n_ctx)``. Does NOT mutate ``self`` — used by
+        ``_init_in_process`` (sets ``self._llm`` from the result),
+        ``reload_for_preset`` and ``reload_for_device`` (construct the new
+        instance before releasing the old one so VRAM is recoverable on
+        failure).
+
+        The keyword-only overrides let ``reload_for_device`` substitute a
+        device-optimized profile for the four hardware-sensitive knobs while
+        leaving every existing caller (which passes none of them) reading the
+        values from ``cfg`` exactly as before. ``flash_attn`` / ``kv_cache_type``
+        override when not ``None``; ``n_batch`` / ``n_ubatch`` override when not
+        the ``_UNSET`` sentinel (because ``None`` is a meaningful value for them
+        — inherit llama.cpp's defaults).
         """
         from llama_cpp import Llama
 
@@ -616,14 +668,20 @@ class LLMEngine:
                 f"Run `python scripts/download_models.py` first."
             )
 
-        flash_attn = cfg.flash_attn
-        kv_cache_type = cfg.kv_cache_type
+        flash_attn = cfg.flash_attn if flash_attn is None else flash_attn
+        kv_cache_type = (
+            cfg.kv_cache_type if kv_cache_type is None else kv_cache_type
+        )
         # 2026-05-15 latency: explicit n_batch / n_ubatch tuning. ``None``
         # means inherit llama.cpp's own defaults (512 / 512 in 0.3.22).
         # Voice-length prompts on the 4070 Ti benefit from n_ubatch=256
         # but the default is safe everywhere -- left to the user.
-        n_batch = getattr(cfg, "n_batch", None)
-        n_ubatch = getattr(cfg, "n_ubatch", None)
+        # ``_UNSET`` (the default) = no override -> read from cfg; an explicit
+        # value (incl. None) from the device-switch path wins.
+        n_batch = getattr(cfg, "n_batch", None) if n_batch is _UNSET else n_batch
+        n_ubatch = (
+            getattr(cfg, "n_ubatch", None) if n_ubatch is _UNSET else n_ubatch
+        )
         logger.info(
             "Loading LLM (in_process): %s (n_ctx=%d, n_gpu_layers=%d, "
             "flash_attn=%s, kv_cache_type=%d, n_batch=%s, n_ubatch=%s)...",
@@ -766,7 +824,7 @@ class LLMEngine:
             time.monotonic() - t0,
             "on" if self._memory is not None else "off",
         )
-        return llama, Path(model_path)
+        return llama, Path(model_path), int(n_gpu_layers), int(n_ctx)
 
     @staticmethod
     def _maybe_build_persona_loader(cfg):
@@ -835,6 +893,10 @@ class LLMEngine:
         base = server.base_url.rstrip("/")
         self.model_path = None  # not applicable for HTTP runtime
         self._llm = None
+        # Device tracking is in-process-only; the HTTP server owns its weights.
+        self._n_gpu_layers = None
+        self.n_ctx = None
+        self._device = None
         self._http_base_url = base
         self._http_api_key = server.api_key
         self._http_model_alias = server.model_alias
@@ -1487,7 +1549,7 @@ class LLMEngine:
 
         try:
             new_cfg = reload_config().llm
-            new_llm, new_path = self._build_llama(
+            new_llm, new_path, new_gl, new_ctx = self._build_llama(
                 new_cfg, model_path=None, n_ctx=None, n_gpu_layers=gpu_layers,
             )
         except Exception as e:
@@ -1511,6 +1573,9 @@ class LLMEngine:
         old_llm = self._llm
         self._llm = new_llm
         self.model_path = new_path
+        self._n_gpu_layers = new_gl
+        self.n_ctx = new_ctx
+        self._device = "cpu" if new_gl == 0 else "gpu"
         del old_llm
         try:
             import gc
@@ -1530,6 +1595,124 @@ class LLMEngine:
         self._cancel.clear()
         logger.info("reload_for_preset(%s) succeeded; model=%s", preset, new_path)
         return True, f"loaded {preset}"
+
+    def reload_for_device(
+        self, device: str, *, force: bool = False,
+    ) -> "tuple[bool, str]":
+        """Hot-switch the CURRENTLY-loaded model between CPU and GPU, applying
+        a device-optimized llama.cpp profile for the new hardware.
+
+        This keeps the same GGUF + the same ``n_ctx`` — only the four
+        hardware-sensitive knobs change, per :data:`_DEVICE_PROFILES`:
+
+        * ``gpu`` -> full layer offload (-1), CUDA flash-attention, q8_0 KV
+          cache, large prefill batches. Fastest / highest-quality; uses VRAM.
+        * ``cpu`` -> zero GPU layers, flash-attention off (F16 KV cache, which
+          flash_attn-off requires), a smaller micro-batch so the prefill spike
+          does not steal cores from the game. Low resource use; no GPU contention.
+
+        Unlike :meth:`reload_for_preset` this does NOT change the preset, so it
+        can reload the *same* model onto a different device (which the preset
+        no-op guard would otherwise refuse). ``force=True`` reloads even when
+        already on the target device (e.g. to re-apply a profile).
+
+        Same load-new-then-release-old strategy as ``reload_for_preset``: a
+        failed load leaves the engine on its current working device. Returns
+        ``(success, message)``. History is reset on success (the KV cache is
+        rebuilt on the new device). In-process runtime only.
+
+        Anticheat note: this only changes where the 3B *compute* runs (VRAM vs
+        system RAM). It touches no input, capture, or injection surface, so it
+        is irrelevant to the kernel anticheat — purely the user's VRAM-vs-speed
+        tradeoff (gaming mode normally pins the 3B to CPU to leave the card for
+        Valorant; this lets the user borrow the GPU on demand between rounds).
+        """
+        if self._runtime != "in_process":
+            return False, "device switch only supports the in_process runtime"
+
+        dev = (device or "").strip().lower()
+        if dev in {"gpu", "cuda", "graphics", "graphics card", "video card",
+                   "the gpu", "gpu layers"}:
+            target = "gpu"
+        elif dev in {"cpu", "processor", "the cpu", "system memory"}:
+            target = "cpu"
+        else:
+            return False, f"unknown device {device!r} (expected 'cpu' or 'gpu')"
+
+        if getattr(self, "model_path", None) is None:
+            return False, "no in-process model is loaded to move"
+
+        current = getattr(self, "_device", None)
+        if current == target and not force:
+            return True, f"already on {target}"
+
+        if target == "gpu":
+            # Guard the obvious failure mode: no CUDA -> a full-offload load
+            # silently falls back to CPU (or errors). Refuse up front with a
+            # clear message instead of a confusing post-load state.
+            try:
+                import torch  # noqa: WPS433
+                if not torch.cuda.is_available():
+                    return False, "no CUDA device is available for GPU offload"
+            except Exception:                                        # noqa: BLE001
+                # torch missing in a CPU-only env -> let the load try; llama.cpp
+                # may have its own CUDA build. Fail-open to the actual load.
+                pass
+
+        profile = _DEVICE_PROFILES[target]
+        cfg = get_config().llm
+        model_path = self.model_path
+        n_ctx = getattr(self, "n_ctx", None)  # reload on the SAME context budget
+
+        # Cancel any in-flight stream so the old generator's clean-up finishes
+        # before we drop the Llama instance.
+        self._cancel.set()
+        try:
+            new_llm, new_path, new_gl, new_ctx = self._build_llama(
+                cfg,
+                model_path=model_path,
+                n_ctx=n_ctx,
+                n_gpu_layers=profile["n_gpu_layers"],
+                flash_attn=profile["flash_attn"],
+                kv_cache_type=profile["kv_cache_type"],
+                n_batch=profile["n_batch"],
+                n_ubatch=profile["n_ubatch"],
+            )
+        except Exception as e:                                       # noqa: BLE001
+            self._cancel.clear()
+            logger.error("reload_for_device(%s) failed: %s", target, e)
+            return False, f"failed to move the model to {target}: {e}"
+
+        # Success — release old, swap in new.
+        old_llm = self._llm
+        self._llm = new_llm
+        self.model_path = new_path
+        self._n_gpu_layers = new_gl
+        self.n_ctx = new_ctx
+        self._device = target
+        del old_llm
+        try:
+            import gc
+            gc.collect()
+        except Exception:                                            # noqa: BLE001
+            pass
+        try:  # pragma: no cover — torch import may fail in CPU-only test envs
+            import torch  # noqa: WPS433
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:                                            # noqa: BLE001
+            pass
+
+        # Reset history — the KV cache is freshly built on the new device.
+        self._history.clear()
+        self._cancel.clear()
+        logger.info(
+            "reload_for_device(%s) succeeded; model=%s n_gpu_layers=%d "
+            "flash_attn=%s kv=%d",
+            target, new_path, new_gl, profile["flash_attn"],
+            profile["kv_cache_type"],
+        )
+        return True, f"moved to {target}"
 
     def generate(
         self,

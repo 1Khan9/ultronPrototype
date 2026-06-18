@@ -88,7 +88,7 @@ def test_reload_swaps_to_new_llama_on_success() -> None:
     new_path = MagicMock(name="new_path")
 
     def fake_build(cfg, *, model_path=None, n_ctx=None, n_gpu_layers=None):
-        return new_mock, new_path
+        return new_mock, new_path, 0, 4096
 
     with patch("kenning.config.get_config") as gc, \
          patch("kenning.config.reload_config") as rc, \
@@ -118,7 +118,7 @@ def test_reload_sets_env_for_new_preset() -> None:
     new_path = MagicMock(name="new_path")
 
     def fake_build(cfg, *, model_path=None, n_ctx=None, n_gpu_layers=None):
-        return new_mock, new_path
+        return new_mock, new_path, 0, 4096
 
     with patch("kenning.config.get_config") as gc, \
          patch("kenning.config.reload_config") as rc, \
@@ -139,7 +139,7 @@ def test_reload_clears_stale_model_path_env() -> None:
     new_path = MagicMock(name="new_path")
 
     def fake_build(cfg, *, model_path=None, n_ctx=None, n_gpu_layers=None):
-        return new_mock, new_path
+        return new_mock, new_path, 0, 4096
 
     with patch("kenning.config.get_config") as gc, \
          patch("kenning.config.reload_config") as rc, \
@@ -290,7 +290,7 @@ def test_reload_proceeds_when_digest_verified(monkeypatch) -> None:
     fake_llm = MagicMock(name="new_llm")
     monkeypatch.setattr(
         eng, "_build_llama",
-        lambda *a, **kw: (fake_llm, "models/Qwen3.5-4B-Q4_K_M.gguf"),
+        lambda *a, **kw: (fake_llm, "models/Qwen3.5-4B-Q4_K_M.gguf", 0, 4096),
     )
 
     with patch("kenning.config.get_config") as gc, \
@@ -318,7 +318,7 @@ def test_reload_continues_when_pre_check_raises(monkeypatch) -> None:
     fake_llm = MagicMock(name="new_llm")
     monkeypatch.setattr(
         eng, "_build_llama",
-        lambda *a, **kw: (fake_llm, "models/Qwen3.5-4B-Q4_K_M.gguf"),
+        lambda *a, **kw: (fake_llm, "models/Qwen3.5-4B-Q4_K_M.gguf", 0, 4096),
     )
 
     with patch("kenning.config.get_config") as gc, \

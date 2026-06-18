@@ -3233,6 +3233,60 @@ class Orchestrator:
         )
         return True
 
+    def _maybe_handle_llm_device_switch(self, user_text: str) -> bool:
+        """Voice command to hot-switch the 3B model between CPU and GPU
+        ("switch to the GPU" / "move the model back to the CPU"). Each device
+        loads a hardware-optimized llama.cpp profile (GPU: full offload + CUDA
+        flash-attention + q8_0 KV + large batches; CPU: zero GPU layers +
+        flash-attention off + F16 KV + a smaller micro-batch). Gaming mode pins
+        the 3B to CPU so Valorant owns the card; this lets the user borrow the
+        GPU on demand between rounds and hand it back. Strict matcher ->
+        ordinary speech (and bare callout mentions of "gpu"/"cpu") fall through.
+
+        Anticheat-safe: only changes where the model COMPUTE runs (VRAM vs
+        system RAM); touches no input/capture/injection surface.
+        """
+        try:
+            from kenning.audio.relay_speech import match_llm_device_switch
+            target = match_llm_device_switch(user_text)
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("llm device switch probe failed: %s", e)
+            return False
+        if target is None:
+            return False
+        llm = getattr(self, "llm", None)
+        if llm is None or not hasattr(llm, "reload_for_device"):
+            self._speak("I can't move the model right now.")
+            return True
+        # Acknowledge BEFORE the (multi-second) reload so the user isn't left in
+        # silence; the model load blocks this thread but the ack already played.
+        self._speak(
+            "Moving to the GPU." if target == "gpu" else
+            "Moving to the processor."
+        )
+        try:
+            ok, msg = llm.reload_for_device(target)
+        except Exception as e:                                       # noqa: BLE001
+            logger.error("reload_for_device(%s) raised: %s", target, e)
+            self._speak("That didn't work. Staying where I was.")
+            return True
+        logger.info("llm:device_switch | target=%s ok=%s (%s)", target, ok, msg)
+        if ok:
+            # "already on X" is also a success; speak a fitting confirmation.
+            if msg.startswith("already"):
+                self._speak(
+                    "Already on the GPU." if target == "gpu" else
+                    "Already on the processor."
+                )
+            else:
+                self._speak(
+                    "Running on the GPU now." if target == "gpu" else
+                    "Back on the processor."
+                )
+        else:
+            self._speak(f"Couldn't switch. {msg}")
+        return True
+
     def _trace_turn_flow(self, *, raw: str, route: str, reason: str = "",
                          final: str = "", channel: str = "",
                          normalized: Optional[str] = None,
@@ -6145,6 +6199,19 @@ class Orchestrator:
                             logger, "loop:iteration_end",
                             via="anticheat_toggle",
                             follow_up=bool(follow_up_until),
+                        )
+                        continue
+                    # LLM device hot-switch: "switch to the GPU" / "move the
+                    # model back to the CPU" -- reloads the 3B with a
+                    # hardware-optimized profile. Checked before the relay
+                    # handlers; a tight verb+device matcher so callouts that
+                    # merely mention gpu/cpu fall through.
+                    if self._maybe_handle_llm_device_switch(user_text):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="llm_device_switch", follow_up=False,
                         )
                         continue
                     # Flavor-tail toggle: "disable the flavor" / "flavor off"

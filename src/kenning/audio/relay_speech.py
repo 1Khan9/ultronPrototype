@@ -860,6 +860,70 @@ _TOGGLE_ON_RE = re.compile(
     re.IGNORECASE,
 )
 
+# --- LLM device hot-switch ("switch to the GPU" / "move to the CPU") ----------
+# 2026-06-18: a voice command to move the 3B model between CPU and GPU at
+# runtime, each loading a device-optimized llama.cpp profile (see
+# inference._DEVICE_PROFILES). Gaming mode pins the 3B to CPU so Valorant owns
+# the card; this lets the user borrow the GPU on demand (faster replies between
+# rounds) and hand it back. Strict matcher -> ordinary speech falls through.
+# Returns "gpu" / "cpu" / None. The verb set is deliberately tight ("switch /
+# move / put / run / load / offload the model/llm/brain") + the device noun, so
+# game callouts that merely mention "gpu"/"cpu" never trip it.
+_LLM_OBJECT = (
+    r"(?:the\s+)?(?:3b|three\s*b|3\s*b|llm|model|brain|ai|inference|"
+    r"language\s+model|your\s+(?:model|brain))")
+_DEV_GPU = r"(?:the\s+)?(?:gpu|cuda|graphics(?:\s+card)?|video\s+card)"
+_DEV_CPU = r"(?:the\s+)?(?:cpu|processor|system\s+(?:ram|memory))"
+_LLM_SWITCH_VERB = (
+    r"(?:switch|move|put|shift|send|run|load|reload|offload|host|push|"
+    r"transfer|migrate|swap|set|flip)")
+_LLM_TO_GPU_RE = re.compile(
+    rf"^(?:please\s+)?(?:"
+    # "switch the model to the gpu" / "run the llm on the gpu" / "offload to gpu"
+    rf"{_LLM_SWITCH_VERB}\s+(?:{_LLM_OBJECT}\s+)?"
+    rf"(?:on|onto|to|over\s+to|in|into|using)\s+{_DEV_GPU}"
+    # "use the gpu (for the model)"
+    rf"|use\s+{_DEV_GPU}(?:\s+for\s+{_LLM_OBJECT})?"
+    # "(run the) model on (the) gpu"
+    rf"|{_LLM_OBJECT}\s+(?:on|onto|to)\s+{_DEV_GPU}"
+    # bare "switch to gpu"
+    rf"|{_LLM_SWITCH_VERB}\s+to\s+{_DEV_GPU}"
+    rf")\s*[.!?]*$",
+    re.IGNORECASE,
+)
+_LLM_TO_CPU_RE = re.compile(
+    rf"^(?:please\s+)?(?:"
+    rf"{_LLM_SWITCH_VERB}\s+(?:{_LLM_OBJECT}\s+)?"
+    rf"(?:on|onto|to|over\s+to|in|into|using|back\s+to)\s+{_DEV_CPU}"
+    rf"|use\s+{_DEV_CPU}(?:\s+for\s+{_LLM_OBJECT})?"
+    rf"|{_LLM_OBJECT}\s+(?:on|onto|to|back\s+to)\s+{_DEV_CPU}"
+    rf"|{_LLM_SWITCH_VERB}\s+(?:back\s+)?to\s+{_DEV_CPU}"
+    rf")\s*[.!?]*$",
+    re.IGNORECASE,
+)
+
+
+def match_llm_device_switch(text: str) -> Optional[str]:
+    """Match the LLM CPU<->GPU hot-switch voice command.
+
+    Returns ``"gpu"`` to move the model to the GPU, ``"cpu"`` to move it to the
+    CPU, or ``None`` when the utterance is not a device-switch command. Strict
+    phrasings only -- ordinary speech (and bare mentions of "gpu"/"cpu" inside a
+    callout) fall through.
+    """
+    if not text:
+        return None
+    cleaned = text.strip()
+    # GPU first: "...to the cpu" never matches the GPU regex and vice-versa, so
+    # order is immaterial, but checking GPU first keeps the common "give me speed"
+    # ask on the fast path.
+    if _LLM_TO_GPU_RE.match(cleaned):
+        return "gpu"
+    if _LLM_TO_CPU_RE.match(cleaned):
+        return "cpu"
+    return None
+
+
 # Narration / private-thought / external-chat framing that is relay-SHAPED but
 # must NOT relay (the false-relay gate). A real relay command never has a
 # first-person modal SUBJECT before the trigger ("tell them X"), so when the

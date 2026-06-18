@@ -160,7 +160,7 @@ def test_build_llama_fails_open_on_cache_import_error(tmp_path, monkeypatch):
     eng = _stub_engine_for_build_llama()
     cfg = _stub_cfg(prefix_cache_ram_bytes=1024)
     # Must not raise.
-    llama, _ = eng._build_llama(cfg, gguf, 4096, -1)
+    llama, *_ = eng._build_llama(cfg, gguf, 4096, -1)
     assert llama is mock_llama_instance
     # set_cache was never called because import failed.
     mock_llama_instance.set_cache.assert_not_called()
@@ -181,7 +181,7 @@ def test_build_llama_fails_open_on_set_cache_error(tmp_path, monkeypatch):
 
     eng = _stub_engine_for_build_llama()
     cfg = _stub_cfg(prefix_cache_ram_bytes=1024)
-    llama, _ = eng._build_llama(cfg, gguf, 4096, -1)
+    llama, *_ = eng._build_llama(cfg, gguf, 4096, -1)
     assert llama is mock_llama_instance
 
 

@@ -94,7 +94,10 @@ def test_user_phrases_group_relay(text: str, expected_payload: str) -> None:
     [
         ("tell my sova to drone me through garage.", "Sova", "drone me"),
         ("tell my jett aimlabs is free.", "Jett", "aimlabs is free"),
-        ("ask sage how their day was", "Sage", "how their day was"),
+        # NB: "ask sage how their day [is/was]" now routes to the dedicated
+        # ask-day courtesy snap (see test_ask_day_snap), so use a plain
+        # named-relay question here to exercise the named-relay path.
+        ("ask sage if her wall is up", "Sage", "wall"),
     ],
 )
 def test_user_phrases_named_relay(
@@ -374,15 +377,33 @@ def _boom(_prompt: str) -> Any:
     raise AssertionError("LLM must not be called for curated morale")
 
 
+# NB: "nice try" / "good try" / "good effort" route to the dedicated CRISP
+# nice-try snap (head + short tail) added 2026-06-18, NOT the broad consolation
+# pool -- see test_nice_try_crisp_snap below.
 @pytest.mark.parametrize(
     "payload",
-    ["nice try", "good try.", "unlucky", "tough luck", "so close",
+    ["unlucky", "tough luck", "so close",
      "close one", "bad luck", "almost"],
 )
 def test_consolation_uses_curated_pool(payload: str) -> None:
     cmd = match_relay_command(f"tell my team {payload}")
     line = build_relay_line(cmd, None, rephrase=True, generate_fn=_boom)
     assert line in DEFAULT_CONSOLATION_LINES
+
+
+@pytest.mark.parametrize("payload", ["nice try", "good try.", "good effort"])
+def test_nice_try_crisp_snap(payload: str) -> None:
+    """The crisp nice-try snap: a short head ("Nice try." / "Good try." /
+    "Good effort.") plus a brief in-character tail -- deterministic, never the
+    LLM, and distinct from the broad consolation koan pool."""
+    cmd = match_relay_command(f"tell my team {payload}")
+    line = build_relay_line(cmd, None, rephrase=True, generate_fn=_boom)
+    bare = payload.rstrip(".").strip()
+    head = bare[0].upper() + bare[1:] + "."  # sentence-case, not title-case
+    assert line.startswith(head), (payload, line)
+    # A tail follows the head (crisp, not just the bare head).
+    assert len(line) > len(head)
+    assert line not in DEFAULT_CONSOLATION_LINES
 
 
 @pytest.mark.parametrize(
