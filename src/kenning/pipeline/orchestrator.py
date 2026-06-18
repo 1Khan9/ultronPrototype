@@ -6781,15 +6781,31 @@ class Orchestrator:
         self.ring.clear()
         while not self._shutdown.is_set():
             chunk = self.audio.get_chunk(timeout=0.5)
-            if chunk is None:
-                # Idle heartbeat (~every 0.5s, LLM/TTS guaranteed idle):
-                # apply any settings-panel config reload + runtime
-                # actions HERE so GUI changes take effect live (hot)
-                # without waiting for the next turn, and safely (no
-                # generation in flight). Both are mtime/offset-gated and
-                # fail-open.
-                self._maybe_reload_config()
+            # FAST settings-panel ACTION poll -- runs EVERY iteration, NOT just
+            # in the chunk-is-None branch below. The mic callback enqueues a
+            # block every ~16ms unconditionally (even silence is blocks), so
+            # get_chunk(timeout=0.5) almost never returns None during live
+            # capture -- it only times out on a >=0.5s PortAudio STALL. The old
+            # code drained GUI actions ONLY in that None branch, so a quick
+            # action (esp. the speaker MUTE / UNMUTE buttons, which deliberately
+            # skip the config-reload signal) was captive to the next capture
+            # stall -- sporadic-to-never -> the "takes a full minute" lag. Drain
+            # here so it applies in <=100ms. Cheap + safe: _drain_gui_actions
+            # early-outs on a single getsize when there's no new action (the
+            # byte-offset cursor consumes each appended line EXACTLY once,
+            # regardless of call frequency), and the monotonic gate caps it at
+            # ~10 stats/sec. Still on the run-loop thread, still only while
+            # waiting for the wake word, so it remains a guaranteed-idle moment
+            # (no LLM/TTS generation in flight).
+            now = time.monotonic()
+            if now - getattr(self, "_gui_action_last_drain", 0.0) >= 0.1:
+                self._gui_action_last_drain = now
                 self._drain_gui_actions()
+            if chunk is None:
+                # Heavier idle heartbeat -- only on a real >=0.5s gap: config
+                # hot-reload (also runs once per turn at the top of run(), so it
+                # does not need the per-iteration cadence) + embedder recovery.
+                self._maybe_reload_config()
                 self._maybe_recover_embedding()
                 continue
             self.ring.write(chunk)
