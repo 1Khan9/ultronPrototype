@@ -230,3 +230,51 @@ _THANK_YOU_TAILS = (
     "Remain this useful.",
     "Even flesh can rise.",
 )
+
+
+# ============================================================================
+# Part C -- DATA-DRIVEN SNAP REGISTRY (2026-06-18).
+# ============================================================================
+# Add a NEW deterministic "tell my team <X>" snap by APPENDING ONE SnapRule
+# below -- no pipeline code to write. The dispatcher
+# (relay_speech._apply_snap_registry) iterates these IN ORDER and renders the
+# FIRST rule whose regex matches the relay payload. Runtime-gated by
+# KENNING_SNAP_REGISTRY (default on); turning it off falls back to the hardcoded
+# snap functions, which remain as a safety net (so this is fully reversible).
+#
+#   kind="pool"       -> speak a random line from ``lines`` (anti-repeat).
+#   kind="head_tail"  -> echo the matched phrase (regex group 1), capitalized,
+#                        as the head + a random ``tails`` line:
+#                        "Nice try."  +  "We take the next."
+#
+# EXAMPLE -- add a "tell my team well played" snap:
+#   SnapRule(
+#       name="well_played",
+#       match=re.compile(r"^\s*(well\s+played|good\s+game|wp|gg\s+wp)\b", re.I),
+#       kind="pool",
+#       lines=("Well played. The design held.", "Acceptable. Do it again."),
+#   ),
+# ...and it routes immediately. ORDER matters: put a more specific rule (e.g.
+# "nice try") BEFORE a broader one ("consolation") that would also match.
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class SnapRule:
+    """One data-driven snap: a payload regex -> a response render."""
+    name: str
+    match: "re.Pattern"
+    kind: str = "pool"                 # "pool" | "head_tail"
+    lines: tuple = ()                  # for kind="pool"
+    tails: tuple = ()                  # for kind="head_tail"
+
+
+# The registry. Mirrors the existing payload-snaps so they are now data-driven
+# AND editable here; append new rules to extend the pipeline with no code.
+SNAP_REGISTRY: tuple = (
+    SnapRule("clutch", _CLUTCH_RE, "pool", lines=DEFAULT_CLUTCH_LINES),
+    SnapRule("nice_try", _NICE_TRY_RE, "head_tail", tails=_NICE_TRY_TAILS),
+    SnapRule("consolation", _CONSOLATION_RE, "pool",
+             lines=DEFAULT_CONSOLATION_LINES),
+    SnapRule("praise", _PRAISE_RE, "pool", lines=DEFAULT_PRAISE_LINES),
+)

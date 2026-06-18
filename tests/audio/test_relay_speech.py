@@ -616,6 +616,37 @@ def test_clutch_confidence_routes_deterministically() -> None:
     assert len(relay_mod.DEFAULT_CLUTCH_LINES) == 20
 
 
+def test_snap_registry_routes_and_is_data_extensible(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """Part C: the data-driven SNAP_REGISTRY routes the existing snaps and
+    auto-ingests a brand-new SnapRule with NO pipeline code change."""
+    import re as _re
+    import kenning.audio.relay_speech as relay_mod
+    import kenning.audio.voice_lines as vl
+
+    # existing snaps route via the registry, identical pools / format.
+    assert relay_mod._apply_snap_registry("I got this", None) in \
+        vl.DEFAULT_CLUTCH_LINES
+    assert relay_mod._apply_snap_registry("nice try", None).startswith("Nice try. ")
+    assert relay_mod._apply_snap_registry("unlucky", None) in \
+        vl.DEFAULT_CONSOLATION_LINES
+    assert relay_mod._apply_snap_registry("gg", None) in vl.DEFAULT_PRAISE_LINES
+    # non-snap -> None (falls through to LLM / other handlers).
+    assert relay_mod._apply_snap_registry("rush B", None) is None
+    # off-switch -> None (the hardcoded snap functions remain as the fallback).
+    monkeypatch.setenv("KENNING_SNAP_REGISTRY", "0")
+    assert relay_mod._apply_snap_registry("I got this", None) is None
+    monkeypatch.delenv("KENNING_SNAP_REGISTRY", raising=False)
+    # DATA-DRIVEN: append ONE SnapRule -> it routes immediately, no code change.
+    extra = vl.SnapRule(
+        "demo_test",
+        _re.compile(r"^\s*all according to plan\b", _re.IGNORECASE),
+        "pool", lines=("As designed.",))
+    monkeypatch.setattr(vl, "SNAP_REGISTRY", vl.SNAP_REGISTRY + (extra,))
+    assert relay_mod._apply_snap_registry(
+        "all according to plan", None) == "As designed."
+
+
 # ---------------------------------------------------------------------------
 # flavor-tail voice toggle + short hello snap
 # ---------------------------------------------------------------------------

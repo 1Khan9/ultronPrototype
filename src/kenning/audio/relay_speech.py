@@ -2416,6 +2416,37 @@ def _as_clutch(
     return None
 
 
+def _apply_snap_registry(
+    payload: str, recent_lines: Optional[Sequence[str]] = None,
+) -> Optional[str]:
+    """Part C (2026-06-18): DATA-DRIVEN snap dispatch. Iterate the declarative
+    ``voice_lines.SNAP_REGISTRY`` and render the FIRST rule whose regex matches
+    the relay payload -- so a new "tell my team X" snap is added by appending a
+    SnapRule to the aggregate, with NO code change here. Returns the rendered
+    line, or None to fall through to the hardcoded snaps below (which remain as a
+    safety net). Runtime-gated by KENNING_SNAP_REGISTRY (default ON); fail-open."""
+    import os
+    if os.getenv("KENNING_SNAP_REGISTRY", "1").strip().lower() in (
+        "0", "false", "no", "off",
+    ):
+        return None
+    text = payload or ""
+    try:
+        from kenning.audio.voice_lines import SNAP_REGISTRY
+        for rule in SNAP_REGISTRY:
+            m = rule.match.match(text)
+            if not m:
+                continue
+            if rule.kind == "head_tail":
+                head = (m.group(1) if m.groups() else text).strip()
+                head = head[:1].upper() + head[1:].lower()
+                return f"{head}. {pick_line(rule.tails, recent_lines=recent_lines)}"
+            return pick_line(rule.lines, recent_lines=recent_lines)
+    except Exception as e:                                        # noqa: BLE001
+        logger.debug("snap registry skipped (%s); hardcoded fallback", e)
+    return None
+
+
 def _as_consolation_or_praise(
     payload: str, recent_lines: Optional[Sequence[str]],
 ) -> Optional[str]:
@@ -5384,6 +5415,13 @@ def build_relay_line(
                 pick_line(DEFAULT_ENCOURAGEMENT_LINES, recent_lines=recent_lines),
                 max_chars,
             )
+        # Part C: DATA-DRIVEN snap registry first (clutch / nice-try / consolation
+        # / praise + any user-added SnapRule in voice_lines.SNAP_REGISTRY). First
+        # match wins. Identical order/result to the hardcoded snaps below, which
+        # remain as the fallback when the registry is disabled or unmatched.
+        reg = _apply_snap_registry(getattr(command, "payload", ""), recent_lines)
+        if reg is not None:
+            return _cap_line(reg, max_chars)
         # Clutch confidence ('tell my team I got this') -> curated Ultron round-
         # clutch line. Before consolation/praise so "I'll clutch this" -> the
         # clutch pool (a bare "clutch" after a teammate's play stays praise).
