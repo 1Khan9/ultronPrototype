@@ -293,7 +293,15 @@ def _strip_scaffold(s: str) -> str:
     if m:
         remainder = s[m.end():].strip()
         if remainder and not _is_protected_scaffold_remainder(remainder):
-            if _HAS_RELAY_LEAD.match(remainder) or _TEAM_LEAD.match(remainder):
+            # Use the remainder AS-IS only when it is genuinely already a relay
+            # command -- a team-noun lead, OR a relay verb that is NOT just a bare
+            # ambiguous tactical imperative (drop/give/share/call X). Otherwise
+            # prepend the canonical lead so the callout is relayed (F1 fix).
+            already_relay = _TEAM_LEAD.match(remainder) or (
+                _HAS_RELAY_LEAD.match(remainder)
+                and not _AMBIG_TACTICAL_LEAD.match(remainder)
+            )
+            if already_relay:
                 s = remainder
             else:
                 s = "tell my team " + remainder
@@ -528,6 +536,22 @@ _HAS_RELAY_LEAD = re.compile(
     r"repeat|echo|yell|shout|announce|broadcast|call\s+out|encourage|hype|"
     r"roast|flame|give|share|drop|compliment|praise|gas|prop|props|"
     r"criticize|criticise|critique|rip\s+into|tear\s+into|chew\s+out)\b",
+    re.IGNORECASE,
+)
+
+# A remainder that merely STARTS with a relay-AMBIGUOUS tactical verb
+# (drop/give/share/call) but does NOT address a group -- i.e. it's a tactical
+# PAYLOAD ("drop spike on me", "give me a gun", "share credits"), not a nested
+# relay command. Used to refine the wrapper reframe: without this, "let my team
+# know drop spike on me" sees the remainder "drop spike on me" match
+# _HAS_RELAY_LEAD (on "drop"), so the reframe used it AS-IS and dropped the
+# "tell my team" prepend -> the relay was MISSED. "call out X", "drop the team
+# X", "give everyone X" DO address a group and are excluded here (still treated
+# as already-led). 2026-06-18 corpus audit F1.
+_AMBIG_TACTICAL_LEAD = re.compile(
+    r"^\s*(?:drop|give|share|call)\b"
+    r"(?!\s+(?:out\b|to\b|them\b|'?em\b|everyone\b|everybody\b|"
+    r"(?:my|our|the)\s+(?:team|teammates?|squad|boys|guys|mates|crew|gang|fam)\b))",
     re.IGNORECASE,
 )
 
