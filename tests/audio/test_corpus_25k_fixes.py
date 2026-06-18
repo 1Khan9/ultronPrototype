@@ -7,6 +7,7 @@ safety net. Tests pin the fix + guard against regression.
 from __future__ import annotations
 
 from kenning.audio.command_normalizer import _strip_scaffold
+from kenning.audio.relay_speech import _payload_has_content
 
 
 # ---------------------------------------------------------------------------
@@ -45,3 +46,29 @@ def test_f1_does_not_touch_plain_relays():
     assert _strip_scaffold("tell my team rotate to A") == "tell my team rotate to A"
     # No wrapper -> bare tactical imperative is left alone here (scaffold no-op).
     assert _strip_scaffold("drop spike on me") == "drop spike on me"
+
+
+# ---------------------------------------------------------------------------
+# F2: a trailing single-letter SITE callout (A/B/C) after a position cue is real
+# content -- "they are A" was dropped because "a" is the junk article (B/C
+# already passed since they aren't junk words).
+# ---------------------------------------------------------------------------
+
+
+def test_f2_site_letter_position_callouts_are_content():
+    assert _payload_has_content("they are A")
+    assert _payload_has_content("rotate to A")
+    assert _payload_has_content("push to A")
+    assert _payload_has_content("one A")
+    assert _payload_has_content("they are B")   # already worked; stays valid
+    assert _payload_has_content("they are C")
+
+
+def test_f2_still_rejects_genuine_junk_fragments():
+    # The all-junk gate must still drop clipped fragments.
+    assert not _payload_has_content("that the")
+    assert not _payload_has_content("of them")
+    assert not _payload_has_content("about")
+    assert not _payload_has_content("a")        # bare article, single word
+    # an article "a" NOT trailing a position cue is not rescued
+    assert not _payload_has_content("they are the")

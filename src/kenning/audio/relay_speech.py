@@ -1157,6 +1157,18 @@ _SHORT_CALLOUTS = frozenset(
     "eco op go gg ace run hp low top sub cat rat ult mid off yes no".split()
 )
 
+# Words that, when immediately preceding a lone site letter (A/B/C), mark it as
+# a SITE position callout rather than the article "a" -- so "they are A",
+# "rotate to A", "push to A", "one A" carry content. Used by
+# _payload_has_content's site-callout rescue (F2). Position copulas/preps/verbs
+# + small counts.
+_SITE_CALLOUT_CUES = frozenset(
+    "are is re at on in to into onto toward towards push pushing pushed hold "
+    "holding rotate rotating rush rushing go going hit hitting take taking "
+    "split swing swinging cross crossing head heading defending defend "
+    "one two three four five both all".split()
+)
+
 # First-person instructions TO Kenning ("I want you to acknowledge")
 # are not reported teammate speech -- the pronoun pair gives them away.
 _FIRST_PERSON_TO_YOU_RE = re.compile(r"^i\s+\w+\s+you\b", re.IGNORECASE)
@@ -1173,6 +1185,15 @@ def _payload_has_content(payload: str) -> bool:
     words = [w for w in words if w]
     if not words:
         return False
+    # A trailing single-letter SITE callout (A/B/C) after a position cue is real
+    # content -- "they are A", "rotate to A", "push to A", "one A" -- NOT the
+    # junk article "a". The article never trails a payload behind a position
+    # word. This rescues A-site position callouts that the all-junk gate below
+    # would otherwise drop (because "a" is a junk article, while "b"/"c" already
+    # pass). 2026-06-18 corpus audit F2.
+    if (len(words) >= 2 and words[-1] in {"a", "b", "c"}
+            and words[-2] in _SITE_CALLOUT_CUES):
+        return True
     # An ALL-junk payload ("that the", "about", "of them") carries no message
     # even with multiple words -- reject it so a clipped fragment never relays.
     if all(w in _JUNK_SINGLE_WORDS for w in words):
