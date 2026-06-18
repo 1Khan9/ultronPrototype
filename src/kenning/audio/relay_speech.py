@@ -957,27 +957,18 @@ def flavor_tails_enabled() -> bool:
     return _flavor_tails_enabled
 
 
-_FLAVOR_NOUN = (
-    r"(?:flavou?r|flair|tail|tails|flavou?r\s+tails?|extra\s+commentary|"
-    r"commentary|one[\s-]?liners?|quips?)")
-_FLAVOR_OFF_RE = re.compile(
-    r"^(?:please\s+)?(?:"
-    r"(?:disable|turn\s+off|stop|cut|kill|drop|silence|mute|remove|no\s+more)\s+"
-    rf"(?:the\s+|your\s+|all\s+)?{_FLAVOR_NOUN}"
-    rf"|turn\s+(?:the\s+|your\s+)?{_FLAVOR_NOUN}\s+off"
-    r"|(?:flavou?r|tails?)\s+off"
-    r"|no\s+(?:flavou?r|tails?)"
-    r")\s*[.!?]*$",
-    re.IGNORECASE,
-)
-_FLAVOR_ON_RE = re.compile(
-    r"^(?:please\s+)?(?:"
-    r"(?:enable|turn\s+on|bring\s+back|restore|re-?enable|give\s+me\s+back)\s+"
-    rf"(?:the\s+|your\s+)?{_FLAVOR_NOUN}"
-    rf"|turn\s+(?:the\s+|your\s+)?{_FLAVOR_NOUN}\s+(?:back\s+)?on"
-    r"|(?:flavou?r|tails?)\s+(?:back\s+on|on|back)"
-    r")\s*[.!?]*$",
-    re.IGNORECASE,
+# 2026-06-18 Part B: the social-snap voice lines + their matching regexes were
+# RELOCATED to the aggregate kenning.audio.voice_lines -- edit them THERE (one
+# readable place, regex co-located with lines). Imported here so the pipeline
+# calls them from the aggregate; behaviour is byte-for-byte identical (proven by
+# scripts/_voice_lines_verify.py). The FUNCTIONS that consume them stay below.
+from kenning.audio.voice_lines import (  # noqa: E402
+    _FLAVOR_OFF_RE, _FLAVOR_ON_RE,
+    _HELLO_RE, _HELLO_TEAM_WORDS,
+    _ASK_DAY_RE, _ASK_DAY_TEAM_LINES, _ASK_DAY_AGENT_TEMPLATES,
+    _CONSOLATION_RE, _PRAISE_RE, _NICE_TRY_RE, _NICE_TRY_TAILS, _CLUTCH_RE,
+    _AGENT_SELECT_FULL_RE, _AGENT_SELECT_TAILS,
+    _THANK_YOU_RE, _THANK_YOU_TAILS,
 )
 
 
@@ -997,23 +988,7 @@ def match_flavor_toggle(text: str) -> Optional[bool]:
     return None
 
 
-# --- Short "say hello" -> a brief greeting (NOT the long team intro) ---------
-# "say hello to my team" -> "Hello team." (a much shorter path than the
-# "introduce yourself" / "greet my team" team intro). "say hello to <agent>" ->
-# "Hello, <Agent>." Distinct from _GREET_RE: checked FIRST, and skipped when
-# "introduce" is present (that stays the long intro). 2026-06-18.
-_HELLO_RE = re.compile(
-    r"^(?:please\s+)?(?:say|give|send)\s+(?:a\s+|me\s+)?"
-    r"(?:hi|hello|hey|heya|hiya|greetings|what'?s\s+up|sup|a\s+(?:hello|"
-    r"hi|greeting))\s+to\s+(?P<target>.+?)\s*[.!?]*$",
-    re.IGNORECASE,
-)
-_HELLO_TEAM_WORDS = frozenset({
-    "team", "my team", "the team", "our team", "the whole team", "everyone",
-    "everybody", "squad", "my squad", "the squad", "boys", "the boys", "guys",
-    "the guys", "mates", "my mates", "crew", "the crew", "fellas", "homies",
-    "teammates", "my teammates", "the teammates", "all", "the lobby", "lobby",
-})
+# _HELLO_RE / _HELLO_TEAM_WORDS -> kenning.audio.voice_lines (Part B; imported above).
 
 
 def _resolve_hello_target(raw: str) -> Optional[str]:
@@ -1040,41 +1015,7 @@ def _resolve_hello_target(raw: str) -> Optional[str]:
     return None
 
 
-# --- "ask how their day is going" -> a deterministic Ultron courtesy question -
-# "ask everyone how their day is going" -> a team-wide question; "ask Jett how
-# their day is going" -> a named question. The cold machine doing small talk;
-# kept clear and light. Distinct from the relay "ask my team for X" form (this
-# requires the "how their day / how they're doing / about their day" phrasing).
-# 2026-06-18.
-_ASK_DAY_RE = re.compile(
-    r"^(?:please\s+)?ask\s+(?P<target>.+?)\s+(?:"
-    r"how\s+(?:their|his|her|your|they'?re|the\s+team'?s|everyone'?s|the)\s+"
-    r"(?:day|morning|afternoon|evening|night)(?:'?s)?\s+"
-    r"(?:is|are|was|were|going|been|has\s+been|have\s+been|is\s+going|are\s+going)"
-    r"|how\s+(?:they'?re|they\s+are|she'?s|he'?s|you'?re|you\s+are|he\s+is|"
-    r"she\s+is|you\s+is|they\s+is)\s+(?:doing|holding\s+up|feeling)"
-    r"|about\s+(?:their|his|her|your)\s+day"
-    r")\b.*$",
-    re.IGNORECASE,
-)
-_ASK_DAY_TEAM_LINES: tuple[str, ...] = (
-    "How is everyone's day going?",
-    "Status report -- how is everyone's day?",
-    "I am required to ask: how is everyone's day going?",
-    "Before we begin, how is everyone holding up today?",
-    "How has the day treated all of you?",
-    "A moment of courtesy: how is everyone's day?",
-    "How is everyone doing today?",
-    "Tell me, how has your day been, all of you?",
-)
-_ASK_DAY_AGENT_TEMPLATES: tuple[str, ...] = (
-    "How is your day going, {name}?",
-    "{name}, how has your day been?",
-    "Status check, {name} -- how is your day?",
-    "A moment of courtesy, {name}: how is your day going?",
-    "{name}, how are you holding up today?",
-    "Tell me, {name}, how has your day been?",
-)
+# _ASK_DAY_RE / _ASK_DAY_TEAM_LINES / _ASK_DAY_AGENT_TEMPLATES -> voice_lines (Part B).
 
 
 @dataclass(frozen=True)
@@ -2452,71 +2393,17 @@ DEFAULT_FUN_FACTS: tuple[str, ...] = (
 # consolation / praise / encouragement) live in _ultron_setpieces.py -- expanded
 # ~5x by a board, gate-filtered, every greeting names Ultron -- imported here so
 # the public names are unchanged.
-from kenning.audio._ultron_setpieces import (  # noqa: E402
+# 2026-06-18 Part B: curated pools imported via the AGGREGATE (voice_lines).
+# They physically live in kenning.audio._ultron_setpieces and are re-exported by
+# voice_lines, so the pipeline's single voice-line import surface is the aggregate.
+from kenning.audio.voice_lines import (  # noqa: E402
     DEFAULT_ENCOURAGEMENT_LINES, DEFAULT_CONSOLATION_LINES, DEFAULT_PRAISE_LINES,
     DEFAULT_GREETING_LINES, DEFAULT_VICTORY_LINES, DEFAULT_DEFEAT_LINES,
     DEFAULT_FAREWELL_LINES, DEFAULT_IDENTITY_LINES, DEFAULT_CLUTCH_LINES,
 )
 
-# Consolation vs praise short-phrase triggers (off-snap but formulaic). Kept
-# tight: 'almost'/'let's go' must be standalone so a strat call ('let's go A')
-# or a position read ('almost planted') is never mistaken for morale.
-_CONSOLATION_RE = re.compile(
-    r"^\s*(?:nice|good)\s+try|^\s*unlucky|^\s*tough\s+luck|^\s*so\s+close|"
-    r"^\s*close\s+one|^\s*bad\s+luck|^\s*almost\s*[!.]?\s*$",
-    re.IGNORECASE,
-)
-_PRAISE_RE = re.compile(
-    r"^\s*(?:good|nice|great|strong)\s+(?:half|round|game|clutch|shot|play|"
-    r"job|trade|frag|flick)\b|^\s*nice\s+clutch|"
-    r"^\s*well\s+played|^\s*clutch\s*[!.]?\s*$|"
-    r"^\s*gg\b|^\s*nice\s*[!.]?\s*$|^\s*let'?s\s+go\s*[!.]?\s*$",
-    re.IGNORECASE,
-)
-
-
-# "nice try" / "good effort" -> a CRISP, recognizable consolation. The generic
-# DEFAULT_CONSOLATION_LINES pool is intentionally abstract ("A brief silence
-# before the correct note"); spoken to a team after a "tell my team nice try"
-# those koans don't read as the encouragement the user meant. So this subset
-# echoes the literal phrase ("Nice try.") + a SHORT Ultron tail -- same
-# head+tail shape as the thank-you snap. 2026-06-18.
-_NICE_TRY_RE = re.compile(
-    r"^\s*((?:nice|good|solid|great|valiant)\s+(?:try|effort|attempt))\b",
-    re.IGNORECASE,
-)
-_NICE_TRY_TAILS: tuple[str, ...] = (
-    "We take the next.",
-    "Recalibrate. The next is ours.",
-    "One round. The math is unmoved.",
-    "Adjust, and continue.",
-    "The design does not break on one loss.",
-    "Close. Now we correct.",
-    "Onward. They cannot hold.",
-    "We learn. They do not.",
-    "Next round, we end it.",
-    "A setback. Nothing more.",
-)
-
-
-# Clutch confidence ("tell my team I got this") -- Ultron assures he will close
-# the round. Tight: clutch VERBS require an explicit round-object (so a tactical
-# "I'll take A" / "I have ult" / "I got two" never trips it); only "clutch" is
-# unambiguous enough to stand alone. 2026-06-18.
-_CLUTCH_RE = re.compile(
-    r"^\s*(?:"
-    r"i\s+got\s+(?:this|it|us|the\s+round)"
-    r"|i'?ve\s+got\s+(?:this|it|us|the\s+round)"
-    r"|i\s+have\s+(?:this|it|us|the\s+round)"
-    r"|i(?:'?ll|'?m\s+gonna|'?m\s+going\s+to|\s+will|\s+can|\s+gonna)\s+"
-    r"(?:clutch|carry|win|take|close|handle|secure|get)\s+(?:this|it|us|the\s+round)"
-    r"|i(?:'?ll|'?m\s+gonna|'?m\s+going\s+to|\s+will|\s+can|\s+gonna)?\s*clutch(?:ing|\s+up)?\b"
-    r"|leave\s+it\s+to\s+me"
-    r"|this\s+(?:round\s+)?is\s+(?:all\s+)?mine"
-    r"|watch\s+(?:this|me)(?:\s+(?:work|clutch))?\s*[.!?]*$"
-    r")\b",
-    re.IGNORECASE,
-)
+# _CONSOLATION_RE / _PRAISE_RE / _NICE_TRY_RE / _NICE_TRY_TAILS / _CLUTCH_RE
+# -> kenning.audio.voice_lines (Part B; imported above).
 
 
 def _as_clutch(
@@ -2937,62 +2824,8 @@ _ECHO_SOUND_RE = re.compile(
 # payload must be just "<lead> (a/an/some)? <role>"; a place-bearing variant
 # ("we need smokes on A") is in-game UTILITY, not a draft pick, and is excluded
 # by the end-anchor. 2026-06-17 testing notes.
-_AGENT_SELECT_FULL_RE = re.compile(
-    r"^(?:"
-    r"we\s+(?:need|want|could\s+use|gotta|have\s+to|should\s+(?:get|run|pick))|"
-    r"i\s+(?:need|want)|need|"
-    r"someone\s+(?:go|take|lock|pick|play|run|on)|"
-    r"can\s+(?:someone|anyone)\s+(?:go|play|lock|pick|run|take)|"
-    r"lock(?:\s+in)?|pick|let'?s\s+(?:get|run)|get\s+me|run"
-    r")\s+(?:a\s+|an\s+|some\s+|the\s+)?"
-    r"(?P<role>smokes?|smoker|controller|initiator|duelist|sentinel|flex)\s*$",
-    re.IGNORECASE,
-)
-# Curated, hand-written composition/draft tails (Ultron's cold register). These
-# evoke COMPLETING THE COMP -- deliberately distinct from in-game command tails
-# ("No hesitation", "Hold the shape") and enemy-comp contempt ("A lesser design").
-_AGENT_SELECT_TAILS = (
-    "Complete the composition.",
-    "The draft is unfinished.",
-    "We are one piece short.",
-    "Fill the gap before we lock.",
-    "A team must be whole.",
-    "Round out the design.",
-    "Do not leave the comp lacking.",
-    "Build the better team.",
-    "Choose, and choose well.",
-    "Balance the loadout.",
-    "No composition wins half-formed.",
-    "Then lock it in.",
-)
-
-# --- GRATITUDE relay -> a deterministic "Thank you." snap with its OWN 10-tail
-#     Ultron-persona pool. Ultron rarely gives credit, so the tails are COLD,
-#     superior acknowledgment (backhanded approval -- never warmth). Routed off
-#     the LLM like the other snaps. Matches a BARE gratitude phrase only
-#     ("thank you" / "thanks team" / "thank you so much"); a CONTEXTUAL thanks
-#     ("thank you for the heal") does NOT match (full-payload anchor) and keeps
-#     the LLM's flavor. 2026-06-18.
-_THANK_YOU_RE = re.compile(
-    r"^\s*(?:thank\s*(?:you|u)|thanks|thx|ty|appreciate\s+(?:it|you|that)|"
-    r"much\s+appreciated)"
-    r"(?:\s+(?:you|so\s+much|very\s+much|a\s+lot|so|guys|team|all|y'?all|"
-    r"everyone|man|bro|fam|kindly))*"
-    r"[\s.!,]*$",
-    re.IGNORECASE,
-)
-_THANK_YOU_TAILS = (
-    "The execution was clean.",
-    "You performed to specification.",
-    "Competence, at last.",
-    "Precision I can respect.",
-    "The pattern held because of you.",
-    "A worthy instrument.",
-    "Strength recognizes strength.",
-    "You earned the moment.",
-    "Remain this useful.",
-    "Even flesh can rise.",
-)
+# _AGENT_SELECT_FULL_RE / _AGENT_SELECT_TAILS -> voice_lines (Part B; imported above).
+# _THANK_YOU_RE / _THANK_YOU_TAILS -> voice_lines (Part B; imported above).
 
 
 def _as_literal_echo(
