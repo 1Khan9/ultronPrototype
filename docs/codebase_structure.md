@@ -10,8 +10,47 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
+> **Validating HEAD: LLM CPU↔GPU HOT-SWITCH + INSTANT SPEAKER MUTE + AGGREGATE FOLLOW-UPS**
+> (2026-06-18, latest = `221a77a`). Five pushed milestones on `main`:
+> - **LLM device hot-switch** (`ba6e5c3`): voice commands "switch to the GPU" / "move the model
+>   back to the CPU" reload the live 3B with a device-optimized llama.cpp profile, no restart.
+>   `inference._DEVICE_PROFILES` (GPU = full offload `-1` + CUDA flash-attn + q8_0 KV + large
+>   batches; CPU = 0 GPU layers + flash-attn OFF + F16 KV [mandatory when flash-attn off] + smaller
+>   micro-batch so prefill doesn't steal game cores). `_build_llama` gained keyword-only
+>   flash_attn/kv_cache_type/n_batch/n_ubatch overrides (default→cfg via an `_UNSET` sentinel; every
+>   existing caller unchanged) and now returns `(llama, path, n_gpu_layers, n_ctx)` so the engine
+>   tracks its live device. `reload_for_device(device)` = load-new-then-release-old (failed load
+>   keeps current device), no-op when already on target (`force=` to re-apply), refuses GPU without
+>   CUDA, resets history, reloads on the same n_ctx. Matcher `relay_speech.match_llm_device_switch`
+>   ("gpu"/"cpu"/None, tight verb+device so callouts mentioning gpu/cpu fall through); handler
+>   `orchestrator._maybe_handle_llm_device_switch` (acks before the multi-second reload), wired into
+>   the lean dispatch. Anticheat-safe (only changes WHERE the model compute runs). Tests:
+>   `tests/test_llm_device_switch.py`.
+> - **Instant speaker mute + auto-dismiss banner** (`395e2b3`): the GUI quick MUTE/UNMUTE were slow
+>   (they wrote the reload signal → a full heavy config reload + a spoken "Settings updated." before
+>   the mute applied). Now they fire a dedicated `speaker_mute` action that flips a live override in
+>   the TTS engine directly — `kokoro_engine._live_speaker_mute` tri-state (None=defer to config) +
+>   `set_live_speaker_mute()`; `_speakers_muted()` prefers it; the default-speaker output silences
+>   from the next clip on, essentially instantly (OBS/B3 tee unaffected). `orchestrator` handles the
+>   action; a full config reload clears the override back to None so config/overlay stays
+>   authoritative. GUI `_apply_mute_value` writes the action + keeps the overlay in sync (no reload
+>   signal). NEW `_flash_status(text, fg, ms)` auto-clears the bottom banner so it no longer crowds
+>   the controls; apply confirmations route through it. Tests: `tests/test_speaker_mute_live.py`.
+> - **Golden digest + pytest gate** (`2e4e0fa`): committed `tests/data/voice_lines_golden_digest.json`
+>   (358 symbols) + `tests/test_voice_lines_golden.py` runs `_voice_lines_verify.py check` in a
+>   subprocess with `PYTHONHASHSEED=0` (set-built regexes need a fixed seed; can't set it in-process)
+>   so any accidental edit to a curated line / regex / threshold / registry rule fails CI. Harness
+>   gained a `KENNING_VOICE_LINES_DIGEST` env override.
+> - **Pool relocation follow-up** (`d5556dd`): `DEFAULT_ROAST_LINES` + `DEFAULT_FUN_FACTS` moved into
+>   `voice_lines.py` (single voice-line surface), re-imported (is-identical; golden green).
+>   `DEFAULT_ADDRESSEE_NAMES` + the `(regex, replacement)` mishear tables deliberately left in place
+>   (would duplicate the canonical gazetteer / split order-sensitive regex-coupled rules — documented).
+> - **Flavor-lint** (`221a77a`): `_tail_schema.lint_agent_flavor(flavor)` + `tests/audio/test_flavor_lint.py`
+>   guard the 1,628-tail AGENT_FLAVOR library (gender-pronoun consistency via AGENT_GENDER, known
+>   situations/tags, no empties/dupes, word cap). Calibrated against the live library (0 findings).
+>
 > **Validating HEAD: ROUTING/NORMALIZATION + LLM AGGREGATES + TARGET REGISTRY + 5-LENS REVIEW**
-> (2026-06-18, latest). The aggregate system was extended to TWO more single-edit-place files,
+> (2026-06-18). The aggregate system was extended to TWO more single-edit-place files,
 > each a separate pushed, INDEPENDENTLY-REVERTIBLE checkpoint, all proven byte-for-byte by
 > `scripts/_voice_lines_verify.py` (now also covers numeric knobs + the dataclass registries;
 > 351 symbols):
