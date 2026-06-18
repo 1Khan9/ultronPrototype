@@ -44,6 +44,9 @@ _MODULES = [
     "kenning.audio._router_backends",
     "kenning.audio._command_exemplars",
     "kenning.audio._relay_intent",
+    # LLM prompts (llm_prompts aggregate target).
+    "kenning.llm.inference",
+    "kenning.audio._ultron_answer",
 ]
 
 
@@ -65,6 +68,10 @@ def _val_digest(v):
             return {"kind": "dict", "len": len(v), "repr": repr(v)}
         except Exception:
             return None
+    # LLM PROMPTS are plain str module constants -- capture them too so the
+    # llm_prompts relocation is verifiable (only non-trivial constants).
+    if isinstance(v, str) and len(v) >= 12:
+        return {"kind": "str", "value": v}
     return None
 
 
