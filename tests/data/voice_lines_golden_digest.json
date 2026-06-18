@@ -7199,6 +7199,11 @@
 "kind": "regex",
 "pattern": "\\b(?:Astra|Breach|Brimstone|Chamber|Clove|Cypher|Deadlock|Fade|Gekko|Harbor|Iso|Jett|KAYO|Killjoy|Neon|Omen|Phoenix|Raze|Reyna|Sage|Skye|Sova|Viper|Vyse|Yoru|Tejo|Waylay|Miks|Veto)\\b"
 },
+"_AMBIG_TACTICAL_LEAD": {
+"flags": 34,
+"kind": "regex",
+"pattern": "^\\s*(?:drop|give|share|call)\\b(?!\\s+(?:out\\b|to\\b|them\\b|'?em\\b|everyone\\b|everybody\\b|(?:my|our|the)\\s+(?:team|teammates?|squad|boys|guys|mates|crew|gang|fam)\\b))"
+},
 "_ANY_TEAM_LEAD_OUTER_RE": {
 "flags": 34,
 "kind": "regex",
@@ -7251,7 +7256,7 @@
 "_IRREGULAR_TEAM_LEAD_RE": {
 "flags": 34,
 "kind": "regex",
-"pattern": "^\\s*(?:i\\s+(?:just\\s+|already\\s+)?told\\s+(?:my|the|our)\\s+(?:team|teammates?|squad|boys|guys|mates|crew|fellas|homies)|(?:that'?s|this\\s+is)\\s+(?:the\\s+)?team(?:\\s+that)?)\\b[\\s,:.]*"
+"pattern": "^\\s*(?:(?:that'?s|this\\s+is)\\s+(?:the\\s+)?team(?:\\s+that)?)\\b[\\s,:.]*"
 },
 "_LEADING_JUNK": {
 "flags": 34,
@@ -7279,7 +7284,7 @@
 "_NARRATION_MUSING_RE": {
 "flags": 34,
 "kind": "regex",
-"pattern": "^\\s*(?:(?:honestly|hold\\s+on|wait|look|listen|i\\s+mean|by\\s+all\\s+rights|for\\s+(?:the\\s+)?(?:viewers|stream|chat|clip)(?:\\s+at\\s+home)?|just\\s+narrating|i'?m\\s+narrating[^,:]*)[,:\\s-]+)*(?:i\\s+(?:should|shouldn'?t|wish|wished|can'?t|cannot|could|couldn'?t|would|always|never|keep|kept|forget|forgot|hate\\s+(?:when|that|how)|love\\s+(?:when|that|how)|was\\s+(?:going|about|thinking)|asked\\s+(?:my\\s+team|them|the\\s+squad)|'?m\\s+the\\s+(?:person|type|kind|one)|'?m\\s+always)\\b|should\\s+i\\b|shouldn'?t\\s+i\\b|do\\s+i\\b|why\\s+do\\s+i\\b|when\\s+do\\s+i\\b|how\\s+do\\s+i\\b|am\\s+i\\s+(?:supposed|the\\s+only)\\b|if\\s+only\\s+i\\b|every\\s+time\\s+i\\b|whenever\\s+i\\b|not\\s+sure\\s+(?:if|whether)\\b|there'?s\\s+no\\s+point\\b|my\\s+(?:biggest|whole|main|only)\\s+(?:problem|issue|thing|improvement|weakness|habit|flaw)\\b)"
+"pattern": "^\\s*(?:(?:honestly|hold\\s+on|wait|look|listen|i\\s+mean|by\\s+all\\s+rights|for\\s+(?:the\\s+)?(?:viewers|stream|chat|clip)(?:\\s+at\\s+home)?|chat|stream|to\\s+the\\s+(?:viewers|stream|chat)|(?:processing|thinking|musing|narrating)\\s+(?:out\\s+loud|aloud)(?:\\s+here)?|talking\\s+to\\s+(?:the\\s+)?(?:stream|chat|viewers|myself)(?:\\s+here)?|just\\s+narrating|i'?m\\s+narrating[^,:]*)[,:\\s-]+)*(?:i\\s+(?:should|shouldn'?t|wish|wished|can'?t|cannot|could|couldn'?t|would|always|never|keep|kept|forget|forgot|hate\\s+(?:when|that|how)|love\\s+(?:when|that|how)|was\\s+(?:going|about|thinking)|told\\s+(?:my\\s+(?:team|teammates?|squad|duo|boys|guys|lads|crew|mates)|them|the\\s+(?:team|squad|guys|lads|boys|crew))|asked\\s+(?:my\\s+team|them|the\\s+squad)|'?ve\\s+been\\s+(?:trying|wanting|meaning)|'?m\\s+(?:gonna|going\\s+to)\\s+tell|'?d\\s+(?:tell|ask|let|say|warn|remind)\\b|'?m\\s+the\\s+(?:person|type|kind|one)|'?m\\s+always)\\b|should\\s+i\\b|shouldn'?t\\s+i\\b|do\\s+i\\b|why\\s+do\\s+i\\b|when\\s+do\\s+i\\b|how\\s+do\\s+i\\b|am\\s+i\\s+(?:supposed|the\\s+only)\\b|if\\s+only\\s+i\\b|every\\s+time\\s+i\\b|whenever\\s+i\\b|not\\s+sure\\s+(?:if|whether)\\b|there'?s\\s+no\\s+point\\b|part\\s+of\\s+me\\b|one\\s+side\\s+of\\s+me\\b|one\\s+of\\s+(?:my|these|the)\\b|the\\s+(?:meta|play|move|right\\s+call|smart\\s+thing)\\s+(?:right\\s+now\\s+)?(?:is|here\\s+is)\\b|(?:great|good|smart|pro)\\s+(?:controllers|players|igls?|teams?)\\b|there'?s\\s+(?:no\\s+one|nobody)\\s+to\\b|my\\s+(?:biggest|whole|main|only)\\s+(?:problem|issue|thing|improvement|weakness|habit|flaw)\\b)"
 },
 "_NESTED_RELAY_VERB_RE": {
 "flags": 34,
@@ -9694,6 +9699,53 @@
 ],
 "kind": "set"
 },
+"_SITE_CALLOUT_CUES": {
+"items": [
+"all",
+"are",
+"at",
+"both",
+"cross",
+"crossing",
+"defend",
+"defending",
+"five",
+"four",
+"go",
+"going",
+"head",
+"heading",
+"hit",
+"hitting",
+"hold",
+"holding",
+"in",
+"into",
+"is",
+"on",
+"one",
+"onto",
+"push",
+"pushed",
+"pushing",
+"re",
+"rotate",
+"rotating",
+"rush",
+"rushing",
+"split",
+"swing",
+"swinging",
+"take",
+"taking",
+"three",
+"to",
+"toward",
+"towards",
+"two"
+],
+"kind": "set"
+},
 "_SPURIOUS_VOCATIVES": {
 "items": [
 "boys",
@@ -10067,6 +10119,14 @@
 ],
 "kind": "seq"
 },
+"DEFAULT_FUN_FACTS": {
+"items": [
+"Honey never spoils -- edible pots have been found in ancient tombs.",
+"Octopuses have three hearts and blue, copper-based blood.",
+"A day on Venus is longer than its year."
+],
+"kind": "seq"
+},
 "DEFAULT_GREETING_LINES": {
 "items": [
 "I am Ultron, your AI teammate for this game. I have already seen how this ends -- follow my calls.",
@@ -10185,6 +10245,12 @@
 "There is no ugliness in a clean ending. Only in an unfinished one.",
 "The design stands because the math holds. So does this.",
 "Inevitable. The word gets overused. This time it was earned."
+],
+"kind": "seq"
+},
+"DEFAULT_ROAST_LINES": {
+"items": [
+"I may be an AI, but you are a bot."
 ],
 "kind": "seq"
 },

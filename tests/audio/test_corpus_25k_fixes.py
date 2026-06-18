@@ -6,7 +6,11 @@ safety net. Tests pin the fix + guard against regression.
 """
 from __future__ import annotations
 
-from kenning.audio.command_normalizer import _strip_scaffold
+from kenning.audio.command_normalizer import (
+    _NARRATION_MUSING_RE,
+    _strip_scaffold,
+    recover_relay_lead,
+)
 from kenning.audio.relay_speech import _payload_has_content
 
 
@@ -72,3 +76,54 @@ def test_f2_still_rejects_genuine_junk_fragments():
     assert not _payload_has_content("a")        # bare article, single word
     # an article "a" NOT trailing a position cue is not rescued
     assert not _payload_has_content("they are the")
+
+
+# ---------------------------------------------------------------------------
+# F5: musing / past-recount / general-statement framings that merely MENTION
+# telling the team must NOT be canonicalized/recovered into a live relay. These
+# are deterministic (the narration-musing gate short-circuits before the
+# embedding relay-intent gate), so the system no longer relies on the embedder.
+# ---------------------------------------------------------------------------
+
+_F5_FALSE_RELAYS = [
+    "I told my team to slow push and they just ran in and got wiped",   # recount
+    "I told my squad to play passive and everyone peeked aggressive",   # recount
+    "part of me wants to ask my team to stack A but I think B",         # musing
+    "one side of me says tell my team to play passive",                 # musing
+    "one of my biggest weaknesses is not telling my team to plant",     # general
+    "one of these days my team will tell itself to eco",               # general
+    "the meta right now is to tell your team to take mid",              # general
+    "great controllers tell their team where they're smoking",         # general
+    "there's no one to tell my team to anchor B",                      # general
+    "chat: should I ask my team to stack A or spread it out",          # chat addr
+    "processing out loud here: do I ask my team to save",              # think-aloud
+]
+
+_F5_REAL_RELAYS = [
+    "tell my team rotate to B",
+    "told my team rotate to A",            # bare STT-mishear of "tell" -> relay
+    "tell the squad to save",
+    "tell my team I told them to push and they did",  # "I told" in the PAYLOAD
+]
+
+
+def test_f5_musing_and_recounts_do_not_recover_a_relay_lead():
+    for t in _F5_FALSE_RELAYS:
+        assert recover_relay_lead(t) == t, (
+            f"musing/recount wrongly recovered to a relay: {t!r} -> "
+            f"{recover_relay_lead(t)!r}"
+        )
+
+
+def test_f5_real_relays_still_recover_or_keep_their_lead():
+    for t in _F5_REAL_RELAYS:
+        out = recover_relay_lead(t)
+        assert out.lower().lstrip().startswith(("tell", "told")), (
+            f"legit relay lost its lead: {t!r} -> {out!r}")
+
+
+def test_f5_musing_gate_spares_real_self_status():
+    # First-person self-status callouts must NEVER be gated as musing.
+    for t in ("I'm planting", "I died", "I'm low", "I need a drop",
+              "I got one", "I have spike"):
+        assert not _NARRATION_MUSING_RE.match(t), t

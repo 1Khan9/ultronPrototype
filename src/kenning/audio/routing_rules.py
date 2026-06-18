@@ -231,8 +231,14 @@ NORM2_MANGLED_TEAM_LEAD_RE = re.compile(
 )
 NORM2_IRREGULAR_TEAM_LEAD_RE = re.compile(
     rf"^\s*(?:"
-    rf"i\s+(?:just\s+|already\s+)?told\s+(?:my|the|our)\s+{NORM2_TEAM_NOUN}"
-    rf"|(?:that'?s|this\s+is)\s+(?:the\s+)?team(?:\s+that)?"
+    # NB: the first-person PAST "I (just/already) told my team ..." branch was
+    # REMOVED (2026-06-18 corpus audit F5): it canonicalized recounts ("I told
+    # my team to save and watched them buy rifles", "I told my squad to rotate
+    # but they stayed A") into a LIVE relay. A past first-person recount is
+    # narration, not a relay -- now left for the narration/musing gate to keep
+    # conversational. The bare STT-mishear "told my team X" (no "I") is still
+    # handled as a relay by NORM2_MANGLED_TELL ("told" is a mishear of "tell").
+    rf"(?:that'?s|this\s+is)\s+(?:the\s+)?team(?:\s+that)?"
     rf")\b[\s,:.]*",
     re.IGNORECASE,
 )

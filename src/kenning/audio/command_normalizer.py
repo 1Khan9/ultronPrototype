@@ -818,18 +818,39 @@ _NARRATION_MUSING_RE = re.compile(
     r"^\s*"
     r"(?:(?:honestly|hold\s+on|wait|look|listen|i\s+mean|by\s+all\s+rights|"
     r"for\s+(?:the\s+)?(?:viewers|stream|chat|clip)(?:\s+at\s+home)?|"
+    # 2026-06-18 F5: leading stream/chat ADDRESS + thinking-aloud framings.
+    r"chat|stream|to\s+the\s+(?:viewers|stream|chat)|"
+    r"(?:processing|thinking|musing|narrating)\s+(?:out\s+loud|aloud)(?:\s+here)?|"
+    r"talking\s+to\s+(?:the\s+)?(?:stream|chat|viewers|myself)(?:\s+here)?|"
     r"just\s+narrating|i'?m\s+narrating[^,:]*)[,:\s-]+)*"
     r"(?:"
     r"i\s+(?:should|shouldn'?t|wish|wished|can'?t|cannot|could|couldn'?t|would|"
     r"always|never|keep|kept|forget|forgot|hate\s+(?:when|that|how)|"
     r"love\s+(?:when|that|how)|was\s+(?:going|about|thinking)|"
+    # 2026-06-18 F5: first-person PAST recount ("I told my team/squad/guys X ...
+    # and they ...") + intent-musing ("I'd tell ...", "I've been trying/wanting
+    # to ...", "I'm going to tell ..."). A recount/announced-intent is narration.
+    r"told\s+(?:my\s+(?:team|teammates?|squad|duo|boys|guys|lads|crew|mates)|"
+    r"them|the\s+(?:team|squad|guys|lads|boys|crew))|"
     r"asked\s+(?:my\s+team|them|the\s+squad)|"
+    r"'?ve\s+been\s+(?:trying|wanting|meaning)|'?m\s+(?:gonna|going\s+to)\s+tell|"
+    r"'?d\s+(?:tell|ask|let|say|warn|remind)\b|"
     r"'?m\s+the\s+(?:person|type|kind|one)|'?m\s+always)"
     r"\b"
     r"|should\s+i\b|shouldn'?t\s+i\b|do\s+i\b|why\s+do\s+i\b|when\s+do\s+i\b|"
     r"how\s+do\s+i\b|am\s+i\s+(?:supposed|the\s+only)\b"
     r"|if\s+only\s+i\b|every\s+time\s+i\b|whenever\s+i\b"
     r"|not\s+sure\s+(?:if|whether)\b|there'?s\s+no\s+point\b"
+    # 2026-06-18 F5: general-statement / detached-musing frames that merely
+    # MENTION telling the team ("part of me wants to ...", "one side of me says
+    # ...", "one of my biggest weaknesses is ...", "one of these days ...", "the
+    # meta is to tell ...", "great controllers tell their team ...", "there's no
+    # one to tell ...") -- none is a live first-person relay command.
+    r"|part\s+of\s+me\b|one\s+side\s+of\s+me\b|one\s+of\s+(?:my|these|the)\b"
+    r"|the\s+(?:meta|play|move|right\s+call|smart\s+thing)\s+(?:right\s+now\s+)?"
+    r"(?:is|here\s+is)\b"
+    r"|(?:great|good|smart|pro)\s+(?:controllers|players|igls?|teams?)\b"
+    r"|there'?s\s+(?:no\s+one|nobody)\s+to\b"
     r"|my\s+(?:biggest|whole|main|only)\s+(?:problem|issue|thing|"
     r"improvement|weakness|habit|flaw)\b"
     r")",
