@@ -49,7 +49,12 @@ from kenning.audio._ultron_answer import THINK_RESPOND_SUFFIX_RE
 # strip would empty it, keep the original) so a bare "okay" still survives.
 _WAKE_HOMOPHONES = (
     r"ultron|ulltron|ultronn|ultran|ultram|altron|voltron|ultra|ultro|"
-    r"ultr|oltron|ultraun|tron|ron|run|rons"
+    r"ultr|oltron|ultraun|tron|ron|run|rons|"
+    # 2026-06-18: wake-tail mishears observed live when the 0.35s pre-roll's
+    # "...tron" is hallucinated by Whisper. ONLY tokens that are never a real
+    # callout word are listed here (NOT "one"/"from"/"frenzy" -- those are
+    # legitimate); the domain-prompt wake prime is the primary fix.
+    r"franz|prong|fronz|pronto"
 )
 _FILLER = (
     r"hey|ok|okay|um+|uh+|er+|hmm+|so|well|yeah|yep|yup|now|and|then|"

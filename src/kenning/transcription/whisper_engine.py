@@ -22,13 +22,23 @@ logger = get_logger("transcription.whisper")
 
 # Closed Valorant vocabulary fed to the decoder as initial_prompt (domain
 # biasing) so agent names + callout terms are recognised at the source. <=200
-# tokens; most-confusable proper nouns first. Overridable via WHISPER_INITIAL_PROMPT.
+# tokens; most-confusable proper nouns first. WHISPER_INITIAL_PROMPT is APPENDED
+# to this (it no longer SHADOWS it -- see the build site below).
+#
+# 2026-06-18: every capture begins with the wake-word PRE-ROLL, so the prompt
+# LEADS with "Ultron." -- this primes the decoder to render the clipped "...tron"
+# tail as a strippable "Ultron"/"Tron" (caught by the normalizer's wake-remnant
+# pass) instead of hallucinating it into phantom leading words (Franz / Prong /
+# One / We're on) that contaminate the callout. Map LOCATIONS are included so
+# spot calls ("tree", "plat") aren't misheard as numbers ("3") or filler.
 _DOMAIN_PROMPT = (
-    "Valorant team comms. Agents: Raze, Jett, Sova, Omen, Killjoy, Cypher, Viper, "
+    "Ultron. Valorant team comms. Agents: Raze, Jett, Sova, Omen, Killjoy, Cypher, Viper, "
     "Phoenix, Sage, Reyna, Breach, Fade, Skye, Astra, Harbor, Clove, Chamber, "
     "Brimstone, Gekko, Yoru, Iso, Deadlock, Tejo, Waylay, Vyse, Neon, KAY/O. "
     "Calls: spike, plant, defuse, ult, smoke, flash, molly, dart, rotate, eco, "
-    "save, push, heaven, mid, long, short, A site, B site, C site, lurk, flank."
+    "save, push, heaven, mid, long, short, A site, B site, C site, lurk, flank. "
+    "Spots: tree, plat, platform, hell, default, elbow, garage, market, generator, "
+    "back site, A main, B main, rafters, ramp, pit, link, window, lane, tube."
 )
 
 # faster-whisper emits stock phrases ("Thank you.", "Thanks for watching",
@@ -213,8 +223,26 @@ class WhisperEngine:
                 prompt_reset_on_temperature=0.5,
             )
             if getattr(settings, "WHISPER_DOMAIN_BIAS", True):
+                # 2026-06-18: COMBINE, never SHADOW. The .env carried a stale
+                # WHISPER_INITIAL_PROMPT='Kenning.' (the OLD wake word) which,
+                # via the previous `or`, replaced the whole Valorant domain prompt
+                # -> domain biasing was effectively OFF (Sova->Silva, tree->3,
+                # wake tail -> phantom words). Now the domain prompt is always used
+                # and a *meaningful* custom prompt is appended; the obsolete
+                # 'Kenning' value is ignored so it can never disable biasing again.
+                _extra = (getattr(settings, "WHISPER_INITIAL_PROMPT", "") or "").strip()
+                if _extra.lower().rstrip(". ") in ("", "kenning"):
+                    _extra = ""
                 _kw["initial_prompt"] = (
-                    getattr(settings, "WHISPER_INITIAL_PROMPT", "") or _DOMAIN_PROMPT)
+                    _DOMAIN_PROMPT + (" " + _extra if _extra else "")).strip()
+                # One-time confirmation (after the first callout) that domain
+                # biasing is LIVE with the wake prime -- proves the shadow fix.
+                if not getattr(self, "_logged_domain_prompt", False):
+                    self._logged_domain_prompt = True
+                    logger.info(
+                        "Whisper domain biasing ACTIVE: initial_prompt primes "
+                        "wake word + Valorant vocab (%d chars)",
+                        len(_kw["initial_prompt"]))
             # Drop any kwarg the installed faster-whisper doesn't accept, so a newer
             # knob can't TypeError and (via the except below) silently break ALL
             # transcription on an older library.
