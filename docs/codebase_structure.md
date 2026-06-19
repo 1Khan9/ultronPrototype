@@ -10,6 +10,24 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
+> **Validating HEAD: FLAVOR-TAILS-OFF RESPONSE SETS**
+> (2026-06-18, user request, `43bcb2e`). When flavor tails are OFF ("Ultron, flavor off"), the
+> overlapping social / identity / economy / banter commands use a dedicated CURATED set instead of
+> the default rendering. Flavor-ON is UNCHANGED — a single hook at the top of
+> `relay_speech.build_relay_line` calls `_flavor_off_response(command, recent_lines)` only when
+> `flavor_tails_enabled()` is False; it returns None for everything else (existing tail-stripped
+> rendering intact). Addressee-adapted (a named agent gets "..., \<Agent\>"; team/none = bare); pools
+> rotate via `pick_line` (LRU). Pools/`_FO_*` live in `relay_speech.py` (golden-tracked). Covers:
+> identity soundboard/voice-changer/streamer ("\<X\> asked if you are a \<thing\>, respond"); hello;
+> thank you / nice try / nice shot / well played / my bad / sorry; "I got this" (10-line clutch);
+> buy up / save; "buy me [a \<weapon\>]"; "drop me their \<weapon\>"; "take this \<weapon\>";
+> word-for-word verbatim ("Guys, X" / "\<Agent\>, X"); "is flaming you"; "called you cringe"; "the
+> team is arguing"; "told you to shut up"; "told you to stop" (agent pulled from payload);
+> "encourage the team"; "flame the enemy" (NEW matcher `_FLAME_ENEMY_RE` + `flame_enemy` directive —
+> uses the curated pool in BOTH flavor states since it had no prior behaviour); "flame my \<agent\>".
+> Tests: `TestFlavorOffSets` (35). Golden re-blessed (only the 13 new `_FO_*`/`_FLAME_ENEMY_RE`
+> symbols added).
+>
 > **Validating HEAD: "THEY'RE OUT" SNAP CALLOUT (enemy out / committed on site)**
 > (2026-06-18, user request). Bare "Ultron, they're out" / "they're not out" only relayed via the
 > fuzzy relay-intent gate (sidecar) and could miss. Added the enemy-commitment "out" shape to
