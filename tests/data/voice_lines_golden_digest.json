@@ -7355,6 +7355,11 @@
 "kind": "str",
 "value": "Brimstone|Deadlock|Chamber|Killjoy|Phoenix|Breach|Cypher|Harbor|Waylay|Astra|Clove|Gekko|Reyna|Viper|Fade|Jett|KAYO|Neon|Omen|Raze|Sage|Skye|Sova|Vyse|Yoru|Tejo|Miks|Veto|Iso"
 },
+"_RUNON_TEAM_LEAD_RE": {
+"flags": 34,
+"kind": "regex",
+"pattern": "^\\s*(tell|told|ask)\\s*(?:my|the|our)\\s*team\\b[\\s,:.]*"
+},
 "_SAY_DIRECTIVE": {
 "kind": "str",
 "value": "can\\s+you\\s+(?:please\\s+)?(?:say|tell|relay)|could\\s+you\\s+(?:please\\s+)?(?:say|tell|relay)|(?:might\\s+be|it'?d\\s+be|would\\s+be)\\s+worth\\s+(?:saying|telling)|(?:you\\s+)?(?:probably\\s+)?should\\s+(?:say|tell|relay|let)|i\\s+want\\s+you\\s+to\\s+(?:say|tell|relay|let)|i\\s+need\\s+you\\s+to\\s+(?:say|tell|relay|let)|hurry\\s+(?:up\\s+(?:and\\s+)?)?(?:say|tell|relay)|make\\s+sure\\s+(?:to|you)\\s+(?:say|tell|relay)|go\\s+ahead\\s+and\\s+(?:say|tell|relay)|do\\s+me\\s+a\\s+favor\\s+and\\s+(?:say|tell|relay)"
@@ -10091,10 +10096,6 @@
 "flags": 34,
 "kind": "regex",
 "pattern": "\\b(?:we\\s+won|won\\s+(?:the|that|this)|gg\\s+we\\s+won|we\\s+win|victor(?:y|ious)|took\\s+(?:the|that|this)\\s+(?:game|match|one)|we\\s+got\\s+(?:the\\s+win|that|this)|stomped\\s+them|destroyed\\s+them|rolled\\s+them|smashed\\s+them|clean\\s+sweep|swept\\s+them|gg\\s+ez)\\b"
-},
-"_flavor_tails_enabled": {
-"kind": "bool",
-"value": true
 }
 },
 "kenning.audio.voice_lines": {

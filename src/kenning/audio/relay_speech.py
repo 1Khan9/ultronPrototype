@@ -5865,6 +5865,14 @@ def _flavor_off_response(
                 return (f"{agent}, take this {w}." if agent
                         else f"Someone take this {w}.")
 
+        # Bare yes/no confirmation -> just "Yes." / "No." (the curated pool has
+        # persona lines like "No, I won't."; with tails off the user wants only
+        # the bare word). Addressee-adapted like the other simple snaps.
+        if payl in ("yes", "yeah", "yep", "yup", "affirmative", "confirmed"):
+            return f"Yes, {agent}." if agent else "Yes."
+        if payl in ("no", "nope", "nah", "negative", "denied"):
+            return f"No, {agent}." if agent else "No."
+
         # Simple social / economy snaps.
         if payl in _FO_SIMPLE:
             base = _FO_SIMPLE[payl]

@@ -56,6 +56,11 @@ _MODULES = [
     "kenning.audio._ultron_answer",
 ]
 
+# Module-level names that are RUNTIME STATE, not curated content -- their value
+# changes at runtime (the live flavor-tail toggle) and follows the environment
+# (KENNING_FLAVOR_TAILS), so digesting them makes the gate flap. Skipped.
+_SKIP_RUNTIME_STATE = frozenset({"_flavor_tails_enabled"})
+
 
 def _val_digest(v):
     """A stable, comparable representation of a value we care about."""
@@ -103,7 +108,7 @@ def _collect():
             continue
         modout = {}
         for name in dir(mod):
-            if name.startswith("__"):
+            if name.startswith("__") or name in _SKIP_RUNTIME_STATE:
                 continue
             try:
                 v = getattr(mod, name)

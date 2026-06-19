@@ -1039,3 +1039,24 @@ class TestRunOnLead:
     def test_teammate_not_broken(self) -> None:
         from kenning.audio.command_normalizer import normalize_command
         assert "teammate" in normalize_command("tell my teammate to wait").lower()
+
+
+class TestFlavorOffYesNoTerse:
+    """2026-06-19: with tails off, "say yes"/"say no" should be JUST "Yes."/"No."
+    (the curated pool has persona lines like "No, I won't."; flavor-on keeps it)."""
+
+    @_pytest.mark.parametrize("text,expected", [
+        ("say no", "No."), ("say yes", "Yes."), ("just say no", "No."),
+        ("say nope", "No."), ("say yeah", "Yes."),
+        ("tell Sage no", "No, Sage."), ("tell Sage yes", "Yes, Sage."),
+    ])
+    def test_terse_yes_no_off(self, _tails_off, text, expected) -> None:
+        assert _line(text) == expected
+
+    def test_flavor_on_yes_no_unchanged(self) -> None:
+        prev = _RS.flavor_tails_enabled()
+        try:
+            _RS.set_flavor_tails_enabled(True)
+            assert _line("say no") not in ("No.", "No, team.")  # persona pool
+        finally:
+            _RS.set_flavor_tails_enabled(prev)
