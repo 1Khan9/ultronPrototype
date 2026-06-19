@@ -10,6 +10,30 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
+> **Validating HEAD: 25K-CORPUS AUDIT — 5 DETERMINISTIC ROUTING/NORMALIZATION ROOT FIXES**
+> (2026-06-18, latest = `4a36d8e`). A fresh 25,000-case corpus (seed 26) was traced through the FULL
+> pipeline with the live embedding sidecar (`scripts/relay_test/trace_corpus_full.py`), audited via an
+> `expect_match` oracle sweep + hand-verification, and 5 deterministic-layer bugs were fixed so the
+> matcher/normalizer are correct WITHOUT relying on the embedding relay-intent gate as a safety net.
+> Each fix was regression-tested with a 24,996-input behavioral diff (`scripts/_aggregate_behavior_diff.py`)
+> showing ONLY intended changes; net = 11 missed-relays fixed + 47 false-relays deterministically
+> suppressed, 0 regressions. Tests in `tests/audio/test_corpus_25k_fixes.py`.
+> - **F1** `9c5e721` — `command_normalizer._strip_scaffold`: "let my team know <imperative>" reframes to
+>   "tell my team X" instead of dropping the lead. New `_AMBIG_TACTICAL_LEAD` (drop/give/share/call as a
+>   bare tactical payload ≠ an existing relay lead).
+> - **F2** `a6f0f73` — `relay_speech._payload_has_content`: a trailing site letter A/B/C after a position
+>   cue ("they are A") is real content, not the junk article "a". New `_SITE_CALLOUT_CUES`.
+> - **F5** `33fe5fe` — first-person musings/recounts/general-statements no longer relay: removed the
+>   "I told my team" recount branch from `routing_rules.NORM2_IRREGULAR_TEAM_LEAD_RE` + extended
+>   `command_normalizer._NARRATION_MUSING_RE` (recount/intent/general frames). Golden re-blessed.
+> - **F3** `b3c6711` — a reported context clause ("my teammate is flaming me, tell them …") keeps its
+>   directive: new `_TEAM_AS_SUBJECT_RE` stops `_strip_scaffold` treating "my teammate is …" as an
+>   outer relay frame.
+> - **F4** `4a36d8e` — "ask <agent> about <topic>" relays (added "about" to `relay_speech._ASK_LEAD`).
+> - F6 (439 empty-tail snaps) + F7 (1 long curated line) investigated → BENIGN (question relays
+>   correctly get no tail; the long line is coherent curated content). Detail → memory
+>   `project_corpus_25k_audit_2026_06_18.md`.
+>
 > **Validating HEAD: LLM CPU↔GPU HOT-SWITCH + INSTANT SPEAKER MUTE + AGGREGATE FOLLOW-UPS**
 > (2026-06-18, latest = `221a77a`). Five pushed milestones on `main`:
 > - **LLM device hot-switch** (`ba6e5c3`): voice commands "switch to the GPU" / "move the model
