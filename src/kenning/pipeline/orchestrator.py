@@ -7098,6 +7098,14 @@ class Orchestrator:
                             self._smart_turn_min_complete_speech_ms,
                         )
                         band = "incomplete"
+                        # The speculative STT already ran on this sub-floor
+                        # fragment using the CRUDER onset wake-trim, which can
+                        # clip the command lead ("show me the stop button" ->
+                        # "Start button" -> wrongly refused). Since we are now
+                        # EXTENDING the capture, discard that partial so the
+                        # foreground STT re-runs on the FULL buffer with the
+                        # accurate VAD-segmentation wake-strip (_strip_wake_audio).
+                        self._invalidate_speculative_stt()
                     if band == "undecided":
                         # Inference failed; trust VAD's verdict at
                         # the fast-path baseline.
@@ -7495,6 +7503,10 @@ class Orchestrator:
                         / 1000.0 * settings.SAMPLE_RATE
                     ):
                         band = "incomplete"
+                        # Discard the sub-floor speculative partial (cruder wake
+                        # trim can clip the lead) -> foreground re-runs on the
+                        # full extended buffer (mirror of _capture_utterance).
+                        self._invalidate_speculative_stt()
                     if band == "undecided":
                         if streaming_active:
                             self._maybe_stop_stt_stream()

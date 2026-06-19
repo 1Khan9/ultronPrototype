@@ -428,6 +428,27 @@ def test_smart_turn_floor_extends_short_fragment(monkeypatch):
         f"{audio.size} samples ({audio.size / 256:.0f} chunks), expected 7")
 
 
+def test_floor_downgrade_invalidates_speculative(monkeypatch):
+    """When the floor downgrades a sub-floor fragment to 'incomplete' (extending
+    the capture), the speculative partial -- which used the cruder onset wake-trim
+    and may have clipped the command lead ("show me the stop button" -> "Start
+    button") -- must be invalidated so the foreground STT re-runs on the full,
+    accurately-wake-stripped buffer."""
+    from kenning.audio.vad import SpeechEvent as E
+
+    o = _capture_orch(monkeypatch, [
+        (E.SPEECH_START, 1.0), (E.NONE, 1.0),
+        (E.NONE, 0.0), (E.NONE, 0.0),   # 2 silence chunks -> speculative kickoff
+        (E.SPEECH_END, 0.0),            # smart-turn early_complete -> floor -> incomplete
+    ], smart_turn_band="early_complete", min_complete_ms=1000)
+    n = _count_invalidations(o)
+    o._capture_utterance()
+    o._collect_speculative_stt(timeout_s=2.0)
+    assert n["calls"] >= 1, (
+        "the floor downgrade must invalidate the sub-floor speculative partial so "
+        "the foreground STT re-runs on the full (accurately wake-stripped) buffer")
+
+
 def test_smart_turn_above_floor_submits(monkeypatch):
     """speech_samples above the floor + 'early_complete' -> submit at the first
     SPEECH_END (the floor must not interfere with normal short callouts)."""
