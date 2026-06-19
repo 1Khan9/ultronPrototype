@@ -696,8 +696,9 @@ class TestFlavorOffSets:
         ("ask my Sage to drop me their vandal", "Sage, drop me your Vandal."),
         ("tell my team to take this vandal", "Someone take this Vandal."),
         ("tell Sage to take this operator", "Sage, take this Operator."),
-        ("tell Sage word for word the spike is down", "Sage, the spike is down"),
-        ("tell my team word for word push B now", "Guys, push B now"),
+        # verbatim is now EXACT -- no "Guys,"/addressee prefix (2026-06-19).
+        ("tell Sage word for word the spike is down", "the spike is down"),
+        ("tell my team word for word push B now", "push B now"),
     ])
     def test_flavor_off_exact(self, _tails_off, text, expected) -> None:
         assert _line(text) == expected
@@ -891,8 +892,9 @@ class TestSttMishearTolerance:
         ("say push B word for word", "push b"),
     ])
     def test_bare_verbatim(self, _tails_off, text, payload) -> None:
+        # verbatim speaks the EXACT payload -- no "Guys,"/addressee prefix.
         line = _line(text).lower()
-        assert line == f"guys, {payload}", f"{text!r} -> {line!r}"
+        assert line == payload, f"{text!r} -> {line!r}"
 
     @_pytest.mark.parametrize("text", ["I urge my team", "urge my team"])
     def test_encourage_urge_mishear(self, _tails_off, text) -> None:
@@ -921,3 +923,39 @@ class TestSttMishearTolerance:
         # must not be turned into an agent snap or a bare-verbatim "Guys, ..."
         assert not line.startswith("Guys,") or "push b" in line.lower() or True
         assert line not in ("Nice try, Clove.", "Nice shot, Clove.")
+
+
+class TestLiveBatch0619B:
+    """2026-06-19 second live batch: verbatim must be EXACT (no "Guys,"); a
+    drop-weapon request always says "your"; "give my team to X" is a tell->give
+    mishear; "Tejo" TTS pronunciation."""
+
+    def test_verbatim_is_exact_no_prefix(self, _tails_off) -> None:
+        assert _line("repeat spaghetti and meatballs word for word") == \
+            "spaghetti and meatballs"
+
+    @_pytest.mark.parametrize("text,expected", [
+        ("ask Iso to drop me his sheriff", "Iso, drop me your Sheriff."),
+        ("ask Reyna to drop me their vandal", "Reyna, drop me your Vandal."),
+    ])
+    def test_drop_weapon_says_your(self, _tails_off, text, expected) -> None:
+        assert _line(text) == expected
+
+    @_pytest.mark.parametrize("text,expected", [
+        ("give my team to rush mid", "rush mid"),
+        ("give my team to group up", "group up"),
+    ])
+    def test_give_team_to_is_tell(self, text, expected) -> None:
+        from kenning.audio.command_normalizer import normalize_command
+        assert normalize_command(text).lower() == f"tell my team {expected}"
+
+    def test_give_team_encouragement_still_compose(self) -> None:
+        # the COMPOSE form (no "to") must NOT be rewritten to "tell"
+        from kenning.audio.command_normalizer import normalize_command
+        assert normalize_command("give my team encouragement").lower() \
+            .startswith("give my team")
+
+    def test_tejo_pronunciation(self) -> None:
+        from kenning.audio.relay_speech import relay_tts_text
+        assert relay_tts_text("Hello, Tejo.") == "Hello, Tayho."
+        assert "Tejo" not in relay_tts_text("Tejo, nice shot.")

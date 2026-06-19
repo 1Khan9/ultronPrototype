@@ -191,6 +191,12 @@ _SOMEONE_LEAD_RE = re.compile(
     r"^\s*(?:tell|ask|let|have|get)\s+someone\s+(?:to\s+)?",
     re.IGNORECASE,
 )
+# "give my team to <imperative>" is a "tell"->"give" STT mishear (live "give my
+# team to rush mid" echoed literally). The trailing "to <verb>" disambiguates it
+# from the COMPOSE form "give my team encouragement" (no "to"), which must stay.
+_GIVE_TEAM_TO_RE = re.compile(
+    r"^\s*give\s+(?:my|the|our)\s+team\s+to\s+", re.IGNORECASE,
+)
 
 
 def _canonicalize_directive_lead(s: str) -> str:
@@ -982,6 +988,9 @@ def normalize_command(text: str) -> str:
     # never leaks into the spoken line and never falls through to desktop
     # (2026-06-17 battery: the dominant failure mode).
     s = _canonicalize_directive_lead(s)
+    # "give my team to <imperative>" -> "tell my team <imperative>" (tell->give
+    # mishear; the "to" guards the compose form "give my team encouragement").
+    s = _GIVE_TEAM_TO_RE.sub("tell my team ", s, count=1)
     # Bare "ask <question>" / "tell someone to X" -> route to the team (they were
     # abstaining to desktop with no addressee).
     s = _BARE_ASK_RE.sub("ask my team ", s, count=1)

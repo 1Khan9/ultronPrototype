@@ -3517,14 +3517,26 @@ _A_SITE_RE = re.compile(
 )
 
 
+# Agent / proper-noun names the misaki phonemizer mispronounces. Rewritten to a
+# spoken-form spelling for TTS ONLY (the logged/displayed line stays correct).
+# "Tejo" -> misaki said "TEE-joo"; "Tayho" forces the intended "TAY-ho".
+_TTS_NAME_PRONUNCIATION = (
+    (re.compile(r"\bTejo\b", re.IGNORECASE), "Tayho"),
+)
+
+
 def relay_tts_text(line: str) -> str:
     """Return the line as it should be PRONOUNCED -- the displayed/logged text
-    stays clean. Currently corrects the site-letter 'A' callout pronunciation
-    ('A site' -> spoken 'eigh site' = the letter); extend with other spoken-form
-    fixes as needed."""
-    if not line or "A" not in line:
+    stays clean. Corrects mispronounced agent names (e.g. Tejo) always, and the
+    site-letter 'A' callout ('A site' -> spoken 'eigh site') when present. Extend
+    with other spoken-form fixes as needed."""
+    if not line:
         return line
-    return _A_SITE_RE.sub("eigh", line)
+    for _rx, _repl in _TTS_NAME_PRONUNCIATION:
+        line = _rx.sub(_repl, line)
+    if "A" in line:
+        line = _A_SITE_RE.sub("eigh", line)
+    return line
 
 
 def _as_named_question(name: str, payload: str) -> Optional[str]:
@@ -5768,10 +5780,11 @@ def _flavor_off_response(
         if directive == "hello":
             return f"Hello, {agent}." if agent else "Hello."
 
-        # Verbatim ("tell <X> word for word <statement>"): lead with the
-        # addressee, then the exact statement.
+        # Verbatim ("repeat <statement> word for word"): speak the EXACT
+        # statement -- no "Guys,"/addressee prefix (it is a soundboard-proof
+        # phrase; the user does not want a word tacked on). 2026-06-19.
         if getattr(command, "verbatim", False) and pay:
-            return f"{agent}, {pay}" if agent else f"Guys, {pay}"
+            return pay
 
         # "encourage the team".
         if payl == "encouragement" or directive in ("encourage", "morale"):
@@ -5823,7 +5836,12 @@ def _flavor_off_response(
                         else "Can I get a buy.")
             return (f"Can you buy me a {w}, {agent}." if agent
                     else f"Can someone drop me a {w}.")
-        if payl.startswith("drop me their") or payl.startswith("drop me your"):
+        # "ask Iso to drop me his/their/her/your <weapon>" -> Ultron asks the
+        # agent to drop ULTRON one, so the possessive is always "your" (live:
+        # "drop me his Sheriff" echoed "his").
+        if (payl.startswith("drop me their") or payl.startswith("drop me your")
+                or payl.startswith("drop me his") or payl.startswith("drop me her")
+                or payl.startswith("drop me a") or payl.startswith("drop me the")):
             w = _fo_weapon(pay)
             if w:
                 return (f"{agent}, drop me your {w}." if agent

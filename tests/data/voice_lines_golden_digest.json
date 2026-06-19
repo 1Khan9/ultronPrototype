@@ -7248,6 +7248,11 @@
 "kind": "str",
 "value": "hey|ok|okay|um+|uh+|er+|hmm+|so|well|yeah|yep|yup|now|and|then|please|alright|right|i\\s+mean|i\\s+think|i\\s+hope|i\\s+guess|i\\s+wanna|i\\s+want\\s+to|let'?s\\s+see|you\\s+know|basically|just|y'?know|ya\\s+know|kind\\s+of|kinda|sort\\s+of|sorta|ugh+|mmk+|mhm+|hmph|like\\s+i\\s+said|i\\s+want\\s+to\\s+say|i\\s+wanna\\s+say|i\\s+gotta\\s+say|man(?=\\s*,)|bro|bruh|dude|homie|fam|bud|buddy|guys|yo"
 },
+"_GIVE_TEAM_TO_RE": {
+"flags": 34,
+"kind": "regex",
+"pattern": "^\\s*give\\s+(?:my|the|our)\\s+team\\s+to\\s+"
+},
 "_HAS_RELAY_LEAD": {
 "flags": 34,
 "kind": "regex",
