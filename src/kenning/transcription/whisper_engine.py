@@ -141,8 +141,18 @@ class WhisperEngine:
                 vad_filter=settings.WHISPER_VAD_FILTER,
             )
             if getattr(settings, "WHISPER_DOMAIN_BIAS", True):
+                # 2026-06-18 fix: a user-set WHISPER_INITIAL_PROMPT must AUGMENT
+                # the Valorant domain vocabulary, not REPLACE it. The previous
+                # `user or _DOMAIN_PROMPT` let a short override (e.g. .env
+                # KENNING_WHISPER_INITIAL_PROMPT='Kenning.') SHADOW the whole
+                # domain prompt -> domain biasing effectively OFF -> agent-name
+                # jargon errors (Sova->Silva) and phantom leads ("Also team ...").
+                # Keep the domain vocab as the base; append any user override.
+                _user_ip = (getattr(settings, "WHISPER_INITIAL_PROMPT", "") or "").strip()
                 _kw["initial_prompt"] = (
-                    getattr(settings, "WHISPER_INITIAL_PROMPT", "") or _DOMAIN_PROMPT)
+                    f"{_DOMAIN_PROMPT} {_user_ip}".strip() if _user_ip
+                    else _DOMAIN_PROMPT
+                )
             segments, info = self._model.transcribe(audio, **_kw)
             kept = []
             for seg in segments:

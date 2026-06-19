@@ -264,16 +264,22 @@ def test_kick_off_copies_audio_to_avoid_race():
 # ---------------------------------------------------------------------------
 
 
-def _capture_orch(monkeypatch, vad_script, *, transcribe="ok"):
+def _capture_orch(monkeypatch, vad_script, *, transcribe="ok",
+                  smart_turn_band=None, min_complete_ms=1000):
     """Partial Orchestrator wired to drive ``_capture_utterance`` through a
     scripted VAD. ``vad_script`` is a list of (SpeechEvent, probability), one
     per chunk, consumed lock-step by ``vad.process``/``audio.get_chunk``; the
-    loop ends on the SPEECH_END entry (smart-turn is stubbed off, so the VAD
-    decides end-of-turn). Heavy helpers (wake-strip, smart-turn, streaming) are
-    stubbed so only the speculative-STT silence/resume logic is exercised."""
+    loop ends on the SPEECH_END entry. With ``smart_turn_band=None`` smart-turn
+    is OFF (the VAD decides end-of-turn); pass a band string ("early_complete"
+    etc.) to enable it returning that fixed band, so the min-speech FLOOR can be
+    exercised. Heavy helpers (wake-strip, streaming, Silero) are stubbed; the
+    pre-roll is forced to zero so the returned buffer length == chunks*256."""
     from kenning.pipeline import orchestrator as orch_mod
     from kenning.pipeline.orchestrator import Orchestrator
     from kenning.audio.vad import VadResult
+
+    # Pre-roll OFF so the returned audio length is exactly chunks*256 samples.
+    monkeypatch.setenv("KENNING_WAKE_TRIM_TO_SPEECH", "0")
 
     o = object.__new__(Orchestrator)
     o._speculative_stt_lock = threading.Lock()
@@ -293,8 +299,10 @@ def _capture_orch(monkeypatch, vad_script, *, transcribe="ok"):
     o._max_utterance_seconds = 30.0
     o._long_utterance_threshold_seconds = 0.0      # disable the long-utterance bump
     o._long_utterance_silence_duration_ms = 1200
-    o._smart_turn_incomplete_extension_ms = 0
-    o._smart_turn_medium_grace_ms = 0
+    o._smart_turn_window_seconds = 8.0
+    o._smart_turn_incomplete_extension_ms = 1000   # extension waits for resumed speech
+    o._smart_turn_medium_grace_ms = 1000
+    o._smart_turn_min_complete_speech_ms = min_complete_ms
 
     # No-op heavy helpers.
     o._cancel_background_summarizer = lambda: None
@@ -302,7 +310,14 @@ def _capture_orch(monkeypatch, vad_script, *, transcribe="ok"):
     o._maybe_start_stt_stream = lambda: False
     o._maybe_feed_stt_chunk = lambda c: None
     o._stt_streaming_enabled = lambda: False
-    o._smart_turn_should_check = lambda **k: False  # VAD decides end-of-turn
+    if smart_turn_band is None:
+        o._smart_turn_should_check = lambda **k: False  # VAD decides end-of-turn
+    else:
+        o.smart_turn = object()                         # truthy: "available"
+        o._smart_turn_should_check = lambda **k: True
+        o._run_smart_turn = lambda captured: SimpleNamespace(
+            probability=0.9, latency_ms=30.0)
+        o._classify_smart_turn_verdict = lambda verdict: smart_turn_band
     o._strip_wake_audio = lambda buf, *a, **k: buf  # avoid Silero segmentation
     monkeypatch.setattr(orch_mod, "_trim_wake_from_capture",
                         lambda audio, *a, **k: audio)
@@ -383,3 +398,50 @@ def test_capture_keeps_speculative_without_resume(monkeypatch):
     assert n["calls"] == 0, (
         "a trailing-silence kickoff with no resumed speech must NOT be "
         "invalidated -- the speculative latency win must be preserved")
+
+
+# ---------------------------------------------------------------------------
+# Smart-Turn min-speech FLOOR: a "complete" verdict on a sub-floor fragment
+# (a post-wake-pause mis-fire, e.g. "Ultron, tell the team..." + pause) must
+# NOT end the capture -- it is downgraded to "incomplete" so the capture
+# extends. Above the floor, a "complete" verdict submits normally. (2026-06-18)
+# ---------------------------------------------------------------------------
+
+
+def test_smart_turn_floor_extends_short_fragment(monkeypatch):
+    """speech_samples below the floor + an 'early_complete' verdict -> the
+    capture must EXTEND (consume the resumed speech), not stop on the lead."""
+    from kenning.audio.vad import SpeechEvent as E
+
+    # floor 80 ms (= 5 chunks); first fragment is ~2 chunks (< floor).
+    o = _capture_orch(monkeypatch, [
+        (E.SPEECH_START, 1.0), (E.NONE, 1.0),
+        (E.SPEECH_END, 0.0),               # ~32 ms speech < 80 ms floor -> extend
+        (E.SPEECH_START, 1.0), (E.NONE, 1.0), (E.NONE, 1.0),
+        (E.SPEECH_END, 0.0),               # smart-turn already used -> stop here
+    ], smart_turn_band="early_complete", min_complete_ms=80)
+    audio = o._capture_utterance()
+    o._collect_speculative_stt(timeout_s=2.0)
+    # Extended past the first SPEECH_END (3 chunks) to consume all 7 chunks.
+    assert audio.size == 7 * 256, (
+        f"floor must extend the capture past the sub-floor lead; got "
+        f"{audio.size} samples ({audio.size / 256:.0f} chunks), expected 7")
+
+
+def test_smart_turn_above_floor_submits(monkeypatch):
+    """speech_samples above the floor + 'early_complete' -> submit at the first
+    SPEECH_END (the floor must not interfere with normal short callouts)."""
+    from kenning.audio.vad import SpeechEvent as E
+
+    # floor 16 ms (= 1 chunk); fragment is ~3 chunks (> floor) -> submit.
+    o = _capture_orch(monkeypatch, [
+        (E.SPEECH_START, 1.0), (E.NONE, 1.0), (E.NONE, 1.0),
+        (E.SPEECH_END, 0.0),               # ~48 ms speech > 16 ms floor -> submit
+        (E.SPEECH_START, 1.0), (E.NONE, 1.0), (E.SPEECH_END, 0.0),  # NOT consumed
+    ], smart_turn_band="early_complete", min_complete_ms=16)
+    audio = o._capture_utterance()
+    o._collect_speculative_stt(timeout_s=2.0)
+    # Stopped at the first SPEECH_END (4 chunks); the trailing script is unused.
+    assert audio.size == 4 * 256, (
+        f"above the floor, an 'early_complete' verdict must submit at the first "
+        f"SPEECH_END; got {audio.size} samples ({audio.size / 256:.0f} chunks)")

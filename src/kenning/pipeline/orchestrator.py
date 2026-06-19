@@ -581,6 +581,18 @@ class Orchestrator:
             self._smart_turn_completion_threshold = 0.5
             self._smart_turn_early_completion_threshold = 0.65
             self._smart_turn_medium_grace_ms = 200
+        # 2026-06-18 min-speech floor for end-of-turn (see _capture_utterance):
+        # below this many ms of CONTIGUOUS speech, a Smart Turn "complete" /
+        # "medium" verdict is downgraded to "incomplete" so a post-wake-pause
+        # fragment ("Ultron, tell the team..." then a pause -- only ~0.8 s
+        # captured) EXTENDS the capture instead of submitting a truncated clip.
+        # Env-overridable (KENNING_SMART_TURN_MIN_COMPLETE_MS) for live tuning.
+        try:
+            import os as _os_st
+            self._smart_turn_min_complete_speech_ms = int(
+                _os_st.getenv("KENNING_SMART_TURN_MIN_COMPLETE_MS", "1000"))
+        except Exception:                                            # noqa: BLE001
+            self._smart_turn_min_complete_speech_ms = 1000
         self.ring = RingBuffer(
             int(ring_capacity_seconds * settings.SAMPLE_RATE)
         )
@@ -7012,6 +7024,25 @@ class Orchestrator:
                     smart_turn_used = True
                     # 2026-05-16 latency pass 2: gradient-fire bands.
                     band = self._classify_smart_turn_verdict(verdict)
+                    # 2026-06-18 min-speech floor: a "complete"/"medium" verdict
+                    # on a very short fragment is almost always a post-wake-pause
+                    # mis-fire (e.g. "Ultron, tell the team..." then a pause --
+                    # only ~0.8 s captured). Don't end the capture on it; treat it
+                    # as incomplete so the capture EXTENDS and waits for the user
+                    # to keep talking. (Genuinely brief callouts pay only the
+                    # incomplete-extension wait; a truncated command is far worse.)
+                    if band in ("early_complete", "medium_complete") and (
+                        speech_samples < self._smart_turn_min_complete_speech_ms
+                        / 1000.0 * settings.SAMPLE_RATE
+                    ):
+                        logger.info(
+                            "Smart Turn V3: '%s' on a %.0f ms fragment "
+                            "(< %d ms floor) -- treating as incomplete; "
+                            "extending capture", band,
+                            speech_samples / settings.SAMPLE_RATE * 1000.0,
+                            self._smart_turn_min_complete_speech_ms,
+                        )
+                        band = "incomplete"
                     if band == "undecided":
                         # Inference failed; trust VAD's verdict at
                         # the fast-path baseline.
@@ -7401,6 +7432,14 @@ class Orchestrator:
                     smart_turn_used = True
                     # 2026-05-16 latency pass 2: gradient-fire bands.
                     band = self._classify_smart_turn_verdict(verdict)
+                    # 2026-06-18 min-speech floor (mirror of _capture_utterance):
+                    # don't end a follow-up capture on a sub-floor fragment;
+                    # downgrade to incomplete so it extends for resumed speech.
+                    if band in ("early_complete", "medium_complete") and (
+                        speech_samples < self._smart_turn_min_complete_speech_ms
+                        / 1000.0 * settings.SAMPLE_RATE
+                    ):
+                        band = "incomplete"
                     if band == "undecided":
                         if streaming_active:
                             self._maybe_stop_stt_stream()
