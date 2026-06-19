@@ -49,6 +49,7 @@ __all__ = [
     "RelayPlaybackResult",
     "match_relay_command",
     "match_relay_toggle",
+    "is_complete_tactical_callout",
     "build_relay_line",
     "relay_route_info",
     "load_roast_lines",
@@ -5880,6 +5881,51 @@ def _flavor_off_response(
     except Exception:                                                # noqa: BLE001
         return None
     return None
+
+
+# Cheap, sidecar-free leading-relay-lead strip for `is_complete_tactical_callout`.
+# Deliberately NOT `command_normalizer.normalize_command` -- that calls the
+# relay-intent embedder gate, which must never run on the capture hot path.
+_EARLY_LEAD_STRIP_RE = re.compile(
+    r"^(?:tell|let|say\s+to|relay(?:\s+to)?)\s+"
+    r"(?:my|the|our)?\s*(?:team|squad|guys)?\s*(?:to\s+|know\s+)?",
+    re.IGNORECASE,
+)
+
+
+def is_complete_tactical_callout(text: str) -> bool:
+    """True iff *text* is an unambiguous, COMPLETE tactical team callout.
+
+    A "complete tactical callout" is a deterministic snap whose payload
+    parses under the conservative slot grammar (`_parse_callout_slots`:
+    every token a tactical slot, >=2 meaningful slot types) -- e.g.
+    "Jett hit 84", "two A main", "Sova hit 84, Breach hit 97". A bare
+    prefix or single word ("rotate", "Jett") returns False.
+
+    Used by the orchestrator's optional snap-early-endpoint
+    (``KENNING_SNAP_EARLY_ENDPOINT``, default off) to close the capture
+    the instant a full tactical callout is recognized in the speculative
+    transcript. This is SAFE -- a clean slot-callout parse means the
+    utterance is NOT the kind of sub-second fragment the min-speech floor
+    exists to catch (so closing early cannot truncate it), and it does NOT
+    blind-lower that floor (a fragment that does not parse still extends).
+
+    Pure-CPU, sidecar-free (does NOT call normalize_command / the
+    relay-intent embedder), fail-open: any error -> False -> the caller
+    keeps the floor's extend-on-fragment behaviour. Conservative by design
+    (directive-only calls like "rotate B" return False rather than risk a
+    false early-close).
+    """
+    try:
+        t = (text or "").strip()
+        if not t:
+            return False
+        payload = _EARLY_LEAD_STRIP_RE.sub("", t).strip()
+        if len(payload.split()) < 2:
+            return False
+        return _parse_callout_slots(payload) is not None
+    except Exception:                                                # noqa: BLE001
+        return False
 
 
 def build_relay_line(

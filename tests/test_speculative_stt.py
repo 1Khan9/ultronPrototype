@@ -469,6 +469,47 @@ def test_smart_turn_above_floor_submits(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Snap-early-endpoint (E3, KENNING_SNAP_EARLY_ENDPOINT, default OFF): a sub-floor
+# "complete" verdict whose speculative transcript is already a COMPLETE tactical
+# callout closes the capture early (the floor is for FRAGMENTS, not complete
+# callouts). A non-complete partial still extends -- anti-hallucination preserved.
+# ---------------------------------------------------------------------------
+def test_snap_early_endpoint_closes_on_complete_callout(monkeypatch):
+    from kenning.audio.vad import SpeechEvent as E
+    # floor 80 ms (5 chunks); first fragment ~2 chunks (< floor) -> would extend.
+    o = _capture_orch(monkeypatch, [
+        (E.SPEECH_START, 1.0), (E.NONE, 1.0),
+        (E.SPEECH_END, 0.0),               # sub-floor early_complete
+        (E.SPEECH_START, 1.0), (E.NONE, 1.0), (E.NONE, 1.0),
+        (E.SPEECH_END, 0.0),               # consumed ONLY if we extended
+    ], smart_turn_band="early_complete", min_complete_ms=80)
+    o._snap_early_endpoint = True
+    o._peek_speculative_stt = lambda: "two A main"   # a COMPLETE tactical callout
+    audio = o._capture_utterance()
+    o._collect_speculative_stt(timeout_s=2.0)
+    assert audio.size == 3 * 256, (
+        f"with the flag on + a complete callout, capture must CLOSE at the first "
+        f"SPEECH_END (3 chunks); got {audio.size / 256:.0f} chunks (it extended)")
+
+
+def test_snap_early_endpoint_still_extends_fragment(monkeypatch):
+    from kenning.audio.vad import SpeechEvent as E
+    o = _capture_orch(monkeypatch, [
+        (E.SPEECH_START, 1.0), (E.NONE, 1.0),
+        (E.SPEECH_END, 0.0),
+        (E.SPEECH_START, 1.0), (E.NONE, 1.0), (E.NONE, 1.0),
+        (E.SPEECH_END, 0.0),
+    ], smart_turn_band="early_complete", min_complete_ms=80)
+    o._snap_early_endpoint = True
+    o._peek_speculative_stt = lambda: "rotate"   # a bare prefix -> NOT complete
+    audio = o._capture_utterance()
+    o._collect_speculative_stt(timeout_s=2.0)
+    assert audio.size == 7 * 256, (
+        "with the flag on but a non-complete partial, the floor must STILL extend "
+        f"(anti-hallucination); got {audio.size / 256:.0f} chunks, expected 7")
+
+
+# ---------------------------------------------------------------------------
 # 2026-06-19: cold pre-roll -> VAD pre-feed (ad15ded port). A command spoken
 # with no pause after "Ultron" lands in the pre-roll; the live loop only VADs
 # NEW chunks, so without the pre-feed speech_seen stayed False and the buffer

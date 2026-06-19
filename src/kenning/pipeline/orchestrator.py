@@ -607,6 +607,22 @@ class Orchestrator:
                 _os_st.getenv("KENNING_SMART_TURN_MIN_COMPLETE_MS", "1000"))
         except Exception:                                            # noqa: BLE001
             self._smart_turn_min_complete_speech_ms = 1000
+        # 2026-06-19 snap-early-endpoint (latency_optimizations_V1 E3, default OFF):
+        # when ON, a sub-floor Smart Turn "complete"/"medium" verdict is NOT
+        # downgraded if the speculative transcript already parses as a COMPLETE
+        # tactical callout (relay_speech.is_complete_tactical_callout) -- a clean
+        # slot-callout is not the kind of fragment the floor guards against, so
+        # closing early cannot truncate it. The floor still extends every
+        # fragment that does NOT parse (the anti-hallucination guarantee is
+        # preserved). Fail-open. Env: KENNING_SNAP_EARLY_ENDPOINT (1/true).
+        try:
+            import os as _os_se
+            self._snap_early_endpoint = (
+                _os_se.getenv("KENNING_SNAP_EARLY_ENDPOINT", "0").strip().lower()
+                in ("1", "true", "yes", "on")
+            )
+        except Exception:                                            # noqa: BLE001
+            self._snap_early_endpoint = False
         self.ring = RingBuffer(
             int(ring_capacity_seconds * settings.SAMPLE_RATE)
         )
@@ -7219,22 +7235,51 @@ class Orchestrator:
                         speech_samples < self._smart_turn_min_complete_speech_ms
                         / 1000.0 * settings.SAMPLE_RATE
                     ):
-                        logger.info(
-                            "Smart Turn V3: '%s' on a %.0f ms fragment "
-                            "(< %d ms floor) -- treating as incomplete; "
-                            "extending capture", band,
-                            speech_samples / settings.SAMPLE_RATE * 1000.0,
-                            self._smart_turn_min_complete_speech_ms,
-                        )
-                        band = "incomplete"
-                        # The speculative STT already ran on this sub-floor
-                        # fragment using the CRUDER onset wake-trim, which can
-                        # clip the command lead ("show me the stop button" ->
-                        # "Start button" -> wrongly refused). Since we are now
-                        # EXTENDING the capture, discard that partial so the
-                        # foreground STT re-runs on the FULL buffer with the
-                        # accurate VAD-segmentation wake-strip (_strip_wake_audio).
-                        self._invalidate_speculative_stt()
+                        # E3 snap-early-endpoint (default OFF): if the speculative
+                        # transcript already parses as a COMPLETE tactical callout,
+                        # this is NOT the fragment the floor guards against -- honour
+                        # the completion and close early instead of extending. Any
+                        # utterance that does NOT cleanly parse still falls through
+                        # to the downgrade below (the anti-hallucination guarantee).
+                        _early_ok = False
+                        if getattr(self, "_snap_early_endpoint", False):
+                            try:
+                                from kenning.audio.relay_speech import (
+                                    is_complete_tactical_callout,
+                                )
+                                _spec_txt = self._peek_speculative_stt()
+                                _early_ok = bool(
+                                    _spec_txt
+                                    and is_complete_tactical_callout(_spec_txt)
+                                )
+                            except Exception:                        # noqa: BLE001
+                                _early_ok = False
+                        if _early_ok:
+                            logger.info(
+                                "Smart Turn V3: '%s' on a %.0f ms fragment but the "
+                                "speculative transcript is a COMPLETE tactical "
+                                "callout (%r) -- snap-early-endpoint: closing "
+                                "without extending", band,
+                                speech_samples / settings.SAMPLE_RATE * 1000.0,
+                                _spec_txt,
+                            )
+                        else:
+                            logger.info(
+                                "Smart Turn V3: '%s' on a %.0f ms fragment "
+                                "(< %d ms floor) -- treating as incomplete; "
+                                "extending capture", band,
+                                speech_samples / settings.SAMPLE_RATE * 1000.0,
+                                self._smart_turn_min_complete_speech_ms,
+                            )
+                            band = "incomplete"
+                            # The speculative STT already ran on this sub-floor
+                            # fragment using the CRUDER onset wake-trim, which can
+                            # clip the command lead ("show me the stop button" ->
+                            # "Start button" -> wrongly refused). Since we are now
+                            # EXTENDING the capture, discard that partial so the
+                            # foreground STT re-runs on the FULL buffer with the
+                            # accurate VAD-segmentation wake-strip (_strip_wake_audio).
+                            self._invalidate_speculative_stt()
                     if band == "undecided":
                         # Inference failed; trust VAD's verdict at
                         # the fast-path baseline.
@@ -9456,6 +9501,22 @@ class Orchestrator:
         with self._speculative_stt_lock:
             self._speculative_stt_invalidated = True
         self._invalidate_speculative_classification()
+
+    def _peek_speculative_stt(self) -> Optional[str]:
+        """Non-consuming peek at the in-flight speculative STT result.
+
+        Returns the speculative transcript if one is ready and not yet
+        invalidated, else ``None``. Does NOT consume, invalidate, or block
+        -- safe to call from the capture loop. Used by the snap-early-endpoint
+        completeness check (E3). Fail-open.
+        """
+        try:
+            with self._speculative_stt_lock:
+                if self._speculative_stt_invalidated:
+                    return None
+                return self._speculative_stt_result
+        except Exception:                                            # noqa: BLE001
+            return None
 
     def _invalidate_speculative_classification(self) -> None:
         """Mark the speculative classification slot as invalid.
