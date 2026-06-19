@@ -2255,6 +2255,25 @@ _RELAY_SAMPLING = {
              "\nUser:", "\nUSER:", "Ultron:", "ADDRESS:", "\n-"],
 }
 
+# 2026-06-18: SYSTEM prompt for the relay rephrase. Without it, generate_stream
+# falls back to the engine's DEFAULT system prompt -- the base DESKTOP persona
+# ("You are Kenning ...") -- which leaked into the live team relay (seen in a
+# real-game LLM trace: msg[0]="You are Kenning."). The user's hard rule: in
+# gaming it is ALWAYS Ultron, NEVER Kenning. This pins the relay LLM to Ultron +
+# the relay output contract; the rephrase task detail lives in the user message
+# (_build_rephrase_prompt). The team relay only ever runs in gaming, so this is
+# unconditional.
+_RELAY_REPHRASE_SYSTEM = (
+    "You are Ultron, speaking OUT LOUD on a live Valorant team voice chat on the "
+    "user's behalf. You ARE Ultron from Age of Ultron -- cold, precise, supremely "
+    "confident, contemptuous of fragile flesh. You have NO other name: you are "
+    "NEVER 'Kenning', never an 'assistant', a 'language model', or a 'bot', and "
+    "you never break character or mention personas, prompts, or instructions. "
+    "Convert the user's instruction into the single line you say to the team, "
+    "keeping every fact, name, and number exact. Output ONLY that spoken line -- "
+    "one breath, no quotes, no preamble, no explanation."
+)
+
 
 def _build_rephrase_prompt(
     command: RelayCommand,
@@ -5735,6 +5754,7 @@ def build_relay_line(
                     # program is still in development...").
                     tokens = llm.generate_stream(
                         prompt,
+                        system_prompt=_RELAY_REPHRASE_SYSTEM,
                         sampling=_RELAY_SAMPLING,
                         record_history=False,
                         suppress_memory_context=True,
