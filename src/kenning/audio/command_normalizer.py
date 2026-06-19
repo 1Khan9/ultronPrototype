@@ -804,7 +804,11 @@ _STRONG_CALLOUT_RE = re.compile(
     r"(?:they|they're|the\s+enemy|enemy|enemies)\s+(?:have|has|had|got|bought|"
     r"saved|sold|forced|forcing|are\s+saving|are\s+forcing|need|needs|never|"
     r"always|crossed|cross|tripped|will|won'?t|are\s+all|are\s+off|could\s+be|"
-    r"might\s+be|may\s+be|wrapped|wrapping|re-?hit|committing|splitting)\b|"
+    r"might\s+be|may\s+be|wrapped|wrapping|re-?hit|committing|splitting|"
+    # 2026-06-18 user request: "they're out" (enemy committed / out on site) and
+    # "they're not out" -- enemy-commitment status. Optional copula + optional
+    # negation; "out\b" only matches standalone "out" (never "outside"/"outnumbered").
+    r"(?:are\s+|is\s+)?(?:not\s+)?out)\b|"
     # count / there-are + a following word ("one back plat", "two cat",
     # "there are two cat", "one close left", "there are 2 cat")
     r"(?:there\s+(?:are|is)\s+)?(?:one|two|three|four|five|six|\d+)\s+\w|"

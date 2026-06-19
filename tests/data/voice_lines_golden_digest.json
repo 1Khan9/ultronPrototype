@@ -7367,7 +7367,7 @@
 "_STRONG_CALLOUT_RE": {
 "flags": 34,
 "kind": "regex",
-"pattern": "^\\s*(?:(?:i\\s+(?:can\\s+)?)?hear\\b|i\\s+heard\\b|footsteps\\b|(?:they|they're|the\\s+enemy|enemy|enemies)\\s+(?:have|has|had|got|bought|saved|sold|forced|forcing|are\\s+saving|are\\s+forcing|need|needs|never|always|crossed|cross|tripped|will|won'?t|are\\s+all|are\\s+off|could\\s+be|might\\s+be|may\\s+be|wrapped|wrapping|re-?hit|committing|splitting)\\b|(?:there\\s+(?:are|is)\\s+)?(?:one|two|three|four|five|six|\\d+)\\s+\\w|(?:my\\s+|their\\s+|our\\s+|the\\s+)?(?:Astra|Breach|Brimstone|Chamber|Clove|Cypher|Deadlock|Fade|Gekko|Harbor|Iso|Jett|KAYO|Killjoy|Neon|Omen|Phoenix|Raze|Reyna|Sage|Skye|Sova|Viper|Vyse|Yoru|Tejo|Waylay|Miks|Veto)\\b.*\\b(?:main|site|long|short|mid|heaven|hell|window|garage|tree|cat|plat|connector|link|ramp|market|sewer|spawn|cubby|elbow|pit|rafters|stairs|ult|ulted|ulting|walled|smoked|flashed|darted|caged|stunned|droned|naded|mollied|half|low|one\\s+shot|dead|down|cracked|tree|nest|snake|baiting|baited|baits|flanking|lurking|peeking|rotating|pushing)\\b|spike\\b)"
+"pattern": "^\\s*(?:(?:i\\s+(?:can\\s+)?)?hear\\b|i\\s+heard\\b|footsteps\\b|(?:they|they're|the\\s+enemy|enemy|enemies)\\s+(?:have|has|had|got|bought|saved|sold|forced|forcing|are\\s+saving|are\\s+forcing|need|needs|never|always|crossed|cross|tripped|will|won'?t|are\\s+all|are\\s+off|could\\s+be|might\\s+be|may\\s+be|wrapped|wrapping|re-?hit|committing|splitting|(?:are\\s+|is\\s+)?(?:not\\s+)?out)\\b|(?:there\\s+(?:are|is)\\s+)?(?:one|two|three|four|five|six|\\d+)\\s+\\w|(?:my\\s+|their\\s+|our\\s+|the\\s+)?(?:Astra|Breach|Brimstone|Chamber|Clove|Cypher|Deadlock|Fade|Gekko|Harbor|Iso|Jett|KAYO|Killjoy|Neon|Omen|Phoenix|Raze|Reyna|Sage|Skye|Sova|Viper|Vyse|Yoru|Tejo|Waylay|Miks|Veto)\\b.*\\b(?:main|site|long|short|mid|heaven|hell|window|garage|tree|cat|plat|connector|link|ramp|market|sewer|spawn|cubby|elbow|pit|rafters|stairs|ult|ulted|ulting|walled|smoked|flashed|darted|caged|stunned|droned|naded|mollied|half|low|one\\s+shot|dead|down|cracked|tree|nest|snake|baiting|baited|baits|flanking|lurking|peeking|rotating|pushing)\\b|spike\\b)"
 },
 "_TEAM_AS_SUBJECT_RE": {
 "flags": 34,
@@ -9455,6 +9455,11 @@
 "kind": "regex",
 "pattern": "(?:\\bi\\s+(?:should|want\\s+to|keep|wish|need\\s+to|am\\s+going\\s+to|gotta|might|could|kept|tried\\s+to|was\\s+(?:about\\s+to|gonna|going\\s+to|thinking|saying))\\b[^.?!]*\\b(?:tell|telling|say|saying|ask|asking|relay)\\b|\\bpart\\s+of\\s+(?:me|that)\\b|\\bi\\s+keep\\s+(?:saying|telling|wanting|thinking)\\b|\\b(?:chat|the\\s+chat|viewers?|the\\s+stream|my\\s+stream)\\s+(?:says|is\\s+saying|said|wants|is\\s+asking|thinks|asks)\\b|\\b(?:someone|somebody)\\s+(?:donated|in\\s+(?:the\\s+)?chat|watching|on\\s+stream)\\b|\\b(?:my|our)\\s+(?:coach|boy|friend|buddy|mom|dad|girlfriend)\\s+\\w+\\s+(?:said|says|told\\s+me)\\b[^.?!]*\\bi\\s+(?:should|need\\s+to|have\\s+to|gotta)\\b|\\bthis\\s+is\\s+internal\\b|\\bi\\s+(?:do\\s+not|don'?t)\\s+want\\s+(?:ultron|the\\s+llm)\\b|\\bdo\\s+i\\s+(?:tell|say|relay|ask)\\b|\\bshould\\s+i\\s+(?:tell|say|relay|ask|respond|reply)\\b|\\bhow\\s+(?:do|should)\\s+(?:you|i)\\s+(?:handle|respond|reply)\\b|\\bhave\\s+you\\s+ever\\b)"
 },
+"_NEG_AUX_CONTRACT": {
+"kind": "dict",
+"len": 16,
+"repr": "{'is': \"isn't\", 'are': \"aren't\", 'was': \"wasn't\", 'were': \"weren't\", 'do': \"don't\", 'does': \"doesn't\", 'did': \"didn't\", 'can': \"can't\", 'could': \"couldn't\", 'will': \"won't\", 'would': \"wouldn't\", 'should': \"shouldn't\", 'has': \"hasn't\", 'have': \"haven't\", 'had': \"hadn't\", 'must': \"mustn't\"}"
+},
 "_NEWFACT_SUBJECT": {
 "kind": "str",
 "value": "(?:their|our|my|they|they're|we|we're|i|i'm|spike|last|careful|the\\s+enemy|enemy|all\\s+enemies|do\\s+not|don'?t|crossfire|default|execute|retake|defuse|anchor|revive|spread|rotate|gather|trade|swing|fight|flash|cover|drone|recon|watch|stack|clear|smoke|molly|check|force|knife|plant|carry|look|push|take|save|wait|cage|play|dart|grab|stun|wall|heal|lurk|bait|peek|slow|fall|hold|pick|drop|lock|ulti|ult|get|use|res|buy|go|brimstone|deadlock|phoenix|killjoy|chamber|waylay|harbor|breach|cypher|reyna|viper|astra|clove|kay/o|gekko|jett|raze|yoru|neon|omen|miks|sova|skye|kayo|fade|tejo|sage|vyse|veto|iso)\\b|(?:one|two|three|four|five|six)\\s"
@@ -9559,6 +9564,11 @@
 "kind": "regex",
 "pattern": "^(?:why|how|where|when|what|whats|who|whom|which|whose)\\b"
 },
+"_Q_WH_NEGAUX_INVERT_RE": {
+"flags": 34,
+"kind": "regex",
+"pattern": "^(?P<wh>why|how|where|when|what|whats|who|whom|which|whose)\\s+(?P<subj>they|he|she|it|we|you|the\\s+\\w+|their\\s+\\w+|our\\s+\\w+|my\\s+\\w+|enemy|enemies|someone|anyone|everyone)\\s+(?P<aux>is|are|was|were|do|does|did|can|could|will|would|should|has|have|had|must)(?:n'?t|'t|\\s+not)\\s+(?P<rest>\\S.*)$"
+},
 "_REACTION_DIRECTIVES": {
 "flags": 34,
 "kind": "regex",
@@ -9578,6 +9588,10 @@
 "kind": "dict",
 "len": 4,
 "repr": "{'enemy': 'spotted', 'ult': 'ult', 'damage': 'damaged', 'utility': 'utility'}"
+},
+"_RELAY_REPHRASE_SYSTEM": {
+"kind": "str",
+"value": "You are Ultron, speaking OUT LOUD on a live Valorant team voice chat on the user's behalf. You ARE Ultron from Age of Ultron -- cold, precise, supremely confident, contemptuous of fragile flesh. You have NO other name: you are NEVER 'Kenning', never an 'assistant', a 'language model', or a 'bot', and you never break character or mention personas, prompts, or instructions. Convert the user's instruction into the single line you say to the team, keeping every fact, name, and number exact. Output ONLY that spoken line -- one breath, no quotes, no preamble, no explanation."
 },
 "_RELAY_SAMPLING": {
 "kind": "dict",

@@ -615,3 +615,32 @@ class TestThankYouSnap:
         tail = (line[len("Thank you."):].strip()
                 if line.startswith("Thank you.") else None)
         assert tail not in _THANK_YOU_TAILS, line
+
+
+# ===========================================================================
+# 2026-06-18 user request: bare "they're out" / "they're not out" relay as
+# enemy-commitment status snaps (enemy out / committed on site). Added to
+# _STRONG_CALLOUT_RE so they bypass the fuzzy relay-intent gate.
+# ===========================================================================
+class TestEnemyOutCallout:
+    @pytest.mark.parametrize("text,head", [
+        ("they're out", "They're out"),
+        ("they're not out", "They're not out"),
+        ("they are out", "They're out"),
+        ("the enemy is out", "The enemy is out"),
+        ("they're out on site", "They're out on site"),
+        ("they're not out yet", "They're not out yet"),
+    ])
+    def test_enemy_out_relays_as_snap(self, text, head) -> None:
+        # bare callout (no "tell my team") must relay, subject-exact, with a tail
+        line = _line(text)
+        assert line and line.startswith(head), line
+
+    @pytest.mark.parametrize("text", [
+        "they're outside", "they're outnumbered", "force them out",
+        "call them out", "they're washed",
+    ])
+    def test_out_lookalikes_not_strong_callout(self, text) -> None:
+        # the new rule must NOT fire on "out" substrings / insults
+        from kenning.audio.command_normalizer import _STRONG_CALLOUT_RE
+        assert not _STRONG_CALLOUT_RE.match(text), text
