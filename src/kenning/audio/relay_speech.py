@@ -315,7 +315,9 @@ _BARE_CLUTCH_RE = re.compile(
 )
 _BARE_ENCOURAGE_RE = re.compile(
     r"^(?:please\s+)?(?:i\s+|to\s+|let'?s\s+)?"
-    r"(?:encourage|hype(?:\s+up)?|motivate|rally|gas\s+up|pump\s+up)\s+"
+    # "urge" / "I urge" is a live STT mishear of "encourage" ("encourage my team"
+    # -> "I urge my team").
+    r"(?:encourage|urge|hype(?:\s+up)?|motivate|rally|gas\s+up|pump\s+up)\s+"
     r"(?:the\s+|my\s+|our\s+)?"
     r"(?:team|teammates?|guys|boys|squad|everyone|them|us)\b\s*[.!?]*$",
     re.IGNORECASE,
@@ -458,6 +460,36 @@ _VERBATIM_PREFIX_RE = re.compile(
     r")\s+",
     re.IGNORECASE,
 )
+
+# Leading say-ish verb on a LEAD-LESS verbatim utterance, including the live STT
+# mishears of "say" ("Stay"/"Sane"/"Sale"). Stripped so "Stay good boy word for
+# word" -> payload "good boy".
+_BARE_VERBATIM_LEAD_RE = re.compile(
+    r"^(?:please\s+)?(?:say|says|said|sayin'?|saying|stay|sane|sale|"
+    r"hey|ok(?:ay)?|repeat|echo)\s+(?:it|that|this)?\s*",
+    re.IGNORECASE,
+)
+
+
+def _extract_bare_verbatim(cleaned: str) -> Optional[str]:
+    """Pull the literal payload from a LEAD-LESS verbatim utterance ("say X word
+    for word" / "X verbatim") when no relay lead matched. STT mangles the lead
+    verb ("say" -> "Stay"), so the verbatim MARKER carries the intent. Returns
+    the short payload, or None when there is no marker / the payload is empty or
+    too long to be a soundboard phrase."""
+    s = (cleaned or "").strip()
+    m = _VERBATIM_SUFFIX_RE.search(s)
+    if m and m.start() > 0:
+        s = s[:m.start()]
+    elif _VERBATIM_PREFIX_RE.match(s):
+        s = _VERBATIM_PREFIX_RE.sub("", s, count=1)
+    else:
+        return None
+    s = _BARE_VERBATIM_LEAD_RE.sub("", s, count=1).strip(" ,;.!?\"'")
+    if not s or len(s.split()) > 8:
+        return None
+    return s
+
 
 # "Repeat to my team X" -- a PREFIX verbatim relay. The soundboard check: a
 # teammate asks the user to say a specific word/phrase out loud to prove a human
@@ -812,6 +844,31 @@ _CRITICIZE_RE = re.compile(
     rf"(?:my\s+|our\s+|the\s+)?(?P<name>{_CRITICIZE_NAME})(?:'s)?\b.*$",
     re.IGNORECASE,
 )
+
+# Agent-led social snap: "Clove nice try" / "Iso nice shot" / "Reyna well
+# played", and the live STT-mangled shape "give my <agent> a nice try" (the user
+# said "Clove nice try"). Routes to the addressee-adapted snap ("Nice try,
+# Clove." with tails off) instead of echoing the literal or falling to the LLM.
+# 2026-06-19. The phrase set mirrors the flavor-OFF _FO_SIMPLE social keys.
+_AGENT_SNAP_RE = re.compile(
+    rf"^(?:please\s+)?"
+    # optional lead -- incl. the "tell my team ..." the normalizer prepends to
+    # "Iso nice shot" (but not "Clove nice try"), so both shapes route the same.
+    rf"(?:(?:tell|say|give)\s+(?:to\s+)?(?:my\s+|the\s+|our\s+)?team[\s,]+"
+    rf"|give\s+(?:my\s+|our\s+)?|tell\s+(?:my\s+)?|say\s+to\s+)?"
+    rf"(?P<name>{_CRITICIZE_NAME})[\s,]+(?:a\s+|an\s+|some\s+)?"
+    r"(?P<phrase>nice\s+(?:try|shot|one)|good\s+(?:try|shot)|well\s+played|"
+    r"my\s+bad|sorry|thank\s+you|thanks)"
+    r"\s*[.!?]*$",
+    re.IGNORECASE,
+)
+# Normalize the matched phrase to a flavor-OFF _FO_SIMPLE key / consolation head.
+_AGENT_SNAP_NORM = {
+    "nice try": "nice try", "good try": "nice try", "nice one": "nice try",
+    "nice shot": "nice shot", "good shot": "nice shot",
+    "well played": "well played", "my bad": "my bad", "sorry": "sorry",
+    "thank you": "thank you", "thanks": "thank you",
+}
 
 # "flame / roast / trash the enemy" -- author a cold put-down of the ENEMY team
 # (compose, directive="flame_enemy"). Distinct from _CRITICIZE_RE (which targets
@@ -1684,6 +1741,22 @@ def match_relay_command(
             compose=True, directive=f"compliment:{_comp_agent}",
         )
 
+    # Agent-led social snap ("Clove nice try" / "Iso nice shot", and the live
+    # STT-mangled "give my clove a nice try") -> the addressee-adapted snap
+    # naming the agent ("Nice try, Clove." tails-off). After criticize/compliment
+    # (those verbs win); before the generic relay so it isn't echoed literally or
+    # dropped to the LLM. Only fires for a roster agent.
+    _masnap = _AGENT_SNAP_RE.match(cleaned)
+    if _masnap is not None:
+        _snap_agent = _canon_agent(_masnap.group("name"))
+        if _snap_agent:
+            _snap_ph = _AGENT_SNAP_NORM.get(
+                re.sub(r"\s+", " ", _masnap.group("phrase").strip().lower()))
+            if _snap_ph:
+                return RelayCommand(
+                    payload=_snap_ph, raw_text=text, addressee=_snap_agent,
+                )
+
     # Fun-fact requests ("tell my team a fun fact") -- verbatim corpus.
     if _FUN_FACT_RE.match(cleaned):
         return RelayCommand(
@@ -1918,6 +1991,16 @@ def match_relay_command(
     imperative = _match_imperative_directive(cleaned, text, vocabulary)
     if imperative is not None:
         return imperative
+
+    # LEAD-LESS verbatim ("say X word for word" -> heard as "Stay X word for
+    # word"). The trailing/leading verbatim MARKER carries the intent even when
+    # STT mangled the "say" verb and there is no relay lead. Last resort, so
+    # every explicit relay above wins; speaks the short payload verbatim.
+    _bare_vb = _extract_bare_verbatim(cleaned)
+    if _bare_vb:
+        return RelayCommand(
+            payload=_bare_vb, raw_text=text, addressee="team", verbatim=True,
+        )
     return None
 
 

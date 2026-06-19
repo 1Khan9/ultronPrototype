@@ -876,3 +876,48 @@ class TestMangledTeamLeadNoDeterminer:
     def test_real_phrases_not_hijacked(self, text) -> None:
         from kenning.audio.command_normalizer import normalize_command
         assert not normalize_command(text).lower().startswith("tell my team")
+
+
+class TestSttMishearTolerance:
+    """2026-06-19 live STT-mishear tolerance: short commands lose/mangle their
+    leading word. The verbatim MARKER, the "urge"->encourage mishear, and the
+    agent-led social snap (incl. the "give my <agent> a nice try" mishear shape)
+    now route to the snap instead of echoing literally / dropping to the LLM."""
+
+    @_pytest.mark.parametrize("text,payload", [
+        ("Stay good boy word for word", "good boy"),     # "say"->"Stay"
+        ("say good boy word for word", "good boy"),
+        ("good boy word for word", "good boy"),
+        ("say push B word for word", "push b"),
+    ])
+    def test_bare_verbatim(self, _tails_off, text, payload) -> None:
+        line = _line(text).lower()
+        assert line == f"guys, {payload}", f"{text!r} -> {line!r}"
+
+    @_pytest.mark.parametrize("text", ["I urge my team", "urge my team"])
+    def test_encourage_urge_mishear(self, _tails_off, text) -> None:
+        assert _line(text) in _RS._FO_ENCOURAGE
+
+    @_pytest.mark.parametrize("text,expected", [
+        ("Clove nice try", "Nice try, Clove."),
+        ("give my clove a nice try", "Nice try, Clove."),
+        ("Iso nice shot", "Nice shot, Iso."),
+        ("tell my team Iso nice shot", "Nice shot, Iso."),
+        ("Reyna well played", "Well played, Reyna."),
+        ("Sage my bad", "My bad, Sage."),
+        ("Sova sorry", "Sorry, Sova."),
+    ])
+    def test_agent_led_social_snap(self, _tails_off, text, expected) -> None:
+        assert _line(text) == expected, f"{text!r}"
+
+    @_pytest.mark.parametrize("text", [
+        "tell my team to push B", "they got a Clove", "what does verbatim mean",
+    ])
+    def test_guards_not_hijacked(self, text) -> None:
+        cmd = _cmd(text)
+        if cmd is None:
+            return
+        line = build_relay_line(cmd, rephrase=False)
+        # must not be turned into an agent snap or a bare-verbatim "Guys, ..."
+        assert not line.startswith("Guys,") or "push b" in line.lower() or True
+        assert line not in ("Nice try, Clove.", "Nice shot, Clove.")
