@@ -18,6 +18,19 @@
 
 ---
 
+## 🔖 Stable baseline — Ultron 0.1
+
+Commit `816df7c` is the designated **stable, restorable baseline** of the gaming
+teammate-relay assistant (lean boot · gaming engaged · anticheat default) — git tag
+**`ultron-0.1`**, pinned branch `release/ultron-0.1`, a [GitHub
+release](https://github.com/1v9Khan/ultronPrototype/releases/tag/ultron-0.1), and a
+standalone launchable backup at `E:\Ultron-0.1\`. **Restore** the dev tree with
+`git checkout ultron-0.1`; **launch the backup** (a known-good build that stays
+streamable while the dev version is under maintenance) with
+`E:\Ultron-0.1\launch_ultron_0_1.ps1`. Runbook: [`docs/ultron_0_1_baseline.md`](docs/ultron_0_1_baseline.md).
+
+---
+
 ## ⚡ Why Kenning?
 
 > **What would a voice assistant feel like if it lived entirely on your GPU instead of in someone else's data center?**

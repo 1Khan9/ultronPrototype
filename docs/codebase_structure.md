@@ -10,6 +10,23 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
+> ## ⭐ ULTRON 0.1 — STABLE RESTORABLE BASELINE (`816df7c`)
+>
+> **`816df7c` is tagged `ultron-0.1`** — the designated stable, restorable baseline
+> (lean gaming / anticheat-default; the most stable Ultron to date). Markers:
+> git tag **`ultron-0.1`** + pinned branch **`release/ultron-0.1`** + GitHub release
+> + standalone launchable backup at **`E:\Ultron-0.1\`**.
+> - **"Restore us to Ultron 0.1"** → rewind the dev tree to the tag
+>   (`git fetch --all --tags; git checkout ultron-0.1`, or `git reset --hard ultron-0.1`
+>   on main). Models/venv/voice-assets are gitignored+stable, so restoring the code
+>   fully restores behavior.
+> - **"Launch Ultron 0.1"** → run **`E:\Ultron-0.1\launch_ultron_0_1.ps1`** (the BACKUP,
+>   NOT the in-development version) so a known-good Ultron is always streamable while
+>   the dev build is under maintenance. One Ultron at a time (shared port 8772 / wake /
+>   audio / PTT).
+> - Full runbook: **`docs/ultron_0_1_baseline.md`**. Post-0.1 roadmap:
+>   **`docs/latency_optimizations_V1.md`**.
+>
 > **Validating HEAD: "FLAVOR OFF" MISHEAR-TOLERANT + COLD-PRE-ROLL VAD PRE-FEED**
 > (2026-06-19, `52a5530` + `4de149b`). A live "Ultron flavor off" failed twice: (1) the command
 > landed in the cold pre-roll and the live VAD saw only silence → `loop:empty_capture` ("didn't
