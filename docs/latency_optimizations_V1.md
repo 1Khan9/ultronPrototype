@@ -68,22 +68,48 @@ rule) or A/B audio by ear, items are shipped by risk:
 - These were proven **innocent by a controlled A/B**: the full sweep produced the **identical**
   pass/fail set (10866 passed / same 24 environmental fails) with the tuning vs. baseline `.env`.
 
-**✅ VERIFIED already-done / no action:**
-- **Kokoro GPU keep-warm (T2)** is already wired at `orchestrator.py` (`self.tts.warmup()`).
-- **Python hot-path micro-opt (M1)** — all 115 `re.compile` in `relay_speech.py` are module-level;
-  no per-call compiles to hoist.
+**🟡 SHIPPED-FLAGGED (code present + unit-tested, default OFF so production is unchanged):**
+- **Endpoint close-on-recognized-complete-callout (E3 / 1.1, the biggest snap win)** —
+  `KENNING_SNAP_EARLY_ENDPOINT` (default off). `relay_speech.is_complete_tactical_callout`
+  (sidecar-free, conservative slot-grammar) + `orchestrator._peek_speculative_stt` + the
+  flag-gated branch at the min-speech-floor check: when the speculative transcript already
+  parses as a COMPLETE tactical callout (e.g. "two A main", "Reyna is tree"), the floor does
+  NOT downgrade → the capture closes early. A fragment that doesn't parse still extends — the
+  0.8 s-fragment anti-hallucination guarantee is preserved by construction (NOT a blind floor
+  lower). Conservative: damage-verb forms ("Jett hit 84") don't early-close (they pay the floor;
+  no truncation risk). Tests: `tests/audio/test_snap_early_endpoint.py` (5) +
+  `tests/test_speculative_stt.py` (2 integration). **Live A/B:** enable + measure truncation
+  rate on paused callouts; keep on at zero truncation.
 
-**✏️ CORRECTION to the plan:** `KENNING_TTS_LENGTH_SCALE` feeds **Piper only** (`piper_length_scale`)
-— it is a **dead knob for the Kokoro runtime**. Kokoro pacing is `speed` (default 1.0, already
-native) + `dur_*` factors, which are **voice character** (A/B-approved, locked) and were **not**
-touched. So the only safe TTS pacing lever is the inter-sentence gap (shipped above).
+**✅ AUDIT — already implemented / superseded / correctly rejected (no action; the codebase has
+had 3 prior latency passes and is near-frontier):**
+- **T2 Kokoro GPU keep-warm** — already wired (`orchestrator` `self.tts.warmup()`).
+- **M1 hot-path micro-opt** — all 115 `re.compile` in `relay_speech.py` are module-level already.
+- **E2 adaptive confidence-gated endpointing** — ALREADY present: Smart-Turn gradient-fire bands
+  (`early_completion_threshold` 0.65 / `medium_grace_ms` / `incomplete_extension_ms`) +
+  `fast_path_silence_duration_ms` already lowered to **300 ms** (the research's target range).
+  Further tuning (below 300 ms) is quality-sensitive → live A/B only.
+- **E4 Smart-Turn V3.1** — SUPERSEDED: already on **`smart-turn-v3.2-cpu.onnx`** (newer than v3.1).
+- **L1 LLM prefix/KV cache** — infrastructure present (`LlamaRAMCache`, `prefix_cache_ram_bytes`)
+  but **correctly DISABLED by a prior LIVE BENCHMARK**: the comment at `config.yaml` documents a
+  measured **~15 ms TTFT *regression*** on this 4070 Ti + 4B + short-prompt workload (the RAMCache
+  `load_state` memcpy exceeds the eval savings; llama.cpp's internal KV cache already does
+  intra-session prefix reuse). The research's "50–90% cut" was for longer-prompt workloads.
+  Enabling it would REGRESS latency — left at 0.
+- **L3 n_threads / use_mlock** — left to llama.cpp defaults (≈ physical cores already); marginal on
+  32 GB RAM + a 2.2 GB model; net-neutral. Not worth the subtle risk.
+- **`length_scale`** — feeds **Piper only**; a dead knob for Kokoro (whose pacing is `speed`=1.0 +
+  `dur_*` voice-character factors, locked). Not touched.
 
-**🔵 SPEC'D-NEXT (not shipped — need live A/B / offline work / corpus gate; doing them blind would
-risk the quality regression the mandate forbids):** the endpoint close-on-recognized-complete
-(1.1, the biggest win — must NOT be a blind floor-lower; that re-opens the 0.8 s-fragment
-hallucination bug), E2 adaptive silence + Smart-Turn V3.1, T3/T4 synth↔PTT overlap + streaming,
-F1 WAV pre-render cache, R1 Model2Vec static re-rank (corpus-gated), MC SymSpell/bigram,
-detect_side refactor, L1 prefix-cache, L3 thread cap. See Tiers below.
+**🔵 SPEC'D-NEXT (genuine multi-build efforts — each needs voice-stack A/B, offline model work, or a
+corpus-replay gate that can't be closed responsibly without the live stack; doing them blind would
+risk the quality regression the mandate forbids):** T3/T4 synth↔PTT overlap + sentence streaming
+(audio-timing — clip/stitch risk, needs live ear); F1 WAV pre-render cache (needs an offline Kokoro
+render of the 1628 tails + audio QA); R1 Model2Vec static re-rank (the user's #1 named idea — needs
+`model2vec` dep + offline distill + a sidecar-vs-static corpus-diff zero-regression gate; **off the
+snap path** — snaps make no embed call); MC SymSpell/bigram (the existing 25k-audited mishear system
+is already strong → low marginal value + over-correction risk; corpus-validate first); detect_side
+refactor (code-coherence, behavioral-diff gated, ~µs latency value). Each is fully spec'd in Part A.
 
 **⚠️ Sweep recipe note (for future sessions):** running the sweep with **no embedder sidecar**
 requires `KENNING_ROUTER_WAIT_SECONDS=0` (fail-fast to lexical) or it blocks ~30 s/test on the

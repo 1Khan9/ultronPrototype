@@ -27,6 +27,29 @@
 > - Full runbook: **`docs/ultron_0_1_baseline.md`**. Post-0.1 roadmap:
 >   **`docs/latency_optimizations_V1.md`**.
 >
+> **Validating HEAD: LATENCY V1 — SNAP-EARLY-ENDPOINT (E3) + ROADMAP AUDIT**
+> (2026-06-19, post-Ultron-0.1). Deterministic/snap-path latency pass driven by a 14-agent
+> research board (`docs/latency_optimizations_V1.md`). The load-bearing finding: snap slowness is
+> NOT model inference (matcher ~1-2 ms) — it's endpointing floors + TTS pacing + PTT margins.
+> - **SHIPPED-FLAGGED E3** (`feat(capture)`): `relay_speech.is_complete_tactical_callout` (NEW,
+>   sidecar-free conservative slot-grammar predicate, exported) + `orchestrator._peek_speculative_stt`
+>   (NEW) + `orchestrator._snap_early_endpoint` flag (`KENNING_SNAP_EARLY_ENDPOINT`, default OFF).
+>   At the min-speech-floor check in `_capture_utterance`, when the speculative transcript already
+>   parses as a COMPLETE tactical callout the floor does NOT downgrade → capture closes early
+>   (−300..−700 ms). A non-parsing fragment STILL extends — the 0.8 s-fragment anti-hallucination
+>   guarantee is preserved (NOT a blind floor-lower). The floor-block reads the flag via a defensive
+>   `getattr` (partial-orchestrator-safe). Tests: `tests/audio/test_snap_early_endpoint.py` (5) +
+>   `tests/test_speculative_stt.py` (+2 integration). Default OFF ⇒ production behaviour unchanged.
+> - **SHIPPED (.env runtime, verified test-neutral by a controlled A/B):** `KENNING_WHISPER_BEAM_SIZE`
+>   5→1; `KENNING_TTS_SENTENCE_PAUSE_MS` 350→280 (post-callout inter-sentence silence; not voice rate).
+> - **AUDIT — already done / superseded / correctly rejected:** T2 keep-warm (`tts.warmup()` wired);
+>   M1 regexes already module-level; E2 adaptive endpointing already present (gradient-fire bands +
+>   `fast_path_silence_duration_ms` already 300 ms); E4 superseded (already `smart-turn-v3.2`); L1
+>   prefix-cache deliberately DISABLED by a prior live bench (~15 ms TTFT regression on this rig);
+>   `KENNING_TTS_LENGTH_SCALE` is Piper-only (dead for Kokoro). Genuinely-remaining (SPEC'D, need live
+>   A/B or offline work): synth↔PTT overlap + sentence streaming, WAV pre-render cache, Model2Vec
+>   static re-rank (corpus-gated, off-snap-path), SymSpell/bigram, detect_side refactor.
+>
 > **Validating HEAD: "FLAVOR OFF" MISHEAR-TOLERANT + COLD-PRE-ROLL VAD PRE-FEED**
 > (2026-06-19, `52a5530` + `4de149b`). A live "Ultron flavor off" failed twice: (1) the command
 > landed in the cold pre-roll and the live VAD saw only silence → `loop:empty_capture` ("didn't
