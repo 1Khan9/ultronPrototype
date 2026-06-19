@@ -6578,6 +6578,44 @@ class Orchestrator:
                         )
                         continue
 
+                # LEAN GAMING BOOT: these runtime VOICE TOGGLES also live ONLY in
+                # the skipped coding_voice block, so in a barebones gaming session
+                # they would fall through to the relay matcher / router -> the LLM
+                # and never fire (the live "flavor off gave an LLM response" bug).
+                # Run them here (all lean-safe -- relay_speech / inference only)
+                # BEFORE the relay matcher + router so "flavor off" / "switch to
+                # the GPU" / "mute the team chat" work in a gaming session.
+                if self.coding_voice is None:
+                    if self._maybe_handle_llm_device_switch(user_text):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="llm_device_switch-lean", follow_up=False,
+                        )
+                        continue
+                    if self._maybe_handle_flavor_toggle(user_text):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="flavor_toggle-lean", follow_up=False,
+                        )
+                        continue
+                    if self._maybe_handle_relay_toggle(user_text):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = (
+                            self._last_response_finished_monotonic
+                            + _addr_cfg.warm_mode_duration_seconds
+                            if _addr_cfg.follow_up_enabled else None
+                        )
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="relay_toggle-lean",
+                            follow_up=bool(follow_up_until),
+                        )
+                        continue
+
                 # LEAN GAMING BOOT: the exact Spotify matcher above lives INSIDE
                 # the coding_voice block, which the lean boot skips -- so music
                 # commands would fall to the router (abstain) and the LLM would
