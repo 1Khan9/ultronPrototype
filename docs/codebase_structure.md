@@ -10,6 +10,33 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
+> **Validating HEAD: "FLAVOR OFF" MISHEAR-TOLERANT + COLD-PRE-ROLL VAD PRE-FEED**
+> (2026-06-19, `52a5530` + `4de149b`). A live "Ultron flavor off" failed twice: (1) the command
+> landed in the cold pre-roll and the live VAD saw only silence → `loop:empty_capture` ("didn't
+> respond at first"); (2) on the repeat, Whisper transcribed "flavor off" as **"Save her off."**
+> ("flavor" isn't Valorant-domain vocab, so the domain-biased STT snapped it to the in-vocab "save"),
+> the relay normalizer prepended "tell my team", and it relayed as an eco call.
+> **`52a5530` (flavor-toggle):** the lean flavor-toggle check ran on the NORMALIZED text — `run()`
+> reassigns `user_text = normalize_command(user_text)` (which prepends the relay lead) at
+> `orchestrator.py` ~6066, BEFORE the toggle check at ~6601 — so it saw "tell my team save her off"
+> and never matched. The check now runs on the **raw** transcript (`_raw_stt`, hoisted above the
+> normalize block). And `voice_lines._FLAVOR_OFF_MISHEAR_RE`/`_FLAVOR_ON_MISHEAR_RE` (consumed by
+> `relay_speech.match_flavor_toggle`) map the homophone mishears ("save her / saver / favor / flaver
+> / labor / tails … off|on") back to the toggle; the trailing off/on is the distinctive signal (no
+> tactical callout is "\<flavor-homophone\> off"), guards confirm "back off", "hold off", "we're on",
+> "lock on", "push on A", bare "save" still fall through; ON is kept tighter than OFF. Tests:
+> `TestFlavorToggleMishears` (36); golden +4 mishear symbols.
+> **`4de149b` (capture):** FIX1 — `_capture_utterance` pre-feeds `chunks[0]` (the cold pre-roll
+> snapshot, captured before the detector fired) to `self.vad.process` ONCE before the live loop,
+> latching `speech_seen` so a command spoken with no pause after "Ultron" is no longer discarded. The
+> VAD is reset just above + chunks[0] isn't re-appended → one continuous VAD stream, no double-count;
+> a pause can't cause a premature wake-only submit (the sub-floor SPEECH_END is downgraded to
+> "incomplete" by the existing min-speech floor and EXTENDS). FIX2 — since a bare "Ultron" now
+> captures + transcribes, `run()` stands down (`routing:wake_word_only`) when `_WAKE_REMNANT_RE.match`
+> consumes the WHOLE raw transcript (a real multi-word command leaves content and proceeds). Tests:
+> 3 new in `test_speculative_stt.py` (pre-roll speech latches / silence still bails / wake-only
+> predicate). Both fail-open.
+>
 > **Validating HEAD: BARE "SAY HELLO" → TEAM + DETERMINISTIC "TOLD YOU TO STOP"**
 > (2026-06-19, `0ca9c19`). Two live-testing relay-routing fixes. (1) Bare "say hello" / "say hi" /
 > "say hey" (no `to <team|agent>`) fell through the relay matchers to the semantic router, which
