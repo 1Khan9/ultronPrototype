@@ -10,6 +10,26 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
+> **Validating HEAD: WHISPER DOMAIN-BIAS RESTORE + SMART-TURN MIN-SPEECH FLOOR**
+> (2026-06-18). Two more real-voice capture/STT fixes after live re-testing:
+> - **Whisper domain-prompt shadow** (`transcription/whisper_engine.py`): `initial_prompt` was
+>   `WHISPER_INITIAL_PROMPT or _DOMAIN_PROMPT`, so the `.env` override
+>   (`KENNING_WHISPER_INITIAL_PROMPT='Kenning.'`) SHADOWED the Valorant `_DOMAIN_PROMPT` (agent
+>   names + callout terms) → domain biasing effectively OFF → agent-name jargon errors
+>   (Sova→Silva) and PHANTOM LEADS (`"Ultron, phoenix no flashes"` transcribed as `"Also team
+>   phoenix has no flashes"`, which broke the snap match, fell to the relay LLM, and spoke a
+>   garbled line). FIX: the user override now AUGMENTS the domain prompt (domain vocab is always
+>   the base), so biasing is always on.
+> - **Smart-Turn early-close on a post-wake pause** (`orchestrator._capture_utterance` /
+>   `_follow_up_listen`): a "complete" verdict on a very short fragment (e.g. `"Ultron, tell the
+>   team..."` then a pause → only ~0.8 s captured) ended the capture → Whisper hallucinated
+>   `"Hit the stop button"` → silent stop-button route → no response. FIX: a min-speech FLOOR
+>   (`self._smart_turn_min_complete_speech_ms`, env `KENNING_SMART_TURN_MIN_COMPLETE_MS`, default
+>   1000 ms) downgrades a complete/medium verdict on sub-floor speech to "incomplete" so the
+>   capture EXTENDS for resumed speech (the existing incomplete-extension timeout backstops it).
+>   Trade-off: up to ~0.7 s extra latency on a genuinely sub-1 s callout — accepted by the user;
+>   tune via the env. 2 new floor regression tests in `tests/test_speculative_stt.py` (16/16).
+>
 > **Validating HEAD: SPECULATIVE-STT MID-PAUSE TRUNCATION FIX**
 > (2026-06-18). Live real-voice testing showed the raw transcript dropping everything after a
 > natural mid-sentence pause (e.g. 3.2 s of captured audio → only "Say to my team."). ROOT CAUSE:
