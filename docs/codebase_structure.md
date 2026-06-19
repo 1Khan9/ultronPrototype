@@ -10,6 +10,22 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
+> **Validating HEAD: BARE "SAY HELLO" → TEAM + DETERMINISTIC "TOLD YOU TO STOP"**
+> (2026-06-19, `0ca9c19`). Two live-testing relay-routing fixes. (1) Bare "say hello" / "say hi" /
+> "say hey" (no `to <team|agent>`) fell through the relay matchers to the semantic router, which
+> scored it `identity` (conf 0.865) and answered from the LLM. `voice_lines._HELLO_RE`'s
+> `\s+to\s+(?P<target>…)` group is now OPTIONAL, and `relay_speech.match_relay_command` defaults a
+> missing target to `"team"` → bare "say hello" greets the team ("Hello team." / "Hello." tails-off).
+> Targeted forms ("say hello to Jett") unchanged. (2) "\<agent\> told you to stop" had **no
+> deterministic match** — it relied on the sidecar-backed relay-intent gate, so the defiance line only
+> appeared when the embedder was reachable (flaky; a non-deterministic test surfaced it). New
+> `relay_speech._STOP_CMD_RE` matches "\<agent\> told/said … (to) stop [talking|responding|…]" →
+> directive `stop_command` (agent = leading token, else team), rendered from the `_FO_STOP` defiance
+> pool in BOTH flavor states (`build_relay_line` + the flavor-off hook). The trailing qualifier is
+> restricted to silence words so a TACTICAL "stop pushing" / "stop rotating B" still relays. The old
+> `_FO_STOP_RE` text fallback (false-fired on "told you to stop pushing") was removed. Tests:
+> `TestSayHelloDefaultAndStop` (13); golden re-blessed (`+_STOP_CMD_RE`, `−_FO_STOP_RE`, `_HELLO_RE`).
+>
 > **Validating HEAD: FLAVOR-TAILS-OFF RESPONSE SETS**
 > (2026-06-18, user request, `43bcb2e`). When flavor tails are OFF ("Ultron, flavor off"), the
 > overlapping social / identity / economy / banter commands use a dedicated CURATED set instead of
