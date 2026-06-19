@@ -197,6 +197,13 @@ _SOMEONE_LEAD_RE = re.compile(
 _GIVE_TEAM_TO_RE = re.compile(
     r"^\s*give\s+(?:my|the|our)\s+team\s+to\s+", re.IGNORECASE,
 )
+# "ask Iso to drop me HIS sheriff" -> Ultron is asking the agent to drop ULTRON
+# one of THEIR guns, so the possessive is "your", not "his/her/their" (live:
+# "drop me his Sheriff" echoed "his" in flavor-ON). Normalized so BOTH flavor
+# states render "your".
+_DROP_POSSESSIVE_RE = re.compile(
+    r"\bdrop\s+me\s+(?:his|her|their|its)\b", re.IGNORECASE,
+)
 
 
 def _canonicalize_directive_lead(s: str) -> str:
@@ -991,6 +998,9 @@ def normalize_command(text: str) -> str:
     # "give my team to <imperative>" -> "tell my team <imperative>" (tell->give
     # mishear; the "to" guards the compose form "give my team encouragement").
     s = _GIVE_TEAM_TO_RE.sub("tell my team ", s, count=1)
+    # "drop me his/her/their X" -> "drop me your X" (Ultron asks the agent to
+    # drop ITS own gun -> second person).
+    s = _DROP_POSSESSIVE_RE.sub("drop me your", s)
     # Bare "ask <question>" / "tell someone to X" -> route to the team (they were
     # abstaining to desktop with no addressee).
     s = _BARE_ASK_RE.sub("ask my team ", s, count=1)

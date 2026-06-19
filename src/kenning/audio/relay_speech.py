@@ -857,15 +857,17 @@ _AGENT_SNAP_RE = re.compile(
     rf"(?:(?:tell|say|give)\s+(?:to\s+)?(?:my\s+|the\s+|our\s+)?team[\s,]+"
     rf"|give\s+(?:my\s+|our\s+)?|tell\s+(?:my\s+)?|say\s+to\s+)?"
     rf"(?P<name>{_CRITICIZE_NAME})[\s,]+(?:a\s+|an\s+|some\s+)?"
-    r"(?P<phrase>nice\s+(?:try|shot|one)|good\s+(?:try|shot)|well\s+played|"
-    r"my\s+bad|sorry|thank\s+you|thanks)"
+    r"(?P<phrase>nice\s+(?:try|shot|one|job)|good\s+(?:try|shot|job|game|round|"
+    r"half)|well\s+played|my\s+bad|sorry|thank\s+you|thanks)"
     r"\s*[.!?]*$",
     re.IGNORECASE,
 )
 # Normalize the matched phrase to a flavor-OFF _FO_SIMPLE key / consolation head.
 _AGENT_SNAP_NORM = {
     "nice try": "nice try", "good try": "nice try", "nice one": "nice try",
-    "nice shot": "nice shot", "good shot": "nice shot",
+    "nice shot": "nice shot", "good shot": "nice shot", "nice job": "nice job",
+    "good job": "good job", "good game": "good game", "good round": "good round",
+    "good half": "good half",
     "well played": "well played", "my bad": "my bad", "sorry": "sorry",
     "thank you": "thank you", "thanks": "thank you",
 }
@@ -5702,6 +5704,10 @@ _FO_SIMPLE = {
     "thank you": "Thank you", "nice try": "Nice try", "nice shot": "Nice shot",
     "well played": "Well played", "my bad": "My bad", "sorry": "Sorry",
     "buy up": "Buy up", "save": "Save",
+    # terse praise -- spoken plainly when tails are off ("tell my team good job"
+    # -> "Good job.", not a curated praise paragraph).
+    "good job": "Good job", "good game": "Good game", "good round": "Good round",
+    "good half": "Good half", "nice job": "Nice job",
 }
 _FO_WEAPON_RE = re.compile(
     r"\b(vandal|phantom|operator|odin|sheriff|guardian|judge|bucky|marshal|"

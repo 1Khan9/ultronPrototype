@@ -96,6 +96,7 @@ AGENT_MISHEARS = {
     "silvers": "Sova",
     "royal": "Reyna", "raina": "Reyna", "rayna": "Reyna", "reina": "Reyna",
     "rena": "Reyna", "regina": "Reyna", "reyna's": "Reyna", "ray nuh": "Reyna",
+    "raynor": "Reyna",  # "rain a"/"rain uh" (multi-word) -> _PHRASE_MISHEARS
     "jet": "Jett", "jed": "Jett", "jett's": "Jett", "jette": "Jett",
     "yet": "Jett", "jett": "Jett",
     "cipher": "Cypher", "sypher": "Cypher", "cyphus": "Cypher", "sifa": "Cypher",

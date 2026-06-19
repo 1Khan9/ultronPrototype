@@ -959,3 +959,38 @@ class TestLiveBatch0619B:
         from kenning.audio.relay_speech import relay_tts_text
         assert relay_tts_text("Hello, Tejo.") == "Hello, Tayho."
         assert "Tejo" not in relay_tts_text("Tejo, nice shot.")
+
+
+class TestLiveBatch0619C:
+    """2026-06-19 third live batch (all STT-mishear / flavor-state issues):
+    "flavor off"->"cover off"; drop-weapon possessive his->your in BOTH flavor
+    states; "Reyna"->"rain a"; terse "good job" snap."""
+
+    @_pytest.mark.parametrize("text", ["cover off", "covered off", "clever off"])
+    def test_flavor_off_cover_mishear(self, text) -> None:
+        assert _RS.match_flavor_toggle(text) is False
+
+    @_pytest.mark.parametrize("text", ["back off", "cover the angle", "cover B"])
+    def test_flavor_off_guards(self, text) -> None:
+        assert _RS.match_flavor_toggle(text) is None
+
+    @_pytest.mark.parametrize("flavor", [True, False])
+    def test_drop_weapon_possessive_your_both_states(self, flavor) -> None:
+        prev = _RS.flavor_tails_enabled()
+        try:
+            _RS.set_flavor_tails_enabled(flavor)
+            line = _line("ask Iso to drop me his sheriff")
+            assert "your" in line.lower() and "his" not in line.lower(), line
+        finally:
+            _RS.set_flavor_tails_enabled(prev)
+
+    def test_reyna_rain_a_mishear(self, _tails_off) -> None:
+        assert _line("tell my rain a nice try") == "Nice try, Reyna."
+
+    def test_rain_a_guard(self) -> None:
+        from kenning.audio.command_normalizer import normalize_command
+        assert "Reyna" not in normalize_command("it started to rain a lot")
+
+    def test_good_job_terse_snap(self, _tails_off) -> None:
+        assert _line("tell my team good job") == "Good job."
+        assert _line("tell my Reyna good job") == "Good job, Reyna."

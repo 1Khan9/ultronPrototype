@@ -522,8 +522,8 @@
 },
 "_AGENT_MISHEARS": {
 "kind": "dict",
-"len": 135,
-"repr": "{'silva': 'Sova', 'selva': 'Sova', 'sofa': 'Sova', 'soda': 'Sova', 'soever': 'Sova', 'sovereign': 'Sova', 'saba': 'Sova', \"sova's\": 'Sova', 'sobi': 'Sova', 'sovah': 'Sova', 'soba': 'Sova', 'silver': 'Sova', 'silvers': 'Sova', 'royal': 'Reyna', 'raina': 'Reyna', 'rayna': 'Reyna', 'reina': 'Reyna', 'rena': 'Reyna', 'regina': 'Reyna', \"reyna's\": 'Reyna', 'ray nuh': 'Reyna', 'jet': 'Jett', 'jed': 'Jett', \"jett's\": 'Jett', 'jette': 'Jett', 'yet': 'Jett', 'jett': 'Jett', 'cipher': 'Cypher', 'sypher': 'Cypher', 'cyphus': 'Cypher', 'sifa': 'Cypher', 'sina': 'Cypher', 'saifer': 'Cypher', 'kayo': 'KAY/O', 'cale': 'KAY/O', 'kayle': 'KAY/O', 'kio': 'KAY/O', 'kayoh': 'KAY/O', 'kay-o': 'KAY/O', 'que': 'KAY/O', 'kayode': 'KAY/O', 'oman': 'Omen', 'omens': 'Omen', 'omar': 'Omen', 'vyper': 'Viper', 'wiper': 'Viper', \"viper's\": 'Viper', 'hyper': 'Viper', 'race': 'Raze', 'rays': 'Raze', 'raisa': 'Raze', 'raz': 'Raze', \"raze's\": 'Raze', 'rage': 'Raze', 'felix': 'Phoenix', \"phoenix's\": 'Phoenix', 'fenix': 'Phoenix', 'venix': 'Phoenix', 'phoenixs': 'Phoenix', 'gecko': 'Gekko', 'geko': 'Gekko', \"gekko's\": 'Gekko', 'geco': 'Gekko', 'breech': 'Breach', \"breach's\": 'Breach', 'fate': 'Fade', 'faded': 'Fade', 'fad': 'Fade', 'fage': 'Fade', 'sky': 'Skye', 'ski': 'Skye', 'skype': 'Skye', \"sky's\": 'Skye', 'aster': 'Astra', 'astro': 'Astra', \"astra's\": 'Astra', 'arbor': 'Harbor', 'harbour': 'Harbor', 'harper': 'Harbor', 'arbour': 'Harbor', 'clive': 'Clove', \"clove's\": 'Clove', 'clo': 'Clove', 'claw': 'Clove', 'cloves': 'Clove', \"clive's\": 'Clove', 'brimston': 'Brimstone', 'grimstone': 'Brimstone', 'brimstine': 'Brimstone', 'brim': 'Brimstone', \"brimstone's\": 'Brimstone', 'brimstown': 'Brimstone', 'deadlocke': 'Deadlock', 'dead lock': 'Deadlock', 'deadbolt': 'Deadlock', 'deadshot': 'Deadlock', 'deadlog': 'Deadlock', \"neon's\": 'Neon', 'nian': 'Neon', 'neyon': 'Neon', 'leon': 'Neon', 'euro': 'Yoru', 'yoda': 'Yoru', \"yoru's\": 'Yoru', 'yo-ru': 'Yoru', 'yoroo': 'Yoru', 'y\u043e\u0440\u0443': 'Yoru', 'kill joy': 'Killjoy', \"killjoy's\": 'Killjoy', 'kiljoy': 'Killjoy', 'kj': 'Killjoy', 'kill-joy': 'Killjoy', 'chambers': 'Chamber', \"chamber's\": 'Chamber', 'jaber': 'Chamber', 'teacho': 'Tejo', 'taho': 'Tejo', \"tejo's\": 'Tejo', 'techno': 'Tejo', 'way lay': 'Waylay', 'weigh lay': 'Waylay', 'waylaid': 'Waylay', 'mix': 'Miks', 'meeks': 'Miks', 'mics': 'Miks', 'vice': 'Vyse', 'vise': 'Vyse', 'vis': 'Vyse', 'vyce': 'Vyse', 'wise': 'Vyse', \"veto's\": 'Veto', 'vito': 'Veto', \"iso's\": 'Iso', 'isa': 'Iso', 'ito': 'Iso'}"
+"len": 136,
+"repr": "{'silva': 'Sova', 'selva': 'Sova', 'sofa': 'Sova', 'soda': 'Sova', 'soever': 'Sova', 'sovereign': 'Sova', 'saba': 'Sova', \"sova's\": 'Sova', 'sobi': 'Sova', 'sovah': 'Sova', 'soba': 'Sova', 'silver': 'Sova', 'silvers': 'Sova', 'royal': 'Reyna', 'raina': 'Reyna', 'rayna': 'Reyna', 'reina': 'Reyna', 'rena': 'Reyna', 'regina': 'Reyna', \"reyna's\": 'Reyna', 'ray nuh': 'Reyna', 'raynor': 'Reyna', 'jet': 'Jett', 'jed': 'Jett', \"jett's\": 'Jett', 'jette': 'Jett', 'yet': 'Jett', 'jett': 'Jett', 'cipher': 'Cypher', 'sypher': 'Cypher', 'cyphus': 'Cypher', 'sifa': 'Cypher', 'sina': 'Cypher', 'saifer': 'Cypher', 'kayo': 'KAY/O', 'cale': 'KAY/O', 'kayle': 'KAY/O', 'kio': 'KAY/O', 'kayoh': 'KAY/O', 'kay-o': 'KAY/O', 'que': 'KAY/O', 'kayode': 'KAY/O', 'oman': 'Omen', 'omens': 'Omen', 'omar': 'Omen', 'vyper': 'Viper', 'wiper': 'Viper', \"viper's\": 'Viper', 'hyper': 'Viper', 'race': 'Raze', 'rays': 'Raze', 'raisa': 'Raze', 'raz': 'Raze', \"raze's\": 'Raze', 'rage': 'Raze', 'felix': 'Phoenix', \"phoenix's\": 'Phoenix', 'fenix': 'Phoenix', 'venix': 'Phoenix', 'phoenixs': 'Phoenix', 'gecko': 'Gekko', 'geko': 'Gekko', \"gekko's\": 'Gekko', 'geco': 'Gekko', 'breech': 'Breach', \"breach's\": 'Breach', 'fate': 'Fade', 'faded': 'Fade', 'fad': 'Fade', 'fage': 'Fade', 'sky': 'Skye', 'ski': 'Skye', 'skype': 'Skye', \"sky's\": 'Skye', 'aster': 'Astra', 'astro': 'Astra', \"astra's\": 'Astra', 'arbor': 'Harbor', 'harbour': 'Harbor', 'harper': 'Harbor', 'arbour': 'Harbor', 'clive': 'Clove', \"clove's\": 'Clove', 'clo': 'Clove', 'claw': 'Clove', 'cloves': 'Clove', \"clive's\": 'Clove', 'brimston': 'Brimstone', 'grimstone': 'Brimstone', 'brimstine': 'Brimstone', 'brim': 'Brimstone', \"brimstone's\": 'Brimstone', 'brimstown': 'Brimstone', 'deadlocke': 'Deadlock', 'dead lock': 'Deadlock', 'deadbolt': 'Deadlock', 'deadshot': 'Deadlock', 'deadlog': 'Deadlock', \"neon's\": 'Neon', 'nian': 'Neon', 'neyon': 'Neon', 'leon': 'Neon', 'euro': 'Yoru', 'yoda': 'Yoru', \"yoru's\": 'Yoru', 'yo-ru': 'Yoru', 'yoroo': 'Yoru', 'y\u043e\u0440\u0443': 'Yoru', 'kill joy': 'Killjoy', \"killjoy's\": 'Killjoy', 'kiljoy': 'Killjoy', 'kj': 'Killjoy', 'kill-joy': 'Killjoy', 'chambers': 'Chamber', \"chamber's\": 'Chamber', 'jaber': 'Chamber', 'teacho': 'Tejo', 'taho': 'Tejo', \"tejo's\": 'Tejo', 'techno': 'Tejo', 'way lay': 'Waylay', 'weigh lay': 'Waylay', 'waylaid': 'Waylay', 'mix': 'Miks', 'meeks': 'Miks', 'mics': 'Miks', 'vice': 'Vyse', 'vise': 'Vyse', 'vis': 'Vyse', 'vyce': 'Vyse', 'wise': 'Vyse', \"veto's\": 'Veto', 'vito': 'Veto', \"iso's\": 'Iso', 'isa': 'Iso', 'ito': 'Iso'}"
 },
 "_COMMON_WORDS": {
 "items": [
@@ -5753,8 +5753,8 @@
 },
 "_MISHEARS": {
 "kind": "dict",
-"len": 154,
-"repr": "{'silva': 'Sova', 'selva': 'Sova', 'sofa': 'Sova', 'soda': 'Sova', 'soever': 'Sova', 'sovereign': 'Sova', 'saba': 'Sova', \"sova's\": 'Sova', 'sobi': 'Sova', 'sovah': 'Sova', 'soba': 'Sova', 'silver': 'Sova', 'silvers': 'Sova', 'royal': 'Reyna', 'raina': 'Reyna', 'rayna': 'Reyna', 'reina': 'Reyna', 'rena': 'Reyna', 'regina': 'Reyna', \"reyna's\": 'Reyna', 'ray nuh': 'Reyna', 'jet': 'Jett', 'jed': 'Jett', \"jett's\": 'Jett', 'jette': 'Jett', 'yet': 'Jett', 'jett': 'Jett', 'cipher': 'Cypher', 'sypher': 'Cypher', 'cyphus': 'Cypher', 'sifa': 'Cypher', 'sina': 'Cypher', 'saifer': 'Cypher', 'kayo': 'KAY/O', 'cale': 'KAY/O', 'kayle': 'KAY/O', 'kio': 'KAY/O', 'kayoh': 'KAY/O', 'kay-o': 'KAY/O', 'que': 'KAY/O', 'kayode': 'KAY/O', 'oman': 'Omen', 'omens': 'Omen', 'omar': 'Omen', 'vyper': 'Viper', 'wiper': 'Viper', \"viper's\": 'Viper', 'hyper': 'Viper', 'race': 'Raze', 'rays': 'Raze', 'raisa': 'Raze', 'raz': 'Raze', \"raze's\": 'Raze', 'rage': 'Raze', 'felix': 'Phoenix', \"phoenix's\": 'Phoenix', 'fenix': 'Phoenix', 'venix': 'Phoenix', 'phoenixs': 'Phoenix', 'gecko': 'Gekko', 'geko': 'Gekko', \"gekko's\": 'Gekko', 'geco': 'Gekko', 'breech': 'Breach', \"breach's\": 'Breach', 'fate': 'Fade', 'faded': 'Fade', 'fad': 'Fade', 'fage': 'Fade', 'sky': 'Skye', 'ski': 'Skye', 'skype': 'Skye', \"sky's\": 'Skye', 'aster': 'Astra', 'astro': 'Astra', \"astra's\": 'Astra', 'arbor': 'Harbor', 'harbour': 'Harbor', 'harper': 'Harbor', 'arbour': 'Harbor', 'clive': 'Clove', \"clove's\": 'Clove', 'clo': 'Clove', 'claw': 'Clove', 'cloves': 'Clove', \"clive's\": 'Clove', 'brimston': 'Brimstone', 'grimstone': 'Brimstone', 'brimstine': 'Brimstone', 'brim': 'Brimstone', \"brimstone's\": 'Brimstone', 'brimstown': 'Brimstone', 'deadlocke': 'Deadlock', 'dead lock': 'Deadlock', 'deadbolt': 'Deadlock', 'deadshot': 'Deadlock', 'deadlog': 'Deadlock', \"neon's\": 'Neon', 'nian': 'Neon', 'neyon': 'Neon', 'leon': 'Neon', 'euro': 'Yoru', 'yoda': 'Yoru', \"yoru's\": 'Yoru', 'yo-ru': 'Yoru', 'yoroo': 'Yoru', 'y\u043e\u0440\u0443': 'Yoru', 'kill joy': 'Killjoy', \"killjoy's\": 'Killjoy', 'kiljoy': 'Killjoy', 'kj': 'Killjoy', 'kill-joy': 'Killjoy', 'chambers': 'Chamber', \"chamber's\": 'Chamber', 'jaber': 'Chamber', 'teacho': 'Tejo', 'taho': 'Tejo', \"tejo's\": 'Tejo', 'techno': 'Tejo', 'way lay': 'Waylay', 'weigh lay': 'Waylay', 'waylaid': 'Waylay', 'mix': 'Miks', 'meeks': 'Miks', 'mics': 'Miks', 'vice': 'Vyse', 'vise': 'Vyse', 'vis': 'Vyse', 'vyce': 'Vyse', 'wise': 'Vyse', \"veto's\": 'Veto', 'vito': 'Veto', \"iso's\": 'Iso', 'isa': 'Iso', 'ito': 'Iso', 'ultimate': 'ult', 'ultima': 'ult', 'ulta': 'ult', 'diffuse': 'defuse', 'diffusing': 'defusing', 'diffused': 'defused', 'molotov': 'molly', 'incendiary': 'molly', 'mollie': 'molly', 'mali': 'molly', 'trip wire': 'tripwire', 'nano swarm': 'nanoswarm', 'alarm bot': 'alarmbot', 'recon dart': 'recon bolt', 'owl drone': 'drone', 'meddle': 'Meddle', 'the spike': 'the spike', 'operator': 'Operator', 'op': 'Operator'}"
+"len": 155,
+"repr": "{'silva': 'Sova', 'selva': 'Sova', 'sofa': 'Sova', 'soda': 'Sova', 'soever': 'Sova', 'sovereign': 'Sova', 'saba': 'Sova', \"sova's\": 'Sova', 'sobi': 'Sova', 'sovah': 'Sova', 'soba': 'Sova', 'silver': 'Sova', 'silvers': 'Sova', 'royal': 'Reyna', 'raina': 'Reyna', 'rayna': 'Reyna', 'reina': 'Reyna', 'rena': 'Reyna', 'regina': 'Reyna', \"reyna's\": 'Reyna', 'ray nuh': 'Reyna', 'raynor': 'Reyna', 'jet': 'Jett', 'jed': 'Jett', \"jett's\": 'Jett', 'jette': 'Jett', 'yet': 'Jett', 'jett': 'Jett', 'cipher': 'Cypher', 'sypher': 'Cypher', 'cyphus': 'Cypher', 'sifa': 'Cypher', 'sina': 'Cypher', 'saifer': 'Cypher', 'kayo': 'KAY/O', 'cale': 'KAY/O', 'kayle': 'KAY/O', 'kio': 'KAY/O', 'kayoh': 'KAY/O', 'kay-o': 'KAY/O', 'que': 'KAY/O', 'kayode': 'KAY/O', 'oman': 'Omen', 'omens': 'Omen', 'omar': 'Omen', 'vyper': 'Viper', 'wiper': 'Viper', \"viper's\": 'Viper', 'hyper': 'Viper', 'race': 'Raze', 'rays': 'Raze', 'raisa': 'Raze', 'raz': 'Raze', \"raze's\": 'Raze', 'rage': 'Raze', 'felix': 'Phoenix', \"phoenix's\": 'Phoenix', 'fenix': 'Phoenix', 'venix': 'Phoenix', 'phoenixs': 'Phoenix', 'gecko': 'Gekko', 'geko': 'Gekko', \"gekko's\": 'Gekko', 'geco': 'Gekko', 'breech': 'Breach', \"breach's\": 'Breach', 'fate': 'Fade', 'faded': 'Fade', 'fad': 'Fade', 'fage': 'Fade', 'sky': 'Skye', 'ski': 'Skye', 'skype': 'Skye', \"sky's\": 'Skye', 'aster': 'Astra', 'astro': 'Astra', \"astra's\": 'Astra', 'arbor': 'Harbor', 'harbour': 'Harbor', 'harper': 'Harbor', 'arbour': 'Harbor', 'clive': 'Clove', \"clove's\": 'Clove', 'clo': 'Clove', 'claw': 'Clove', 'cloves': 'Clove', \"clive's\": 'Clove', 'brimston': 'Brimstone', 'grimstone': 'Brimstone', 'brimstine': 'Brimstone', 'brim': 'Brimstone', \"brimstone's\": 'Brimstone', 'brimstown': 'Brimstone', 'deadlocke': 'Deadlock', 'dead lock': 'Deadlock', 'deadbolt': 'Deadlock', 'deadshot': 'Deadlock', 'deadlog': 'Deadlock', \"neon's\": 'Neon', 'nian': 'Neon', 'neyon': 'Neon', 'leon': 'Neon', 'euro': 'Yoru', 'yoda': 'Yoru', \"yoru's\": 'Yoru', 'yo-ru': 'Yoru', 'yoroo': 'Yoru', 'y\u043e\u0440\u0443': 'Yoru', 'kill joy': 'Killjoy', \"killjoy's\": 'Killjoy', 'kiljoy': 'Killjoy', 'kj': 'Killjoy', 'kill-joy': 'Killjoy', 'chambers': 'Chamber', \"chamber's\": 'Chamber', 'jaber': 'Chamber', 'teacho': 'Tejo', 'taho': 'Tejo', \"tejo's\": 'Tejo', 'techno': 'Tejo', 'way lay': 'Waylay', 'weigh lay': 'Waylay', 'waylaid': 'Waylay', 'mix': 'Miks', 'meeks': 'Miks', 'mics': 'Miks', 'vice': 'Vyse', 'vise': 'Vyse', 'vis': 'Vyse', 'vyce': 'Vyse', 'wise': 'Vyse', \"veto's\": 'Veto', 'vito': 'Veto', \"iso's\": 'Iso', 'isa': 'Iso', 'ito': 'Iso', 'ultimate': 'ult', 'ultima': 'ult', 'ulta': 'ult', 'diffuse': 'defuse', 'diffusing': 'defusing', 'diffused': 'defused', 'molotov': 'molly', 'incendiary': 'molly', 'mollie': 'molly', 'mali': 'molly', 'trip wire': 'tripwire', 'nano swarm': 'nanoswarm', 'alarm bot': 'alarmbot', 'recon dart': 'recon bolt', 'owl drone': 'drone', 'meddle': 'Meddle', 'the spike': 'the spike', 'operator': 'Operator', 'op': 'Operator'}"
 },
 "_MISHEAR_FORCE": {
 "items": [
@@ -7239,6 +7239,11 @@
 "kind": "regex",
 "pattern": "(?:--+\\s*(?:no\\s+)?wait\\b|\\bno\\s+wait\\b|\\bno\\s+no\\b|\\bscratch\\s+that\\b|\\bnever\\s*mind\\b|\\bforget\\s+it\\b|\\bactually\\s+no\\b|\\bor\\s+rather\\b|\\bi\\s+mean\\b|\\bwell\\s+no\\b|\\bno\\s+actually\\b|\\bi\\s+don'?t\\s+know\\b|--+\\s*to\\s+(?:all|the)\\s+\\w+|--+\\s*actually\\b|--+\\s*no\\b|--+)[\\s,.:;\\-]*"
 },
+"_DROP_POSSESSIVE_RE": {
+"flags": 34,
+"kind": "regex",
+"pattern": "\\bdrop\\s+me\\s+(?:his|her|their|its)\\b"
+},
 "_EMBEDDED_FILLER_RE": {
 "flags": 34,
 "kind": "regex",
@@ -8155,13 +8160,13 @@
 },
 "_AGENT_SNAP_NORM": {
 "kind": "dict",
-"len": 10,
-"repr": "{'nice try': 'nice try', 'good try': 'nice try', 'nice one': 'nice try', 'nice shot': 'nice shot', 'good shot': 'nice shot', 'well played': 'well played', 'my bad': 'my bad', 'sorry': 'sorry', 'thank you': 'thank you', 'thanks': 'thank you'}"
+"len": 15,
+"repr": "{'nice try': 'nice try', 'good try': 'nice try', 'nice one': 'nice try', 'nice shot': 'nice shot', 'good shot': 'nice shot', 'nice job': 'nice job', 'good job': 'good job', 'good game': 'good game', 'good round': 'good round', 'good half': 'good half', 'well played': 'well played', 'my bad': 'my bad', 'sorry': 'sorry', 'thank you': 'thank you', 'thanks': 'thank you'}"
 },
 "_AGENT_SNAP_RE": {
 "flags": 34,
 "kind": "regex",
-"pattern": "^(?:please\\s+)?(?:(?:tell|say|give)\\s+(?:to\\s+)?(?:my\\s+|the\\s+|our\\s+)?team[\\s,]+|give\\s+(?:my\\s+|our\\s+)?|tell\\s+(?:my\\s+)?|say\\s+to\\s+)?(?P<name>astra|breach|brimstone|chamber|clove|cypher|deadlock|fade|gekko|harbor|iso|jett|kayo|kay\\s+o|killjoy|kill\\s+joy|miks|neon|omen|phoenix|raze|reyna|sage|skye|sova|tejo|veto|viper|vyse|waylay|yoru|cipher|gecko|mix|way\\s+lay)[\\s,]+(?:a\\s+|an\\s+|some\\s+)?(?P<phrase>nice\\s+(?:try|shot|one)|good\\s+(?:try|shot)|well\\s+played|my\\s+bad|sorry|thank\\s+you|thanks)\\s*[.!?]*$"
+"pattern": "^(?:please\\s+)?(?:(?:tell|say|give)\\s+(?:to\\s+)?(?:my\\s+|the\\s+|our\\s+)?team[\\s,]+|give\\s+(?:my\\s+|our\\s+)?|tell\\s+(?:my\\s+)?|say\\s+to\\s+)?(?P<name>astra|breach|brimstone|chamber|clove|cypher|deadlock|fade|gekko|harbor|iso|jett|kayo|kay\\s+o|killjoy|kill\\s+joy|miks|neon|omen|phoenix|raze|reyna|sage|skye|sova|tejo|veto|viper|vyse|waylay|yoru|cipher|gecko|mix|way\\s+lay)[\\s,]+(?:a\\s+|an\\s+|some\\s+)?(?P<phrase>nice\\s+(?:try|shot|one|job)|good\\s+(?:try|shot|job|game|round|half)|well\\s+played|my\\s+bad|sorry|thank\\s+you|thanks)\\s*[.!?]*$"
 },
 "_ANSWER_CMD_RE": {
 "flags": 34,
@@ -8694,7 +8699,7 @@
 "_FLAVOR_OFF_MISHEAR_RE": {
 "flags": 34,
 "kind": "regex",
-"pattern": "^(?:please\\s+|ultron[\\s,]+)?(?:turn\\s+|set\\s+|put\\s+)?(?:flavou?rs?|flavou?red|flaver|flairs?|favou?rs?|favou?red|favou?rite|save(?:rs?|s)?(?:\\s+(?:her|hers|here|your|the))?|savou?rs?|labou?rs?|tales?|tails?|tail)\\s+(?:is\\s+|are\\s+|tails?\\s+)?off\\b\\s*[.!?]*$"
+"pattern": "^(?:please\\s+|ultron[\\s,]+)?(?:turn\\s+|set\\s+|put\\s+)?(?:flavou?rs?|flavou?red|flaver|flairs?|favou?rs?|favou?red|favou?rite|save(?:rs?|s)?(?:\\s+(?:her|hers|here|your|the))?|savou?rs?|covers?|covered|clever|hover|labou?rs?|tales?|tails?|tail)\\s+(?:is\\s+|are\\s+|tails?\\s+)?off\\b\\s*[.!?]*$"
 },
 "_FLAVOR_OFF_RE": {
 "flags": 34,
@@ -8975,8 +8980,8 @@
 },
 "_FO_SIMPLE": {
 "kind": "dict",
-"len": 8,
-"repr": "{'thank you': 'Thank you', 'nice try': 'Nice try', 'nice shot': 'Nice shot', 'well played': 'Well played', 'my bad': 'My bad', 'sorry': 'Sorry', 'buy up': 'Buy up', 'save': 'Save'}"
+"len": 13,
+"repr": "{'thank you': 'Thank you', 'nice try': 'Nice try', 'nice shot': 'Nice shot', 'well played': 'Well played', 'my bad': 'My bad', 'sorry': 'Sorry', 'buy up': 'Buy up', 'save': 'Save', 'good job': 'Good job', 'good game': 'Good game', 'good round': 'Good round', 'good half': 'Good half', 'nice job': 'Nice job'}"
 },
 "_FO_STOP": {
 "items": [
@@ -10543,12 +10548,12 @@
 },
 "_FLAVOR_OFF_MISHEAR_LEAD": {
 "kind": "str",
-"value": "(?:flavou?rs?|flavou?red|flaver|flairs?|favou?rs?|favou?red|favou?rite|save(?:rs?|s)?(?:\\s+(?:her|hers|here|your|the))?|savou?rs?|labou?rs?|tales?|tails?|tail)"
+"value": "(?:flavou?rs?|flavou?red|flaver|flairs?|favou?rs?|favou?red|favou?rite|save(?:rs?|s)?(?:\\s+(?:her|hers|here|your|the))?|savou?rs?|covers?|covered|clever|hover|labou?rs?|tales?|tails?|tail)"
 },
 "_FLAVOR_OFF_MISHEAR_RE": {
 "flags": 34,
 "kind": "regex",
-"pattern": "^(?:please\\s+|ultron[\\s,]+)?(?:turn\\s+|set\\s+|put\\s+)?(?:flavou?rs?|flavou?red|flaver|flairs?|favou?rs?|favou?red|favou?rite|save(?:rs?|s)?(?:\\s+(?:her|hers|here|your|the))?|savou?rs?|labou?rs?|tales?|tails?|tail)\\s+(?:is\\s+|are\\s+|tails?\\s+)?off\\b\\s*[.!?]*$"
+"pattern": "^(?:please\\s+|ultron[\\s,]+)?(?:turn\\s+|set\\s+|put\\s+)?(?:flavou?rs?|flavou?red|flaver|flairs?|favou?rs?|favou?red|favou?rite|save(?:rs?|s)?(?:\\s+(?:her|hers|here|your|the))?|savou?rs?|covers?|covered|clever|hover|labou?rs?|tales?|tails?|tail)\\s+(?:is\\s+|are\\s+|tails?\\s+)?off\\b\\s*[.!?]*$"
 },
 "_FLAVOR_OFF_RE": {
 "flags": 34,

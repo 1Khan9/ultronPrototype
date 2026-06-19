@@ -152,6 +152,11 @@ _PHRASE_MISHEARS: tuple[tuple[re.Pattern[str], object], ...] = (
         re.I), "roast"),
     # "mic check" heard as "Mike check" / "my check".
     (re.compile(r"\b(?:mike|my)\s+check\b", re.I), "mic check"),
+    # "Reyna" mis-heard as "rain a" / "rain uh" (the "-eyna" tail -> "ain a").
+    # Live: "tell my Reyna nice try" -> "tell my rain a nice try" -> LLM. Gated
+    # to an agent-reference lead so a literal "rain" elsewhere is untouched.
+    (re.compile(r"\b(my|our|the|tell|ask|told|for)\s+rain\s+(?:a|uh)\b", re.I),
+     lambda m: m.group(1) + " Reyna"),
     # site letters heard as words.
     (re.compile(r"\b(?:bee?|be)\s+(main|site|long|short)\b", re.I),
      lambda m: "B " + m.group(1).lower()),

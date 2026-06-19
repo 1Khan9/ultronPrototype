@@ -121,7 +121,8 @@ _FLAVOR_ON_RE = re.compile(
 _FLAVOR_OFF_MISHEAR_LEAD = (
     r"(?:flavou?rs?|flavou?red|flaver|flairs?|favou?rs?|favou?red|favou?rite|"
     r"save(?:rs?|s)?(?:\s+(?:her|hers|here|your|the))?|savou?rs?|"
-    r"labou?rs?|tales?|tails?|tail)")
+    # "cover"/"clever"/"hover" are live STT mishears of "flavor".
+    r"covers?|covered|clever|hover|labou?rs?|tales?|tails?|tail)")
 _FLAVOR_ON_MISHEAR_LEAD = (
     r"(?:flavou?rs?|flavou?red|flaver|flairs?|favou?rs?|favou?red|favou?rite|"
     r"save(?:rs?|s)?\s+(?:her|hers|here|your)|savou?rs?)")
