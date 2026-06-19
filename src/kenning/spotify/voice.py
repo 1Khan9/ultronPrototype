@@ -356,8 +356,9 @@ def handle_spotify_command(command: SpotifyCommand, client) -> str:
                 "once to authorize me.")
     except SpotifyAPIError as e:
         logger.warning("spotify command failed: %s", e)
-        if "active" in str(e).lower() or "404" in str(e):
-            return "Open Spotify on a device first, then ask me again."
+        _es = str(e).lower()
+        if any(k in _es for k in ("active", "device", "404", "403")):
+            return "Open Spotify on a device and start playing, then ask me again."
         return "Spotify didn't take that one."
     except Exception as e:  # noqa: BLE001
         logger.warning("spotify command error: %s", e)

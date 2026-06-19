@@ -91,7 +91,7 @@ class SpotifyClient:
     def _call(
         self, method: str, path: str, *,
         params: Optional[dict] = None, json_body: Optional[dict] = None,
-        allow_404: bool = False,
+        allow_404: bool = False, _retried: bool = False,
     ) -> Any:
         token = self._auth.access_token()
         resp = self._request(
@@ -104,11 +104,30 @@ class SpotifyClient:
             return None
         if allow_404 and code == 404:
             return None
-        if code in (401, 403):
+        if code == 401:
+            # An EXPIRED / revoked token is a real auth problem -> re-authorize.
             raise SpotifyAPIError(
-                "Spotify rejected the request -- re-authorize "
-                "(run scripts/spotify_setup.py). "
-                f"({code})"
+                "Spotify session expired -- re-authorize "
+                "(run scripts/spotify_setup.py). (401)"
+            )
+        if code == 403:
+            # A 403 with a VALID token is almost never an auth problem -- it is
+            # usually "no ACTIVE device" or a transient device-state restriction
+            # (Spotify rejects a playback write when the target device just
+            # connected or nothing is queued). Activate a device and retry ONCE,
+            # then surface a DEVICE-oriented message, not "re-authorize".
+            if (not _retried and method in ("PUT", "POST")
+                    and path.startswith("/me/player")):
+                try:
+                    if self.ensure_device():
+                        return self._call(
+                            method, path, params=params, json_body=json_body,
+                            allow_404=allow_404, _retried=True)
+                except SpotifyAPIError:
+                    pass
+            raise SpotifyAPIError(
+                "Spotify won't take that right now -- make sure Spotify is open "
+                "and playing on a device, then try again. (403)"
             )
         if code >= 400:
             raise SpotifyAPIError(f"Spotify API {method} {path} -> {code}")
@@ -161,8 +180,11 @@ class SpotifyClient:
                  if d.name.lower() == self._default_device.lower()), None,
             )
         pick = pick or devs[0]
+        # _retried=True so a 403 on the transfer itself can't recurse back into
+        # the ensure_device retry in _call.
         self._call("PUT", "/me/player",
-                   json_body={"device_ids": [pick.id], "play": False})
+                   json_body={"device_ids": [pick.id], "play": False},
+                   _retried=True)
         return pick.id
 
     # -- transport -----------------------------------------------------
