@@ -308,6 +308,16 @@ wake_word:
   # if it ever misses a real, fast "Ultron".
   consecutive_frames:
     ultron: 4
+  # PER-WORD cold pre-roll (2026-06-19): seconds of audio captured BEFORE the
+  # detector fired, fed to STT + the VAD. The schema default for "ultron" is
+  # 0.05s (it assumes you pause after the wake word); a command spoken with NO
+  # pause landed before that tiny window and was lost (empty_capture -- "only
+  # works when I pause"). 0.30s captures the fast no-pause command. The
+  # wake-strip (KENNING_WAKE_TRIM_TO_SPEECH, VAD segmentation) removes the
+  # "...tron" tail, so the longer pre-roll should NOT leak a phantom lead word.
+  # Lower back toward 0.05-0.15 if phantom leads ("Franz/Prong") reappear.
+  cold_pre_roll:
+    ultron: 0.30
   cooldown_seconds: 1.5         # debounce repeated triggers
 
 # ---------------------------------------------------------------------------
