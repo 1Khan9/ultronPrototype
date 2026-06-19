@@ -10,6 +10,37 @@
 > **Maintenance contract:** this file is the operating manual. Keep it
 > current — see "Maintenance contract" at the bottom.
 >
+> **Validating HEAD: LIVE AUDIO-INJECTION CORPUS PROTOCOL + WH-QUESTION NEGATED-AUX INVERSION**
+> (2026-06-18). Two milestones:
+> - **Live audio-injection corpus protocol** (`scripts/relay_test/audio_corpus/`): a dedicated
+>   end-to-end harness that exercises the FULL pipeline from raw audio (wake word → pre-roll →
+>   audio-domain wake-drop → Whisper STT → norm1/norm2 → routing → tail selection → the **real** 3B →
+>   Kokoro), feeding synthesized command audio in exactly as if spoken into the mic. `gen_commands.py`
+>   splices a trained "Ultron" wake sample (`training/crosscheck_ultron/*.wav`, fires ~0.94 — stock
+>   Kokoro "Ultron" scores ~0.27 and would never fire) before a STOCK-Kokoro command body (am_michael,
+>   fast combat cadence) → composite WAVs. `run_corpus.py` boots the full `Orchestrator` in-process,
+>   swaps `orch.audio` for `InjectableCapture` (`inject.py`, zero change to runtime `capture.py`),
+>   drives each clip through the live `run()` loop, captures the per-stage trace, and RE-TRANSCRIBES
+>   the spoken response with Whisper to verify understandable speech (real LLM calls are NOT skipped).
+>   `render_review.py` renders a per-case review with auto-flags. Generated audio (`out/`) + session
+>   logs (`session_*/`) are git-ignored; only the four scripts + README are tracked. First run
+>   (159/239 cases) → by-hand note-per-case audit at `logs/relay_test/_corpus_audit_notes_<stamp>.md`:
+>   **0 wake-leak flags** (the audio-domain wake-drop never leaked "Ultron"), and the short-callout
+>   transcription failures were diagnosed as a **stock-TTS × Whisper artifact** (am_michael garbles
+>   short jargon), NOT pipeline bugs. Higher-value LLM-faithfulness + multi-clause-truncation findings
+>   were deferred to a real-voice full run (they need the live 3B to regression-test). See protocol
+>   README in the dir.
+> - **FIX A — wh-question negated-aux inversion** (`relay_speech._wh_copula_invert` + new
+>   `_Q_WH_NEGAUX_INVERT_RE` / `_NEG_AUX_CONTRACT`): an ask-form team question whose negated auxiliary
+>   trails the subject now fronts to natural spoken order — "ask my team why they aren't smoking" →
+>   *"Why aren't they smoking?"* (audit case #15), mirroring the existing trailing-copula inversion.
+>   Tightly bounded (closed aux + subject set, only inside the gated ask path) and verified not to
+>   over-fire (phantom glued-`t` and non-negated forms rejected; already-inverted "why isn't he
+>   pushing" left as-is). Pure deterministic string logic — zero latency/resource impact, no 3B.
+>   Added new symbols only (no tracked golden-digest symbol changed → no re-bless); tests in
+>   `tests/audio/test_corpus_audit_fixes.py::TestT617TestingFixes::test_wh_copula_inversion`
+>   (208 passed in the suite, golden gate green).
+>
 > **Validating HEAD: 25K-CORPUS AUDIT — 5 DETERMINISTIC ROUTING/NORMALIZATION ROOT FIXES**
 > (2026-06-18, latest = `4a36d8e`). A fresh 25,000-case corpus (seed 26) was traced through the FULL
 > pipeline with the live embedding sidecar (`scripts/relay_test/trace_corpus_full.py`), audited via an
