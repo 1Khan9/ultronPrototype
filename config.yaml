@@ -317,7 +317,7 @@ wake_word:
   # "...tron" tail, so the longer pre-roll should NOT leak a phantom lead word.
   # Lower back toward 0.05-0.15 if phantom leads ("Franz/Prong") reappear.
   cold_pre_roll:
-    ultron: 0.30
+    ultron: 0.15
   cooldown_seconds: 1.5         # debounce repeated triggers
 
 # ---------------------------------------------------------------------------
