@@ -19,10 +19,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import threading
 import time
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import soundfile as sf            # imported BEFORE the firewall (Orchestrator())
@@ -72,7 +74,19 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--gpu", action="store_true", help="move the 3B to GPU for speed")
     ap.add_argument("--turn-timeout", type=float, default=90.0)
+    ap.add_argument("--u1", action="store_true",
+                    help="Ultron 1.0 mode: route-all-through-8B + always-listening; "
+                         "captures the gate scenario + full prompt + <think> and the "
+                         "labeled-battery fields (expected_scenario/channel/case_class).")
     args = ap.parse_args()
+
+    if args.u1:
+        # Set BEFORE Orchestrator() boots + before run() reads them (run() reads
+        # KENNING_ALWAYS_LISTENING at thread entry; relay_speech reads
+        # KENNING_U1_LLM_ROUTE per call). Idempotent if already exported.
+        os.environ["KENNING_U1_LLM_ROUTE"] = "1"
+        os.environ["KENNING_ALWAYS_LISTENING"] = "1"
+        print("[corpus] U1 mode: KENNING_U1_LLM_ROUTE=1 KENNING_ALWAYS_LISTENING=1")
 
     man = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
     if args.limit:
@@ -102,6 +116,24 @@ def main() -> int:
             pass
         return clip
     KokoroSpeech._synthesize = _hooked
+
+    # --- U1: capture the FULL prompt + raw <think>-inclusive output ----------
+    # Tee LLMEngine.generate_stream so the per-stage trace shows the exact
+    # system+user prompt and the model's raw output (incl. any <think>) for the
+    # call that authored this turn -- without disturbing the streaming consumer.
+    llm_cap = {"system": None, "user": None, "out": []}
+    if args.u1:
+        from kenning.llm.inference import LLMEngine
+        _orig_gen = LLMEngine.generate_stream
+
+        def _gen_hooked(self, user_message, **kw):
+            llm_cap["system"] = kw.get("system_prompt")
+            llm_cap["user"] = user_message
+            llm_cap["out"] = []
+            for tok in _orig_gen(self, user_message, **kw):
+                llm_cap["out"].append(tok)
+                yield tok
+        LLMEngine.generate_stream = _gen_hooked
 
     # --- boot the full orchestrator + swap the mic --------------------------
     from kenning.pipeline import Orchestrator
@@ -158,10 +190,26 @@ def main() -> int:
     time.sleep(3.0)
     print("[corpus] boot ready; driving commands")
 
+    klog = _ROOT / "logs" / "kenning.log"
+
+    def _gate_scenario_since(offset: int) -> Optional[str]:
+        """Parse the LAST `intent_gate:verdict scenario=X` from kenning.log past ``offset``."""
+        try:
+            data = klog.read_text(encoding="utf-8", errors="ignore")[offset:]
+        except OSError:
+            return None
+        hits = re.findall(r"intent_gate:verdict.*?scenario=(\w+)", data)
+        return hits[-1] if hits else None
+
     results = []
     for m in man:
         cmd = m["command"]
         cap_state["buf"].clear(); cap_state["sr"] = None; cap_state["last"] = 0.0
+        llm_cap["system"] = llm_cap["user"] = None; llm_cap["out"] = []
+        try:
+            klog_off = klog.stat().st_size
+        except OSError:
+            klog_off = 0
         base_n = _trace_count()
         cap_state["on"] = True
         pcm, sr = sf.read(m["wav"], dtype="float32")
@@ -233,6 +281,20 @@ def main() -> int:
             "response_retranscribed": resp_txt,
             "turn_seconds": elapsed, "got_trace_row": got_row,
         }
+        if args.u1:
+            # u1.0 per-stage trace: the gate scenario + the labeled expectations +
+            # the FULL prompt (system+user) + the model's raw output (incl <think>).
+            rec.update({
+                "case_class": m.get("case_class"),
+                "expected_scenario": m.get("expected_scenario"),
+                "expected_channel": m.get("expected_channel"),
+                "wake_free": m.get("wake_free"),
+                "tags": m.get("tags"),
+                "gate_scenario": _gate_scenario_since(klog_off),
+                "prompt_system": llm_cap["system"],
+                "prompt_user": llm_cap["user"],
+                "llm_output_raw": ("".join(llm_cap["out"]) or None),
+            })
         results.append(rec)
         with log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")

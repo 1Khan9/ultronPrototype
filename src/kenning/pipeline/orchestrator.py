@@ -1331,6 +1331,11 @@ class Orchestrator:
         self._next_turn_force_search = False
         self._last_response_finished_monotonic: float = 0.0
         self._last_search_payload = None
+        # Ultron 1.0 M5b -- the 4-class always-listening intent-gate verdict for
+        # the current turn (``audio.intent_gate.Scenario`` or None). Set by the
+        # always-listening gate in run(); reset each iteration; consumed by M6b's
+        # PRIVATE_REPLY routing. None whenever always-listening is OFF.
+        self._last_scenario = None
         # Catalog 13 (evolution): set at the end of _respond when the just-
         # finished response was cut off by a barge-in. Consumed by the
         # evolution turn recorder on the NEXT turn to nudge the response
@@ -3122,6 +3127,94 @@ class Orchestrator:
             )
         except Exception as e:                                       # noqa: BLE001
             logger.debug("idle VRAM reclaim skipped: %s", e)
+
+    def _classify_always_listening(self, user_text: str, seconds_since: float):
+        """Ultron 1.0 M5b -- classify a finalized transcript for always-listening.
+
+        Thin wrapper over :func:`kenning.audio.intent_gate.classify_scenario` that
+        escalates the undecided band (PRIVATE vs IGNORE) to the 8B via
+        :func:`resolve_with_llm`. Returns a ``ScenarioVerdict``. Only called when
+        ``addressing.always_listening`` is ON, so it is OFF the wake-required hot
+        path entirely.
+
+        ASR-confidence (``no_speech_prob`` / ``avg_logprob``) is NOT yet surfaced
+        by ``WhisperEngine.transcribe``; the gate accepts the documented fail-open
+        defaults (0.0) and degrades gracefully to the addressing-rule + relay
+        signal layers without them (live ASR-confidence + threshold calibration is
+        a follow-up on the labeled battery -- see the M5b design note). Fail-open:
+        any error returns a fail-CLOSED IGNORE verdict (never crashes the loop).
+        """
+        from kenning.audio import intent_gate
+        try:
+            verdict = intent_gate.classify_scenario(
+                user_text,
+                seconds_since_response=seconds_since,
+                names=None,  # match_relay_command falls back to DEFAULT_ADDRESSEE_NAMES
+            )
+            if verdict.needs_llm:
+                verdict = intent_gate.resolve_with_llm(verdict, user_text, self.llm)
+            return verdict
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("always-listening intent gate failed (-> IGNORE): %s", e)
+            return intent_gate.ScenarioVerdict(
+                intent_gate.Scenario.IGNORE, 0.0, f"gate error: {e}",
+            )
+
+    def _maybe_handle_private_reply(self, user_text: str) -> bool:
+        """Ultron 1.0 M6b -- the PRIVATE_REPLY (me-only) answer path.
+
+        When the always-listening gate (M5b) classified THIS turn as PRIVATE_REPLY
+        AND the route-all flag is on, answer the player privately via the lean
+        :func:`kenning.audio.ultron_prompt.build_private_prompt` and speak it on the
+        DESKTOP channel (``self._speak`` -- the player's own speakers; NEVER the
+        team mic, NEVER push-to-talk). Returns True iff it handled the turn (the
+        caller then skips the generic conversational ``_respond``).
+
+        Strict no-op on the wake-required path: ``self._last_scenario`` is
+        PRIVATE_REPLY only when ``addressing.always_listening`` is ON, and the lean
+        private prompt is used only when ``KENNING_U1_LLM_ROUTE`` is ON (mirrors the
+        relay path's M1-wire flag-gating; OFF -> the normal ``_respond`` handles it).
+        Fail-open: any error / empty output returns False so ``_respond`` still runs.
+        """
+        try:
+            from kenning.audio.intent_gate import Scenario
+            if self._last_scenario is not Scenario.PRIVATE_REPLY:
+                return False
+            from kenning.audio.relay_speech import (
+                u1_llm_route_enabled, relay_verbosity, flavor_tails_enabled,
+            )
+            if not u1_llm_route_enabled() or self.llm is None:
+                return False
+            from kenning.audio import ultron_prompt
+            pr = ultron_prompt.build_private_prompt(
+                user_text,
+                verbosity=relay_verbosity(),
+                flavor_tail=flavor_tails_enabled(),
+            )
+            text = "".join(self.llm.generate_stream(
+                pr.user,
+                system_prompt=pr.system,
+                sampling=pr.sampling,
+                enable_thinking=pr.enable_thinking,
+                suppress_memory_context=True,
+                record_history=False,
+            ))
+            from kenning.llm.inference import strip_thinking_text
+            text = strip_thinking_text(text or "").strip()
+            if not text:
+                return False  # fall through to _respond rather than stay silent
+            try:
+                self._trace_turn_flow(
+                    raw=user_text, route="private_reply",
+                    reason="always-listening PRIVATE_REPLY -> build_private_prompt (desktop)",
+                    final=text, channel="desktop")
+            except Exception:                                        # noqa: BLE001
+                pass
+            self._speak(text)
+            return True
+        except Exception as e:                                       # noqa: BLE001 - fail-open
+            logger.debug("private-reply (M6b) skipped (-> _respond): %s", e)
+            return False
 
     def _is_relay_command(self, user_text: str) -> bool:
         """True iff ``user_text`` is a strict relay command (or a relay
@@ -5818,6 +5911,19 @@ class Orchestrator:
         from kenning.config import get_config
         from kenning import trace
         _addr_cfg = get_config().addressing
+        # Ultron 1.0 M5b -- always-listening (optional wakeword), default OFF.
+        # Captured once here (like _addr_cfg) -> a change needs a restart. When
+        # ON the loop listens perpetually (no wake word) and gates every
+        # transcript through the 4-class intent_gate instead of the binary
+        # AddressingClassifier. When OFF every path below is byte-identical to
+        # the wake-required behaviour. The env override `KENNING_ALWAYS_LISTENING`
+        # (1/true/yes/on) flips it without a Tier-3 config.yaml edit -- the
+        # sanctioned switch for the audio E2E battery + live dogfooding (mirrors
+        # the other u1.0 env flags); config wins when neither is set.
+        _always_listening = bool(getattr(_addr_cfg, "always_listening", False)) or (
+            os.getenv("KENNING_ALWAYS_LISTENING", "").strip().lower()
+            in ("1", "true", "yes", "on")
+        )
         self.audio.start()
         word = self.wake.active_word
         print(f"\n  Kenning is listening. Say '{word}' to wake.\n")
@@ -5904,8 +6010,25 @@ class Orchestrator:
                 # actually performs LLM work.
                 self._maybe_run_background_summarizer()
 
+                # Ultron 1.0 M5b -- always-listening (default OFF). Keep the
+                # follow-up window perpetually armed so the loop NEVER blocks on
+                # the wake word: it reuses the existing ``_follow_up_listen``
+                # VAD-bounded capture every iteration, and the 4-class intent
+                # gate (below) decides relay / private / command / ignore.
+                # No-op when OFF (the wake-required path is unchanged); also
+                # independent of ``follow_up_enabled`` (which OFF-by-default
+                # disables only the *wake-word* follow-up window).
+                if _always_listening and follow_up_until is None:
+                    follow_up_until = (
+                        time.monotonic() + _addr_cfg.warm_mode_duration_seconds
+                    )
+
                 speech: Optional[np.ndarray] = None
                 came_from_follow_up = False
+                # M5b: the 4-class intent-gate verdict for THIS turn (always-
+                # listening only); consumed by M6b's PRIVATE_REPLY routing.
+                # Reset every iteration so a prior turn's scenario never leaks.
+                self._last_scenario = None
 
                 if self._pending_capture.is_set():
                     # Barge-in or wake-during-follow-up → fresh wake-gated capture.
@@ -5920,7 +6043,7 @@ class Orchestrator:
                     follow_up_until = None
                 elif (
                     follow_up_until is not None
-                    and _addr_cfg.follow_up_enabled
+                    and (_addr_cfg.follow_up_enabled or _always_listening)
                     and time.monotonic() < follow_up_until
                 ):
                     self._state = State.FOLLOW_UP_LISTENING
@@ -6095,6 +6218,42 @@ class Orchestrator:
                         trace.tlog(
                             logger, "addressing:wake_or_relay_override",
                             text=user_text[:160],
+                        )
+                    elif _always_listening:
+                        # Ultron 1.0 M5b -- 4-class always-listening intent gate
+                        # (RELAY_TO_TEAM / PRIVATE_REPLY / COMMAND_LOCAL / IGNORE,
+                        # fail-closed to IGNORE). IGNORE -> discard (the window
+                        # stays armed via the loop-top re-arm); the other three
+                        # are ADDRESSED and flow through the EXISTING dispatch
+                        # cascade below (which routes relay vs toggle vs
+                        # conversational). The scenario is stashed on
+                        # ``self._last_scenario`` for M6b's PRIVATE_REPLY channel.
+                        from kenning.audio.intent_gate import Scenario as _Scenario
+                        seconds_since = (
+                            time.monotonic() - self._last_response_finished_monotonic
+                        )
+                        sv = self._classify_always_listening(user_text, seconds_since)
+                        self._last_scenario = sv.scenario
+                        trace.tlog(
+                            logger, "intent_gate:verdict",
+                            scenario=sv.scenario.value,
+                            conf=float(sv.confidence or 0.0),
+                            reason=sv.reason,
+                            needs_llm=bool(sv.needs_llm),
+                            text=user_text[:160],
+                        )
+                        if sv.scenario == _Scenario.IGNORE:
+                            print(
+                                f"  (heard: {user_text!r} -- ignored "
+                                f"[{sv.reason}])"
+                            )
+                            trace.tlog(
+                                logger, "intent_gate:ignored", reason=sv.reason,
+                            )
+                            continue
+                        print(
+                            f"  (always-listening, {sv.scenario.value}) "
+                            f"you: {user_text}"
                         )
                     else:
                         seconds_since = (
@@ -6930,6 +7089,28 @@ class Orchestrator:
                     continue
 
                 trace.set_phase("respond")
+                # Ultron 1.0 M6b -- PRIVATE_REPLY (me-only) answer path. When the
+                # always-listening gate classified THIS turn as PRIVATE_REPLY (and
+                # KENNING_U1_LLM_ROUTE is on), answer privately via the lean
+                # build_private_prompt on the DESKTOP channel and skip the generic
+                # conversational _respond. Intercepts HERE (after Spotify / relay /
+                # router all declined) so a command the gate labelled PRIVATE is
+                # never hijacked away from its real handler. No-op on the
+                # wake-required path (_last_scenario is None) + fail-open to _respond.
+                if self._maybe_handle_private_reply(user_text):
+                    self._last_response_finished_monotonic = time.monotonic()
+                    if _addr_cfg.follow_up_enabled:
+                        follow_up_until = (
+                            self._last_response_finished_monotonic
+                            + _addr_cfg.warm_mode_duration_seconds
+                        )
+                    else:
+                        follow_up_until = None
+                    trace.tlog(
+                        logger, "loop:iteration_end",
+                        via="private_reply", follow_up=bool(follow_up_until),
+                    )
+                    continue
                 # Catalog 09 batch G wiring: thread the classified
                 # intent kind through to _respond so the LLM can pick
                 # a per-intent condenser before generating. Default

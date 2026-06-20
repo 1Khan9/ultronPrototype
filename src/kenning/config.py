@@ -1639,6 +1639,18 @@ class AddressingConfig(_Strict):
     zero_shot_model: str = "google/flan-t5-small"
     load_eagerly: bool = True
     log_path: str = "logs/addressing.jsonl"
+    # Ultron 1.0 M5b -- always-listening (optional wakeword). When True the run
+    # loop listens perpetually (no wake word required) and gates every finalized
+    # transcript through the 4-class ``audio.intent_gate.classify_scenario``
+    # (RELAY_TO_TEAM / PRIVATE_REPLY / COMMAND_LOCAL / IGNORE, fail-closed to
+    # IGNORE) instead of the binary AddressingClassifier. DEFAULT OFF: the wake
+    # word stays the competitive default; each false relay is a team-visible
+    # blast (asymmetric cost) and the gate thresholds need calibration on the
+    # labeled battery + real logs/addressing.jsonl. PREREQUISITE: VoiceMeeter mic
+    # isolation (teammate/Discord audio must not bleed into the user's mic bus).
+    # Captured once at run() entry -> a change needs a restart (like the other
+    # addressing knobs).
+    always_listening: bool = False
 
 
 class CodingCanonicalMonitorConfig(_Strict):

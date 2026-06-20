@@ -913,6 +913,14 @@ addressing:
   zero_shot_model: "google/flan-t5-small"
   load_eagerly: true                         # load Flan-T5 at startup (~8 s) vs first ambiguous utt
   log_path: "logs/addressing.jsonl"
+  # Ultron 1.0 M5b -- always-listening (optional wakeword). OFF by default: the
+  # wake word stays the competitive default. When true the loop listens
+  # perpetually (no wake word) and gates every transcript through the 4-class
+  # audio.intent_gate.classify_scenario (RELAY_TO_TEAM / PRIVATE_REPLY /
+  # COMMAND_LOCAL / IGNORE; fail-closed to IGNORE) instead of the binary
+  # AddressingClassifier. PREREQUISITE: VoiceMeeter mic isolation. Thresholds
+  # (KENNING_GATE_*) need calibration on the labeled battery before relying on it.
+  always_listening: false
 
 # ---------------------------------------------------------------------------
 # Coding orchestration (AI coding agent subprocess via direct bridge)

@@ -6,7 +6,7 @@
 
 *Say "kenning." Talk. Get answers in a custom voice. Everything runs on your GPU.*
 
-[![tests](https://img.shields.io/badge/tests-10982%20passing-brightgreen?style=flat-square)](https://github.com/1v9Khan/ultronPrototype)
+[![tests](https://img.shields.io/badge/tests-11073%20passing-brightgreen?style=flat-square)](https://github.com/1v9Khan/ultronPrototype)
 [![latency](https://img.shields.io/badge/TTFA-~266ms-blueviolet?style=flat-square)](#-at-a-glance)
 [![VRAM](https://img.shields.io/badge/VRAM-6.3GB%20standby-orange?style=flat-square)](#-at-a-glance)
 [![python](https://img.shields.io/badge/python-3.11+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
@@ -40,6 +40,12 @@ always-listening intent gate and `no / low / high` verbosity. All of it sits beh
 flag (default **off**), so the shipped behavior is unchanged until each increment is proven regression-clean.
 Architecture, live status, and the regression baseline live under
 [`docs/ultron_1_0/`](docs/ultron_1_0/) (start at `00_process_log/STATUS.md`).
+
+The pipeline is now feature-complete behind its flag: the always-listening four-class intent gate is wired into
+the run loop (`addressing.always_listening`, default off), private "me-only" replies route to the desktop
+channel, and a labeled audio end-to-end battery exercises the whole path. Every increment is regression-clean
+against the frozen control baseline and listed in [`CHANGELOG.md`](CHANGELOG.md). Live calibration of the gate
+thresholds and the latency pass remain before the flags flip on by default.
 
 ---
 
