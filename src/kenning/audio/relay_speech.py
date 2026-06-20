@@ -1183,6 +1183,43 @@ def match_flavor_toggle(text: str) -> Optional[bool]:
     return None
 
 
+# ULTRON 1.0 verbosity command: "no flavor" / "low flavor" / "high flavor" (+ synonyms)
+# -> the no/low/high reply-length axis (relay_verbosity()). DISTINCT from the flavor-tail
+# on/off toggle above: "off"/"on" are deliberately EXCLUDED from the level words so
+# "flavor off" stays a tail toggle and never reads as a verbosity level. Fully anchored
+# (the whole utterance must be the command) so ordinary speech ("no, push low") falls through.
+_VB_LEVEL = (r"(no|none|zero|low|minimal|min|light|lite|terse|brief|less"
+             r"|high|full|max|maximum|verbose|rich|more|vivid)")
+_VERBOSITY_CMD_RE = re.compile(
+    r"^(?:please\s+|ultron[\s,]+)?"
+    r"(?:(?:set|make|use|go|switch\s+to|turn|put|give\s+me)\s+)?"
+    r"(?:the\s+|your\s+|it\s+to\s+)?"
+    r"(?:"
+    rf"{_VB_LEVEL}\s+(?:flavou?r|favou?r|verbosity)"
+    r"|"
+    rf"(?:flavou?r|favou?r|verbosity)\s+(?:to\s+|at\s+|on\s+)?{_VB_LEVEL}"
+    r")\b\s*[.!?]*$",
+    re.IGNORECASE,
+)
+
+
+def match_verbosity_command(text: str) -> Optional[str]:
+    """Match the no/low/high verbosity voice command ("no flavor" / "low flavor" /
+    "high flavor" + synonyms). Returns "none" / "low" / "high", or None.
+
+    Distinct from :func:`match_flavor_toggle` (which is the flavor-tail on/off toggle).
+    Strict + fully anchored, so ordinary speech falls through. Callers pass the RAW
+    transcript (pre-normalization), like the other toggle matchers.
+    """
+    if not text:
+        return None
+    m = _VERBOSITY_CMD_RE.match(text.strip())
+    if not m:
+        return None
+    from kenning.audio.ultron_prompt import normalize_verbosity
+    return normalize_verbosity(m.group(1) or m.group(2))
+
+
 # ---------------------------------------------------------------------------
 # THINKING MODE (2026-06-19): a runtime toggle for whether the relay path may
 # AUTHOR via the LLM. When OFF (the DEFAULT), the orchestrator passes
@@ -1207,6 +1244,50 @@ def set_thinking_mode_enabled(enabled: bool) -> None:
 
 def thinking_mode_enabled() -> bool:
     return _thinking_mode_enabled
+
+
+# ---------------------------------------------------------------------------
+# ULTRON 1.0 (2026-06-20): the route-everything-through-the-8B relay path. When
+# KENNING_U1_LLM_ROUTE is ON, the generic (non-tactical, non-snap) relay rephrase
+# uses the LEAN templated prompt (kenning.audio.ultron_prompt.build_relay_prompt)
+# -- the validated route-all design (persona + no/low/high verbosity + flavor
+# toggle + exemplars) -- instead of the legacy ~4.8k-token _build_rephrase_prompt
+# monolith (which yields EMPTY output from the 8B in live probing). DEFAULT OFF:
+# the proven deterministic path stays live until this is A/B-validated. Research
+# C_route_llm recommends a HYBRID (deterministic center, LLM only at the edges) --
+# this PRESERVES that: the tactical-literal pre-route + the snap pools still fire
+# FIRST; only the non-tactical edge rephrase is affected. The downstream
+# fact-preservation guards (_repair_against_input / _output_keeps_facts /
+# _literal_relay abstention) are UNCHANGED and apply to both paths.
+_u1_llm_route_enabled: bool = _os_flavor.getenv(
+    "KENNING_U1_LLM_ROUTE", "0").strip().lower() not in (
+    "0", "false", "no", "off", "")
+
+
+def set_u1_llm_route_enabled(enabled: bool) -> None:
+    """Enable/disable the Ultron 1.0 lean-LLM relay route at runtime (default OFF)."""
+    global _u1_llm_route_enabled
+    _u1_llm_route_enabled = bool(enabled)
+
+
+def u1_llm_route_enabled() -> bool:
+    return _u1_llm_route_enabled
+
+
+# Relay verbosity for the u1.0 LLM route: "none" | "low" | "high" (the no/low/high
+# "flavor" command flips this; default from KENNING_U1_VERBOSITY or "high").
+_u1_verbosity: str = (_os_flavor.getenv("KENNING_U1_VERBOSITY", "high").strip().lower() or "high")
+
+
+def set_relay_verbosity(level: str) -> None:
+    """Set the u1.0 relay verbosity (none/low/high) at runtime."""
+    global _u1_verbosity
+    from kenning.audio.ultron_prompt import normalize_verbosity
+    _u1_verbosity = normalize_verbosity(level)
+
+
+def relay_verbosity() -> str:
+    return _u1_verbosity
 
 
 # "thinking"/"think mode"/"reasoning"/"llm" -- in-vocab, so the mishear surface is
@@ -6271,8 +6352,18 @@ def build_relay_line(
         if snap is not None:
             return _cap_line(snap, max_chars)
         # COMPOUND (two+ facts): resolve each tactical fact deterministically so
-        # the 3B never drops a fact or hallucinates filler.
-        det_line, leftover = _as_compound_callout(command, recent_lines)
+        # the 3B never drops a fact or hallucinates filler. u1.0 (M4): when the
+        # LLM route is ON, a compound is instead sent as ONE combined LLM call
+        # (build_relay_prompt(compound=True)) at the step-27 path below -- the
+        # user's "back-to-back commands -> one response". Skipping the
+        # deterministic resolver here lets it fall through; the downstream
+        # fact-guards (_output_keeps_facts/_literal_relay) still protect it.
+        _u1_compound = (u1_llm_route_enabled()
+                        and not getattr(command, "verbatim", False)
+                        and len(_split_compound(command.payload or "")) >= 2)
+        det_line, leftover = (
+            (None, None) if _u1_compound
+            else _as_compound_callout(command, recent_lines))
         if det_line is not None and not leftover:
             return _cap_line(det_line, max_chars)         # fully deterministic
         if det_line is not None and leftover:
@@ -6305,7 +6396,7 @@ def build_relay_line(
         # is instant in gaming mode. Gated on a count/location/ability fact (a
         # pure-agent line like "their Reyna is washed" is an insult -> keep the
         # LLM's flavor); opinions/banter/identity have no such fact-token.
-        if not getattr(command, "verbatim", False):
+        if not getattr(command, "verbatim", False) and not _u1_compound:
             nums, agents, locs, abils = _fact_tokens(command.payload or "")
             tactical = len(nums) + len(locs) + len(abils)
             # 2026-06-17: route ANY line carrying a concrete tactical token
@@ -6354,9 +6445,36 @@ def build_relay_line(
                     logger.debug("relay answer: rejected meta-leak %r", line)
                     line = ""
             else:
-                prompt = _build_rephrase_prompt(command, recent_lines)
+                # ULTRON 1.0 route (flag-gated, default OFF): the LEAN templated
+                # prompt (validated to author correct in-character relays; the
+                # legacy monolith yields EMPTY 8B output). Adds no/low/high
+                # verbosity + the flavor-tail toggle. Legacy path otherwise.
+                if u1_llm_route_enabled():
+                    from kenning.audio.ultron_prompt import build_relay_prompt
+                    from kenning.audio.agent_kits import kit_facts_for
+                    # M3: inject accurate kit facts for the agents this callout names
+                    # (addressee first) so the 8B never hallucinates a kit.
+                    _addr = getattr(command, "addressee", "team") or "team"
+                    _agents = _roster_agents(command.payload or "")
+                    if _addr != "team":
+                        _agents = [_addr] + [a for a in _agents
+                                             if a.lower() != _addr.lower()]
+                    _u1_kits = kit_facts_for(_agents) or None
+                    _pr = build_relay_prompt(
+                        command.payload or "",
+                        addressee=_addr,
+                        verbosity=relay_verbosity(),
+                        flavor_tail=flavor_tails_enabled(),
+                        agent_context=_u1_kits,
+                        recent_lines=list(recent_lines or ()),
+                        compound=_u1_compound,
+                    )
+                    _u1_prompt, _u1_system, _u1_sampling = _pr.user, _pr.system, _pr.sampling
+                else:
+                    _u1_prompt = _build_rephrase_prompt(command, recent_lines)
+                    _u1_system, _u1_sampling = _RELAY_REPHRASE_SYSTEM, _RELAY_SAMPLING
                 if generate_fn is not None:
-                    tokens = generate_fn(prompt)
+                    tokens = generate_fn(_u1_prompt)
                 elif llm is not None and hasattr(llm, "generate_stream"):
                     # FULLY ISOLATED generation (2026-06-11 live fix):
                     # without suppress_memory_context the engine prepends
@@ -6365,9 +6483,9 @@ def build_relay_line(
                     # callout (observed live in game chat: "Clove, the
                     # program is still in development...").
                     tokens = llm.generate_stream(
-                        prompt,
-                        system_prompt=_RELAY_REPHRASE_SYSTEM,
-                        sampling=_RELAY_SAMPLING,
+                        _u1_prompt,
+                        system_prompt=_u1_system,
+                        sampling=_u1_sampling,
                         record_history=False,
                         suppress_memory_context=True,
                         enable_thinking=False,
@@ -6375,6 +6493,12 @@ def build_relay_line(
                 else:
                     tokens = ()
                 line = "".join(tokens).strip()
+                # C_route_llm guard: thinking must NEVER leak into a relay line
+                # (llama.cpp #20345/#13189 -- enable_thinking is not always honored).
+                # generate_stream already strips, but belt-and-suspenders here.
+                if "<think>" in line or "</think>" in line:
+                    line = re.sub(r"<think>.*?</think>", "", line, flags=re.DOTALL)
+                    line = line.replace("<think>", "").replace("</think>", "").strip()
         except Exception as e:  # noqa: BLE001 - fail-open to the fallback
             logger.warning("relay rephrase failed (using fallback): %s", e)
             line = ""

@@ -1,0 +1,1010 @@
+# codebase_structure.md — exhaustive reconciliation against source (2026-06-20)
+
+Generated from a 17-lane recon board (Sonnet, high effort; run `wf_305cffba-f9e`). Each lane enumerated every source file + public symbol in its scope and checked the doc's CURRENT-STATE body sections (NOT the historical Validating-HEAD/Recent-sessions log) for accuracy + coverage.
+
+**Totals:** 231 findings — {'high': 64, 'medium': 88, 'low': 79} · categories {'MISSING_FROM_DOC': 167, 'WRONG_DETAIL': 48, 'STALE_DOC_CLAIM': 13, 'RENAMED': 2, 'REMOVED_STILL_DOCUMENTED': 1}.
+
+**Status:** the FACTUAL-ERROR set (WRONG_DETAIL/STALE/RENAMED/REMOVED — the doc says something untrue) was fixed first (highest priority); MISSING_FROM_DOC are coverage gaps. This file is the durable, resumable work-list.
+
+### RESOLUTION (2026-06-20, commits `7bc8130` → tip)
+**APPLIED — ~57 of 64 factual errors** (the doc no longer states these untruths). Highlights: core-toplevel
+(channels enum, local_clock/trace/latency_hygiene/recognizer names, config preset + chunking classes,
+__main__/__init__/bus), audio (wake_word predict→process + fallback, vad fields, capture get_chunk,
+voicemeeter env, command/regex/pattern counts), memory (ContextGenerator, reset_shared_reranker, discourse
+enum), web_search (ReaderChain, SearchResult), openclaw (23→26 intents + dataclasses), tts (rvc fail-soft),
+errors (OpenClaw*Error), response_style (3 hints + AND), whisper (AUGMENT), the voice-query flow, the
+models-table state, scripts counts (corpus 25k / 27 metrics / 55 packs / 21 refs), inference signatures.
+
+**APPLIED — major coverage gaps:** NEW body sections for the whole-missing packages
+`src/kenning/{safety, subprocess, agent_loop, evolution, mcp, providers}/`; the CLAUDE.md-key audio modules
+`routing_rules.py`, `llm_prompts.py`, `_ultron_social.py`, `_ultron_answer.py`; `web_search/` (rate_limit,
+playwright_reader, slimdown_html, pandoc_converter); `desktop/` (browser_use/sessions/sequence, sequence,
+ocr, clipboard, click_preview, dialog_poller, win32_helpers); `coding/` (edit_matcher, edit_recovery,
+patch_v4a, file_read_cache [+corrected the desktop/ misplacement], file_mention_resolver, coder_modes,
+architect_supervisor, commit_message, python_lint, tree_sitter_lint, ai_comment_watcher); the config.yaml
+inventory (push_to_talk, relay_speech, semantic_router); + the new Ultron 1.0 modules.
+
+**REMAINING (low cosmetic — tracked here for a follow-up sweep):** a few desktop result-dataclass field
+tweaks ([35]-[38]); orchestrator stale inline line-numbers ([49]); check_vram / xtts-normalize / ddg-throttle
+detail ([56][60][64]); NEGATIVE_SET 30→31 ([53]); the visual file-tree entries for the new audio modules +
+`providers/` (the modules HAVE authoritative body sections — the tree is a secondary index); ~15 test
+subdirectories not listed in the Tests section; 2 docs not linked in the index (`ultron_1_0/README.md`,
+`openclaw_desktop_automation_setup.md`); `scripts/ptt_test.py` + `scripts/relay_test/audio_corpus/`.
+None of these are factual errors — they are coverage completeness items.
+
+---
+
+## addressing-stt-llm (7)
+
+- **[MEDIUM] WRONG_DETAIL** — The doc says WHISPER_INITIAL_PROMPT is 'overridable with a custom WHISPER_INITIAL_PROMPT', implying the user value replaces the domain prompt. The 2026-06-18 fix in source changed this: the domain vocab is now always the base and the user override is APPENDED (`f"{_DOMAIN_PROMPT} {_user_ip}".strip()`). A user override no longer shadows/replaces the domain prompt.
+  - DOC: ### `src/kenning/transcription/whisper_engine.py` — "overridable with a custom `WHISPER_INITIAL_PROMPT`"
+  - SRC: src/kenning/transcription/whisper_engine.py:150-155
+  - FIX: Change 'overridable with a custom `WHISPER_INITIAL_PROMPT`' to 'augmented by a custom `WHISPER_INITIAL_PROMPT`; the domain vocab is always the base and the env var appends to it (never replaces — a 2026-06-18 fix to stop a short override like `Kenning.` from shadowing the whole vocabulary).'
+- **[MEDIUM] WRONG_DETAIL** — The primary doc entry for _build_llama states the return type as `(Llama, Path)` (a 2-tuple). Source returns a 4-tuple: `(llama, resolved_model_path, resolved_n_gpu_layers, resolved_n_ctx)`. The doc does note 'a 4-tuple return' in the reload_for_device bullet (line 4990) but the _build_llama entry itself is stale and contradictory.
+  - DOC: ### `src/kenning/llm/inference.py` — `_build_llama(cfg, model_path, n_ctx, n_gpu_layers) -> (Llama, Path)`
+  - SRC: src/kenning/llm/inference.py:624-827 (returns (llama, Path, int, int) at line 827)
+  - FIX: Update the _build_llama bullet to `-> (Llama, Path, int, int)` where the last two ints are `resolved_n_gpu_layers` and `resolved_n_ctx`. Remove the duplicate mention from the reload_for_device bullet.
+- **[MEDIUM] WRONG_DETAIL** — The doc lists the signature as `reload_for_device(device)` but source has a `force: bool = False` keyword argument. When force=True the reload happens even when already on the target device, e.g. to re-apply a profile. This option is omitted from the doc.
+  - DOC: ### `src/kenning/llm/inference.py` — `reload_for_device(device)`
+  - SRC: src/kenning/llm/inference.py:1599-1601 (`def reload_for_device(self, device: str, *, force: bool = False)`)
+  - FIX: Update signature to `reload_for_device(device: str, *, force: bool = False)` and note: 'force=True reloads even when already on the target device (e.g. to re-apply a profile).'
+- **[MEDIUM] WRONG_DETAIL** — The doc lists _chat_completion_kwargs as taking three parameters and states it 'Returns ONLY the four sampling params + optional stream flag'. Source has a fourth `sampling: Optional[dict] = None` parameter and, when sampling is provided, merges allowed keys (temperature, top_p, top_k, min_p, max_tokens, repeat_penalty, presence_penalty, frequency_penalty, stop, grammar, logit_bias, seed) into the returned dict. The doc is incorrect on both the signature and the return shape.
+  - DOC: ### `src/kenning/llm/inference.py` — `_chat_completion_kwargs(_llm_cfg, enable_thinking, *, stream)`
+  - SRC: src/kenning/llm/inference.py:2150-2199 (signature includes `sampling: Optional[dict] = None` and merges it into kwargs)
+  - FIX: Update signature to `_chat_completion_kwargs(_llm_cfg, enable_thinking, *, stream, sampling: Optional[dict] = None)` and note that when `sampling` is provided its allowed keys are merged into the output, enabling per-call overrides for the relay ANSWER path (stop sequences, min_p, grammar, logit_bias, seed).
+- **[MEDIUM] MISSING_FROM_DOC** — LLMEngine.generate_isolated() is a public method that bypasses _build_messages (no persona, no RAG, no history) and is used by the background summarizer for structured/JSON extraction passes. It is entirely absent from the doc section.
+  - DOC: ### `src/kenning/llm/inference.py` — LLMEngine public methods list
+  - SRC: src/kenning/llm/inference.py:1835-1929 (`def generate_isolated(self, system_prompt, user_prompt, *, max_tokens, temperature, top_p) -> str`)
+  - FIX: Add a bullet: `generate_isolated(system_prompt, user_prompt, *, max_tokens=2048, temperature=0.2, top_p=0.95) -> str` — one-shot call with caller-supplied prompts; bypasses SOUL.md persona, memory history, and RAG; does NOT record to history. Used by BackgroundSummarizer and other callers with self-contained context. Returns '' on failure (fail-open).
+- **[LOW] MISSING_FROM_DOC** — AddressingClassifier.should_respond(utterance, seconds_since_response) -> bool is a public convenience method that the orchestrator uses (wraps classify() and returns True iff verdict is ADDRESSED). It is not mentioned in the doc section listing for classifier.py.
+  - DOC: ### `src/kenning/addressing/` — addressing/classifier.py
+  - SRC: src/kenning/addressing/classifier.py:205-211
+  - FIX: Add a bullet under addressing/classifier.py: `should_respond(utterance, seconds_since_response=0.0) -> bool` — convenience wrapper; returns `True` iff `classify()` verdict is ADDRESSED.
+- **[LOW] MISSING_FROM_DOC** — Six public LLMEngine methods are absent from the doc section: (1) retrieve_rag_snippets(user_message, *, gate_verdict=None) -> List — public wrapper for pre-fetching RAG snippets on a background thread; (2) set_current_intent_kind(intent_kind) / get_current_intent_kind() — per-turn intent setting for the intent-adaptive condenser; (3) set_temperament_hint(hint) / get_temperament_hint() — catalog-13 evolution temperament injection per turn; (4) pop_last_ttft_ms() -> Optional[float] — read-and-clear TTFT in ms for the evolution metrics ring.
+  - DOC: ### `src/kenning/llm/inference.py` — LLMEngine public methods list
+  - SRC: src/kenning/llm/inference.py:1227-1243 (retrieve_rag_snippets), 1366-1390 (set_current_intent_kind/get_current_intent_kind), 1392-1409 (set_temperament_hint/get_temperament_hint), 1966-1977 (pop_last_ttft_ms)
+  - FIX: Add bullets for each: retrieve_rag_snippets (background-thread pre-fetch wrapper), set_current_intent_kind/get_current_intent_kind (catalog 09 intent-adaptive condenser), set_temperament_hint/get_temperament_hint (catalog 13 evolution temperament), and pop_last_ttft_ms (read-and-clear TTFT for evolution metrics).
+
+## audio-io-capture (9)
+
+- **[HIGH] WRONG_DETAIL** — The doc documents a method `predict(audio_block) -> Optional[str]` on WakeWordDetector that does not exist. The actual streaming detection method is `process(audio: np.ndarray) -> bool`. The doc also omits the key public methods `reload_for_word(word: str) -> tuple[bool, str]` (hot-swap) and `fired_recently(window_s: float = 0.5) -> bool` (V1-gap A4 accessor).
+  - DOC: #### `audio/wake_word.py` — '`predict(audio_block) -> Optional[str]` — fires a wake event'
+  - SRC: src/kenning/audio/wake_word.py:237 — `def process(self, audio: np.ndarray) -> bool:`; grep for 'def predict' finds nothing in wake_word.py
+  - FIX: Replace `predict(audio_block) -> Optional[str]` with `process(audio: np.ndarray) -> bool`. Add `fired_recently(window_s: float = 0.5) -> bool` and `reload_for_word(word: str) -> tuple[bool, str]` to the documented public surface.
+- **[HIGH] WRONG_DETAIL** — The doc says WakeWordDetector falls back to `hey_jarvis` when the selected model is missing. The actual fallback chain is: first the custom `ultron.onnx` side-by-side model (i.e. `settings.WAKE_WORD_FALLBACK`, defaulting to 'ultron'), and only as a last resort a pretrained openWakeWord built-in using that same fallback name — never 'hey_jarvis'.
+  - DOC: #### `audio/wake_word.py` — 'Falls back to `hey_jarvis` with startup warning if missing'
+  - SRC: src/kenning/audio/wake_word.py:128-165 — fallback chain: (1) custom fallback_name ONNX (default 'ultron' → ultron.onnx); (2) pretrained word using fallback_name (default 'ultron'); 'hey_jarvis' appears nowhere in the file
+  - FIX: Update the fallback description: 'Falls back to the custom `{fallback_name}.onnx` (default: `ultron.onnx`) side-by-side model; only if that is also absent does it fall back to the pretrained openWakeWord word of the same name. `hey_jarvis` is not used.'
+- **[MEDIUM] WRONG_DETAIL** — The doc lists `read_blocks() -> Iterator[np.ndarray]` as a public method of AudioCapture. This method does not exist in the source. The actual chunk-consumer API is `get_chunk(timeout: float = 1.0) -> Optional[np.ndarray]`.
+  - DOC: #### `audio/capture.py` — 'read_blocks() -> Iterator[np.ndarray]'
+  - SRC: src/kenning/audio/capture.py: absent — grep for 'def read_blocks' finds nothing; actual consumer API is get_chunk(timeout: float = 1.0) -> Optional[np.ndarray] at capture.py:145
+  - FIX: Replace `read_blocks() -> Iterator[np.ndarray]` with `get_chunk(timeout: float = 1.0) -> Optional[np.ndarray]` in the capture.py section. Also add `drain()` (discards pending chunks, reports drop accounting) and `qsize() -> int`.
+- **[MEDIUM] WRONG_DETAIL** — The doc places `_capture_utterance` inside AudioCapture in capture.py. It actually lives on the Orchestrator class in pipeline/orchestrator.py:7075 and is not part of AudioCapture's API at all.
+  - DOC: #### `audio/capture.py` — '`_capture_utterance(...)` (used by Orchestrator)'
+  - SRC: src/kenning/audio/capture.py: no `def _capture_utterance` anywhere; actual definition is src/kenning/pipeline/orchestrator.py:7075 `def _capture_utterance(self) -> np.ndarray`
+  - FIX: Remove `_capture_utterance(...)` from the `audio/capture.py` section. Document it under the Orchestrator section in pipeline/orchestrator.py instead.
+- **[MEDIUM] MISSING_FROM_DOC** — llm_prompts.py has no dedicated `####` subsection in the current-state body of the doc. It holds five key public constants (ULTRON_GAMING_PERSONA, ANSWER_PERSONA_CORE, ANSWER_MARVEL_RULES, ANSWER_THINK_RULES, ANSWER_SYSTEM_FOR) and an inline construction-site index, but none of this is surfaced in the body sections that readers would consult for the current state.
+  - DOC: No `#### audio/llm_prompts.py` section in the current-state body; file appears only in historical log blockquotes at doc lines 245 and 407
+  - SRC: src/kenning/audio/llm_prompts.py:48,82,97,113,123 — defines ULTRON_GAMING_PERSONA, ANSWER_PERSONA_CORE, ANSWER_MARVEL_RULES, ANSWER_THINK_RULES, ANSWER_SYSTEM_FOR; grep for '#### `audio/llm_prompts' in codebase_structure.md finds no matches
+  - FIX: Add a `#### audio/llm_prompts.py` subsection documenting ULTRON_GAMING_PERSONA (gaming conversational persona, used by orchestrator._gaming_conversational_prompt), ANSWER_PERSONA_CORE + ANSWER_MARVEL_RULES + ANSWER_THINK_RULES → ANSWER_SYSTEM_FOR (adaptive ANSWER pipeline, used by _ultron_answer), and the indexed-in-place note for _REPHRASE_PROMPT (relay_speech) and the base desktop persona (config.yaml).
+- **[MEDIUM] WRONG_DETAIL** — The voicemeeter_level.py doc section has a doubled 'RELAY' in the env var name: `KENNING_RELAY_RELAY_VM_LEVEL_GUARD`. The actual env var is `KENNING_RELAY_VM_LEVEL_GUARD`.
+  - DOC: #### `audio/voicemeeter_level.py` — '`KENNING_RELAY_RELAY_VM_LEVEL_GUARD` / config, default OFF'
+  - SRC: src/kenning/audio/voicemeeter_level.py:18,95 — `KENNING_RELAY_VM_LEVEL_GUARD` (single 'RELAY'); doc line 4868 reads `KENNING_RELAY_RELAY_VM_LEVEL_GUARD`
+  - FIX: Change `KENNING_RELAY_RELAY_VM_LEVEL_GUARD` to `KENNING_RELAY_VM_LEVEL_GUARD` in the voicemeeter_level.py doc section.
+- **[LOW] WRONG_DETAIL** — The doc says the VadResult dataclass has a field named `prob`, but the actual field name in source is `probability`.
+  - DOC: #### `audio/vad.py` — 'class VadResult — dataclass: event, is_speech, prob'
+  - SRC: src/kenning/audio/vad.py:30-34 — `@dataclass class VadResult: event: SpeechEvent; is_speech: bool; probability: float`
+  - FIX: Change `prob` to `probability` in the VadResult description in the vad.py section.
+- **[LOW] WRONG_DETAIL** — The doc abbreviates the SpeechEvent enum members as 'START / END / NONE', but the actual member names are SPEECH_START, SPEECH_END, and NONE.
+  - DOC: #### `audio/vad.py` — 'class SpeechEvent(Enum) — START / END / NONE'
+  - SRC: src/kenning/audio/vad.py:24-27 — `class SpeechEvent(Enum): NONE = 'none'; SPEECH_START = 'speech_start'; SPEECH_END = 'speech_end'`
+  - FIX: Update the enum description to 'SPEECH_START / SPEECH_END / NONE' to match the actual member names.
+- **[LOW] STALE_DOC_CLAIM** — The file-tree one-liner for capture.py says status-flag warnings are throttled '1st + every 50th', implying periodic recurrence. The source only issues a single first-occurrence warning from the audio callback; subsequent flags are silently counted and reported in aggregate from drain(). The 'every 50th' throttle does not exist. (Note: the dedicated #### section body at line 4044 correctly says 'single first-occurrence warning', so only the file-tree line is wrong.)
+  - DOC: File-tree entry for capture.py (doc line 2625): 'throttled warning (1st + every 50th; replaces the warn-once-forever latch...)'
+  - SRC: src/kenning/audio/capture.py:207-209 — audio thread only logs on first occurrence (status_flag_count == 1); no 'every 50th' logic anywhere in the file
+  - FIX: Update the file-tree line to read 'throttled warning (first occurrence only; recurrence totals reported from drain())' to match both source and the #### section body.
+
+## audio-relay-flavor (12)
+
+- **[HIGH] WRONG_DETAIL** — The doc documents the VoiceMeeter level-guard env var as `KENNING_RELAY_RELAY_VM_LEVEL_GUARD` (double RELAY_) but the actual name in source and the code that reads it is `KENNING_RELAY_VM_LEVEL_GUARD`.
+  - DOC: audio/voicemeeter_level.py section: '(`KENNING_RELAY_RELAY_VM_LEVEL_GUARD` / config, default OFF)'
+  - SRC: src/kenning/audio/voicemeeter_level.py:18,95 — env var name is `KENNING_RELAY_VM_LEVEL_GUARD`
+  - FIX: Replace `KENNING_RELAY_RELAY_VM_LEVEL_GUARD` with `KENNING_RELAY_VM_LEVEL_GUARD` in the voicemeeter_level.py body section.
+- **[HIGH] WRONG_DETAIL** — The doc's __all__ table omits three symbols that are actually in __all__: `is_complete_tactical_callout`, `relay_route_info`, and `pick_line`. All three are public, callable, and used externally (orchestrator calls is_complete_tactical_callout for E3; relay_route_info is the route-classifier; pick_line is the documented alias for pick_roast_line).
+  - DOC: relay_speech.py Public API (__all__) section — lists 13 symbols ending with play_to_device, does not list is_complete_tactical_callout, relay_route_info, or pick_line
+  - SRC: src/kenning/audio/relay_speech.py:44-61 — __all__ contains is_complete_tactical_callout (line 52), relay_route_info (line 54), pick_line (line 58) in addition to the documented symbols
+  - FIX: Add `is_complete_tactical_callout`, `relay_route_info`, and `pick_line` to the Public API (__all__) table in the relay_speech.py doc section.
+- **[HIGH] MISSING_FROM_DOC** — _ultron_social.py (public API: SOCIAL_POOLS dict, classify_social_reaction function) and _ultron_answer.py (public API: MARVEL_CANON, marvel_topic, classify_answer_subtype, extract_answer_slots, build_answer_call, is_meta_leak, THINK_RESPOND_SUFFIX_RE) are absent from both the file tree and any dedicated body section. They are mentioned only in passing in session-log history rows (lines 609, 589). These are load-bearing modules: _as_curated_reaction in relay_speech imports SOCIAL_POOLS and classify_social_reaction, and build_relay_line imports build_answer_call and is_meta_leak on the LLM answer path.
+  - DOC: File tree block for src/kenning/audio/ (lines 2633-2646) — lists _ultron_pools, _agent_flavor, _multi_flavor, _ultron_commands, _ultron_setpieces but not _ultron_social or _ultron_answer
+  - SRC: src/kenning/audio/_ultron_social.py:30 (__all__ = ["SOCIAL_POOLS", "classify_social_reaction"]), src/kenning/audio/_ultron_answer.py:34-38 (__all__ lists MARVEL_CANON, marvel_topic, classify_answer_subtype, extract_answer_slots, build_answer_call, is_meta_leak, THINK_RESPOND_SUFFIX_RE) — neither file appears in the file tree (docs lines 2633-2646) and neither has a #### body section
+  - FIX: Add tree entries for _ultron_social.py and _ultron_answer.py between _ultron_commands.py and _ultron_setpieces.py in the file tree. Add a brief #### body section for each documenting their public API (SOCIAL_POOLS dict + classify_social_reaction; and __all__ contents for _ultron_answer).
+- **[MEDIUM] MISSING_FROM_DOC** — voice_lines.py, agent_kits.py, ultron_prompt.py, and _ultron_identity.py all have #### body sections in the doc (lines 4844, 4898, 4875, 4303 respectively) but are ABSENT from the file-tree listing. A reader scanning the tree for the audio directory layout will not find them. The tree jumps from _ultron_setpieces.py directly to ring_buffer.py.
+  - DOC: File tree block for src/kenning/audio/ (lines 2633-2646)
+  - SRC: src/kenning/audio/voice_lines.py:363-375, src/kenning/audio/agent_kits.py:19, src/kenning/audio/ultron_prompt.py:37, src/kenning/audio/_ultron_identity.py:288 — all four files exist with tree-level relevance; none appear in the file tree block lines 2633-2646
+  - FIX: Insert tree entries for _ultron_identity.py, _ultron_social.py, _ultron_answer.py, voice_lines.py, ultron_prompt.py, and agent_kits.py in the audio/ file tree block (after _ultron_setpieces.py and before ring_buffer.py).
+- **[MEDIUM] WRONG_DETAIL** — The tree entry for _ultron_commands.py claims 73 explicit user commands. The actual COMMAND_SCOPE and COMMAND_RESPONSES dicts each have 79 keys. The count is stale from before additional commands were added.
+  - DOC: File tree entry for _ultron_commands.py (line 2638): '73 explicit user commands × up to 40 curated full-Ultron responses'
+  - SRC: src/kenning/audio/_ultron_commands.py:8 — COMMAND_SCOPE has 79 keys; src/kenning/audio/_ultron_commands.py:104 — COMMAND_RESPONSES has 79 keys
+  - FIX: Update the tree entry for _ultron_commands.py: '79 explicit user commands × up to 40 curated full-Ultron responses'.
+- **[MEDIUM] WRONG_DETAIL** — Eight pool-size counts in the curated-pools table are stale. They reflect the original pre-board-expansion sizes from 2026-06-15. The 2026-06-15 and 2026-06-16 passes expanded every pool substantially. Current actual sizes: ENCOURAGEMENT=77 (doc: 12), CONSOLATION=21 (doc: 8), PRAISE=42 (doc: 8), GREETING=32 (doc: 6), VICTORY=34 (doc: 6), DEFEAT=25 (doc: 5), FAREWELL=28 (doc: 4), IDENTITY=32 (doc: 6). CALM (5) and STREAMER (3) match the doc.
+  - DOC: Curated pools table in relay_speech.py body section (lines 4717-4724): ENCOURAGEMENT=12 lines, CONSOLATION=8 lines, PRAISE=8 lines, GREETING=6 lines, VICTORY=6 lines, DEFEAT=5 lines, FAREWELL=4 lines, IDENTITY=6 lines
+  - SRC: src/kenning/audio/_ultron_setpieces.py: DEFAULT_ENCOURAGEMENT_LINES=77, DEFAULT_CONSOLATION_LINES=21, DEFAULT_PRAISE_LINES=42, DEFAULT_GREETING_LINES=32, DEFAULT_VICTORY_LINES=34, DEFAULT_DEFEAT_LINES=25, DEFAULT_FAREWELL_LINES=28, DEFAULT_IDENTITY_LINES=32 (verified by direct module load)
+  - FIX: Update the curated-pools table to reflect current sizes, or drop the line counts entirely (they go stale quickly) and instead note the table was last calibrated on 2026-06-15.
+- **[MEDIUM] MISSING_FROM_DOC** — DEFAULT_COMPLIMENT_LINES is a public pool symbol in relay_speech.py used by the compliment: directive path in build_relay_line, but it is absent from the curated-pools table and from the build_relay_line routing-order description. Similarly, DEFAULT_PROMO_LINES (line 3160) is used via _DIRECTIVE_POOLS['promo'] but absent from the curated-pools table.
+  - DOC: Curated pools table in relay_speech.py body section (lines 4713-4731) — lists DEFAULT_CRITICIZE_LINES but not DEFAULT_COMPLIMENT_LINES; build_relay_line routing order also omits the compliment: directive step
+  - SRC: src/kenning/audio/relay_speech.py:3054 — DEFAULT_COMPLIMENT_LINES defined; src/kenning/audio/relay_speech.py:6277 — used via pick_line(DEFAULT_COMPLIMENT_LINES) on the compliment: directive path
+  - FIX: Add DEFAULT_COMPLIMENT_LINES and DEFAULT_PROMO_LINES rows to the curated-pools table. Add a 'compliment: directive' step to the build_relay_line routing-order description (after the criticize: directive step, around step 5.5).
+- **[MEDIUM] WRONG_DETAIL** — The doc says _RELAY_PATTERNS has 13 patterns. The actual tuple has 14 entries. The 14th pattern (added later) handles 'ask if/whether/who/whoever X' with no explicit group.
+  - DOC: match_relay_command pipeline, step 6: '_RELAY_PATTERNS — 13 patterns covering group addressees...'
+  - SRC: src/kenning/audio/relay_speech.py:119-217 — _RELAY_PATTERNS tuple contains 14 compiled patterns (counted by direct inspection of the tuple body)
+  - FIX: Update the doc to say '14 patterns' for _RELAY_PATTERNS.
+- **[MEDIUM] STALE_DOC_CLAIM** — The doc describes _apply_snap_registry as 'the FIRST build_relay_line pass'. In the actual source, it runs after _flavor_off_response, verbatim, _render_target_registry, hello/ask_day directives, relay-wrapper strip, _as_curated_command, _as_curated_reaction, roast/fun_fact, morale-compose, greet/farewell, calm-down, criticize, flame_enemy, stop_command, compliment, identity question, _as_known_fact, and _is_morale_phrase — making it approximately the 20th distinct guard. The phrase 'FIRST pass over voice_lines.SNAP_REGISTRY' is technically true (it is the first call that touches that specific registry) but reads as 'first step in build_relay_line', which is false.
+  - DOC: relay_speech.py body, line ~4608: '_apply_snap_registry(...) (the FIRST `build_relay_line` pass over `voice_lines.SNAP_REGISTRY`)'
+  - SRC: src/kenning/audio/relay_speech.py:6129-6330 — _flavor_off_response is called FIRST (before verbatim), then verbatim, then _render_target_registry, then curated_command, then curated_reaction; _apply_snap_registry appears inside the 'not compose and not context' block after morale_phrase check, roughly 20 guards into build_relay_line
+  - FIX: Clarify the phrasing to: '_apply_snap_registry(...) (the FIRST pass over `voice_lines.SNAP_REGISTRY`, inside the snap-check block that runs after the curated-command, social-reaction, and compose guards)'.
+- **[MEDIUM] MISSING_FROM_DOC** — The documented step-list for match_relay_command (steps 0-10) omits approximately 12 matchers that are actually in the pipeline: (a) _BARE_CLUTCH_RE and _BARE_ENCOURAGE_RE run BEFORE the narration guard; (b) _FLAME_ENEMY_RE, _STOP_CMD_RE, _CRITICIZE_RE, _COMPLIMENT_RE, _AGENT_SNAP_RE run after roast and before fun_fact; (c) _match_target_registry (TARGET_SNAP_REGISTRY), hello, ask_day, _PROMO_RE, _TEAM_ARGUING_RE, _FF_REQUEST_RE, _match_think_respond, _match_reported_reaction all run between the _FAREWELL_RE block and the _RELAY_PATTERNS loop; (d) _SAY_YESNO_RE, _ECONOMY_CALLOUT_RE, _DROP_WEAPON_RE, _match_imperative_directive, and bare-verbatim extraction all run after _BARE_SAY_RE. The doc step-list is structurally accurate for what it shows but incomplete as a pipeline reference.
+  - DOC: match_relay_command pipeline description, steps 0-10 (lines ~4647-4660)
+  - SRC: src/kenning/audio/relay_speech.py:1815-1897 — _BARE_CLUTCH_RE/ENCOURAGE (pre-narration), _FLAME_ENEMY_RE, _STOP_CMD_RE, _CRITICIZE_RE, _COMPLIMENT_RE, _AGENT_SNAP_RE run before _FUN_FACT_RE and the _RELAY_PATTERNS loop; src/kenning/audio/relay_speech.py:1938-2015 — _match_target_registry, hello, ask_day, _PROMO_RE, _TEAM_ARGUING_RE, _FF_REQUEST_RE, _match_think_respond, _match_reported_reaction run between _FAREWELL_RE and _RELAY_PATTERNS; src/kenning/audio/relay_speech.py:2099-2158 — _SAY_YESNO_RE, _ECONOMY_CALLOUT_RE, _DROP_WEAPON_RE, _match_imperative_directive, bare-verbatim run after _BARE_SAY_RE
+  - FIX: Expand the match_relay_command pipeline description to include the missing steps, or add a note that the listed steps are the primary group-callout paths and additional matchers (bare-clutch/encourage, flame_enemy, stop_command, criticize, compliment, agent-snap, target-registry, promo, team-arguing, ff-request, think-respond, reported-reaction, say-yesno, economy, drop-weapon, imperative, bare-verbatim) are interspersed.
+- **[LOW] WRONG_DETAIL** — The doc says ~55 regexes in _CURATED_PATTERNS. Actual count is 60.
+  - DOC: build_relay_line routing order, step 1b: '_as_curated_command — matches the payload against _CURATED_PATTERNS (~55 regexes...)'
+  - SRC: src/kenning/audio/relay_speech.py:5490-5607 — 60 regex tuples in _CURATED_PATTERNS (counted by r-string opener)
+  - FIX: Update '~55 regexes' to '~60 regexes' (or '60 regexes') in the step 1b description.
+- **[LOW] WRONG_DETAIL** — The tree entry for _ultron_setpieces.py uses a brace-expansion shorthand listing 8 pool names. DEFAULT_CLUTCH_LINES is also defined and exported from that file (used by voice_lines.py which imports it at line 61) but is not in the list.
+  - DOC: File tree entry for _ultron_setpieces.py (line 2639): 'DEFAULT_{GREETING,VICTORY,DEFEAT,FAREWELL,IDENTITY,CONSOLATION,PRAISE,ENCOURAGEMENT}_LINES' — DEFAULT_CLUTCH_LINES absent from this brace-expansion list
+  - SRC: src/kenning/audio/_ultron_setpieces.py:249 — DEFAULT_CLUTCH_LINES defined and exported
+  - FIX: Add CLUTCH to the brace-expansion list: DEFAULT_{GREETING,VICTORY,DEFEAT,FAREWELL,IDENTITY,CONSOLATION,PRAISE,ENCOURAGEMENT,CLUTCH}_LINES.
+
+## audio-routing-stt (5)
+
+- **[HIGH] MISSING_FROM_DOC** — routing_rules.py is a load-bearing aggregate module (three sections: L1 STT vocab/mishears/protection, L2 relay-lead recognition NORM2_* regexes, and L3 ROUTE_DEFAULT_THRESHOLD/MARGIN/FAMILY_THRESHOLDS) consumed by _stt_correct, command_normalizer, and command_router. It has no dedicated body section in the doc — only a historical session-log blockquote. The NORM2_MANGLED_TEAM_LEAD_RE, NORM2_TELL_TEAM_LEAD_RE, NORM2_IRREGULAR_TEAM_LEAD_RE, NORM2_TEAM_NOUN, NORM2_MANGLED_TELL, NORM2_TELL_CLASS_VERB, AGENTS, MAPS, WEAPONS, ABILITIES, LOCATIONS, TERMS, AGENT_MISHEARS, TERM_MISHEARS, MISHEAR_FORCE, FUZZY_BLOCK, PROTECT_EXTRA, MULTI_TERMS, ROUTE_DEFAULT_THRESHOLD (0.50), ROUTE_DEFAULT_MARGIN (0.06), and ROUTE_FAMILY_THRESHOLDS are all undocumented in the body.
+  - DOC: No `#### audio/routing_rules.py` section exists; only a historical blockquote at doc line 399 describes it
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/audio/routing_rules.py:1-277 (entire file)
+  - FIX: Add a `#### audio/routing_rules.py` body section describing the three sections and their key exported names, following the same format as the adjacent sections. Key items to document: AGENTS gazetteer is the single source of truth; NORM2_* regexes are consumed by command_normalizer; ROUTE_DEFAULT_THRESHOLD=0.50 / ROUTE_DEFAULT_MARGIN=0.06 / ROUTE_FAMILY_THRESHOLDS are consumed by command_router.
+- **[MEDIUM] MISSING_FROM_DOC** — The visual file-tree for src/kenning/audio/ omits command_normalizer.py, command_router.py, _router_backends.py, _command_exemplars.py, routing_rules.py, and intent_gate.py entirely. All 6 files are present in source; 5 of 6 have body sections but are not in the tree. A reader scanning the tree for the audio module inventory would miss these key routing/normalizer files.
+  - DOC: File-tree section `│ ├── audio/` block (doc lines 2629-2646)
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/docs/codebase_structure.md:2629-2646 (audio/ file-tree block lists relay_speech through waveform, skipping 6 scope files)
+  - FIX: Add tree entries for command_normalizer.py, command_router.py, _router_backends.py, _command_exemplars.py, routing_rules.py, and intent_gate.py in the audio/ directory block, each with a one-line description consistent with their body sections.
+- **[MEDIUM] STALE_DOC_CLAIM** — The file-tree description of _stt_correct.py characterises stage 3 as 'difflib fuzzy agent-snap (cutoff 0.82)'. In the current source, the primary engine in _phonetic_fuzzy_snap is rapidfuzz.distance.JaroWinkler with cutoffs 0.88 (phonetic-corroborated) and 0.92 (fuzzy-only); difflib is only a fallback when rapidfuzz is not installed. The cutoff 0.82 belongs to the separate _closest_agent function (stage 1.5 slot-correction), not stage 3. The description thus names the wrong library as primary and applies the wrong cutoff threshold.
+  - DOC: File-tree entry for `_stt_correct.py` (doc line 2630): '(3) difflib fuzzy agent-snap (cutoff 0.82, _FUZZY_BLOCK)'
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/audio/_stt_correct.py:305-349 (_phonetic_fuzzy_snap uses rapidfuzz JaroWinkler as primary, difflib only as fallback when rapidfuzz absent)
+  - FIX: Update the _stt_correct.py tree entry to read: '(3) phonetic + rapidfuzz JaroWinkler snap: phonetic-corroborated >= 0.88, fuzzy-only >= 0.92; difflib fallback when rapidfuzz absent. Slot-agent _closest_agent (stage 1.5) uses JaroWinkler >= 0.82.'  Remove the 'cutoff 0.82' association with the main snap path.
+- **[LOW] MISSING_FROM_DOC** — The doc section for _router_backends.py describes LexicalBackend, EmbeddingBackend, HybridBackend, and get_backend, but does not mention HybridBackend.try_recover() — a public method that re-enables the embedding component after a 3x-failure latch. It is called from the idle voice loop to recover from transient sidecar outages and is the mechanism that prevents a temporary sidecar crash from permanently relegating the session to lexical-only.
+  - DOC: `#### audio/_router_backends.py` section (doc lines 4281-4292)
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/audio/_router_backends.py:305-321 (HybridBackend.try_recover public method)
+  - FIX: Add a sentence to the _router_backends.py doc section: 'HybridBackend.try_recover() re-enables the embedding component after the 3x-failure latch if the sidecar has come back up; called throttled from the idle voice loop so a transient outage does not permanently disable the hybrid for the session.'
+- **[LOW] MISSING_FROM_DOC** — The doc section for command_router.py lists get_command_router() and get_embedding_backend() as the public singleton accessors, but omits reset_command_router() — a public function that drops the cached router singleton so the next call rebuilds it. It is used by the boot respawn-on-lexical retry (re-spawn sidecar, rebuild with embedding) and test isolation.
+  - DOC: `#### audio/command_router.py` section (doc lines 4263-4279)
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/audio/command_router.py:199-208 (reset_command_router public function)
+  - FIX: Add reset_command_router() to the command_router.py doc section alongside get_command_router(): 'reset_command_router() drops and resets the singleton (used by boot respawn-on-lexical retry and test isolation; takes the singleton lock to avoid races with a concurrent build).'
+
+## coding (15)
+
+- **[HIGH] WRONG_DETAIL** — The doc's file tree places `file_read_cache.py` under `src/kenning/desktop/` (line 2575, inside the `desktop/` subtree). In source the file lives at `src/kenning/coding/file_read_cache.py`. There is no `src/kenning/desktop/file_read_cache.py` in the repo. The `coding/` directory tree section (lines 2711-2753) omits it entirely.
+  - DOC: File tree line 2575: `│       │   ├── file_read_cache.py` nested under `desktop/`
+  - SRC: src/kenning/coding/file_read_cache.py (confirmed present by Glob)
+  - FIX: Remove `file_read_cache.py` from the `desktop/` tree entry (line 2575) and add it to the `coding/` tree block with its existing description: `file_read_cache.py ← 2026-05-24 cline batch 2 (T7a): per-session mtime-validated file-read cache; FileReadCache / CachedReadEntry / get_file_read_cache(session_id, max_entries=None)`.
+- **[HIGH] MISSING_FROM_DOC** — `ai_comment_watcher.py` has no entry in the `coding/` directory tree block and no dedicated `####` section. It exposes the public classes `AICommentKind`, `AICommentTrigger`, `AICommentWatcher`, the function `scan_file_for_ai_comments`, and the constant `AI_COMMENT_REGEX`.
+  - DOC: ### `src/kenning/coding/` — no `####` section or file-tree entry for ai_comment_watcher.py; only a commit-log mention at doc line 2425
+  - SRC: src/kenning/coding/ai_comment_watcher.py:150 (class AICommentWatcher), :78 (AI_COMMENT_REGEX), :150 (AICommentKind), :159 (AICommentTrigger), :193 (scan_file_for_ai_comments)
+  - FIX: Add a tree-listing entry under `coding/` and a `#### coding/ai_comment_watcher.py` section documenting `AICommentKind`, `AICommentTrigger`, `AICommentWatcher`, `scan_file_for_ai_comments`, and `AI_COMMENT_REGEX`.
+- **[HIGH] MISSING_FROM_DOC** — `architect_supervisor.py` has no entry in the `coding/` directory tree block and no `####` section. It exposes `ArchitectRequest`, `ArchitectPlan`, `ArchitectSupervisor`, and `DEFAULT_ARCHITECT_SYSTEM_PROMPT`.
+  - DOC: ### `src/kenning/coding/` — no `####` section or file-tree entry for architect_supervisor.py; only commit-log mention at doc line 2425
+  - SRC: src/kenning/coding/architect_supervisor.py:77 (DEFAULT_ARCHITECT_SYSTEM_PROMPT), :101 (ArchitectRequest), :115 (ArchitectPlan), :145 (ArchitectSupervisor)
+  - FIX: Add a tree-listing entry and a `#### coding/architect_supervisor.py` section documenting the three dataclasses and the supervisor class.
+- **[HIGH] MISSING_FROM_DOC** — `coder_modes.py` is absent from the `coding/` directory tree block and has no `####` section. It exposes `EditFormat`, `CoderMode`, `get_coder_mode`, `list_coder_modes`, `edit_modes`, `read_only_modes`.
+  - DOC: ### `src/kenning/coding/` — no `####` section or file-tree entry for coder_modes.py; only commit-log mention at doc line 2425
+  - SRC: src/kenning/coding/coder_modes.py:36 (EditFormat), :56 (CoderMode), :145 (get_coder_mode), :152 (list_coder_modes), :157 (edit_modes), :162 (read_only_modes)
+  - FIX: Add a tree-listing entry and a `#### coding/coder_modes.py` section.
+- **[HIGH] MISSING_FROM_DOC** — `commit_message.py` is absent from the `coding/` directory tree block and has no `####` section. It exposes `CommitMessageRequest`, `CommitMessageResult`, `generate_commit_message`, `strip_outer_quotes`, and `DEFAULT_COMMIT_SYSTEM_PROMPT`.
+  - DOC: ### `src/kenning/coding/` — no `####` section or file-tree entry for commit_message.py; only commit-log mention at doc line 2425
+  - SRC: src/kenning/coding/commit_message.py:52 (DEFAULT_COMMIT_SYSTEM_PROMPT), :66 (CommitMessageRequest), :79 (CommitMessageResult), :93 (generate_commit_message), :168 (strip_outer_quotes)
+  - FIX: Add a tree-listing entry and a `#### coding/commit_message.py` section.
+- **[HIGH] MISSING_FROM_DOC** — `edit_matcher.py` is absent from the `coding/` directory tree block and has no `####` section. It is the fuzz-cascade SEARCH/REPLACE edit engine, exposing `Strategy`, `EditResult`, `apply_edit`, `apply_edit_to_files`, and `find_similar_lines`.
+  - DOC: ### `src/kenning/coding/` — no `####` section or file-tree entry for edit_matcher.py; only commit-log mention at doc line 2425
+  - SRC: src/kenning/coding/edit_matcher.py:79 (Strategy), :90 (EditResult), :120 (apply_edit), :195 (apply_edit_to_files), :469 (find_similar_lines)
+  - FIX: Add a tree-listing entry and a `#### coding/edit_matcher.py` section describing the five-strategy cascade.
+- **[HIGH] MISSING_FROM_DOC** — `edit_recovery.py` is absent from the `coding/` directory tree block and has no `####` section. It exposes `EditSpec`, `EditRecoveryResult`, `did_edit_likely_apply`, `is_search_mismatch_error`, `enrich_mismatch_error`, `run_edit_with_recovery`, and `wrap_edit_tool_with_recovery`.
+  - DOC: ### `src/kenning/coding/` — no `####` section or file-tree entry for edit_recovery.py; referenced only in history session-log at doc lines 2046/2334
+  - SRC: src/kenning/coding/edit_recovery.py:59 (EditSpec), :86 (did_edit_likely_apply), :147 (is_search_mismatch_error), :153 (enrich_mismatch_error), :173 (EditRecoveryResult), :199 (run_edit_with_recovery), :271 (wrap_edit_tool_with_recovery)
+  - FIX: Add a tree-listing entry and a `#### coding/edit_recovery.py` section.
+- **[HIGH] MISSING_FROM_DOC** — `file_mention_resolver.py` is absent from the `coding/` directory tree block and has no `####` section. It exposes `FileMention` and `resolve_mentions`.
+  - DOC: ### `src/kenning/coding/` — no `####` section or file-tree entry for file_mention_resolver.py; only commit-log mention at doc line 2425
+  - SRC: src/kenning/coding/file_mention_resolver.py:94 (FileMention), :111 (resolve_mentions)
+  - FIX: Add a tree-listing entry and a `#### coding/file_mention_resolver.py` section.
+- **[HIGH] MISSING_FROM_DOC** — `patch_v4a.py` is absent from the `coding/` directory tree block and has no `####` section. It implements the v4a unified-patch format with `parse_v4a_patch`, `apply_patch`, and associated dataclasses.
+  - DOC: ### `src/kenning/coding/` — no `####` section or file-tree entry for patch_v4a.py; only commit-log mention at doc line 2425
+  - SRC: src/kenning/coding/patch_v4a.py:71-84 (BEGIN_PATCH/END_PATCH/ADD_PREFIX/UPDATE_PREFIX/DELETE_PREFIX/SCOPE_PREFIX/EOF_MARKER/FUZZ_* constants), :87 (PatchAction), :94 (PatchHunk), :116 (PatchFileBlock), :127 (ParsedPatch), :133 (PatchError), :142 (parse_v4a_patch), :350 (apply_patch)
+  - FIX: Add a tree-listing entry and a `#### coding/patch_v4a.py` section.
+- **[HIGH] MISSING_FROM_DOC** — `python_lint.py` is absent from the `coding/` directory tree block and has no `####` section. It exposes `lint_python`, `FLAKE8_FATAL_SELECT`, and `DEFAULT_FLAKE8_TIMEOUT`.
+  - DOC: ### `src/kenning/coding/` — no `####` section or file-tree entry for python_lint.py; only commit-log mention at doc line 2425 and test-section reference at line 2250
+  - SRC: src/kenning/coding/python_lint.py:58 (FLAKE8_FATAL_SELECT), :69 (DEFAULT_FLAKE8_TIMEOUT), :78 (lint_python)
+  - FIX: Add a tree-listing entry and a `#### coding/python_lint.py` section.
+- **[HIGH] MISSING_FROM_DOC** — `tree_sitter_lint.py` is absent from the `coding/` directory tree block and has no `####` section. It exposes `LintError`, `LintReport`, `tree_sitter_lint`, and `MAX_NODE_VISITS`.
+  - DOC: ### `src/kenning/coding/` — no `####` section or file-tree entry for tree_sitter_lint.py; only commit-log mention at doc line 2425
+  - SRC: src/kenning/coding/tree_sitter_lint.py:47 (MAX_NODE_VISITS), :51 (LintError), :74 (LintReport), :118 (tree_sitter_lint)
+  - FIX: Add a tree-listing entry and a `#### coding/tree_sitter_lint.py` section.
+- **[MEDIUM] MISSING_FROM_DOC** — The `####` section for `project_introspect.py` lists `invalidate_snapshot_cache(project_path=None)` but omits three additional public functions added in a production-hardening pass: `invalidate_snapshot_cache_for_file(file_path)`, `install_bus_invalidator()`, and `reset_bus_invalidator_for_testing()`. These are public (no underscore prefix) and are tested in the introspect test suite.
+  - DOC: #### `coding/project_introspect.py` — Internals list and public function list (doc line 5568)
+  - SRC: src/kenning/coding/project_introspect.py:396 (invalidate_snapshot_cache_for_file), :416 (install_bus_invalidator), :472 (reset_bus_invalidator_for_testing)
+  - FIX: Add `invalidate_snapshot_cache_for_file(file_path) -> int`, `install_bus_invalidator() -> Callable[[], None]`, and `reset_bus_invalidator_for_testing()` to the `#### coding/project_introspect.py` Internals list below `invalidate_snapshot_cache`.
+- **[MEDIUM] MISSING_FROM_DOC** — The `####` section for `runner.py` lists `start_task`, `has_active_task`, `cancel_active`, `progress_narration`, `completion_narration`, `pop_budget_warning`, and `record_pre_task_aborted` but omits two public methods added in production-hardening: `bind_session(session_id)` (wires the MCP coordinator to the active handle) and `drain_task_successes() -> List[tuple]` (drains the EvolutionService capsule queue). Both are referenced in the `voice.py` section and the file-tree blurb for runner.py.
+  - DOC: #### `coding/runner.py` — CodingTaskRunner method list (doc lines 5498-5509)
+  - SRC: src/kenning/coding/runner.py:228 (bind_session), :1107 (drain_task_successes)
+  - FIX: Add `bind_session(session_id)` and `drain_task_successes() -> List[tuple]` to the `CodingTaskRunner` method list in `#### coding/runner.py`.
+- **[MEDIUM] MISSING_FROM_DOC** — The `####` section lists `extract_python_metadata` and `extract_metadata_from_path` but omits two additional public helpers: `is_python_file(path) -> bool` and `is_syntax_valid(source) -> str`.
+  - DOC: #### `coding/ast_metadata.py` — public surface list (doc lines 5510-5519)
+  - SRC: src/kenning/coding/ast_metadata.py:275 (is_python_file), :286 (is_syntax_valid)
+  - FIX: Add `is_python_file(path) -> bool` and `is_syntax_valid(source) -> bool` to the `#### coding/ast_metadata.py` section's public surface list.
+- **[LOW] MISSING_FROM_DOC** — The `####` section mentions the PRIOR_PROLOGUE vs PROLOGUE selection inside `_build_digest_prompt` but does not list `DIGEST_PROMPT_PROLOGUE` and `DIGEST_PROMPT_PRIOR_PROLOGUE` as named module-level constants, which they are.
+  - DOC: #### `coding/project_digest.py` — Internal helpers list (doc line 5542)
+  - SRC: src/kenning/coding/project_digest.py:117 (DIGEST_PROMPT_PROLOGUE), :128 (DIGEST_PROMPT_PRIOR_PROLOGUE)
+  - FIX: Add `DIGEST_PROMPT_PROLOGUE` and `DIGEST_PROMPT_PRIOR_PROLOGUE` to the module-level constants listed in `#### coding/project_digest.py`.
+
+## core-toplevel (15)
+
+- **[HIGH] WRONG_DETAIL** — Source Channel enum has exactly three members: USER, TEAMMATE, SYSTEM. Doc lists five completely different members (USER, SYSTEM, BACKGROUND, EXTERNAL, OTHER), none of which match what is actually there (TEAMMATE is entirely absent from the doc; BACKGROUND/EXTERNAL/OTHER do not exist in source). The from_str fallback is USER in source, not OTHER as the doc states.
+  - DOC: ### `src/kenning/channels.py` — 'Channel enum (USER / SYSTEM / BACKGROUND / EXTERNAL / OTHER)' and 'Channel.from_str … with OTHER fallback'
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/channels.py:38-70
+  - FIX: Replace the Channel enum member list with 'USER / TEAMMATE / SYSTEM', document TEAMMATE as the VoiceMeeter loopback game-voice channel, and correct the from_str fallback to USER.
+- **[HIGH] WRONG_DETAIL** — The public function is named maybe_local_clock_reply(user_text, *, now=None) in source, not maybe_handle. The doc also does not mention the injectable 'now' parameter. maybe_handle does not exist in this module.
+  - DOC: ### `src/kenning/local_clock_reply.py` — 'Public: maybe_handle(user_text) -> Optional[str]'
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/local_clock_reply.py:341-379
+  - FIX: Update the public API entry to 'maybe_local_clock_reply(user_text, *, now=None) -> Optional[str]' and note the clock-injection parameter for testing.
+- **[HIGH] WRONG_DETAIL** — Every documented function name is wrong. Source exports: raise_process_priority(level='above_normal') -> bool, pause_gc() -> bool, resume_gc(*, collect_now=True) -> bool, is_gc_paused() -> bool, warmup_llm(generate_fn, *, prompt=DEFAULT_LLM_WARMUP_PROMPT) -> Optional[float], warmup_embedder(encode_fn, *, prompt='warmup') -> Optional[float]. None of apply_process_priority, tune_gc, warmup_llm_engine, or warmup_embedder(embedder) exist.
+  - DOC: ### `src/kenning/latency_hygiene.py` — 'Public: apply_process_priority() / tune_gc() / warmup_llm_engine(engine) / warmup_embedder(embedder)'
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/latency_hygiene.py:59,127,151,197,235
+  - FIX: Replace the entire public function list with the correct names and signatures: raise_process_priority, pause_gc, resume_gc, is_gc_paused, warmup_llm, warmup_embedder.
+- **[HIGH] WRONG_DETAIL** — current_turn_id() does not exist; the correct name is get_turn() -> Optional[int]. The full public __all__ also includes set_turn(turn_id), get_phase() -> Optional[str], snapshot() -> dict, and restore(state) which are absent from the doc. tlog() signature is tlog(log, msg, *, level=logging.INFO, **kwargs), not tlog(logger, event, **kwargs). fmt() is the structured line formatter (turn/phase/msg/kwargs), not just a 'short formatter for kv emission'.
+  - DOC: ### `src/kenning/trace.py` — 'Public: next_turn() / set_phase(name) / current_turn_id() / tlog(logger, event, **kwargs) / phase(name) / fmt(value)'
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/trace.py:43-54,67,75,80,103,108,118,132,170,194
+  - FIX: Correct current_turn_id -> get_turn; add set_turn, get_phase, snapshot, restore to the public list; fix tlog signature to show the level parameter.
+- **[HIGH] WRONG_DETAIL** — Multiple wrong details: (1) Constructor default threshold is 0.8 in source, not 0.65. (2) register() signature is register(canonical_phrase, *, handler=None, priority=0), not register(name, phrase, *, threshold=None). (3) .is_loaded() is documented as a method but source exposes it as a property named .loaded (not .is_loaded). (4) IntentMatch fields are (canonical_phrase, utterance, similarity) — no 'name' field, no 'threshold' field. (5) IntentRegistration fields are (canonical_phrase, handler, priority) — no 'name' field, no 'threshold' field.
+  - DOC: ### `src/kenning/intent/recognizer.py` — 'KenningIntentRecognizer(model, variant, threshold=0.65) / .register(name, phrase, *, threshold=None) / .is_loaded() / IntentMatch(name, phrase, similarity, threshold) / IntentRegistration(name, phrase, threshold)'
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/intent/recognizer.py:48-65,79-113,239-267,320-372
+  - FIX: Correct all five items: threshold default to 0.8; register signature; .loaded property name; IntentMatch and IntentRegistration field names.
+- **[HIGH] STALE_DOC_CLAIM** — The doc describes only one hint class (brevity). Source has three hint classes dispatched in priority order: is_procedural_request() -> _PROCEDURAL_HINT, is_factual_question() -> _FACTUAL_HINT, is_brief_question() -> _BREVITY_HINT. apply_brevity_hint() now dispatches across all three. The public API is missing is_procedural_request() and is_factual_question(). Additionally, the doc says brevity detection uses '≤12 words OR ≤80 chars' but source uses AND (the OR was a documented bug fixed 2026-05-19).
+  - DOC: ### `src/kenning/response_style.py` — describes only is_brief_question and apply_brevity_hint; 'brevity hint for short questions'
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/response_style.py:63,206,222,272-310
+  - FIX: Add is_procedural_request() and is_factual_question() to the public API. Correct the brevity threshold description to AND. Update the module description to reflect that three hint classes exist.
+- **[HIGH] WRONG_DETAIL** — The doc names MemoryTopicalChunkingConfig and MemoryDiscourseTaggingConfig. Source defines these classes as TopicalChunkingConfig (line 1115) and DiscourseTaggingConfig (line 1136) — no 'Memory' prefix on either class name.
+  - DOC: ### `src/kenning/config.py` — lists 'MemoryTopicalChunkingConfig' and 'MemoryDiscourseTaggingConfig' in the sub-models list
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/config.py:1115-1156
+  - FIX: Change MemoryTopicalChunkingConfig -> TopicalChunkingConfig and MemoryDiscourseTaggingConfig -> DiscourseTaggingConfig in the config.py doc section.
+- **[HIGH] WRONG_DETAIL** — The doc states the current default LLM preset is 'qwen3.5-4b'. Source at LLMConfig.preset field shows the default is 'josiefied-qwen3-4b' (line 847). qwen3.5-4b is a retained swap-back preset, not the active default.
+  - DOC: ### `src/kenning/config.py` — 'LLM_PRESETS … Current default qwen3.5-4b'
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/config.py:847
+  - FIX: Update the default preset description to 'josiefied-qwen3-4b'.
+- **[MEDIUM] MISSING_FROM_DOC** — The doc's sub-models list omits approximately 15 config classes present in source and in KenningConfig's top-level fields: PushToTalkConfig, RelaySpeechConfig, SemanticRouterConfig, StopButtonConfig, VisualizerConfig, SpotifyConfig, TestingModeConfig, EvolutionConfig, SkillsConfig, EventsConfig, HooksConfig, McpConfig, McpServerSpec, InteractiveToolsBlockConfig, DeepResearchConfig, LLMServerConfig, LLMRagConfig, LLMCompressionConfig, LLMSelfConsistencyConfig, LLMHistoryCompressionConfig, LLMPersonaConfig, IdleVramReclaimConfig, MemoryHistoryCompressionConfig, AmbiguityBandClarificationConfig, RoutingIRMAConfig, OpenClawBridgeConfig, OpenClawBlockAndReviseConfig, CitationConfig, TrafilaturaConfig, WebSearchQueryReformulationConfig, CodingDialogAutoHandlerConfig, CodingPreEditSnapshotConfig, CodingArchitectConfig, CodingRepoMapConfig, CodingPreWriteLintConfig, CodingAiCommentWatcherConfig, OutputWatchConfig, ClickPreviewConfig, BrowserUseConfig, BackgroundSummarizerConfig.
+  - DOC: ### `src/kenning/config.py` — sub-models list
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/config.py:3701-3920,3923-4016
+  - FIX: Append the missing config class names to the sub-models list. At minimum add the top-level KenningConfig fields that have no matching entry: push_to_talk (PushToTalkConfig), relay_speech (RelaySpeechConfig), semantic_router (SemanticRouterConfig), spotify (SpotifyConfig), testing_mode (TestingModeConfig), evolution (EvolutionConfig), skills (SkillsConfig), events (EventsConfig), hooks (HooksConfig), mcp (McpConfig), deep_research (DeepResearchConfig), stop_button (StopButtonConfig), visualizer (VisualizerConfig), browser_use (BrowserUseConfig).
+- **[MEDIUM] MISSING_FROM_DOC** — src/kenning/diagnostics.py is a top-level module in scope with public API (audio_diagnostics_enabled() function and sentinel logic), but has no dedicated doc section under 'Source modules'. It is only referenced in passing in the audio output section.
+  - DOC: No '### `src/kenning/diagnostics.py`' section exists in the Source modules area of codebase_structure.md
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/diagnostics.py:1-30 (file exists at top level)
+  - FIX: Add a '### `src/kenning/diagnostics.py`' section describing its purpose (operator toggle for verbose audio diagnostics), the sentinel file (~/.kenning/audio_diagnostics_on), the config flag (diagnostics.spoken_audio_logging), and the public functions it exposes.
+- **[MEDIUM] WRONG_DETAIL** — Source has a fourth exit code: 4 is returned when the anticheat import firewall fails to install or fails to enforce while anticheat-safe mode is active (added 2026-06-15/06-17 audit hardening). This is a hard REFUSE-TO-START path that the doc omits entirely.
+  - DOC: ### `src/kenning/__main__.py` — 'Exit codes: 0 ok / 1 startup-or-run failure / 2 missing model / 3 duplicate instance'
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/__main__.py:145-159
+  - FIX: Add '4 anticheat import firewall failed to install or is not enforcing' to the exit codes list.
+- **[MEDIUM] MISSING_FROM_DOC** — Source defines two additional module-level public items: _ResilientStream class (crash-proof stdout/stderr wrapper added 2026-06-18 to fix OSError [Errno 22] crashes on broken consoles) and _ensure_utf8_stdio() function (forces UTF-8 encoding + wraps streams with _ResilientStream). While private by convention (underscore), these are load-bearing for the anticheat-safe boot and are referenced in comments as an important 2026-06-18 fix. The doc should at least note their existence.
+  - DOC: ### `src/kenning/__main__.py` — Public section lists only main()
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/__main__.py:18-94
+  - FIX: Add a note that __main__.py also contains _ResilientStream (crash-proof stream wrapper) and _ensure_utf8_stdio() called at the top of main() for robustness on broken/redirected consoles.
+- **[MEDIUM] WRONG_DETAIL** — The doc says the SIGTERM/atexit handlers call _kill_embedder_sidecar(). Source shows the _sigint handler simply calls orchestrator.shutdown(), and atexit.register(orchestrator.shutdown). There is no _kill_embedder_sidecar() call in __main__.py (that reaping happens inside orchestrator.shutdown() or at boot via sidecar_lock). The specific function name the doc attributes to __main__.py does not appear in that file.
+  - DOC: ### `src/kenning/__main__.py` — 'SIGTERM handler and atexit backstop … trigger full cleanup (sidecar reap via _kill_embedder_sidecar())'
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/__main__.py:99-112
+  - FIX: Remove the reference to _kill_embedder_sidecar() from the __main__.py doc section; note that cleanup is delegated to orchestrator.shutdown() which handles sidecar reaping.
+- **[MEDIUM] WRONG_DETAIL** — Source defines two additional error classes not in the doc: OpenClawAuthError (subclass of OpenClawGatewayError — 401/403 credential rejection) and OpenClawToolError (subclass of KenningError — tool invocation failed at application layer, distinct from transport failures). Both are in __all__.
+  - DOC: ### `src/kenning/errors.py` — DependencyUnavailableError sub-hierarchy lists 'OpenClawGatewayError' but stops there
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/errors.py:128-139
+  - FIX: Add OpenClawAuthError (under OpenClawGatewayError) and OpenClawToolError (direct KenningError subclass) to the hierarchy in the errors.py section.
+- **[LOW] WRONG_DETAIL** — Source searches torch/lib and nvidia-*-cu12 site-packages dirs, adding any 'bin' subdirectories. It finds cudart64_12.dll and cublas64_12.dll this way. cudnn_ops_infer64_9.dll is not mentioned in the code and would only be found if it happened to be in one of those discovered directories. The doc implies it is explicitly targeted, which is misleading.
+  - DOC: ### `src/kenning/__init__.py` — 'adds CUDA runtime DLL directories … cudnn_ops_infer64_9.dll'
+  - SRC: C:/STC/ultronPrototype/.claude/worktrees/infallible-kepler-0a865d/src/kenning/__init__.py:19-40
+  - FIX: Rephrase to say the init adds torch/lib and nvidia-*-cu12/bin directories to os.add_dll_directory so DLLs like cudart64_12.dll and cublas64_12.dll are discoverable, removing the specific cudnn mention.
+
+## desktop (15)
+
+- **[HIGH] MISSING_FROM_DOC** — browser_use.py (~4000+ lines, 30+ public classes including BrowserUseTool, BrowserUseResult, BrowserElement, BrowserState, BrowserHtmlResult, BrowserTextResult, BrowserBboxResult, BrowserActionResult, BrowserCookiesResult, BrowserProfile, BrowserCdpResult, BrowserEvalResult, BrowserScreenshotResult, JsScriptAnalysis, CdpStatementAnalysis, and singletons get_browser_use_tool/set_browser_use_tool/reset_browser_use_tool_for_testing) has no dedicated #### body section. Only referenced in historical Validating HEAD log entries (lines 1810, 1946, 1966).
+  - DOC: ### `src/kenning/desktop/` — no `#### desktop/browser_use.py` section exists in the body
+  - SRC: src/kenning/desktop/browser_use.py:906 (class BrowserUseTool), :448 (class BrowserUseResult), :254 (class JsScriptAnalysis), :738 (def analyze_js_script), :3688 (def get_browser_use_tool)
+  - FIX: Add a `#### desktop/browser_use.py` section documenting BrowserUseTool, the result dataclass hierarchy, JsScriptAnalysis/CdpStatementAnalysis validators, and the singleton accessors.
+- **[HIGH] MISSING_FROM_DOC** — browser_sessions.py (BrowserSession, BrowserSessionResult, BrowserSessionsManager with named-session lifecycle management, singleton accessors) has no dedicated #### body section. Only referenced in historical log entries (lines 1959, 1967).
+  - DOC: ### `src/kenning/desktop/` — no `#### desktop/browser_sessions.py` section exists in the body
+  - SRC: src/kenning/desktop/browser_sessions.py:101 (class BrowserSession), :112 (class BrowserSessionResult), :138 (class BrowserSessionsManager), :522 (def get_browser_sessions_manager)
+  - FIX: Add a `#### desktop/browser_sessions.py` section documenting BrowserSession, BrowserSessionResult, BrowserSessionsManager, and singleton accessors.
+- **[HIGH] MISSING_FROM_DOC** — browser_sequence.py (BrowserSequenceStep, BrowserScreenshotRef, BrowserStepResult, BrowserSequenceResult, BrowserSequenceRunner, get/set_browser_sequence_runner) has no dedicated #### body section. Only referenced in historical log entry (line 1962, 1968).
+  - DOC: ### `src/kenning/desktop/` — no `#### desktop/browser_sequence.py` section exists in the body
+  - SRC: src/kenning/desktop/browser_sequence.py:74 (class BrowserSequenceStep), :101 (class BrowserScreenshotRef), :119 (class BrowserStepResult), :135 (class BrowserSequenceResult), :158 (class BrowserSequenceRunner)
+  - FIX: Add a `#### desktop/browser_sequence.py` section documenting the step/result dataclasses and BrowserSequenceRunner.
+- **[HIGH] MISSING_FROM_DOC** — sequence.py (catalog 09 T5) has 9 public classes/enums and a full screenshot-bracketed step runner with VLM verification, but has no dedicated #### body section. Only mentioned in a historical log line (line 2073).
+  - DOC: ### `src/kenning/desktop/` — no `#### desktop/sequence.py` section exists in the body
+  - SRC: src/kenning/desktop/sequence.py:88 (class SequenceStatus), :96 (class StepOutcome), :104 (class VlmVerdict), :115 (class SequenceStep), :145 (class ScreenshotRef), :175 (class StepResult), :205 (class SequenceResult), :237 (class DesktopSequenceRunner), :562 (def get_sequence_runner)
+  - FIX: Add a `#### desktop/sequence.py` section documenting SequenceStep, SequenceResult, DesktopSequenceRunner, and the VLM verification/auto-pass mechanism.
+- **[HIGH] MISSING_FROM_DOC** — ocr.py (catalog 08 T7: Tesseract-backed OCR with OCRResult, is_ocr_available, ocr_image_bytes, ocr_screen_region, ocr_screen_monitor; lazy pytesseract import, fail-open) has no dedicated #### body section. Only mentioned in historical log entries (lines 2038, 2050).
+  - DOC: ### `src/kenning/desktop/` — no `#### desktop/ocr.py` section exists in the body
+  - SRC: src/kenning/desktop/ocr.py:92 (class OCRResult), :193 (def is_ocr_available), :214 (def ocr_image_bytes), :285 (def ocr_screen_region), :352 (def ocr_screen_monitor)
+  - FIX: Add a `#### desktop/ocr.py` section documenting OCRResult and the three public extraction functions.
+- **[HIGH] MISSING_FROM_DOC** — clipboard.py (catalog 09 T4: ClipboardResult, ClipboardManager with read/write/taint integration, singleton accessors) has no dedicated #### body section. Only mentioned in a historical log line (line 2072).
+  - DOC: ### `src/kenning/desktop/` — no `#### desktop/clipboard.py` section exists in the body
+  - SRC: src/kenning/desktop/clipboard.py:76 (class ClipboardResult), :168 (class ClipboardManager), :381 (def get_clipboard_manager), :389 (def set_clipboard_manager)
+  - FIX: Add a `#### desktop/clipboard.py` section documenting ClipboardResult, ClipboardManager, and the Cap-2/Cap-3 safety gating architecture.
+- **[HIGH] MISSING_FROM_DOC** — click_preview.py (VLM-confirmed click-preview gate: PreviewDecision, ConfirmedClick, PreviewResult, ConfirmationHistory bounded store, draw_crosshair_on_image, preview_click) has no dedicated #### body section. Only appears in a file-tree annotation (line 2573).
+  - DOC: ### `src/kenning/desktop/` — no `#### desktop/click_preview.py` section exists in the body
+  - SRC: src/kenning/desktop/click_preview.py:65 (class PreviewDecision), :75 (class ConfirmedClick), :85 (class PreviewResult), :101 (def draw_crosshair_on_image), :150 (class ConfirmationHistory), :199 (def preview_click)
+  - FIX: Add a `#### desktop/click_preview.py` section documenting the PreviewDecision enum, result dataclasses, ConfirmationHistory, and preview_click function.
+- **[HIGH] MISSING_FROM_DOC** — dialog_poller.py (catalog 08: background polling daemon, DialogPoller with start/stop lifecycle, event-driven DialogAppearedEvent/DialogResolvedEvent publication, 750 ms cadence, singleton accessors) has no dedicated #### body section. Only mentioned in historical log entry (line 2038).
+  - DOC: ### `src/kenning/desktop/` — no `#### desktop/dialog_poller.py` section exists in the body
+  - SRC: src/kenning/desktop/dialog_poller.py:59 (class _TrackedDialog), :72 (class DialogPoller), :415 (def get_dialog_poller), :429 (def set_dialog_poller)
+  - FIX: Add a `#### desktop/dialog_poller.py` section documenting DialogPoller, its polling cadence/event contract, and singleton accessors.
+- **[HIGH] MISSING_FROM_DOC** — win32_helpers.py (catalog 07 T2: MonitorDpi, get_monitor_dpi, get_monitor_dpi_for_window, get_last_input_idle_ms, is_window_cloaked, BlockInputResult, block_input_context context manager, logical_to_physical, physical_to_logical) has no dedicated #### body section. Only referenced in a historical log entry (line 2214).
+  - DOC: ### `src/kenning/desktop/` — no `#### desktop/win32_helpers.py` section exists in the body
+  - SRC: src/kenning/desktop/win32_helpers.py:173 (class MonitorDpi), :218 (def get_monitor_dpi), :285 (def get_monitor_dpi_for_window), :322 (def get_last_input_idle_ms), :381 (def is_window_cloaked), :431 (class BlockInputUnavailableError), :442 (class BlockInputResult), :497 (def block_input_context), :608 (def logical_to_physical), :651 (def physical_to_logical)
+  - FIX: Add a `#### desktop/win32_helpers.py` section documenting MonitorDpi, DPI helpers, idle probe, cloaked-window detection, BlockInputResult, block_input_context, and coordinate conversion functions.
+- **[MEDIUM] WRONG_DETAIL** — The Screenshot class description lists only 7 fields and omits the `bytes_discarded: bool = False` field and the `without_bytes() -> Screenshot` method (the analyze-and-discard pattern used by ScreenContextCache). Additionally, ScreenCaptureError is in the package __all__ but not mentioned in the doc section.
+  - DOC: #### `desktop/capture.py` — `class Screenshot -- frozen: image_bytes (PNG), monitor_index, width, height, timestamp, origin_x/y`
+  - SRC: src/kenning/desktop/capture.py:73 (bytes_discarded: bool = False) and :75 (def without_bytes)
+  - FIX: Add `bytes_discarded` (bool, default False) and `without_bytes() -> Screenshot` to the Screenshot description. Add a bullet for `class ScreenCaptureError(RuntimeError)` since it is exported from the package __init__.
+- **[MEDIUM] WRONG_DETAIL** — The doc lists only two method values `wm_close` and `kill_tree` for CloseWindowResult.method; source documents a third value `pywinauto_close` in the comment alongside the field definition.
+  - DOC: #### `desktop/windows.py` — `class CloseWindowResult` — `success + window + method (wm_close / kill_tree) + suspected_unsaved + error`
+  - SRC: src/kenning/desktop/windows.py:664 (method: str = ""  # "wm_close" / "pywinauto_close" / "kill_tree" / "")
+  - FIX: Update the CloseWindowResult description to read `method ("wm_close" / "pywinauto_close" / "kill_tree")`.
+- **[MEDIUM] MISSING_FROM_DOC** — FocusResult (frozen dataclass: success, window, method, error with three method values set_foreground_window / app_activate_com / app_activate_powershell) and focus_by_title (two-tier foreground focus: SetForegroundWindow + WScript.Shell AppActivate + PowerShell fallback) are public symbols in windows.py but absent from the current-state #### body. They are only referenced in a historical session log entry (doc line 2222).
+  - DOC: #### `desktop/windows.py` body section — no mention of FocusResult or focus_by_title
+  - SRC: src/kenning/desktop/windows.py:325 (class FocusResult), :441 (def focus_by_title)
+  - FIX: Add bullets for `class FocusResult` and `focus_by_title(partial_title, *, prefer_monitor, fall_back_to_app_activate, timeout_s) -> FocusResult` to the `#### desktop/windows.py` section.
+- **[MEDIUM] MISSING_FROM_DOC** — Four public functions in uia.py have no entry in the current-state #### body: physical_center_of_element, physical_rect_of_element (DPI-aware coordinate conversion helpers), dpi_aware_click_at_element_center (high-DPI-safe click), and wait_for_pixel_color (polling barrier by pixel colour). They are referenced only in historical log entries (doc lines 2065, 2075, 2231).
+  - DOC: #### `desktop/uia.py` body section — no mention of physical_center_of_element, physical_rect_of_element, dpi_aware_click_at_element_center, or wait_for_pixel_color
+  - SRC: src/kenning/desktop/uia.py:605 (def physical_center_of_element), :653 (def physical_rect_of_element), :695 (def dpi_aware_click_at_element_center), :1143 (def wait_for_pixel_color)
+  - FIX: Add bullets for these four functions to the `#### desktop/uia.py` section: physical_center_of_element, physical_rect_of_element, dpi_aware_click_at_element_center (DPI-aware coordinate helpers), and wait_for_pixel_color (pixel-colour polling barrier with clock_fn/sleep_fn injection).
+- **[LOW] WRONG_DETAIL** — The DialogInfo description lists three fields (window, class_name, matched_by) but omits the fourth field `control_type: str = ""` present in source.
+  - DOC: #### `desktop/dialog_control.py` — `class DialogInfo (window + class_name + matched_by)`
+  - SRC: src/kenning/desktop/dialog_control.py:141-147 (class DialogInfo fields: window, class_name, control_type='', matched_by='')
+  - FIX: Update the DialogInfo description to include `control_type` (e.g. `window + class_name + control_type + matched_by`).
+- **[LOW] WRONG_DETAIL** — The section header lists only two RoutingIntent kinds (APP_LAUNCH + SCREEN_CONTEXT_QUERY) but the module also handles WINDOW_MOVE and WINDOW_CLOSE. The frozen-result-types bullet names only AppLaunchVoiceResult and ScreenContextVoiceResult, omitting WindowMoveVoiceResult and WindowCloseVoiceResult (both are exported in __all__ and documented further down in the same section — but the opening class-list bullet is incomplete).
+  - DOC: #### `desktop/voice.py` — header: `Bridges :class:`RoutingIntent` (kinds APP_LAUNCH + SCREEN_CONTEXT_QUERY)...` and bullet `class AppLaunchVoiceResult / class ScreenContextVoiceResult -- frozen result types`
+  - SRC: src/kenning/desktop/voice.py:68 (class WindowMoveVoiceResult), :86 (class WindowCloseVoiceResult)
+  - FIX: Update the header to mention all four bridged kinds (APP_LAUNCH + SCREEN_CONTEXT_QUERY + WINDOW_MOVE + WINDOW_CLOSE) and expand the class bullet to list all four result types.
+
+## docs-runtime-flows (12)
+
+- **[HIGH] STALE_DOC_CLAIM** — The models/ table marks Qwen3.5-4B-Q4_K_M.gguf as 'CURRENT DEFAULT 2026-05-20 round 8' and the 8B Josiefied as 'deleted'. In fact, config.yaml (line 558) currently uses preset 'josiefied-qwen3-8b', and Josiefied-Qwen3-8B-abliterated-v1.Q5_K_M.gguf is present on disk as the Ultron 1.0 active model.
+  - DOC: ### `models/` (main checkout only) — "State as of 2026-05-20 round 8: only the active LLM + draft remain on disk"
+  - SRC: config.yaml:558 (preset: "josiefied-qwen3-8b"); docs/codebase_structure.md:7176 ("CURRENT DEFAULT 2026-05-20 round 8" for Qwen3.5-4B-Q4_K_M.gguf)
+  - FIX: Update the models/ table 'State as of' note and move Josiefied-Qwen3-8B-abliterated-v1.Q5_K_M.gguf from the 'Deleted' table to the active-files table, noting it is the current Ultron 1.0 default (preset 'josiefied-qwen3-8b', n_ctx 4096, 10 GB VRAM).
+- **[HIGH] STALE_DOC_CLAIM** — The cross-cutting flow diagram has four stale or wrong claims: (1) Step 2a names 'kenning' as the custom OpenWakeWord ONNX but the active config uses ultron.onnx. (2) Step 5 shows 'local_clock_reply.maybe_handle(user_text)' as a pre-routing step between addressing and classify_routing, but the real function is maybe_local_clock_reply() (different name) and it runs inside _respond() (step 9a), not before classify_routing. (3) Step 9a names 'Qwen3.5-4B Q4_K_M' as the LLM but config.yaml uses josiefied-qwen3-8b. (4) The normalize_command pre-routing step (orchestrator.py:6156, added 2026-06-14) — which transforms the raw STT transcript before any matcher sees it — is entirely absent from the diagram between steps 2 and 4.
+  - DOC: ### Voice query (conversational) — happy path (steps 2a, 5, 9a, 10)
+  - SRC: src/kenning/pipeline/orchestrator.py:6156 (normalize_command called between addressing and intent dispatch); src/kenning/local_clock_reply.py:341 (function name is maybe_local_clock_reply); orchestrator.py:10114 (local_clock called inside _respond(), not pre-routing); config.yaml:275 (wake model=ultron.onnx); config.yaml:558 (preset=josiefied-qwen3-8b); docs/codebase_structure.md:3248-3322
+  - FIX: Update step 2a to say 'ultron' ONNX (or '"ultron" (was "kenning") custom OpenWakeWord ONNX'). Rename step 5 to reflect it is inside _respond() and rename the function to maybe_local_clock_reply. Update step 9a LLM name to 'josiefied-qwen3-8b Q5_K_M (default as of 2026-06-20 Ultron 1.0 pivot)'. Insert a new step between 2 and 4: 'normalize_command(user_text) — STT correction layer (Valorant vocab, wake-remnant strip, relay-lead restore) → may rewrite user_text for downstream matchers'.
+- **[MEDIUM] MISSING_FROM_DOC** — docs/latency_optimizations_V1.md exists on disk and is referenced in the Validating HEAD header (lines 27-28, 94) but is not linked anywhere in the Documentation index section (lines 7207-7280).
+  - DOC: ## Documentation index
+  - SRC: docs/latency_optimizations_V1.md (file exists); docs/codebase_structure.md lines 7207-7280 (Documentation index — absent)
+  - FIX: Add an entry under a new '### Relay / gaming campaign' subsection in the Documentation index: '- **Post-0.1 latency + quality roadmap:** [docs/latency_optimizations_V1.md](latency_optimizations_V1.md) — snap-path latency focus, deterministic roadmap, E3 measurements.'
+- **[MEDIUM] MISSING_FROM_DOC** — docs/ultron_0_1_baseline.md exists and is referenced in CLAUDE.md and the Validating HEAD header (line 27) but is not linked in the Documentation index section.
+  - DOC: ## Documentation index
+  - SRC: docs/ultron_0_1_baseline.md (file exists); docs/codebase_structure.md lines 7207-7280 (absent)
+  - FIX: Add under a '### Relay / gaming campaign' subsection: '- **Ultron 0.1 runbook:** [docs/ultron_0_1_baseline.md](ultron_0_1_baseline.md) — full operational runbook for the 0.1 stable baseline build.'
+- **[MEDIUM] STALE_DOC_CLAIM** — The models/ table documents only kenning.onnx as the WakeWordDetector model. The active config uses ultron.onnx (config.yaml line 275), which also exists on disk. The ultron.onnx model is entirely undocumented in the runtime artifacts.
+  - DOC: ### `models/` — `openwakeword/kenning.onnx` | `WakeWordDetector`
+  - SRC: models/openwakeword/ultron.onnx (present); config.yaml:275 (model_path: 'models/openwakeword/ultron.onnx'); docs/codebase_structure.md:7179 (only 'openwakeword/kenning.onnx' listed)
+  - FIX: Add a row for 'openwakeword/ultron.onnx | WakeWordDetector (ACTIVE since Ultron 1.0; config model_path points here) | small' and clarify that kenning.onnx is the legacy/fallback model.
+- **[MEDIUM] STALE_DOC_CLAIM** — Two GGUFs exist in models/ that are not documented anywhere in the models/ table: Qwen2.5-7B-Instruct-abliterated-v2.Q5_K_M.gguf and Qwen3-4B-Instruct-2507-heretic.Q5_K_M.gguf.
+  - DOC: ### `models/` (main checkout only)
+  - SRC: models/ directory listing shows Qwen2.5-7B-Instruct-abliterated-v2.Q5_K_M.gguf and Qwen3-4B-Instruct-2507-heretic.Q5_K_M.gguf present; docs/codebase_structure.md:7174-7198 (neither mentioned)
+  - FIX: Add rows for each undocumented GGUF in the models/ table with their purpose and which LLM_PRESETS slot they correspond to (or note 'manual swap-in, no preset').
+- **[MEDIUM] MISSING_FROM_DOC** — logs/usage_trace.jsonl is written by orchestrator._log_usage_trace() (active in testing mode, line 3447) but is not listed in the Runtime artifacts logs/ table. It is only mentioned in the Validating HEAD historical header (lines 504, 605).
+  - DOC: ### `logs/` table in ## Runtime artifacts
+  - SRC: src/kenning/pipeline/orchestrator.py:3417,3447 (_log_usage_trace writes logs/usage_trace.jsonl); docs/codebase_structure.md:7119-7138 (logs/ table — absent)
+  - FIX: Add a row: '| logs/usage_trace.jsonl | Orchestrator._log_usage_trace() | JSONL | Testing-mode full pipeline trace: raw STT → normalized → route+reason → spoken line + channel. Written only when testing_mode active. |'
+- **[LOW] MISSING_FROM_DOC** — docs/openclaw_desktop_automation_setup.md exists on disk but is not listed in the OpenClaw user-side setup procedures subsection, unlike the closely related openclaw_desktop_control_setup.md which is listed.
+  - DOC: ### OpenClaw integration (user-side setup procedures)
+  - SRC: docs/openclaw_desktop_automation_setup.md (file exists); docs/codebase_structure.md lines 7250-7262 (OpenClaw setup procedures — absent)
+  - FIX: Add an entry: '- **Desktop automation primitives (pyautogui/screenshot):** [docs/openclaw_desktop_automation_setup.md](openclaw_desktop_automation_setup.md)'
+- **[LOW] MISSING_FROM_DOC** — docs/preflight_decision.md is referenced inline in the scripts section (line 6753) but is not linked in the Documentation index, making it invisible to the 'Reading order for a fresh Claude' guidance.
+  - DOC: ## Documentation index
+  - SRC: docs/preflight_decision.md (file exists); only mentioned inline at codebase_structure.md:6753; absent from lines 7207-7280
+  - FIX: Add under '### 4B optimization plan': '- **Pre-flight gate decision record:** [docs/preflight_decision.md](preflight_decision.md) — settles whether a dedicated CPU pre-flight model beats the main LLM (verdict: keep main LLM, TTFT 79 ms).'
+- **[LOW] MISSING_FROM_DOC** — docs/test_sweep_binding_rules.md exists and is referenced inline in the scripts section (line 6899) but is absent from the Documentation index.
+  - DOC: ## Documentation index
+  - SRC: docs/test_sweep_binding_rules.md (file exists); only mentioned inline at codebase_structure.md:6899; absent from lines 7207-7280
+  - FIX: Add under '### Foundation reference': '- **Test-sweep binding rules:** [docs/test_sweep_binding_rules.md](test_sweep_binding_rules.md) — mandated workflow for running the full corpus sweep safely.'
+- **[LOW] STALE_DOC_CLAIM** — Three GGUFs listed in the 'Deleted 2026-05-20 round 8' table are still present on disk: gemma-3-4b-it-abliterated.Q4_K_M.gguf, google_gemma-3-1b-it-Q4_K_M.gguf, and Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf.
+  - DOC: **Deleted 2026-05-20 round 8** table
+  - SRC: models/ listing shows gemma-3-4b-it-abliterated.Q4_K_M.gguf, google_gemma-3-1b-it-Q4_K_M.gguf, Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf still present; docs/codebase_structure.md:7190-7192 says all three were deleted 2026-05-20 round 8
+  - FIX: Either remove these files to match the documented cleanup, or move them back into the active table with a note that they were re-added for swap-back use.
+- **[LOW] MISSING_FROM_DOC** — logs/relay_test/ is the output directory for the relay test harness and scorecard, producing per-run JSONL and JSON files. This directory is described inline in the scripts sections (lines 7313, 7432) but is not documented in the Runtime artifacts logs/ table.
+  - DOC: ### `logs/` table in ## Runtime artifacts
+  - SRC: scripts/relay_test/harness.py:7313 (output: 'logs/relay_test/<stage>_<tag>.jsonl'), scripts/relay_test/scorecard.py (output: 'logs/relay_test/scorecard_<tag>.json', 'logs/relay_test/bench_<tag>.json'); docs/codebase_structure.md:7119-7138 (absent)
+  - FIX: Add a row: '| logs/relay_test/<stage>_<tag>.jsonl, scorecard_<tag>.json, bench_<tag>.json | scripts/relay_test/harness.py, scorecard.py | JSONL/JSON | Relay harness per-case results + scorecard metrics + bench latency. |'
+
+## memory (8)
+
+- **[HIGH] WRONG_DETAIL** — The doc documents the class as `TurnContextualizer` but the actual class name in source is `ContextGenerator`. The description of its behaviour (LLM-generated contextual anchor, background writer, default OFF) is otherwise accurate.
+  - DOC: #### `memory/contextualizer.py` — '`class TurnContextualizer`'
+  - SRC: src/kenning/memory/contextualizer.py:61
+  - FIX: Rename `class TurnContextualizer` to `class ContextGenerator` in the doc subsection.
+- **[HIGH] WRONG_DETAIL** — The doc states there is a module-level `set_shared_reranker()` function. No such function exists in source. The actual pair is `get_shared_reranker()` (line 275) and `reset_shared_reranker()` (line 291, a test-only reset). The doc has both the name and the semantics wrong.
+  - DOC: #### `memory/reranker.py` — 'Module-level `get_shared_reranker()` / `set_shared_reranker()` for singleton sharing.'
+  - SRC: src/kenning/memory/reranker.py:291 (reset_shared_reranker), absent: set_shared_reranker
+  - FIX: Replace `set_shared_reranker()` with `reset_shared_reranker()` in the doc and note it is test-only.
+- **[HIGH] WRONG_DETAIL** — The six discourse type labels listed in the doc are entirely wrong. The actual DiscourseType enum values are QUESTION / STATEMENT / DECISION / CLARIFICATION_REQUEST / ACKNOWLEDGMENT / TOPIC_SHIFT. None of REQUEST, CONFIRMATION, SOCIAL, or OTHER appear in source.
+  - DOC: #### `memory/discourse.py` — '6-way classifier (REQUEST / QUESTION / STATEMENT / CONFIRMATION / SOCIAL / OTHER)'
+  - SRC: src/kenning/memory/discourse.py:45-71 (DiscourseType enum values: QUESTION, STATEMENT, DECISION, CLARIFICATION_REQUEST, ACKNOWLEDGMENT, TOPIC_SHIFT)
+  - FIX: Replace the parenthetical type list with the correct enum values: QUESTION / STATEMENT / DECISION / CLARIFICATION_REQUEST / ACKNOWLEDGMENT / TOPIC_SHIFT.
+- **[MEDIUM] MISSING_FROM_DOC** — history_compression.py has no `####` subsection in the memory section. It is a non-trivial public module implementing the tail-preserve LLM compression algorithm (catalog T6 + T21 race-protection) with five public functions and a frozen dataclass. It is referenced in config (memory.history_compression) but has no source-level doc entry.
+  - DOC: ### `src/kenning/memory/` (section ends at ranking.py line 5088; no subsection for history_compression.py)
+  - SRC: src/kenning/memory/history_compression.py (CompressionResult, find_split_point, compress_history, compress_history_recursive, compress_history_with_guard, messages_to_text, messages_to_dicts — all public)
+  - FIX: Add a `#### memory/history_compression.py` subsection documenting CompressionResult, find_split_point, compress_history, compress_history_recursive, and compress_history_with_guard.
+- **[MEDIUM] MISSING_FROM_DOC** — history_recall.py has no `####` subsection in the memory section. It is the orchestrator short-circuit matcher for 'what did I say earlier?' in-session recall (works without Qdrant, searches the DualHistoryStore). The module's public class HistoryRecallMatch and function match_history_recall are entirely undocumented in the current-state body.
+  - DOC: ### `src/kenning/memory/` (no subsection for history_recall.py; only mentioned in passing in a session log block around line 1495)
+  - SRC: src/kenning/memory/history_recall.py (HistoryRecallMatch dataclass, match_history_recall function, ROLE_USER/ROLE_ASSISTANT constants)
+  - FIX: Add a `#### memory/history_recall.py` subsection documenting HistoryRecallMatch (role, topic, raw fields), match_history_recall(), and the ROLE_USER/ROLE_ASSISTANT role constants.
+- **[MEDIUM] MISSING_FROM_DOC** — deep_recall.py has no `####` subsection in the memory section. It is the strict matcher for the iterative-RAG deep recall short-circuit path (requires both an exhaustiveness marker and a memory referent; refuses web-research patterns). Its public class DeepRecallMatch and function match_deep_recall are entirely absent from the current-state doc body.
+  - DOC: ### `src/kenning/memory/` (no subsection for deep_recall.py; only mentioned in passing in a session log block around line 1474)
+  - SRC: src/kenning/memory/deep_recall.py (DeepRecallMatch dataclass, match_deep_recall function)
+  - FIX: Add a `#### memory/deep_recall.py` subsection documenting DeepRecallMatch and match_deep_recall() alongside the deliberate strictness rationale (both depth + memory markers required).
+- **[LOW] MISSING_FROM_DOC** — The doc omits the public dataclass RerankResult (wraps a MemoryTurn with cross-encoder score + pre_rerank_index) and the public method rerank_with_scores() (returns List[RerankResult] rather than List[Tuple[idx, score]]). Both are part of the module's public __all__.
+  - DOC: #### `memory/reranker.py` — lists only CrossEncoderReranker and rerank()
+  - SRC: src/kenning/memory/reranker.py:53 (class RerankResult), src/kenning/memory/reranker.py:206 (def rerank_with_scores)
+  - FIX: Add RerankResult dataclass and rerank_with_scores() method to the reranker.py subsection.
+- **[LOW] MISSING_FROM_DOC** — Two public functions in ranking.py — compute_topic_match_score() and compute_discourse_match_score() — are missing from the doc entry. They are used by compute_composite_score() to boost candidates that match the query's topic_id or expected discourse_types.
+  - DOC: #### `memory/ranking.py` — lists cosine_similarity, compute_recency_boost, compute_surprise_score, compute_redundancy_penalty, compute_composite_score, select_top_k; omits topic/discourse helpers
+  - SRC: src/kenning/memory/ranking.py:169 (compute_topic_match_score), src/kenning/memory/ranking.py:191 (compute_discourse_match_score)
+  - FIX: Add compute_topic_match_score(candidate, query_topic_id) and compute_discourse_match_score(candidate, expected_discourse_types) to the ranking.py bullet list.
+
+## misc-subsystems (19)
+
+- **[HIGH] MISSING_FROM_DOC** — The entire safety/ package (30+ source files including the validator, all category rules, policy chain, taint tracking, two-phase approval, path resolver, auto approval, etc.) has no dedicated ### src/kenning/safety/ doc section. It is the largest uncharted subsystem in scope.
+  - DOC: No `### src/kenning/safety/` section exists in docs/codebase_structure.md. Only scattered per-file entries appear in the 'New & changed source modules (2026-06)' appendix (lines 7474, 7553, 7568) for testing_mode.py, anticheat.py, and import_firewall.py, with no coverage of the remaining 27+ files.
+  - SRC: src/kenning/safety/ — 30+ files including anticheat.py, audit.py, auto_approval.py, hierarchical_policy.py, ignore.py, import_firewall.py, intent.py, path_resolver.py, policy.py, policy_chain.py, taint.py, testing_mode.py, two_phase_approval.py, validator.py, rules/__init__.py, rules/base.py, rules/category_a.py through rules/category_s.py
+  - FIX: Add a `### src/kenning/safety/` section covering: validator.py (SafetyValidator, get_validator), policy.py/policy_chain.py (PolicyChain, chain decision flow), taint.py (TaintTracker), path_resolver.py (PathResolver.safe_realpath), two_phase_approval.py (ApprovalRequest, ApprovalRegistry), auto_approval.py (AutoApprovalMatrix, yolo_mode), hierarchical_policy.py, safety/rules/ sub-package (rule base class + all category files A-S). Cross-reference the existing per-file entries in the 2026-06 appendix for testing_mode.py, anticheat.py, and import_firewall.py.
+- **[HIGH] MISSING_FROM_DOC** — The subprocess/ package (kill_tree, process_registry, sidecar_lock, zombie_killer) has no dedicated doc section. KillTreeResult, ProcessRegistry, ZombieKiller, and the embedder-sidecar singleton enforcer (sidecar_lock) are load-bearing production infrastructure with no body-section coverage.
+  - DOC: No `### src/kenning/subprocess/` section exists. All four files appear only in the file-tree ASCII diagram (lines 2919-2921) and in session-log entries.
+  - SRC: src/kenning/subprocess/kill_tree.py, process_registry.py, sidecar_lock.py, zombie_killer.py — confirmed at file list lines 368-371. No `### src/kenning/subprocess/` header found via grep.
+  - FIX: Add a `### src/kenning/subprocess/` section documenting: kill_tree.py (kill_process_tree, KillTreeResult, kill_own_children), process_registry.py (ProcessRegistry, JobState, get_process_registry), sidecar_lock.py (sweep, default_pidfile, reap_stray_embedders), zombie_killer.py (ZombieKiller, TrackedProcess, get_zombie_killer).
+- **[HIGH] MISSING_FROM_DOC** — The agent_loop/ package (AgentLoop base, DeepGatherLoop sub-classes, LoopDetector, ModeSession, SubagentRunner, SubagentPolicyConfig) is the backbone of all bounded agentic loops (deep research, deep memory, deep exploration, UI discovery, evolution cycles) but has no doc section.
+  - DOC: No `### src/kenning/agent_loop/` section exists. Files appear only in session-log entries (e.g. line 2409 mentions agent_loop/loop_detection_extended, subagent_policy) and in a prose reference at line 1805.
+  - SRC: src/kenning/agent_loop/__init__.py, base.py, deep_loops.py, loop_detection.py, loop_detection_extended.py, mode.py, subagent.py, subagent_policy.py — confirmed at file list lines 7-14.
+  - FIX: Add a `### src/kenning/agent_loop/` section covering: base.py (AgentLoop ABC, LoopStatus, StepRecord, LoopResult), deep_loops.py (DeepGatherLoop, DeepMemoryLoop, DeepExplorationLoop, DeepUIDiscoveryLoop), loop_detection.py (LoopDetector, LoopVerdict), loop_detection_extended.py, mode.py (ModeSession, Mode, ModePolicy, ModeFlipResult), subagent.py (SubagentRunner, SubagentTask, TokenLedger, ToolGuard), subagent_policy.py (SubagentPolicyConfig, ResolvedSubagentToolPolicy, filter_tools_by_policy).
+- **[HIGH] MISSING_FROM_DOC** — The evolution/ package (12 files) has no dedicated doc section. EvolutionService, EvolutionStore, TieredAutonomyController, BlastEstimation, GuardrailVerdict, SkillDistiller, etc. are entirely undocumented in the body sections.
+  - DOC: No `### src/kenning/evolution/` section exists. The config.yaml section at line 6474 describes evolution config knobs and briefly mentions 'the src/kenning/evolution/ tree above' but no such tree section exists in the doc body.
+  - SRC: src/kenning/evolution/__init__.py, autonomy.py, blast_radius.py, evolution_loop.py, guardrails.py, intent.py, models.py, personality.py, service.py, signals.py, skill_distiller.py, turn_metrics.py — confirmed at file list lines 155-166.
+  - FIX: Add a `### src/kenning/evolution/` section covering at minimum: service.py (EvolutionService, EvolutionStore, main hooks), models.py (key dataclasses), autonomy.py (TieredAutonomyController, AutonomyTier), blast_radius.py (compute_blast_radius, BlastComputation), guardrails.py (evaluate_guardrails, GuardrailVerdict), evolution_loop.py (EvolutionLoop), and note that signals.py / personality.py / skill_distiller.py / turn_metrics.py exist as supporting infrastructure.
+- **[HIGH] MISSING_FROM_DOC** — The mcp/ package (McpServerRegistry, build_mcp_server_registry, McpTransportKind, StdioMcpTransportConfig, HttpMcpTransportConfig, SseMcpTransportConfig, StreamableHttpMcpTransportConfig, sanitise_transport_config, transport_from_spec) has no dedicated doc section.
+  - DOC: No `### src/kenning/mcp/` section exists. builder.py, registry.py and transport.py appear only in session-log entries (line 2409: 'mcp/ (transport with env/header sanitisation + McpServerRegistry with kill-on-disconnect)') and the file-tree diagram.
+  - SRC: src/kenning/mcp/__init__.py, builder.py, registry.py, transport.py — confirmed at file list lines 228-230.
+  - FIX: Add a `### src/kenning/mcp/` section covering: registry.py (McpServerRegistry, McpServerHandle, McpServerState, get/set_mcp_server_registry), builder.py (build_mcp_server_registry, transport_from_spec), transport.py (McpTransportKind, the four transport config dataclasses, sanitise_transport_config, filter_environment, filter_http_headers).
+- **[MEDIUM] MISSING_FROM_DOC** — The ptt/ package (PttController, PttBackend, NullPttBackend, SerialHidPttBackend, RawHidPttBackend, build_ptt_controller, CMD_DOWN/UP/HEARTBEAT constants, HID_PTT_VID) has no structured doc section. The inline prose description is thorough but not formatted as a scannable API reference.
+  - DOC: No `### src/kenning/ptt/` section exists. The package is described only in a long prose paragraph within the audio pipeline section (line 4766) without listing classes or public functions.
+  - SRC: src/kenning/ptt/backends.py, controller.py — confirmed at file list lines 290-291. No `### src/kenning/ptt/` header found.
+  - FIX: Add a `### src/kenning/ptt/` section with: backends.py (PttBackend ABC, NullPttBackend, SerialHidPttBackend, RawHidPttBackend, find_hid_ptt_device, find_arduino_port, CMD_* constants), controller.py (PttController, build_ptt_controller).
+- **[MEDIUM] MISSING_FROM_DOC** — The spotify/ package (SpotifyAuth, SpotifyClient, LeanSpotifyHandler, match_spotify_command, handle_spotify_command, SpotifyCommand, SpotifyCredentials) has no dedicated doc section.
+  - DOC: No `### src/kenning/spotify/` section exists. The config.yaml section at line 4535 mentions 'spotify.credentials_path' but there is no source-level API documentation for the spotify/ package.
+  - SRC: src/kenning/spotify/auth.py, client.py, lean_handler.py, voice.py — confirmed at file list lines 358-361.
+  - FIX: Add a `### src/kenning/spotify/` section covering: auth.py (SpotifyAuth, SpotifyCredentials, exchange_code, build_authorize_url), client.py (SpotifyClient, NowPlaying, Device, SpotifyAPIError), lean_handler.py (LeanSpotifyHandler), voice.py (match_spotify_command, handle_spotify_command, SpotifyCommand enum).
+- **[MEDIUM] MISSING_FROM_DOC** — The settings_gui/ package (ControlPanel, LogTailer, Knob, Section, match_settings_command, launch_gui, close_gui, apply_updates, patch_config_text) has no dedicated doc section.
+  - DOC: No `### src/kenning/settings_gui/` section exists anywhere in docs/codebase_structure.md.
+  - SRC: src/kenning/settings_gui/__main__.py, app.py, launch.py, spec.py — confirmed at file list lines 345-348.
+  - FIX: Add a `### src/kenning/settings_gui/` section covering: app.py (ControlPanel, LogTailer, main), launch.py (match_settings_command, launch_gui, close_gui), spec.py (Knob, Section, apply_updates, patch_config_text, write_reload_signal, write_runtime_overrides, write_action, RELOAD_SIGNAL_RELPATH, ACTION_RELPATH, RUNTIME_OVERRIDES_RELPATH).
+- **[MEDIUM] MISSING_FROM_DOC** — The identity/ package (AliasGraph, AliasGraphEntry, AliasOperation, AliasGraphEvent, InvalidSlugError, TrustedCaller, VerifiedClaims, mint_token, verify_token, rotate_secret) has no dedicated doc section.
+  - DOC: No `### src/kenning/identity/` section exists. alias_graph.py is mentioned only in a session log entry at line 2407 ('src/kenning/identity/alias_graph.py').
+  - SRC: src/kenning/identity/alias_graph.py, short_lived_token.py — confirmed at file list lines 177-178.
+  - FIX: Add a `### src/kenning/identity/` section covering: alias_graph.py (AliasGraph, AliasGraphEntry, AliasGraphEvent, AliasOperation, normalize_slug, validate_slug, InvalidSlugError, SlugReservedError), short_lived_token.py (TrustedCaller, VerifiedClaims, mint_token, verify_token, rotate_secret, TokenError hierarchy).
+- **[MEDIUM] MISSING_FROM_DOC** — The feedback/ package (ModerationPlan, build_plan, requires_confirmation, ImpactSeverity, PlanOutcome, ReportConcernMatch, match_report_concern, Report, ReportQueue, ReportStatus, FinalAction) has no dedicated doc section.
+  - DOC: No `### src/kenning/feedback/` section exists in docs/codebase_structure.md.
+  - SRC: src/kenning/feedback/moderation_plan.py, report_intent.py, report_queue.py — confirmed at file list lines 168-170.
+  - FIX: Add a `### src/kenning/feedback/` section covering: moderation_plan.py (ModerationPlan, build_plan, requires_confirmation, render_plan_for_voice, ImpactSeverity, PlanOutcome), report_intent.py (ReportConcernMatch, match_report_concern), report_queue.py (Report, ReportQueue, ReportStatus, FinalAction, UnknownReportError, IllegalTriageError).
+- **[MEDIUM] MISSING_FROM_DOC** — The observability/ package (PrivateMetricsStore, hash_root, hash_skill_slug, RootRecord, SkillRecord, HashedEvent, is_telemetry_enabled, RawPathLeakError) has no dedicated doc section.
+  - DOC: No `### src/kenning/observability/` section exists in docs/codebase_structure.md.
+  - SRC: src/kenning/observability/private_telemetry.py — confirmed at file list line 245. No `### src/kenning/observability/` header found.
+  - FIX: Add a `### src/kenning/observability/` section covering: private_telemetry.py (PrivateMetricsStore, hash_root, hash_skill_slug, canonical_label_root, is_telemetry_enabled, RootRecord, SkillRecord, HashedEvent, RawPathLeakError, stale_root_ids).
+- **[MEDIUM] MISSING_FROM_DOC** — The install/ package grew from 1 file to 10 files during the OpenClaw/ClawHub catalog ports, but the `### src/kenning/install/` doc section was never updated beyond the original idempotent.py coverage. Nine files (artifact_identity.py, coherence.py, discovery.py, lockfile.py, pin.py, reason_codes.py, resolver.py, static_scanner.py, trust_envelope.py, voice_baseline_verify.py) are completely absent from the body section, though many are described inline in the file-tree ASCII diagram.
+  - DOC: `### src/kenning/install/` section (doc line 6251–6260) — only `install/idempotent.py` is documented in the body section.
+  - SRC: src/kenning/install/ — files artifact_identity.py, coherence.py, discovery.py, lockfile.py, pin.py, reason_codes.py, resolver.py, static_scanner.py, trust_envelope.py, voice_baseline_verify.py all exist (file list lines 180-190) but `### src/kenning/install/` body section at doc line 6251 only covers idempotent.py.
+  - FIX: Expand the `### src/kenning/install/` section to add subsections for: artifact_identity.py (ArtifactIdentity, verify_identity, verify_clawpack_tarball, TOFU pin functions), coherence.py (check_intent_phrase_coherence), discovery.py (DiscoveryCache, discover, resolve_registry_base), lockfile.py (lockfile read/write/clear/reap_stray_embedders), pin.py (pin/unpin, materialise_default_pins, KENNING_DEFAULT_PINS), reason_codes.py (canonical_code_for_finding, moderation reason catalogue), resolver.py (ArtifactResolver, ResolvedArtifact, verify_artifact_bytes), static_scanner.py (scan_untrusted_skills, dependency denylist), trust_envelope.py (TrustEnvelope, refuse_if_blocked, VersionExactRequest), voice_baseline_verify.py (verify_voice_baseline_artifacts_async, verify_single_artifact_sync).
+- **[MEDIUM] MISSING_FROM_DOC** — The skills/ package has 7 files but the doc body section only documents registry.py. Six load-bearing public modules are absent from the body section: activation.py (evaluate_activation, plan_activation, CapabilityKind), capability_tags.py (CapabilityTag, derive_capability_tags, filter_capabilities, is_gaming_mode_safe), loader.py (load_skill_from_path, load_skills_from_directory), marketplace.py (MarketplaceSource, MarketplaceManifest, build_install_plan), models.py (Skill, SkillType, SkillSource, KeywordTrigger, TaskTrigger, SkillMatch), scan.py (scan_skill_content, SkillScanResult).
+  - DOC: `### src/kenning/skills/` section (doc line 6292–6303) — only skills/registry.py is covered in the body.
+  - SRC: src/kenning/skills/activation.py, capability_tags.py, loader.py, marketplace.py, models.py, scan.py — six files present (file list lines 350-356) but not documented in the `### src/kenning/skills/` body section.
+  - FIX: Expand the `### src/kenning/skills/` section to add: models.py (Skill, SkillType, SkillSource, KeywordTrigger, TaskTrigger, SkillMatch), loader.py (load_skill_from_path, load_skills_from_directory, SkillLoadStats), scan.py (scan_skill_content, scan_skill, SkillScanResult), capability_tags.py (CapabilityTag, TaggedCapability, derive_capability_tags, filter_capabilities, is_gaming_mode_safe, needs_explicit_intent), activation.py (ActivationTriggers, ActivationContext, ActivationResult, evaluate_activation, plan_activation), marketplace.py (MarketplaceSource, MarketplaceManifest, InstallPlanEntry, build_install_plan).
+- **[MEDIUM] MISSING_FROM_DOC** — intent/command_registry.py (Command, CommandRegistry, DEFAULT_REGISTRY, @command decorator) has no doc section. The intent/ package body section is entirely absent — only the recognizer.py is individually documented (out of this lane's scope).
+  - DOC: No `### src/kenning/intent/` package section exists. command_registry.py is mentioned only in a session log at doc line 2425.
+  - SRC: src/kenning/intent/command_registry.py exists (file list line 192); `### src/kenning/intent/` has no body section — only `### src/kenning/intent/recognizer.py` (doc line 3679, and recognizer.py is out of this lane's scope).
+  - FIX: Add an `### src/kenning/intent/` section (or at minimum an `#### intent/command_registry.py` entry) covering: Command dataclass, CommandRegistry (register/match/dispatch), DEFAULT_REGISTRY singleton, @command decorator.
+- **[LOW] MISSING_FROM_DOC** — resilience/fail_open_log.py (per-session fail-open counter with JSONL persistence, configure/record/session_counts/flush_to_disk/previous_session_counts/render_summary) is missing from the resilience/ body section.
+  - DOC: `### src/kenning/resilience/` section (doc line 6155–6174) — fail_open_log.py is absent from the body section (only appears in the file-tree at line 2789).
+  - SRC: src/kenning/resilience/fail_open_log.py exists (file list line 295, confirmed public functions: configure, record, session_counts, flush_to_disk, previous_session_counts, render_summary, reset_for_testing). The `### src/kenning/resilience/` section at doc line 6155 lists only circuit_breaker.py, error_log.py, and phrases.py.
+  - FIX: Add a `#### resilience/fail_open_log.py` subsection within the resilience/ section documenting: configure(log_path), record(category, reason), session_counts(), flush_to_disk(), previous_session_counts(), render_summary(counts), reset_for_testing().
+- **[LOW] MISSING_FROM_DOC** — The public function set_error_observer(observer) in resilience/error_log.py is not documented in the body section. It is the seam through which the evolution service monitors all subsystem error events.
+  - DOC: `#### resilience/error_log.py` section (doc line 6166–6170) lists `get_error_log()` and `set_error_log(log)` but omits `set_error_observer()`.
+  - SRC: src/kenning/resilience/error_log.py:187 — `def set_error_observer(observer)` is a public module-level function added in production hardening (#62/#125/#64).
+  - FIX: Add `set_error_observer(observer: Optional[Callable[[str, str], None]]) -> None` to the `#### resilience/error_log.py` subsection, noting it fires after every JSONL write (fail-open) and is used by the evolution loop.
+- **[LOW] MISSING_FROM_DOC** — Three public utility modules (ansi_safe.py, retry.py, spinner.py) that were ported from the aider/cline/OpenClaw catalogs are absent from the utils/ body doc section, though they appear in the file-tree diagram.
+  - DOC: `### src/kenning/utils/` section (doc line 6176) — covers heartbeat.py, health_check.py, logging.py, fairseq_compat.py, mtime_cache.py, token_budget.py, snapshot_guard.py, relative_indent.py, poll.py only. ansi_safe.py, retry.py, and spinner.py appear only in the file-tree at lines 2932–2935.
+  - SRC: src/kenning/utils/ansi_safe.py (strip_ansi, sanitize_for_log, split_graphemes, grapheme_width, visible_width, truncate_to_visible_width), src/kenning/utils/retry.py (with_retry, with_retry_sync, RetriableError, RetryBudget, parse_retry_after), src/kenning/utils/spinner.py (Spinner, WaitingSpinner) — confirmed at file list lines 390, 398, 400. All three absent from the `### src/kenning/utils/` body section (doc line 6176–6239).
+  - FIX: Add three new subsections within `### src/kenning/utils/`: ansi_safe.py (strip_ansi, sanitize_for_log, split_graphemes, grapheme_width, visible_width, truncate_to_visible_width); retry.py (with_retry async decorator, with_retry_sync, RetriableError, RetryBudget, RetryAttempt, parse_retry_after); spinner.py (Spinner, WaitingSpinner, TRACK_LENGTH, DEFAULT_* constants).
+- **[LOW] MISSING_FROM_DOC** — Two condenser-related files added after the initial OpenHands batch (splitter.py from the OpenClaw port, structured_8_section.py from the cline port) are absent from the llm/condensers/ body section. They appear only in session log entries.
+  - DOC: `### src/kenning/llm/condensers/` section (doc line 6420–6441) — documents base.py, noop/recent/amortized/observation_masking/llm_summarizing.py, and factory.py but omits splitter.py and structured_8_section.py.
+  - SRC: src/kenning/llm/condensers/splitter.py (chunk_messages_by_max_tokens, split_messages_by_token_share, ChunkPlan, Message, IdentifierPreservationPolicy, summarise_with_fallback) and src/kenning/llm/condensers/structured_8_section.py (StructuredEightSectionCondenser, ParsedSummary, parse_summary, compact_for_voice, build_structured_8_section_condenser) — both confirmed at file list lines 213-214.
+  - FIX: Add two new subsections within `### src/kenning/llm/condensers/`: splitter.py (Message, ChunkPlan, IdentifierPreservationPolicy, chunk_messages_by_max_tokens, split_messages_by_token_share, identifier_preservation_text, summarise_with_fallback); structured_8_section.py (StructuredEightSectionCondenser, ParsedSummary, parse_summary, compact_for_voice, build_structured_8_section_condenser, SUMMARISE_PROMPT_TEMPLATE).
+- **[LOW] MISSING_FROM_DOC** — Two lifecycle files are absent from the lifecycle/ body section: docker_startup.py (DockerStartupResult, searxng_reachable, ensure_docker_running) and gaming_engage.py (GamingEngageDeps, gaming_engage_iterator, gaming_disengage_iterator). gaming_engage.py's 'what changed' appendix entry documents only the 2026-06 delta, not the baseline API.
+  - DOC: `### src/kenning/lifecycle/` section (doc line 6359–6418) covers only start_task.py, pending_message_queue.py, and single_instance.py. gaming_engage.py appears only in the 'what changed' appendix at line 7545; docker_startup.py appears only in the file-tree at line 2845.
+  - SRC: src/kenning/lifecycle/docker_startup.py exists (file list line 196; DockerStartupResult, searxng_reachable, ensure_docker_running) and src/kenning/lifecycle/gaming_engage.py exists (file list line 197; GamingEngageDeps, ENGAGE_TASK_NAME, DISENGAGE_TASK_NAME). Neither appears in the `### src/kenning/lifecycle/` body section.
+  - FIX: Add `#### lifecycle/docker_startup.py` (DockerStartupResult, searxng_reachable, ensure_docker_running, _DEFAULT_DOCKER_PATH) and `#### lifecycle/gaming_engage.py` (GamingEngageDeps dataclass, gaming_engage_iterator async generator, gaming_disengage_iterator, ENGAGE_TASK_NAME, DISENGAGE_TASK_NAME) to the lifecycle/ body section.
+
+## openclaw (6)
+
+- **[HIGH] WRONG_DETAIL** — The doc claims RoutingIntentKind has 23 values and lists them, but the source has 26. Three values added after the last doc update are absent from the list: ACTIVE_WINDOW_QUERY (line 117), SEMANTIC_CLICK (line 127), WINDOW_CLOSE_CONFIRMATION (line 135). The same stale count '23' appears in the file-tree one-liner at doc lines 2761 and 2767.
+  - DOC: #### `openclaw_routing/intents.py` — '**23 values**: CONVERSATIONAL, CODE_TASK, ... NAVIGATE_TO_SITE'
+  - SRC: src/kenning/openclaw_routing/intents.py:25-135 (26 enum values enumerated)
+  - FIX: Update the enum count to 26, append ACTIVE_WINDOW_QUERY, SEMANTIC_CLICK, WINDOW_CLOSE_CONFIRMATION to the list in the #### section and in the file-tree one-liner.
+- **[HIGH] MISSING_FROM_DOC** — Three per-category dataclasses (ActiveWindowQueryIntent, SemanticClickIntent, WindowCloseConfirmationIntent) and their corresponding RoutingIntent fields (active_window_query_intent, semantic_click_intent, window_close_confirmation_intent) exist in source but are not mentioned in the doc's dataclass list or RoutingIntent field list.
+  - DOC: #### `openclaw_routing/intents.py` — 'Per-category dataclasses: ...' and 'RoutingIntent — top-level dataclass: ...'
+  - SRC: src/kenning/openclaw_routing/intents.py:391 (ActiveWindowQueryIntent), :407 (SemanticClickIntent), :437 (WindowCloseConfirmationIntent); :551-553 (three RoutingIntent fields)
+  - FIX: Add ActiveWindowQueryIntent, SemanticClickIntent, WindowCloseConfirmationIntent to the per-category dataclass list. Add active_window_query_intent, semantic_click_intent, window_close_confirmation_intent to the RoutingIntent field enumeration.
+- **[HIGH] MISSING_FROM_DOC** — The #### body section for mcp_tools.py documents only 5 original tool implementations and is entirely silent about the Phase 7 desktop automation suite (~19 additional impl functions). The file-tree one-liner at doc line 2783 does note '24 total' but the authoritative narrative section is out of date.
+  - DOC: #### `openclaw_bridge/mcp_tools.py` (Phase 13) — 'Tool implementations: get_heartbeat_alerts_impl, acknowledge_alert_impl, run_maintenance_impl, list_active_coding_sessions_impl, get_recent_voice_alerts_impl'
+  - SRC: src/kenning/openclaw_bridge/mcp_tools.py:367-1258 (enumerate_monitors_impl, list_windows_impl, take_screenshot_impl, describe_screen_impl, get_screen_context_impl, launch_app_impl, launch_chrome_url_impl, open_image_search_impl, move_window_to_monitor_impl, focus_window_impl, window_action_impl, click_uia_impl, type_into_uia_impl, get_window_text_impl, mouse_click_impl, mouse_move_impl, type_text_impl, press_hotkey_impl, scroll_impl, find_image_on_screen_impl, clipboard_read_impl, clipboard_write_impl)
+  - FIX: Extend the #### mcp_tools.py section to list the Phase 7 desktop automation tools (enumerate_monitors, list_windows, take_screenshot, describe_screen, get_screen_context, launch_app, launch_chrome_url, open_image_search, move_window_to_monitor, focus_window, window_action, click_uia, type_into_uia, get_window_text, mouse_click, mouse_move, type_text, press_hotkey, scroll, find_image_on_screen, clipboard_read, clipboard_write) with a brief description of the Phase 7 desktop MCP surface.
+- **[MEDIUM] MISSING_FROM_DOC** — Three routing-package files exist with public classes and functions but have no dedicated #### body section in the Source modules narrative. They appear only as terse one-liner entries in the file-tree (doc lines 2759-2760, 2768). Key public API: AmbiguityVerdict + should_clarify + should_clarify_from_config (ambiguity.py); ValidationResult + ToolCallValidator + is_enabled (block_and_revise.py); RecentDecision + ReformulationContext + InputReformulator + build_default_reformulator (irma.py).
+  - DOC: ### `src/kenning/openclaw_routing/` (Phase 5) — no #### sections for ambiguity.py, block_and_revise.py, or irma.py
+  - SRC: src/kenning/openclaw_routing/ambiguity.py:46 (AmbiguityVerdict), :67 (should_clarify), :143 (should_clarify_from_config); src/kenning/openclaw_routing/block_and_revise.py:56 (ValidationResult), :71 (ToolCallValidator), :184 (is_enabled); src/kenning/openclaw_routing/irma.py:37 (RecentDecision), :59 (ReformulationContext), :71 (InputReformulator), :128 (build_default_reformulator)
+  - FIX: Add #### sections for ambiguity.py, block_and_revise.py, and irma.py in the openclaw_routing body, documenting their public classes, key functions, and default-OFF flag-gated behavior.
+- **[MEDIUM] MISSING_FROM_DOC** — Three classifier helper functions for the post-NAVIGATE_TO_SITE intent kinds are present in source but absent from the #### section: _classify_active_window_query (line 1769), _classify_semantic_click (line 1835), and _classify_window_close_confirmation (line 1921). The dispatch order in the doc also does not mention ACTIVE_WINDOW_QUERY, SEMANTIC_CLICK, or WINDOW_CLOSE_CONFIRMATION branches.
+  - DOC: #### `openclaw_routing/classifier.py` — describes classify_routing dispatch order and named classifier helpers, but stops at WINDOW_MOVE/WINDOW_CLOSE pass
+  - SRC: src/kenning/openclaw_routing/classifier.py:1769 (_classify_active_window_query), :1835 (_classify_semantic_click), :1921 (_classify_window_close_confirmation)
+  - FIX: Add entries for _classify_active_window_query, _classify_semantic_click, _classify_window_close_confirmation to the classifier.py section, and note their positions in the layered dispatch order.
+- **[LOW] MISSING_FROM_DOC** — The GamingModeManager __init__ accepts on_engaged and on_disengaged callback parameters (confirmed at gaming_mode.py:152-153) which are omitted from the #### section's parameter description. The file-tree one-liner at doc line 2766 does mention 'on_engaged/on_disengaged callbacks' so the gap is only in the #### body section.
+  - DOC: #### `openclaw_routing/gaming_mode.py` (V1-gap A1) — 'GamingModeManager __init__(*, client, plugins_to_disable, toggle_docker, ...)'
+  - SRC: src/kenning/openclaw_routing/gaming_mode.py:152-153 (on_engaged: Optional[Any] = None, on_disengaged: Optional[Any] = None)
+  - FIX: Add on_engaged / on_disengaged optional callback parameters to the GamingModeManager __init__ description in the #### section.
+
+## orchestrator-pipeline-bus (7)
+
+- **[HIGH] STALE_DOC_CLAIM** — The doc states the event catalog has 17 canonical events and lists them, but the source has 19. Two events added with the desktop-dialog poller (DialogAppearedEvent, type='desktop.dialog.appeared', and DialogResolvedEvent, type='desktop.dialog.resolved') are present in events.py and re-exported from bus/__init__.py but are not listed in the doc and the count is wrong.
+  - DOC: "17 canonical events in `events.py` re-exported from `__init__.py`: ... VRAMReclaimedEvent" (doc line 3613-3620)
+  - SRC: src/kenning/bus/events.py: BUS_EVENT_CATALOG has 19 entries (lines 276-296); DialogAppearedEvent at line 237, DialogResolvedEvent at line 256
+  - FIX: Change '17 canonical events' to '19 canonical events' and append `DialogAppearedEvent`, `DialogResolvedEvent` to the enumeration in the doc section.
+- **[MEDIUM] MISSING_FROM_DOC** — Three public items added with the slow-subscriber watchdog are absent from the doc's Public listing for bus/: Bus.slow_subscriber_count() -> int, Bus.slow_subscriber_warn_ms() -> float, and module-level set_slow_subscriber_recorder(recorder). All are re-exported from bus/__init__.py and mentioned in the bus test extension note at doc line 6914 but never listed in the bus/ section's Public block.
+  - DOC: "Public: ... Module-level shortcuts: `publish`, `subscribe`, `subscribe_all`, `get_bus`, `reset_bus_for_testing()`" (doc line 3611-3612)
+  - SRC: src/kenning/bus/service.py:242 (slow_subscriber_count), :253 (slow_subscriber_warn_ms), :75 (set_slow_subscriber_recorder); all exported in src/kenning/bus/__init__.py lines 47-50
+  - FIX: Add to the Bus class listing: `.slow_subscriber_count() -> int`, `.slow_subscriber_warn_ms() -> float`. Add to module-level shortcuts: `set_slow_subscriber_recorder(recorder)`. Also mention DEFAULT_SLOW_SUBSCRIBER_WARN_MS constant (default 15.0).
+- **[MEDIUM] MISSING_FROM_DOC** — swap_stt_engine is the only non-dunder truly public method on Orchestrator besides run/shutdown/__enter__/__exit__, and it is completely absent from the doc. It enables runtime hot-swap between the primary and gaming STT engines (e.g., parakeet <-> moonshine), invalidates in-flight speculative STT, and returns True/False on success. It is exposed to external callers (e.g., the gaming-mode manager and GUI).
+  - DOC: Orchestrator class method listing (doc lines 6088-6122) — swap_stt_engine absent
+  - SRC: src/kenning/pipeline/orchestrator.py:9545 `def swap_stt_engine(self, name: str) -> bool`
+  - FIX: Add to the Orchestrator method listing: `swap_stt_engine(name: str) -> bool` — runtime hot-swap between primary and gaming STT engines; invalidates in-flight speculative STT; returns False when dual-STT is not configured.
+- **[MEDIUM] MISSING_FROM_DOC** — _classify_smart_turn_verdict is a load-bearing Smart Turn V3 method introduced in the 2026-05-16 latency pass 2 that maps a SmartTurnVerdict probability to a three-band gradient ('early_complete', 'medium_complete', incomplete) controlling the fast-path silence schedule. The doc documents the three other Smart Turn methods in the same cluster but omits this one, leaving a gap in the documented routing logic.
+  - DOC: Smart Turn V3 method cluster: `_build_smart_turn_detector`, `_smart_turn_should_check`, `_run_smart_turn` (doc lines 6090-6092) — _classify_smart_turn_verdict absent
+  - SRC: src/kenning/pipeline/orchestrator.py:5289 `def _classify_smart_turn_verdict(self, verdict) -> str`
+  - FIX: Add to the Smart Turn V3 method cluster: `_classify_smart_turn_verdict(verdict) -> str` (2026-05-16) — maps SmartTurnVerdict to three-band gradient: 'early_complete' (prob >= early_completion_threshold), 'medium_complete' (in [completion_threshold, early_completion_threshold)), or 'incomplete'; drives the fast-path silence schedule.
+- **[MEDIUM] MISSING_FROM_DOC** — Seven major dispatch handler methods added from 2026-06 onward are not listed in the orchestrator's method inventory. _maybe_handle_relay_speech (the main relay/team-callout dispatch path, line 3454) is particularly significant as it is the hot path for all gaming relay commands. The others gate flavor, verbosity, thinking-mode, relay-enable, anticheat, and LLM-device routing respectively. All follow the established _maybe_handle_* pattern listed for other handlers.
+  - DOC: Orchestrator method listing (doc lines 6088-6122); these handlers are referenced in narrative blocks at doc lines 6124-6151 but not listed as documented methods
+  - SRC: src/kenning/pipeline/orchestrator.py: _maybe_handle_relay_speech at line 3454, _maybe_handle_thinking_toggle at line 3326, _maybe_handle_verbosity_command at line 3300, _maybe_handle_relay_toggle at line 3248, _maybe_handle_flavor_toggle at line 3277, _maybe_handle_llm_device_switch at line 3352, _maybe_handle_anticheat_toggle at line 3156
+  - FIX: Add to the Orchestrator method listing: _maybe_handle_relay_speech(user_text, *, force=False) -> bool, _maybe_handle_thinking_toggle(user_text) -> bool, _maybe_handle_verbosity_command(user_text) -> bool, _maybe_handle_relay_toggle(user_text) -> bool, _maybe_handle_flavor_toggle(user_text) -> bool, _maybe_handle_llm_device_switch(user_text) -> bool, _maybe_handle_anticheat_toggle(user_text) -> bool.
+- **[LOW] WRONG_DETAIL** — Seven explicit line-number references in the orchestrator doc section are significantly stale. The file has grown substantially since these were recorded. Actual locations: _init_telemetry_store: 2158 (doc claims 958), _latency_bucket: 2178 (doc claims 978), _emit_turn_telemetry: 2194 (doc claims 994), _init_report_queue: 2240 (doc claims 1040), _maybe_handle_report_concern: 2259 (doc claims 1059), _load_browser_use_if_enabled: 2079 (doc claims 892), _mint_forensic_token: 3771 (doc claims 1121).
+  - DOC: "_init_telemetry_store() (orchestrator.py:958)", "_emit_turn_telemetry(...) (orchestrator.py:994)", "_latency_bucket(latency_ms) (static, orchestrator.py:978)", "_mint_forensic_token(...) (orchestrator.py:1121)", "_init_report_queue() (orchestrator.py:1040)", "_maybe_handle_report_concern(user_text) (orchestrator.py:1059)", "_load_browser_use_if_enabled() (2026-05-30 catalog 10, orchestrator.py:892)" (doc lines 6119-6122)
+  - SRC: src/kenning/pipeline/orchestrator.py:2158 (_init_telemetry_store), :2194 (_emit_turn_telemetry), :2178 (_latency_bucket), :3771 (_mint_forensic_token), :2240 (_init_report_queue), :2259 (_maybe_handle_report_concern), :2079 (_load_browser_use_if_enabled)
+  - FIX: Remove the explicit line numbers (orchestrator.py:NNN) from these entries or update them to the current values. Given the file's ongoing growth, removing them entirely is preferable to risking future staleness.
+- **[LOW] MISSING_FROM_DOC** — The doc lists three _announce_pending_* voice-loop poll hooks but omits two others of the same kind: _announce_pending_run_report (line 8224, announces a pending coding run report) and _announce_pending_anchor_narration (line 8273, announces a pending architecture narrator narration). These follow the same poll-hook pattern.
+  - DOC: "_announce_coding_completion_if_pending(), _announce_pending_clarifications(), _announce_pending_budget_warning() — voice-loop poll hooks" (doc line 6109)
+  - SRC: src/kenning/pipeline/orchestrator.py:8224 (_announce_pending_run_report), :8273 (_announce_pending_anchor_narration)
+  - FIX: Extend the voice-loop poll hooks entry to include _announce_pending_run_report() and _announce_pending_anchor_narration().
+
+## scripts (20)
+
+- **[HIGH] MISSING_FROM_DOC** — scripts/ptt_test.py is entirely absent from the doc. It is a manual auto-PTT hardware test that drives the PTT key-hold through the real PTT backend (build_ptt_controller) while Valorant is open, to verify the HID/serial path reaches the game under Vanguard. It is operationally load-bearing for PTT debugging.
+  - DOC: ## Operational scripts
+  - SRC: scripts/ptt_test.py:1 (file exists, no doc entry anywhere)
+  - FIX: Add a ### `scripts/ptt_test.py` entry under Operational scripts: Purpose = manual Vanguard-safe PTT key-hold test (cycles PTT hold/release via build_ptt_controller, no audio or pipeline); Run = `.venv\Scripts\python.exe scripts\ptt_test.py [--hold N] [--cycles N]`.
+- **[HIGH] MISSING_FROM_DOC** — The audio_corpus/ subdirectory and its 4 scripts (gen_commands.py, inject.py, render_review.py, run_corpus.py) are mentioned only in a historical-log blockquote (line 289) and are completely absent from the relay_test/ body section, the file tree, and the campaign section. These scripts implement the live audio-injection corpus protocol — the most integration-realistic relay test path.
+  - DOC: ### `scripts/relay_test/`
+  - SRC: scripts/relay_test/audio_corpus/gen_commands.py, inject.py, render_review.py, run_corpus.py (all exist; only reference is historical-log blockquote at doc line 289)
+  - FIX: Add audio_corpus/ as a named subsection under the relay_test/ campaign detail. It belongs next to the other dev tools, with per-script descriptions covering gen_commands (TTS-render batch), inject.py (InjectableCapture swap), run_corpus.py (full Orchestrator driver), render_review.py (per-case review renderer). Also add it to the file tree at line 3035.
+- **[MEDIUM] MISSING_FROM_DOC** — scripts/relay_test/audit_trace.py is entirely absent from the doc. It converts a trace_corpus JSONL into structured audit artifacts: _summary.txt (route distribution + anomaly counts), _anomalies.txt (structural problems), _newpaths.txt (new-pathway cases), and per-agent pairings/<agent>.txt for line-by-line coherence review. It is a primary tool for the corpus audit workflow.
+  - DOC: ### `scripts/relay_test/` (dev tools entry at doc line 3045)
+  - SRC: scripts/relay_test/audit_trace.py:1-15 (file exists, zero doc mentions)
+  - FIX: Add audit_trace.py to the dev tools catch-all at line 3045, or give it a named bullet in the campaign section alongside analyze_outputs.py.
+- **[MEDIUM] MISSING_FROM_DOC** — scripts/relay_test/dump_corpus.py is entirely absent from the doc. It renders a full trace_corpus JSONL into a human-readable dump of every case (grouped by route then category) for hand-reading line-by-line coherence/quality audits of the 25k corpus.
+  - DOC: ### `scripts/relay_test/` (dev tools entry at doc line 3045)
+  - SRC: scripts/relay_test/dump_corpus.py:1-10 (file exists, zero doc mentions)
+  - FIX: Add dump_corpus.py to the relay_test/ dev tools list at line 3045.
+- **[MEDIUM] MISSING_FROM_DOC** — scripts/relay_test/pipeline_trace.py is entirely absent from the doc. It is a full-pipeline TRACE emitter (transcription -> normalize_command -> match_relay_command -> build_relay_line) for by-hand corpus reading at every stage.
+  - DOC: ### `scripts/relay_test/` (dev tools entry at doc line 3045)
+  - SRC: scripts/relay_test/pipeline_trace.py:1-10 (file exists, zero doc mentions)
+  - FIX: Add pipeline_trace.py to the relay_test/ dev tools list at line 3045 alongside trace_corpus.py.
+- **[MEDIUM] MISSING_FROM_DOC** — scripts/relay_test/blip_diag.py is completely absent from the doc. The dev-tools catch-all at line 3045 lists burst_diag (covered in line 7456 too) but not blip_diag. These are sibling one-off audio-diagnostic probes.
+  - DOC: ### `scripts/relay_test/` dev tools, doc line 3045 and doc line 7456
+  - SRC: scripts/relay_test/blip_diag.py (file exists, zero doc mentions)
+  - FIX: Add blip_diag to the dev tools entry at line 3045 (alongside burst_diag) and mention it at line 7456 in the detailed section.
+- **[MEDIUM] MISSING_FROM_DOC** — scripts/relay_test/_cmd_concrete.py is entirely absent from the doc. It is a one-shot batch rewrite script that replaced abstract/literary strings in _ultron_commands.py with the concrete machine register. Though it was applied and superseded, it still exists in the tree.
+  - DOC: ### `scripts/relay_test/`
+  - SRC: scripts/relay_test/_cmd_concrete.py:1-3 (file exists, zero doc mentions)
+  - FIX: Add a note in the relay_test/ section or dev-tools entry that _cmd_concrete.py is a stale one-shot rewrite helper (applied, kept for history).
+- **[MEDIUM] MISSING_FROM_DOC** — scripts/relay_test/_render_25k_chunks.py is entirely absent from the doc.
+  - DOC: ### `scripts/relay_test/`
+  - SRC: scripts/relay_test/_render_25k_chunks.py (file exists, zero doc mentions)
+  - FIX: Add _render_25k_chunks.py to the relay_test/ dev tools list or the catch-all at line 3045.
+- **[MEDIUM] MISSING_FROM_DOC** — scripts/relay_test/route_scorecard.py is mentioned only inside a historical-log blockquote (line 598, inside `>`), not in the current-state body sections. It implements the deterministic snap% vs LLM% gate used in the live campaign workflow.
+  - DOC: ### `scripts/relay_test/` campaign section
+  - SRC: scripts/relay_test/route_scorecard.py exists on disk; only mentioned in historical-log blockquote at doc line 598
+  - FIX: Add route_scorecard.py to the relay_test/ body section or at minimum the dev tools catch-all at line 3045.
+- **[MEDIUM] MISSING_FROM_DOC** — scripts/relay_test/battery_replay.py is mentioned only inside a historical-log blockquote (line 505). It is a live-dispatch replay harness (battery_cmds.txt -> real gaming dispatch + live 3B) used to iterate on relay quality.
+  - DOC: ### `scripts/relay_test/` campaign section
+  - SRC: scripts/relay_test/battery_replay.py exists on disk; only mentioned in historical-log blockquote at doc line 505
+  - FIX: Add battery_replay.py to the relay_test/ body section or dev tools catch-all at line 3045.
+- **[MEDIUM] MISSING_FROM_DOC** — Three var_* packs are completely absent from the doc: var_marvel_think.py, var_social_reactions.py, var_yesno_agree.py. They are not mentioned anywhere in the doc body (only var_curated_commands, var_contextual_enemy, var_repeat_verbatim appear in historical log). Combined with the already-noted count errors, the doc's enumeration of the var_* family is severely incomplete.
+  - DOC: `var_*` variety packs (19 packs) list at doc line 7380
+  - SRC: scripts/relay_test/vocab_packs/var_marvel_think.py, var_social_reactions.py, var_yesno_agree.py (all exist, zero doc body mentions)
+  - FIX: Add the 7 missing var_* packs (var_contextual_enemy, var_curated_commands, var_curated_commands2, var_marvel_think, var_repeat_verbatim, var_social_reactions, var_yesno_agree) to the var_* list at line 7380.
+- **[MEDIUM] WRONG_DETAIL** — The doc says build_corpus and both aliases call with target=20000. The actual source has `_TARGET = 25000` and build_corpus_10k calls `build_corpus(seed, _TARGET)` — the default is 25000, not 20000. The '10k' alias name is historical but the alias calls at 25k not 20k.
+  - DOC: corpus_packs.py description at doc line 7352: 'build_corpus(seed=0, target=20000)' and 'both call build_corpus at target=20000'
+  - SRC: scripts/relay_test/corpus_packs.py:29 `_TARGET = 25000`; corpus_packs.py:188 `def build_corpus(seed: int = 0, target: int = _TARGET)`
+  - FIX: Update the corpus_packs.py description at line 7352 to say 'build_corpus(seed=0, target=25000)' and correct 'both call build_corpus at target=25000'.
+- **[MEDIUM] WRONG_DETAIL** — The vocab_packs counts are wrong on three levels: (1) total packs: 55 actual vs 48 claimed; (2) var_* count: 27 actual vs 19 claimed; (3) stress_* count: 20 actual vs 21 claimed. The doc also says '~29.4k unique pack payloads' which may no longer be accurate given the 7 additional var_* packs.
+  - DOC: doc line 3043 '48 packs'; doc line 7365 'vocab_packs/ (48 packs, ~29.4k payloads)'; doc line 7379 'var_* variety packs (19 packs)'; doc line 7382 'stress_* metric-stress packs (21 packs)'
+  - SRC: scripts/relay_test/vocab_packs/ directory: 55 .py files excluding __init__.py; 27 var_* files; 20 stress_* files
+  - FIX: Update the total count to 55, var_* to 27, stress_* to 20, and add the 7 missing var_* pack names to the enumeration at line 7380.
+- **[MEDIUM] WRONG_DETAIL** — The doc says the scorecard tracks '16 tracked metrics (_TRACKED)'. The actual _TRACKED list has 27 entries, having been extended with iter5 personality metrics (flavor_coverage, contextual_match, voice_register_rate, soundboard_max_repeat), comprehensive-loop fidelity metrics (llm_flag_rate, compound_zero_fact_loss), zero-tolerance gates (oov_addressee_matches, fallback_malformed, isolation_flag_fail), and audio/ASR fidelity metrics (blips_per_1000, asr_coverage). The 16-metric count is severely stale.
+  - DOC: scorecard.py description at doc line 7430: '16 tracked metrics (_TRACKED)'
+  - SRC: scripts/relay_test/scorecard.py:588-625 `_TRACKED` list has 27 entries
+  - FIX: Update the scorecard description to say '27 tracked metrics (_TRACKED)' and enumerate the current metric families.
+- **[MEDIUM] WRONG_DETAIL** — Two conflicting counts appear in the same doc: the file tree says 20 and the campaign section says 15. The actual count is 21 (the original 20 plus ultron_voice.md which is not mentioned anywhere in the doc). The campaign section's '15' is the most stale; the file tree's '20' is closer but still off by one.
+  - DOC: File tree line 3044: 'refs/ <- 20 web-grounded Valorant reference docs'; campaign section line 7403: 'refs/ (15 web-grounded Valorant reference documents)'
+  - SRC: scripts/relay_test/refs/ directory: 21 files (includes ultron_voice.md); doc line 3044 says '20 web-grounded'; doc line 7403 says '15 web-grounded'
+  - FIX: Update both references to '21 web-grounded reference documents' and add ultron_voice.md to the listed files at doc line 7403-7411.
+- **[LOW] WRONG_DETAIL** — The doc says NEGATIVE_SET has 30 stream-narration phrases. The actual list has 31 items.
+  - DOC: scorecard.py description at doc line 7425: 'NEGATIVE_SET — 30 stream-narration phrases'
+  - SRC: scripts/relay_test/scorecard.py:315-331 `NEGATIVE_SET` has 31 items
+  - FIX: Change '30 stream-narration phrases' to '31 stream-narration phrases' at line 7425.
+- **[LOW] MISSING_FROM_DOC** — scripts/relay_test/refs/ultron_voice.md exists in the refs/ directory but is not listed in the doc's enumeration of the 15/20 reference documents. The other 20 files are all described.
+  - DOC: refs/ list at doc line 7403-7411
+  - SRC: scripts/relay_test/refs/ultron_voice.md (file exists, zero doc mentions)
+  - FIX: Add ultron_voice.md to the refs/ list at line 7403-7411 with a description of its content (MCU/comics Ultron voice patterns, persona grounding).
+- **[LOW] REMOVED_STILL_DOCUMENTED** — The file tree description of corpus_packs.py references _split_compound as a function in that module, but _split_compound does not exist in the source. The actual functions are _all_pack_names, _relay_pack_names, _expect_match, _load_pack, _pack_cases, _compound_cases, _cap_stratified, build_corpus, build_corpus_10k. Only _compound_cases is real; _split_compound never existed or was removed.
+  - DOC: File tree line 3038: 'corpus_packs.py <- build_corpus(seed, target=20000): auto-discover packs by kind (relay/question/NEGATIVE) + _split_compound/_compound_cases + stratified cap'
+  - SRC: scripts/relay_test/corpus_packs.py: grep for _split_compound returns no matches
+  - FIX: Remove _split_compound from the corpus_packs.py description at line 3038.
+- **[LOW] WRONG_DETAIL** — The doc omits _resolve_target_mb entirely and shows an incorrect signature for _format_line (doc shows 2 args, source has 4: used, total, target_mb, preset_label). The --target-preset CLI flag is also absent from the documented CLI.
+  - DOC: check_vram.py Functions at doc line 6541: 'vram_used_mb(gpu_id), vram_total_mb(gpu_id), gpu_name(gpu_id), _format_line(used, total), main(argv)'
+  - SRC: scripts/check_vram.py:54 `def _resolve_target_mb(override)`; scripts/check_vram.py:124 `def _format_line(used, total, target_mb, preset_label)`
+  - FIX: Update the check_vram.py function list to include _resolve_target_mb(override) and correct _format_line's signature to (used, total, target_mb, preset_label). Add --target-preset to the documented CLI flags.
+- **[LOW] MISSING_FROM_DOC** — scripts/_aggregate_behavior_diff.py is mentioned only in a historical-log blockquote (line 323, inside `>`) as the tool used for 24,996-input behavioral diff regression tests. It is absent from the file tree and the Operational scripts prose section.
+  - DOC: ## Operational scripts
+  - SRC: scripts/_aggregate_behavior_diff.py exists; only mentioned in historical-log blockquote at doc line 323
+  - FIX: Add scripts/_aggregate_behavior_diff.py to the file tree listing under scripts/ and optionally add a brief prose entry.
+
+## structural-coverage (28)
+
+- **[HIGH] MISSING_FROM_DOC** — audio/routing_rules.py is one of the three central relay-pipeline modules called out in CLAUDE.md as a 'key area', but it appears only in session-log blockquotes (lines 332, 399, 406) -- never in the file tree under audio/ and never in any body section. A navigator reading the file tree or Source modules section will find no entry for this file.
+  - DOC: File tree audio/ section (lines 2624-2660) and Source modules section (line 3514+)
+  - SRC: src/kenning/audio/routing_rules.py:1 (tracked, git ls-files confirmed)
+  - FIX: Add a file tree entry for routing_rules.py to the audio/ subtree listing (between relay_speech.py and command_normalizer.py) with a one-line description of its STT-correction + normalize rule layers + thresholds role, and add a body '#### audio/routing_rules.py' section analogous to the relay_speech.py one.
+- **[HIGH] MISSING_FROM_DOC** — audio/llm_prompts.py is named in CLAUDE.md as a key area ('LLM persona/answer prompts + construction index') but is referenced only in session-log blockquotes (lines 245, 407). It is absent from both the file tree and all body sections. The doc therefore provides no guidance on where LLM prompts live.
+  - DOC: File tree audio/ section (lines 2624-2660) and Source modules section
+  - SRC: src/kenning/audio/llm_prompts.py:1 (tracked, git ls-files confirmed)
+  - FIX: Add a file tree entry for llm_prompts.py to the audio/ subtree and a body section covering LlamaPromptBuilder, _RELAY_REPHRASE_SYSTEM, _RELAY_SYSTEM, and the Ultron persona prompt logic.
+- **[HIGH] MISSING_FROM_DOC** — _ultron_answer.py (the adaptive LLM ANSWER pipeline for Meta/Social/Marvel responses, is_meta_leak gate) is referenced only in session-log blockquotes (lines 589, 608). It is absent from the file tree (which lists _ultron_pools, _ultron_setpieces, _ultron_commands, _ultron_identity but not _ultron_answer) and from all body sections.
+  - DOC: File tree audio/ section (lines 2624-2660)
+  - SRC: src/kenning/audio/_ultron_answer.py:1 (tracked, git ls-files confirmed)
+  - FIX: Add a file tree entry for _ultron_answer.py to the audio/ subtree alongside _ultron_identity.py, with a one-line description of the meta-leak gate and LLM ANSWER pipeline.
+- **[HIGH] MISSING_FROM_DOC** — _ultron_social.py (curated social-reaction pools: compliments/insults/surrender/yes-no) is referenced only in session-log blockquote line 609. It is absent from the file tree and from all body sections.
+  - DOC: File tree audio/ section (lines 2624-2660)
+  - SRC: src/kenning/audio/_ultron_social.py:1 (tracked, git ls-files confirmed)
+  - FIX: Add a file tree entry for _ultron_social.py to the audio/ subtree describing the addressee-adapted social-reaction pools.
+- **[HIGH] MISSING_FROM_DOC** — The entire providers/ package (3 files: auth_profiles.py, failover_policy.py, rotation.py) is absent from both the file tree and all body sections. The package is mentioned only in passing in a session-log row (line 2409: 'new packages providers/ (failover_policy + auth_profiles + rotation)'). No file tree entry exists for the providers/ directory.
+  - DOC: File tree (lines 2519-3240) -- no providers/ entry anywhere in file tree; Source modules section has no providers/ subsection
+  - SRC: src/kenning/providers/auth_profiles.py, src/kenning/providers/failover_policy.py, src/kenning/providers/rotation.py (all tracked, git ls-files confirmed)
+  - FIX: Add a providers/ subtree entry to the File tree section and a body subsection describing RotatingBraveClient / AuthProfileStore / FailoverPolicy, analogous to the existing web_search/ section.
+- **[MEDIUM] MISSING_FROM_DOC** — The rules/ package (conditionals.py) has no file tree entry and no body section. The safety/rules/ sub-package IS in the file tree, but the top-level rules/ package that conditionals.py belongs to does not appear anywhere in the doc.
+  - DOC: File tree (lines 2519-3240) -- no rules/ entry
+  - SRC: src/kenning/rules/conditionals.py:1 (tracked, git ls-files confirmed)
+  - FIX: Add a rules/ subtree entry to the File tree section describing the conditionals module.
+- **[MEDIUM] MISSING_FROM_DOC** — Eight core safety policy files are absent from both the file tree and body sections. The file tree shows safety/anticheat.py, import_firewall.py, testing_mode.py, audit.py, auto_approval.py, ignore.py but the policy engine files (validator, policy, policy_chain, hierarchical_policy, intent, path_resolver, taint, two_phase_approval) are not listed. These are mentioned only in the Validating HEAD session-log block (line 2409) but have no body-section documentation.
+  - DOC: Source modules section (line 3514+); safety/ file tree entry
+  - SRC: src/kenning/safety/validator.py, src/kenning/safety/policy.py, src/kenning/safety/policy_chain.py, src/kenning/safety/hierarchical_policy.py, src/kenning/safety/intent.py, src/kenning/safety/path_resolver.py, src/kenning/safety/taint.py, src/kenning/safety/two_phase_approval.py (all tracked)
+  - FIX: Extend the safety/ subtree in the File tree to list each policy engine file with a one-line description, and add a body section covering the two-phase approval mechanism, validator logic, and hierarchical policy chain.
+- **[MEDIUM] MISSING_FROM_DOC** — The file tree shows safety/rules/ with entries for category_it.py, category_s.py, and cap_carveouts.py only (3 visible entries per the read at lines 2620-2623). The remaining 17 category files (category_a through category_p, category_ignore, base.py) are not individually listed anywhere in the doc. Each category implements a distinct safety rule class.
+  - DOC: File tree safety/rules/ entry (lines 2618-2623)
+  - SRC: src/kenning/safety/rules/base.py, src/kenning/safety/rules/cap_carveouts.py, src/kenning/safety/rules/category_a.py through category_s.py (19 files tracked)
+  - FIX: Extend the safety/rules/ subtree listing to enumerate all category files with a one-line description of the safety category each covers (e.g., category_a = A1 system-prompt injection, category_b = B1 SSRF, etc.).
+- **[MEDIUM] MISSING_FROM_DOC** — moonshine_engine.py and parakeet_engine.py appear in the file tree with one-line descriptions (lines 2656-2657) but have no dedicated body sections. whisper_engine.py has a full '### src/kenning/transcription/whisper_engine.py' body section (line 5000+). The alternative STT engines are actively used (parakeet via isolated venv, moonshine via C++ lib) and their lifecycle/streaming protocol differs from Whisper.
+  - DOC: Source modules section -- '### src/kenning/transcription/whisper_engine.py' has a full body section; moonshine and parakeet have none
+  - SRC: src/kenning/transcription/moonshine_engine.py:1, src/kenning/transcription/parakeet_engine.py:1 (both tracked; file tree at doc lines 2656-2657 confirms they ARE in the file tree)
+  - FIX: Add '### src/kenning/transcription/moonshine_engine.py' and '### src/kenning/transcription/parakeet_engine.py' body sections analogous to the whisper_engine section, covering streaming protocol, lifecycle helpers, and configuration.
+- **[MEDIUM] MISSING_FROM_DOC** — The Tests section documents tests/routing/, tests/integration/, tests/coding/, tests/error_recovery/, tests/audio/, tests/subprocess/, tests/install/, tests/data/, tests/web_search/, tests/safety/, tests/memory/, tests/observations/, tests/openclaw_routing/, tests/addressing/. However fifteen subdirectories (checkpoints, events, hooks, intent, llm, mcp, parsing, pipeline, projects, providers, ptt, rules, search, services, streaming) are not mentioned anywhere in the Tests section or elsewhere in the doc body.
+  - DOC: Tests section (line 6869+)
+  - SRC: tests/checkpoints, tests/events, tests/hooks, tests/intent, tests/llm, tests/mcp, tests/parsing, tests/pipeline, tests/projects, tests/providers, tests/ptt, tests/rules, tests/search, tests/services, tests/streaming (all confirmed via git ls-files)
+  - FIX: Add entries in the Tests section for each missing subdirectory with a brief description of what package/concern they cover.
+- **[LOW] MISSING_FROM_DOC** — Nine llm/ submodule files appear in the file tree with one-line descriptions but have no dedicated body sections. The file tree entries are accurate and readable, so the coverage is minimal but present. The only llm/ module with a full body section is inference.py.
+  - DOC: Source modules llm/ section
+  - SRC: src/kenning/llm/cache_aware_chunks.py, cache_warmer.py, compression.py, draft_model.py, history_processors.py, requery.py, self_consistency.py, context_scoring.py, context_window_guard.py (all in file tree lines 2660-2690)
+  - FIX: Consider adding brief body entries for context_window_guard.py (actively wired at startup) and history_processors.py (always-ON pipeline component) as they are most likely to need maintenance guidance.
+- **[LOW] MISSING_FROM_DOC** — The llm/condensers/ sub-package (6 files) has no file tree subtree entry and no body section. The session-log mentions 'condensers/splitter' in passing (line 2409) but the condensers/ directory itself does not appear in the file tree.
+  - DOC: File tree llm/ section
+  - SRC: src/kenning/llm/condensers/amortized.py, condensers/llm_summarizing.py, condensers/noop.py, condensers/observation_masking.py, condensers/recent.py, condensers/splitter.py (all tracked)
+  - FIX: Add a condensers/ subtree entry under llm/ in the file tree listing the six condenser strategy modules with one-line descriptions of each strategy.
+- **[LOW] MISSING_FROM_DOC** — Five of the six observations/ module files appear in the file tree but have no body-section documentation. Only safe_capture.py is mentioned in a body section context.
+  - DOC: File tree observations/ section
+  - SRC: src/kenning/observations/integrations.py, lineage_overlap.py, outcome_resolver.py, schema.py, writer.py (tracked; only safe_capture.py has a body reference)
+  - FIX: Extend the observations/ subsection in the file tree to describe integrations.py, schema.py, writer.py (the core observation pipeline), and outcome_resolver.py (the offline maintenance task).
+- **[LOW] MISSING_FROM_DOC** — Three openclaw_routing/ modules (ambiguity.py, block_and_revise.py, irma.py) are absent from the file tree and body sections. Other modules in that package (canonicalize.py, classify.py, etc.) ARE referenced.
+  - DOC: File tree openclaw_routing/ section
+  - SRC: src/kenning/openclaw_routing/ambiguity.py, block_and_revise.py, irma.py (all tracked)
+  - FIX: Add file tree entries for ambiguity.py, block_and_revise.py, and irma.py in the openclaw_routing/ subtree.
+- **[LOW] MISSING_FROM_DOC** — ptt/backends.py is absent from both the file tree and body sections. ptt/controller.py is referenced, but the backends module (which implements the rawhid/serial/etc. backend abstraction) is not documented.
+  - DOC: File tree ptt/ section
+  - SRC: src/kenning/ptt/backends.py:1 (tracked)
+  - FIX: Add a file tree entry for ptt/backends.py describing the backend dispatch and Literal type-pinned rawhid-only path.
+- **[LOW] MISSING_FROM_DOC** — The mcp/ package has no file tree subtree entry. The session-log (line 2409) mentions 'mcp/ (transport with env/header sanitisation + McpServerRegistry)' and the Infrastructure-wiring row (line 2382) mentions builder.py, but the mcp/ directory and its three files are not listed in the file tree.
+  - DOC: File tree -- no mcp/ subtree entry
+  - SRC: src/kenning/mcp/registry.py:1, src/kenning/mcp/transport.py:1 (both tracked)
+  - FIX: Add a mcp/ subtree entry to the file tree listing builder.py, registry.py (McpServerRegistry), and transport.py (env-header sanitisation) with one-line descriptions.
+- **[LOW] MISSING_FROM_DOC** — Four of the five skills/ submodule files have no file tree or body-section entries. Only skills/scan.py is mentioned in body context (the skill trust-gate). The other four files implement the skills loader, marketplace, activation, and data models.
+  - DOC: File tree skills/ section
+  - SRC: src/kenning/skills/activation.py, loader.py, marketplace.py, models.py (all tracked)
+  - FIX: Add file tree entries for activation.py, loader.py, marketplace.py, and models.py under the skills/ subtree.
+- **[LOW] MISSING_FROM_DOC** — Three of the four spotify/ files (auth.py, client.py, voice.py) have no file tree or body-section entries. lean_handler.py is mentioned. The auth, client, and voice modules implement OAuth flow, Spotify Web API client, and voice command parsing respectively.
+  - DOC: File tree spotify/ section -- only lean_handler.py referenced
+  - SRC: src/kenning/spotify/auth.py, client.py, voice.py (all tracked)
+  - FIX: Add file tree entries for auth.py (OAuth + token refresh), client.py (SpotifyClient wrapper), and voice.py (voice command parsing) under the spotify/ subtree.
+- **[LOW] MISSING_FROM_DOC** — Three web_search/ reader/converter modules are absent from the file tree. The file tree lists trafilatura_reader.py, searxng.py, brave.py etc., but pandoc_converter.py, playwright_reader.py, and slimdown_html.py (mentioned in the session-log at line 2425 as 'Aider catalog port') are not listed.
+  - DOC: File tree web_search/ section (lines ~2695-2715)
+  - SRC: src/kenning/web_search/pandoc_converter.py, playwright_reader.py, slimdown_html.py (all tracked)
+  - FIX: Add file tree entries for pandoc_converter.py, playwright_reader.py, and slimdown_html.py to the web_search/ subtree with descriptions of each reader/converter role.
+- **[LOW] MISSING_FROM_DOC** — utils/ansi_safe.py and utils/spinner.py are absent from the file tree and body sections. The session-log (line 2425) mentions 'utils/{mtime_cache, token_budget, snapshot_guard, relative_indent, spinner, poll}' but the file tree for utils/ does not include spinner or ansi_safe.
+  - DOC: File tree utils/ section
+  - SRC: src/kenning/utils/ansi_safe.py:1, src/kenning/utils/spinner.py:1 (both tracked)
+  - FIX: Add file tree entries for ansi_safe.py (ANSI-safe stdout wrapper) and spinner.py (CLI progress spinner) to the utils/ subtree.
+- **[LOW] MISSING_FROM_DOC** — memory/history_compression.py is absent from the file tree. The memory/ subtree lists embedder.py, qdrant_store.py, ranking.py, reranker.py, topical_chunking.py, discourse.py, contextualizer.py, background_summarizer.py, but not history_compression.py.
+  - DOC: File tree memory/ section (lines ~2679-2688)
+  - SRC: src/kenning/memory/history_compression.py:1 (tracked)
+  - FIX: Add a file tree entry for history_compression.py to the memory/ subtree describing the heuristic + perplexity-scorer compressor.
+- **[LOW] MISSING_FROM_DOC** — search/code_exploration.py is absent from the file tree and body sections. The search/ subtree lists ripgrep.py but not code_exploration.py.
+  - DOC: File tree search/ section
+  - SRC: src/kenning/search/code_exploration.py:1 (tracked)
+  - FIX: Add a file tree entry for code_exploration.py to the search/ subtree.
+- **[LOW] MISSING_FROM_DOC** — settings_gui/launch.py is absent from the file tree. The settings_gui/ entry at line 2626 references 'spec.py knob catalogue + write_runtime_overrides' and 'app.py tkinter dark-theme UI' but does not list launch.py (the strict matcher + spawn/close logic).
+  - DOC: File tree settings_gui/ section (line 2626)
+  - SRC: src/kenning/settings_gui/launch.py:1 (tracked)
+  - FIX: Add launch.py to the settings_gui/ file tree entry description.
+- **[LOW] MISSING_FROM_DOC** — scripts/ptt_test.py has no entry in the Operational scripts section and no file tree entry under scripts/. The scripts section covers embedder_server.py, autonomous_e2e_harness.py, relay_test/ harness, and flavor_gen/audit offline tools, but not ptt_test.py.
+  - DOC: Operational scripts section (line 6632+)
+  - SRC: scripts/ptt_test.py:1 (tracked, git ls-files confirmed)
+  - FIX: Add a scripts/ptt_test.py entry to the Operational scripts section describing its role in PTT HID verification.
+- **[LOW] MISSING_FROM_DOC** — The Operational scripts section describes the relay_test/ harness and mentions audio_corpus/ as an 'MP3 command-battery infra', but the four individual audio_corpus/ scripts (gen_commands.py, inject.py, render_review.py, run_corpus.py) have no file tree or body entries beyond that single mention.
+  - DOC: Operational scripts section relay_test/ entry
+  - SRC: scripts/relay_test/audio_corpus/gen_commands.py, inject.py, render_review.py, run_corpus.py (all tracked)
+  - FIX: Add a brief audio_corpus/ subtree listing to the relay_test/ entry in the Operational scripts section, describing each script's role in the MP3 battery infrastructure.
+- **[LOW] MISSING_FROM_DOC** — docs/openclaw_desktop_automation_setup.md exists in git but is not referenced in the Documentation index or anywhere else in the doc body.
+  - DOC: Documentation index (line 7207+)
+  - SRC: docs/openclaw_desktop_automation_setup.md:1 (tracked)
+  - FIX: Add docs/openclaw_desktop_automation_setup.md to the Documentation index with a brief note on its content (OpenClaw desktop automation setup guide).
+- **[LOW] MISSING_FROM_DOC** — docs/ultron_1_0/README.md exists in git (confirmed via git ls-files) but is not referenced in the Documentation index section. The ultron_1_0/ directory is mentioned in the doc, but its README.md is not listed.
+  - DOC: Documentation index (line 7207+)
+  - SRC: docs/ultron_1_0/README.md:1 (tracked)
+  - FIX: Add docs/ultron_1_0/README.md to the Documentation index or the ultron_1_0/ section entry.
+- **[LOW] MISSING_FROM_DOC** — tests/test_wake_word_swap.py is a top-level test file that is not referenced in the Tests section or anywhere in the doc body.
+  - DOC: Tests section (line 6869+)
+  - SRC: tests/test_wake_word_swap.py:1 (tracked)
+  - FIX: Add a note about tests/test_wake_word_swap.py in the Tests section under the wake-word or addressing test coverage entry.
+
+## tests-config (38)
+
+- **[HIGH] MISSING_FROM_DOC** — The top-level config.yaml section `push_to_talk` (18 keys covering the HID/serial PTT backend, lead/release/jitter timing, heartbeat cadence, and max-hold watchdog) is not listed in the doc's config.yaml section inventory. It is only mentioned obliquely in a cross-cutting flow paragraph (line 4766) and a conftest note (line 568), never as a documented config section.
+  - DOC: ## Configuration / ### `config.yaml` section list (lines 6449–6506) — push_to_talk is absent from the bulleted list of top-level sections
+  - SRC: config.yaml:165-177 (push_to_talk section) + src/kenning/config.py:3868 (PushToTalkConfig) + src/kenning/config.py:3927 (KenningConfig.push_to_talk)
+  - FIX: Add a `push_to_talk` entry to the config.yaml section list covering: enabled, backend (rawhid/serial/auto), hid_vid, hid_usage_page, serial_port, baud, key, lead_ms, release_tail_ms, release_jitter_ms, heartbeat_ms, max_hold_seconds. Env: KENNING_PTT_ENABLED / KENNING_PTT_SERIAL_PORT.
+- **[HIGH] MISSING_FROM_DOC** — The top-level config.yaml section `relay_speech` (8 keys: enabled, output_device, rephrase, max_line_chars, echo_to_user, follow_up_seconds, roast_lines_path, fun_facts_path) is not listed in the config.yaml section inventory in the doc, despite being a primary feature section.
+  - DOC: ## Configuration / ### `config.yaml` section list — relay_speech absent from the bulleted section inventory
+  - SRC: config.yaml:1835-1865 (relay_speech section) + src/kenning/config.py:3701 (RelaySpeechConfig) + src/kenning/config.py:3965 (KenningConfig.relay_speech)
+  - FIX: Add a `relay_speech` entry to the config.yaml section list documenting the eight keys and their defaults (enabled=true, output_device 'Voicemeeter Input', rephrase=true, max_line_chars=360, echo_to_user=true, follow_up_seconds=120.0, roast_lines_path, fun_facts_path).
+- **[HIGH] MISSING_FROM_DOC** — The top-level `semantic_router` section (17 fields in SemanticRouterConfig covering backend, embedding_weight, and 14 sidecar_* knobs for the isolated-venv embedder) has no entry in the doc's config.yaml section listing. It is mentioned in an inline paragraph at line 7704 only as new schema fields, never as a standalone documented section.
+  - DOC: ## Configuration / ### `config.yaml` section list — semantic_router absent from the section inventory
+  - SRC: src/kenning/config.py:3823 (SemanticRouterConfig) + src/kenning/config.py:3968 (KenningConfig.semantic_router) — no top-level 'semantic_router' key appears in config.yaml (schema provides defaults); schema has 17 fields including sidecar_*, embedding_weight, backend
+  - FIX: Add a `semantic_router` entry to the config.yaml section list covering: enabled, backend (hybrid/embedding/lexical), embedding_weight, sidecar_enabled, sidecar_host, sidecar_port, sidecar_python, sidecar_script, sidecar_backend, sidecar_model, sidecar_device, sidecar_hf_cache, sidecar_startup_timeout_seconds, sidecar_orphan_sweep_enabled, sidecar_pidfile_path.
+- **[HIGH] STALE_DOC_CLAIM** — The doc's wake_word new-keys block shows thresholds.ultron as 0.7 but the actual config.yaml shows 0.65 following the 2026-06-17 sensitivity bump (comment: '2026-06-17: 0.7 -> 0.65 (user wanted a SLIGHT sensitivity bump'). The doc retains the pre-2026-06-17 value.
+  - DOC: ## Configuration — `wake_word` new-keys block at line 7757: `ultron: 0.7   # 2026-06-15: raised 0.6 → 0.7 to reject confusables`
+  - SRC: config.yaml:292 — `ultron: 0.65  # 2026-06-17: 0.7 -> 0.65`
+  - FIX: Update the wake_word new-keys block to show `ultron: 0.65  # 2026-06-17: 0.7 -> 0.65` and note the reason (occasional missed real 'Ultron'; 3-frame sustain gate stays as the primary false-accept guard).
+- **[MEDIUM] MISSING_FROM_DOC** — The top-level `spotify` config section (enabled, credentials_path, default_device) is not mentioned in the config.yaml section listing. It is mentioned only in a source-module paragraph at line 4529.
+  - DOC: ## Configuration / ### `config.yaml` section list — spotify absent from section inventory
+  - SRC: config.yaml:1830-1833 (spotify section) + src/kenning/config.py:3680 (SpotifyConfig) + src/kenning/config.py:3979 (KenningConfig.spotify)
+  - FIX: Add `- spotify (enabled, credentials_path='~/.kenning/spotify.json', default_device)` to the config.yaml section list.
+- **[MEDIUM] MISSING_FROM_DOC** — The top-level `notifications` section (telegram sub-section with enabled, user_id_env, fallback_user_id, notify_on.*) is not listed in the config.yaml section listing.
+  - DOC: ## Configuration / ### `config.yaml` section list — notifications absent from section inventory
+  - SRC: config.yaml:1439-1463 (notifications section) + src/kenning/config.py:2808 (NotificationsConfig) + src/kenning/config.py:3944 (KenningConfig.notifications)
+  - FIX: Add `- notifications (telegram.{enabled, user_id_env, fallback_user_id, notify_on.*})` to the config.yaml section list.
+- **[MEDIUM] MISSING_FROM_DOC** — The top-level `heartbeat` section (alert_log_path, alert_retention_days, auto_notify_telegram) is not listed in the config.yaml section inventory.
+  - DOC: ## Configuration / ### `config.yaml` section list — heartbeat absent from section inventory
+  - SRC: config.yaml:1471-1477 (heartbeat section) + src/kenning/config.py:2916 (HeartbeatConfig) + src/kenning/config.py:3945 (KenningConfig.heartbeat)
+  - FIX: Add `- heartbeat (alert_log_path, alert_retention_days=30, auto_notify_telegram)` to the config.yaml section list.
+- **[MEDIUM] MISSING_FROM_DOC** — The top-level `media_generation` section (8 keys including enabled, image_tool, video_tool, music_tool, default_*_provider, default_timeout_seconds, delivery_voice, delivery_text, acknowledgment_phrases) is not in the config.yaml section list.
+  - DOC: ## Configuration / ### `config.yaml` section list — media_generation absent from section inventory
+  - SRC: config.yaml:1489-1503 (media_generation section) + src/kenning/config.py:2863 (MediaGenerationConfig) + src/kenning/config.py:3947 (KenningConfig.media_generation)
+  - FIX: Add `- media_generation (enabled, image_tool, video_tool, music_tool, default_*_provider=null, default_timeout_seconds, delivery_voice, delivery_text, acknowledgment_phrases)` to the config.yaml section list.
+- **[MEDIUM] MISSING_FROM_DOC** — The top-level `browser` section (enabled, default_snapshot_mode, default_*_timeout_seconds, long_running_progress_threshold_seconds, acknowledgment_phrases) is not in the config.yaml section list. Note: this is distinct from `browser_use` which IS documented.
+  - DOC: ## Configuration / ### `config.yaml` section list — browser absent from section inventory
+  - SRC: config.yaml:1512-1524 (browser section) + src/kenning/config.py:2827 (BrowserConfig) + src/kenning/config.py:3946 (KenningConfig.browser)
+  - FIX: Add `- browser (enabled, default_snapshot_mode, default_navigation/action/screenshot_timeout_seconds, long_running_progress_threshold_seconds, acknowledgment_phrases)` to the section list.
+- **[MEDIUM] MISSING_FROM_DOC** — The top-level `events` section (enabled, store_backend, base_dir, qdrant_collection, default_session_id, install_bus_sink) is not in the config.yaml section listing.
+  - DOC: ## Configuration / ### `config.yaml` section list — events absent from section inventory
+  - SRC: config.yaml:1592-1598 (events section) + src/kenning/config.py:3420 (EventsConfig) + src/kenning/config.py:4006 (KenningConfig.events)
+  - FIX: Add `- events (enabled=true, store_backend='jsonl', base_dir, qdrant_collection, default_session_id, install_bus_sink)` to the config.yaml section list.
+- **[MEDIUM] MISSING_FROM_DOC** — The top-level `skills` section (8 keys: enabled, always_on_only, disabled_skills, default_min_user_text_chars, max_matches_per_turn, max_skill_block_chars, public_dirname, user_dirname, project_dirname, extra_dirs) is not in the config.yaml section list.
+  - DOC: ## Configuration / ### `config.yaml` section list — skills absent from section inventory
+  - SRC: config.yaml:1621-1631 (skills section) + src/kenning/config.py:3450 (SkillsConfig) + src/kenning/config.py:3999 (KenningConfig.skills)
+  - FIX: Add `- skills (enabled, always_on_only, disabled_skills, default_min_user_text_chars, max_matches_per_turn, max_skill_block_chars, public/user/project_dirname, extra_dirs)` to the config.yaml section list.
+- **[MEDIUM] MISSING_FROM_DOC** — The top-level `hooks` config section (HooksConfig with enabled=True) governs out-of-process lifecycle hooks (TaskStart cancel-capable, TaskComplete) but has no entry in the config.yaml section listing.
+  - DOC: ## Configuration / ### `config.yaml` section list — hooks absent from section inventory
+  - SRC: src/kenning/config.py:3618 (HooksConfig) + src/kenning/config.py:4010 (KenningConfig.hooks) — no 'hooks' top-level key appears in config.yaml (schema default enabled=True used)
+  - FIX: Add `- hooks (enabled=true — out-of-process lifecycle hooks; TaskStart cancel-capable + TaskComplete user scripts under ~/.kenning/hooks/)` to the config.yaml section list.
+- **[MEDIUM] MISSING_FROM_DOC** — The top-level `mcp` section (McpConfig: enabled=False, autostart=False, servers=[]) providing the sandboxed external-MCP-server lifecycle manager (T22) is not listed in the config.yaml section inventory.
+  - DOC: ## Configuration / ### `config.yaml` section list — mcp (client) absent from section inventory
+  - SRC: src/kenning/config.py:3660 (McpConfig) + src/kenning/config.py:4016 (KenningConfig.mcp) — no 'mcp' top-level key in config.yaml (schema default enabled=False used)
+  - FIX: Add `- mcp (enabled=false, autostart=false, servers=[{id, transport, command, args, ...}] — T22 external MCP client; default OFF)` to the config.yaml section list.
+- **[MEDIUM] STALE_DOC_CLAIM** — The doc's wake_word new-keys block states min_consecutive_frames was raised to 3 on 2026-06-15. The actual config.yaml shows it as 2 (and a separate per-word `consecutive_frames.ultron: 4` dict was added instead). The doc's value of 3 does not match the file's 2.
+  - DOC: ## Configuration — wake_word new-keys block at line 7758: `min_consecutive_frames: 3  # 2026-06-15: 2 → 3`
+  - SRC: config.yaml:299-300 — `min_consecutive_frames: 2`
+  - FIX: Update the wake_word new-keys block: `min_consecutive_frames: 2` (the flat fallback, unchanged) and add `consecutive_frames: {ultron: 4}` — the per-word gate that provides the 4-frame sustain for ultron specifically (raised from 3 on 2026-06-18 to reject brief confusables like 'Oh, we shouldn\'t').
+- **[MEDIUM] MISSING_FROM_DOC** — Two new per-word sub-dicts under `wake_word` are entirely absent from the doc: `consecutive_frames` (overrides min_consecutive_frames per word; ultron=4 added 2026-06-18) and `cold_pre_roll` (per-word audio window pre-roll for no-pause commands; ultron=0.15s added 2026-06-19). Both are defined in WakeWordConfig at config.py:291.
+  - DOC: ## Configuration — wake_word new-keys block (lines 7749–7763) — neither consecutive_frames dict nor cold_pre_roll dict appear in any doc block
+  - SRC: config.yaml:309-320 — `consecutive_frames: {ultron: 4}` and `cold_pre_roll: {ultron: 0.15}` sub-sections
+  - FIX: Add to the wake_word new-keys block: `consecutive_frames: {ultron: 4}  # per-word sustain gate override (2026-06-18: 3->4 for ultron)` and `cold_pre_roll: {ultron: 0.15}  # per-word pre-roll window in seconds (2026-06-19)`.
+- **[LOW] MISSING_FROM_DOC** — tests/agent_loop/ (7 test files covering AgentLoop base pattern, deep-loop detection, mode routing, and subagent dispatch) has no structured body entry in the Tests section. It is only mentioned in the Recent-sessions history table.
+  - DOC: ## Tests section body — no structured entry for tests/agent_loop/
+  - SRC: tests/agent_loop/ directory with test_base.py, test_deep_loops.py, test_loop_detection.py, test_loop_detection_extended.py, test_mode.py, test_subagent.py, test_subagent_policy.py
+  - FIX: Add a tests/agent_loop/ entry under ## Tests documenting: test_base.py (AgentLoop base pattern + max_steps cap), test_loop_detection.py / test_loop_detection_extended.py (repeated-signature detector), test_mode.py, test_subagent.py / test_subagent_policy.py.
+- **[LOW] MISSING_FROM_DOC** — tests/checkpoints/ (4 test files covering the CheckpointRegistry shadow-repo mechanism) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/checkpoints/
+  - SRC: tests/checkpoints/ directory with test_exclusions.py, test_registry.py, test_restore.py, test_shadow_repo.py
+  - FIX: Add a tests/checkpoints/ entry: test_registry.py, test_restore.py, test_shadow_repo.py, test_exclusions.py cover the CheckpointRegistry revertible-proposal mechanism.
+- **[LOW] MISSING_FROM_DOC** — tests/ptt/ (1 file: test_ptt_controller.py covering PttController state machine) has no body entry in ## Tests. PTT is only mentioned in a cross-cutting-flows paragraph.
+  - DOC: ## Tests section body — no structured entry for tests/ptt/
+  - SRC: tests/ptt/ directory with test_ptt_controller.py
+  - FIX: Add a tests/ptt/ entry: test_ptt_controller.py covers PttController press/heartbeat/release state machine, NullPttBackend inertness, and host max-hold watchdog.
+- **[LOW] MISSING_FROM_DOC** — tests/subprocess/ (3 files covering kill_tree, orphan guardrails, and the process registry) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/subprocess/
+  - SRC: tests/subprocess/ directory with test_kill_tree.py, test_orphan_guardrails.py, test_process_registry.py
+  - FIX: Add a tests/subprocess/ entry: test_kill_tree.py, test_orphan_guardrails.py (DEADMAN + sidecar_lock.reap_stray_embedders), test_process_registry.py.
+- **[LOW] MISSING_FROM_DOC** — tests/llm/ (10+ test files covering LLM infrastructure: cache-aware chunking, cache warmers, condensers, context-window guards, dedup file reads, history processors, image markdown, mode routing) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/llm/
+  - SRC: tests/llm/ directory with 10 test files (test_cache_aware_chunks.py, test_cache_warmer.py, test_condensers.py, test_context_window_guard.py, test_dedup_file_reads.py, test_history_processors.py, test_image_markdown.py, test_mode_router.py, etc.)
+  - FIX: Add a tests/llm/ entry documenting the LLM-infrastructure subdir (distinct from top-level test_llm.py GPU test).
+- **[LOW] MISSING_FROM_DOC** — tests/tts/ (1 file: test_text_hygiene.py covering TTS text normalization / hygiene) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/tts/
+  - SRC: tests/tts/ with test_text_hygiene.py (mentioned at doc line 4071 only in a source-module paragraph)
+  - FIX: Add a tests/tts/ entry: test_text_hygiene.py covers normalize_text_for_tts verbatim incident shapes and the _speakable helper.
+- **[LOW] MISSING_FROM_DOC** — tests/utils/ (8 test files covering utility primitives: ANSI safety, health-check probes, HeartbeatThread, mtime-cache, poll helpers, retry logic, snapshot guards) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/utils/
+  - SRC: tests/utils/ directory with test_ansi_safe.py, test_health_check.py, test_heartbeat.py, test_mtime_cache.py, test_poll.py, test_relative_indent.py, test_retry.py, test_snapshot_guard.py
+  - FIX: Add a tests/utils/ entry: test_heartbeat.py (HeartbeatThread + HeartbeatStats), test_health_check.py (http + cdp probes), plus test_ansi_safe, test_mtime_cache, test_poll, test_relative_indent, test_retry, test_snapshot_guard.
+- **[LOW] MISSING_FROM_DOC** — tests/web_search/ (1 file: test_provider_chain_recorder.py covering the per-pid rate-limit recorder wired into Brave/SearxNG/DDG) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/web_search/
+  - SRC: tests/web_search/ with test_provider_chain_recorder.py (mentioned at doc line 2408 only in history table)
+  - FIX: Add a tests/web_search/ entry: test_provider_chain_recorder.py covers SearchProviderChain._build_recorder round-trip and DDG throttle classification.
+- **[LOW] MISSING_FROM_DOC** — tests/feedback/ (covers ReportQueue + ModerationPlan tests) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/feedback/
+  - SRC: tests/feedback/ directory with test files (mentioned at doc line 2402 only in history table)
+  - FIX: Add a tests/feedback/ entry: covers ReportQueue JSONL hash-chain, triage/file_report/verify_log_chain, and ModerationPlan pre-act preview.
+- **[LOW] MISSING_FROM_DOC** — tests/identity/ (covers alias_graph: rename/merge/transfer/soft_delete/hard_delete, redirect-chain, JSONL hash-chain) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/identity/
+  - SRC: tests/identity/ directory (mentioned at doc line 2407 only in history table)
+  - FIX: Add a tests/identity/ entry covering alias_graph tests.
+- **[LOW] MISSING_FROM_DOC** — tests/install/ (covers lockfile, pin, reason_codes, voice_baseline_verify modules) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/install/
+  - SRC: tests/install/ directory with test_voice_baseline_verify.py (mentioned at doc line 2398 only in history table)
+  - FIX: Add a tests/install/ entry: test_voice_baseline_verify.py (TOFU hash verification of 6 voice baseline artifacts), plus lockfile/pin/reason_codes tests.
+- **[LOW] MISSING_FROM_DOC** — tests/observability/ (covers PrivateMetricsStore aggregate-only telemetry, HashedRootId/SkillId, stale_root_ids) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/observability/
+  - SRC: tests/observability/ directory (mentioned at doc line 2401 only in history table)
+  - FIX: Add a tests/observability/ entry covering PrivateMetricsStore and privacy-by-construction telemetry primitives.
+- **[LOW] MISSING_FROM_DOC** — tests/openclaw_bridge/ (covers OpenClawClient._run_cli subprocess reap, timeout, process tree) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/openclaw_bridge/
+  - SRC: tests/openclaw_bridge/ directory with test_client.py (mentioned at doc lines 1299/1550/2386 only in history table)
+  - FIX: Add a tests/openclaw_bridge/ entry: test_client.py covers _run_cli timeout tree-reap contract.
+- **[LOW] MISSING_FROM_DOC** — tests/lifecycle/ (covers single_instance guard: OS byte-lock, PID metadata, auto-release) has no body entry in the Tests section body.
+  - DOC: ## Tests section body — no structured entry for tests/lifecycle/
+  - SRC: tests/lifecycle/ directory (mentioned at doc line 6416 only in a source-module section)
+  - FIX: Add a tests/lifecycle/ entry: test_single_instance.py (12 tests — lock acquisition, holder-PID metadata, auto-release on process death).
+- **[LOW] MISSING_FROM_DOC** — tests/settings_gui/ has no body entry in ## Tests. It is mentioned only in a source-module paragraph.
+  - DOC: ## Tests section body — no structured entry for tests/settings_gui/
+  - SRC: tests/settings_gui/ directory with test_spec_and_launch.py (mentioned at doc line 4515 only in a source-module section)
+  - FIX: Add a tests/settings_gui/ entry: test_spec_and_launch.py (46 tests covering GUI spec + launch patcher).
+- **[LOW] MISSING_FROM_DOC** — tests/spotify/ has no body entry in ## Tests. Only mentioned in the source-module section.
+  - DOC: ## Tests section body — no structured entry for tests/spotify/
+  - SRC: tests/spotify/ directory with test_spotify.py (mentioned at doc line 4580 only in a source-module section)
+  - FIX: Add a tests/spotify/ entry: test_spotify.py (143 tests — auth refresh/cache, SpotifyClient action set, matcher subtleties).
+- **[LOW] MISSING_FROM_DOC** — tests/skills/ (covers SkillRegistry, skill mode-filter, trigger matching, maybe_get_skills_block) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/skills/
+  - SRC: tests/skills/ directory (mentioned at doc line 2397 only in history table)
+  - FIX: Add a tests/skills/ entry covering skill mode-filter, loader round-trip, and registry matching.
+- **[LOW] MISSING_FROM_DOC** — tests/hooks/ (covers out-of-process lifecycle hook discovery, TaskStart cancel, TaskComplete) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/hooks/
+  - SRC: tests/hooks/ directory with test_discovery.py, test_lifecycle.py, test_lifecycle_t3.py
+  - FIX: Add a tests/hooks/ entry: test_discovery.py, test_lifecycle.py, test_lifecycle_t3.py.
+- **[LOW] MISSING_FROM_DOC** — tests/streaming/ (4 files covering streaming coordinator, presentation scheduler, reasoning-stream window) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/streaming/
+  - SRC: tests/streaming/ directory with test_coordinator.py, test_presentation_scheduler.py, test_reasoning_stream.py, test_window.py
+  - FIX: Add a tests/streaming/ entry covering tests/streaming/ test files.
+- **[LOW] MISSING_FROM_DOC** — tests/mcp/ (covers the MCP client builder and MCP protocol) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/mcp/
+  - SRC: tests/mcp/ directory with test_builder.py, test_mcp.py
+  - FIX: Add a tests/mcp/ entry: test_builder.py, test_mcp.py.
+- **[LOW] MISSING_FROM_DOC** — tests/intent/ (covers IntentCommandRegistry) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/intent/
+  - SRC: tests/intent/ directory with test_command_registry.py
+  - FIX: Add a tests/intent/ entry: test_command_registry.py.
+- **[LOW] MISSING_FROM_DOC** — tests/rules/ (1 file: test_conditionals.py) has no body entry in ## Tests.
+  - DOC: ## Tests section body — no structured entry for tests/rules/
+  - SRC: tests/rules/ directory with test_conditionals.py
+  - FIX: Add a tests/rules/ entry: test_conditionals.py.
+- **[LOW] MISSING_FROM_DOC** — Seven additional subdirectories (tests/parsing/, tests/pipeline/, tests/projects/, tests/providers/, tests/search/, tests/services/, tests/events/) have no body entry in the Tests section.
+  - DOC: ## Tests section body — no structured entries for these directories
+  - SRC: tests/parsing/ directory + tests/pipeline/ directory + tests/projects/ directory + tests/providers/ directory + tests/search/ directory + tests/services/ directory + tests/events/ directory
+  - FIX: Add body entries for tests/parsing/, tests/pipeline/, tests/projects/, tests/providers/, tests/search/, tests/services/, and tests/events/.
+
+## tts (5)
+
+- **[HIGH] WRONG_DETAIL** — The doc says convert() raises RVCConversionError on failure. The source catches all exceptions and returns (pcm_int16, sample_rate) unchanged — it is fail-soft. RVCConversionError is defined in kenning.errors and is only raised from speech.py's TextToSpeech._synthesize, not from RvcConverter.convert() itself.
+  - DOC: #### `tts/rvc.py` — `convert(pcm: np.ndarray, sample_rate: int) -> (pcm, sr)` — raises RVCConversionError on failure
+  - SRC: src/kenning/tts/rvc.py:131-133 — except block returns (pcm_int16, sample_rate); no RVCConversionError raised
+  - FIX: Change the rvc.py entry to: `convert(pcm: np.ndarray, sample_rate: int) -> (pcm, sr)` — fail-soft: on inference error returns the original PCM unchanged and logs at EXCEPTION level. (RVCConversionError is raised by TextToSpeech._synthesize in speech.py, not by this method.)
+- **[MEDIUM] MISSING_FROM_DOC** — spectral_smooth.py has no dedicated ###/#### section. The file tree entry only mentions spectral_smooth() and trim_and_fade(). The public function expand_internal_pauses() — which scales internal pause durations (capped or lengthened) and is wired to the KokoroSpeech max_pause_cap_ms knob — appears nowhere in the current-state body sections.
+  - DOC: File tree entry line 2705: `spectral_smooth.py ← spectral magnitude smoothing … 2026-05-22 ADDED trim_and_fade(audio, sr, **kwargs)` — no section covers expand_internal_pauses
+  - SRC: src/kenning/tts/spectral_smooth.py:305 — `def expand_internal_pauses(audio, sr, *, scale, min_pause_ms, max_pause_ms, min_keep_ms, threshold_db, speech_db, frame_ms)` is public (no leading underscore) and exported in __all__; absent from every doc section
+  - FIX: Add a `#### tts/spectral_smooth.py` section documenting: spectral_smooth(), trim_and_fade(), expand_internal_pauses() (scale param, pause range, dtype-preserving, wired via KokoroSpeech.max_pause_cap_ms). Private helpers _strip_post_gap_blip and _compress_internal_dead_space can be omitted or noted briefly.
+- **[MEDIUM] MISSING_FROM_DOC** — kokoro_engine.py is the DEFAULT production TTS engine but has no dedicated doc section (only a file-tree one-liner and scattered cross-references). KokoroEngineLoadError, KokoroSynthError, and the module-level set_live_speaker_mute() / _broadcast_submit() are entirely absent from current-state documentation. The full constructor (18 params, including f0/dur prosody attrs and max_pause_cap_ms) is undocumented.
+  - DOC: File tree entry line 2701 mentions KokoroSpeech briefly. No body section covers KokoroEngineLoadError, KokoroSynthError, set_live_speaker_mute(), prepare_output_stream(), set_ack_cache(), or the full KokoroSpeech constructor kwargs.
+  - SRC: src/kenning/tts/kokoro_engine.py:62 — `def set_live_speaker_mute(value: Optional[bool]) -> None` (module-level); line 121 — `class KokoroEngineLoadError(RuntimeError)`; line 125 — `class KokoroSynthError(RuntimeError)`; line 226 — `class KokoroSpeech`. No dedicated ###/#### section exists.
+  - FIX: Add a `#### tts/kokoro_engine.py` section covering: KokoroEngineLoadError, KokoroSynthError, set_live_speaker_mute(value), class KokoroSpeech with key constructor params (device, voice, apply_trim_fade, f0_contour_factor family, dur_factor family, max_pause_cap_ms), and key public methods: speak(), speak_stream(), warmup(), prepare_output_stream(), move_to_device(), set_ack_cache(), stop(), is_available(), reset_load_error().
+- **[LOW] STALE_DOC_CLAIM** — The doc lists only 5 pattern families for normalize_text_for_tts(). The source implements at least 12: the 5 listed plus temperatures (°F/°C/bare °), currency ($B/M/K, €, £), unit suffixes (mph, km/h, kg, lbs, ms, Hz, etc.), ordinals (1st/2nd/3rd), title abbreviations (Dr./Mr./Mrs./Ms./Prof.), acronym dot patterns, more abbreviations, and ampersand-to-and replacement. The doc description is significantly incomplete.
+  - DOC: #### `tts/xtts_v3.py` — `normalize_text_for_tts(text) -> str` (NEW 2026-05-19) — Handles patterns XTTS-v2 mispronounces: Windows drive paths, times with AM/PM, 24-hour times, standalone a.m./p.m. markers, Latin abbreviations (e.g./i.e./etc./vs.).
+  - SRC: src/kenning/tts/xtts_v3.py:280-437 — _TEMP_F_RE, _TEMP_C_RE, _TEMP_DEG_RE, _CURRENCY_PATTERNS, _UNIT_PATTERNS, _ORDINAL_RE, _TITLE_PATTERNS, _ACRONYM_DOTS_PATTERNS, _ABBREVIATION_PATTERNS, _AMPERSAND_RE all present and applied by normalize_text_for_tts()
+  - FIX: Extend the normalize_text_for_tts description to list all major pattern categories: temperatures (°F/°C/bare degree), currency ($B/M/K, €, £), unit suffixes (speed, mass, frequency, latency), ordinals (1st–99th), title abbreviations (Dr./Mr./etc.), acronyms with dots, ampersand to 'and', in addition to the already-listed path/time/Latin-abbrev patterns.
+- **[LOW] WRONG_DETAIL** — The doc groups is_warm and warmed_count together in a list, implying both are properties. In source, warmed_count is a @property but is_warm() is a plain method (def is_warm(self) -> bool). Minor but a caller using is_warm as an attribute (without calling it) would get a bound method instead of a bool.
+  - DOC: #### `tts/precomputed_ack.py` — `is_warm` / `warmed_count` (listed together, doc implies both are properties)
+  - SRC: src/kenning/tts/precomputed_ack.py:94 — `def is_warm(self) -> bool:` (regular method, not @property); line 89 — `@property def warmed_count`
+  - FIX: Distinguish: `is_warm()` — method returning bool; `warmed_count` — @property returning int.
+
+## web_search (10)
+
+- **[HIGH] MISSING_FROM_DOC** — rate_limit.py is a substantial public module (T14, openclaw-clawhub catalog port) with classes RateLimitState, BackoffConfig, RateLimitTracker and functions parse_rate_limit_headers, compute_backoff, sleep_for_backoff, get_global_tracker, reset_global_tracker_for_testing. It is consumed by provider_chain.py and all three provider clients. The doc section has no entry for this file at all.
+  - DOC: ### `src/kenning/web_search/` — no subsection for rate_limit.py exists
+  - SRC: src/kenning/web_search/rate_limit.py:201 (class RateLimitState), :367 (class BackoffConfig), :454 (class RateLimitTracker), :263 (parse_rate_limit_headers), :386 (compute_backoff), :426 (sleep_for_backoff), :591 (get_global_tracker)
+  - FIX: Add a '#### web_search/rate_limit.py (T14 rate-limit envelope)' subsection documenting RateLimitState, BackoffConfig, RateLimitTracker, parse_rate_limit_headers, compute_backoff, sleep_for_backoff, get_global_tracker.
+- **[HIGH] MISSING_FROM_DOC** — playwright_reader.py provides PlaywrightReader (a JS-aware, Playwright-backed page extractor that implements the fetch(url)->Optional[str] interface used by the reader chain). It is the third reader registered in ReaderChain._READER_FACTORIES. The doc section has no entry for this file.
+  - DOC: ### `src/kenning/web_search/` — no subsection for playwright_reader.py exists
+  - SRC: src/kenning/web_search/playwright_reader.py:86 (class PlaywrightReader), :54 (DEFAULT_WAIT_UNTIL), :57 (DEFAULT_NAVIGATION_TIMEOUT_MS), :61 (DEFAULT_BROWSER_LAUNCH_TIMEOUT_MS), :66 (_sanitised_user_agent)
+  - FIX: Add '#### web_search/playwright_reader.py (opt-in JS reader)' documenting PlaywrightReader with its fetch(url)->Optional[str] interface, lazy browser construction, opt-in-only nature (DEFAULT OFF), and the slimdown -> pandoc pipeline it feeds.
+- **[HIGH] MISSING_FROM_DOC** — pandoc_converter.py exposes html_to_markdown(html_text)->Optional[str] and pandoc_available()->bool. It is used by PlaywrightReader (_slim_and_convert) for the HTML->Markdown conversion step. The doc section has no entry for this file.
+  - DOC: ### `src/kenning/web_search/` — no subsection for pandoc_converter.py exists
+  - SRC: src/kenning/web_search/pandoc_converter.py:54 (html_to_markdown), :87 (pandoc_available)
+  - FIX: Add '#### web_search/pandoc_converter.py' documenting html_to_markdown and pandoc_available, noting the graceful three-failure-mode degradation.
+- **[HIGH] MISSING_FROM_DOC** — slimdown_html.py exposes slimdown_html(html_text)->str, the HTML pre-processor that strips SVG/img/style/script/noscript/interactive widgets and data: URLs before pandoc conversion. Used by PlaywrightReader and pandoc_converter pipeline. The doc section has no entry for this file.
+  - DOC: ### `src/kenning/web_search/` — no subsection for slimdown_html.py exists
+  - SRC: src/kenning/web_search/slimdown_html.py:68 (slimdown_html)
+  - FIX: Add '#### web_search/slimdown_html.py' documenting slimdown_html(html_text)->str and noting it is the first stage of the HTML->Markdown pipeline (slimdown -> pandoc).
+- **[MEDIUM] RENAMED** — The doc names the reader chain class 'ReaderProviderChain' in three places. The actual class in reader_chain.py is named 'ReaderChain'. There is no 'ReaderProviderChain' anywhere in source.
+  - DOC: web_search/reader_chain.py — `class ReaderProviderChain` (codebase_structure.md:5150); also line 2693 in the file-tree comment and line 3304 in the cross-cutting flows table
+  - SRC: src/kenning/web_search/reader_chain.py:46 — `class ReaderChain:`
+  - FIX: Rename all three occurrences of 'ReaderProviderChain' in the doc to 'ReaderChain' (lines 5150, 2693, 3304).
+- **[MEDIUM] RENAMED** — The brave.py section (line 5097) documents the dataclass as 'class BraveResult', but SearchResult is the real primary class (introduced in the 2026-05-21 rename); BraveResult is a backward-compat alias. The doc's cross-reference at line 2686 acknowledges the rename, but the per-file section still lists BraveResult as the class.
+  - DOC: web_search/brave.py — `class BraveResult` — dataclass: url, title, snippet, rank (codebase_structure.md:5097)
+  - SRC: src/kenning/web_search/brave.py:52 — `class SearchResult:` (primary); brave.py:72 — `BraveResult = SearchResult` (alias only)
+  - FIX: Change line 5097 to '- `class SearchResult` (primary; `BraveResult` is a backwards-compat alias) — dataclass: url, title, snippet, rank' and update line 5099 to use `List[SearchResult]`.
+- **[MEDIUM] MISSING_FROM_DOC** — brave.py contains two additional public items not in the doc's per-file section: resolve_brave_api_keys() (de-dup multi-key resolver for T6 rotation) and RotatingBraveClient (multi-key Brave client with auth-profile rotation, per-key cooldown/disable). These are mentioned only in a distant cross-reference note at line 1491 but not in the brave.py section itself.
+  - DOC: web_search/brave.py section (codebase_structure.md:5095-5100) — neither resolve_brave_api_keys nor RotatingBraveClient appear in the section
+  - SRC: src/kenning/web_search/brave.py:273 (resolve_brave_api_keys), :304 (class RotatingBraveClient)
+  - FIX: Add to the web_search/brave.py section: '- `resolve_brave_api_keys(cfg?) -> List[str]` — T6 multi-key resolver' and '- `class RotatingBraveClient` — multi-key Brave client with per-key cooldown/disable (T6); exposes same search() interface as BraveSearchClient'.
+- **[LOW] MISSING_FROM_DOC** — duckduckgo.py defines DuckDuckGoError (a typed failure class subclassing BraveAPIError, analogous to SearxNGError which the doc does mention for searxng.py) and _DDG_BREAKER (a CircuitBreaker with threshold=3/window=300s/cooldown=300s). Both are absent from the doc section, creating an inconsistency with the parallel treatment of searxng.py.
+  - DOC: web_search/duckduckgo.py section (codebase_structure.md:5131-5135) — neither DuckDuckGoError nor _DDG_BREAKER are mentioned
+  - SRC: src/kenning/web_search/duckduckgo.py:37 (class DuckDuckGoError), :42 (_DDG_BREAKER)
+  - FIX: Add '- `DuckDuckGoError(BraveAPIError)` — typed failure' and '- `_DDG_BREAKER` — CircuitBreaker (3/5min, 5min cooldown)' to the duckduckgo.py section, matching the pattern used for searxng.py.
+- **[LOW] WRONG_DETAIL** — The doc says throttle detection is for 'HTTP 403 / CAPTCHA-marker' only. The actual code checks for six string markers: '429', '403', 'captcha', 'rate', 'throttle', 'blocked'. Also, the circuit-breaker is not incremented by this path; it raises DuckDuckGoError which the breaker counts, but the code also fires the T14 rate-limit recorder (_record_outcome). The description is incomplete.
+  - DOC: web_search/duckduckgo.py — 'Includes 2026-05-22 CAPTCHA handling: any HTTP 403 / CAPTCHA-marker translates into circuit-breaker increment + empty list' (codebase_structure.md:5134)
+  - SRC: src/kenning/web_search/duckduckgo.py:167-171 — checks for '429', '403', 'captcha', 'rate', 'throttle', 'blocked' in error text
+  - FIX: Update to: 'T14 throttle detection: error text containing "429", "403", "captcha", "rate", "throttle", or "blocked" is classified as was_429=True and fires the T14 rate-limit recorder; raises DuckDuckGoError (counted by _DDG_BREAKER).'.
+- **[LOW] MISSING_FROM_DOC** — search.py contains _get_cross_encoder() (lazy loader for a cross-encoder reranker model) and _rank_snippets_cross_encoder() (cross-encoder ranking path, alternative to _rank_snippets_llm). These are part of the ranking subsystem and are called from _rank_snippets(). The doc only describes _rank_snippets as 'LLM-driven' without noting the cross-encoder path.
+  - DOC: web_search/search.py section — only '_rank_snippets(llm, query, results, top_n)' is documented as LLM-driven re-ranking (codebase_structure.md:5157)
+  - SRC: src/kenning/web_search/search.py:193 (_get_cross_encoder), :222 (_rank_snippets_cross_encoder)
+  - FIX: Update the _rank_snippets entry to: '- `_rank_snippets(llm, query, results, top_n)` — re-ranking dispatcher: tries cross-encoder (via `_rank_snippets_cross_encoder` / `_get_cross_encoder`) first, falls back to LLM ranking (`_rank_snippets_llm`) on failure or when cross-encoder unavailable'.

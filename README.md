@@ -6,7 +6,7 @@
 
 *Say "kenning." Talk. Get answers in a custom voice. Everything runs on your GPU.*
 
-[![tests](https://img.shields.io/badge/tests-10357%20passing-brightgreen?style=flat-square)](https://github.com/1v9Khan/ultronPrototype)
+[![tests](https://img.shields.io/badge/tests-10982%20passing-brightgreen?style=flat-square)](https://github.com/1v9Khan/ultronPrototype)
 [![latency](https://img.shields.io/badge/TTFA-~266ms-blueviolet?style=flat-square)](#-at-a-glance)
 [![VRAM](https://img.shields.io/badge/VRAM-6.3GB%20standby-orange?style=flat-square)](#-at-a-glance)
 [![python](https://img.shields.io/badge/python-3.11+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
@@ -28,6 +28,18 @@ standalone launchable backup at `E:\Ultron-0.1\`. **Restore** the dev tree with
 `git checkout ultron-0.1`; **launch the backup** (a known-good build that stays
 streamable while the dev version is under maintenance) with
 `E:\Ultron-0.1\launch_ultron_0_1.ps1`. Runbook: [`docs/ultron_0_1_baseline.md`](docs/ultron_0_1_baseline.md).
+
+---
+
+## 🚧 In development — Ultron 1.0
+
+The active dev line is **Ultron 1.0**: routing every response through an in-process 8B LLM, with the
+deterministic snap matchers retired-not-removed and repurposed as routers that pick a curated prompt and
+inject the matching snap lines + per-agent libraries as in-context exemplars; plus an optional-wakeword
+always-listening intent gate and `no / low / high` verbosity. All of it sits behind the `KENNING_U1_LLM_ROUTE`
+flag (default **off**), so the shipped behavior is unchanged until each increment is proven regression-clean.
+Architecture, live status, and the regression baseline live under
+[`docs/ultron_1_0/`](docs/ultron_1_0/) (start at `00_process_log/STATUS.md`).
 
 ---
 

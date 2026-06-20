@@ -550,12 +550,20 @@ llm:
   #   4. Voice: "switch to the 9B" / "switch to the gemma" (hot-swap)
   #
   # See docs/4b_optimization_plan.md for the per-preset details.
-  preset: "qwen3.5-4b"
-  # The next three keys are auto-filled from the preset above. Uncomment
+  # ULTRON 1.0 (2026-06-20): default rolled to the 8B abliterated model.
+  # Verified loading in-character via LLMEngine at n_ctx=4096 -> ~7.1 GB
+  # resident VRAM (safe under the 10 GB cap; Kokoro adds ~1.5 GB). Quality
+  # -first per the u1.0 mandate; the "switch the model to the CPU" voice
+  # command hands the card back mid-match. Swap back: preset: "qwen3.5-4b".
+  preset: "josiefied-qwen3-8b"
+  # u1.0 VRAM hard cap: the research synthesis (C_model) shows >8K context
+  # risks exceeding 10 GB and 40K OOMs; relay prompts fit well under 4k.
+  # This explicit value overrides the preset's 8192.
+  n_ctx: 4096
+  # The next keys are auto-filled from the preset above. Uncomment
   # to override (e.g. plug a non-preset GGUF in via preset: "custom").
-  # model_path: "models/Qwen3.5-4B-Q4_K_M.gguf"
-  # draft_model_path: "models/Qwen3.5-0.8B-Q4_K_M.gguf"  (auto from preset)
-  # n_ctx: 16384
+  # model_path: "models/Josiefied-Qwen3-8B-abliterated-v1.Q5_K_M.gguf"
+  # draft_model_path: null  (8B has no paired draft; speculative off)
   # 2026-05-22 -- speculative decoding flavour. The qwen3.5-4b preset
   # ships the 0.8B GGUF on disk for the real-model draft path. Knob:
   #   "none"  -- no llama-cpp-level speculative decoding (current

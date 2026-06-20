@@ -3297,6 +3297,32 @@ class Orchestrator:
         )
         return True
 
+    def _maybe_handle_verbosity_command(self, user_text: str) -> bool:
+        """Ultron 1.0 verbosity command: "no flavor" / "low flavor" / "high flavor"
+        (and synonyms) -- the no/low/high axis controlling reply length/density on
+        the LLM relay route (relay_speech.relay_verbosity()). DISTINCT from the
+        flavor-tail on/off toggle (_maybe_handle_flavor_toggle): "no flavor" sets
+        verbosity to none; "flavor off" toggles the tail. Strict, fully-anchored
+        matcher -> ordinary speech falls through. Runtime + process-global."""
+        try:
+            from kenning.audio.relay_speech import (
+                match_verbosity_command, set_relay_verbosity,
+            )
+            level = match_verbosity_command(user_text)
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("verbosity command probe failed: %s", e)
+            return False
+        if level is None:
+            return False
+        set_relay_verbosity(level)
+        logger.info("relay:verbosity | level=%s", level)
+        self._speak({
+            "none": "No flavor. Bare callouts.",
+            "low": "Low flavor.",
+            "high": "High flavor.",
+        }.get(level, "Verbosity set."))
+        return True
+
     def _maybe_handle_thinking_toggle(self, user_text: str) -> bool:
         """Voice toggle for THINKING MODE -- whether the relay path may author via
         the LLM. OFF (the default) snaps every "compose" command from its
@@ -6342,6 +6368,19 @@ class Orchestrator:
                     # Flavor-tail toggle: "disable the flavor" / "flavor off"
                     # vs "flavor back on" -- strips the in-character tails to
                     # bare callouts mid-game. Checked before the relay handler.
+                    # u1.0 verbosity command ("no/low/high flavor") -- checked
+                    # BEFORE the flavor-tail toggle so "no flavor" sets reply
+                    # VERBOSITY (its new u1.0 meaning) rather than the legacy
+                    # tail-off. "flavor off"/"on" still fall to the toggle below
+                    # (verbosity excludes the off/on level words).
+                    if self._maybe_handle_verbosity_command(user_text):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="verbosity_command", follow_up=False,
+                        )
+                        continue
                     if self._maybe_handle_flavor_toggle(user_text):
                         self._last_response_finished_monotonic = time.monotonic()
                         follow_up_until = None
@@ -6680,6 +6719,14 @@ class Orchestrator:
                         trace.tlog(
                             logger, "loop:iteration_end",
                             via="llm_device_switch-lean", follow_up=False,
+                        )
+                        continue
+                    if self._maybe_handle_verbosity_command(_raw_stt):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="verbosity_command-lean", follow_up=False,
                         )
                         continue
                     if self._maybe_handle_flavor_toggle(_raw_stt):

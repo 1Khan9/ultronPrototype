@@ -27,6 +27,68 @@
 > - Full runbook: **`docs/ultron_0_1_baseline.md`**. Post-0.1 roadmap:
 >   **`docs/latency_optimizations_V1.md`**.
 >
+> **Validating HEAD: ULTRON 1.0 PIVOT — route-all-through-8B (ACTIVE, 2026-06-20)**
+> Branch `claude/infallible-kepler-0a865d` (off `main` @ `6064e5f`); NOT on `main`/`origin/main` yet — the
+> whole pivot is gated behind `KENNING_U1_LLM_ROUTE` (default OFF), so `main` runtime behavior is unchanged.
+> **Authoritative spec + live status:** `docs/ultron_1_0/` — read `00_process_log/STATUS.md` +
+> `04_implementation/00_state_and_continuation.md` FIRST. Memory: `project_ultron_1_0_pivot.md`; binding
+> process rules `feedback_ultron_1_0_process.md`.
+> **What it is:** every spoken response is authored by an **8B LLM**; the deterministic snap matchers are
+> RETIRED-not-removed → repurposed as ROUTERS that pick a curated prompt template + inject snap lines +
+> agent/flavor libraries as in-context exemplars. Plus an optional-wakeword **always-listening 3-way gate**
+> {RELAY_TO_TEAM, PRIVATE_REPLY, COMMAND_LOCAL, IGNORE}; flavor → **no/low/high verbosity** (+ a separate
+> tail on/off); strict Ultron persona; 10 GB VRAM cap (quality-first; latency deferred to M8). The
+> adversarial board reframed "route ALL through the LLM" into a flag-gated HYBRID: deterministic center
+> stays (fact-perfect, 0 ms), the 8B handles the edges, A/B-measurable via the flag (`C_route_llm`).
+> **LANDED — each flag-gated + regression-clean vs the frozen baseline (10966 pass / 22 pre-existing fail /
+> 39 skip, `docs/ultron_1_0/05_testing/00_baseline.md`; a fail is a regression ONLY if not in those 22):**
+> - **M0** (`f2bd3de`): default LLM preset → **`josiefied-qwen3-8b`** at **`n_ctx: 4096`** (10 GB VRAM cap;
+>   ~7.1 GB resident, STT stays CPU). Qwen3.5-9B HARD-BLOCKED (FGDN_AR abort, llama.cpp #23347). Thinking
+>   OFF by default for relay/persona (reasoning harms roleplay + breaks grammar #20345).
+> - **M1** (`69b63cb` / wire `4222ff4`): NEW **`audio/ultron_prompt.py`** — a LEAN (~165-word) templated
+>   prompt assembler (`build_relay_prompt` / `build_private_prompt` → `PromptResult`); the legacy
+>   ~4.8k-token `_build_rephrase_prompt` overflows `n_ctx=4096` and yielded EMPTY 8B output. Wired into
+>   `relay_speech.build_relay_line`'s generic-rephrase path (step 27) behind `KENNING_U1_LLM_ROUTE`:
+>   ON → lean prompt, OFF → legacy `_build_rephrase_prompt`. The post-LLM fact-guards
+>   (`_output_keeps_facts` / `_repair_against_input` / `_literal_relay`) are MANDATORY + unchanged (live
+>   8B fact-drift observed — it added "on B" to "Jett hit 84").
+> - **M2** (`4d21015`): `relay_speech.match_verbosity_command` ("no/low/high flavor", off/on excluded) +
+>   runtime `relay_verbosity()` / `set_relay_verbosity()`; `orchestrator._maybe_handle_verbosity_command`
+>   dispatched BEFORE the flavor toggle in BOTH dispatch paths (full=user_text, lean=`_raw_stt`).
+> - **M3** (`6e1d546`): NEW **`audio/agent_kits.py`** — version-stamped 29-agent kit dict (`AGENT_KITS`,
+>   `agent_kit_fact`, `kit_facts_for`) with the C_domain corrections applied inline; injected
+>   (`agent_context=`) by the addressed agent so the 8B never hallucinates a kit.
+> - **M4** (`fc6e5af`): compound back-to-back callouts → ONE combined LLM response (`_u1_compound`; pure-slot
+>   compounds still resolve deterministically; NO grammar on the hot path — free-text + fact-guards).
+> - **M6a** (`eb67ff6`): `build_private_prompt` fixed (private Q&A exemplars, not relay callouts — relay
+>   exemplars made the 8B emit empty/callout-shaped output on a question).
+> - **M5-classifier** (`caed7a0`): NEW **`audio/intent_gate.py`** — the 4-class fail-CLOSED gate
+>   (`Scenario`, `ScenarioVerdict`, `classify_scenario`, `resolve_with_llm`): ASR-confidence pre-reject →
+>   existing matchers/relay-intent → addressing rules → 8B-in-undecided-band. CLASSIFIER ONLY — NOT yet
+>   wired into the run loop (that is M5b, the riskiest remaining piece). DEFAULT OFF; wake-word stays the
+>   competitive default; prereq = VoiceMeeter mic isolation.
+> - **Phase-5 harness** (`b00eadc`): NEW **`scripts/relay_test/u1_text_harness.py`** (text-injection
+>   routing/intent harness — the PRIMARY, deterministic calibration source) + `trace_corpus_full.py`.
+> - Tests: `tests/audio/{test_ultron_prompt,test_u1_llm_route,test_agent_kits,test_intent_gate}.py`.
+> **REMAINING (precise specs in `docs/ultron_1_0/04_implementation/00_state_and_continuation.md`):** M5b wire
+> always-listening into the run loop (reuse the follow-up mechanism, flag `addressing.always_listening`
+> default OFF), M6b PRIVATE_REPLY routing (→ `build_private_prompt` → desktop channel), the audio MP3 E2E
+> harness, M7 retire/unify + golden re-bless (the `_DOMAIN_PROMPT` `.env`-shadow STT bug is ALREADY fixed —
+> `whisper_engine` AUGMENTs the domain prompt, see that section), M8 latency (user-deferred), M9 finalize +
+> tag `ultron-1.0`. The body "Source modules" sections for the three new modules are below in the `audio/` section.
+> **ALSO landed 2026-06-19 (previously undocumented here): thinking-mode toggle** —
+> `relay_speech.thinking_mode_enabled()` / `match_thinking_toggle()` (env `KENNING_THINKING_MODE`, default
+> OFF; `orchestrator._maybe_handle_thinking_toggle` in both dispatch points) gates the LLM on the relay path
+> so compose commands SNAP deterministically on flavor-ON unless thinking is on; + nice-try flavor parity
+> (`_name_social_snap` names the addressee on the flavor-ON consolation render). Memory
+> `project_thinking_mode_flavor_parity_2026_06_19.md`.
+>
+> **⚠️ MAINTENANCE CONTRACT (BINDING — Ultron 1.0 forward):** this doc is the canonical map and MUST be
+> updated in the SAME commit as ANY structural change (new/renamed/removed module, public class/function,
+> script, test dir, config key/section, doc, or cross-cutting flow). Treat doc-drift as a regression — fix
+> the doc before declaring the task done. See "Maintenance contract" at the bottom; mirrored in `CLAUDE.md`
+> (binding rule #4) and `feedback_ultron_1_0_process.md` (process rule 3).
+>
 > **Validating HEAD: LATENCY V1 — SNAP-EARLY-ENDPOINT (E3) + ROADMAP AUDIT**
 > (2026-06-19, post-Ultron-0.1). Deterministic/snap-path latency pass driven by a 14-agent
 > research board (`docs/latency_optimizations_V1.md`). The load-bearing finding: snap slowness is
@@ -2305,6 +2367,8 @@ result of every row. Deep narrative lives in the corresponding
 
 | Date | HEAD | Summary | Tests | Memory file |
 |------|------|---------|-------|-------------|
+| 2026-06-20 | branch `claude/infallible-kepler-0a865d` | **Ultron 1.0 pivot — route-all-through-8B (flag-gated, NOT on main).** Default LLM preset → `josiefied-qwen3-8b` @ `n_ctx 4096` (M0). NEW modules `audio/ultron_prompt.py` (lean ~165-word prompt assembler, M1), `audio/agent_kits.py` (version-stamped 29-agent kit injection, M3), `audio/intent_gate.py` (4-class always-listening gate CLASSIFIER, M5 — not yet loop-wired). `relay_speech` gains the `KENNING_U1_LLM_ROUTE` branch in `build_relay_line` (lean prompt + agent-kit context + compound→one-LLM-call M4) + `match_verbosity_command`/`relay_verbosity` (no/low/high, M2) + `build_private_prompt` fix (M6a). NEW harness `scripts/relay_test/u1_text_harness.py` (text-injection PRIMARY) + `trace_corpus_full.py`. Tests `tests/audio/{test_ultron_prompt,test_u1_llm_route,test_agent_kits,test_intent_gate}.py`. ALL behind `KENNING_U1_LLM_ROUTE` (default OFF) → main behavior unchanged; each increment regression-clean vs the frozen 22-fail baseline. Spec + live status: `docs/ultron_1_0/` (read `00_process_log/STATUS.md` first). | green (22 baseline) | [project_ultron_1_0_pivot.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_ultron_1_0_pivot.md) |
+| 2026-06-19 | `6064e5f` (main) | **Thinking-mode toggle + nice-try flavor parity + E3 snap-early-endpoint.** NEW `relay_speech.thinking_mode_enabled()`/`match_thinking_toggle()` (env `KENNING_THINKING_MODE`, default OFF) gates the LLM on the relay path so compose commands (soundboard/voice-changer/flame/praise) SNAP deterministically on flavor-ON unless thinking is on; `orchestrator._maybe_handle_thinking_toggle` in both dispatch points. `_name_social_snap` names the addressee on the flavor-ON nice-try render (parity). E3 latency: `relay_speech.is_complete_tactical_callout` + `orchestrator._snap_early_endpoint` (`KENNING_SNAP_EARLY_ENDPOINT`, default OFF) close capture early on a complete tactical callout (detail in the validating-HEAD header). | green | [project_thinking_mode_flavor_parity_2026_06_19.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_thinking_mode_flavor_parity_2026_06_19.md) |
 | 2026-06-18 | `0b5da79` (main) | **Un-silence hotfix + per-chunk blip + follow-up addressing + "thank you" snap** (reapplied on the rolled-back `9711e2e` base; the `a9818af` probe-safe-firewall / wake-clip / mic-preprocessing batch was reverted, only these targeted fixes kept plus one new snap). **ANTICHEAT:** removed `pytesseract` from the import-firewall blocklist — `transformers` (pulled in by Kokoro TTS + Whisper) probes it at IMPORT time via `importlib.util.find_spec("pytesseract")`, and this finder RAISES inside that probe, so the whole transformers import fails → Kokoro/Whisper/Smart-Turn never load and Ultron goes silent; pytesseract isn't installed and the OCR capability stays blocked via the `kenning.desktop` prefix, so omitting the bare name costs zero protection. **TTS BLIP** (`tts/kokoro_engine.py`): run `trim_and_fade` on EACH sentence chunk before joining — an empirical per-utterance probe showed the inter-sentence gap *edges* were already clean; the real artifact is the undertrained fine-tune's noise burst at every *internal* sentence onset/offset, which the single OUTER `trim_and_fade` never reached. Supersedes the cosine edge-fade. **ADDRESSING (follow-up window)** (`pipeline/orchestrator.py`): a leading wake word ("Ultron, show me the stop button") now bypasses the borderline zero-shot gate via `_FOLLOWUP_WAKE_RE` — it was scoring 0.75 < the 0.80 ADDRESSED threshold and silently dropping the command despite the user saying the name (the rules side keyed direct-address to "kenning" ONLY, so the real "ultron" wake word was invisible to the classifier); narrow regex (real wake words, leading position) so it can't false-accept room chatter. This is the *blunt* fix — the board-designed confidence-fusion (real flan probability + graded features + cost-asymmetric threshold) is the deferred clean replacement. **NEW — gratitude snap** (`audio/relay_speech.py`): deterministic "thank you" relay snap (`_THANK_YOU_RE` + a dedicated 10-tail `_THANK_YOU_TAILS` Ultron-persona pool — cold, superior acknowledgment, never warmth), routed off the LLM like the other snaps; matches bare gratitude only ("thank you" / "thanks team" / "thank you so much"), a contextual thanks ("thank you for the heal") keeps its real content. 7 frozen tests (`TestThankYouSnap`). | green | [project_prelaunch_hardening_2026_06_17.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_prelaunch_hardening_2026_06_17.md) |
 | 2026-06-17 | `75cad1c` (main) | **Pre-launch anticheat hardening + live-testing relay/TTS fixes** (follows the `2293677` battery pass). **ANTICHEAT** — `safety/import_firewall.py`: `find_spec` FAIL-SAFE (`except: active=True` → block when the anticheat state can't be determined, was fail-open), `_INSTALL_LOCK` against duplicate finders, `is_firewall_installed()` always scans live `meta_path`, NEW `assert_firewall_enforces()` (imports the blocked-but-absent `interception` driver and proves the `ImportError` is the firewall's; ERROR if a blocked import succeeds), blocklist += CDP/webdriver (pyppeteer/undetected_chromedriver/DrissionPage/helium/comtypes.gen) + capture/input-sim/clipboard/OCR/virtual-gamepad exacts — all pure defense-in-depth (none on any voice/relay/audio/ptt path; win32api/win32gui/comtypes deliberately left importable for pycaw). `__main__.py`: Orchestrator imported LAZILY after the firewall installs (closes the pre-firewall import window); FATAL `return 4` refuse-to-start if anticheat active and the firewall is absent or not enforcing. `pipeline/orchestrator.py`: posture audit now requires the firewall to ENFORCE (not just be present), warns on non-default safety flags while gaming-engaged, `_skip_for_lean_gaming` fail-SAFE. **PTT** — `ptt/controller.py`+`config.py`+`config.yaml`: backend pinned `"rawhid"` (HID-only masked keyboard VID 0x1209, NO COM port; NEVER auto-falls-back to the legacy-CDC serial path that scans the Arduino VID 0x2341 — inert NullPttBackend if absent) + NEW `release_jitter_ms: 60` (random 0..60ms extra release tail so the key-hold is never machine-precise; only extends the mic window). **FIRMWARE** — `git mv firmware/leonardo_ptt` → `firmware/leonardo_ptt_LEGACY_CDC_DO_NOT_FLASH/` (.ino → `.ino.DO_NOT_FLASH`, ⛔ README header); the hardened `firmware/leonardo_ptt_hid/` (enumerates under *Keyboards*, no serial port) is the only build to flash. Leonardo live-confirmed HID-keyboard, no COM. **RELAY/TTS FIXES** (from live testing) — `tts/kokoro_engine.py`: cosine edge-fade the inter-sentence silence gap (the raw zero-gap stepped to/from non-zero chunk edges = a click/"blip" at the callout↔tail boundary). `audio/relay_speech.py`: agent-select draft requests ("we need smokes / an initiator / a duelist / a sentinel") get a DEDICATED curated COMPOSITION tail pool (`_AGENT_SELECT_FULL_RE` + `_AGENT_SELECT_TAILS`), distinct from in-game tactical commands and from the enemy-comp read ("they have no smokes"); wh-question copula inversion (`_wh_copula_invert`: "where our smokes are" → "Where are our smokes?"); single named agent at a place uses the natural callout form "Reyna, tree." (was "Reyna is tree" → read as "Reyna is A tree"). 14 frozen tests (`TestT617TestingFixes`). | 1.2k+ | [project_prelaunch_hardening_2026_06_17.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_prelaunch_hardening_2026_06_17.md) |
 | 2026-06-16 | 0b9c4f1 (main) | **Corpus-loop matcher hardening + flavor library deep expansion + coherence audit.** Three phases, all on the MAIN checkout `C:\STC\ultronPrototype`. **(1) CORPUS-LOOP MATCHER HARDENING** (iter 1: 92.7% → 99.4% clean on 20k seed-0 corpus): NEW `audio/_common_words.py` (GENERATED frozenset of top-~5000 English words, baked by `scripts/build_common_words.py`; gates `_stt_correct._phonetic_fuzzy_snap` + the curated `_fix_token` layer so real English is never corrupted — "let"/"mean"/"yet" stay as-is); NEW `audio/_relay_intent.py` (`RelayIntentGate` — semantic margin gate over the embeddinggemma sidecar, positive vs negative exemplar clouds, threshold 0.06, FAIL-OPEN; vetoes `recover_relay_lead`'s bare-callout prepend, the source of ~97% of corpus false-relays, cutting them 674→~70); `command_normalizer.py` additions: narration/epistemic-hedge regex fast-path (zero-cost, runs before embed), lead-preserving disfluency resolution (`_resolve_disfluency`: `_DISFLUENCY_CUE_RE`/`_DISFLUENCY_SPLIT_RE`, negation-safe, preserves relay lead), conversational lead-filler strip, relay-intent gate wiring; `_stt_correct.py` additions: common-word protection gate, inflection guard (`-ed`/`-ing`/`-ers` never snapped onto a base term), OOV agent-superstring guard (snap target may not be a superstring of heard token), `_MISHEAR_FORCE` allow-list; `command_router.py` `get_embedding_backend()` exposes the shared sidecar client for reuse; NEW `scripts/relay_test/trace_corpus.py` (full-pipeline tracer) + `analyze_outputs.py` (triage bucketer). Sidecar must be UP on 8772 for the gate to be exercised. **(2) FLAVOR LIBRARY DEEP EXPANSION**: `_tail_schema.py` (NEW): `TailEntry(text, tags)` schema + `as_entry`/`entries` coercion (zero-rewrite legacy migration); expanded 16-key enemy situation taxonomy (`Sit`, `ENEMY_SITUATIONS`); machine-readable `AGENT_GENDER` (pronoun per agent); `loc_class`/`dmg_level_tag`/`ability_tag`/`situation_for_payload`/`build_active_tags` fact-folding helpers. `_tail_selector.py` (NEW): semantic fine-selector (query embed → doc-matrix cosine → MMR + recent-mask → per-pool abstain threshold → fail-open to `_pick_flavor`); OFF by default (`KENNING_ENABLE_TAIL_SELECTOR` opt-in). `relay_speech._flavor_ctx` rewritten as HYBRID two-stage (coarse route → 4-tier `_tier_filter` → opt-in `select_tail`). `_CRITICIZE_RE` fixed: "call out" no longer treated as a criticism verb (fixed 105/106 owner-inversions of factual callouts). "I hit/tagged/cracked `<agent>` for `<n>`" pattern routes to that enemy's damaged pool with the right dmg tag. NEW offline generation pipeline: `scripts/flavor_gen/{integrate_tails,apply_cuts}.py`. **(3) COHERENCE AUDIT** (by-hand, every line): `_agent_flavor.py` RE-AUTHORED 4,147 → **1,628 tight TailEntry entries** (~5/cell): every ult = the REAL ultimate, every utility ability-tagged (`ability:<canon>`), filler/wrong-kit/off-topic cut; CURATED dict (`scripts/flavor_gen/curated_overrides.py`) applied by `apply_curated.py`; verified by `scripts/flavor_audit/lint_tails.py` (0 hard/0 soft/0 thin). `_ultron_setpieces.py` de-biblicalized (~18 flood/Noah/ark/God/church lines → machine/evolution/immortal register). Routing fixes: `_situation_for` lifts situation to `ult` on ult keyword; `_flavor_ctx` skips semantic selector for small (<5) candidate cells (LRU, zero sidecar cost). Normalization: `_tail_schema._VERB_TO_ABILITY` (mollied→molly, walled→wall, darted→dart…); `_stt_correct._slot_agent_correct` context SLOT-confirmation pass (Stage 1.5, "raise hit 18"→"Raze hit 18"; slots only, non-slot uses untouched); `whisper_engine.py` decode-time domain biasing (`initial_prompt = _DOMAIN_PROMPT`, gated `WHISPER_DOMAIN_BIAS` default-on). **All ML in loopback sidecar / build-time scripts; anticheat firewall intact.** 964 audio+safety tests green; lint 0/0/0. | 964 | [project_corpus_loop_2026_06_16.md](file:///C:/Users/alecf/.claude/projects/C--STC-ultronPrototype/memory/project_corpus_loop_2026_06_16.md) |
@@ -2563,7 +2627,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── output_quality.py   ← TTS blip watcher: per-clip artifact analysis (edge bursts, join clicks, dropouts, clipping) on a daemon thread → WARN + logs/audio_quality.jsonl
 │       ├── settings_gui/           ← Voice-launched control panel (DETACHED process): spec.py knob catalogue + write_runtime_overrides (ephemeral data/runtime_overrides.json overlay — no longer mutates config.yaml); launch.py strict matcher + spawn/close; app.py tkinter dark-theme UI + live log stream + Lean Boot section (engage_at_startup + 12 barebones_* + llm_gpu_layers) + _apply_one(path) single-knob apply
 │       │   ├── relay_speech.py     ← Voice relay: "tell my teammates X" matcher + deterministic-first callout pipeline + owner-aware CONTEXTUAL Ultron flavor selection (_flavor_ctx) + curated-COMMAND intent (_as_curated_command) + verbatim "repeat to my team X" (_match_repeat_command) + contextual enemy inference (_as_enemy_action) + LRU pool selection (_pick_lru) + LLM rephrase (film-canon _REPHRASE_PROMPT) + playback on a secondary output device (VoiceMeeter strip → mic bus). LIVE-STT REPAIR (2026-06-14) in the orchestrator handler: tries [user_text, correct(stripped), correct(full), stripped] — `_strip_leading_wake_remnant` drops a mis-heard wake word ("Run, tell my team"), `_stt_correct.correct_callout_stt` snaps mis-transcribed agents/terms to canon (Silva→Sova, Royal→Reyna, jet→Jett, sold→ult; curated map + difflib fuzzy) so a garbled callout is relayed with fixed words; clean text matches first (never over-corrected). 2026-06-15 test-drive fixes: relay lead-leak fixes; criticize/roast compose; consistent agent ult tails; a deterministic "I died" callout; widened bare-callout coverage (counts/requests/weapons/movement/locations); "X asked about Y, respond" → in-character context+directive relay; greet/identity split (team-directed greet → mic; bare identity question → conversational desktop in the Ultron persona). 2026-06-16: `_flavor_ctx` now does HYBRID two-stage tail selection — coarse route (register+payload → fine situation via `_situation_for`, then the agent or multi pool) → 4-tier TAG filter (`_tier_filter`, falls back to the agent's spotted pool then the generic register pool) → semantic `select_tail` (fail-open to `_pick_flavor`); `_CRITICIZE_RE` no longer treats "call out" as a criticism verb (fixed 105 owner-inversions of factual callouts); a new "I hit/tagged/cracked <agent> for <n>" pattern routes to the named enemy's damaged pool with the right dmg tag
-│       │   ├── _stt_correct.py      ← Valorant STT correction (negligible latency, ~0.045 ms/callout, pure string work): (1) CONTEXT rules disambiguate words that are also real English ("has/their/popped old/sold/vault" → "...ult", but literal "fall back to old" untouched; "site a"→"A site", "amen"→"A main"); (2) curated agent + tactical-term mishear maps; (3) difflib fuzzy agent-snap (cutoff 0.82, _FUZZY_BLOCK). Relay fallback only; clean callouts idempotent. 2026-06-16: common-word PROTECTION gate (a token in _common_words.COMMON_WORDS is never snapped) + an INFLECTION guard (never snaps an -ed/-ing/-ers form or a real/gazetteer plural onto a base gazetteer term) + an OOV agent-SUPERSTRING guard (a snap target may not be a superstring of the heard token) + a _MISHEAR_FORCE allow-list (curated mishears that fire even though they are common words)
+│       │   ├── _stt_correct.py      ← Valorant STT correction (negligible latency, ~0.045 ms/callout, pure string work): (1) CONTEXT rules disambiguate words that are also real English ("has/their/popped old/sold/vault" → "...ult", but literal "fall back to old" untouched; "site a"→"A site", "amen"→"A main"); (2) curated agent + tactical-term mishear maps; (3) phonetic + rapidfuzz JaroWinkler snap (phonetic-corroborated >=0.88 / fuzzy-only >=0.92; difflib only as fallback when rapidfuzz absent; slot-agent _closest_agent stage-1.5 JaroWinkler >=0.82). Relay fallback only; clean callouts idempotent. 2026-06-16: common-word PROTECTION gate (a token in _common_words.COMMON_WORDS is never snapped) + an INFLECTION guard (never snaps an -ed/-ing/-ers form or a real/gazetteer plural onto a base gazetteer term) + an OOV agent-SUPERSTRING guard (a snap target may not be a superstring of the heard token) + a _MISHEAR_FORCE allow-list (curated mishears that fire even though they are common words)
 │       │   ├── _common_words.py     ← NEW (2026-06-16): GENERATED frozenset COMMON_WORDS (top-~5000 frequency-ranked English words, alpha-only len≥3, from scripts/build_common_words.py over the public-domain google-10000-english list); imported by _stt_correct to PROTECT real words from the phonetic/fuzzy gazetteer snapper. Pure data, no deps. Regenerate, do not hand-edit
 │       │   ├── _tail_schema.py      ← NEW (2026-06-16): flavor TAIL schema + tagging primitives (pure-python, stdlib only → anticheat-safe). TailEntry(text, tags) dataclass + as_entry/entries coercion (lossless migration of legacy str pools → tagless TailEntry, zero behavior change); the expanded 16-key enemy situation taxonomy (Sit / ENEMY_SITUATIONS: spotted/ult/damaged/utility + moving/planting/defusing/rotating/saving/falling_back/peeking/holding/lurking/trading/last_alive/near_death); machine-readable AGENT_GENDER (was code comments) + GENDER_PRONOUNS; and loc_class / dmg_level_tag / ability_tag / situation_for_payload / build_active_tags that fold noisy callout facts (location, hp/damage, ability, action words) into COARSE tags (loc:high_ground/long_range/site_area/flank_route/mid/choke · dmg:one_shot/low/minor · ability:*). Tags only ever fine-select WITHIN an already-correct cell, so a mis-parsed tag can never produce a wrong-character tail
 │       │   ├── _tail_selector.py    ← NEW (2026-06-16): SEMANTIC tail selection over the embeddinggemma sidecar. select_tail() builds a structured query (agent+situation+tags), embeds it (kind=query), scores it against a cached doc matrix of the candidate tails, applies MMR diversity + a HARD recent-mask (anti-repeat across a round) + a per-pool-kind abstain threshold, and is strictly FAIL-OPEN (returns None on ANY failure → caller uses the deterministic _pick_flavor). numpy-only (firewall-legal — a faster-whisper transitive dep; torch/transformers stay blocked); the only network is the existing loopback sidecar client. OFF BY DEFAULT — opt-in via KENNING_ENABLE_TAIL_SELECTOR (the deterministic hierarchy routes contextually at zero latency; the selector adds sidecar latency only for large ambiguous pools)
@@ -2571,8 +2635,8 @@ For the current decisions and Foundation phase status see
 │       │   ├── _ultron_pools.py    ← Movie-Ultron snap-tail register pools (_FLAVOR_ENEMY/_ULT/_DAMAGE/_UTILITY/_CAREFUL/_COMMAND/_SELF); ENEMY=contempt, COMMAND/SELF/CAREFUL=serene/stoic (never contempt at allies). Audited.
 │       │   ├── _agent_flavor.py    ← AGENT_FLAVOR[agent][situation] = list[TailEntry]: per-agent character-tailored tails for ALL 29 agents (canonical gender, kit/lore recast as Ultron contempt). REWRITTEN 2026-06-16 as TailEntry(text, tags) with loc:/dmg:/ability: tags — agent × situation × sub-context. COHERENCE PASS (2026-06-16): RE-AUTHORED down to ~1,628 tight TailEntry entries (~5/cell); every ult = the REAL ultimate, every utility ability-tagged (ability:<canon>), filler/wrong-kit cut. SOLE tail source when one enemy agent is named. Content lives in scripts/flavor_gen/curated_overrides.py (hand-written) applied by apply_curated.py, verified by scripts/flavor_audit/lint_tails.py (0 hard/0 soft/0 thin). Regenerate via those scripts, do not hand-edit
 │       │   ├── _multi_flavor.py    ← MULTI_FLAVOR[situation]: plural group tails for callouts naming 2+ enemy agents
-│       │   ├── _ultron_commands.py ← NEW: COMMAND_RESPONSES/COMMAND_SCOPE/COMMAND_SLOT — 73 explicit user commands × up to 40 curated full-Ultron responses (refuse/dismiss/criticize/praise/ask/status/strategy/yes-no-agree), {site}/{agent}/{name} slots; LRU-selected by _as_curated_command in relay_speech.py
-│       │   ├── _ultron_setpieces.py ← DEFAULT_{GREETING,VICTORY,DEFEAT,FAREWELL,IDENTITY,CONSOLATION,PRAISE,ENCOURAGEMENT}_LINES (board-expanded ~5x; every greeting names Ultron AND identifies as "your AI teammate for this game", person-aware grammar); imported by relay_speech.py. 2026-06-15: greet/identity set-pieces trimmed to ~6-7 s spoken length. 2026-06-16 (coherence pass): DE-BIBLICALIZED — ~18 flood/Noah/ark/sacrament/God/church/abstract lines replaced with the machine/evolution/immortal/superior register (only canonical meteor + evolution beats kept)
+│       │   ├── _ultron_commands.py ← NEW: COMMAND_RESPONSES/COMMAND_SCOPE/COMMAND_SLOT — 79 explicit user commands × up to 40 curated full-Ultron responses (refuse/dismiss/criticize/praise/ask/status/strategy/yes-no-agree), {site}/{agent}/{name} slots; LRU-selected by _as_curated_command in relay_speech.py
+│       │   ├── _ultron_setpieces.py ← DEFAULT_{GREETING,VICTORY,DEFEAT,FAREWELL,IDENTITY,CONSOLATION,PRAISE,ENCOURAGEMENT,CLUTCH}_LINES (board-expanded ~5x; every greeting names Ultron AND identifies as "your AI teammate for this game", person-aware grammar); imported by relay_speech.py. 2026-06-15: greet/identity set-pieces trimmed to ~6-7 s spoken length. 2026-06-16 (coherence pass): DE-BIBLICALIZED — ~18 flood/Noah/ark/sacrament/God/church/abstract lines replaced with the machine/evolution/immortal/superior register (only canonical meteor + evolution beats kept)
 │       │   ├── ring_buffer.py      ← Pre-speech audio buffer
 │       │   ├── smart_turn.py       ← Smart Turn V3 ONNX wrapper (NEW 2026-05-12; CPU-only end-of-turn confirmation)
 │       │   ├── vad.py              ← Silero-VAD wrapper
@@ -2626,7 +2690,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── jina.py             ← JinaReaderClient + circuit breaker
 │       │   ├── provider_chain.py   ← 2026-05-22 frontier: SearchProviderChain (searxng -> brave -> duckduckgo); first-non-empty-wins cascade; per-provider client construction memoized; forwards categories= only to SearxNG. 2026-05-25 openclaw-clawhub batch 1 (T14): RateLimitTracker integration -- constructor `tracker` kwarg (defaults to process-wide singleton via :func:`get_global_tracker`); `should_skip(pid)` consults the tracker before each provider attempt; `record_provider_outcome(pid, headers, was_429)` is the public hook clients call after each request to keep cooldowns fresh. Purely additive: existing clients unchanged; chain skips known-cooled providers silently.
 │       │   ├── rate_limit.py       ← 2026-05-25 openclaw-clawhub batch 1 (T14): HTTP rate-limit envelope parser + backoff helpers + per-provider tracker. Header constants for the legacy `X-RateLimit-*` family + standard `RateLimit-*` family + `Retry-After`. :func:`parse_retry_after` handles numeric seconds, IMF-fixdate, large-value-as-epoch (>=31_000_000s) heuristic, past-date clamping. :func:`parse_rate_limit_headers` returns frozen :class:`RateLimitState` with preferred-fallback order Retry-After -> RateLimit-Reset -> X-RateLimit-Reset. :class:`BackoffConfig` defaults base=0.3s / cap=5.0s / jitter=0.3s. :func:`compute_backoff` server-hint-or-exponential. :class:`RateLimitTracker` per-provider cooldown + 429 counter + RLock-guarded. Module-level :func:`get_global_tracker` singleton + :func:`reset_global_tracker_for_testing` test hook. Generalised beyond web-search (re-usable for future MCP transport, Jina reader, remote-LLM cascade).
-│       │   ├── reader_chain.py     ← 2026-05-22 frontier: ReaderProviderChain (trafilatura -> jina) for full-text extraction
+│       │   ├── reader_chain.py     ← 2026-05-22 frontier: ReaderChain (trafilatura -> jina) for full-text extraction
 │       │   ├── query_rewrite.py    ← 2026 catalog 12 (felo-search T1): pre-search query reformulation. reformulate_query + expand_query_rules (zero-cost "X vs Y"/"how to X"/"best X"/leading-temporal rewrites) + opt-in expand_query_llm (in-process Qwen decomposition) + maybe_reformulate_queries executor helper; QueryReformulation dataclass; MAX_TOTAL_QUERIES=5 fan-out ceiling; fail-open; logs to logs/search_reformulations.jsonl
 │       │   ├── deep_research.py     ← 2026 catalog 12 (felo-search T3, YELLOW): DeepResearchLoop(AgentLoop) -- bounded decompose -> search-each-sub-question -> LLM gap-analysis -> search-gaps loop over the FREE ladder (reuses WebSearchExecutor + rate-limit tracker + web_results cache; load-bearing max_steps cap; fail-open at every layer). match_deep_research strict voice-intent matcher ("research X in depth" / "deep dive on X" / "dig deeper into X"). DeepResearchResult.to_payload() -> SearchPayload feeding the orchestrator's existing synthesis path. Wired via Orchestrator._maybe_handle_deep_research run-loop short-circuit (no new RoutingIntentKind). First concrete consumer of the catalog-11 AgentLoop base
 │       │   ├── search.py           ← WebSearchExecutor (orchestrates chain + reader chain + ranking); 2026-05-22 categories= param forwarded for news-category SearxNG routing. 2026 catalog 12 (felo-search T1): run() calls maybe_reformulate_queries before _dedupe_queries + fan-out
@@ -2700,7 +2764,7 @@ For the current decisions and Foundation phase status see
 │       │   ├── disambiguator.py    ← IntentDisambiguator (CODING/AUTOMATION/HYBRID/UNCLEAR; opt-in IRMA enrichment)
 │       │   ├── dispatcher.py       ← OpenClawDispatcher (5 stub methods + V1-gap C3 desktop/window handlers)
 │       │   ├── gaming_mode.py     ← V1-gap A1 (2026-05): GamingModeManager with on_engaged/on_disengaged callbacks (LLM hot-swap, STT swap, Kokoro device flip, VLM unload, Parakeet server stop); decoupled from openclaw_on (works without OpenClaw); ~2.3 GB VRAM freed
-│       │   ├── intents.py          ← RoutingIntentKind enum (23 values: CONVERSATIONAL, CODE_TASK, PROGRESS_QUERY, CANCEL, MID_SESSION_ADJUSTMENT, CLARIFICATION_RESPONSE, BROWSER_AUTOMATION, MEDIA_GENERATION, MESSAGING, FILE_OPERATION, SHELL_OPERATION, HYBRID_TASK, MODEL_SWITCH, SYSTEM_STATUS, GAMING_MODE, DESKTOP_AUTOMATION, WINDOW_AUTOMATION, APP_LAUNCH, SCREEN_CONTEXT_QUERY, WINDOW_MOVE, WINDOW_CLOSE, OPEN_LAST_SOURCE, NAVIGATE_TO_SITE), RoutingIntent + per-category dataclasses (incl. AppLaunchIntent, ScreenContextIntent, WindowMoveIntent, WindowCloseIntent, ModelSwitchIntent, SystemStatusIntent, GamingModeIntent, DesktopIntent, WindowIntent, OpenLastSourceIntent (2026-05-22 with ordinal + referent + monitor), NavigateToSiteIntent (2026-05-22 with site_query + monitor))
+│       │   ├── intents.py          ← RoutingIntentKind enum (26 values: CONVERSATIONAL, CODE_TASK, PROGRESS_QUERY, CANCEL, MID_SESSION_ADJUSTMENT, CLARIFICATION_RESPONSE, BROWSER_AUTOMATION, MEDIA_GENERATION, MESSAGING, FILE_OPERATION, SHELL_OPERATION, HYBRID_TASK, MODEL_SWITCH, SYSTEM_STATUS, GAMING_MODE, DESKTOP_AUTOMATION, WINDOW_AUTOMATION, APP_LAUNCH, SCREEN_CONTEXT_QUERY, WINDOW_MOVE, WINDOW_CLOSE, OPEN_LAST_SOURCE, NAVIGATE_TO_SITE, ACTIVE_WINDOW_QUERY, SEMANTIC_CLICK, WINDOW_CLOSE_CONFIRMATION), RoutingIntent + per-category dataclasses (incl. AppLaunchIntent, ScreenContextIntent, WindowMoveIntent, WindowCloseIntent, ModelSwitchIntent, SystemStatusIntent, GamingModeIntent, DesktopIntent, WindowIntent, OpenLastSourceIntent (2026-05-22 with ordinal + referent + monitor), NavigateToSiteIntent (2026-05-22 with site_query + monitor), ActiveWindowQueryIntent, SemanticClickIntent, WindowCloseConfirmationIntent)
 │       │   ├── irma.py             ← 4B plan Item 5: InputReformulator + ReformulationContext (default OFF)
 │       │   └── runner.py           ← AutomationTaskRunner (mirror of CodingTaskRunner)
 │       │
@@ -2971,13 +3035,13 @@ For the current decisions and Foundation phase status see
 │   └── relay_test/                ← Valorant relay test harness + 20k corpus + scorecard (see the "2026-06 relay/gaming campaign" section below)
 │       ├── harness.py             ← staged matcher/rephrase/audio/asr/full pipeline test (GAMING_PRESET 3B, testing-mode parity, RELAY_TEST_GPU_LAYERS)
 │       ├── corpus.py              ← original build_corpus() base cases + _GROUP_PREFIXES
-│       ├── corpus_packs.py        ← build_corpus(seed, target=20000): auto-discover packs by kind (relay/question/NEGATIVE) + _split_compound/_compound_cases + stratified cap; build_corpus_10k/_20k aliases
+│       ├── corpus_packs.py        ← build_corpus(seed, target=25000): auto-discover packs by kind (relay/question/NEGATIVE) + _compound_cases + stratified cap; build_corpus_10k/_20k aliases
 │       ├── scorecard.py           ← reliability scorecard: fact-token extractor, classify_route (by LLM-invocation), per-category retention p50/p95/p99, inversion/hallucination, deterministic coverage, matcher/false-relay, flavor TTR, --bench (CPU-3B latency+RSS), no-regression diff
 │       ├── trace_corpus.py        ← NEW (2026-06-16): full-pipeline corpus TRACER — runs the corpus through the live normalize→route→relay pipeline and records each stage's output for triage
 │       ├── analyze_outputs.py     ← NEW (2026-06-16): output TRIAGE over a trace/rephrase JSONL (bucket + flag the lines worth a human/audit look)
 │       ├── make_audit_chunks.py   ← split the LLM-routed lines of a rephrase JSONL into per-agent audit chunks
 │       ├── vocab_packs/           ← 48 packs (~29.4k payloads): 8 base + var_* variety + stress_* metric-stress + persona_flavor (OUTPUT pool, excluded from inputs)
-│       ├── refs/                  ← 20 web-grounded Valorant reference docs (agents/abilities/maps/callouts/economy/slang/meta/Marvel) used to ground generation
+│       ├── refs/                  ← 21 web-grounded Valorant reference docs (agents/abilities/maps/callouts/economy/slang/meta/Marvel + ultron_voice.md) used to ground generation
 │       └── (dev tools)            ← play_sample, cadence_actual/cadence_check, flow_check, validate_pipeline, probe/reprobe/waveform_check/burst_diag
 │
 ├── tests/
@@ -3182,7 +3246,7 @@ For the current decisions and Foundation phase status see
    queue maxsize 1024 since 2026-05-22 audio-overflow fix)
 2. Orchestrator.run() loop:
    a. WakeWordDetector or AddressingClassifier consumes blocks
-      ├── COLD: "kenning" custom OpenWakeWord ONNX required
+      ├── COLD: "ultron" custom OpenWakeWord ONNX required (config wake_word.model_path; "kenning" is the legacy model). follow_up/always-listen is OFF by default — wake required every turn.
       └── WARM: AddressingClassifier verdict (rule -> zero-shot fallback) required
    b. On addressed: Silero VAD marks utterance start/end + Smart Turn V3
       gradient-fire confirms end (early-complete prob ≥ 0.65 -> submit at 300 ms;
@@ -3197,18 +3261,23 @@ For the current decisions and Foundation phase status see
    └── stt.engine="whisper"    -> WhisperEngine (faster-whisper int8_fp16;
                                   beam_size=1 since 2026-05-15)
    -> user_text
+3b. command_normalizer.normalize_command(user_text) (2026-06-14+, runs BEFORE all
+   matchers): L2 strip/canonicalize-relay-lead + L1 STT correction (Valorant
+   gazetteer, wake-remnant strip, relay-lead restore via the relay-intent gate);
+   a zero-mistakes gate returns questions/Spotify/reactions verbatim. May rewrite
+   user_text for the matchers below; logs raw + normalized (`routing:normalized`).
 4. KenningIntentRecognizer.process_utterance(user_text):
    ├── Match against 25 registered phrases via Gemma-300M q4 embeddings (CPU)
    ├── If "needs fresh data" intent matches -> set self._next_turn_force_search=True
    ├── If "gaming mode engage/disengage" matches -> short-circuit + invoke
    │                                                 GamingModeManager directly
    └── Else: return None and continue normal flow
-5. local_clock_reply.maybe_handle(user_text):
+5. local_clock_reply.maybe_local_clock_reply(user_text, *, now=None) [NOTE: actually invoked INSIDE _respond() at step 9a, not as a separate pre-routing step]:
    ├── "what time is it" / "what's today's date" -> system clock reply, ~5 ms
    ├── "what time is it in <city>" + city in zoneinfo map -> reply, no LLM
    └── Else: return None and continue normal flow
 6. classify_routing(user_text, has_active_coding_task, has_pending_clarification)
-   → RoutingIntent (one of 23 RoutingIntentKind values)
+   → RoutingIntent (one of 26 RoutingIntentKind values)
 7. Orchestrator intercepts OPEN_LAST_SOURCE / NAVIGATE_TO_SITE BEFORE the
    capability controller (orchestrator-local state access):
    ├── OPEN_LAST_SOURCE -> _resolve_cited_source() + webbrowser.open() OR Chrome on monitor
@@ -3231,19 +3300,19 @@ For the current decisions and Foundation phase status see
       │   ├── classify_by_rules: _TIME_SENSITIVE / _VOLATILE_TOPICS /
       │   │                       _NEWS_QUERIES / _TIME_IN_LOCATION_GATE_RE
       │   ├── If self._next_turn_force_search: pre-populate cached_verdict=SEARCH
-      │   └── Else preflight LLM (Qwen3.5-4B) on UNCERTAIN cases
+      │   └── Else preflight LLM (the active preset — josiefied-qwen3-8b as of Ultron 1.0) on UNCERTAIN cases
       ├── If SEARCH:
       │   ├── AcknowledgmentSource.next_phrase() -> TTS immediately
       │   │   (cache hit: ~0 ms; cache miss: ~200-400 ms)
       │   ├── WebSearchExecutor.run(text, categories="news" iff news query):
       │   │   ├── SearchProviderChain: SearxNG -> Brave -> DuckDuckGo
-      │   │   └── ReaderProviderChain: Trafilatura -> Jina
+      │   │   └── ReaderChain: Trafilatura -> Jina
       │   ├── format_sources_for_prompt + (if news) multi-event directive
       │   └── injected into LLM context
       ├── ConversationMemory.retrieve(text, k=3, min_relevance=0.78) -> MemoryTurn[]
       │   (reranker.enabled=false runtime; cosine + RRF + recency composite)
       ├── LLMEngine.generate_stream(text, enable_thinking=False, history_user_message=bare):
-      │   ├── Qwen3.5-4B Q4_K_M in-process via llama-cpp-python
+      │   ├── the active preset (josiefied-qwen3-8b Q5_K_M, Ultron 1.0 default) in-process via llama-cpp-python
       │   ├── /no_think marker via _apply_no_think_marker (saves 5-10 s TTFT)
       │   └── In-process spec decoding wired (llm.draft_kind="none" default)
       └── KokoroSpeech.speak_stream(tokens) -> CUDA StyleTTS2 + ISTFTNet (voice=kenning)
@@ -3451,9 +3520,11 @@ External call (Brave, Jina) → CircuitBreaker.call(_do_X, ...)
 
 ### `src/kenning/__init__.py`
 
-**Purpose:** package init. On Windows, adds CUDA runtime DLL directories to
-the loader path so llama-cpp / ctranslate2 find `cudart64_12.dll`,
-`cublas64_12.dll`, `cudnn_ops_infer64_9.dll`.
+**Purpose:** package init. On Windows, `_register_cuda_dll_paths()` adds CUDA
+runtime DLL directories (the installed `torch/lib` + any `nvidia-*-cu12/bin`) to
+`os.add_dll_directory` so llama-cpp / ctranslate2 find their CUDA DLLs (e.g.
+`cudart64_12.dll`, `cublas64_12.dll`). Importing `kenning` FIRST is what makes a
+later `import llama_cpp` succeed (the DLL dirs are registered here).
 
 **No public API** beyond import side effects.
 
@@ -3468,8 +3539,9 @@ the loader path so llama-cpp / ctranslate2 find `cudart64_12.dll`,
   model load; `KENNING_ALLOW_MULTIPLE_INSTANCES=1` bypasses), builds an
   `Orchestrator`, calls `.run()` until KeyboardInterrupt, releases the
   lock in a `finally`. Exit codes: 0 ok / 1 startup-or-run failure /
-  2 missing model / 3 duplicate instance.
-- **2026-06-15:** a SIGTERM handler and an atexit backstop were added (was SIGINT-only). Both trigger full cleanup (sidecar reap via `_kill_embedder_sidecar()` + audit-log flush). `taskkill /F` is uncatchable at the process level and is covered at the NEXT boot by the orphan sweep (`sidecar_lock.sweep()`) plus audit-log repair (`AuditLog.repair_if_needed()`).
+  2 missing model / 3 duplicate instance / 4 anticheat import-firewall failed to
+  install or is not enforcing (FATAL refuse-to-start when anticheat is active).
+- **2026-06-15:** a SIGTERM handler and an atexit backstop were added (was SIGINT-only). Both trigger full cleanup delegated to `Orchestrator.shutdown()` (which reaps the embedder sidecar + flushes the audit log). `taskkill /F` is uncatchable at the process level and is covered at the NEXT boot by the orphan sweep (`sidecar_lock.sweep()`) plus audit-log repair (`AuditLog.repair_if_needed()`).
 
 **In:** environment + config.yaml (via Orchestrator construction).
 **Out:** stdout console transcript, log files.
@@ -3489,7 +3561,7 @@ the loader path so llama-cpp / ctranslate2 find `cudart64_12.dll`,
   `QdrantCollections` (conversations / facts / web_results / **projects**),
   `QdrantConfig`, `MemoryConfig` (+ `MemoryRerankingConfig` /
   `MemoryRetrievalConfig` / `MemoryContextualRetrievalConfig` /
-  `MemoryTopicalChunkingConfig` / `MemoryDiscourseTaggingConfig`),
+  `TopicalChunkingConfig` / `DiscourseTaggingConfig`),
   `BraveConfig`, `JinaConfig`, `SearxNGConfig`, `DuckDuckGoConfig`,
   `WebCacheConfig`, `WebSearchConfig` (+ chain ordering),
   `AddressingConfig`, `IntentConfig` (2026-05-22 Gemma-300M intent recognizer),
@@ -3516,9 +3588,10 @@ the loader path so llama-cpp / ctranslate2 find `cudart64_12.dll`,
 **Runtime-overrides overlay (NEW 2026-06-15 — config.yaml is the immutable boot source of truth):** the settings panel no longer writes `config.yaml`. It writes an EPHEMERAL overlay file `data/runtime_overrides.json` (`settings_gui/spec.py: write_runtime_overrides`, const `RUNTIME_OVERRIDES_RELPATH`). `reload_config()` merges that overlay in-session via `_merge_runtime_overrides`, and `clear_runtime_overrides()` wipes it at orchestrator boot. Net effect: GUI edits are session-only and revert on restart, so the lean-boot / gaming / anticheat / posture-canary defaults can never be left undone by a stale GUI edit — the code in `config.yaml` is always the source of truth at boot.
 - `current_config_path() -> Path | None`
 - `LLM_PRESETS: dict[str, dict]` (4B plan Stage A) — preset table for
-  `LLMConfig.preset`. Current default `qwen3.5-4b` (Qwen 3.5 4B Q4_K_M
-  + 0.8B draft + n_ctx=8192). Other presets retained for swap-back:
-  `josiefied-qwen3-4b`, `josiefied-qwen3-8b`, `qwen3.5-9b`,
+  `LLMConfig.preset`. **Schema (config.py) field default `josiefied-qwen3-4b`**;
+  `config.yaml` currently SETS `josiefied-qwen3-8b` (Ultron 1.0, n_ctx=4096) as the
+  active preset. Presets retained for swap-back: `qwen3.5-4b` (Qwen 3.5 4B Q4_K_M
+  + 0.8B draft + n_ctx=8192), `qwen3.5-9b`,
   `gemma-3-4b-abliterated`, `llama-3.2-3b-abliterated` (gaming-mode
   target; n_ctx=6144). `LLMConfig._apply_preset` (model_validator)
   fills in `model_path` / `n_ctx` / `draft_model_path` only when those
@@ -3546,14 +3619,14 @@ registrations through the orchestrator.
   - `.published_count() -> int`
 - Module-level shortcuts: `publish`, `subscribe`, `subscribe_all`, `get_bus`,
   `reset_bus_for_testing()` (test escape hatch)
-- 17 canonical events in `events.py` re-exported from `__init__.py`:
+- 19 canonical events in `events.py` re-exported from `__init__.py`:
   `TurnStartedEvent`, `TurnCompletedEvent`, `STTTranscribedEvent`,
   `RoutingClassifiedEvent`, `GateVerdictEvent`, `MemoryRetrievedEvent`,
   `LLMStreamTokenEvent`, `LLMStreamCompleteEvent`, `TTSPlayedEvent`,
   `CodingFileChangedEvent`, `ProjectIndexedEvent`,
   `ProjectDigestGeneratedEvent`, `SupervisorDecidedEvent`,
   `SafetyViolatedEvent`, `GamingEngagedEvent`, `GamingDisengagedEvent`,
-  `VRAMReclaimedEvent`
+  `VRAMReclaimedEvent`, `DialogAppearedEvent`, `DialogResolvedEvent`
 - `BUS_EVENT_CATALOG: list[BusEvent]` for introspection
 
 **Threading:** callbacks fire on publisher thread (synchronous). State
@@ -3567,9 +3640,10 @@ delivered with WARN.
 payload + future channel-aware retrieval.
 
 **Public:**
-- `Channel` enum (`USER` / `SYSTEM` / `BACKGROUND` / `EXTERNAL` / `OTHER`)
+- `Channel` enum (`USER` / `TEAMMATE` / `SYSTEM`) — `TEAMMATE` is the VoiceMeeter
+  loopback game-voice channel
 - `ChannelMetadata` dataclass
-- `Channel.from_str(value) -> Channel` (with `OTHER` fallback for
+- `Channel.from_str(value) -> Channel` (with `USER` fallback for
   forward-compat with legacy payloads)
 
 ### `src/kenning/local_clock_reply.py` (2026-05-20)
@@ -3578,7 +3652,7 @@ payload + future channel-aware retrieval.
 without ever invoking the LLM or web search. ~5 ms reply path.
 
 **Public:**
-- `maybe_handle(user_text) -> Optional[str]` — returns a spoken-form
+- `maybe_local_clock_reply(user_text, *, now=None) -> Optional[str]` — returns a spoken-form
   reply when the utterance matches a bare time/date regex OR
   `_TIME_IN_LOCATION_RE` with a city in `_CITY_TIMEZONES` (~70 cities
   mapped to IANA tz identifiers). Returns None for unknown cities
@@ -3592,10 +3666,10 @@ without ever invoking the LLM or web search. ~5 ms reply path.
 boost, GC tuning, LLM/embedder warmup.
 
 **Public:**
-- `apply_process_priority()` — Win32 process priority bump
-- `tune_gc()` — adjust GC generation thresholds
-- `warmup_llm_engine(engine)` / `warmup_embedder(embedder)` —
-  trigger first-load on a background thread
+- `raise_process_priority(level="above_normal") -> bool` — Win32 process priority bump
+- `pause_gc() -> bool` / `resume_gc(*, collect_now=True) -> bool` / `is_gc_paused() -> bool` — GC control
+- `warmup_llm(generate_fn, *, prompt=DEFAULT_LLM_WARMUP_PROMPT) -> Optional[float]` /
+  `warmup_embedder(encode_fn, *, prompt="warmup") -> Optional[float]` — trigger first-load, return elapsed seconds
 
 ### `src/kenning/trace.py` (2026-05-20 Round 6)
 
@@ -3606,11 +3680,12 @@ in order.
 
 **Public:**
 - `next_turn() -> int` — increment + return the thread-local turn id
-- `set_phase(name: str)` — set the thread-local phase tag
-- `current_turn_id() -> Optional[int]`
-- `tlog(logger, event: str, **kwargs)` — structured log emission
+- `set_turn(turn_id: Optional[int])` / `get_turn() -> Optional[int]` — thread-local turn id
+- `set_phase(name: str)` / `get_phase() -> Optional[str]` — thread-local phase tag
+- `tlog(log, msg, *, level=logging.INFO, **kwargs)` — structured log emission
 - `phase(name: str)` — context manager setting phase for its scope
-- `fmt(value) -> str` — short formatter for kv emission
+- `fmt(msg, **kwargs) -> str` — structured line formatter (turn/phase/msg/kwargs)
+- `snapshot() -> dict` / `restore(state: dict)` — save/restore the thread-local trace state
 
 ### `src/kenning/intent/recognizer.py` (2026-05-22)
 
@@ -3619,14 +3694,14 @@ in order.
 and a thread-safe registry that replays registrations on model load.
 
 **Public:**
-- `KenningIntentRecognizer(model="embeddinggemma-300m", variant="q4", threshold=0.65)`
-  - `.register(name, phrase, *, threshold=None)` — append a recognised
+- `KenningIntentRecognizer(model="embeddinggemma-300m", variant="q4", threshold=0.8)`
+  - `.register(canonical_phrase, *, handler=None, priority=0)` — append a recognised
     intent (replayed on first model load)
   - `.process_utterance(text) -> Optional[IntentMatch]` — fail-open;
     returns None on model load failure or below-threshold match
-  - `.is_loaded() -> bool`
-- `IntentMatch(name, phrase, similarity, threshold)`
-- `IntentRegistration(name, phrase, threshold)`
+  - `.loaded` (property) `-> bool`
+- `IntentMatch(canonical_phrase, utterance, similarity)`
+- `IntentRegistration(canonical_phrase, handler, priority)`
 - `get_intent_recognizer() -> Optional[KenningIntentRecognizer]` /
   `set_intent_recognizer(rec)` — module-level singleton accessors
 
@@ -3643,6 +3718,7 @@ plus registered phrases from `config.yaml:intent.phrases`.
 - `DependencyUnavailableError` (subclass)
   - `BraveAPIError`, `JinaReaderError`, `QdrantUnavailableError`,
     `AnthropicAPIError`, `OllamaUnavailableError`, `OpenClawGatewayError`
+    (+ `OpenClawAuthError` under it), `OpenClawToolError`
 - `ClaudeCodeError`
 - `AudioPipelineError`
   - `WhisperTranscriptionError`, `PiperSynthesisError`,
@@ -3693,21 +3769,21 @@ pre-flight gate's uncertainty signals.
 text before it reaches the LLM. Lives OUTSIDE the persona file
 (SOUL.md is voice-quality-locked) so the orchestrator can nudge the
 model on a per-utterance basis without changing the system prompt.
-Today only one addendum lives here — a brevity hint for short
+Three addenda live here (dispatched in priority order): a procedural-steps
+hint, a factual-answer hint, and a brevity hint for short
 questions that the 4B model otherwise tends to over-explain ("What
 are the Orcs in 40k?" → 1164-char four-paragraph essay in the
 2026-05-10 live session).
 
 **Public:**
 - `is_brief_question(user_text: str) -> bool` — True iff the
-  utterance is short (≤12 words OR ≤80 chars after strip) AND not
+  utterance is short (≤12 words AND ≤80 chars after strip) AND not
   explicitly asking for depth via any of the `_DEPTH_MARKERS`
   keywords (`explain` / `in detail` / `step by step` /
   `walk me through` / `elaborate` / `expand on` / `everything you
   know` / etc.). Empty / whitespace input returns False.
-- `apply_brevity_hint(user_text: str) -> str` — prepends a
-  `[Style: respond in 1-3 short sentences …]` directive when
-  `is_brief_question` returns True; otherwise returns input
+- `is_procedural_request(user_text) -> bool` → `_PROCEDURAL_HINT`; `is_factual_question(user_text) -> bool` → `_FACTUAL_HINT` — the other two hint classes.
+- `apply_brevity_hint(user_text: str) -> str` — dispatches across all THREE hint classes in priority order (procedural → factual → brevity); prepends the matching `[Style: …]` directive (e.g. `[Style: respond in 1-3 short sentences …]` for brevity) when one matches; otherwise returns input
   unchanged. Empty input passes through. Idempotent on
   already-hinted text (the hinted version is too long to be
   re-classified as brief).
@@ -3967,14 +4043,44 @@ User-preference persistence so "open YouTube" picks up "monitor 2 + maximize" th
 - `record_launch_preference(...)` -- one-call helper for the voice handler.
 - Wired at `CapabilityVoiceController._handle_app_launch`: utterances without explicit monitor target consult the logger first; matching prior preference's monitor + flags become the defaults.
 
+> **Anticheat note:** every `desktop/` module below is kept ENTIRELY OUT of RAM under anticheat (gated/lazy imports; the import-firewall blocks the input/capture/UIA/browser stacks). These sections document capability that exists but is NOT loaded in a lean gaming session.
+
+#### `desktop/browser_use.py` (catalog 10 — external browser-use CLI wrapper)
+- `class BrowserUseTool` — sync subprocess wrapper over the external `browser-use` CLI (Playwright + CDP); ~30 read/write methods all routed through the safety validator. Result hierarchy: `BrowserUseResult`, `BrowserState`, `BrowserHtmlResult`/`BrowserTextResult`/`BrowserBboxResult`, `BrowserActionResult`, `BrowserCookiesResult`, `BrowserCdpResult`, `BrowserEvalResult`, `BrowserScreenshotResult`, `BrowserProfile`. `JsScriptAnalysis` / `CdpStatementAnalysis` static-analysis validators. Singletons `get_browser_use_tool` / `set_browser_use_tool` / `reset_browser_use_tool_for_testing`. Fail-open (binary absent → structured "not found").
+
+#### `desktop/browser_sessions.py` (catalog 10 T8)
+- `class BrowserSession`, `class BrowserSessionResult`, `class BrowserSessionsManager` (named-session lifecycle: allowlist + cap + ProcessRegistry + kill_process_tree on force-close) + `get_browser_sessions_manager`.
+
+#### `desktop/browser_sequence.py` (catalog 10 creative extension)
+- `BrowserSequenceStep`, `BrowserScreenshotRef`, `BrowserStepResult`, `BrowserSequenceResult`, `class BrowserSequenceRunner` (before/after screenshot bracket + injected VLM verify) + `get/set_browser_sequence_runner`.
+
+#### `desktop/sequence.py` (catalog 09 T5 — desktop step runner)
+- `SequenceStatus`, `StepOutcome`, `VlmVerdict`, `SequenceStep`, `ScreenshotRef`, `StepResult`, `SequenceResult`, `class DesktopSequenceRunner` (screenshot-bracketed steps + VLM verification, auto-pass radius) + `get_sequence_runner`.
+
+#### `desktop/ocr.py` (catalog 08 T7 — Tesseract OCR)
+- `class OCRResult`, `is_ocr_available()`, `ocr_image_bytes()`, `ocr_screen_region()`, `ocr_screen_monitor()` — lazy pytesseract, fail-open.
+
+#### `desktop/clipboard.py` (catalog 09 T4)
+- `class ClipboardResult`, `class ClipboardManager` (read=Cap-2 / write=Cap-3, taint-tracker integration) + `get/set_clipboard_manager`.
+
+#### `desktop/click_preview.py` (VLM-confirmed click gate)
+- `class PreviewDecision`, `ConfirmedClick`, `PreviewResult`, `class ConfirmationHistory` (bounded store), `draw_crosshair_on_image()`, `preview_click()`.
+
+#### `desktop/dialog_poller.py` (catalog 08 — background UIA dialog poller)
+- `class DialogPoller` (start/stop daemon, ~750 ms cadence, publishes `DialogAppearedEvent`/`DialogResolvedEvent`) + `get/set_dialog_poller`. STOPPED + unloaded under anticheat.
+
+#### `desktop/win32_helpers.py` (catalog 07 T2 — ctypes Win32 helpers)
+- `class MonitorDpi`, `get_monitor_dpi()`, `get_monitor_dpi_for_window()`, `get_last_input_idle_ms()`, `is_window_cloaked()`, `class BlockInputResult`, `block_input_context()` (hardened ctx-mgr, UIPI floor), `logical_to_physical()` / `physical_to_logical()`.
+
 ### `src/kenning/audio/`
 
 #### `audio/capture.py`
 - `class AudioCaptureError(RuntimeError)` — raised on device init failure
 - `class AudioCapture` — sounddevice callback thread enqueueing 32 ms blocks
   - `start()` / `stop()`
-  - `read_blocks() -> Iterator[np.ndarray]`
-  - `_capture_utterance(...)` (used by Orchestrator)
+  - `get_chunk(timeout: float = 1.0) -> Optional[np.ndarray]` — consumer API (the Orchestrator capture loop pulls chunks)
+  - `drain()` — discard pending chunks + report drop accounting; `qsize() -> int`
+  - (NOTE: `_capture_utterance` is an `Orchestrator` method, not on `AudioCapture`.)
   - 2026-06-12 status-flag + drop accounting: per-session counters
     reset in `start()` (before the stream opens). The audio thread
     only COUNTS PortAudio status flags (`input overflow` etc.) plus a
@@ -4533,6 +4639,25 @@ Converts a user voice command into a line Kenning speaks on a **separate** PortA
 
 **Flavor architecture — coherence audit + routing fixes (2026-06-16):** a by-hand curation pass made the deep-expansion library ruthlessly KIT-ACCURATE and concise. `_agent_flavor.py` was RE-AUTHORED down to **~1,628 tight `TailEntry` entries** (~5 per cell): every agent's `ult` cell is now its REAL ultimate (Jett → Blade Storm, Viper → her Pit, Raze → the rocket, Sova → blind shock, KAY/O → NULL//cmd, Killjoy → Lockdown), every `utility` cell is ability-TAGGED (`ability:<canon>`, incl. agent-unique abilities like Raze `boombot`/`paintshells` or Killjoy `alarmbot`/`turret`), and filler / off-topic / wrong-kit lines were cut. The content lives in a hand-written CURATED dict (`scripts/flavor_gen/curated_overrides.py`) applied by `scripts/flavor_gen/apply_curated.py` and verified by the deterministic lint gate (`scripts/flavor_audit/lint_tails.py`). `_ultron_setpieces.py` was de-biblicalized (~18 flood/Noah/ark/sacrament/God/church/abstract lines replaced with the machine / evolution / immortal / superior register; only the canonical meteor + evolution beats kept). Two selection changes: `_situation_for` now LIFTS the situation to `ult` whenever the payload carries an ult keyword (so "their Viper ulted B" reaches her curated ULT pool, not utility) before refining the `spotted` base; and `_flavor_ctx` SKIPS the semantic `select_tail` entirely for a small (<5) candidate cell — a curated/tag-filtered cell is already a tight fit, so the deterministic LRU `_pick_flavor` is as good as a cosine re-rank and avoids the per-callout sidecar embed (a latency win); the semantic selector now only earns its cost on a large ambiguous pool. The verb→ability routing relies on `_tail_schema._VERB_TO_ABILITY` (mollied→molly, walled→wall, darted→dart) folding a callout verb to the same `ability:` tag the curated `utility` cells carry. Selection ARCHITECTURE is unchanged in shape (coarse-keyed route → small-cell LRU or large-cell semantic fine-select, fail-open); the curated content is just kit-accurate and concise now.
 
+**Ultron 1.0 + late-2026-06 relay additions:** new public matchers/helpers on top of the matrix above —
+`match_verbosity_command(text) -> Optional[str]` (no/low/high "flavor"; off/on excluded so it stays disjoint
+from the tail toggle) + `relay_verbosity()` / `set_relay_verbosity(level)` (runtime no/low/high state, env
+`KENNING_U1_VERBOSITY`); `u1_llm_route_enabled()` / `set_u1_llm_route_enabled(b)` (env `KENNING_U1_LLM_ROUTE`,
+default OFF) gating the LEAN-LLM relay route; `match_thinking_toggle(text) -> Optional[bool]` +
+`thinking_mode_enabled()` (env `KENNING_THINKING_MODE`, default OFF); `match_llm_device_switch(text)`
+(GPU↔CPU hot-reload of the live model, anticheat-safe compute-location only); `is_complete_tactical_callout(text)`
+(sidecar-free conservative slot-grammar predicate, exported for E3 snap-early-endpoint);
+`_apply_snap_registry(...)` (the FIRST pass over `voice_lines.SNAP_REGISTRY` (inside the snap-check block, after ~20 prior guards),
+`KENNING_SNAP_REGISTRY`); `_flavor_off_response(cmd, recent)` (the tails-OFF curated response sets, hooked at
+the top of `build_relay_line` only when `not flavor_tails_enabled()`); `_as_enemy_status` (the "they're
+out" enemy-commitment snap); the `_THANK_YOU_RE` + 10-tail gratitude snap. **build_relay_line u1.0 branch:**
+in the generic-rephrase step (step 27) `if u1_llm_route_enabled():` build via `ultron_prompt.build_relay_prompt`
+(`verbosity=relay_verbosity()`, `flavor_tail=flavor_tails_enabled()`, `agent_context=kit_facts_for(addressed
+agents)`, `compound=_u1_compound`) else the legacy `_build_rephrase_prompt` + `_RELAY_REPHRASE_SYSTEM`; the
+deterministic snap/tactical-literal pre-route + the post-LLM fact-guards are UNCHANGED (the C_route_llm
+hybrid). All flag-OFF byte-identical → default behavior is the proven deterministic path. See the validating-HEAD
+header + `docs/ultron_1_0/` for the full pivot.
+
 ---
 
 #### Public API (`__all__`)
@@ -4548,6 +4673,9 @@ Converts a user voice command into a line Kenning speaks on a **separate** PortA
 - `pick_roast_line(lines, recent_lines, rng) -> str` — anti-repeat pick from any verbatim pool; `pick_line` is an alias. Backed by `_pick_lru` (module-level `_LRU_COUNT`/`_LRU_SEEN`): serves the candidate gone LONGEST since last use (never-used first, ties random), comparing ONLY the passed candidate set so pools never cross-contaminate.
 - `resolve_relay_device(configured) -> Optional[int]` — resolve device name/index via `kenning.audio.devices.resolve_device`, fail-open.
 - `play_to_device(pcm, sample_rate, device_index, *, stream_factory, cancel_event=None) -> float` — synchronous playback via the WASAPI low-latency `make_output_stream` chokepoint (or test seam); returns seconds written. **Pre-widens mono PCM to centered STEREO and opens a 2-channel stream** (matching the B3 BroadcastSink): the relay B1 device is a stereo VoiceMeeter VAIO endpoint, so a 1-channel stream forced WASAPI's auto-convert to up-mix 1→2 channels *on top of* the 24k→48k resample, which **statics/distorts on B1** (B3 was clean because it already fed stereo). Writes the PCM in chunks and polls `cancel_event` between chunks so an "Ultron, stop" barge-in aborts mid-clip.
+- `is_complete_tactical_callout(text) -> bool` — sidecar-free conservative slot-grammar predicate (E3 snap-early-endpoint; also used by `intent_gate`).
+- `relay_route_info(...)` — the route classifier (template/route metadata for a callout).
+- `pick_line(...)` — alias of `pick_roast_line` (anti-repeat LRU pick from any verbatim pool).
 
 ---
 
@@ -4568,7 +4696,7 @@ Converts a user voice command into a line Kenning speaks on a **separate** PortA
 3. `_GREET_RE` (skipped when verbatim suffix present) → `compose=True, directive="greet"`
 4. `_FAREWELL_RE` (skipped when verbatim) → `compose=True, directive` from `_farewell_directive` (`farewell_win` / `farewell_loss` / `farewell` via `_WIN_RE` / `_LOSS_RE`)
 5. `_COMPOSE_PATTERNS` (encouragement) → `compose=True, payload="encouragement"`
-6. **`_RELAY_PATTERNS`** — 13 patterns covering group addressees (`_GROUP` = `my/our/the team/squad/…`), pronoun groups (`_GROUP_PRON` = `them/'em/everyone/the guys/…`), channel forms (`in game chat`), enemy-addressed bravado (`_ENEMY_GROUP`), `call out X`, `relay X`, `relay to my team X`, bare `relay X`, implicit-ask (`ask if anyone…`). Payload extracted; `ask … to` strips leading `to`; `_strip_verbatim_suffix` splits off trailing verbatim demand. Gated by `_payload_has_content`.
+6. **`_RELAY_PATTERNS`** — 14 patterns covering group addressees (`_GROUP` = `my/our/the team/squad/…`), pronoun groups (`_GROUP_PRON` = `them/'em/everyone/the guys/…`), channel forms (`in game chat`), enemy-addressed bravado (`_ENEMY_GROUP`), `call out X`, `relay X`, `relay to my team X`, bare `relay X`, implicit-ask (`ask if anyone…`). Payload extracted; `ask … to` strips leading `to`; `_strip_verbatim_suffix` splits off trailing verbatim demand. Gated by `_payload_has_content`.
 7. **Named-addressee patterns** (`_named_patterns`, LRU-cached per vocabulary key) — `the/my/their <agent>`: `tell <name> X`, `ask <name> X`, `say X to <name>`. `_NAME_CANON` maps STT variants (`kay o`→Kayo, `kill joy`→Killjoy, `cipher`→Cypher, `gecko`→Gekko, `mix`→Miks, `way lay`→Waylay) to display names via `_display_name`.
 8. **Context + directive** (`_match_context_directive`): `"<reported-speech context>, <directive>"`. Context must be ≥ 3 words and contain `_CONTEXT_VERB_RE` (asked/saying/flaming/tilted/roasting/…) and not match `_FIRST_PERSON_TO_YOU_RE`. Literal-payload variant (`_TELL_HIM_TAIL_RE`: `"..., tell him X"`) checked first; then closed-directive-atom tail (`_DIRECTIVE_TAIL_RE`: respond/calm down/clap back/back me up/…). Addressee inferred from single roster name in context via `_addressee_from_context`.
 8b. **Reported question → implicit answer** (`_match_reported_question`, NEW 2026-06-15) — `"X asked about/if Y"` with a question object but no explicit directive (`"Jett asked about Tony Stark"`, `"my teammate is wondering if you're a bot"`) routes to an in-character ANSWER path (`compose=True, directive="respond"`) even without a spoken "respond". Returns None for explicit-directive forms (owned by `_match_context_directive`), first-person-to-you instructions, and anything lacking a `_REPORTED_QUESTION_OBJ_RE` object. The answer itself is authored by `build_relay_line`'s answer path (Marvel topics like Tony Stark / Iron Man in-character, identity-category pools, or general-knowledge facts).
@@ -4582,7 +4710,7 @@ Converts a user voice command into a line Kenning speaks on a **separate** PortA
 #### `build_relay_line` — routing order
 
 1. **Verbatim** (`command.verbatim`) → `_cap_line(_strip_artifacts(payload))` — covers both the trailing verbatim demand and the `repeat to my team X` command.
-1b. **Curated command** (`_as_curated_command`) — matches the payload against `_CURATED_PATTERNS` (~55 regexes, each tagged with a team and/or named command id); picks a scope-appropriate id (named when addressee ≠ team), selects a response from `COMMAND_RESPONSES` by `_pick_lru`, and slot-fills `{site}` (`_extract_site`: longest `_is_place` run, skips generic nouns, prefers site-letters), `{agent}` (`_roster_agents`), `{name}` (addressee). Returns None (falls through) when verbatim or no pattern matches.
+1b. **Curated command** (`_as_curated_command`) — matches the payload against `_CURATED_PATTERNS` (~60 regexes, each tagged with a team and/or named command id); picks a scope-appropriate id (named when addressee ≠ team), selects a response from `COMMAND_RESPONSES` by `_pick_lru`, and slot-fills `{site}` (`_extract_site`: longest `_is_place` run, skips generic nouns, prefers site-letters), `{agent}` (`_roster_agents`), `{name}` (addressee). Returns None (falls through) when verbatim or no pattern matches.
 2. **Pure morale compose** (compose + no directive + no context + `_is_morale_payload`) → `pick_line(DEFAULT_ENCOURAGEMENT_LINES)`.
 3. **Greet / farewell compose** (compose + directive in `_DIRECTIVE_POOLS`) → `pick_line(_DIRECTIVE_POOLS[directive])`; pools: `greet`, `farewell_win`, `farewell_loss`, `farewell`.
 4. **Calm-down** (`_is_calm_directive` on directive, or `_is_calm_payload` on payload) → `pick_line(DEFAULT_CALM_LINES)` with `{name}` substituted by addressee prefix.
@@ -4631,16 +4759,19 @@ Converts a user voice command into a line Kenning speaks on a **separate** PortA
 
 | Symbol | Use |
 |---|---|
-| `DEFAULT_ENCOURAGEMENT_LINES` | Pure morale / hype / focus calls (12 lines) |
-| `DEFAULT_CONSOLATION_LINES` | After lost round (`nice try` / `unlucky`) (8 lines) |
-| `DEFAULT_PRAISE_LINES` | After won round (`good half` / `clutch`) (8 lines) |
-| `DEFAULT_GREETING_LINES` | Team intro as Ultron (6 lines) |
-| `DEFAULT_VICTORY_LINES` | Win sign-off (6 lines) |
-| `DEFAULT_DEFEAT_LINES` | Loss sign-off (5 lines) |
-| `DEFAULT_FAREWELL_LINES` | Neutral sign-off (4 lines) |
-| `DEFAULT_IDENTITY_LINES` | "Are you an AI?" answer (6 lines) |
-| `DEFAULT_STREAMER_LINES` | "Are you a streamer?" answer (3 lines) |
-| `DEFAULT_CALM_LINES` | Clinical calm-down with `{name}` slot (5 lines) |
+_(Pool sizes were greatly expanded in the 2026-06 coherence pass and are deliberately NOT tracked here to avoid re-staling — see `_ultron_setpieces.py` for the live counts.)_
+
+| `DEFAULT_ENCOURAGEMENT_LINES` | Pure morale / hype / focus calls |
+| `DEFAULT_CONSOLATION_LINES` | After lost round (`nice try` / `unlucky`) |
+| `DEFAULT_PRAISE_LINES` | After won round (`good half` / `clutch`) |
+| `DEFAULT_GREETING_LINES` | Team intro as Ultron |
+| `DEFAULT_VICTORY_LINES` | Win sign-off |
+| `DEFAULT_DEFEAT_LINES` | Loss sign-off |
+| `DEFAULT_FAREWELL_LINES` | Neutral sign-off |
+| `DEFAULT_CLUTCH_LINES` | Clutch / 1vX hype |
+| `DEFAULT_IDENTITY_LINES` | "Are you an AI?" answer |
+| `DEFAULT_STREAMER_LINES` | "Are you a streamer?" answer |
+| `DEFAULT_CALM_LINES` | Clinical calm-down with `{name}` slot |
 | `DEFAULT_CRITICIZE_LINES` | Curated "criticize `<agent>`" lines (NEW 2026-06-15) — replaces the unreliable 3B for the criticize command, served via `pick_line` |
 | `DEFAULT_SAVE_LINES`, `DEFAULT_FORCE_LINES`, `DEFAULT_FULLBUY_LINES` | Economy buy decisions |
 | `DEFAULT_ROAST_LINES` | Seed roast (1 line; user extends `data/relay_roasts.txt`) |
@@ -4699,17 +4830,19 @@ Firmware (legacy serial): `firmware/leonardo_ptt/leonardo_ptt.ino` — ATmega32u
     empty. (2026-05-10 mode-aware pre-roll fix.)
 
 #### `audio/vad.py`
-- `class SpeechEvent(Enum)` — START / END / NONE
-- `class VadResult` — dataclass: event, is_speech, prob
+- `class SpeechEvent(Enum)` — SPEECH_START / SPEECH_END / NONE
+- `class VadResult` — dataclass: event, is_speech, probability
 - `class VoiceActivityDetector` — silero-vad wrapper; consumes 512-sample windows.
   - `reset()` — clear hysteresis state AND restore the baseline silence-window requirement (so an adaptive bump from the previous utterance doesn't leak into the next one).
   - `set_min_silence_duration_ms(ms)` (2026-05-11 adaptive end-of-turn) — adjust trailing-silence requirement at runtime. Orchestrator calls this from `_capture_utterance` once speech has been active past `vad.long_utterance_threshold_seconds` so a thinking pause mid-prompt doesn't close a long technical description.
 
 #### `audio/wake_word.py`
 - `class WakeWordDetector` — openWakeWord wrapper
-  - Loads `models/openwakeword/kenning.onnx` (custom)
-  - Falls back to `hey_jarvis` with startup warning if missing
-  - `predict(audio_block) -> Optional[str]` — fires a wake event
+  - Loads the active word's custom ONNX (`wake_word.model_path`, e.g. `models/openwakeword/ultron.onnx`)
+  - Falls back to the custom `{fallback_name}.onnx` side-by-side model (default `ultron.onnx`); only if that
+    is also absent does it fall back to a pretrained openWakeWord word of the same name — `hey_jarvis` is NOT used
+  - `process(audio: np.ndarray) -> bool` — feed a frame; returns True on a wake fire
+  - `reload_for_word(word: str) -> tuple[bool, str]` — hot-swap the live model (GUI dropdown)
   - `fired_recently(window_s: float = 0.5) -> bool` (V1-gap A4) — read-only accessor for the last trigger timestamp; returns True iff a wake fire happened within ``window_s`` seconds. Used by the orchestrator's pre-task barge-in watcher. Idempotent — does not consume the trigger.
 
 #### `audio/smart_turn.py` (NEW 2026-05-12)
@@ -4758,6 +4891,128 @@ VAD" rather than misclassifying.
   is the single seam between config and runtime that the orchestrator
   uses; no other call site constructs a detector directly.
 
+#### `audio/voice_lines.py` (NEW 2026-06-18 — voice-line aggregate + data-driven snap registry)
+
+The single review surface for all relay voice lines + the regexes that route to them. A PURE relocation
+(proven byte-identical, 358 symbols, by `scripts/_voice_lines_verify.py` under `PYTHONHASHSEED=0`) of the
+social-snap regexes + pools out of `relay_speech`, co-located under a category→trigger→matcher→responses→
+tails map, and RE-EXPORTING `DEFAULT_*_LINES` + `AGENT_FLAVOR` so existing imports keep working. Adds the
+DATA-DRIVEN extension contract:
+- `class SnapRule` + `SNAP_REGISTRY: tuple` — a list of (matcher → responses/tails) rules consumed by
+  `relay_speech._apply_snap_registry` as the FIRST pass in `build_relay_line`'s snap gate
+  (`KENNING_SNAP_REGISTRY`, default on). Append ONE `SnapRule` = a new snap, no code change; FIRST match
+  wins (precedence); the hardcoded paths remain as fallback.
+- `class TargetSnapRule` + `TARGET_SNAP_REGISTRY: tuple` — the addressee-targeted variant (named-agent snaps).
+- `DEFAULT_ROAST_LINES`, `DEFAULT_FUN_FACTS`, and the relocated `DEFAULT_*_LINES` pools + `AGENT_FLAVOR`.
+- The flavor-toggle mishear tables `_FLAVOR_OFF_MISHEAR_RE` / `_FLAVOR_ON_MISHEAR_RE` and the `_HELLO_RE`
+  social-snap regexes live here (the regex-coupled gazetteer tables that would lose order/safety-net if
+  moved were deliberately LEFT in `relay_speech`).
+- Golden gate: `tests/data/voice_lines_golden_digest.json` + `tests/test_voice_lines_golden.py` run
+  `scripts/_voice_lines_verify.py check` in a `PYTHONHASHSEED=0` subprocess; flavor-lint
+  `scripts/flavor_audit/lint_tails.py` (`_tail_schema.lint_agent_flavor`). RE-BLESS after any intentional
+  voice-line/registry change. Detail: memory `project_voice_lines_aggregate_2026_06_18.md`.
+
+#### `audio/voicemeeter_level.py` (NEW 2026-06-18 — boot level guard for the team bus)
+
+Anticheat-clean VoiceMeeter Remote-API helper (no input/capture surface) that, when enabled
+(`KENNING_RELAY_VM_LEVEL_GUARD` / config, default OFF), checks/raises the B1 bus (Ultron→Valorant
+mic) fader at boot so Vivox AGC makeup-gain doesn't lift the codec noise floor (the live-diagnosed "volume
+same, quality bad"). The DECISIVE fix is manual (raise B1); this is the optional code complement, paired
+with `relay_speech._shape_for_team` (team-path-only DSP: rumble-HP → voiced-RMS normalize → comfort-noise
+floor → tanh soft-clip; gate `KENNING_RELAY_TEAM_DSP`, each stage env-gated + fail-open) + the GUI APPLY
+UNMUTE button. Detail: memory `project_valorant_audio_rootcause_2026_06_18.md`.
+
+#### `audio/ultron_prompt.py` (NEW 2026-06-20 — Ultron 1.0 lean prompt assembler)
+
+The route-everything-through-the-8B prompt builder. Replaces the legacy ~4.8k-token
+`relay_speech._build_rephrase_prompt` (which overflows the u1.0 `n_ctx=4096` cap and yielded EMPTY 8B
+output) with a LEAN (~165-word) templated prompt validated live to produce correct, fast (~0.2-0.5 s),
+in-character, fact-preserving relays. Stdlib-only (anticheat-safe). Public API:
+- `VERBOSITY_LEVELS = ("none","low","high")`, `DEFAULT_VERBOSITY = "high"`,
+  `normalize_verbosity(value) -> str` (word-aware: parses "no/low/high flavor" + synonyms; fail-soft).
+- `RELAY_SYSTEM` / `PRIVATE_SYSTEM` — stable, cache-friendly persona + output-rule prefixes (the variable
+  callout + exemplars go LAST in the user message). The `_VERBOSITY_DIRECTIVE` for `none` forces a
+  TELEGRAPHIC FRAGMENT (the 8B collapses a weak "be brief" back into a sentence).
+- `@dataclass PromptResult(system, user, sampling, enable_thinking=False)` — thinking is ALWAYS False here.
+- `build_relay_prompt(callout, *, addressee="team", verbosity, flavor_tail, exemplars, agent_context,
+  recent_lines, compound) -> PromptResult` — `addressee != "team"` opens with the teammate's name;
+  `compound=True` instructs ONE combined line; `agent_context` (from `agent_kits.kit_facts_for`) prevents
+  kit hallucination; per-verbosity `max_tokens` (none 24 / low 40 / high 72).
+- `build_private_prompt(query, ...) -> PromptResult` — the ME-ONLY (PRIVATE_REPLY) variant; its own Q&A
+  exemplars (`_DEFAULT_PRIVATE_EXEMPLARS`), `max_tokens` lifted to 110 on `high`.
+- **HARD RULE (module docstring):** callers MUST run the existing fact-guards
+  (`relay_speech._output_keeps_facts` / `_repair_against_input` / `_literal_relay`) on the model output —
+  this module only builds the prompt, it does not relax the correctness backstop.
+- Tests: `tests/audio/test_ultron_prompt.py`, `tests/audio/test_u1_llm_route.py`.
+
+#### `audio/agent_kits.py` (NEW 2026-06-20 — Ultron 1.0 agent-kit reference for LLM context injection)
+
+Hot-swappable, VERSION-STAMPED (`KITS_VERSION = "v2026-06-20 (Patch 12.10)"`) per-agent kit facts injected
+into the relay/answer prompt so the 8B never hallucinates a kit (it mis-stated Sova's kit in probing).
+Pure data + stdlib. Sourced from `docs/ultron_1_0/02_research/board/B_valorant_kits.md` with the
+adversarially-verified `C_domain.md` corrections applied inline (Iso Undercut also suppresses 4 s; Clove
+Not Dead Yet = 8 pts; Veto Evolution = 7 pts; Waylay/Veto/Miks/Tejo flagged post-cutoff). Public API:
+- `AGENT_KITS: Dict[str, str]` — 29 agents, compact `"Role | C=.. Q=.. E=..(/sig) X=..(ult)"` form.
+- `agent_kit_fact(agent) -> Optional[str]` (tolerant canon lookup) and
+  `kit_facts_for(agents, *, limit=4) -> List[str]` (de-duped, capped — long prompts raise hallucination risk).
+- To update for a patch/agent: edit `AGENT_KITS` + bump `KITS_VERSION` — no code change. Tests:
+  `tests/audio/test_agent_kits.py`.
+
+#### `audio/intent_gate.py` (NEW 2026-06-20 — Ultron 1.0 always-listening 3-way/4-class intent gate)
+
+The optional-wakeword scenario classifier (CLASSIFIER ONLY at present — M5b will wire it into the run loop).
+A COMPOSITION of existing proven components (no new in-process ML); cost-asymmetric, FAIL-CLOSED to IGNORE.
+Public API:
+- `class Scenario(str, Enum)` = {RELAY_TO_TEAM, PRIVATE_REPLY, COMMAND_LOCAL, IGNORE};
+  `@dataclass ScenarioVerdict(scenario, confidence, reason, needs_llm)`.
+- `classify_scenario(text, *, wake_present, seconds_since_response, no_speech_prob, avg_logprob, names)
+  -> ScenarioVerdict` — cascade: ASR-confidence pre-reject (`no_speech_prob`/`avg_logprob`, env
+  `KENNING_GATE_*`) → COMMAND_LOCAL (toggle/Spotify/stop matchers) → RELAY_TO_TEAM (`correct_callout_stt`
+  L1-only [NOT `normalize_command`, which over-injects the relay lead] → `match_relay_command` 0.95 /
+  `is_complete_tactical_callout` 0.90 / agent+`_fact_tokens` 0.88 / `relay_intent_ok` 0.75) → addressing
+  rules NO→IGNORE / YES+wake→PRIVATE_REPLY → undecided → fail-closed IGNORE with `needs_llm=True`.
+- `resolve_with_llm(verdict, text, llm) -> ScenarioVerdict` — single-token {PRIVATE, IGNORE} 8B escalation
+  for the undecided band (`enable_thinking=False`, fail-CLOSED on any non-PRIVATE token / error).
+- DEFAULT OFF (opt-in `addressing.always_listening`); wake-word stays the competitive default; thresholds
+  are heuristic starting points to calibrate on the labeled battery + `logs/addressing.jsonl`. PREREQUISITE:
+  VoiceMeeter mic isolation. Tests: `tests/audio/test_intent_gate.py`.
+
+#### `audio/routing_rules.py` (DATA SSOT — STT vocab + relay-lead regexes + router thresholds)
+
+One of the three CLAUDE.md "key area" relay modules. Pure data, three layers, consumed across the routing cascade:
+- **L1 STT vocab/protection:** `AGENTS` gazetteer (the single source of truth, line 47) + `MAPS`, `WEAPONS`,
+  `ABILITIES`, `LOCATIONS`, `TERMS`, `MULTI_TERMS`; mishear tables `AGENT_MISHEARS` / `TERM_MISHEARS` /
+  `MISHEAR_FORCE`; `FUZZY_BLOCK` + `PROTECT_EXTRA` (over-correction guards). Consumed by `_stt_correct`.
+- **L2 relay-lead recognition:** the `NORM2_*` regexes (`NORM2_MANGLED_TEAM_LEAD_RE`, `NORM2_TELL_TEAM_LEAD_RE`,
+  `NORM2_IRREGULAR_TEAM_LEAD_RE`, `NORM2_TEAM_NOUN`, `NORM2_MANGLED_TELL`, `NORM2_TELL_CLASS_VERB`).
+  Consumed by `command_normalizer`.
+- **L3 router thresholds:** `ROUTE_DEFAULT_THRESHOLD = 0.50`, `ROUTE_DEFAULT_MARGIN = 0.06`,
+  `ROUTE_FAMILY_THRESHOLDS` (per-family overrides). Consumed by `command_router`.
+
+#### `audio/llm_prompts.py` (LLM persona/answer prompt SSOT + construction index)
+
+The single source of truth for the LLM-path prompts (CLAUDE.md key area). Public:
+- `ULTRON_GAMING_PERSONA` — the conversational/gaming Ultron system prompt (tied to the gaming model so it
+  can never leak the "Kenning" desktop persona).
+- `ANSWER_PERSONA_CORE`, `ANSWER_MARVEL_RULES`, `ANSWER_THINK_RULES` — the curated answer-path persona/rules.
+- `ANSWER_SYSTEM_FOR: dict` (line 123) — the route-subtype → system-prompt index (e.g. marvel / think-respond);
+  **this is the extension point for new answer subtypes** (per the research synthesis). `_RELAY_REPHRASE_SYSTEM`
+  for the generic relay rephrase lives in `relay_speech` (Ultron register).
+
+#### `audio/_ultron_social.py` (curated social-reaction pools)
+
+`__all__ = ["SOCIAL_POOLS", "classify_social_reaction"]`. `SOCIAL_POOLS` = addressee-adapted curated pools
+(compliments / insults / surrender / yes-no); `classify_social_reaction(text) -> Optional[str]` detects which
+social category an utterance is. Consumed by `relay_speech._as_curated_reaction` (picking/LRU lives in
+`relay_speech`).
+
+#### `audio/_ultron_answer.py` (adaptive LLM ANSWER pipeline + meta-leak gate)
+
+`__all__ = [MARVEL_CANON, marvel_topic, classify_answer_subtype, extract_answer_slots, build_answer_call,
+is_meta_leak, THINK_RESPOND_SUFFIX_RE]`. Builds the focused per-subtype system_prompt + slots + constrained
+sampling for Marvel / "think and respond" answers (`build_answer_call`); `is_meta_leak` is the
+identity/model-leak gate on the LLM answer path. Consumed by `relay_speech.build_relay_line`'s answer path.
+
 ### `src/kenning/addressing/`
 
 #### `addressing/rules.py`
@@ -4794,8 +5049,10 @@ VAD" rather than misclassifying.
   vocabulary (the agent roster + callout terms, ≤200 tokens, most-confusable proper
   nouns first) — so agent names and tactical terms are recognised at the SOURCE,
   cutting mishears before the downstream `_stt_correct` snapper sees them. Additive
-  and reversible: gated by `WHISPER_DOMAIN_BIAS` (default on), overridable with a
-  custom `WHISPER_INITIAL_PROMPT`; reset per turn (`condition_on_previous_text`
+  and reversible: gated by `WHISPER_DOMAIN_BIAS` (default on), AUGMENTED by a
+  custom `WHISPER_INITIAL_PROMPT` (the env var APPENDS to the domain vocab, never
+  replaces it — a 2026-06-18 fix so a short override like `Kenning.` can't shadow the
+  whole vocabulary); reset per turn (`condition_on_previous_text`
   stays off for command STT). `initial_prompt` is supported by every faster-whisper
   version.
 
@@ -4814,10 +5071,12 @@ VAD" rather than misclassifying.
   - `_build_messages(user_message)` — resolves system prompt fresh each turn (Phase 1 hot-reload), assembles RAG snippets + recent + user
   - `_resolve_system_prompt()` (Phase 1) — sources from `PersonaLoader.get_system_prompt("user_facing")` when `llm.persona.source == "workspace"` (default), else `cfg.system_prompt`. Falls back to config when workspace is empty.
   - `_http_chat_completion(...)` / `_http_stream(...)` — OpenAI-compat HTTP client (uses `requests`, SSE for streaming, cancel-aware).
-  - `_chat_completion_kwargs(_llm_cfg, enable_thinking, *, stream)` (4B plan Stage F; 2026-05-14 third pass rewrite) — static helper that builds the kwargs dict for `Llama.create_chat_completion`. Returns ONLY the four sampling params + optional ``stream`` flag — NEVER emits ``chat_template_kwargs`` because the pinned llama-cpp-python 0.3.22 doesn't accept it (passing it raises ``TypeError``). The thinking-mode toggle is applied to the user message instead via :meth:`_apply_no_think_marker`. The HTTP runtime's payload-building code still emits ``chat_template_kwargs`` because llama-cpp-server (separate codebase) does accept it.
+  - `_chat_completion_kwargs(_llm_cfg, enable_thinking, *, stream, sampling=None)` (4B plan Stage F; 2026-05-14 third pass rewrite) — static helper that builds the kwargs dict for `Llama.create_chat_completion`. Returns the four base sampling params + optional ``stream`` flag, and when ``sampling`` is provided MERGES its allowed keys (per-call overrides for the relay/answer path: stop sequences, min_p, grammar, logit_bias, seed) — NEVER emits ``chat_template_kwargs`` because the pinned llama-cpp-python 0.3.22 doesn't accept it (passing it raises ``TypeError``). The thinking-mode toggle is applied to the user message instead via :meth:`_apply_no_think_marker`. The HTTP runtime's payload-building code still emits ``chat_template_kwargs`` because llama-cpp-server (separate codebase) does accept it.
   - `_apply_no_think_marker(messages, enable_thinking) -> list` (2026-05-14 third pass) — staticmethod that appends ``/no_think`` to the last user message when ``enable_thinking is False``. Qwen3 / Qwen3.5 chat templates inspect the user message for this marker and skip the ``<think>...</think>`` block. ``enable_thinking=None`` (default) and ``True`` are no-ops. Returns a copy of ``messages`` — never mutates the original. Replaces the previous ``chat_template_kwargs`` mechanism which crashed against the real llama-cpp-python signature. **2026-06-15 marker-leak fix:** the marker is Qwen-template-specific, so it is gated on the LIVE-LOADED model (`self.model_path`), not just config — in lean gaming the LLM is constructed directly as the llama-3.2-3b preset while `config.llm` still names the Qwen base, so a config-only check wrongly matched "qwen" and appended `/no_think` to the llama model (which has no template hook and PARROTED it — TTS spoke "No think"). The root bug was that `self.model_path` is a `pathlib.Path`; the old code called `.lower()` on it directly, which raised `AttributeError` that the bare `except` swallowed → the marker was appended UNCONDITIONALLY. Fixed with `str()` coercion so the Qwen check actually runs against the resolved path.
-  - `_build_llama(cfg, model_path, n_ctx, n_gpu_layers) -> (Llama, Path)` (4B plan voice-swap) — pure constructor that builds + returns a fresh `Llama` instance per `cfg`. Does NOT mutate `self`. Used by `_init_in_process` and `reload_for_preset`.
+  - `_build_llama(cfg, model_path, n_ctx, n_gpu_layers, **overrides) -> (Llama, Path, int, int)` (4B plan voice-swap; the last two ints are the resolved n_gpu_layers + n_ctx) — pure constructor that builds + returns a fresh `Llama` instance per `cfg` (+ kw overrides). Does NOT mutate `self`. Used by `_init_in_process`, `reload_for_preset`, and `reload_for_device`.
   - `reload_for_preset(preset: str) -> (bool, str)` (4B plan voice-swap) — hot-swap the loaded LLM to `preset` without restarting Kenning. Builds the new `Llama` FIRST so a failed swap (missing GGUF, invalid preset) leaves the engine in its working state. On success: history cleared, `KENNING_LLM_PRESET` env updated, stale `KENNING_LLM_MODEL_PATH` cleared. On failure: env vars restored. Idempotent (`already on X` returns success without rebuild). `in_process` runtime only.
+  - `reload_for_device(device: str, *, force: bool = False)` + `_DEVICE_PROFILES` (NEW 2026-06-18) — hot-reload the live model with a device-optimized llama.cpp profile (GPU = full offload + flash-attn + q8_0 KV + large batches; CPU = 0 layers + F16 KV + small ubatch). `force=True` reloads even when already on the target device (re-apply a profile). Load-new-then-release-old (a failed load leaves the working model intact). Backs the voice command `relay_speech.match_llm_device_switch` ("switch the model to the GPU/CPU"); anticheat-safe (compute-location only).
+  - **Ultron 1.0 serving (2026-06-20):** the `system_prompt=` override fast path (`[system, user]`, no RAG/history) IS the route-all-through-8B surface used by `ultron_prompt`; `enable_thinking=False` is enforced on relay/private routes (`_apply_no_think_marker` appends `/no_think` for qwen-family + the kwarg; startup assert that `<think>` never leaks). `sampling` whitelist already includes `grammar`+`logit_bias` (unused — NO grammar on the hot path per research D4). Default preset is now `josiefied-qwen3-8b` @ `n_ctx=4096` (10 GB VRAM cap). TODO (research synthesis): add a `_sanitize_user_input` call on the `system_prompt=` branch to restore injection defense on relay routes.
   - `generate(user_message, *, enable_thinking=None)` and `generate_stream(user_message, *, enable_thinking=None, record_history=True)` (4B plan Stage F + 2026-05-18 latency pass 3 Phase 3) — per-call thinking mode parameter, plus `record_history` on the streaming variant. When `record_history=False`, the end-of-stream auto-record is skipped so callers can defer history commit to after they've confirmed the response was actually consumed (used by the orchestrator's speculative-LLM path).
   - `record_completed_turn(user_message, response)` (2026-05-18 latency pass 3 Phase 3) — public commit hook for the deferred-history pattern. No-op on empty input. Used by `Orchestrator._collect_speculative_llm`'s commit closure after the buffered tokens have been drained to TTS.
 
@@ -4837,12 +5096,12 @@ VAD" rather than misclassifying.
 #### `memory/reranker.py` (2026-05-21 frontier Item 2)
 - `class CrossEncoderReranker` — wraps `sentence-transformers` CrossEncoder; uses `BAAI/bge-reranker-v2-m3` by default.
   - `rerank(query, candidates, *, top_k) -> List[Tuple[idx, score]]` — predict relevance, sort, top-k.
-  - Module-level `get_shared_reranker()` / `set_shared_reranker()` for singleton sharing.
+  - Module-level `get_shared_reranker()` / `reset_shared_reranker()` (test-only) for singleton sharing.
   - `_PREDICT_CONTENT_CAP_CHARS = 500` truncates candidate content before predict() to bound tokenize cost.
   - Default: code-level ENABLED but runtime `memory.reranking.enabled: false` after live perf measurement (17-18 s/turn on CPU).
 
 #### `memory/contextualizer.py` (2026-05-21 frontier Item 4)
-- `class TurnContextualizer` — Anthropic-technique contextual retrieval. LLM-generates a brief situational anchor before embedding each turn so the dense vector carries surrounding context.
+- `class ContextGenerator` — Anthropic-technique contextual retrieval. LLM-generates a brief situational anchor before embedding each turn so the dense vector carries surrounding context.
 - Default OFF (`memory.contextual_retrieval.enabled: false`); LLM cost ~80-150 ms per write turn.
 
 #### `memory/topical_chunking.py` (2026-05-19 Track 1a)
@@ -4923,7 +5182,7 @@ Module is I/O-free. Callers wire their own persistence (Qdrant payload, JSONL au
 
 #### `web_search/brave.py`
 - `_BRAVE_BREAKER` — module-level CircuitBreaker (3/5min, 5min cooldown)
-- `class BraveResult` — dataclass: url, title, snippet, rank
+- `class SearchResult` (primary; `BraveResult` is a back-compat alias) — dataclass: url, title, snippet, rank
 - `class BraveSearchClient`
   - `search(query, count?) -> List[BraveResult]` — uses breaker + raises BraveAPIError
   - `_do_search(query, count)` — inner; raises typed errors
@@ -4976,7 +5235,7 @@ Module is I/O-free. Callers wire their own persistence (Qdrant payload, JSONL au
   - `fetch(url) -> Optional[str]` — caps at ~32 k chars (was 200 k before live perf bug)
 
 #### `web_search/reader_chain.py` (2026-05-22 frontier)
-- `class ReaderProviderChain` — cascading reader chain
+- `class ReaderChain` — cascading reader chain
   - Default order: `trafilatura -> jina` (local-first)
   - `fetch(url) -> Optional[str]` — first-non-empty wins
 
@@ -4986,7 +5245,7 @@ Module is I/O-free. Callers wire their own persistence (Qdrant payload, JSONL au
 - `_rank_snippets(llm, query, results, top_n)` — LLM-driven re-ranking
 - `_normalise_search_query(q)` / `_dedupe_queries(qs)` (V1-gap B2) — drop near-duplicate Brave queries before fan-out using a token-set canonical form (lowercase + possessive strip + stopword drop + sort).
 - `_render_inline_marker(index, *, fmt)` (V1-gap B3) — render bracketed `[1]` (default) or Unicode superscript (¹²³) inline citations based on `web_search.citation.inline_marker_format`.
-- `class WebSearchExecutor` — orchestrates SearchProviderChain → rank → ReaderProviderChain → cache. **2026-05-09 latency fix:** reader fetches run IN PARALLEL via `concurrent.futures.ThreadPoolExecutor` with a collective deadline cap. Pre-fix the loop was sequential and one slow page (~10 s on a Quora result) blocked the entire search path while the TTS playback queue starved waiting for tokens. Post-fix wall time is `max(per-fetch durations)` instead of `sum(...)`, capped further by `collective_deadline_seconds`. Any fetch still in flight at deadline is abandoned (its source falls back to snippet-only with a `jina_deadline:<url>` note). Threads keep running in the background and exit on per-fetch HTTP timeout; `pool.shutdown(wait=False)` ensures the executor returns immediately.
+- `class WebSearchExecutor` — orchestrates SearchProviderChain → rank → ReaderChain → cache. **2026-05-09 latency fix:** reader fetches run IN PARALLEL via `concurrent.futures.ThreadPoolExecutor` with a collective deadline cap. Pre-fix the loop was sequential and one slow page (~10 s on a Quora result) blocked the entire search path while the TTS playback queue starved waiting for tokens. Post-fix wall time is `max(per-fetch durations)` instead of `sum(...)`, capped further by `collective_deadline_seconds`. Any fetch still in flight at deadline is abandoned (its source falls back to snippet-only with a `jina_deadline:<url>` note). Threads keep running in the background and exit on per-fetch HTTP timeout; `pool.shutdown(wait=False)` ensures the executor returns immediately.
   - `__init__(brave, jina, llm, cache=None, max_fetch=None, collective_deadline_seconds=None)` — `brave` is actually the SearchProviderChain (legacy field name retained for compatibility with internal call sites).
   - `run(user_query, search_queries?, top_n=3, categories=None) -> SearchPayload` — 2026-05-22: `categories` param forwarded to the chain (only SearxNG accepts; Brave/DDG ignore). Set to `"news"` from the orchestrator when `_NEWS_QUERIES` regex matches.
 - `format_sources_for_prompt(sources, *, strategy_queries=None)` / `format_sources_for_transcript(sources, *, strategy_queries=None)` — references list always uses bracket form for monospace clarity. 2026 catalog 12 (felo-search T4): `SearchPayload.queries` records the fanned-out (reformulated) query list; `_format_strategy_line` joins a multi-query strategy into a `q1 | q2` one-liner (self-suppresses for a single query); both formatters append the strategy when `strategy_queries` is passed (`[Search strategy: …]` in the prompt block / `strategy: …` in the transcript). The orchestrator wires it to the TRANSCRIPT ONLY (gated by `web_search.expose_search_strategy`, default ON) so spoken replies stay concise; the prompt param is reserved for future text / GUI channels.
@@ -5005,6 +5264,24 @@ Module is I/O-free. Callers wire their own persistence (Qdrant payload, JSONL au
 - `class DeepResearchMatch` + `match_deep_research(text)` — strict regex matcher (requires an explicit deep / thorough / in-depth / deep-dive / dig-deeper marker; extracts the topic). "search X" / "what is X" / "look up X" never match.
 - `_parse_json_list` / `_dedupe_subqueries` — tolerant JSON extraction + dedup helpers.
 - **Wired** in `Orchestrator._maybe_handle_deep_research` (run-loop short-circuit, NO new `RoutingIntentKind`): acks, runs the loop, then synthesizes + streams the answer through the same LLM->TTS path `_respond` uses. Gated by `deep_research.enabled` (default ON; per-turn opt-in via the matcher, so the normal sub-second search path is untouched). Config: top-level `deep_research.{enabled, max_steps, max_sub_queries_per_step, top_n_per_query, max_accumulated_sources}`.
+
+#### `web_search/rate_limit.py` (T14 rate-limit envelope)
+- `class RateLimitState` / `class BackoffConfig` / `class RateLimitTracker`; `parse_rate_limit_headers()`,
+  `compute_backoff()`, `sleep_for_backoff()`, `get_global_tracker()` / `reset_global_tracker_for_testing()`.
+  Consumed by `provider_chain.py` + all three provider clients (Brave/SearxNG/DDG) to cool a 429'd provider.
+
+#### `web_search/playwright_reader.py` (opt-in JS-aware reader)
+- `class PlaywrightReader` — Playwright/Chromium page extractor implementing the `fetch(url) -> Optional[str]`
+  reader interface; the third reader registered in `ReaderChain`. Lazy browser construction; **DEFAULT OFF**
+  (opt-in). Feeds the slimdown → pandoc HTML→Markdown pipeline.
+
+#### `web_search/slimdown_html.py`
+- `slimdown_html(html_text) -> str` — the first HTML→Markdown stage: strips SVG/img/style/script/noscript/
+  interactive widgets + `data:` URLs before pandoc conversion.
+
+#### `web_search/pandoc_converter.py`
+- `html_to_markdown(html_text) -> Optional[str]`, `pandoc_available() -> bool` — the pandoc HTML→Markdown step
+  (graceful degradation when pandoc absent); used by `PlaywrightReader`.
 
 ### `src/kenning/tts/`
 
@@ -5057,7 +5334,7 @@ while populating, subsequent turns hit.
 
 #### `tts/rvc.py`
 - `class RvcConverter` — infer-rvc-python wrapper, cuda:0
-  - `convert(pcm: np.ndarray, sample_rate: int) -> (pcm, sr)` — raises RVCConversionError on failure
+  - `convert(pcm: np.ndarray, sample_rate: int) -> (pcm, sr)` — FAIL-SOFT: on inference error returns the original PCM unchanged + logs at EXCEPTION level (RVCConversionError is raised by `TextToSpeech._synthesize` in speech.py, not here)
   - `close()` — releases GPU memory
   - **Tests:** [`tests/test_rvc.py`](../tests/test_rvc.py) (7 tests; explicit-path kwargs to avoid the default-arg gotcha; close idempotency; convert empty-audio / not-loaded guards; context-manager release).
 
@@ -5575,10 +5852,40 @@ implementation).
   orchestrator's `_maybe_handle_run_program` run-loop short-circuit (with
   `_announce_pending_run_report` draining the async run summary).
 
+#### `coding/edit_matcher.py` — the SEARCH/REPLACE edit engine
+- `class Strategy`, `class EditResult`, `apply_edit()`, `apply_edit_to_files()`, `find_similar_lines()` — the fuzz-cascade (exact → whitespace-flexible → …) edit applier.
+
+#### `coding/edit_recovery.py`
+- `EditSpec`, `EditRecoveryResult`, `did_edit_likely_apply()`, `is_search_mismatch_error()`, `enrich_mismatch_error()`, `run_edit_with_recovery()`, `wrap_edit_tool_with_recovery()` — SEARCH-mismatch recovery wrapper (SWE-Agent T1/T14).
+
+#### `coding/patch_v4a.py` — v4a unified-patch format
+- `parse_v4a_patch()`, `apply_patch()`, dataclasses `PatchAction`/`PatchHunk`/`PatchFileBlock`/`ParsedPatch`, `class PatchError`, + the BEGIN/END/ADD/UPDATE/DELETE/SCOPE/EOF/FUZZ_* constants.
+
+#### `coding/file_read_cache.py` (catalog cline T7a) — per-session mtime-validated file-read cache
+- `class FileReadCache` (RLock-guarded; `maybe_serve_from_cache` / `record_read` / `invalidate` / `clear`), `class CachedReadEntry`, `get_file_read_cache(session_id, max_entries=None)`. **NOTE: this file lives in `coding/`, NOT `desktop/`** (the desktop/ file-tree entry is misplaced).
+
+#### `coding/file_mention_resolver.py`
+- `class FileMention`, `resolve_mentions()` — resolve `@file` / path mentions in a coding prompt.
+
+#### `coding/coder_modes.py`
+- `class EditFormat`, `class CoderMode`, `get_coder_mode()`, `list_coder_modes()`, `edit_modes()`, `read_only_modes()`.
+
+#### `coding/architect_supervisor.py`
+- `class ArchitectRequest`, `class ArchitectPlan`, `class ArchitectSupervisor`, `DEFAULT_ARCHITECT_SYSTEM_PROMPT` — the pre-dispatch architect plan provider (`coding.architect`).
+
+#### `coding/commit_message.py`
+- `class CommitMessageRequest`, `class CommitMessageResult`, `generate_commit_message()`, `strip_outer_quotes()`, `DEFAULT_COMMIT_SYSTEM_PROMPT`.
+
+#### `coding/python_lint.py` / `coding/tree_sitter_lint.py` (pre-write lint cascade, `coding.pre_write_lint`)
+- python_lint: `lint_python()`, `FLAKE8_FATAL_SELECT`, `DEFAULT_FLAKE8_TIMEOUT` (compile + flake8). tree_sitter: `class LintError`, `class LintReport`, `tree_sitter_lint()`, `MAX_NODE_VISITS` (multi-language syntax check).
+
+#### `coding/ai_comment_watcher.py`
+- `class AICommentKind`, `class AICommentTrigger`, `class AICommentWatcher`, `scan_file_for_ai_comments()`, `AI_COMMENT_REGEX` — scans written files for `AI!`/`AI?`-style action comments.
+
 ### `src/kenning/openclaw_routing/` (Phase 5)
 
 #### `openclaw_routing/intents.py`
-- `class RoutingIntentKind(str, Enum)` — **23 values**: CONVERSATIONAL, CODE_TASK, PROGRESS_QUERY, CANCEL, MID_SESSION_ADJUSTMENT, CLARIFICATION_RESPONSE, BROWSER_AUTOMATION, MEDIA_GENERATION, MESSAGING, FILE_OPERATION, SHELL_OPERATION, HYBRID_TASK, MODEL_SWITCH (4B plan), SYSTEM_STATUS (Phase 13), GAMING_MODE (V1-gap A1), DESKTOP_AUTOMATION (V1-gap C3), WINDOW_AUTOMATION (V1-gap C3), APP_LAUNCH (Phase 8 desktop), SCREEN_CONTEXT_QUERY (Phase 8 desktop), WINDOW_MOVE (2026-05-14 third pass), WINDOW_CLOSE (2026-05-14 third pass), **OPEN_LAST_SOURCE** (2026-05-22 opens cited URL from last search-augmented turn; supports ordinal "the second one" + referent "the NBC story" + embedding-similarity match), **NAVIGATE_TO_SITE** (2026-05-22 queries SearxNG + scores top-10 domains + opens best match)
+- `class RoutingIntentKind(str, Enum)` — **26 values** (ACTIVE_WINDOW_QUERY, SEMANTIC_CLICK, WINDOW_CLOSE_CONFIRMATION added): CONVERSATIONAL, CODE_TASK, PROGRESS_QUERY, CANCEL, MID_SESSION_ADJUSTMENT, CLARIFICATION_RESPONSE, BROWSER_AUTOMATION, MEDIA_GENERATION, MESSAGING, FILE_OPERATION, SHELL_OPERATION, HYBRID_TASK, MODEL_SWITCH (4B plan), SYSTEM_STATUS (Phase 13), GAMING_MODE (V1-gap A1), DESKTOP_AUTOMATION (V1-gap C3), WINDOW_AUTOMATION (V1-gap C3), APP_LAUNCH (Phase 8 desktop), SCREEN_CONTEXT_QUERY (Phase 8 desktop), WINDOW_MOVE (2026-05-14 third pass), WINDOW_CLOSE (2026-05-14 third pass), **OPEN_LAST_SOURCE** (2026-05-22 opens cited URL from last search-augmented turn; supports ordinal "the second one" + referent "the NBC story" + embedding-similarity match), **NAVIGATE_TO_SITE** (2026-05-22 queries SearxNG + scores top-10 domains + opens best match)
 - Per-category dataclasses: `BrowserIntent`, `MediaGenIntent`, `MessagingIntent`, `FileOpIntent`, `ShellOpIntent`, **`GamingModeIntent`** (V1-gap A1), **`DesktopIntent`** (V1-gap C3), **`WindowIntent`** (V1-gap C3), **`AppLaunchIntent`** (Phase 8 desktop), **`ScreenContextIntent`** (Phase 8 desktop), **`WindowMoveIntent`** (2026-05-14 third pass), **`WindowCloseIntent`** (2026-05-14 third pass), **`OpenLastSourceIntent`** (2026-05-22: monitor_index, monitor_query, ordinal, referent, raw_text), **`NavigateToSiteIntent`** (2026-05-22: site_query, monitor_index, monitor_query, raw_text)
 - `HybridSubtask` — dataclass: order, type, subtype, description
 - `RoutingIntent` — top-level dataclass: kind, raw_text, confidence, source, reason, coding_intent, automation_intent, subtasks, model_switch_intent, system_status_intent, **gaming_mode_intent, desktop_intent, window_intent** (V1-gaps A1/C3), app_launch_intent, screen_context_intent, window_move_intent, window_close_intent, **open_last_source_intent, navigate_to_site_intent** (2026-05-22), needs_user_clarification, clarification_question
@@ -6269,6 +6576,75 @@ Swappable history compression. Five concrete condensers + factory + intent selec
 - `build_condenser(name, **kwargs) -> Condenser` — string-keyed factory (`noop` / `recent` / `amortized` / `observation_masking` / `llm_summarizing`).
 - `select_condenser_for_intent(intent_label: str, *, summarize_fn=None, fallback_name="noop") -> Condenser` — the catalog's "adaptive switching by intent" extension. Greetings -> NoOp; factual -> Recent; coding -> LLMSummarizing (requires `summarize_fn`); fallback `fallback_name` when unmatched.
 
+### `src/kenning/safety/` (runtime tool-call validator + anticheat + rule engine)
+
+The largest safety subsystem (30+ files). Every capability/tool call passes the validator; the anticheat
+layers (`anticheat.py`, `import_firewall.py`) and the lean-boot posture are load-bearing for the user's
+Valorant/Vanguard account (see `feedback_no_default_load_anticheat.md`).
+- `validator.py` — `SafetyValidator` + `get_validator()`; the central `check(tool_name, ...)` returning
+  ALLOW / AUDITED_ALLOW / BLOCK_HARD; the seam every desktop/coding/network capability flows through.
+- `policy.py` / `policy_chain.py` — `PolicyChain` (ordered policy decision flow); `hierarchical_policy.py`.
+- `rules/` sub-package — `base.py` (rule base class + `cap_carveouts.py`) + the category rule files
+  `category_a.py … category_s.py` (one module per capability category: process-memory/injection/hooks/
+  capture/input/path/network/etc.) + `conditionals.py`. Each defines the detection/decision rules the
+  validator composes.
+- `taint.py` (`TaintTracker`), `path_resolver.py` (`PathResolver.safe_realpath`), `two_phase_approval.py`
+  (`ApprovalRequest` / `ApprovalRegistry` — voice yes/no for destructive ops), `auto_approval.py`
+  (`AutoApprovalMatrix`, yolo-mode), `ignore.py` (`KenningIgnoreRule` — `.kenningignore` secrets block),
+  `intent.py` (explicit-intent NEEDS_EXPLICIT_INTENT unblock), `audit.py` (`AuditLog`, hash-chained JSONL +
+  `repair_if_needed()`).
+- `anticheat.py` (`anticheat_active()`, 49 module guards, `is_blocked_tool`, surface hooks),
+  `import_firewall.py` (loader-level `sys.meta_path` block + `assert_firewall_enforces()`),
+  `testing_mode.py` (`is_testing_mode_active()` + sentinel). (These three also have entries in the
+  "2026-06 relay/gaming campaign" appendix.)
+
+### `src/kenning/subprocess/` (process lifecycle + orphan reaping)
+
+Production infra for never leaking child processes (the embedder sidecar + any spawned tools).
+- `kill_tree.py` — `kill_process_tree()`, `KillTreeResult`, `kill_own_children()`.
+- `process_registry.py` — `ProcessRegistry`, `JobState`, `get_process_registry()` (T12 process discipline).
+- `sidecar_lock.py` — embedder-sidecar SINGLETON enforcer: `sweep()` (boot orphan reap), `default_pidfile()`,
+  `reap_stray_embedders()`.
+- `zombie_killer.py` — `ZombieKiller`, `TrackedProcess`, `get_zombie_killer()` (tracked daemon reaper).
+
+### `src/kenning/agent_loop/` (bounded agentic loop backbone)
+
+The `max_steps`-bounded observe→plan→act→verify base used by every agentic feature (deep research/memory/
+exploration, UI discovery, evolution cycles).
+- `base.py` — `AgentLoop` (ABC), `LoopStatus`, `StepRecord`, `LoopResult` (the load-bearing step cap +
+  repeated-signature loop detection + verify hook + fail-open execution).
+- `deep_loops.py` — `DeepGatherLoop`, `DeepMemoryLoop`, `DeepExplorationLoop`, `DeepUIDiscoveryLoop`.
+- `loop_detection.py` (`LoopDetector`, `LoopVerdict`) + `loop_detection_extended.py`.
+- `mode.py` — `ModeSession`, `Mode`, `ModePolicy`, `ModeFlipResult`.
+- `subagent.py` — `SubagentRunner`, `SubagentTask`, `TokenLedger`, `ToolGuard`; `subagent_policy.py`
+  (`SubagentPolicyConfig`, `ResolvedSubagentToolPolicy`, `filter_tools_by_policy`).
+
+### `src/kenning/evolution/` (bounded autonomous self-improvement — clawhub catalog 13/14)
+
+Data-only, Tier-3-walled self-improvement (config `evolution`). Lean-gaming skips it. See the
+THIRD_PARTY_NOTICES quarantined-source record.
+- `service.py` — `EvolutionService`, `EvolutionStore` (JSONL runtime + `digest()` + per-turn hooks).
+- `models.py` (GEP capsule data model), `signals.py` (local opportunity/correction/gap/failure extraction),
+  `skill_distiller.py` (capsule→`data/evolution/skills/*.md`), `blast_radius.py` (`compute_blast_radius`,
+  protected-path wall), `guardrails.py` (`evaluate_guardrails`, `GuardrailVerdict` — latency/quality/error/
+  resource detectors + rollback), `autonomy.py` (`TieredAutonomyController`, `AutonomyTier`),
+  `personality.py` (Tier-0 temperament hint), `evolution_loop.py` (`EvolutionLoop(AgentLoop)`),
+  `turn_metrics.py` (the guardrail metrics ring), `intent.py` ("evolve now" / "evolution status" matchers).
+
+### `src/kenning/mcp/` (MCP server registry + transport)
+
+- `registry.py` — `McpServerRegistry`, `McpServerHandle`, `McpServerState`, `get/set_mcp_server_registry()`
+  (kill-on-disconnect lifecycle). `config evolution`/`mcp.enabled`/`mcp.autostart` (default OFF).
+- `builder.py` — `build_mcp_server_registry()`, `transport_from_spec()`.
+- `transport.py` — `McpTransportKind` + the four transport config dataclasses (Stdio/Http/Sse/StreamableHttp) +
+  `sanitise_transport_config()` / `filter_environment()` / `filter_http_headers()` (env/header sanitisation).
+
+### `src/kenning/providers/` (web-search provider failover/rotation)
+
+- `rotation.py` — `RotatingBraveClient` (multi-key Brave rotation, T6).
+- `auth_profiles.py` — `AuthProfileStore`. `failover_policy.py` — `FailoverPolicy` (provider failover ordering).
+  Consumed by `web_search/provider_chain.py`.
+
 ---
 
 ## Configuration
@@ -6282,7 +6658,11 @@ Sections:
 - `wake_word` (name, model_path, fallback_model, threshold, cooldown)
 - `stt` (model, device, compute_type, beam_size, temperature, etc.)
 - `llm` (provider="llama_cpp", **preset** ["qwen3.5-9b"|"qwen3.5-4b"|"custom"; auto-fills model_path/n_ctx/draft_model_path when those keys are omitted — Stage A of the 4B plan], runtime ["in_process"|"http_server"], model_path, draft_model_path, n_ctx, gpu_layers, temperature, top_p, max_tokens, repeat_penalty, history_turns, flash_attn, kv_cache_type, system_prompt, server.{base_url,...}, persona.{source,...})
+- **Ultron 1.0 (2026-06-20):** `llm.preset` default is now **`josiefied-qwen3-8b`** with explicit **`n_ctx: 4096`** (10 GB VRAM cap; `gpu_layers: -1`, `flash_attn: true`, `kv_cache_type: 1` already present). Behavioral routing is ENV-gated (not config.yaml keys yet — added to the Pydantic schema in M5b/M7): `KENNING_U1_LLM_ROUTE` (default OFF — route the generic relay through the lean `ultron_prompt`), `KENNING_U1_VERBOSITY` (none/low/high, default high), `KENNING_THINKING_MODE` (default OFF), `KENNING_SNAP_REGISTRY` (default on). All default to today's behavior. Spec: `docs/ultron_1_0/`.
 - `embeddings` (dense_model, sparse_model, dense_dim)
+- `push_to_talk` (HID/serial auto-PTT; `config.py` `PushToTalkConfig`) — enabled (default OFF), backend (rawhid/serial/auto), hid_vid, hid_usage_page, serial_port, baud, key, lead_ms, release_tail_ms, release_jitter_ms, heartbeat_ms, max_hold_seconds. Env `KENNING_PTT_ENABLED` / `KENNING_PTT_SERIAL_PORT`.
+- `relay_speech` (the Valorant relay feature; `config.py` `RelaySpeechConfig`) — enabled, output_device ("Voicemeeter Input"), rephrase, max_line_chars (360), echo_to_user, follow_up_seconds (120.0), roast_lines_path, fun_facts_path.
+- `semantic_router` (embedder sidecar + fuzzy router; `config.py` `SemanticRouterConfig`, mostly schema-default — no top-level YAML key required) — enabled, backend (hybrid/embedding/lexical), embedding_weight, sidecar_enabled, sidecar_host, sidecar_port, sidecar_python, sidecar_script, sidecar_backend, sidecar_model, sidecar_device ("cpu"), sidecar_startup_timeout_seconds, sidecar_orphan_sweep_enabled, sidecar_pidfile_path.
 - `qdrant` (data_dir="data/qdrant", collections.{conversations, facts, web_results, **projects** [2026-05-22 supervisor stack]})
 - `memory` (enabled, jsonl_legacy_path, recent_turns, rag_top_k, rag_exclude_recent, facts_top_k, write_queue_maxsize, **retrieval.{multi_pass_enabled=false, max_categories_per_query=4, candidates_per_category_multiplier=4}** (V1-gap A2), **ranking.{rrf_weight=1.0, recency_weight=0.2, recency_half_life_days=7.0, surprise_weight=0.15, redundancy_weight=0.3}** (V1-gap A2), **rag_min_relevance=0.6** (NEW 2026-05-09: cosine-similarity floor for RAG candidates; tuned empirically with bge-small INT8 -- off-topic content peaks ~0.55-0.57, truly relevant 0.7-0.95), **history_turns_for_llm=4** (NEW 2026-05-09: cap on recent-turn history fed to LLM per call; prevents topic-bleed when user pivots topics))
 - `web_search` (enabled, brave_api_key_env, brave/jina/cache subsections, **citation.inline_marker_format="bracket"** [V1-gap B3]). 2026-05-09 latency fix tunables: **`jina.timeout_seconds: 6.0`** (was 15.0), **`jina.max_fetch: 2`** (was 3), **`jina.collective_deadline_seconds: 6.0`** (NEW — executor-side cap on parallel fetch wait; 0 disables). 2026 catalog 12 (felo-search T1): **`query_reformulation.{enabled: true, use_llm: false, max_variants: 2}`** — pre-search query expansion (rule-based default, zero-cost; LLM decomposition opt-in via `use_llm`). 2026 catalog 12 (felo-search T4): **`expose_search_strategy: true`** — surface the fanned-out reformulated queries in the visible transcript (never spoken).
@@ -6997,7 +7377,7 @@ Set `$env:PYTEST_RUN_GPU_TESTS = "1"` before pytest. Includes real Claude API ca
 
 ### `models/` (main checkout only)
 
-State as of 2026-05-20 round 8: only the active LLM + draft remain on disk. All other GGUFs were deleted to free ~22 GB; their download blocks are retained in `scripts/download_models.py` and their presets are retained in `LLM_PRESETS` so one-line re-download + swap-back is intact.
+State as of 2026-06-20 (Ultron 1.0): the ACTIVE LLM is `Josiefied-Qwen3-8B-abliterated-v1.Q5_K_M.gguf` (preset `josiefied-qwen3-8b`, n_ctx 4096, ~7 GB — config.yaml sets it). The active wake model is `openwakeword/ultron.onnx` (config `wake_word.model_path`); `kenning.onnx` is the legacy/fallback. **The per-file tables below are STALE/approximate** — several GGUFs listed as "deleted 2026-05-20 round 8" (gemma-3-4b-it-abliterated, google_gemma-3-1b-it, Josiefied-Qwen3-4B-abliterated-v2, Qwen2.5-7B-Instruct-abliterated-v2, Qwen3-4B-Instruct-2507-heretic) are present again on disk for swap-back. The GGUF set is fluid; the authoritative list is `LLM_PRESETS` + the download blocks in `scripts/download_models.py`. (The original 2026-05-20 note: only the active LLM + draft were kept then, freeing ~22 GB.)
 
 | File | Used by | Size |
 |---|---|---|
@@ -7093,6 +7473,18 @@ Reading order for a fresh Claude:
 - **4B-model optimization plan (all stages + Items 4–8 done):** [docs/4b_optimization_plan.md](4b_optimization_plan.md)
 - **GGUF SHA256 reference:** [docs/model_checksums.md](model_checksums.md)
 
+### Ultron 1.0 (active pivot — `docs/ultron_1_0/`, started 2026-06-20)
+The route-all-through-8B / optional-wakeword / no-low-high-verbosity rearchitecture. A self-contained context
+directory (git-versioned, not just memory). Read order when regrounding:
+- **`docs/ultron_1_0/00_process_log/STATUS.md`** — the always-current snapshot (READ FIRST).
+- **`docs/ultron_1_0/04_implementation/00_state_and_continuation.md`** — precise remaining-work specs (M5b→M9).
+- **`docs/ultron_1_0/02_research/02_research_synthesis.md`** — the 6 resolved decisions + the C_route_llm hybrid reframing.
+- **`docs/ultron_1_0/03_plan/00_ultron_1_0_architecture_and_roadmap.md`** — architecture + M0→M9 roadmap.
+- **`docs/ultron_1_0/01_recon/00_codebase_map.md`** — pivot attach-point map (line refs).
+- **`docs/ultron_1_0/05_testing/00_baseline.md`** — the frozen 22-fail regression baseline.
+- Raw boards: `01_recon/raw/board{A,B}_*.md` (22), `02_research/board/{A,B,C}_*.md` (41); kickoff log
+  `00_process_log/2026-06-20_kickoff.md`. Memory: `project_ultron_1_0_pivot.md`, `feedback_ultron_1_0_process.md`.
+
 ---
 
 
@@ -7165,7 +7557,7 @@ Base corpus of ~500–600 deterministic test cases covering every relay shape.
 
 Expands the base corpus to a ~20k stratified sample by auto-discovering vocab packs.
 
-- **`build_corpus(seed=0, target=20000) -> list[Case]`** — merges `_orig_build_corpus()` + `_pack_cases(seed)` + `_compound_cases(seed)`, deduplicates by `(text.lower(), category)`, then calls `_cap_stratified` to trim to `target` while preserving category proportions. Aliased as **`build_corpus_10k`** and **`build_corpus_20k`** (both call `build_corpus` at target=20000; the `10k` name is a historical alias).
+- **`build_corpus(seed=0, target=25000) -> list[Case]`** — merges `_orig_build_corpus()` + `_pack_cases(seed)` + `_compound_cases(seed)`, deduplicates by `(text.lower(), category)`, then calls `_cap_stratified` to trim to `target` while preserving category proportions. Aliased as **`build_corpus_10k`** and **`build_corpus_20k`** (both call `build_corpus` at target=25000; the `10k`/`20k` names are historical aliases — `_TARGET=25000`).
 - **Pack auto-discovery:** `_all_pack_names()` lists all `.py` files in `vocab_packs/` (excluding `__init__.py`). Packs are classified by name:
   - **RELAY** (default) — `expect_match=True`; items already phrased as a command (`_CMD_LEAD_RE`) are used verbatim; raw callouts get a rotating relay prefix varied by `(ii + pi + seed) % len(_GROUP_PREFIXES)`.
   - **QUESTION** (`_QUESTION_PACKS`: `questions_to_ultron`, `var_teammate_to_ultron`, `var_identity_questions`, `var_marvel_banter`, `var_banter_at_ultron`, `stress_banter_mock`, `stress_marvel_identity_edge`) — teammate-to-Ultron; `expect_match=False`.
@@ -7178,7 +7570,7 @@ Expands the base corpus to a ~20k stratified sample by auto-discovering vocab pa
 
 ---
 
-#### `vocab_packs/` (48 packs, ~29.4k payloads)
+#### `vocab_packs/` (55 packs, ~29.4k payloads)
 
 Each pack is a Python module exporting `ITEMS: list[str]`. Organized into three families:
 
@@ -7216,7 +7608,7 @@ Each pack is a Python module exporting `ITEMS: list[str]`. Organized into three 
 - `stress_slang_runons` — slang-heavy run-on comms.
 - `stress_stt_homophones` — STT homophones for agents/locations (raze/raise, yoru/your, ult/alt, eco/echo, Kay-O/K.O.).
 
-**`refs/` (15 web-grounded Valorant reference documents):** ground-truth Markdown used during corpus and prompt construction (not loaded at runtime):
+**`refs/` (21 web-grounded Valorant reference documents, incl. `ultron_voice.md`):** ground-truth Markdown used during corpus and prompt construction (not loaded at runtime):
 - Per-agent refs: `agents_controllers.md`, `agents_duelists.md`, `agents_initiators.md`, `agents_sentinels.md` — full 29-agent roster, ability names, usage patterns.
 - Per-map refs (10 maps): `map_ascent.md`, `map_bind.md`, `map_breeze.md`, `map_fracture.md`, `map_haven.md`, `map_icebox.md`, `map_lotus.md`, `map_pearl.md`, `map_split.md`, `map_sunset.md`.
 - `maps_newest.md` — Abyss, Corrode (2025–2026 additions).
@@ -7243,7 +7635,7 @@ Turns harness JSONL logs into tail-sensitive reliability metrics and a no-regres
 - **`route_and_latency(seed, limit) -> dict`** — `routes` breakdown (`deterministic`/`partial`/`llm`), `pure_deterministic_coverage`, `deterministic_or_partial_coverage`, `det_path_latency_us` percentiles (microseconds; model-free fast path).
 - **`quality_metrics(jsonl_path) -> dict`** — from a rephrase JSONL: per-category fact retention `_pcts`, `retention_by_category`, `inversion_rate`/`_count`, `hallucination_rate`/`_count`/`_examples`, flavor diversity as `flavor_type_token_ratio` (TTR over final sentences) and `flavor_max_repeat`.
 - **`build_scorecard(jsonl_path, seed, limit, tag) -> dict`** — assembles `matcher` + `routing` + optional `quality` sections.
-- **No-regression diff (`diff(prev, cur)`):** 16 tracked metrics (`_TRACKED`) covering matcher clean, false-relay, pure-deterministic coverage, fact-retention mean/p50/p95 (overall + count/owner/agent/loc), count-p99, inversion, hallucination, flavor TTR, flavor max-repeat. Returns `(report_str, passed: bool)`; exit 2 on regression.
+- **No-regression diff (`diff(prev, cur)`):** 27 tracked metrics (`_TRACKED`) covering matcher clean, false-relay, pure-deterministic coverage, fact-retention mean/p50/p95 (overall + count/owner/agent/loc), count-p99, inversion, hallucination, flavor TTR, flavor max-repeat. Returns `(report_str, passed: bool)`; exit 2 on regression.
 - **`--bench` mode (`bench_llm`):** loads the gaming 3B on CPU (`RELAY_TEST_GPU_LAYERS=0`, the live gaming config), samples LLM-routed cases via `classify_route`, times `build_relay_line` on 50 deterministic + N LLM cases, reports `det_path_ms`/`llm_path_ms` percentiles + `peak_rss_mb` (via `psutil`). This is the authoritative latency gate for the live gaming condition.
 - **Output:** `logs/relay_test/scorecard_<tag>.json` + `logs/relay_test/bench_<tag>.json`.
 - **CLI:** `--jsonl PATH --seed N --limit N --tag TAG --prev scorecard_prior.json --bench --bench-n N`.
@@ -7451,6 +7843,31 @@ a stray lazy import.
 
 `tests/safety/test_anticheat.py` — exhaustive anticheat coverage (68 tests): guard semantics (inactive default, runtime toggle, config-pin, test-session isolation), blocked-tool taxonomy sweep (27 tools incl. namespaced/dotted/case-insensitive normalization), allowed-tool passthrough, voice toggle matcher, AST audit asserting every guarded desktop function still contains its `guard()` call, surface-hook stop+restore + broken-hook fail-open, ban-class API source sweep, `press_key`/`press_hotkey` hard-raise, `ToolCallValidator` BLOCK_HARD pre-check + audit log, orchestrator voice toggle, gaming-mode tie-in (engage→ON, disengage→OFF unconditionally, broken-config fail-safe).
 
+#### Ultron 1.0 — new modules, harness & tests (2026-06-20)
+
+New `src/kenning/audio/` modules (full API in the `audio/` "Source modules" section above):
+`ultron_prompt.py` (lean prompt assembler, M1), `agent_kits.py` (version-stamped 29-agent kit injection, M3),
+`intent_gate.py` (4-class always-listening gate classifier, M5). Plus the `voice_lines.py` aggregate +
+`voicemeeter_level.py` (both 2026-06-18). New env flags: `KENNING_U1_LLM_ROUTE` (default OFF),
+`KENNING_U1_VERBOSITY` (none/low/high, default high), `KENNING_THINKING_MODE` (default OFF),
+`KENNING_SNAP_REGISTRY` (default on), `KENNING_SNAP_EARLY_ENDPOINT` (default OFF).
+
+New harness `scripts/relay_test/u1_text_harness.py` — the PRIMARY text-injection routing/intent harness
+(deterministic, ~1 ms/case, the calibration source): a labeled `Case` set (command / non_trigger /
+compound) run through `normalize_command` → `match_relay_command` → relay route, scored into REAL-fails vs
+known-baseline vs `u1_gate_target` buckets (exits 1 only on REAL fails). Output `logs/u1_text_harness/run.jsonl`.
+Companion `scripts/relay_test/trace_corpus_full.py` — full-pipeline per-case tracer (separates norm-L1/L2 +
+router decision) used for the 25k-corpus audits and as the harness substrate.
+
+New tests under `tests/audio/`:
+- `test_ultron_prompt.py` — verbosity coercion + directives, relay/private prompt assembly, addressee/compound/
+  agent-context/exemplar blocks, no `<think>`, sampling per verbosity.
+- `test_u1_llm_route.py` — the `KENNING_U1_LLM_ROUTE` flag-OFF-byte-identical + flag-ON wiring in `build_relay_line`.
+- `test_agent_kits.py` — kit lookup/canon/de-dup/cap + the C_domain corrections.
+- `test_intent_gate.py` — the 4-class fail-closed cascade (relay/command-local/private/ignore), ASR pre-reject,
+  the undecided-band + `resolve_with_llm` (stub LLM).
+- (2026-06-19) `test_snap_early_endpoint.py` (E3) + the thinking-mode toggle tests.
+
 #### config.yaml new keys
 
 ### `config.yaml` new keys
@@ -7545,8 +7962,10 @@ wake_word:
   fallback_model: "kenning"  # custom kenning.onnx; never hey_jarvis
   thresholds:             # per-word overrides; active word's value replaces the flat threshold on swap
     kenning: 0.4
-    ultron: 0.7         # 2026-06-15: raised 0.6 → 0.7 to reject confusables
-  min_consecutive_frames: 3  # 2026-06-15: 2 → 3; score must stay >= threshold for N consecutive frames before firing
+    ultron: 0.65        # 2026-06-17: 0.7 -> 0.65 (slight sensitivity bump; the per-word sustain gate is the primary false-accept guard)
+  min_consecutive_frames: 2  # flat fallback
+  consecutive_frames:
+    ultron: 4              # 2026-06-18: per-word sustain raised 3 -> 4 to reject brief confusables (e.g. 'Oh, we...')
 ```
 
 - `thresholds` — read by `WakeWordDetector._threshold_for(word)`; applied on construction and on `reload_for_word()`.
@@ -7619,6 +8038,18 @@ Audio path (mic, STT, LLM, TTS, VoiceMeeter relay, waveform overlay) is explicit
 ## Maintenance contract
 
 **This document is the operating manual. Keep it current.**
+
+> ### ⭐ BINDING RULE (Ultron 1.0 forward, reaffirmed 2026-06-20)
+> **Update `docs/codebase_structure.md` in the SAME commit as any structural change** — a new/renamed/removed
+> module, public class/function, script, test directory, config key/section, doc, or cross-cutting flow. This
+> is non-negotiable and treated like a test: **doc-drift is a regression.** A fresh AI-agent session must be
+> able to reground from this doc + the memory files WITHOUT re-exploring the source; if that breaks after your
+> change, you violated the contract — fix the doc before declaring the task done. When a structural change
+> ships across several commits, the doc update lands with the commit that makes the structure real. This rule
+> is mirrored in `CLAUDE.md` (binding rule #4), `feedback_ultron_1_0_process.md` (process rule 3), and the
+> RELEASE CHECKLIST in `feedback_no_default_load_anticheat.md` ("ALWAYS update docs/codebase_structure.md").
+> The running **Validating HEAD** header at the top is the first thing read — prepend a new block there for
+> each substantive session AND update the affected body sections (don't let the header lead the body).
 
 This contract is **binding** — every non-trivial change to the
 codebase must update this document in the same change. Skipping

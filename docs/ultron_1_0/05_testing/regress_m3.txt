@@ -1,0 +1,917 @@
+........................................................................ [  0%]
+........................................................................ [  1%]
+........................................................................ [  1%]
+........................................................................ [  2%]
+...........F............................................................ [  3%]
+.......................................................F................ [  3%]
+........................................................................ [  4%]
+.....................F.................FF.F............................. [  5%]
+.............................FF......................................... [  5%]
+........................................................................ [  6%]
+........................................................................ [  7%]
+........................................................................ [  7%]
+........................................................................ [  8%]
+........................................................................ [  9%]
+........................................................................ [  9%]
+........................................................................ [ 10%]
+........................................................................ [ 11%]
+........................................................................ [ 11%]
+........................................................................ [ 12%]
+........................................................................ [ 12%]
+........................................................................ [ 13%]
+........................................................................ [ 14%]
+........................................................................ [ 14%]
+........................................................................ [ 15%]
+........................................................................ [ 16%]
+.............................................................s.......... [ 16%]
+........................................................................ [ 17%]
+........................................................................ [ 18%]
+........................................................................ [ 18%]
+........................................................................ [ 19%]
+........................................................................ [ 20%]
+........................................................................ [ 20%]
+........................................................................ [ 21%]
+........................................................................ [ 22%]
+........................................................................ [ 22%]
+........................................................................ [ 23%]
+........................................................................ [ 24%]
+........................................................................ [ 24%]
+........................................................................ [ 25%]
+........................................................................ [ 25%]
+........................................................................ [ 26%]
+........................................................................ [ 27%]
+........................................................................ [ 27%]
+........................................................................ [ 28%]
+........................................................................ [ 29%]
+........................................................................ [ 29%]
+........................................................................ [ 30%]
+..................................................FF.................... [ 31%]
+........................................................................ [ 31%]
+........................................................................ [ 32%]
+........................................................................ [ 33%]
+........................................................................ [ 33%]
+........................................................................ [ 34%]
+........................................................................ [ 35%]
+........................................................................ [ 35%]
+........................................................................ [ 36%]
+........................................................................ [ 37%]
+........................................................................ [ 37%]
+........................................................................ [ 38%]
+........................................................................ [ 38%]
+........................................................................ [ 39%]
+........................................................................ [ 40%]
+........................................................................ [ 40%]
+........................................................................ [ 41%]
+........................................................................ [ 42%]
+....ssssssssssss........................................................ [ 42%]
+........................................................................ [ 43%]
+........................................................................ [ 44%]
+........................................................................ [ 44%]
+........................................................................ [ 45%]
+........................................................................ [ 46%]
+........................................................................ [ 46%]
+........................................................................ [ 47%]
+........................................................................ [ 48%]
+........................................................................ [ 48%]
+........................................................................ [ 49%]
+........................................................................ [ 50%]
+........................................................................ [ 50%]
+........................................................................ [ 51%]
+........................................................................ [ 51%]
+........................................................................ [ 52%]
+........................................................................ [ 53%]
+........................................................................ [ 53%]
+........................................................................ [ 54%]
+........................................................................ [ 55%]
+........................................................................ [ 55%]
+........................................................................ [ 56%]
+........................................................................ [ 57%]
+........................................................................ [ 57%]
+........................................................................ [ 58%]
+........................................................................ [ 59%]
+........................................................................ [ 59%]
+........................................................................ [ 60%]
+........................................................................ [ 61%]
+........................................................................ [ 61%]
+........................................................................ [ 62%]
+........................................................................ [ 63%]
+.................................................................s...s.. [ 63%]
+........................................................................ [ 64%]
+........................................................................ [ 64%]
+.....................................ssssssss........................... [ 65%]
+........................................................................ [ 66%]
+........................................................................ [ 66%]
+........................................................................ [ 67%]
+........................................................................ [ 68%]
+........................................................................ [ 68%]
+........................................................................ [ 69%]
+........................................................................ [ 70%]
+........................................................................ [ 70%]
+................ss...................................................... [ 71%]
+......................................................s................. [ 72%]
+........................................................................ [ 72%]
+....sss................................................................. [ 73%]
+........................................................................ [ 74%]
+........................................................................ [ 74%]
+........................................................................ [ 75%]
+........................................................................ [ 76%]
+........................................................................ [ 76%]
+........................................................................ [ 77%]
+........................................................................ [ 77%]
+........................................................................ [ 78%]
+........................................................................ [ 79%]
+........................................................................ [ 79%]
+...........ss........................................................... [ 80%]
+........................................................................ [ 81%]
+........................................................................ [ 81%]
+........................................................................ [ 82%]
+........................................................................ [ 83%]
+....FFFF...........s.................................................... [ 83%]
+........................................................................ [ 84%]
+.............................s.......................................... [ 85%]
+..............................................FF............F..F........ [ 85%]
+........................................................................ [ 86%]
+........................................................................ [ 87%]
+........................s............................................... [ 87%]
+........................................................................ [ 88%]
+........................................................................ [ 89%]
+........................................................................ [ 89%]
+........................................................................ [ 90%]
+........................................................................ [ 90%]
+......................................FF................................ [ 91%]
+.....................................F.................................. [ 92%]
+......................................ss................................ [ 92%]
+........................................................................ [ 93%]
+.............s.......................................................... [ 94%]
+........................................................................ [ 94%]
+.............................ss......................................... [ 95%]
+.....................................................F.................. [ 96%]
+........................................................................ [ 96%]
+........................................................................ [ 97%]
+........................................................................ [ 98%]
+........................................................................ [ 98%]
+........................................................................ [ 99%]
+................................................................         [100%]
+================================== FAILURES ===================================
+_______________ TestC6Disfluency.test_value_swap_keeps_last_buy _______________
+
+self = <tests.audio.test_corpus_audit_fixes.TestC6Disfluency object at 0x000002D506DCFCD0>
+
+    def test_value_swap_keeps_last_buy(self) -> None:
+        # "well no" cue path: keep only the corrected value.
+>       assert normalize_command("uh full buy -- well no -- half buy").lower() == "half buy"
+E       AssertionError: assert 'tell my team half buy' == 'half buy'
+E         
+E         - half buy
+E         + tell my team half buy
+
+tests\audio\test_corpus_audit_fixes.py:95: AssertionError
+________ TestC4ReportedDirective.test_say_to_delivers_literal_payload _________
+
+self = <tests.audio.test_corpus_audit_fixes.TestC4ReportedDirective object at 0x000002D506E30F90>
+
+    def test_say_to_delivers_literal_payload(self) -> None:
+        line = _line("Sova said the enemy is on long, say to her rotate B").lower()
+>       assert "rotate b" in line and "say to" not in line
+E       AssertionError: assert ('rotate b' in 'sova said the enemy is on long, say to her rotate b. he darts a path and rotates. seen.' and 'say to' not in 'sova said t...tates. seen.'
+E         
+E         'say to' is contained here:
+E           sova said the enemy is on long, say to her rotate b. he darts a path and rotates. seen.
+E         ?                                 ++++++)
+
+tests\audio\test_corpus_audit_fixes.py:370: AssertionError
+_ TestFlavorOffSets.test_flavor_off_pool_member[Sage told you to stop-pool5-Sage] _
+
+self = <tests.audio.test_corpus_audit_fixes.TestFlavorOffSets object at 0x000002D506E80FD0>
+_tails_off = None, text = 'Sage told you to stop'
+pool = ('I cannot change my programming, {name}.', '{name}, Ultron stops for no one.', 'You cannot silence me, {name}.', 'My directive is to win, {name}, I will not stop.', '{name}, stopping is not in my programming.')
+agent = 'Sage'
+
+    @_pytest.mark.parametrize("text,pool,agent", [
+        ("tell my team I got this", _RS._FO_CLUTCH, None),
+        ("Sage is flaming you", _RS._FO_FLAMING, "Sage"),
+        ("Sage called you cringe", _RS._FO_CRINGE, "Sage"),
+        ("the team is arguing", _RS._FO_ARGUING, None),
+        ("Sage told you to shut up", _RS._FO_SHUTUP, "Sage"),
+        ("Sage told you to stop", _RS._FO_STOP, "Sage"),
+        ("encourage the team", _RS._FO_ENCOURAGE, None),
+        ("flame the enemy", _RS._FO_FLAME_ENEMY, None),
+        ("flame my Sage", _RS._FO_FLAME_AGENT, "Sage"),
+    ])
+    def test_flavor_off_pool_member(self, _tails_off, text, pool, agent) -> None:
+        line = _line(text)
+        rendered = {p.format(name=agent) if (agent and "{name}" in p) else p
+                    for p in pool}
+>       assert line in rendered, f"{line!r} not in {sorted(rendered)}"
+E       AssertionError: 'Sage told you to stop.' not in ['I cannot change my programming, Sage.', 'My directive is to win, Sage, I will not stop.', 'Sage, Ultron stops for no one.', 'Sage, stopping is not in my programming.', 'You cannot silence me, Sage.']
+E       assert 'Sage told you to stop.' in {'I cannot change my programming, Sage.', 'My directive is to win, Sage, I will not stop.', 'Sage, Ultron stops for no one.', 'Sage, stopping is not in my programming.', 'You cannot silence me, Sage.'}
+
+tests\audio\test_corpus_audit_fixes.py:721: AssertionError
+_ TestSayHelloDefaultAndStop.test_stop_command_deterministic[Sage told you to stop] _
+
+self = <tests.audio.test_corpus_audit_fixes.TestSayHelloDefaultAndStop object at 0x000002D506E9C510>
+text = 'Sage told you to stop'
+
+    @_pytest.mark.parametrize("text", [
+        "Sage told you to stop", "Sage told me to stop", "Sage said stop talking",
+        "my Sage told me to stop responding",
+    ])
+    def test_stop_command_deterministic(self, text) -> None:
+        cmd = _cmd(text)
+>       assert cmd is not None and cmd.directive == "stop_command", \
+            f"{text!r} must match stop_command deterministically"
+E       AssertionError: 'Sage told you to stop' must match stop_command deterministically
+E       assert (RelayCommand(payload='Sage told you to stop', raw_text='tell my team Sage told you to stop', addressee='team', compose=False, context=None, directive=None, roast=False, fun_fact=False, verbatim=False) is not None and None == 'stop_command')
+E        +  where None = RelayCommand(payload='Sage told you to stop', raw_text='tell my team Sage told you to stop', addressee='team', compose=False, context=None, directive=None, roast=False, fun_fact=False, verbatim=False).directive
+
+tests\audio\test_corpus_audit_fixes.py:814: AssertionError
+_ TestSayHelloDefaultAndStop.test_stop_command_deterministic[Sage told me to stop] _
+
+self = <tests.audio.test_corpus_audit_fixes.TestSayHelloDefaultAndStop object at 0x000002D506E9C790>
+text = 'Sage told me to stop'
+
+    @_pytest.mark.parametrize("text", [
+        "Sage told you to stop", "Sage told me to stop", "Sage said stop talking",
+        "my Sage told me to stop responding",
+    ])
+    def test_stop_command_deterministic(self, text) -> None:
+        cmd = _cmd(text)
+>       assert cmd is not None and cmd.directive == "stop_command", \
+            f"{text!r} must match stop_command deterministically"
+E       AssertionError: 'Sage told me to stop' must match stop_command deterministically
+E       assert (RelayCommand(payload='Sage told me to stop', raw_text='tell my team Sage told me to stop', addressee='team', compose=False, context=None, directive=None, roast=False, fun_fact=False, verbatim=False) is not None and None == 'stop_command')
+E        +  where None = RelayCommand(payload='Sage told me to stop', raw_text='tell my team Sage told me to stop', addressee='team', compose=False, context=None, directive=None, roast=False, fun_fact=False, verbatim=False).directive
+
+tests\audio\test_corpus_audit_fixes.py:814: AssertionError
+_ TestSayHelloDefaultAndStop.test_stop_command_deterministic[my Sage told me to stop responding] _
+
+self = <tests.audio.test_corpus_audit_fixes.TestSayHelloDefaultAndStop object at 0x000002D506E9CC90>
+text = 'my Sage told me to stop responding'
+
+    @_pytest.mark.parametrize("text", [
+        "Sage told you to stop", "Sage told me to stop", "Sage said stop talking",
+        "my Sage told me to stop responding",
+    ])
+    def test_stop_command_deterministic(self, text) -> None:
+        cmd = _cmd(text)
+>       assert cmd is not None and cmd.directive == "stop_command", \
+            f"{text!r} must match stop_command deterministically"
+E       AssertionError: 'my Sage told me to stop responding' must match stop_command deterministically
+E       assert (RelayCommand(payload='my Sage told me to stop responding', raw_text='tell my team my Sage told me to stop responding', addressee='team', compose=False, context=None, directive=None, roast=False, fun_fact=False, verbatim=False) is not None and None == 'stop_command')
+E        +  where None = RelayCommand(payload='my Sage told me to stop responding', raw_text='tell my team my Sage told me to stop responding', addressee='team', compose=False, context=None, directive=None, roast=False, fun_fact=False, verbatim=False).directive
+
+tests\audio\test_corpus_audit_fixes.py:814: AssertionError
+_ TestMangledTeamLeadNoDeterminer.test_real_phrases_not_hijacked[kill the enemy team] _
+
+self = <tests.audio.test_corpus_audit_fixes.TestMangledTeamLeadNoDeterminer object at 0x000002D506EC7F90>
+text = 'kill the enemy team'
+
+    @_pytest.mark.parametrize("text", [
+        "kill the enemy team", "push with the team",
+    ])
+    def test_real_phrases_not_hijacked(self, text) -> None:
+        from kenning.audio.command_normalizer import normalize_command
+>       assert not normalize_command(text).lower().startswith("tell my team")
+E       AssertionError: assert not True
+E        +  where True = <built-in method startswith of str object at 0x000002D50DC68BD0>('tell my team')
+E        +    where <built-in method startswith of str object at 0x000002D50DC68BD0> = 'tell my team kill the enemy team'.startswith
+E        +      where 'tell my team kill the enemy team' = <built-in method lower of str object at 0x000002D50DC6AD90>()
+E        +        where <built-in method lower of str object at 0x000002D50DC6AD90> = 'tell my team kill the enemy team'.lower
+E        +          where 'tell my team kill the enemy team' = <function normalize_command at 0x000002D50638B420>('kill the enemy team')
+
+tests\audio\test_corpus_audit_fixes.py:930: AssertionError
+_ TestMangledTeamLeadNoDeterminer.test_real_phrases_not_hijacked[push with the team] _
+
+self = <tests.audio.test_corpus_audit_fixes.TestMangledTeamLeadNoDeterminer object at 0x000002D506EC8110>
+text = 'push with the team'
+
+    @_pytest.mark.parametrize("text", [
+        "kill the enemy team", "push with the team",
+    ])
+    def test_real_phrases_not_hijacked(self, text) -> None:
+        from kenning.audio.command_normalizer import normalize_command
+>       assert not normalize_command(text).lower().startswith("tell my team")
+E       AssertionError: assert not True
+E        +  where True = <built-in method startswith of str object at 0x000002D506ABC710>('tell my team')
+E        +    where <built-in method startswith of str object at 0x000002D506ABC710> = 'tell my team push with the team'.startswith
+E        +      where 'tell my team push with the team' = <built-in method lower of str object at 0x000002D50DC76DD0>()
+E        +        where <built-in method lower of str object at 0x000002D50DC76DD0> = 'tell my team push with the team'.lower
+E        +          where 'tell my team push with the team' = <function normalize_command at 0x000002D50638B420>('push with the team')
+
+tests\audio\test_corpus_audit_fixes.py:930: AssertionError
+________________ test_whisper_transcribe_failure_returns_empty ________________
+
+errors_log = <kenning.resilience.error_log.ErrorLog object at 0x000002D58181C110>
+read_errors = <function read_errors.<locals>._read at 0x000002D5818E5440>
+
+    def test_whisper_transcribe_failure_returns_empty(errors_log, read_errors):
+        """Whisper.transcribe raises -> returns '' and logs WhisperTranscriptionError."""
+        eng = _whisper_with_mock_model()
+        eng._model.transcribe.side_effect = RuntimeError("CUDA OOM")
+    
+        audio = np.zeros(16000, dtype=np.float32)  # 1s of silence
+        out = eng.transcribe(audio)
+    
+        assert out == ""
+        records = read_errors()
+>       assert len(records) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests\error_recovery\test_audio_failures.py:47: AssertionError
+___________ test_whisper_subsequent_transcribe_works_after_failure ____________
+
+errors_log = <kenning.resilience.error_log.ErrorLog object at 0x000002D58184E1D0>
+read_errors = <function read_errors.<locals>._read at 0x000002D5818E4C20>
+
+    def test_whisper_subsequent_transcribe_works_after_failure(errors_log, read_errors):
+        """One Whisper failure doesn't poison subsequent calls."""
+        eng = _whisper_with_mock_model()
+    
+        # First call fails.
+        eng._model.transcribe.side_effect = RuntimeError("transient")
+        assert eng.transcribe(np.zeros(16000, dtype=np.float32)) == ""
+    
+        # Second call succeeds.
+        eng._model.transcribe.side_effect = None
+        seg = MagicMock()
+        seg.text = "hello world"
+        info = MagicMock()
+        info.language = "en"
+        eng._model.transcribe.return_value = ([seg], info)
+    
+        out = eng.transcribe(np.zeros(16000, dtype=np.float32))
+>       assert out == "hello world"
+E       AssertionError: assert '' == 'hello world'
+E         
+E         - hello world
+
+tests\error_recovery\test_audio_failures.py:72: AssertionError
+__________ test_duplicate_exits_3_without_constructing_orchestrator ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002D58D269BD0>
+capsys = <_pytest.capture.CaptureFixture object at 0x000002D58D26A0D0>
+
+    def test_duplicate_exits_3_without_constructing_orchestrator(
+        monkeypatch, capsys
+    ):
+        # __main__ imports the guard inside main(), so patch the SOURCE
+        # module attributes.
+        monkeypatch.setattr(
+            "kenning.lifecycle.single_instance.acquire_single_instance_lock",
+            lambda *a, **k: None,
+        )
+        monkeypatch.setattr(
+            "kenning.lifecycle.single_instance.read_lock_metadata",
+            lambda *a, **k: {"pid": 1234},
+        )
+>       monkeypatch.setattr(m, "Orchestrator", _Boom)
+E       AttributeError: <module 'kenning.__main__' from 'C:\\STC\\ultronPrototype\\.claude\\worktrees\\infallible-kepler-0a865d\\src\\kenning\\__main__.py'> has no attribute 'Orchestrator'
+
+tests\test_main_single_instance.py:77: AttributeError
+_________________ test_lock_released_in_finally_on_happy_path _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002D58CD3D250>
+
+    def test_lock_released_in_finally_on_happy_path(monkeypatch):
+        fake = _FakeLock()
+        monkeypatch.setattr(
+            "kenning.lifecycle.single_instance.acquire_single_instance_lock",
+            lambda *a, **k: fake,
+        )
+        stub = _StubOrchestrator
+        stub.run_raises = False
+>       monkeypatch.setattr(m, "Orchestrator", stub)
+E       AttributeError: <module 'kenning.__main__' from 'C:\\STC\\ultronPrototype\\.claude\\worktrees\\infallible-kepler-0a865d\\src\\kenning\\__main__.py'> has no attribute 'Orchestrator'
+
+tests\test_main_single_instance.py:93: AttributeError
+_____________________ test_lock_released_when_run_raises ______________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002D58D2699D0>
+
+    def test_lock_released_when_run_raises(monkeypatch):
+        fake = _FakeLock()
+        monkeypatch.setattr(
+            "kenning.lifecycle.single_instance.acquire_single_instance_lock",
+            lambda *a, **k: fake,
+        )
+    
+        class _Raising(_StubOrchestrator):
+            run_raises = True
+    
+>       monkeypatch.setattr(m, "Orchestrator", _Raising)
+E       AttributeError: <module 'kenning.__main__' from 'C:\\STC\\ultronPrototype\\.claude\\worktrees\\infallible-kepler-0a865d\\src\\kenning\\__main__.py'> has no attribute 'Orchestrator'
+
+tests\test_main_single_instance.py:110: AttributeError
+_____________________ test_lock_released_on_missing_model _____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002D58D29AED0>
+
+    def test_lock_released_on_missing_model(monkeypatch):
+        fake = _FakeLock()
+        monkeypatch.setattr(
+            "kenning.lifecycle.single_instance.acquire_single_instance_lock",
+            lambda *a, **k: fake,
+        )
+    
+        class _MissingModel:
+            def __init__(self) -> None:
+                raise FileNotFoundError("model.gguf")
+    
+>       monkeypatch.setattr(m, "Orchestrator", _MissingModel)
+E       AttributeError: <module 'kenning.__main__' from 'C:\\STC\\ultronPrototype\\.claude\\worktrees\\infallible-kepler-0a865d\\src\\kenning\\__main__.py'> has no attribute 'Orchestrator'
+
+tests\test_main_single_instance.py:128: AttributeError
+_________________ test_loader_builds_summarizer_when_enabled __________________
+
+bare_orchestrator = <kenning.pipeline.orchestrator.Orchestrator object at 0x000002D5899A5C50>
+cfg_with_summary_enabled = KenningConfig(version='1.0', audio=AudioConfig(sample_rate=16000, channels=1, blocksize=256, dtype='float32', input_de...t', install_bus_sink=True), hooks=HooksConfig(enabled=True), mcp=McpConfig(enabled=False, autostart=False, servers=[]))
+
+    def test_loader_builds_summarizer_when_enabled(
+        bare_orchestrator, cfg_with_summary_enabled,
+    ):
+        bare_orchestrator.memory = _StubMemory()
+        bare_orchestrator.llm = _StubLLM()
+        out = Orchestrator._load_background_summarizer_if_enabled(bare_orchestrator)
+>       assert isinstance(out, BackgroundSummarizer)
+E       assert False
+E        +  where False = isinstance(None, BackgroundSummarizer)
+
+tests\test_orchestrator_background_summary.py:163: AssertionError
+__________________ test_loader_summarizer_calls_llm_isolated __________________
+
+bare_orchestrator = <kenning.pipeline.orchestrator.Orchestrator object at 0x000002D5899B51D0>
+cfg_with_summary_enabled = KenningConfig(version='1.0', audio=AudioConfig(sample_rate=16000, channels=1, blocksize=256, dtype='float32', input_de...t', install_bus_sink=True), hooks=HooksConfig(enabled=True), mcp=McpConfig(enabled=False, autostart=False, servers=[]))
+
+    def test_loader_summarizer_calls_llm_isolated(
+        bare_orchestrator, cfg_with_summary_enabled,
+    ):
+        """Verifies the wired generate_fn calls llm.generate_isolated with
+        the summarizer module's system prompt -- not via .generate() which
+        would inject SOUL.md."""
+        turns = [_StubTurn(1, "user", "hello"), _StubTurn(2, "assistant", "hi")]
+        bare_orchestrator.memory = _StubMemory(turns)
+        llm = _StubLLM()
+        bare_orchestrator.llm = llm
+        summarizer = Orchestrator._load_background_summarizer_if_enabled(bare_orchestrator)
+>       assert summarizer is not None
+E       assert None is not None
+
+tests\test_orchestrator_background_summary.py:177: AssertionError
+______________ test_recent_turns_fn_fail_open_when_memory_raises ______________
+
+bare_orchestrator = <kenning.pipeline.orchestrator.Orchestrator object at 0x000002D589956390>
+cfg_with_summary_enabled = KenningConfig(version='1.0', audio=AudioConfig(sample_rate=16000, channels=1, blocksize=256, dtype='float32', input_de...t', install_bus_sink=True), hooks=HooksConfig(enabled=True), mcp=McpConfig(enabled=False, autostart=False, servers=[]))
+
+    def test_recent_turns_fn_fail_open_when_memory_raises(
+        bare_orchestrator, cfg_with_summary_enabled,
+    ):
+        bare_orchestrator.memory = _RecordingMemory()
+        bare_orchestrator.llm = _StubLLM()
+        summarizer = Orchestrator._load_background_summarizer_if_enabled(bare_orchestrator)
+>       assert summarizer is not None
+E       assert None is not None
+
+tests\test_orchestrator_background_summary.py:414: AssertionError
+_______________ TestLoadEvolution.test_enabled_real_round_trip ________________
+
+self = <tests.test_orchestrator_evolution_wiring.TestLoadEvolution object at 0x000002D50CC3F750>
+tmp_path = WindowsPath('C:/Users/alecf/AppData/Local/Temp/pytest-of-alecf/pytest-1425/test_enabled_real_round_trip0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002D58CDD8C90>
+
+    def test_enabled_real_round_trip(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import kenning.config as cfgmod
+        from kenning.config import KenningConfig
+        from kenning.evolution.service import EvolutionService
+    
+        monkeypatch.setattr(cfgmod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(cfgmod, "get_config", lambda: KenningConfig())
+        o = _bare_orchestrator()
+        svc = o._load_evolution_if_enabled()
+>       assert isinstance(svc, EvolutionService)
+E       AssertionError: assert False
+E        +  where False = isinstance(None, <class 'kenning.evolution.service.EvolutionService'>)
+
+tests\test_orchestrator_evolution_wiring.py:118: AssertionError
+_______ TestLLMEngineHistoryDefer.test_record_history_true_records_turn _______
+
+self = <tests.test_speculative_llm.TestLLMEngineHistoryDefer object at 0x000002D50D51A6D0>
+
+    def test_record_history_true_records_turn(self):
+        log = []
+        e = self._build_engine(record_turn_log=log)
+>       result = list(e.generate_stream("hello"))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_speculative_llm.py:213: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <kenning.llm.inference.LLMEngine object at 0x000002D59B3F9AD0>
+user_message = 'hello'
+
+    def generate_stream(
+        self,
+        user_message: str,
+        *,
+        enable_thinking: Optional[bool] = None,
+        gate_verdict=None,
+        suppress_memory_context: bool = False,
+        precomputed_rag_snippets: Optional[List] = None,
+        record_history: bool = True,
+        history_user_message: Optional[str] = None,
+        rag_query: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        sampling: Optional[dict] = None,
+    ) -> Iterator[str]:
+        """Yield response tokens as they arrive.
+    
+        See :meth:`generate` for the ``enable_thinking``,
+        ``gate_verdict`` (V1-gap A2), and ``suppress_memory_context``
+        (2026-05-09 contamination fix) semantics.
+    
+        ``record_history`` (2026-05-18 latency pass 3): when ``True``
+        (default), a successful stream completion appends the turn to
+        the conversation history at the end of iteration -- matching
+        the pre-existing behaviour. When ``False``, the recording is
+        deferred to an explicit :meth:`record_completed_turn` call by
+        the caller. Used by the orchestrator's speculative-LLM path
+        so a speculation that gets invalidated (user resumed speaking)
+        doesn't leak an orphan record into history.
+    
+        ``history_user_message`` (2026-05-20 round 7 contamination fix):
+        when set, this string is what gets persisted to memory instead
+        of ``user_message``. Use this when ``user_message`` is a
+        HEAVILY AUGMENTED prompt (search-augmented context, brevity
+        hints, confidence markers, etc.) -- the LLM needs the
+        augmented version for grounding, but memory should record the
+        bare user utterance. Without this kwarg, RAG retrieval on a
+        future similar query cosine-matches the stored augmented
+        prompt and re-injects it as 'relevant earlier context',
+        producing a self-reinforcing contamination loop (live session
+        2026-05-20: 'high.' retrieved a prior stored 'User question:
+        ... high. Fresh information from web search: ...' turn).
+        Default ``None`` preserves legacy behaviour.
+    
+        The full response is appended to history once the stream completes
+        normally; on cancel, partial output is recorded so the model
+        remembers what it had said.
+        """
+        self._cancel.clear()
+        messages = self._build_messages(
+            user_message,
+            gate_verdict=gate_verdict,
+            suppress_memory_context=suppress_memory_context,
+            precomputed_rag_snippets=precomputed_rag_snippets,
+            rag_query=rag_query,
+            system_prompt=system_prompt,
+        )
+        # 2026-05-14: same /no_think handling as the blocking path.
+        messages = self._apply_no_think_marker(messages, enable_thinking)
+        # 2026-05-19 round 5 debug: log message-list shape so we can
+        # see whether suppress_memory_context actually fired AND
+        # whether anything is leaking into recent history that
+        # shouldn't be there. The PER-MESSAGE log uses content
+        # PREVIEWS (first 200 chars) so the log stays readable but
+        # surfaces enough to identify contamination.
+        logger.info(
+            "LLM messages (suppress=%s, precomputed=%s, count=%d):",
+            suppress_memory_context,
+            "yes" if precomputed_rag_snippets is not None else "no",
+            len(messages),
+        )
+        for i, m in enumerate(messages):
+            content = str(m.get("content", ""))
+            preview = content[:200].replace("\n", " ")
+            if len(content) > 200:
+                preview += "..."
+            logger.info(
+                "  msg[%d] role=%s (%d chars): %s",
+                i, m.get("role", "?"), len(content), preview,
+            )
+        _llm_cfg = get_config().llm
+        t0 = time.monotonic()
+        first_token_time: Optional[float] = None
+        accumulated: List[str] = []
+        completed = False
+        canceled = False
+    
+        if self._runtime == "in_process":
+>           kwargs = self._chat_completion_kwargs(
+                _llm_cfg, enable_thinking, stream=True, sampling=sampling)
+E           TypeError: TestLLMEngineHistoryDefer._build_engine.<locals>.<lambda>() got an unexpected keyword argument 'sampling'
+
+src\kenning\llm\inference.py:2066: TypeError
+____ TestLLMEngineHistoryDefer.test_record_history_false_skips_auto_record ____
+
+self = <tests.test_speculative_llm.TestLLMEngineHistoryDefer object at 0x000002D50D51AA10>
+
+    def test_record_history_false_skips_auto_record(self):
+        log = []
+        e = self._build_engine(record_turn_log=log)
+>       result = list(e.generate_stream("hello", record_history=False))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_speculative_llm.py:222: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <kenning.llm.inference.LLMEngine object at 0x000002D59B50E490>
+user_message = 'hello'
+
+    def generate_stream(
+        self,
+        user_message: str,
+        *,
+        enable_thinking: Optional[bool] = None,
+        gate_verdict=None,
+        suppress_memory_context: bool = False,
+        precomputed_rag_snippets: Optional[List] = None,
+        record_history: bool = True,
+        history_user_message: Optional[str] = None,
+        rag_query: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        sampling: Optional[dict] = None,
+    ) -> Iterator[str]:
+        """Yield response tokens as they arrive.
+    
+        See :meth:`generate` for the ``enable_thinking``,
+        ``gate_verdict`` (V1-gap A2), and ``suppress_memory_context``
+        (2026-05-09 contamination fix) semantics.
+    
+        ``record_history`` (2026-05-18 latency pass 3): when ``True``
+        (default), a successful stream completion appends the turn to
+        the conversation history at the end of iteration -- matching
+        the pre-existing behaviour. When ``False``, the recording is
+        deferred to an explicit :meth:`record_completed_turn` call by
+        the caller. Used by the orchestrator's speculative-LLM path
+        so a speculation that gets invalidated (user resumed speaking)
+        doesn't leak an orphan record into history.
+    
+        ``history_user_message`` (2026-05-20 round 7 contamination fix):
+        when set, this string is what gets persisted to memory instead
+        of ``user_message``. Use this when ``user_message`` is a
+        HEAVILY AUGMENTED prompt (search-augmented context, brevity
+        hints, confidence markers, etc.) -- the LLM needs the
+        augmented version for grounding, but memory should record the
+        bare user utterance. Without this kwarg, RAG retrieval on a
+        future similar query cosine-matches the stored augmented
+        prompt and re-injects it as 'relevant earlier context',
+        producing a self-reinforcing contamination loop (live session
+        2026-05-20: 'high.' retrieved a prior stored 'User question:
+        ... high. Fresh information from web search: ...' turn).
+        Default ``None`` preserves legacy behaviour.
+    
+        The full response is appended to history once the stream completes
+        normally; on cancel, partial output is recorded so the model
+        remembers what it had said.
+        """
+        self._cancel.clear()
+        messages = self._build_messages(
+            user_message,
+            gate_verdict=gate_verdict,
+            suppress_memory_context=suppress_memory_context,
+            precomputed_rag_snippets=precomputed_rag_snippets,
+            rag_query=rag_query,
+            system_prompt=system_prompt,
+        )
+        # 2026-05-14: same /no_think handling as the blocking path.
+        messages = self._apply_no_think_marker(messages, enable_thinking)
+        # 2026-05-19 round 5 debug: log message-list shape so we can
+        # see whether suppress_memory_context actually fired AND
+        # whether anything is leaking into recent history that
+        # shouldn't be there. The PER-MESSAGE log uses content
+        # PREVIEWS (first 200 chars) so the log stays readable but
+        # surfaces enough to identify contamination.
+        logger.info(
+            "LLM messages (suppress=%s, precomputed=%s, count=%d):",
+            suppress_memory_context,
+            "yes" if precomputed_rag_snippets is not None else "no",
+            len(messages),
+        )
+        for i, m in enumerate(messages):
+            content = str(m.get("content", ""))
+            preview = content[:200].replace("\n", " ")
+            if len(content) > 200:
+                preview += "..."
+            logger.info(
+                "  msg[%d] role=%s (%d chars): %s",
+                i, m.get("role", "?"), len(content), preview,
+            )
+        _llm_cfg = get_config().llm
+        t0 = time.monotonic()
+        first_token_time: Optional[float] = None
+        accumulated: List[str] = []
+        completed = False
+        canceled = False
+    
+        if self._runtime == "in_process":
+>           kwargs = self._chat_completion_kwargs(
+                _llm_cfg, enable_thinking, stream=True, sampling=sampling)
+E           TypeError: TestLLMEngineHistoryDefer._build_engine.<locals>.<lambda>() got an unexpected keyword argument 'sampling'
+
+src\kenning\llm\inference.py:2066: TypeError
+_______________________ test_stt_default_engine_is_auto _______________________
+
+    def test_stt_default_engine_is_auto():
+        """The frontier-enhancement Item 5 introduces ``stt.engine: auto``
+        as the default -- automatically uses Parakeet when NeMo is
+        available, falls back to Whisper otherwise. This way fresh
+        installs without NeMo continue working with Whisper, while
+        operators who ``pip install nemo_toolkit[asr]`` get Parakeet
+        activated with no extra config flip."""
+        cfg = STTConfig()
+>       assert cfg.engine == "auto"
+E       AssertionError: assert 'whisper' == 'auto'
+E         
+E         - auto
+E         + whisper
+
+tests\test_stt_engine_swap.py:43: AssertionError
+_________ test_playwright_reader_fetch_returns_none_when_unavailable __________
+
+    def test_playwright_reader_fetch_returns_none_when_unavailable():
+        """When playwright isn't installed, fetch() returns None silently."""
+        from kenning.web_search.playwright_reader import PlaywrightReader
+        import importlib.util as _u
+    
+>       if _u.find_spec("playwright") is not None:
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_web_search_readers.py:172: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+<frozen importlib.util>:104: in find_spec
+    ???
+<frozen importlib._bootstrap>:1078: in _find_spec
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <kenning.safety.import_firewall.AnticheatImportFirewall object at 0x000002D58528E790>
+fullname = 'playwright', path = None, target = None
+
+    def find_spec(self, fullname, path=None, target=None):
+        if not is_blocked_module(fullname):
+            return None  # not our concern -> defer to the normal finders
+        # Read the flag LIVE so a mid-session anticheat toggle is honoured and
+        # so non-gaming sessions can still use the desktop/browser tools.
+        # 2026-06-17 audit: FAIL-SAFE -- if we cannot DETERMINE the anticheat
+        # state (e.g. a transient config-read error early in boot), BLOCK the
+        # import. A clean, confident `anticheat_active() == False` (a deliberate
+        # desktop session) still allows the import; only UNCERTAINTY blocks. This
+        # closes the "config error -> firewall silently fails open" gap.
+        try:
+            from kenning.safety.anticheat import anticheat_active
+            active = bool(anticheat_active())
+        except Exception:                                            # noqa: BLE001
+            active = True   # fail-SAFE: uncertain -> block (anticheat-correct)
+        if not active:
+            return None  # firewall only bites while anticheat-safe mode is on
+        logger.error(
+            "ANTICHEAT IMPORT FIREWALL: refused runtime import of %r -- "
+            "input/capture/automation modules must never load into the "
+            "process while a protected game is running.",
+            fullname,
+        )
+>       raise ImportError(
+            f"anticheat import firewall: {fullname!r} is blocked while "
+            f"anticheat-safe mode is active (no input/capture/automation code "
+            f"may load into this process during a protected game)"
+        )
+E       ImportError: anticheat import firewall: 'playwright' is blocked while anticheat-safe mode is active (no input/capture/automation code may load into this process during a protected game)
+
+src\kenning\safety\import_firewall.py:158: ImportError
+------------------------------ Captured log call ------------------------------
+ERROR    kenning.safety.import_firewall:import_firewall.py:152 ANTICHEAT IMPORT FIREWALL: refused runtime import of 'playwright' -- input/capture/automation modules must never load into the process while a protected game is running.
+============================== warnings summary ===============================
+src\kenning\coding\session.py:116
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\src\kenning\coding\session.py:116: PytestCollectionWarning: cannot collect test class 'TestStatus' because it has a __init__ constructor (from: tests/test_projections.py)
+    @dataclass
+
+tests/coding/test_mock_bridge_smoke.py::test_mock_bridge_runs_simple_script_to_completion
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\coding\test_mock_bridge_smoke.py:56: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    s = server.get_session_state(session.session_id)
+
+tests/coding/test_mock_bridge_smoke.py::test_mock_bridge_declare_complete_runs_handler
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\coding\test_mock_bridge_smoke.py:158: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    assert server.get_session_state(session.session_id).status == SessionStatus.COMPLETE
+
+tests/coding/test_orchestration.py::test_scenario_1_new_project_smooth_completion
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\coding\test_orchestration.py:198: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    final = stack.server.get_session_state(session.session_id)
+
+tests/coding/test_orchestration.py::test_scenario_5_verification_failure_then_correction_succeeds
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\coding\test_orchestration.py:435: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    s = stack.server.get_session_state(session.session_id)
+
+tests/coding/test_orchestration.py::test_scenario_5_verification_failure_then_correction_succeeds
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\coding\test_orchestration.py:485: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    final = stack.server.get_session_state(session.session_id)
+
+tests/coding/test_orchestration.py::test_scenario_9_model_escalation_after_haiku_threshold
+tests/coding/test_orchestration.py::test_scenario_9_model_escalation_after_haiku_threshold
+tests/coding/test_orchestration.py::test_scenario_9_model_escalation_after_haiku_threshold
+tests/coding/test_orchestration.py::test_scenario_9_model_escalation_after_haiku_threshold
+tests/coding/test_orchestration.py::test_scenario_9_model_escalation_after_haiku_threshold
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\coding\test_orchestration.py:667: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    s = stack.server.get_session_state(session.session_id)
+
+tests/coding/test_orchestration.py::test_scenario_9_model_escalation_after_haiku_threshold
+tests/coding/test_orchestration.py::test_scenario_9_model_escalation_after_haiku_threshold
+tests/coding/test_orchestration.py::test_scenario_9_model_escalation_after_haiku_threshold
+tests/coding/test_orchestration.py::test_scenario_9_model_escalation_after_haiku_threshold
+tests/coding/test_orchestration.py::test_scenario_9_model_escalation_after_haiku_threshold
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\coding\test_orchestration.py:691: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    if stack.server.get_session_state(session.session_id).status == SessionStatus.FAILED:
+
+tests/coding/test_orchestration.py::test_scenario_9_model_escalation_after_haiku_threshold
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\coding\test_orchestration.py:694: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    final = stack.server.get_session_state(session.session_id)
+
+tests/desktop/test_screen_context.py::test_build_screen_context_vlm_disabled_by_default
+  C:\STC\ultronPrototype\.venv\Lib\site-packages\pywinauto\__init__.py:80: UserWarning: Revert to STA COM threading mode
+    warnings.warn("Revert to STA COM threading mode", UserWarning)
+
+tests/safety/test_ignore.py: 44 warnings
+  C:\STC\ultronPrototype\.venv\Lib\site-packages\pathspec\pathspec.py:326: DeprecationWarning: GitWildMatchPattern ('gitwildmatch') is deprecated. Use 'gitignore' for GitIgnoreBasicPattern or GitIgnoreSpecPattern instead.
+    patterns = [use_factory(__line) for __line in lines if __line]  # type: ignore[arg-type]
+
+tests/safety/test_ignore.py: 44 warnings
+  C:\STC\ultronPrototype\.venv\Lib\site-packages\pathspec\pattern.py:125: DeprecationWarning: GitWildMatchPattern ('gitwildmatch') is deprecated. Use 'gitignore' for GitIgnoreBasicPattern or GitIgnoreSpecPattern instead.
+    raw_regex, include = self.pattern_to_regex(pattern)
+
+tests/test_mcp_server.py::test_get_session_state_and_list_active
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\test_mcp_server.py:160: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    fetched = server.get_session_state(s1.session_id)
+
+tests/test_mcp_server.py::test_send_followup_validates_kind_and_records_adjustment
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\test_mcp_server.py:176: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    s = server.get_session_state(session.session_id)
+
+tests/test_mcp_server.py::test_terminate_session_removes_from_active
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\test_mcp_server.py:189: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    assert server.get_session_state(session.session_id).status == SessionStatus.TERMINATED
+
+tests/test_mcp_server.py::test_sse_report_progress_records_state
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\test_mcp_server.py:389: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    s = server.get_session_state(session.session_id)
+
+tests/test_mcp_server.py::test_sse_request_clarification_blocks_until_resolved
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\test_mcp_server.py:418: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    s = server.get_session_state(session.session_id)
+
+tests/test_mcp_server.py::test_sse_declare_complete_records_claim
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\test_mcp_server.py:484: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    s = server.get_session_state(session.session_id)
+
+tests/test_mcp_server.py::test_sse_report_test_results_updates_session
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\test_mcp_server.py:515: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    s = server.get_session_state(session.session_id)
+
+tests/test_phase7_audit_and_tokens.py::test_runner_forwards_usage_events_to_session
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\test_phase7_audit_and_tokens.py:276: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    s_after = server.get_session_state(s.session_id)
+
+tests/test_phase7_audit_and_tokens.py::test_runner_queues_warning_when_budget_threshold_crossed
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\test_phase7_audit_and_tokens.py:324: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    s_after = server.get_session_state(s.session_id)
+
+tests/test_phase7_audit_and_tokens.py::test_runner_halts_at_100_percent_budget
+  C:\STC\ultronPrototype\.claude\worktrees\infallible-kepler-0a865d\tests\test_phase7_audit_and_tokens.py:363: DeprecationWarning: get_session_state is deprecated; use the projection-based tools (get_status_delta, get_clarification_context, etc.) or get_full_state for in-process Python callers.
+    s_after = server.get_session_state(s.session_id)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================ slowest 10 durations =============================
+5.05s call     tests/test_coding_voice.py::test_cancel_during_active_task
+4.96s call     tests/test_llm_reload_for_preset.py::test_reload_clears_stale_model_path_env
+4.95s call     tests/test_llm_reload_for_preset.py::test_reload_sets_env_for_new_preset
+4.91s call     tests/test_llm_reload_for_preset.py::test_reload_swaps_to_new_llama_on_success
+4.63s call     tests/test_llm_reload_for_preset.py::test_reload_failure_when_env_was_unset_clears_it
+4.59s call     tests/test_llm_reload_for_preset.py::test_reload_failure_restores_env_vars
+4.55s call     tests/test_llm_reload_for_preset.py::test_reload_failure_keeps_old_engine
+4.00s call     tests/test_tts_pipeline_parallel.py::test_slow_second_clip_does_not_kill_playback
+3.01s call     tests/test_web_search_provider_chain.py::test_searxng_is_reachable_false_when_not_running
+2.66s call     tests/test_voice_lines_golden.py::test_aggregates_match_golden_digest
+=========================== short test summary info ===========================
+FAILED tests/audio/test_corpus_audit_fixes.py::TestC6Disfluency::test_value_swap_keeps_last_buy
+FAILED tests/audio/test_corpus_audit_fixes.py::TestC4ReportedDirective::test_say_to_delivers_literal_payload
+FAILED tests/audio/test_corpus_audit_fixes.py::TestFlavorOffSets::test_flavor_off_pool_member[Sage told you to stop-pool5-Sage]
+FAILED tests/audio/test_corpus_audit_fixes.py::TestSayHelloDefaultAndStop::test_stop_command_deterministic[Sage told you to stop]
+FAILED tests/audio/test_corpus_audit_fixes.py::TestSayHelloDefaultAndStop::test_stop_command_deterministic[Sage told me to stop]
+FAILED tests/audio/test_corpus_audit_fixes.py::TestSayHelloDefaultAndStop::test_stop_command_deterministic[my Sage told me to stop responding]
+FAILED tests/audio/test_corpus_audit_fixes.py::TestMangledTeamLeadNoDeterminer::test_real_phrases_not_hijacked[kill the enemy team]
+FAILED tests/audio/test_corpus_audit_fixes.py::TestMangledTeamLeadNoDeterminer::test_real_phrases_not_hijacked[push with the team]
+FAILED tests/error_recovery/test_audio_failures.py::test_whisper_transcribe_failure_returns_empty
+FAILED tests/error_recovery/test_audio_failures.py::test_whisper_subsequent_transcribe_works_after_failure
+FAILED tests/test_main_single_instance.py::test_duplicate_exits_3_without_constructing_orchestrator
+FAILED tests/test_main_single_instance.py::test_lock_released_in_finally_on_happy_path
+FAILED tests/test_main_single_instance.py::test_lock_released_when_run_raises
+FAILED tests/test_main_single_instance.py::test_lock_released_on_missing_model
+FAILED tests/test_orchestrator_background_summary.py::test_loader_builds_summarizer_when_enabled
+FAILED tests/test_orchestrator_background_summary.py::test_loader_summarizer_calls_llm_isolated
+FAILED tests/test_orchestrator_background_summary.py::test_recent_turns_fn_fail_open_when_memory_raises
+FAILED tests/test_orchestrator_evolution_wiring.py::TestLoadEvolution::test_enabled_real_round_trip
+FAILED tests/test_speculative_llm.py::TestLLMEngineHistoryDefer::test_record_history_true_records_turn
+FAILED tests/test_speculative_llm.py::TestLLMEngineHistoryDefer::test_record_history_false_skips_auto_record
+FAILED tests/test_stt_engine_swap.py::test_stt_default_engine_is_auto - Asser...
+FAILED tests/test_web_search_readers.py::test_playwright_reader_fetch_returns_none_when_unavailable
+22 failed, 11019 passed, 39 skipped, 116 warnings in 161.17s (0:02:41)
