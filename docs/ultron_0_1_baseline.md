@@ -22,8 +22,22 @@
 - **"Launch Ultron 0.1"** → boot the **standalone backup** at `E:\Ultron-0.1` via its
   launcher, **without touching the dev tree**. See **§2**. This is the rule: *launch
   Ultron 0.1 = launch from the E: backup, never the in-development version.*
+- **"Launch Ultron 0.1.1"** → boot `E:\Ultron-0.1.1\launch_ultron_0_1_1.ps1` — the same
+  stable baseline **plus a voice model-lab** to A/B abliterated Qwen LLMs (tag
+  `ultron-0.1.1` @`6ead83f`, branch `release/ultron-0.1.1`). Lab voice cmds (a switch
+  VERB is required): "switch to / load / try **heretic** (4B) / **josiefied 4B** /
+  **huihui** (7B) / **josiefied 8B** / the **3B**", or "switch to **model two..five**";
+  all default CPU; "switch the model to the GPU/CPU" moves the current one. All model
+  GGUFs live in the shared `E:\UltronModels\`. Restore the dev tree to it:
+  `git checkout ultron-0.1.1`.
 - Only **one** Ultron runs at a time (shared embedder port 8772 / wake word / audio
   devices / PTT HID). Stop any running Ultron before launching another.
+
+> **C: model relocation (pending):** all model GGUFs were COPIED to `E:\UltronModels\`
+> on 2026-06-19 (non-destructive — the live 0.1 stream kept reading `C:\…\models`). To
+> free ~25 GB on C: once 0.1 is stopped: replace `C:\STC\ultronPrototype\models` with a
+> directory junction → `E:\UltronModels` (so dev + 0.1 + 0.1.1 all share the E: store).
+> Do NOT do this while any Ultron is running from C:.
 
 ---
 
