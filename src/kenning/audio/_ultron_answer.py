@@ -153,6 +153,11 @@ def classify_answer_subtype(command: object) -> Optional[str]:
     ctx = str(getattr(command, "context", "") or "")
     pl = str(getattr(command, "payload", "") or "")
     text = ctx or pl
+    if directive == "qa":
+        # Dedicated QA-answer command ("answer/qa my team <Q>" / "answer/qa <agent>
+        # <Q>"): Ultron ANSWERS the posed question in persona. A QA turn that is
+        # ALSO about Marvel gets the Marvel canon prompt; otherwise the QA prompt.
+        return "marvel" if marvel_topic(text) else "qa"
     if directive == "think_respond":
         # Adaptive: a think-and-respond turn that is ALSO about Marvel gets the
         # Marvel canon prompt; otherwise the general answer prompt.
@@ -221,6 +226,15 @@ def _render_user(subtype: str, slots: dict) -> str:
             "TASK: answer this in character as Ultron -- on this exact topic, "
             "one or two sentences, addressing the person above. Output only the "
             "spoken line."
+        )
+    elif subtype == "qa":
+        parts.append(f'THE QUESTION TO ANSWER: "{slots["claim"]}".')
+        parts.append(
+            "TASK: ANSWER this question as Ultron -- the real, correct, useful "
+            "answer FIRST, directly, one or two sentences, addressing the person "
+            "above; a sliver of contempt after is fine, no callouts, no preamble. "
+            "If you genuinely could not know it, say so in character instead of "
+            "guessing. Output only the spoken line."
         )
     else:  # think_respond
         parts.append(f'THEIR QUESTION OR STATEMENT: "{slots["claim"]}".')

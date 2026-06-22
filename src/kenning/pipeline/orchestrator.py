@@ -3280,7 +3280,13 @@ class Orchestrator:
                 record_history=False,
             ))
             from kenning.llm.inference import strip_thinking_text
+            from kenning.audio.ultron_prompt import strip_prompt_echo
             text = strip_thinking_text(text or "").strip()
+            # Guard: the small model sometimes echoes its prompt scaffolding or
+            # appends a "- Ultron" signature, and can ramble -- drop the echo,
+            # strip the signature, hard-cap the length (live bug bu5fh4lc8 spoke
+            # the reconcile note aloud). All-scaffolding -> "" -> fall through.
+            text = strip_prompt_echo(text)
             if not text:
                 return False  # fall through to _respond rather than stay silent
             try:

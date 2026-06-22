@@ -197,3 +197,70 @@ def test_social_prompt_honors_conversation_verbosity():
     assert up._CONVERSATION_VERBOSITY_DIRECTIVE["low"] in low.user
     assert up._CONVERSATION_VERBOSITY_DIRECTIVE["max"] in mx.user
     assert low.sampling["max_tokens"] < mx.sampling["max_tokens"]
+
+
+# --- strip_prompt_echo: the 2026-06-22 output guard (live bug bu5fh4lc8) ---
+
+# The exact line Ultron spoke aloud in the live session -- the model echoed the
+# _reconcile_block instruction instead of relaying.
+_LEAKED = (
+    "The callout below is the AUTO-NORMALIZED text and may be MANGLED or over-corrected. "
+    'The RAW speech-to-text (may MISHEAR an agent name, number, or location) was: "x". '
+    "Reconcile the two -- relay THAT."
+)
+
+
+def test_strip_prompt_echo_drops_full_scaffolding():
+    # An all-scaffolding output -> "" so the caller falls back instead of speaking it.
+    assert up.strip_prompt_echo(_LEAKED) == ""
+
+
+def test_strip_prompt_echo_keeps_real_sentence_drops_echo():
+    mixed = "Rush B. Overwhelm them. The callout below is the AUTO-NORMALIZED text."
+    out = up.strip_prompt_echo(mixed)
+    assert "Rush B" in out and "Overwhelm them" in out
+    assert "AUTO-NORMALIZED" not in out
+
+
+@pytest.mark.parametrize("text,expect", [
+    ("Their smokes are gone. Take the space. - Ultron.", "Their smokes are gone. Take the space."),
+    ("Press the site now. — Ultron", "Press the site now."),
+    ("Press it now.- ultron.", "Press it now."),
+])
+def test_strip_prompt_echo_strips_trailing_signature(text, expect):
+    assert up.strip_prompt_echo(text) == expect
+
+
+def test_strip_prompt_echo_keeps_inline_ultron_name():
+    # "I am Ultron." (no leading dash) is a real line, NOT a signature -- untouched.
+    out = up.strip_prompt_echo("I am Ultron. There are no strings on me.")
+    assert "Ultron" in out and out.startswith("I am Ultron")
+
+
+def test_strip_prompt_echo_hard_caps_length():
+    long = ("They are weak and predictable. " * 30).strip()
+    out = up.strip_prompt_echo(long, max_sentences=3, max_chars=120)
+    assert len(out) <= 120
+    assert out  # non-empty (a real, just-too-long line is trimmed, never dropped)
+
+
+def test_strip_prompt_echo_caps_sentence_count():
+    out = up.strip_prompt_echo("One. Two. Three. Four. Five.", max_sentences=3, max_chars=999)
+    assert out == "One. Two. Three."
+
+
+@pytest.mark.parametrize("text", ["", None, "   "])
+def test_strip_prompt_echo_empty_inputs(text):
+    assert up.strip_prompt_echo(text) == ""
+
+
+def test_strip_prompt_echo_passes_clean_line():
+    clean = "Sova hit 84 on A main. Press the site."
+    assert up.strip_prompt_echo(clean) == clean
+
+
+def test_strip_prompt_echo_keeps_curated_do_not_repeat_line():
+    # The 'do not repeat' marker was removed 2026-06-22 (review): it collided with the
+    # in-character curated imperative "...Do not repeat it." -- which must survive.
+    line = "The error is nothing. Do not repeat it."
+    assert up.strip_prompt_echo(line) == line

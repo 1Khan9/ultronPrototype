@@ -27,6 +27,53 @@
 > - Full runbook: **`docs/ultron_0_1_baseline.md`**. Post-0.1 roadmap:
 >   **`docs/latency_optimizations_V1.md`**.
 >
+> **Validating HEAD: DEDICATED QA-ANSWER COMMAND (team OR specific agent, 2026-06-22)**
+> User request: "add a dedicated QA prompt that answers in the Ultron persona and lets me either QA my team or
+> QA to a specific agent." NEW voice command — **`answer/qa/explain [my|the] <team|agent> <question>`** — where
+> the user POSES a question and Ultron AUTHORS an in-character answer, addressed to the whole team or a named
+> teammate (DISTINCT from "ask my team X", which RELAYS the question unanswered). Pieces: (1) `relay_speech`
+> NEW `_match_qa_command` (+ `_QA_VERB_RE` / `_QA_TEAM_RE` / `_split_leading_name`) wired HIGH in
+> `match_relay_command` (right after the verbatim/repeat check) → `RelayCommand(directive="qa", compose=True,
+> context=<question>, addressee=team-or-agent)`; (2) `_ultron_answer.classify_answer_subtype` routes
+> `directive=="qa"` → the NEW **`qa`** subtype (or `marvel` when the question is a Marvel topic) + a `qa` branch
+> in `_render_user` ("THE QUESTION TO ANSWER: …"); (3) NEW `llm_prompts.ANSWER_QA_RULES` + `ANSWER_SYSTEM_FOR["qa"]`
+> (persona core + "give the real, correct, useful answer FIRST … if you genuinely could not know it, say so in
+> character rather than fabricate"). The answer flows through the existing `build_answer_call` path in
+> `build_relay_line` (runs whether or not route-all is on), uses the tight `_ANSWER_SAMPLING` (≈1-2 sentences,
+> 80 tok) so a QA answer has room EVEN when `conversation_verbosity` is `low`, and a named agent is opened-by-name
+> via the answer slots + `_ensure_addressee`. Regression-clean (full `tests/audio/` failures ⊆ the pre-existing
+> flaky env-artifact set, stash-verified; +10 QA tests in `test_social_marvel_answer.py`). STILL-PENDING from the
+> prior list (not in this change): clean ASK-form question-relay under route-all + the FLAG-button stale-`_last_response_text`
+> on relay turns.
+>
+> **Validating HEAD: GATE NAME/WAKE REQUIREMENT + LLM-OUTPUT SCAFFOLDING GUARD (2026-06-22)**
+> Two live-session fixes (boot trace `bu5fh4lc8`) after route-all-by-default shipped — the user reported
+> "horrible responses to a bunch of questions" + "responded a few times when not addressed." **(1) GATE**
+> (`audio/intent_gate.py`): in always-listening, `PRIVATE_REPLY` now REQUIRES an explicit Ultron address
+> signal — a leading wake word OR an unambiguous name token (`ultron`/`kenning`/`hey ai`/`the ai`) anywhere —
+> not the addressing RULES alone (the common nouns `machine`/`robot` are excluded from the gate: anywhere
+> they false-fire on "this machine is slow" / "the machine gun"). The rules score a bare question/imperative ADDRESSED ≥0.80, so un-named
+> conversational lines ("What is that brimstone doing?", "No.", "I think you might be mistaken.") false-fired
+> private replies that talked over the player to their friends. An un-named/un-waked line is now dropped to
+> IGNORE outright (cost-asymmetric); the LLM-band escalation (`resolve_with_llm`) is RETIRED from the gate
+> hot path (it mislabelled "Follow orders."/"Respond." → PRIVATE and cost a model forward-pass per chatter
+> line) — `resolve_with_llm` is retained for callers but `classify_scenario` no longer sets `needs_llm`.
+> **(2) OUTPUT GUARD** (NEW `ultron_prompt.strip_prompt_echo`): the 4B occasionally ECHOED its own prompt
+> scaffolding as speech — the live failure spoke the reconcile note aloud ("The callout below is the
+> AUTO-NORMALIZED text and may be MANGLED…", 25 s), appended a "- Ultron" signature, and rambled.
+> `strip_prompt_echo(text)` drops any sentence containing a template marker, strips the trailing signature,
+> and hard-caps length (3 sentences / 300 chars), returning "" when the whole output was scaffolding (→ the
+> caller falls back). WIRED into all THREE u1.0 LLM-output paths: `relay_speech.build_relay_line` (Safety
+> net 3), `relay_speech._social_llm_line`, and `orchestrator._maybe_handle_private_reply`. Regression-clean:
+> full `tests/audio/` = the SAME 10 pre-existing failures stash-verified, +24 new passing tests
+> (`test_intent_gate` + `test_ultron_prompt` strip_prompt_echo + `test_u1_llm_route` wiring/leak). FOLLOW-UP
+> (2026-06-22, user request): `conversation_verbosity` default LOWERED `high` → **`low`** (one clipped
+> sentence) for tighter live-comms replies — set in ALL four default sites (`config.yaml`, `RelaySpeechConfig`,
+> the `relay_speech` env fallback, `ultron_prompt.DEFAULT_CONVERSATION_VERBOSITY`); raise by voice
+> ("conversation high"). KNOWN-DEFERRED: route-all sending a literal question-relay ("ask team their favorite colors")
+> to the LLM can still editorialize (the deterministic ask-snap is gated off by route-all); + relays don't
+> update `_last_response_text` so the FLAG button logs a stale prior response on a relay turn.
+>
 > **Validating HEAD: ULTRON 1.0 — LLM-ROUTE-BY-DEFAULT + DUAL VERBOSITY + FLAG BUTTON**
 > (2026-06-20, branch `claude/pensive-brahmagupta-dff2e4`, built on a `checkpoint` commit of the live u1.0
 > WIP + the 2507g VRAM deploy). User mandate: route EVERY response through the LLM BY DEFAULT (the loaded
@@ -58,7 +105,7 @@
 >   (callout — bare "flavor <level>" / "callout flavor <level>") and `match_conversation_verbosity_command`
 >   (requires the conversation/chat/talk axis word). Orchestrator `_maybe_handle_verbosity_command` +
 >   `_maybe_handle_conversation_verbosity_command` wired into both dispatch paths; config
->   `relay_speech.callout_verbosity` (default "medium") / `.conversation_verbosity` (default "high") applied at
+>   `relay_speech.callout_verbosity` (default "medium") / `.conversation_verbosity` (default "low" since 2026-06-22) applied at
 >   boot. The post-LLM fact-preservation guards are unchanged. Tests: `tests/audio/test_ultron_prompt.py`
 >   (+dual-axis) + `test_u1_llm_route.py` (+conversation matcher, two-axis independence, config defaults,
 >   dispatch order) — 250 mapped pass.
@@ -5018,6 +5065,15 @@ in-character, fact-preserving relays. Stdlib-only (anticheat-safe). Public API:
   kit hallucination; per-verbosity `max_tokens` (none 24 / low 40 / high 72).
 - `build_private_prompt(query, ...) -> PromptResult` — the ME-ONLY (PRIVATE_REPLY) variant; its own Q&A
   exemplars (`_DEFAULT_PRIVATE_EXEMPLARS`), `max_tokens` lifted to 110 on `high`.
+- **`strip_prompt_echo(text, *, max_sentences=3, max_chars=300) -> str` (NEW 2026-06-22 — output guard):**
+  the small model occasionally ECHOES this module's prompt scaffolding as if it were speech (the live bug
+  `bu5fh4lc8` spoke the `_reconcile_block` note aloud — "The callout below is the AUTO-NORMALIZED text…",
+  25 s), appends a "- Ultron" signature, and rambles. Drops any sentence containing a template marker
+  (`_PROMPT_ECHO_MARKERS` — multi-word, template-specific so a normal line never trips), strips a trailing
+  `[-–—] Ultron` signature (an inline "I am Ultron." is untouched), and hard-caps sentence count + chars.
+  Returns "" when the WHOLE output was scaffolding (caller falls back). Pure stdlib, fail-soft (any error
+  returns the input). WIRED into all three u1.0 LLM-output paths: `relay_speech.build_relay_line` (Safety
+  net 3), `relay_speech._social_llm_line`, `orchestrator._maybe_handle_private_reply`.
 - **HARD RULE (module docstring):** callers MUST run the existing fact-guards
   (`relay_speech._output_keeps_facts` / `_repair_against_input` / `_literal_relay`) on the model output —
   this module only builds the prompt, it does not relax the correctness backstop.
@@ -5049,9 +5105,17 @@ Public API:
   L1-only [NOT `normalize_command`, which over-injects the relay lead] → `match_relay_command` 0.95 /
   `is_complete_tactical_callout` 0.90 / agent+`_fact_tokens` 0.88 — the weak semantic `relay_intent_ok`
   signal was DROPPED 2026-06-21 (it false-relayed conversation to the team; RELAY needs a strong signal)) → addressing
-  rules NO→IGNORE / YES+wake→PRIVATE_REPLY → undecided → fail-closed IGNORE with `needs_llm=True`.
+  rules NO→IGNORE / **PRIVATE_REPLY requires an explicit Ultron address signal** (a leading wake word OR an
+  `_ADDRESS_NAME_RE` unambiguous name — `ultron`/`kenning`/`hey ai`/`the ai`, anywhere; the common nouns
+  `machine`/`robot` are EXCLUDED from the gate so they don't false-fire on ordinary speech; NEW 2026-06-22) → else
+  IGNORE. **The addressing RULES alone are NOT enough for PRIVATE** (they score a bare question/imperative
+  ADDRESSED ≥0.80, which false-fired private replies on un-named conversation the player aimed at teammates —
+  live bug `bu5fh4lc8`). An un-named/un-waked line is dropped to IGNORE outright; `classify_scenario` NO
+  LONGER sets `needs_llm` (the LLM band is retired from the hot path — it mislabelled "Follow orders." →
+  PRIVATE and cost a model forward-pass per chatter line).
 - `resolve_with_llm(verdict, text, llm) -> ScenarioVerdict` — single-token {PRIVATE, IGNORE} LLM escalation
-  for the undecided band (`enable_thinking=False`, fail-CLOSED on any non-PRIVATE token / error).
+  for a `needs_llm` verdict (`enable_thinking=False`, fail-CLOSED on any non-PRIVATE token / error).
+  RETAINED for callers + unit-tested in isolation, but `classify_scenario` no longer triggers it (2026-06-22).
 - DEFAULT OFF (opt-in `addressing.always_listening`); wake-word stays the competitive default; thresholds
   are heuristic starting points to calibrate on the labeled battery + `logs/addressing.jsonl`. PREREQUISITE:
   VoiceMeeter mic isolation. Tests: `tests/audio/test_intent_gate.py`.
@@ -5089,8 +5153,9 @@ social category an utterance is. Consumed by `relay_speech._as_curated_reaction`
 
 `__all__ = [MARVEL_CANON, marvel_topic, classify_answer_subtype, extract_answer_slots, build_answer_call,
 is_meta_leak, THINK_RESPOND_SUFFIX_RE]`. Builds the focused per-subtype system_prompt + slots + constrained
-sampling for Marvel / "think and respond" answers (`build_answer_call`); `is_meta_leak` is the
-identity/model-leak gate on the LLM answer path. Consumed by `relay_speech.build_relay_line`'s answer path.
+sampling for Marvel / "think and respond" / **`qa`** (the 2026-06-22 dedicated QA-answer command —
+`directive=="qa"` → the `qa` subtype + `ANSWER_SYSTEM_FOR["qa"]`) answers (`build_answer_call`); `is_meta_leak`
+is the identity/model-leak gate on the LLM answer path. Consumed by `relay_speech.build_relay_line`'s answer path.
 
 ### `src/kenning/addressing/`
 

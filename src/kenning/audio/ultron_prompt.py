@@ -31,6 +31,7 @@ desktop-interaction surface. Safe on the voice/relay hot path.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Sequence, Tuple
 
@@ -51,7 +52,7 @@ CALLOUT_VERBOSITY_LEVELS: Tuple[str, ...] = ("none", "low", "medium", "high", "m
 CONVERSATION_VERBOSITY_LEVELS: Tuple[str, ...] = ("low", "medium", "high", "max")
 VERBOSITY_LEVELS: Tuple[str, ...] = CALLOUT_VERBOSITY_LEVELS  # back-compat (the superset)
 DEFAULT_CALLOUT_VERBOSITY = "medium"
-DEFAULT_CONVERSATION_VERBOSITY = "high"
+DEFAULT_CONVERSATION_VERBOSITY = "low"
 DEFAULT_VERBOSITY = DEFAULT_CALLOUT_VERBOSITY  # back-compat alias
 
 
@@ -263,6 +264,65 @@ def _sampling_for(verbosity: str, *, axis: str = "callout") -> Dict[str, object]
     table = _CONVERSATION_MAX_TOKENS if axis == "conversation" else _CALLOUT_MAX_TOKENS
     s["max_tokens"] = table.get(verbosity, table["high"])
     return s
+
+
+# ---------------------------------------------------------------------------
+# Output guard (2026-06-22): the small model occasionally ECHOES its own prompt
+# scaffolding as if it were speech. The live failure (bu5fh4lc8) was Ultron
+# speaking the reconcile note aloud -- "The callout below is the AUTO-NORMALIZED
+# text and may be MANGLED or over-corrected. The RAW speech-to-text..." (25 s of
+# it). It also appends a "- Ultron" signature and can ramble past the cap. This
+# guard drops any sentence that echoes a template marker, strips the signature,
+# and hard-caps length. Applied to EVERY u1.0 LLM-authored spoken line (relay /
+# private / social) BEFORE it is spoken. Pure stdlib, fail-soft.
+# ---------------------------------------------------------------------------
+# Phrases that appear ONLY in this module's prompt templates (the _reconcile_block,
+# the leads, the verbosity directives, the exemplar block). Their presence in the
+# model OUTPUT means it echoed an instruction instead of answering. Kept as
+# multi-word, template-specific phrases so a normal spoken line never trips them.
+_PROMPT_ECHO_MARKERS: Tuple[str, ...] = (
+    "auto-normalized", "speech-to-text", "reconcile the two",
+    "now say it", "now respond", "now say your line",
+    "examples of your voice", "example of your voice",
+    "style only", "agent facts",
+    "relay this callout", "relay all of these", "answer them as ultron",
+    "the player said to you", "the callout below", "open with their name",
+    "every fact exact", '-> "', "- player:",
+)
+# A trailing "- Ultron" / "— Ultron." signature the model appends (NOT a normal
+# in-line "I am Ultron." -- that has no leading dash and is left untouched).
+_SIGNATURE_RE = re.compile(r"\s*[-–—]+\s*ultron\.?\s*$", re.IGNORECASE)
+_SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def strip_prompt_echo(text: str, *, max_sentences: int = 3, max_chars: int = 300) -> str:
+    """Drop prompt-scaffolding echoes + a trailing signature; hard-cap length.
+
+    Returns ``""`` when the WHOLE output was scaffolding (the caller should fall
+    back to a curated line / re-ask rather than speak it). Pure stdlib, fail-soft:
+    any error returns the input unchanged so it can never silence a good line.
+    """
+    if not text:
+        return ""
+    try:
+        t = _SIGNATURE_RE.sub("", text.strip()).strip()
+        sents = [s.strip() for s in _SENT_SPLIT_RE.split(t) if s.strip()]
+        kept = []
+        for s in sents:
+            low = s.lower()
+            if any(m in low for m in _PROMPT_ECHO_MARKERS):
+                continue  # a scaffolding echo -- drop this sentence
+            kept.append(s)
+            if len(kept) >= max_sentences:
+                break
+        out = " ".join(kept).strip()
+        if len(out) > max_chars:
+            cut = out[:max_chars]
+            boundary = max(cut.rfind("."), cut.rfind("!"), cut.rfind("?"))
+            out = (cut[:boundary + 1] if boundary > max_chars * 0.5 else cut).strip()
+        return out
+    except Exception:  # noqa: BLE001 - fail-soft: never silence a good line
+        return text.strip()
 
 
 def build_relay_prompt(

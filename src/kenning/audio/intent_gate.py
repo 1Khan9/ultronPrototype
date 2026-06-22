@@ -13,15 +13,19 @@ proven components (no new ML in-process):
   * COMMAND_LOCAL: the toggle/Spotify/stop matchers (relay_speech).
   * RELAY_TO_TEAM: ``match_relay_command`` (strict grammar) + the relay-intent gate
     (``_relay_intent.relay_intent_ok``, semantic+lexical) + ``is_complete_tactical_callout``.
-  * PRIVATE_REPLY: the addressing YES-rules (factual question / imperative / direct address) AND/OR a
-    wake-word/name signal -- ONLY when the utterance is clearly addressed to Ultron.
+  * PRIVATE_REPLY: an EXPLICIT Ultron address signal -- a wake word OR a name token ('ultron' /
+    'kenning' / 'machine' / 'hey ai') -- gated by the addressing rules (a confident NO still wins). A
+    question/command SHAPE alone is NOT enough in always-listening (most speech is to teammates).
   * IGNORE: the addressing NO-rules (phone opener, third-person mention, third-party narrative,
     interjection) + the default.
   * ASR-confidence PRE-REJECT (``no_speech_prob`` / ``avg_logprob`` from faster-whisper) -> IGNORE --
     a free, high-value signal (Apple DDSD: +6.9% rel. EER) that also catches Whisper hallucinations
     on non-speech (which are ~40-52% on short/silent audio).
-The LLM is consulted ONLY in the undecided band (PRIVATE vs IGNORE), with ``enable_thinking=False`` and a
-single-token, fail-CLOSED parse (grammar+thinking conflict, llama.cpp #20345).
+The cheap layers are decisive: an un-named, un-waked line is dropped to IGNORE outright (no LLM spend).
+``resolve_with_llm`` (a single-token, fail-CLOSED PRIVATE-vs-IGNORE escalation, ``enable_thinking=False``)
+is RETAINED for callers but is no longer triggered by ``classify_scenario`` -- it mislabelled un-named
+chatter ('Follow orders.' / 'Respond.') as PRIVATE and cost a model forward-pass on every ambiguous
+friend-chatter line (live, 2026-06-22).
 
 DEFAULT OFF (opt-in via ``addressing.always_listening``). The wake word stays the competitive default;
 each false relay is a team-visible blast (asymmetric cost). Thresholds here are HEURISTIC starting points
@@ -87,6 +91,15 @@ _REACTION_OPENERS: frozenset[str] = frozenset({
 # A direct name/address token for Ultron -- its presence vetoes the reaction filter.
 _NAME_TOKEN_RE = re.compile(
     r"\b(?:ultron|kenning|machine|robot|hey\s+ai|the\s+ai)\b", re.IGNORECASE)
+# The PRIVATE_REPLY address gate uses ONLY the UNAMBIGUOUS Ultron names (anywhere):
+# 'ultron' / 'kenning' / 'hey ai' / 'the ai'. The common nouns 'machine' / 'robot' in
+# _NAME_TOKEN_RE are deliberately EXCLUDED here -- as a private-reply TRIGGER they
+# false-fire on ordinary speech ('this machine is so slow', 'reload the machine gun',
+# 'that robot in the corner'), the very talk-over-the-player bug this gate fixes. They
+# stay in _NAME_TOKEN_RE only as a reaction-filter VETO (a false veto is harmless --
+# the line just falls through to the addressing rules / IGNORE). (2026-06-22)
+_ADDRESS_NAME_RE = re.compile(
+    r"\b(?:ultron|kenning|hey\s+ai|the\s+ai)\b", re.IGNORECASE)
 
 
 def _wake_present(text: str) -> bool:
@@ -216,6 +229,17 @@ def classify_scenario(
     if relay_conf is not None:
         return ScenarioVerdict(Scenario.RELAY_TO_TEAM, relay_conf, "relay signal")
 
+    # An explicit address signal -- a leading wake word OR an unambiguous Ultron name
+    # token anywhere ('ultron' / 'kenning' / 'hey ai' / 'the ai') -- is the ONLY reliable
+    # "this is for me" cue in always-listening, where MOST speech is to teammates or the
+    # stream. A question/command SHAPE alone (what the addressing rules key on) is NOT
+    # enough: in a live match the player constantly asks teammates questions, so bare
+    # lines like "what is that brimstone doing", "no", or "I think you might be mistaken"
+    # read as ADDRESSED to the rules but are almost never meant for Ultron (the live
+    # false-positives 2026-06-22). Cost-asymmetric: a false private reply talks over the
+    # player to their friends -- so PRIVATE_REPLY now REQUIRES this signal.
+    addressed = wake or bool(_ADDRESS_NAME_RE.search(raw))
+
     # 4) Addressing rules: a confident NO -> IGNORE (talking to a person / stream / self).
     hit = _addressing_hit(raw, seconds_since_response)
     try:
@@ -225,27 +249,34 @@ def classify_scenario(
     if hit is not None and AddressingDecision is not None:
         if hit.decision == AddressingDecision.NOT_ADDRESSED and hit.confidence >= _RULE_TAU:
             return ScenarioVerdict(Scenario.IGNORE, hit.confidence, f"addressing NO: {hit.reason}")
-        # 5) Confident YES (or wake) -> PRIVATE_REPLY (talking to Ultron, not a relay).
-        if wake or (hit.decision == AddressingDecision.ADDRESSED and hit.confidence >= _RULE_TAU):
-            return ScenarioVerdict(Scenario.PRIVATE_REPLY,
-                                   max(hit.confidence, 0.85 if wake else hit.confidence),
-                                   "addressed to Ultron (private)")
-        # 6) Undecided band (UNCERTAIN, or sub-tau) -> fail-closed IGNORE, flag for LLM escalation.
-        return ScenarioVerdict(Scenario.IGNORE, 0.50, f"undecided: {hit.reason}", needs_llm=True)
+        # 5) PRIVATE_REPLY -- requires an explicit address signal (name/wake) AND not a
+        # confident NO (handled above). An ADDRESSED rule then raises the confidence; a
+        # wake word alone suffices.
+        if addressed:
+            conf = max(hit.confidence if hit.decision == AddressingDecision.ADDRESSED
+                       else 0.85, 0.85)
+            return ScenarioVerdict(Scenario.PRIVATE_REPLY, conf, "addressed to Ultron (named/wake)")
+        # 6) No name/wake: question/command SHAPE alone is almost always to teammates in a
+        # live always-listening match -> drop it. NO LLM escalation -- the LLM band
+        # mislabelled un-named lines ('Follow orders.' / 'Respond.') as PRIVATE, and a
+        # false private reply is the costly error in this cost-asymmetric gate.
+        return ScenarioVerdict(Scenario.IGNORE, max(hit.confidence, 0.60),
+                               f"no Ultron address signal: {hit.reason}")
 
-    # No addressing hit at all: wake word alone still routes to PRIVATE.
-    if wake:
-        return ScenarioVerdict(Scenario.PRIVATE_REPLY, 0.85, "leading wake word")
-    # Pre-LLM reaction filter: a bare reaction/agreement opener with no question and
-    # no name for Ultron is friend-chatter -- drop it cheaply rather than letting the
-    # LLM band mislabel it PRIVATE (the live "Yeah, I can." / "It's okay." leak).
+    # No addressing hit at all: an explicit address signal still routes to PRIVATE.
+    if addressed:
+        return ScenarioVerdict(Scenario.PRIVATE_REPLY, 0.85, "leading wake word / name")
+    # Pre-LLM reaction filter: a bare reaction/agreement opener is friend-chatter -- drop
+    # it cheaply (kept for the explicit-reason trace; the no-signal fall-through below
+    # would IGNORE it anyway now that an un-named line never escalates).
     _low = (raw or "").strip().lower()
     _first = re.split(r"[\s,.!?]+", _low, maxsplit=1)[0] if _low else ""
     if (_first in _REACTION_OPENERS and "?" not in _low
             and not _NAME_TOKEN_RE.search(_low)):
         return ScenarioVerdict(Scenario.IGNORE, 0.70, "reaction opener (no address)")
-    # Else fail-closed IGNORE, flagged for the LLM escalation.
-    return ScenarioVerdict(Scenario.IGNORE, 0.55, "no addressing signal (fail-closed)", needs_llm=True)
+    # Else IGNORE: no name/wake means it is not for Ultron -> no LLM escalation, no spoken
+    # reply (the cost-asymmetric default).
+    return ScenarioVerdict(Scenario.IGNORE, 0.55, "no addressing signal (fail-closed)")
 
 
 # Single-token classification prompt for the LLM escalation in the undecided band (PRIVATE vs IGNORE).

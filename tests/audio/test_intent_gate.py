@@ -38,10 +38,19 @@ def test_private_reply_with_wake():
     assert v.scenario is Scenario.PRIVATE_REPLY
 
 
-def test_private_reply_factual_question_no_wake():
-    # A clear factual question addressed to the assistant (addressing rule YES >= tau).
+def test_unnamed_factual_question_ignored_in_always_listening():
+    # 2026-06-22: an un-named factual question is NO LONGER a private reply. In
+    # always-listening the player asks teammates questions constantly; without a
+    # name/wake signal it is almost never meant for Ultron -> IGNORE (no LLM spend).
     v = ig.classify_scenario("what time is it right now")
-    assert v.scenario is Scenario.PRIVATE_REPLY
+    assert v.scenario is Scenario.IGNORE, v
+    assert v.needs_llm is False, v
+
+
+def test_named_factual_question_is_private():
+    # The SAME question that names Ultron IS a private reply.
+    v = ig.classify_scenario("ultron, what time is it right now")
+    assert v.scenario is Scenario.PRIVATE_REPLY, v
 
 
 @pytest.mark.parametrize("text", [
@@ -64,11 +73,13 @@ def test_asr_pre_reject_low_logprob():
     assert v.scenario is Scenario.IGNORE and "avg_logprob" in v.reason
 
 
-def test_undecided_is_failclosed_ignore_with_llm_flag():
-    # An ambiguous statement with no relay/command/addressing signal -> fail-closed IGNORE, needs_llm.
+def test_unnamed_ambiguous_statement_ignored_no_llm():
+    # 2026-06-22: an un-named ambiguous statement is dropped CHEAPLY -> IGNORE with
+    # needs_llm False. The LLM band no longer fires on un-named chatter (it leaked
+    # 'Follow orders.' -> PRIVATE and cost a forward-pass on every ambiguous line).
     v = ig.classify_scenario("the rotations feel pretty clean this map")
     assert v.scenario is Scenario.IGNORE
-    assert v.needs_llm is True
+    assert v.needs_llm is False
 
 
 def test_empty():
@@ -85,14 +96,16 @@ class _StubLLM:
 
 
 def test_resolve_with_llm_private():
-    v = ig.classify_scenario("the rotations feel pretty clean this map")  # needs_llm
-    out = ig.resolve_with_llm(v, "the rotations feel pretty clean this map", _StubLLM("PRIVATE"))
+    # resolve_with_llm is RETAINED for callers; tested in isolation since
+    # classify_scenario no longer sets needs_llm (the gate decides on the cheap layers).
+    base = ig.ScenarioVerdict(Scenario.IGNORE, 0.55, "undecided", needs_llm=True)
+    out = ig.resolve_with_llm(base, "the rotations feel pretty clean this map", _StubLLM("PRIVATE"))
     assert out.scenario is Scenario.PRIVATE_REPLY
 
 
 def test_resolve_with_llm_failclosed_on_garbage():
-    v = ig.classify_scenario("the rotations feel pretty clean this map")
-    out = ig.resolve_with_llm(v, "...", _StubLLM("uhh I think maybe"))
+    base = ig.ScenarioVerdict(Scenario.IGNORE, 0.55, "undecided", needs_llm=True)
+    out = ig.resolve_with_llm(base, "...", _StubLLM("uhh I think maybe"))
     assert out.scenario is Scenario.IGNORE  # non-PRIVATE token -> fail closed
 
 
@@ -177,3 +190,46 @@ def test_real_callout_still_relays(text: str) -> None:
     # unaffected by the opinion guard -- these must still relay.
     v = ig.classify_scenario(text, seconds_since_response=5.0)
     assert v.scenario is Scenario.RELAY_TO_TEAM, (text, v)
+
+
+# --- responded-when-not-addressed regression (live session bu5fh4lc8, 2026-06-22) ---
+
+
+@pytest.mark.parametrize("text", [
+    "What? That doesn't sound right. I think you might be mistaken.",
+    "No.",
+    "What is that brimstone doing?",
+    "Follow orders.",
+    "Respond.",
+    "He was kind of clean with the Marshall.",
+])
+def test_unaddressed_conversation_not_private(text: str) -> None:
+    # The live session false-fired PRIVATE_REPLY on these un-named conversational
+    # lines (the player talking to teammates / themselves). Without an Ultron
+    # name/wake signal they must never become a private reply.
+    v = ig.classify_scenario(text, seconds_since_response=5.0)
+    assert v.scenario is not Scenario.PRIVATE_REPLY, (text, v)
+
+
+@pytest.mark.parametrize("text", [
+    "Explain the math, Ultron.",
+    "Ultron, what is their economy?",
+    "kenning, what map is this",
+])
+def test_named_question_still_private(text: str) -> None:
+    # A line that NAMES Ultron is genuinely addressed -> private reply (unchanged).
+    v = ig.classify_scenario(text, seconds_since_response=5.0)
+    assert v.scenario is Scenario.PRIVATE_REPLY, (text, v)
+
+
+@pytest.mark.parametrize("text", [
+    "this machine is so slow",          # their PC, not Ultron
+    "reload the machine gun",           # a weapon
+    "that robot in the corner is creepy",
+])
+def test_common_noun_machine_robot_not_private(text: str) -> None:
+    # 'machine' / 'robot' are common nouns that also name Ultron -- as a PRIVATE_REPLY
+    # TRIGGER anywhere they false-fire on ordinary speech (2026-06-22 review). Only the
+    # unambiguous names (ultron / kenning / hey ai / the ai) gate a private reply.
+    v = ig.classify_scenario(text, seconds_since_response=5.0)
+    assert v.scenario is not Scenario.PRIVATE_REPLY, (text, v)

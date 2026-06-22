@@ -3796,7 +3796,7 @@ class RelaySpeechConfig(_Strict):
     #     private replies + social/banter + non-tactical responses. Voice:
     #     "conversation/chat verbosity <level>". (Coerced to a valid level at boot.)
     callout_verbosity: str = "medium"
-    conversation_verbosity: str = "high"
+    conversation_verbosity: str = "low"
     # Named addressees for per-person callouts ("ask Clove to smoke
     # window", "tell Sova to drone sewers"). Empty -> the built-in
     # Valorant agent roster

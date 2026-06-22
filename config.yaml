@@ -1859,7 +1859,7 @@ relay_speech:
   callout_verbosity: "medium"      # CALLOUT flavor-tail length: none/low/medium/high/max
                                    # (none=clean snap, low=+1 word, medium=+short tail, high/max=+more).
                                    # Voice: "<level> flavor" / "callout flavor <level>".
-  conversation_verbosity: "high"   # reply length for private/social/non-tactical: low/medium/high/max.
+  conversation_verbosity: "low"    # reply length for private/social/non-tactical: low/medium/high/max.
                                    # Voice: "conversation/chat verbosity <level>".
   max_line_chars: 360         # ceiling for a full two-sentence reply; trims only at a sentence boundary
   echo_to_user: true          # ALSO play team callouts on your default speakers

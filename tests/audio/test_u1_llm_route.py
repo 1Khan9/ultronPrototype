@@ -317,7 +317,7 @@ def test_config_verbosity_defaults():
     from kenning.config import RelaySpeechConfig
     c = RelaySpeechConfig()
     assert c.callout_verbosity == "medium"
-    assert c.conversation_verbosity == "high"
+    assert c.conversation_verbosity == "low"
 
 
 def test_dispatch_wires_both_verbosity_axes():
@@ -397,3 +397,35 @@ def test_route_all_compose_does_not_crash_on_u1_compound():
     assert called, "reported question must reach the LLM, not a canned fallback"
     assert "soundboard" not in line.lower()
     assert line and line.strip()
+
+
+def test_strip_prompt_echo_wired_into_all_llm_output_paths():
+    # The 2026-06-22 output guard (strip_prompt_echo) must be applied to EVERY u1.0
+    # LLM-authored spoken line -- relay (build_relay_line), social (_social_llm_line),
+    # and private (orchestrator._maybe_handle_private_reply) -- or the prompt-leak /
+    # signature / ramble (live bug bu5fh4lc8) can reach the speakers again.
+    import inspect
+    from kenning.pipeline.orchestrator import Orchestrator
+    assert "strip_prompt_echo" in inspect.getsource(rs.build_relay_line)
+    assert "strip_prompt_echo" in inspect.getsource(rs._social_llm_line)
+    assert "strip_prompt_echo" in inspect.getsource(
+        Orchestrator._maybe_handle_private_reply)
+
+
+def test_route_all_llm_output_prompt_leak_falls_back():
+    # End-to-end: when the model ECHOES its prompt scaffolding (the live failure),
+    # build_relay_line drops it -> the deterministic fallback is spoken, never the
+    # scaffolding. A clutch line ("I got this") with route ON exercises the LLM path.
+    rs.set_u1_llm_route_enabled(True)
+    cmd = rs.match_relay_command("tell my team I got this")
+    assert cmd is not None
+    leak = ("The callout below is the AUTO-NORMALIZED text and may be MANGLED. "
+            "Now say it:")
+
+    def gen(_prompt):
+        return iter([leak])
+
+    line = rs.build_relay_line(cmd, generate_fn=gen)
+    assert line and line.strip()
+    assert "AUTO-NORMALIZED" not in line
+    assert "Now say it" not in line

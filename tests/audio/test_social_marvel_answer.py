@@ -310,3 +310,83 @@ def test_tactical_and_reaction_never_take_answer_path(text) -> None:
 ])
 def test_is_meta_leak(line, leak) -> None:
     assert is_meta_leak(line) is leak
+
+
+# --- dedicated QA-answer command (2026-06-22, user request) ----------------
+
+
+@pytest.mark.parametrize("text,addressee,q_sub", [
+    ("answer my team who's the best duelist on Bind", "team", "best duelist"),
+    ("answer the team should we force or save", "team", "force or save"),
+    ("explain to my team why we should play retake", "team", "play retake"),
+    ("qa my team what agent counters Jett", "team", "counters Jett"),
+])
+def test_qa_team_command(text, addressee, q_sub) -> None:
+    cmd = match_relay_command(text)
+    assert cmd is not None and cmd.directive == "qa", text
+    assert cmd.addressee == addressee and cmd.compose
+    assert q_sub.lower() in (cmd.context or "").lower()
+
+
+@pytest.mark.parametrize("text,agent", [
+    ("answer Sova how does his ult work", "Sova"),
+    ("qa Jett what should I buy this round", "Jett"),
+    ("answer my Reyna when should she ult", "Reyna"),
+    ("explain to Killjoy where to set up", "Killjoy"),
+])
+def test_qa_named_agent_command(text, agent) -> None:
+    cmd = match_relay_command(text)
+    assert cmd is not None and cmd.directive == "qa", text
+    assert cmd.addressee == agent and cmd.compose and cmd.context
+
+
+def test_qa_routes_to_dedicated_subtype_and_prompt() -> None:
+    cmd = match_relay_command("answer my team who's the best controller")
+    assert classify_answer_subtype(cmd) == "qa"
+    call = build_answer_call(cmd)
+    assert call is not None
+    system, user, _sampling, subtype = call
+    assert subtype == "qa"
+    assert "ANSWER for the team" in system or "answer for the team" in system.lower()
+    assert "THE QUESTION TO ANSWER" in user
+
+
+def test_qa_about_marvel_uses_marvel_prompt() -> None:
+    # A QA turn that is ALSO a Marvel topic gets the Marvel canon prompt.
+    cmd = match_relay_command("answer my team who is Tony Stark to you")
+    assert cmd is not None and cmd.directive == "qa"
+    assert classify_answer_subtype(cmd) == "marvel"
+
+
+def test_qa_reaches_the_llm() -> None:
+    cmd = match_relay_command("answer my team should we play for picks")
+    called = []
+
+    def gen(p):
+        called.append(p)
+        return iter(["Pick them apart. Patience is a weapon mortals lack."])
+
+    line = build_relay_line(cmd, generate_fn=gen)
+    assert called, "a QA command must reach the LLM answer path"
+    assert line and line.strip()
+
+
+def test_qa_named_agent_opens_with_name() -> None:
+    cmd = match_relay_command("answer Jett what should she do")
+
+    def gen(p):
+        return iter(["Take space. Punish their hesitation."])  # no name -> must be prefixed
+
+    line = build_relay_line(cmd, generate_fn=gen)
+    assert line.lower().startswith("jett"), line
+
+
+@pytest.mark.parametrize("text", [
+    "ask my team what their favorite colors are",   # RELAY a question, not QA-answer
+    "explain the smoke",                            # no target
+    "tell my team rush B",                          # tactical callout
+    "answer the call",                              # 'call' is not a target
+])
+def test_qa_negatives(text) -> None:
+    cmd = match_relay_command(text)
+    assert getattr(cmd, "directive", None) != "qa", text

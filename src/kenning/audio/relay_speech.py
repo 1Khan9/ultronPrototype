@@ -1331,7 +1331,7 @@ _callout_verbosity: str = (_os_flavor.getenv(
     _os_flavor.getenv("KENNING_U1_VERBOSITY", "medium")).strip().lower() or "medium")
 _conversation_verbosity: str = (_os_flavor.getenv(
     "KENNING_U1_CONVERSATION_VERBOSITY",
-    _os_flavor.getenv("KENNING_U1_VERBOSITY", "high")).strip().lower() or "high")
+    _os_flavor.getenv("KENNING_U1_VERBOSITY", "low")).strip().lower() or "low")
 
 
 def set_callout_verbosity(level: str) -> None:
@@ -1931,6 +1931,70 @@ def _match_imperative_directive(
     return None
 
 
+# --- Dedicated QA-answer command (2026-06-22, user request) ------------------
+# The user POSES a question for Ultron to ANSWER in persona, directed at the whole
+# team or one agent ("answer my team who's the best duelist on Bind", "qa Jett what
+# should I buy"). DISTINCT from "ask my team X" (which RELAYS the question to the
+# team, unanswered). Routes to the dedicated 'qa' answer subtype (build_answer_call
+# -> ANSWER_SYSTEM_FOR['qa']); the addressee (team or the agent) flows through the
+# answer slots so a named agent is addressed by name.
+_QA_VERB_RE = re.compile(
+    r"^\s*(?:can\s+you\s+|could\s+you\s+|please\s+|hey\s+)?"
+    r"(?:answer|qa|q\s*a|explain)\s+"
+    r"(?:this\s+|that\s+|it\s+)?(?:to\s+|for\s+)?(?:my\s+|the\s+|our\s+)?"
+    r"(?P<rest>\S.*)$",
+    re.IGNORECASE,
+)
+_QA_TEAM_RE = re.compile(
+    r"^(?:team|squad|everyone|everybody|the\s+team|the\s+squad|the\s+guys|"
+    r"the\s+boys|the\s+crew)\b[\s,:.\-]*(?P<q>\S.*)$",
+    re.IGNORECASE,
+)
+
+
+def _split_leading_name(
+    text: str, vocabulary: Sequence[str],
+) -> "tuple[Optional[str], Optional[str]]":
+    """If ``text`` opens with a roster name from ``vocabulary``, return
+    (name, remainder); else (None, None). Longest name first so a multi-word
+    homophone ('kay o', 'way lay') matches before a shorter prefix."""
+    low = (text or "").strip()
+    for name in sorted({n for n in vocabulary if n and n.strip()},
+                       key=len, reverse=True):
+        mm = re.match(rf"^{re.escape(name.strip())}\b[\s,:.\-]*(?P<q>\S.*)$",
+                      low, re.IGNORECASE)
+        if mm:
+            return name.strip(), mm.group("q")
+    return None, None
+
+
+def _match_qa_command(
+    cleaned: str, raw_text: str, vocabulary: Sequence[str],
+) -> Optional["RelayCommand"]:
+    """'answer/qa/explain [my|the] <team|agent> <question>' -> Ultron AUTHORS an
+    in-character answer to the question, addressed to the whole team or the named
+    agent. Returns None without a QA lead, a recognised target, or a question."""
+    m = _QA_VERB_RE.match(cleaned or "")
+    if not m:
+        return None
+    rest = m.group("rest").strip()
+    tm = _QA_TEAM_RE.match(rest)
+    if tm:
+        addressee, q = "team", tm.group("q")
+    else:
+        name, q = _split_leading_name(rest, vocabulary)
+        if name is None:
+            return None
+        addressee = _display_name(name)
+    q = (q or "").strip().strip(",;:.-? ").strip()
+    if not q or len(q.split()) < 1:
+        return None
+    return RelayCommand(
+        payload="", raw_text=raw_text, addressee=addressee,
+        compose=True, context=q, directive="qa",
+    )
+
+
 def match_relay_command(
     text: str,
     *,
@@ -1991,6 +2055,15 @@ def match_relay_command(
     repeat = _match_repeat_command(cleaned, text, vocabulary)
     if repeat is not None:
         return repeat
+
+    # Dedicated QA-ANSWER command -- the user poses a question for Ultron to ANSWER
+    # in persona, for the team or a specific agent ("answer my team who's the best
+    # duelist", "qa Jett what should I buy"). High priority so the QA lead wins over
+    # the generic relay/ask matchers; DISTINCT from "ask my team X" (relay the
+    # question unanswered). (2026-06-22, user request)
+    qa = _match_qa_command(cleaned, text, vocabulary)
+    if qa is not None:
+        return qa
 
     # Roast requests ("roast my team") -- verbatim user-curated lines.
     if _ROAST_RE.match(cleaned):
@@ -3903,7 +3976,7 @@ def _social_llm_line(
     if not u1_llm_route_enabled():
         return fallback
     try:
-        from kenning.audio.ultron_prompt import build_social_prompt
+        from kenning.audio.ultron_prompt import build_social_prompt, strip_prompt_echo
         from kenning.audio._ultron_answer import is_meta_leak
         addr = getattr(command, "addressee", "team") or "team"
         ctx = context or (getattr(command, "context", "") or "")
@@ -3933,7 +4006,7 @@ def _social_llm_line(
         out = "".join(tokens).strip()
         if "<think>" in out or "</think>" in out:
             out = re.sub(r"<think>.*?</think>", "", out, flags=re.DOTALL).strip()
-        out = _strip_artifacts(out)
+        out = strip_prompt_echo(_strip_artifacts(out))
         if not out or is_meta_leak(out):
             logger.debug("social LLM line empty/leak -> canned (kind=%s)", kind)
             return fallback
@@ -6825,6 +6898,14 @@ def build_relay_line(
                                   re.IGNORECASE)):
             logger.debug("relay: rejected 'switch' position hallucination %r", line)
             line = ""
+        # Safety net 3 (2026-06-22): the small model sometimes ECHOES the prompt
+        # scaffolding as if it were speech -- the live bug (bu5fh4lc8) spoke the
+        # reconcile note aloud ("The callout below is the AUTO-NORMALIZED text...").
+        # Drop any scaffolding sentence + a trailing "- Ultron" signature; an
+        # all-scaffold output empties here -> fallback below.
+        if line:
+            from kenning.audio.ultron_prompt import strip_prompt_echo
+            line = strip_prompt_echo(line)
     if not line:
         line = fallback
     # One breath: strip newlines/quotes the model may add, cap length.
