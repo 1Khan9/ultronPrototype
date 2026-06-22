@@ -125,6 +125,13 @@ class StopButtonOverlay:
         on_toggle_ptt: Optional[Callable[[bool], None]] = None,
         ptt_enabled: bool = True,
         ptt_height: int = 30,
+        on_restart: Optional[Callable[[], None]] = None,
+        on_exit: Optional[Callable[[], None]] = None,
+        restart_height: int = 28,
+        exit_height: int = 28,
+        on_flag: Optional[Callable[[], None]] = None,
+        flag_height: int = 26,
+        flag_label: str = "FLAG LAST",
     ) -> None:
         self._on_stop = on_stop
         self._width = max(72, int(width))
@@ -145,6 +152,17 @@ class StopButtonOverlay:
         self._on_toggle_ptt = on_toggle_ptt
         self._ptt_enabled = bool(ptt_enabled)
         self._ptt_h = max(0, int(ptt_height))
+        # Optional RESTART + EXIT action buttons (orchestrator-wired). Restart =
+        # full cleanup then relaunch the same build; Exit = full cleanup then quit.
+        self._on_restart = on_restart
+        self._on_exit = on_exit
+        self._restart_h = max(0, int(restart_height))
+        self._exit_h = max(0, int(exit_height))
+        # Optional FLAG button: logs the last turn (disliked / missed / unwanted
+        # response) to a review log via the orchestrator-wired callback.
+        self._on_flag = on_flag
+        self._flag_h = max(0, int(flag_height))
+        self._flag_label = flag_label or "FLAG LAST"
         self._ui: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self._lock = threading.Lock()
@@ -213,7 +231,13 @@ class StopButtonOverlay:
             btn_h = self._btn_h
             _has_ptt = self._on_toggle_ptt is not None and self._ptt_h > 0
             ptt_h = self._ptt_h if _has_ptt else 0
-            height = bar_h + btn_h + ptt_h
+            _has_restart = self._on_restart is not None and self._restart_h > 0
+            _has_exit = self._on_exit is not None and self._exit_h > 0
+            _has_flag = self._on_flag is not None and self._flag_h > 0
+            restart_h = self._restart_h if _has_restart else 0
+            exit_h = self._exit_h if _has_exit else 0
+            flag_h = self._flag_h if _has_flag else 0
+            height = bar_h + btn_h + restart_h + exit_h + flag_h + ptt_h
             root = tk.Tk()
             root.title("ULTRON // STOP")
             root.geometry(f"{w}x{height}+{self._x}+{self._y}")
@@ -283,6 +307,66 @@ class StopButtonOverlay:
                 ptt_btn.configure(command=_toggle_ptt)
                 ptt_btn.pack(fill="x", side="bottom")
                 ptt_btn.bind("<Button-3>", lambda _e: self.hide())
+
+            # RESTART + EXIT action buttons -- packed at the bottom (above PTT,
+            # below STOP). Each runs Ultron's full cleanup; Restart then relaunches
+            # the same build fresh, Exit quits leaving nothing running.
+            def _make_action_btn(text, fg, fill, cb):
+                b = tk.Button(
+                    root, text=text, bg=fill, fg=fg,
+                    activebackground=fill, activeforeground="#ffffff",
+                    relief="flat", bd=0, highlightthickness=1,
+                    highlightbackground=fg, highlightcolor=fg,
+                    font=("Segoe UI Semibold", 9), cursor="hand2",
+                )
+
+                def _run(_cb=cb):
+                    try:
+                        _cb()
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning("stop-window action failed: %s", e)
+                b.configure(command=_run)
+                b.pack(fill="x", side="bottom")
+                b.bind("<Button-3>", lambda _e: self.hide())
+
+            if _has_exit and self._on_exit is not None:
+                _make_action_btn("EXIT", "#ff6b6b", "#1a0d0d", self._on_exit)
+            if _has_restart and self._on_restart is not None:
+                _make_action_btn("RESTART", "#e0a82e", "#1a160a", self._on_restart)
+
+            # FLAG button -- log the last turn (disliked response / missed response
+            # / response that should not have happened) to logs/flagged_turns.jsonl
+            # for later review. Flashes a brief confirmation so the click is felt.
+            if _has_flag and self._on_flag is not None:
+                _flag_fg, _flag_fill = "#5b8cff", "#0d1626"      # cool blue
+                flag_btn = tk.Button(
+                    root, text=self._flag_label, bg=_flag_fill, fg=_flag_fg,
+                    activebackground=_flag_fill, activeforeground="#ffffff",
+                    relief="flat", bd=0, highlightthickness=1,
+                    highlightbackground=_flag_fg, highlightcolor=_flag_fg,
+                    font=("Segoe UI Semibold", 9), cursor="hand2",
+                )
+
+                def _do_flag(_btn=flag_btn):
+                    try:
+                        if self._on_flag is not None:
+                            self._on_flag()
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning("flag callback failed: %s", e)
+                    # brief confirmation flash, then revert to the label
+                    try:
+                        _btn.configure(text="FLAGGED ✓", fg="#3ddc84",
+                                       highlightbackground="#3ddc84")
+                        _btn.after(900, lambda: _btn.configure(
+                            text=self._flag_label, fg=_flag_fg,
+                            highlightbackground=_flag_fg))
+                    except Exception:  # noqa: BLE001
+                        pass
+                    logger.info("flag button clicked -> last turn logged")
+
+                flag_btn.configure(command=_do_flag)
+                flag_btn.pack(fill="x", side="bottom")
+                flag_btn.bind("<Button-3>", lambda _e: self.hide())
 
             # The STOP button -- the only visible element: red text + a 1px red
             # border on a near-black face, brightening while hovered/pressed.

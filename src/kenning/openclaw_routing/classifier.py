@@ -106,6 +106,19 @@ _MODEL_SWITCH_4B_TOKEN = r"(?:4\s*[Bb]|four\s*[Bb]|for\s*[Bb]|4\s*-\s*[Bb])"
 # "8B" / "8 b" / "eight B".
 _MODEL_SWITCH_8B_TOKEN = r"(?:8\s*[Bb]|eight\s*[Bb]|ate\s*[Bb]|8\s*-\s*[Bb])"
 _MODEL_SWITCH_9B_TOKEN = r"(?:9\s*[Bb]|nine\s*[Bb]|9\s*-\s*[Bb])"
+# 2026-06-20 (Ultron 1.0 VRAM A/B model-lab): "3.5" selects the newer
+# Huihui-Qwen3.5-4B-abliterated candidate, distinct from the Qwen3-series
+# "4B" (josiefied-qwen3-4b). Whisper renders "three point five" / "3.5"
+# cleanly; an optional leading "qwen" is consumed by the model-noun group
+# in _MODEL_SWITCH_PATTERNS below.
+_MODEL_SWITCH_35_TOKEN = r"(?:3\s*\.\s*5|three\s*(?:point\s+)?five)"
+# 2026-06-20 (Ultron 1.0 VRAM A/B): "2507" selects the
+# Josiefied-Qwen3-4B-Instruct-2507-gabliterated-v2 candidate (the user's
+# "best 4B" pick), distinct from the static "4B" (josiefied-qwen3-4b) and
+# the "3.5". Whisper renders the spoken year cleanly as digits or words.
+_MODEL_SWITCH_2507_TOKEN = (
+    r"(?:2507|2\s*5\s*0\s*7|twenty[\s-]?five\s+(?:oh|o|zero|hundred)\s+seven)"
+)
 # 2026-05-19 Track 4 voice integration: word-named family tokens.
 # Whisper transcribes spoken family names cleanly so "switch to
 # gemma" / "switch to llama" route through the same MODEL_SWITCH
@@ -114,7 +127,8 @@ _MODEL_SWITCH_9B_TOKEN = r"(?:9\s*[Bb]|nine\s*[Bb]|9\s*-\s*[Bb])"
 _MODEL_SWITCH_GEMMA_TOKEN = r"(?:gemma(?:\s+3(?:\s+4\s*[Bb])?)?)"
 _MODEL_SWITCH_LLAMA_TOKEN = r"(?:llama(?:\s+3(?:[.\s]2)?(?:\s+3\s*[Bb])?)?)"
 _MODEL_SWITCH_TOKEN = (
-    rf"(?P<model>{_MODEL_SWITCH_4B_TOKEN}|{_MODEL_SWITCH_8B_TOKEN}|"
+    rf"(?P<model>{_MODEL_SWITCH_35_TOKEN}|{_MODEL_SWITCH_2507_TOKEN}|"
+    rf"{_MODEL_SWITCH_4B_TOKEN}|{_MODEL_SWITCH_8B_TOKEN}|"
     rf"{_MODEL_SWITCH_9B_TOKEN}|{_MODEL_SWITCH_GEMMA_TOKEN}|"
     rf"{_MODEL_SWITCH_LLAMA_TOKEN})"
 )
@@ -214,6 +228,16 @@ def _resolve_model_switch_target(matched_token: str) -> str:
     swap_llm_preset's GGUF-presence validation surfaces the
     actionable error when the user tries to swap.
     """
+    norm = matched_token.lower()
+    # 2026-06-20 (Ultron 1.0 VRAM A/B): the "3.5" token selects the newer
+    # Qwen3.5-series 4B (Huihui, non-think-trained). Checked before the
+    # digit branches so a leading "3" is never misread.
+    if ("3.5" in norm or "3 . 5" in norm
+            or "three point five" in norm or "three five" in norm):
+        return "huihui-qwen3.5-4b"
+    # 2026-06-20: "2507" -> the gabliterated-v2 candidate (user's best-4B pick).
+    if "2507" in norm.replace(" ", "") or "twenty" in norm:
+        return "josiefied-qwen3-4b-2507g"
     t = matched_token.lower().replace("-", "").replace(" ", "")
     # Word-named families first -- their tokens contain alphabetic
     # characters that would not match the digit-leading branches.

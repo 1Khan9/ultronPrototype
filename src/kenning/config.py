@@ -722,6 +722,36 @@ LLM_PRESETS: dict[str, dict[str, Any]] = {
         "n_ctx": 6144,
         "draft_model_path": None,
     },
+    # 2026-06-20 -- Ultron 1.0 VRAM A/B candidate. Huihui-Qwen3.5-4B-
+    # abliterated (huihui-ai), imatrix Q4_K_M by mradermacher. The newer
+    # Qwen3.5 series; a TRL non-think fine-tune over Qwen3.5-4B-Base, so it
+    # is THINKING-SAFE by construction (emits no <think> block). That
+    # sidesteps the Qwen3.5 /no_think in-process unreliability (llama.cpp
+    # #20182) which would otherwise risk an EMPTY reply under the u1.0
+    # per-route max_tokens caps (a Qwen3.5 model that thinks would spend
+    # its budget on the hidden block, leaving nothing after the strip).
+    # ~2.7 GB on disk; n_ctx pinned to the u1.0 4096 cap. Reachable by
+    # voice via "switch to the 3.5"; A/B partner to josiefied-qwen3-4b
+    # (Qwen3-4B-2507) against the josiefied-qwen3-8b control. Staged in
+    # E:\UltronModels (the models/ junction).
+    "huihui-qwen3.5-4b": {
+        "model_path": "models/Huihui-Qwen3.5-4B-abliterated.i1-Q4_K_M.gguf",
+        "n_ctx": 4096,
+        "draft_model_path": None,
+    },
+    # 2026-06-20 -- Ultron 1.0 VRAM A/B candidate (USER PICK: "may be the
+    # best 4B"). Josiefied-Qwen3-4B-Instruct-2507-gabliterated-v2
+    # (Goekdeniz-Guelmez), imatrix Q4_K_M by mradermacher. Base =
+    # Qwen3-4B-Instruct-2507 -> thinking-safe Qwen3 family (/no_think works).
+    # The "gabliterated-v2" surgical abliteration + the i1 imatrix quant aim
+    # for higher fidelity than the static josiefied-qwen3-4b (also a 2507
+    # abliteration). Reachable by voice via "switch to 2507". ~2.7 GB on
+    # disk; n_ctx at the u1.0 4096 cap.
+    "josiefied-qwen3-4b-2507g": {
+        "model_path": "models/Josiefied-Qwen3-4B-Instruct-2507-gabliterated-v2.i1-Q4_K_M.gguf",
+        "n_ctx": 4096,
+        "draft_model_path": None,
+    },
     # 2026-05-19 -- Gemma 3 4B abliterated (mradermacher quants of the
     # Goekdeniz-Guelmez Josiefied abliterated fine-tune over Google's
     # gemma-3-4b-it base model). IFEval scores 90.2 vs Qwen3's pattern
@@ -839,6 +869,12 @@ class LLMConfig(_Strict):
         "qwen3.5-4b",
         "josiefied-qwen3-8b",
         "josiefied-qwen3-4b",
+        # 2026-06-20 (Ultron 1.0 VRAM A/B model-lab): newer 4B candidates
+        # switchable by voice ("the 3.5" / "2507"). MUST mirror LLM_PRESETS
+        # (the preset field is a Literal; a key missing here fails
+        # reload_for_preset validation -- pinned by test_llm_presets_match_literal).
+        "huihui-qwen3.5-4b",
+        "josiefied-qwen3-4b-2507g",
         # 2026-05-19: added but NOT default. See LLM_PRESETS comments
         # for swap-readiness contract (GGUFs must be on disk first).
         "gemma-3-4b-abliterated",
@@ -3740,6 +3776,27 @@ class RelaySpeechConfig(_Strict):
     # direct second-person line via the LLM. When False, the relay
     # speaks a deterministic "Team: <payload>" line instead.
     rephrase: bool = True
+    # ULTRON 1.0: route EVERY response (tactical callouts, social/banter,
+    # identity, private replies) through the LLM by default -- the curated
+    # deterministic pools become STYLE EXEMPLARS the model writes fresh
+    # from, never canned soundboard lines. Applied to the runtime flag
+    # (relay_speech.set_u1_llm_route_enabled) at orchestrator boot; the
+    # voice command "switch to deterministic callouts" flips it back at
+    # runtime ("back to smart callouts" returns to the LLM). The word-exact
+    # paths (verbatim "repeat exactly X", curated known-fact answers) stay
+    # deterministic regardless -- they must not be rephrased.
+    llm_route: bool = True
+    # ULTRON 1.0 verbosity -- TWO axes (2026-06-20), applied to the runtime
+    # relay_speech setters at orchestrator boot:
+    #   * callout_verbosity (none/low/medium/high/max): the flavor-tail length on
+    #     a tactical relay callout. none = clean callout, no tail (~ the
+    #     deterministic snap); low = +1 word; medium = +a short tail; high/max =
+    #     a handful more each. Voice: "<level> flavor" / "callout flavor <level>".
+    #   * conversation_verbosity (low/medium/high/max): the reply length for
+    #     private replies + social/banter + non-tactical responses. Voice:
+    #     "conversation/chat verbosity <level>". (Coerced to a valid level at boot.)
+    callout_verbosity: str = "medium"
+    conversation_verbosity: str = "high"
     # Named addressees for per-person callouts ("ask Clove to smoke
     # window", "tell Sova to drone sewers"). Empty -> the built-in
     # Valorant agent roster
@@ -3818,6 +3875,12 @@ class StopButtonConfig(_Strict):
     button_fill: str = "#140709"       # near-black button face
     always_on_top: bool = True
     label: str = "STOP"
+    # FLAG button (2026-06-20): logs the last turn -- a disliked response, a missed
+    # response (he should have answered but didn't), or a response that should not
+    # have happened -- to logs/flagged_turns.jsonl for later review/refinement.
+    # Silent (no TTS); flashes a brief confirmation on click. 0 hides it.
+    flag_height: int = Field(default=26, ge=0, le=200)
+    flag_label: str = "FLAG LAST"
     x: int = Field(default=60, ge=0, le=10000)   # initial top-left position
     y: int = Field(default=60, ge=0, le=10000)
 

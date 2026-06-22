@@ -676,9 +676,10 @@ def test_relay_tts_text_spells_site_letter_a(line: str, spoken: str) -> None:
         "I am Ultron, a mind from the future.",
         "A loss. Disappointing.",
         "You are nothing but a bot.",
-        "They are A.",          # standalone letter already pronounced correctly
-        "They are B long.",     # B already reads as a letter
-        "Push to A. They never learn.",
+        # NB: "They are A." / "They are B long." / "Push to A. ..." now SPELL the
+        # site letter (2026-06-20: the player wants A/B/C spoken as the LETTER,
+        # not the word 'a' -- "rotate to A and plant" was said "rotate to uh and
+        # plant"). Those cases moved to tests/audio/test_site_letter_tts.py.
     ],
 )
 def test_relay_tts_text_leaves_non_site_a_untouched(line: str) -> None:

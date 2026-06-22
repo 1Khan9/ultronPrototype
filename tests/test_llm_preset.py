@@ -43,6 +43,21 @@ def test_default_preset_is_josiefied_4b() -> None:
     assert cfg.preset == "josiefied-qwen3-4b"
     assert cfg.model_path == "models/Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf"
     assert cfg.n_ctx == 6144
+
+
+def test_llm_presets_match_literal() -> None:
+    """Every LLM_PRESETS key must validate as an LLMConfig.preset value.
+
+    The ``preset`` field is a ``Literal`` enum. A preset added to
+    ``LLM_PRESETS`` but NOT to the ``Literal`` passes the ``preset in
+    LLM_PRESETS`` guard in ``reload_for_preset`` and then fails config
+    re-validation at swap time -- the 2026-06-20 VRAM model-lab bug
+    (huihui-qwen3.5-4b / josiefied-qwen3-4b-2507g). This pins the two in
+    sync so a future preset addition that forgets the Literal is caught.
+    """
+    for name in LLM_PRESETS:
+        cfg = LLMConfig(preset=name)  # ValidationError here if not in the Literal
+        assert cfg.preset == name
     # No paired draft model -- no abliterated 0.6B / 0.8B GGUF on HF.
     assert cfg.draft_model_path is None
 
@@ -145,6 +160,10 @@ def test_preset_table_contents() -> None:
     assert set(LLM_PRESETS.keys()) == {
         "qwen3.5-9b", "qwen3.5-4b",
         "josiefied-qwen3-8b", "josiefied-qwen3-4b",
+        # 2026-06-20 VRAM A/B model-lab additions (GGUFs on disk in the
+        # E:\UltronModels store; switchable by voice "the 3.5" / "2507").
+        "huihui-qwen3.5-4b",
+        "josiefied-qwen3-4b-2507g",
         # 2026-05-19 additions: candidates for daily-use + gaming-mode
         # swaps. GGUFs NOT yet on disk -- presets are paper-only until
         # download. swap_llm_preset.py refuses the swap if files are

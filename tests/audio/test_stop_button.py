@@ -191,3 +191,97 @@ def test_dispatch_handles_missing_button() -> None:
     # Still consumes the command (True) and speaks a graceful unavailable line.
     assert handled is True
     assert said and "available" in said[0].lower()
+
+
+# ---------------------------------------------------------------------------
+# FLAG button (2026-06-20) -- last-turn review logging
+# ---------------------------------------------------------------------------
+
+
+def test_overlay_accepts_flag_callback() -> None:
+    hits = []
+    ov = StopButtonOverlay(on_stop=lambda: None,
+                           on_flag=lambda: hits.append(1),
+                           flag_height=30, flag_label="FLAG IT")
+    assert ov._on_flag is not None
+    assert ov._flag_h == 30
+    assert ov._flag_label == "FLAG IT"
+    ov._on_flag()
+    assert hits == [1]
+
+
+def test_overlay_flag_defaults_and_clamp() -> None:
+    ov = StopButtonOverlay(on_stop=lambda: None)
+    assert ov._on_flag is None            # absent by default
+    assert ov._flag_h == 26               # default height
+    assert ov._flag_label == "FLAG LAST"
+    ov2 = StopButtonOverlay(on_stop=lambda: None, flag_height=-5, flag_label="")
+    assert ov2._flag_h == 0               # clamped to >= 0
+    assert ov2._flag_label == "FLAG LAST"  # empty -> default
+
+
+def test_config_flag_defaults() -> None:
+    from kenning.config import StopButtonConfig
+    c = StopButtonConfig()
+    assert c.flag_height == 26
+    assert c.flag_label == "FLAG LAST"
+
+
+def test_stop_button_flag_logs_last_turn(tmp_path, monkeypatch) -> None:
+    import json
+    import pathlib
+    import time
+    import kenning.config as kc
+    monkeypatch.setattr(kc, "resolve_path",
+                        lambda p: tmp_path / pathlib.Path(p).name)
+    o = Orchestrator.__new__(Orchestrator)
+    o._current_raw_stt = "their sova ulted B"
+    o._current_raw_stt_monotonic = time.monotonic()
+    o._last_response_text = "Their Sova ult is up. Play wide."
+    o._last_response_finished_monotonic = time.monotonic()
+    o._last_scenario = None
+    o._stop_button_flag()
+    rec = json.loads(
+        (tmp_path / "flagged_turns.jsonl").read_text("utf-8").strip())
+    assert rec["last_heard"] == "their sova ulted B"
+    assert rec["last_response"] == "Their Sova ult is up. Play wide."
+    assert rec["flag"] == "user_flagged_turn"
+    assert "flagged_at" in rec and "seconds_since_response" in rec
+
+
+def test_stop_button_flag_appends(tmp_path, monkeypatch) -> None:
+    import pathlib
+    import time
+    import kenning.config as kc
+    monkeypatch.setattr(kc, "resolve_path",
+                        lambda p: tmp_path / pathlib.Path(p).name)
+    o = Orchestrator.__new__(Orchestrator)
+    o._current_raw_stt = "x"
+    o._current_raw_stt_monotonic = time.monotonic()
+    o._last_response_text = "y"
+    o._last_response_finished_monotonic = time.monotonic()
+    o._last_scenario = None
+    o._stop_button_flag()
+    o._stop_button_flag()
+    lines = (tmp_path / "flagged_turns.jsonl").read_text(
+        "utf-8").strip().splitlines()
+    assert len(lines) == 2          # appends, never overwrites
+
+
+def test_stop_button_flag_fail_open(monkeypatch) -> None:
+    # A broken resolve_path (or missing attrs) must never raise out of the click.
+    import kenning.config as kc
+
+    def _boom(_p):
+        raise RuntimeError("disk gone")
+
+    monkeypatch.setattr(kc, "resolve_path", _boom)
+    o = Orchestrator.__new__(Orchestrator)
+    o._stop_button_flag()           # missing attrs + broken path: must not raise
+
+
+def test_construction_wires_on_flag() -> None:
+    import inspect
+    src = inspect.getsource(Orchestrator.__init__)
+    assert "on_flag=self._stop_button_flag" in src
+    assert "flag_height=_sb.flag_height" in src

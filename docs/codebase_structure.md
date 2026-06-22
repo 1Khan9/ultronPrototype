@@ -27,6 +27,52 @@
 > - Full runbook: **`docs/ultron_0_1_baseline.md`**. Post-0.1 roadmap:
 >   **`docs/latency_optimizations_V1.md`**.
 >
+> **Validating HEAD: ULTRON 1.0 — LLM-ROUTE-BY-DEFAULT + DUAL VERBOSITY + FLAG BUTTON**
+> (2026-06-20, branch `claude/pensive-brahmagupta-dff2e4`, built on a `checkpoint` commit of the live u1.0
+> WIP + the 2507g VRAM deploy). User mandate: route EVERY response through the LLM BY DEFAULT (the loaded
+> model — the 4B `josiefied-qwen3-4b-2507g` by default, model-agnostic via the voice model-lab; the curated
+> pools become STYLE EXAMPLES the model writes fresh from — never a soundboard), with a voice command to fall
+> back to the deterministic pools; verbosity becomes TWO prompt-level axes; plus a stop-window FLAG button.
+> - **SLICE 1 LANDED — LLM route by default + master toggle.** NEW config `relay_speech.llm_route` (bool,
+>   default **True**); `pipeline/orchestrator.py` __init__ applies it at boot via
+>   `relay_speech.set_u1_llm_route_enabled(...)` (near the stop-button build) — so the LIVE build routes
+>   everything through the 8B by default while the `relay_speech` MODULE default stays OFF for test isolation
+>   (the deterministic relay suite relies on it). NEW `relay_speech.match_llm_route_toggle` (distinct vocab:
+>   "switch to deterministic/curated callouts" → OFF; "back to smart callouts" / "route through the model" →
+>   ON; OFF checked first; disjoint from the thinking/flavor toggles) + `orchestrator._maybe_handle_llm_route_toggle`
+>   wired into BOTH dispatch paths AFTER the thinking toggle. `u1_llm_route_enabled()` already gates BOTH the
+>   tactical relay (`ultron_prompt.build_relay_prompt`) AND the social path (`build_social_prompt`), so the
+>   one flag routes tactical + social + private + conversational through the 8B. The word-exact paths
+>   (verbatim "repeat exactly X", curated known-fact answers) stay deterministic regardless (per the user).
+>   Tests: `tests/audio/test_u1_llm_route.py` (+toggle hits/misses, thinking-disjoint, config default,
+>   dispatch wiring — 57 pass; the 155-test relay+route suite green, no regression).
+> - **SLICE 2 LANDED — two verbosity axes (prompt-level).** `ultron_prompt` now has TWO axes:
+>   `CALLOUT_VERBOSITY_LEVELS` = none/low/medium/high/max (the flavor-tail length on a tactical callout: none =
+>   clean callout, no tail ≈ the deterministic snap; low = +1 word; medium = +a short tail; high/max = a handful
+>   more each) feeding `build_relay_prompt`, and `CONVERSATION_VERBOSITY_LEVELS` = low/medium/high/max (reply
+>   length) feeding `build_private_prompt` + `build_social_prompt`. Each level has its own strict prompt directive
+>   (`_CALLOUT_VERBOSITY_DIRECTIVE` / `_CONVERSATION_VERBOSITY_DIRECTIVE`) + scaled `max_tokens`
+>   (`_CALLOUT_MAX_TOKENS` / `_CONVERSATION_MAX_TOKENS`); the flavor-tail OFF toggle maps to the callout `none`
+>   level. `relay_speech` splits the verbosity global into `callout_verbosity()` / `conversation_verbosity()`
+>   (+ setters; `relay_verbosity` kept as a callout alias) + two disjoint matchers: `match_verbosity_command`
+>   (callout — bare "flavor <level>" / "callout flavor <level>") and `match_conversation_verbosity_command`
+>   (requires the conversation/chat/talk axis word). Orchestrator `_maybe_handle_verbosity_command` +
+>   `_maybe_handle_conversation_verbosity_command` wired into both dispatch paths; config
+>   `relay_speech.callout_verbosity` (default "medium") / `.conversation_verbosity` (default "high") applied at
+>   boot. The post-LLM fact-preservation guards are unchanged. Tests: `tests/audio/test_ultron_prompt.py`
+>   (+dual-axis) + `test_u1_llm_route.py` (+conversation matcher, two-axis independence, config defaults,
+>   dispatch order) — 250 mapped pass.
+> - **SLICE 3 LANDED — stop-window FLAG button.** `audio/stop_button.py` gains an optional FLAG button
+>   (`on_flag` callback + `flag_height` / `flag_label`, wired by the orchestrator) below the STOP/RESTART/EXIT/PTT
+>   rows; clicking it flashes a brief "FLAGGED ✓" and fires `Orchestrator._stop_button_flag`, which APPENDS the
+>   last turn to `logs/flagged_turns.jsonl` — `last_heard` (the per-turn `self._current_raw_stt` + a new
+>   `self._current_raw_stt_monotonic`), `last_response` (`_last_response_text` +
+>   `_last_response_finished_monotonic`), `seconds_since_heard` / `seconds_since_response`, `last_scenario`, + a
+>   wall-clock — so a reviewer can tell a disliked response from a MISSED one (heard, no reply) from an UNWANTED
+>   one. Silent (fires mid-stream) + fail-open. Config `stop_button.flag_height` (26) / `.flag_label`
+>   ("FLAG LAST"). Tests: `tests/audio/test_stop_button.py` (+8: overlay wiring/defaults, the log record,
+>   append-not-overwrite, fail-open, construction wiring) — 54 pass.
+>
 > **Validating HEAD: ULTRON 1.0 PIVOT — route-all-through-8B (ACTIVE, 2026-06-20)**
 > Branch `claude/infallible-kepler-0a865d` (off `main` @ `6064e5f`); NOT on `main`/`origin/main` yet — the
 > whole pivot is gated behind `KENNING_U1_LLM_ROUTE` (default OFF), so `main` runtime behavior is unchanged.
@@ -7340,6 +7386,7 @@ Set `$env:PYTEST_RUN_GPU_TESTS = "1"` before pytest. Includes real Claude API ca
 | `automation_tasks.jsonl` | `AutomationTaskRunner._audit()` | JSONL | Phase 5 OpenClaw task records |
 | `safety_audit.jsonl` | `safety.audit.AuditLog.append()` | JSONL with SHA-256 hash chain | 2026-05-12 Phases 2-5: tamper-evident audit for the runtime tool-call validator; `verify_chain()` rebuilds the chain to detect tampering |
 | `supervisor_decisions.jsonl` | `coding.project_supervisor.ProjectSupervisor._record_decision()` | JSONL | 2026-05-22: every supervisor decision (action / target / confidence / reasoning / candidates / file_hints) for offline threshold tuning |
+| `flagged_turns.jsonl` | `pipeline.orchestrator.Orchestrator._stop_button_flag()` | JSONL | 2026-06-20: the stop-window FLAG button -- last turn (last_heard + last_response + seconds_since_* + last_scenario) flagged by the user as a disliked / missed / unwanted response, for later review/refinement |
 | `eval_runs/<ts>.json` | `scripts/eval_harness.py` | JSON | 2026-05-18 Phase 0: classifier-only eval harness output (routing + addressing + web_gate accuracy on 60-row corpus) |
 | `observations.jsonl` | `observations.writer.ObservationWriter.emit()` | JSONL canonical schema | 2026-05-18 Phase 1: 12-field canonical observation framework write target (suppressed during pytest runs via autouse fixture) |
 | `gaming_mode.jsonl` | `openclaw_routing.gaming_mode.GamingModeManager._audit()` | JSONL | V1-gap A1: engage/disengage outcomes with per-plugin states |

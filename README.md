@@ -6,7 +6,7 @@
 
 *Say "kenning." Talk. Get answers in a custom voice. Everything runs on your GPU.*
 
-[![tests](https://img.shields.io/badge/tests-11073%20passing-brightgreen?style=flat-square)](https://github.com/1v9Khan/ultronPrototype)
+[![tests](https://img.shields.io/badge/tests-11184%20passing-brightgreen?style=flat-square)](https://github.com/1v9Khan/ultronPrototype)
 [![latency](https://img.shields.io/badge/TTFA-~266ms-blueviolet?style=flat-square)](#-at-a-glance)
 [![VRAM](https://img.shields.io/badge/VRAM-6.3GB%20standby-orange?style=flat-square)](#-at-a-glance)
 [![python](https://img.shields.io/badge/python-3.11+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
@@ -33,19 +33,21 @@ streamable while the dev version is under maintenance) with
 
 ## 🚧 In development — Ultron 1.0
 
-The active dev line is **Ultron 1.0**: routing every response through an in-process 8B LLM, with the
-deterministic snap matchers retired-not-removed and repurposed as routers that pick a curated prompt and
-inject the matching snap lines + per-agent libraries as in-context exemplars; plus an optional-wakeword
-always-listening intent gate and `no / low / high` verbosity. All of it sits behind the `KENNING_U1_LLM_ROUTE`
-flag (default **off**), so the shipped behavior is unchanged until each increment is proven regression-clean.
-Architecture, live status, and the regression baseline live under
-[`docs/ultron_1_0/`](docs/ultron_1_0/) (start at `00_process_log/STATUS.md`).
-
-The pipeline is now feature-complete behind its flag: the always-listening four-class intent gate is wired into
-the run loop (`addressing.always_listening`, default off), private "me-only" replies route to the desktop
-channel, and a labeled audio end-to-end battery exercises the whole path. Every increment is regression-clean
-against the frozen control baseline and listed in [`CHANGELOG.md`](CHANGELOG.md). Live calibration of the gate
-thresholds and the latency pass remain before the flags flip on by default.
+The active dev line is **Ultron 1.0**: every response is now authored by the loaded local LLM **by default**,
+with a voice command to switch back to the deterministic curated pools at any time (verbatim "repeat" lines and
+known-fact answers always stay exact). The deterministic snap matchers are retired-not-removed and repurposed as
+routers that pick a curated prompt and inject the matching snap lines + per-agent libraries as in-context
+exemplars. Verbosity is now set at the **prompt level** on two independent, voice-switchable axes — a **callout**
+axis (none / low / medium / high / max flavor-tail length on a tactical callout; "none" ≈ the old deterministic
+snap) and a **conversation** axis (low / medium / high / max reply length for private and social lines) — each
+with strict per-level guidelines so wording and personality stay varied without losing facts or overrunning the
+length. Plus an optional-wakeword always-listening four-class intent gate wired into the run loop
+(`addressing.always_listening`, default off) and private "me-only" replies that route to the desktop channel. A
+stop-window **FLAG button** logs the last turn — a disliked response, one that shouldn't have fired, or one that
+should have but didn't — to a review log for later refinement. Each increment is proven regression-clean against
+the frozen control baseline; the stable Ultron 0.1 baseline above is untouched. Architecture, live status, and
+the regression baseline live under [`docs/ultron_1_0/`](docs/ultron_1_0/) (start at `00_process_log/STATUS.md`).
+Live calibration of the gate thresholds and the latency pass remain before the flags flip on by default.
 
 ---
 
@@ -83,7 +85,7 @@ thresholds and the latency pass remain before the flags flip on by default.
 
 |  |  |
 |---|---|
-| 🧪 &nbsp;**Tests** | 10357 passing · 39 skipped · 10 failing (pre-existing) (~202 s sweep) |
+| 🧪 &nbsp;**Tests** | 11184 passing · 39 skipped · 24 pre-existing baseline fails (~160 s sweep) |
 | ⚡ &nbsp;**Latency (TTFA)** | ~266 ms composite cache-hit turn (LLM TTFT 172 ms, TTS synth 78 ms, STT 16 ms) |
 | 🧠 &nbsp;**VRAM** | ~6.3 GB standby on RTX 4070 Ti (peak ~6.7 GB) → ~2.1 GB in gaming mode |
 | 🛠️ &nbsp;**Active stack** | Parakeet TDT STT (CUDA) · Qwen 3.5 4B Q4_K_M (CUDA) · Kokoro StyleTTS2 (CUDA, fine-tuned voice) · OpenClaw bridge live |

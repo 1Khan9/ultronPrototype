@@ -55,10 +55,19 @@ def test_verbosity_differentiates_directive_and_tokens():
 
 
 def test_flavor_toggle():
-    on = up.build_relay_prompt("they have no smokes", flavor_tail=True)
-    off = up.build_relay_prompt("they have no smokes", flavor_tail=False)
-    assert up._FLAVOR_ON in on.user and up._FLAVOR_ON not in off.user
-    assert up._FLAVOR_OFF in off.user and up._FLAVOR_OFF not in on.user
+    # On the CALLOUT (relay) path the flavor-tail toggle now maps to the callout
+    # verbosity: flavor_tail=False forces the "none" level (clean callout, NO
+    # tail); flavor_tail=True uses the requested level's tail directive.
+    on = up.build_relay_prompt("they have no smokes", verbosity="high", flavor_tail=True)
+    off = up.build_relay_prompt("they have no smokes", verbosity="high", flavor_tail=False)
+    assert up._CALLOUT_VERBOSITY_DIRECTIVE["high"] in on.user
+    assert up._CALLOUT_VERBOSITY_DIRECTIVE["high"] not in off.user
+    assert up._CALLOUT_VERBOSITY_DIRECTIVE["none"] in off.user   # off -> the no-tail directive
+    # The private (conversation) path keeps the explicit _FLAVOR_ON/_FLAVOR_OFF toggle.
+    pon = up.build_private_prompt("what map is this", flavor_tail=True)
+    poff = up.build_private_prompt("what map is this", flavor_tail=False)
+    assert up._FLAVOR_ON in pon.user and up._FLAVOR_ON not in poff.user
+    assert up._FLAVOR_OFF in poff.user and up._FLAVOR_OFF not in pon.user
 
 
 def test_exemplars_injected_custom_and_default():
@@ -88,8 +97,29 @@ def test_named_addressee_opens_with_name():
 
 def test_compound_combines_into_one_line():
     r = up.build_relay_prompt("Jett hit 84, Breach hit 97, one rotating B", compound=True)
-    assert "ONE combined spoken line" in r.user
+    assert "Relay ALL of these callouts" in r.user   # combine-all-into-one directive
+    assert "cohesive" in r.user                       # u1.0: one cohesive natural relay, not a list
     assert "Jett hit 84, Breach hit 97, one rotating B" in r.user
+
+
+def test_raw_text_reconcile_block_when_differs():
+    # u1.0: when the raw STT differs from the normalized callout, the prompt shows BOTH
+    # so the 8B can reconcile a mistranscription vs a normalization mangle.
+    r = up.build_relay_prompt(
+        "Sova hit 84, Sage back site",
+        raw_text="So my team Silva hit 84, sage back site",
+    )
+    assert "RAW speech-to-text" in r.user
+    assert "So my team Silva hit 84, sage back site" in r.user   # raw transcript present
+    assert "Sova hit 84, Sage back site" in r.user                # normalized callout present
+    assert "AUTO-NORMALIZED" in r.user
+
+
+def test_raw_text_no_block_when_same_or_absent():
+    none = up.build_relay_prompt("rush B")
+    assert "RAW speech-to-text" not in none.user
+    same = up.build_relay_prompt("rush B", raw_text="rush B")
+    assert "RAW speech-to-text" not in same.user
 
 
 def test_private_prompt_is_not_relayed():
@@ -117,3 +147,53 @@ def test_sampling_always_has_required_keys(v):
     r = up.build_relay_prompt("rush B", verbosity=v)
     for k in ("temperature", "top_p", "top_k", "min_p", "repeat_penalty", "max_tokens"):
         assert k in r.sampling
+
+
+# --- dual verbosity axes (2026-06-20): callout (5 levels) + conversation (4) ---
+
+def test_normalize_verbosity_medium_and_max():
+    assert up.normalize_verbosity("medium") == "medium"
+    assert up.normalize_verbosity("moderate") == "medium"
+    assert up.normalize_verbosity("max") == "max"
+    assert up.normalize_verbosity("max flavor") == "max"
+    assert up.normalize_verbosity("maximum") == "max"
+    # the conversation axis has no "none" -> clamp to the lowest level
+    assert up.normalize_verbosity("none", levels=up.CONVERSATION_VERBOSITY_LEVELS) == "low"
+    assert up.normalize_verbosity("no flavor", levels=up.CONVERSATION_VERBOSITY_LEVELS) == "low"
+
+
+def test_callout_axis_five_levels_distinct_and_monotonic():
+    prompts = {v: up.build_relay_prompt("rush B", verbosity=v)
+               for v in up.CALLOUT_VERBOSITY_LEVELS}
+    for v in up.CALLOUT_VERBOSITY_LEVELS:
+        assert up._CALLOUT_VERBOSITY_DIRECTIVE[v] in prompts[v].user
+    toks = [prompts[v].sampling["max_tokens"] for v in up.CALLOUT_VERBOSITY_LEVELS]
+    assert toks == sorted(toks) and len(set(toks)) == len(toks)  # none<low<medium<high<max
+
+
+def test_conversation_axis_four_levels_distinct_and_monotonic():
+    prompts = {v: up.build_private_prompt("should I buy", verbosity=v)
+               for v in up.CONVERSATION_VERBOSITY_LEVELS}
+    for v in up.CONVERSATION_VERBOSITY_LEVELS:
+        assert up._CONVERSATION_VERBOSITY_DIRECTIVE[v] in prompts[v].user
+    toks = [prompts[v].sampling["max_tokens"] for v in up.CONVERSATION_VERBOSITY_LEVELS]
+    assert toks == sorted(toks) and len(set(toks)) == len(toks)  # low<medium<high<max
+
+
+def test_relay_and_private_use_separate_axes():
+    # the relay (callout) path uses the callout directives; the private path the
+    # conversation directives -- never crossed.
+    r = up.build_relay_prompt("rush B", verbosity="medium")
+    assert up._CALLOUT_VERBOSITY_DIRECTIVE["medium"] in r.user
+    assert up._CONVERSATION_VERBOSITY_DIRECTIVE["medium"] not in r.user
+    p = up.build_private_prompt("what map", verbosity="medium")
+    assert up._CONVERSATION_VERBOSITY_DIRECTIVE["medium"] in p.user
+    assert up._CALLOUT_VERBOSITY_DIRECTIVE["medium"] not in p.user
+
+
+def test_social_prompt_honors_conversation_verbosity():
+    low = up.build_social_prompt("encouragement", verbosity="low")
+    mx = up.build_social_prompt("encouragement", verbosity="max")
+    assert up._CONVERSATION_VERBOSITY_DIRECTIVE["low"] in low.user
+    assert up._CONVERSATION_VERBOSITY_DIRECTIVE["max"] in mx.user
+    assert low.sampling["max_tokens"] < mx.sampling["max_tokens"]

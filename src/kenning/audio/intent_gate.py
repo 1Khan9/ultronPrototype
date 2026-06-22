@@ -92,6 +92,21 @@ def _is_command_local(text: str) -> bool:
             return True
     except Exception:  # noqa: BLE001 - fail-open to "not a local command"
         pass
+    # The STOP-window + LOGS-window summon/dismiss are local UI commands too, so
+    # they reach the dispatch handlers in always-listening mode (not the relay or
+    # private-reply path). Pure-regex matchers -> no tkinter import here.
+    try:
+        from kenning.audio.stop_button import match_stop_button_command
+        if match_stop_button_command(text) is not None:
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from kenning.audio.log_viewer import match_logs_command
+        if match_logs_command(text) is not None:
+            return True
+    except Exception:  # noqa: BLE001
+        pass
     # "ultron stop" / "stop" all-channel cancel is a local command too.
     import re
     if re.match(r"^\s*(?:ultron[\s,]+)?stop\b\s*[.!?]*$", text, re.IGNORECASE):

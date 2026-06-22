@@ -12,10 +12,12 @@ from kenning.audio import relay_speech as rs
 @pytest.fixture(autouse=True)
 def _reset_flags():
     # Save/restore the process-global flags so tests don't leak state.
-    route0, verb0 = rs.u1_llm_route_enabled(), rs.relay_verbosity()
+    route0 = rs.u1_llm_route_enabled()
+    co0, cv0 = rs.callout_verbosity(), rs.conversation_verbosity()
     yield
     rs.set_u1_llm_route_enabled(route0)
-    rs.set_relay_verbosity(verb0)
+    rs.set_callout_verbosity(co0)
+    rs.set_conversation_verbosity(cv0)
 
 
 def test_flag_defaults_and_setters():
@@ -101,7 +103,8 @@ def test_compound_mixed_flag_on_one_combined_llm_call():
     rs.set_u1_llm_route_enabled(True)
     prompt, line = _capture_compound("Sova hit 84 and they have no smokes left")
     assert prompt is not None, "mixed compound should reach the LLM when route ON"
-    assert "ONE combined" in prompt           # compound directive from build_relay_prompt
+    assert "Relay ALL of these callouts" in prompt   # compound combine-all directive from build_relay_prompt
+    assert "cohesive" in prompt                       # u1.0: one cohesive natural relay, not a list of fragments
     assert "Sova hit 84 and they have no smokes left" in prompt
     assert line
 
@@ -181,3 +184,155 @@ def test_dispatch_checks_verbosity_before_flavor_toggle():
                     "_maybe_handle_flavor_toggle(_raw_stt)")):
         assert vb in src and ft in src, f"missing dispatch call: {vb} / {ft}"
         assert src.index(vb) < src.index(ft), f"verbosity must precede flavor toggle ({vb})"
+
+
+# --- match_llm_route_toggle (ULTRON 1.0 LLM-route master toggle) ---
+
+@pytest.mark.parametrize("text,expected", [
+    # OFF -> deterministic curated/snap pools
+    ("switch to deterministic callouts", False),
+    ("use the curated pool", False),
+    ("go deterministic", False),
+    ("curated callouts", False),
+    ("snap callouts", False),
+    ("switch back to the deterministic curated pool", False),
+    ("back to deterministic callouts", False),
+    ("deterministic mode", False),
+    ("flip to curated callouts", False),
+    ("ultron, use curated callouts", False),
+    # ON -> everything through the LLM
+    ("back to smart callouts", True),
+    ("switch to dynamic callouts", True),
+    ("route everything through the model", True),
+    ("route through the llm", True),
+    ("smart callouts", True),
+    ("return to smart callouts", True),
+    ("use generative callouts", True),
+])
+def test_match_llm_route_toggle_hits(text, expected):
+    assert rs.match_llm_route_toggle(text) is expected
+
+
+@pytest.mark.parametrize("text", [
+    "rush B",
+    "they have no smokes",
+    "low health on their Jett",
+    "tell my team to rotate",
+    "no flavor",            # verbosity command, not route
+    "flavor off",           # flavor-tail toggle, not route
+    "thinking mode off",    # thinking toggle, not route
+    "switch to the gpu",    # device switch, not route
+    "switch to the 8b",     # model switch, not route
+    "",
+])
+def test_match_llm_route_toggle_misses(text):
+    assert rs.match_llm_route_toggle(text) is None
+
+
+def test_llm_route_toggle_distinct_from_thinking():
+    # The two toggles use disjoint vocabulary so one utterance never means both:
+    # thinking owns thinking/reasoning/llm-mode; route owns deterministic/curated/
+    # smart. Each must stay None on the other's command.
+    assert rs.match_thinking_toggle("thinking mode off") is False
+    assert rs.match_llm_route_toggle("thinking mode off") is None
+    assert rs.match_llm_route_toggle("switch to deterministic callouts") is False
+    assert rs.match_thinking_toggle("switch to deterministic callouts") is None
+
+
+def test_config_llm_route_default_on():
+    # The live build defaults to route-everything-through-the-LLM (the orchestrator
+    # applies this config flag at boot). The relay_speech MODULE default stays OFF
+    # for test isolation; this asserts the CONFIG default that boot applies.
+    from kenning.config import RelaySpeechConfig
+    assert RelaySpeechConfig().llm_route is True
+
+
+def test_dispatch_wires_llm_route_toggle_after_thinking():
+    """Both dispatch paths must probe the LLM-route toggle, AFTER the thinking
+    toggle (disjoint vocab, but a stable order keeps intent unambiguous)."""
+    import inspect
+    from kenning.pipeline import orchestrator as orch
+    src = inspect.getsource(orch.Orchestrator.run)
+    for route, think in (("_maybe_handle_llm_route_toggle(user_text)",
+                          "_maybe_handle_thinking_toggle(user_text)"),
+                         ("_maybe_handle_llm_route_toggle(_raw_stt)",
+                          "_maybe_handle_thinking_toggle(_raw_stt)")):
+        assert route in src and think in src, f"missing dispatch call: {route}"
+        assert src.index(think) < src.index(route), f"route toggle must follow thinking ({route})"
+
+
+# --- two verbosity axes: callout (5 levels) + conversation (4 levels) ---
+
+@pytest.mark.parametrize("text,expected", [
+    ("conversation verbosity high", "high"),
+    ("chat flavor low", "low"),
+    ("set conversation verbosity to max", "max"),
+    ("talk verbosity medium", "medium"),
+    ("conversation low", "low"),
+    ("ultron, chat verbosity high", "high"),
+    ("make the conversation verbosity max", "max"),
+])
+def test_match_conversation_verbosity_command_hits(text, expected):
+    assert rs.match_conversation_verbosity_command(text) == expected
+    # the callout matcher must NOT claim a conversation-qualified command
+    assert rs.match_verbosity_command(text) is None
+
+
+@pytest.mark.parametrize("text", [
+    "no flavor",            # bare flavor -> CALLOUT axis, not conversation
+    "low flavor",
+    "high flavor",
+    "callout flavor high",  # explicit callout axis
+    "flavor off",
+    "rush B",
+    "they have no smokes",
+    "",
+])
+def test_match_conversation_verbosity_command_misses(text):
+    assert rs.match_conversation_verbosity_command(text) is None
+
+
+def test_callout_matcher_handles_medium_and_max():
+    assert rs.match_verbosity_command("medium flavor") == "medium"
+    assert rs.match_verbosity_command("max flavor") == "max"
+    assert rs.match_verbosity_command("callout flavor medium") == "medium"
+
+
+def test_two_verbosity_axes_independent():
+    rs.set_callout_verbosity("none")
+    rs.set_conversation_verbosity("max")
+    assert rs.callout_verbosity() == "none"
+    assert rs.conversation_verbosity() == "max"
+    # the legacy relay_verbosity alias tracks the CALLOUT axis
+    assert rs.relay_verbosity() == "none"
+    rs.set_relay_verbosity("high")            # alias -> callout
+    assert rs.callout_verbosity() == "high"
+    assert rs.conversation_verbosity() == "max"   # conversation untouched
+    # conversation has no "none" -> clamps to its lowest level
+    rs.set_conversation_verbosity("no flavor")
+    assert rs.conversation_verbosity() == "low"
+
+
+def test_config_verbosity_defaults():
+    from kenning.config import RelaySpeechConfig
+    c = RelaySpeechConfig()
+    assert c.callout_verbosity == "medium"
+    assert c.conversation_verbosity == "high"
+
+
+def test_dispatch_wires_both_verbosity_axes():
+    """Both dispatch paths probe BOTH verbosity axes -- callout BEFORE conversation,
+    and both BEFORE the flavor toggle."""
+    import inspect
+    from kenning.pipeline import orchestrator as orch
+    src = inspect.getsource(orch.Orchestrator.run)
+    for co, cv, ft in (
+        ("_maybe_handle_verbosity_command(user_text)",
+         "_maybe_handle_conversation_verbosity_command(user_text)",
+         "_maybe_handle_flavor_toggle(user_text)"),
+        ("_maybe_handle_verbosity_command(_raw_stt)",
+         "_maybe_handle_conversation_verbosity_command(_raw_stt)",
+         "_maybe_handle_flavor_toggle(_raw_stt)"),
+    ):
+        assert co in src and cv in src and ft in src, "missing a verbosity dispatch call"
+        assert src.index(co) < src.index(cv) < src.index(ft), "axis dispatch order wrong"

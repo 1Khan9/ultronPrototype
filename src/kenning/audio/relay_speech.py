@@ -1183,41 +1183,82 @@ def match_flavor_toggle(text: str) -> Optional[bool]:
     return None
 
 
-# ULTRON 1.0 verbosity command: "no flavor" / "low flavor" / "high flavor" (+ synonyms)
-# -> the no/low/high reply-length axis (relay_verbosity()). DISTINCT from the flavor-tail
-# on/off toggle above: "off"/"on" are deliberately EXCLUDED from the level words so
-# "flavor off" stays a tail toggle and never reads as a verbosity level. Fully anchored
-# (the whole utterance must be the command) so ordinary speech ("no, push low") falls through.
+# ULTRON 1.0 verbosity commands (2026-06-20): TWO axes.
+#   * CALLOUT  -> match_verbosity_command ("no/low/medium/high/max flavor",
+#     "callout flavor high", "set flavor to medium"). Bare "flavor <level>" is the
+#     CALLOUT axis (the in-game primary); an explicit "callout" qualifier also works.
+#   * CONVERSATION -> match_conversation_verbosity_command ("conversation/chat/talk
+#     verbosity high", "chat flavor low"). REQUIRES the conversation axis word, so
+#     bare "flavor <level>" never lands here.
+# "off"/"on" are deliberately EXCLUDED from the level words so "flavor off" stays
+# the tail toggle. Fully anchored so ordinary speech ("no, push low") falls through.
 _VB_LEVEL = (r"(no|none|zero|low|minimal|min|light|lite|terse|brief|less"
-             r"|high|full|max|maximum|verbose|rich|more|vivid)")
+             r"|medium|mid|moderate|middle|normal|standard|modest"
+             r"|high|full|fuller|max|maximum|most|verbose|rich|more|vivid)")
+_VB_AXIS_CALLOUT = r"(?:callout|call-?out|tactical|relay|in-?game)"
+_VB_AXIS_CONV = (r"(?:conversation|conversational|chat|talk|talking|reply|replies"
+                 r"|response|responses|dialog|dialogue)")
+_VB_NOUN = r"(?:flavou?r|favou?r|verbosity)"
 _VERBOSITY_CMD_RE = re.compile(
     r"^(?:please\s+|ultron[\s,]+)?"
     r"(?:(?:set|make|use|go|switch\s+to|turn|put|give\s+me)\s+)?"
     r"(?:the\s+|your\s+|it\s+to\s+)?"
+    rf"(?:{_VB_AXIS_CALLOUT}\s+)?"
     r"(?:"
-    rf"{_VB_LEVEL}\s+(?:flavou?r|favou?r|verbosity)"
+    rf"{_VB_LEVEL}\s+{_VB_NOUN}"
     r"|"
-    rf"(?:flavou?r|favou?r|verbosity)\s+(?:to\s+|at\s+|on\s+)?{_VB_LEVEL}"
+    rf"{_VB_NOUN}\s+(?:to\s+|at\s+|on\s+)?{_VB_LEVEL}"
     r")\b\s*[.!?]*$",
+    re.IGNORECASE,
+)
+_VERBOSITY_CONV_CMD_RE = re.compile(
+    r"^(?:please\s+|ultron[\s,]+)?"
+    r"(?:(?:set|make|use|go|switch\s+to|turn|put|give\s+me)\s+)?"
+    r"(?:the\s+|your\s+|it\s+to\s+)?"
+    rf"{_VB_AXIS_CONV}\s+(?:{_VB_NOUN}\s+)?(?:to\s+|at\s+|on\s+)?{_VB_LEVEL}"
+    r"\b\s*[.!?]*$",
     re.IGNORECASE,
 )
 
 
 def match_verbosity_command(text: str) -> Optional[str]:
-    """Match the no/low/high verbosity voice command ("no flavor" / "low flavor" /
-    "high flavor" + synonyms). Returns "none" / "low" / "high", or None.
-
-    Distinct from :func:`match_flavor_toggle` (which is the flavor-tail on/off toggle).
-    Strict + fully anchored, so ordinary speech falls through. Callers pass the RAW
-    transcript (pre-normalization), like the other toggle matchers.
+    """Match the CALLOUT verbosity voice command ("no/low/medium/high/max flavor",
+    "callout flavor high", "set flavor to medium" + synonyms). Returns
+    none/low/medium/high/max, or None. The conversation/chat/talk axis is owned by
+    :func:`match_conversation_verbosity_command` and is NOT matched here. Distinct
+    from :func:`match_flavor_toggle` (the tail on/off). Strict + fully anchored.
+    Callers pass the RAW transcript (pre-normalization).
     """
     if not text:
         return None
     m = _VERBOSITY_CMD_RE.match(text.strip())
     if not m:
         return None
-    from kenning.audio.ultron_prompt import normalize_verbosity
-    return normalize_verbosity(m.group(1) or m.group(2))
+    from kenning.audio.ultron_prompt import (
+        normalize_verbosity, CALLOUT_VERBOSITY_LEVELS, DEFAULT_CALLOUT_VERBOSITY,
+    )
+    return normalize_verbosity(m.group(1) or m.group(2),
+                               levels=CALLOUT_VERBOSITY_LEVELS,
+                               default=DEFAULT_CALLOUT_VERBOSITY)
+
+
+def match_conversation_verbosity_command(text: str) -> Optional[str]:
+    """Match the CONVERSATION verbosity voice command ("conversation/chat/talk
+    verbosity high", "chat flavor low", "set conversation verbosity to max").
+    Returns low/medium/high/max, or None. REQUIRES the conversation axis word so
+    the bare "flavor <level>" command stays the CALLOUT axis. Strict + fully
+    anchored; callers pass the RAW transcript (pre-normalization).
+    """
+    if not text:
+        return None
+    m = _VERBOSITY_CONV_CMD_RE.match(text.strip())
+    if not m:
+        return None
+    from kenning.audio.ultron_prompt import (
+        normalize_verbosity, CONVERSATION_VERBOSITY_LEVELS, DEFAULT_CONVERSATION_VERBOSITY,
+    )
+    return normalize_verbosity(m.group(1), levels=CONVERSATION_VERBOSITY_LEVELS,
+                               default=DEFAULT_CONVERSATION_VERBOSITY)
 
 
 # ---------------------------------------------------------------------------
@@ -1274,20 +1315,60 @@ def u1_llm_route_enabled() -> bool:
     return _u1_llm_route_enabled
 
 
-# Relay verbosity for the u1.0 LLM route: "none" | "low" | "high" (the no/low/high
-# "flavor" command flips this; default from KENNING_U1_VERBOSITY or "high").
-_u1_verbosity: str = (_os_flavor.getenv("KENNING_U1_VERBOSITY", "high").strip().lower() or "high")
+# Relay verbosity for the u1.0 LLM route -- TWO axes (2026-06-20):
+#   * CALLOUT (none/low/medium/high/max): the flavor-tail length on a tactical
+#     relay callout (the "flavor"/"callout flavor" command flips it).
+#   * CONVERSATION (low/medium/high/max): the reply length for private/social/
+#     non-tactical responses (the "conversation/chat verbosity" command flips it).
+# Module defaults read env (KENNING_U1_CALLOUT_VERBOSITY / _CONVERSATION_VERBOSITY,
+# falling back to the legacy KENNING_U1_VERBOSITY, then "medium" / "high"); the
+# orchestrator applies the config defaults (relay_speech.callout_verbosity /
+# .conversation_verbosity) at boot. Not normalized at load (build_* normalizes).
+_callout_verbosity: str = (_os_flavor.getenv(
+    "KENNING_U1_CALLOUT_VERBOSITY",
+    _os_flavor.getenv("KENNING_U1_VERBOSITY", "medium")).strip().lower() or "medium")
+_conversation_verbosity: str = (_os_flavor.getenv(
+    "KENNING_U1_CONVERSATION_VERBOSITY",
+    _os_flavor.getenv("KENNING_U1_VERBOSITY", "high")).strip().lower() or "high")
 
 
+def set_callout_verbosity(level: str) -> None:
+    """Set the u1.0 CALLOUT verbosity (none/low/medium/high/max) at runtime."""
+    global _callout_verbosity
+    from kenning.audio.ultron_prompt import (
+        normalize_verbosity, CALLOUT_VERBOSITY_LEVELS, DEFAULT_CALLOUT_VERBOSITY,
+    )
+    _callout_verbosity = normalize_verbosity(
+        level, levels=CALLOUT_VERBOSITY_LEVELS, default=DEFAULT_CALLOUT_VERBOSITY)
+
+
+def callout_verbosity() -> str:
+    return _callout_verbosity
+
+
+def set_conversation_verbosity(level: str) -> None:
+    """Set the u1.0 CONVERSATION verbosity (low/medium/high/max) at runtime."""
+    global _conversation_verbosity
+    from kenning.audio.ultron_prompt import (
+        normalize_verbosity, CONVERSATION_VERBOSITY_LEVELS, DEFAULT_CONVERSATION_VERBOSITY,
+    )
+    _conversation_verbosity = normalize_verbosity(
+        level, levels=CONVERSATION_VERBOSITY_LEVELS, default=DEFAULT_CONVERSATION_VERBOSITY)
+
+
+def conversation_verbosity() -> str:
+    return _conversation_verbosity
+
+
+# Back-compat aliases: the original single "relay verbosity" == the CALLOUT axis.
 def set_relay_verbosity(level: str) -> None:
-    """Set the u1.0 relay verbosity (none/low/high) at runtime."""
-    global _u1_verbosity
-    from kenning.audio.ultron_prompt import normalize_verbosity
-    _u1_verbosity = normalize_verbosity(level)
+    """Back-compat alias -> :func:`set_callout_verbosity` (the relay/callout axis)."""
+    set_callout_verbosity(level)
 
 
 def relay_verbosity() -> str:
-    return _u1_verbosity
+    """Back-compat alias -> :func:`callout_verbosity` (the relay/callout axis)."""
+    return callout_verbosity()
 
 
 # "thinking"/"think mode"/"reasoning"/"llm" -- in-vocab, so the mishear surface is
@@ -1324,6 +1405,55 @@ def match_thinking_toggle(text: str) -> Optional[bool]:
     if _THINKING_OFF_RE.match(cleaned):
         return False
     if _THINKING_ON_RE.match(cleaned):
+        return True
+    return None
+
+
+# ---------------------------------------------------------------------------
+# ULTRON 1.0 (2026-06-20): the LLM-ROUTE master toggle -- switches between
+# routing EVERY response through the LLM (the default) and the deterministic
+# curated/snap pools. "switch to deterministic / curated callouts" -> OFF;
+# "back to smart callouts" / "route through the model" -> ON. Deliberately uses
+# DISTINCT vocabulary from the thinking toggle (thinking/reasoning/llm) so the
+# two never collide; OFF is checked before ON. Fully anchored -> ordinary speech
+# falls through. Callers pass the RAW transcript (pre-normalization).
+_ROUTE_DET_WORD = r"(?:deterministic|curated|canned|scripted|static|preset|snap|fixed)"
+_ROUTE_LLM_WORD = r"(?:smart|dynamic|generative|generated|improvised|creative|intelligent)"
+_ROUTE_NOUN = r"(?:callouts?|responses?|replies|lines?|mode|pool|relays?|speech)"
+_ROUTE_DET_PHRASE = rf"{_ROUTE_DET_WORD}(?:\s+{_ROUTE_DET_WORD})?(?:\s+{_ROUTE_NOUN})?"
+_ROUTE_LLM_PHRASE = rf"{_ROUTE_LLM_WORD}(?:\s+{_ROUTE_LLM_WORD})?(?:\s+{_ROUTE_NOUN})?"
+_LLM_ROUTE_OFF_RE = re.compile(
+    r"^(?:please\s+)?(?:ultron[\s,]+)?(?:"
+    rf"(?:(?:switch|go|change|flip|revert|return)\s+(?:back\s+)?(?:to\s+)?|back\s+to\s+)(?:the\s+|your\s+)?{_ROUTE_DET_PHRASE}"
+    rf"|(?:use|enable|give\s+me)\s+(?:the\s+|your\s+)?{_ROUTE_DET_PHRASE}"
+    rf"|{_ROUTE_DET_WORD}\s+{_ROUTE_NOUN}"
+    r")\s*[.!?]*$",
+    re.IGNORECASE,
+)
+_LLM_ROUTE_ON_RE = re.compile(
+    r"^(?:please\s+)?(?:ultron[\s,]+)?(?:"
+    rf"(?:(?:switch|go|change|flip|revert|return)\s+(?:back\s+)?(?:to\s+)?|back\s+to\s+)(?:the\s+|your\s+)?{_ROUTE_LLM_PHRASE}"
+    rf"|(?:use|enable|give\s+me)\s+(?:the\s+|your\s+)?{_ROUTE_LLM_PHRASE}"
+    rf"|{_ROUTE_LLM_WORD}\s+{_ROUTE_NOUN}"
+    rf"|route\s+(?:everything\s+)?(?:back\s+)?through\s+(?:the\s+)?(?:model|llm|8\s*b|eight\s*b)"
+    r")\s*[.!?]*$",
+    re.IGNORECASE,
+)
+
+
+def match_llm_route_toggle(text: str) -> Optional[bool]:
+    """Match the LLM-route master toggle. Returns True = route everything
+    through the LLM (the default), False = deterministic curated/snap pools,
+    None otherwise. OFF (deterministic) is checked first; strict + fully
+    anchored so ordinary speech falls through. Callers pass the RAW transcript
+    (pre-normalization), like the other toggle matchers. Distinct vocabulary
+    from :func:`match_thinking_toggle` so the two never collide."""
+    if not text:
+        return None
+    cleaned = text.strip()
+    if _LLM_ROUTE_OFF_RE.match(cleaned):
+        return False
+    if _LLM_ROUTE_ON_RE.match(cleaned):
         return True
     return None
 
@@ -1603,6 +1733,23 @@ _TEAM_ARGUING_RE = re.compile(
     r"(?:arguing|argue|fighting|fight|toxic|tilt(?:ed|ing)?|flaming\s+each|"
     r"melting\s+down|at\s+each\s+other'?s\s+throats|going\s+at\s+(?:it|each)|"
     r"bickering|in[\s-]?fighting|turning\s+on\s+each)\b",
+    re.IGNORECASE,
+)
+# Two NAMED teammates at odds ("my Yoru and Sage are fighting", "my Reyna and
+# Jett are arguing") -> the SAME clinical de-escalation. The possessive "my"/"our"
+# lead + the conflict verb mark it as OUR team (never an enemy report), and the
+# end-anchor keeps a TACTICAL "my Sova and Jett are fighting for mid" out (the
+# conflict verb must be the last meaningful word). 2026-06-20: the team-arguing
+# subject set above is team/squad/guys-only, so a two-agent conflict report
+# ("my yoru and sage are fighting/arguing") fell through silently -> no response.
+_TEAMMATES_FIGHTING_RE = re.compile(
+    r"\b(?:my|our)\s+[a-z][a-z/'-]*\s+and\s+[a-z][a-z/'-]*\s+"
+    r"(?:are|is|keeps?|started|getting|won'?t\s+stop)\s+(?:being\s+)?"
+    r"(?:arguing|argue|bickering|toxic|tilt(?:ed|ing)?|in[\s-]?fighting|"
+    r"at\s+each\s+other'?s?\s+throats?|at\s+each\s+other|"
+    r"flaming\s+each\s+other|turning\s+on\s+each\s+other|"
+    r"going\s+at\s+(?:it|each\s+other)|fighting\s+each\s+other|fighting|fight)"
+    r"\s*[.!?]*\s*$",
     re.IGNORECASE,
 )
 # A teammate wants to "ff" (the abbreviation the reaction frame's "forfeit\w*"
@@ -1999,7 +2146,7 @@ def match_relay_command(
     # Our team is arguing / tilting / toxic with each other -> Ultron breaks it up
     # with a clinical de-escalation (NOT a relay of the broken fragment "is
     # arguing"). 2026-06-17 [151].
-    if _TEAM_ARGUING_RE.search(cleaned):
+    if _TEAM_ARGUING_RE.search(cleaned) or _TEAMMATES_FIGHTING_RE.search(cleaned):
         return RelayCommand(
             payload="calm", raw_text=text, addressee="team",
             compose=True, directive="calm",
@@ -3696,6 +3843,22 @@ _TTS_NAME_PRONUNCIATION = (
     (re.compile(r"\bTejo\b", re.IGNORECASE), "Tayho"),
 )
 
+# Callout site letters A / B / C are spoken as LETTERS, never words. The LLM
+# writes a site letter UPPERCASE (and the article lowercase "a"), so an uppercase
+# standalone A/B/C used MID-SENTENCE (preceded by a lowercase word or a comma) is
+# unambiguously a site reference -> spell it phonetically for Kokoro ("eigh" /
+# "bee" / "see"). Sentence-initial / line-start is skipped (a capitalized leading
+# article could appear there); the LLM is prompted to lead such a callout with
+# "A site" / "Site A", which _A_SITE_RE above already rewrites. This + the
+# prompt's "site letter -> bare uppercase letter" rule fix "rotate to A and
+# plant" being spoken as "rotate to uh and plant".
+_SITE_LETTER_PHONETIC = {"A": "eigh", "B": "bee", "C": "see"}
+_SITE_LETTER_RE = re.compile(r"(?<=[a-z,] )([ABC])\b")
+
+
+def _site_letter_repl(m: "re.Match[str]") -> str:
+    return _SITE_LETTER_PHONETIC[m.group(1)]
+
 
 def relay_tts_text(line: str) -> str:
     """Return the line as it should be PRONOUNCED -- the displayed/logged text
@@ -3708,7 +3871,74 @@ def relay_tts_text(line: str) -> str:
         line = _rx.sub(_repl, line)
     if "A" in line:
         line = _A_SITE_RE.sub("eigh", line)
+    # u1.0: a site letter A/B/C used mid-sentence is spoken as the LETTER, so
+    # "rotate to A and plant" is not spoken "rotate to uh and plant".
+    line = _SITE_LETTER_RE.sub(_site_letter_repl, line)
     return line
+
+
+def _social_llm_line(
+    command: "RelayCommand",
+    kind: str,
+    pool: "Sequence[str]",
+    *,
+    max_chars: int,
+    llm: object = None,
+    generate_fn: "Optional[Callable[[str], Iterable[str]]]" = None,
+    recent_lines: "Optional[Sequence[str]]" = None,
+    context: str = "",
+    target: str = "",
+    canned: "Optional[str]" = None,
+) -> str:
+    """A SOCIAL / CONVERSATIONAL response (identity / encouragement / calm / flame / criticize /
+    compliment / defiance). When the u1.0 LLM route is ON and an LLM is available, the 8B authors a
+    NOVEL in-character line -- the curated ``pool`` is supplied only as STYLE exemplars the model is
+    told NOT to repeat. Otherwise -- or on ANY LLM failure / empty / meta-leak -- fall back to
+    ``canned`` (a pre-formatted curated line) or ``pick_line(pool)``. This keeps Ultron from sounding
+    like a soundboard on non-tactical responses, while the snap/relay paths stay deterministic +
+    factual. When u1 is OFF the return is byte-identical to the prior canned behaviour."""
+    fallback = canned if canned is not None else pick_line(pool, recent_lines=recent_lines)
+    if not u1_llm_route_enabled():
+        return fallback
+    try:
+        from kenning.audio.ultron_prompt import build_social_prompt
+        from kenning.audio._ultron_answer import is_meta_leak
+        addr = getattr(command, "addressee", "team") or "team"
+        ctx = context or (getattr(command, "context", "") or "")
+        pr = build_social_prompt(
+            kind,
+            addressee=addr,
+            context=ctx,
+            target=target,
+            verbosity=conversation_verbosity(),
+            exemplars=tuple(pool),
+            recent_lines=recent_lines,
+            raw_text=getattr(command, "raw_text", None),
+        )
+        if generate_fn is not None:
+            tokens: "Iterable[str]" = generate_fn(pr.user)
+        elif llm is not None and hasattr(llm, "generate_stream"):
+            tokens = llm.generate_stream(
+                pr.user,
+                system_prompt=pr.system,
+                sampling=pr.sampling,
+                record_history=False,
+                suppress_memory_context=True,
+                enable_thinking=False,
+            )
+        else:
+            return fallback
+        out = "".join(tokens).strip()
+        if "<think>" in out or "</think>" in out:
+            out = re.sub(r"<think>.*?</think>", "", out, flags=re.DOTALL).strip()
+        out = _strip_artifacts(out)
+        if not out or is_meta_leak(out):
+            logger.debug("social LLM line empty/leak -> canned (kind=%s)", kind)
+            return fallback
+        return _cap_line(out, max_chars)
+    except Exception as e:                                          # noqa: BLE001
+        logger.debug("social LLM line failed (%s) -> canned (kind=%s)", e, kind)
+        return fallback
 
 
 def _as_named_question(name: str, payload: str) -> Optional[str]:
@@ -6098,6 +6328,7 @@ def build_relay_line(
     max_chars: int = MAX_RELAY_LINE_CHARS,
     recent_lines: Optional[Sequence[str]] = None,
     generate_fn: Optional[Callable[[str], Iterable[str]]] = None,
+    raw_stt: Optional[str] = None,
 ) -> str:
     """Produce the line Kenning actually speaks to the teammates.
 
@@ -6216,7 +6447,11 @@ def build_relay_line(
             and not getattr(command, "directive", None)
             and not getattr(command, "context", None)
             and _is_morale_payload(getattr(command, "payload", ""))):
-        return pick_line(DEFAULT_ENCOURAGEMENT_LINES, recent_lines=recent_lines)
+        return _social_llm_line(
+            command, "encouragement", DEFAULT_ENCOURAGEMENT_LINES,
+            max_chars=max_chars, llm=llm, generate_fn=generate_fn,
+            recent_lines=recent_lines,
+        )
 
     # Greet / farewell composes: curated Ultron set-pieces (team intro, match
     # close). Character pieces, not tactical -- a curated pool with anti-repeat
@@ -6245,7 +6480,11 @@ def build_relay_line(
         out = line.format(name=prefix)
         if not prefix and out:
             out = out[0].upper() + out[1:]
-        return _cap_line(out, max_chars)
+        return _social_llm_line(
+            command, "calm", DEFAULT_CALM_LINES,
+            max_chars=max_chars, llm=llm, generate_fn=generate_fn,
+            recent_lines=recent_lines, canned=_cap_line(out, max_chars),
+        )
 
     # Criticize a named teammate ("criticize Reyna for that") -> a curated cold
     # critique naming a CONCRETE failure (the 3B answers vaguely -- "I've
@@ -6254,20 +6493,35 @@ def build_relay_line(
     if _dir.startswith("criticize:"):
         target = _dir.split(":", 1)[1].strip() or "that one"
         line = pick_line(DEFAULT_CRITICIZE_LINES, recent_lines=recent_lines)
-        return _cap_line(line.format(name=target), max_chars)
+        return _social_llm_line(
+            command, "criticize", DEFAULT_CRITICIZE_LINES,
+            max_chars=max_chars, llm=llm, generate_fn=generate_fn,
+            recent_lines=recent_lines, target=target,
+            canned=_cap_line(line.format(name=target), max_chars),
+        )
 
     # "flame the enemy" -- a NEW command (no prior behaviour), so it uses the
     # curated _FO_FLAME_ENEMY pool in BOTH flavor states (the flavor-OFF hook
     # above already returns it when tails are off; this handles flavor-ON).
     if _dir == "flame_enemy":
-        return _cap_line(_fo_pick(_FO_FLAME_ENEMY, None, recent_lines), max_chars)
+        return _social_llm_line(
+            command, "flame_enemy", _FO_FLAME_ENEMY,
+            max_chars=max_chars, llm=llm, generate_fn=generate_fn,
+            recent_lines=recent_lines,
+            canned=_cap_line(_fo_pick(_FO_FLAME_ENEMY, None, recent_lines), max_chars),
+        )
 
     # "<agent> told you to stop" -- deterministic defiance pool in BOTH flavor
     # states (the flavor-OFF hook handles tails-off; this handles flavor-ON).
     if _dir == "stop_command":
         _stop_ag = None if str(getattr(command, "addressee", "team")).lower() == "team" \
             else getattr(command, "addressee", None)
-        return _cap_line(_fo_pick(_FO_STOP, _stop_ag or "human", recent_lines), max_chars)
+        return _social_llm_line(
+            command, "defiance", _FO_STOP,
+            max_chars=max_chars, llm=llm, generate_fn=generate_fn,
+            recent_lines=recent_lines,
+            canned=_cap_line(_fo_pick(_FO_STOP, _stop_ag or "human", recent_lines), max_chars),
+        )
 
     # Compliment a named teammate ("compliment my Sage") -> a curated cold,
     # backhanded praise opening with the name (the 3B analysed the agent instead
@@ -6275,7 +6529,12 @@ def build_relay_line(
     if _dir.startswith("compliment:"):
         target = _dir.split(":", 1)[1].strip() or "that one"
         line = pick_line(DEFAULT_COMPLIMENT_LINES, recent_lines=recent_lines)
-        return _cap_line(line.format(name=target), max_chars)
+        return _social_llm_line(
+            command, "compliment", DEFAULT_COMPLIMENT_LINES,
+            max_chars=max_chars, llm=llm, generate_fn=generate_fn,
+            recent_lines=recent_lines, target=target,
+            canned=_cap_line(line.format(name=target), max_chars),
+        )
 
     # Identity question ('are you an AI / bot / soundboard / streamer / a real
     # person / who's controlling you / a voice changer / a recording?') -> a
@@ -6301,7 +6560,12 @@ def build_relay_line(
         _addr = getattr(command, "addressee", "team")
         if _addr and _addr != "team":
             line = _address_named(line, _addr)
-        return _cap_line(line, max_chars)
+        return _social_llm_line(
+            command, "identity", pool,
+            max_chars=max_chars, llm=llm, generate_fn=generate_fn,
+            recent_lines=recent_lines, context=(_ctx or _pl),
+            canned=_cap_line(line, max_chars),
+        )
 
     # Curated CORRECT answer to a recognized general-knowledge question -- the
     # 3B gets several wrong ('first president' -> 'Lincoln'). Spoken in Ultron's
@@ -6349,7 +6613,7 @@ def build_relay_line(
             and not getattr(command, "context", None)
             and not getattr(command, "verbatim", False)):
         snap = _as_snap_callout(command, recent_lines)
-        if snap is not None:
+        if snap is not None and not u1_llm_route_enabled():
             return _cap_line(snap, max_chars)
         # COMPOUND (two+ facts): resolve each tactical fact deterministically so
         # the 3B never drops a fact or hallucinates filler. u1.0 (M4): when the
@@ -6358,11 +6622,19 @@ def build_relay_line(
         # user's "back-to-back commands -> one response". Skipping the
         # deterministic resolver here lets it fall through; the downstream
         # fact-guards (_output_keeps_facts/_literal_relay) still protect it.
-        _u1_compound = (u1_llm_route_enabled()
-                        and not getattr(command, "verbatim", False)
+        # u1.0 ROUTE-EVERYTHING: when the LLM route is ON, EVERY tactical relay
+        # (single OR compound) is authored by the model for varied, cohesive,
+        # non-soundboard wording -- the deterministic snap/compound/literal
+        # resolvers are skipped and the post-LLM fact-guards
+        # (_output_keeps_facts / _repair_against_input / _literal_relay) are the
+        # backstop. _u1_compound stays the >=2-fact signal for the prompt's
+        # combine-into-one-line instruction. u1 OFF -> byte-identical legacy path.
+        _u1_route = (u1_llm_route_enabled()
+                     and not getattr(command, "verbatim", False))
+        _u1_compound = (_u1_route
                         and len(_split_compound(command.payload or "")) >= 2)
         det_line, leftover = (
-            (None, None) if _u1_compound
+            (None, None) if _u1_route
             else _as_compound_callout(command, recent_lines))
         if det_line is not None and not leftover:
             return _cap_line(det_line, max_chars)         # fully deterministic
@@ -6396,7 +6668,7 @@ def build_relay_line(
         # is instant in gaming mode. Gated on a count/location/ability fact (a
         # pure-agent line like "their Reyna is washed" is an insult -> keep the
         # LLM's flavor); opinions/banter/identity have no such fact-token.
-        if not getattr(command, "verbatim", False) and not _u1_compound:
+        if not getattr(command, "verbatim", False) and not _u1_route:
             nums, agents, locs, abils = _fact_tokens(command.payload or "")
             tactical = len(nums) + len(locs) + len(abils)
             # 2026-06-17: route ANY line carrying a concrete tactical token
@@ -6463,11 +6735,12 @@ def build_relay_line(
                     _pr = build_relay_prompt(
                         command.payload or "",
                         addressee=_addr,
-                        verbosity=relay_verbosity(),
+                        verbosity=callout_verbosity(),
                         flavor_tail=flavor_tails_enabled(),
                         agent_context=_u1_kits,
                         recent_lines=list(recent_lines or ()),
                         compound=_u1_compound,
+                        raw_text=raw_stt,
                     )
                     _u1_prompt, _u1_system, _u1_sampling = _pr.user, _pr.system, _pr.sampling
                 else:

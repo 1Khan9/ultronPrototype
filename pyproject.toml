@@ -54,6 +54,11 @@ dev = [
     # via ``coding.pre_write_lint.enabled`` and gracefully degrades
     # to "skip the flake8 layer" when the binary isn't on PATH.
     "flake8>=6.0",
+    # 2026-06-20 (BR-21.4): ruff + mypy back the .claude PostToolUse advisory hook + the CI
+    # backstop. ADVISORY / CI-only on CHANGED files; orchestrator.py + the voice path are
+    # grandfathered in [tool.ruff]/[tool.mypy] below ("stop the bleeding"). Installed: ruff 0.15.18, mypy 2.1.0.
+    "ruff>=0.15",
+    "mypy>=2.1",
 ]
 
 [project.scripts]
@@ -83,3 +88,36 @@ markers = [
 # Tests that genuinely need >30s (e.g., GPU-gated full model loads) should
 # override per-test with ``@pytest.mark.timeout(120)`` rather than
 # relaxing this default.
+
+# ───────────────────────── Lint / type-check (BR-9.1 / BR-21.4) ─────────────────────────
+# This config is INERT until ruff/mypy are installed (an ask-first dep add, BR-10.9):
+#   .venv\Scripts\python.exe -m pip install ruff mypy        (or: uv add --dev ruff mypy)
+# The .claude PostToolUse hook + the CI backstop run these ADVISORY-only on changed files; the legacy
+# surface is grandfathered ("stop the bleeding" — NEW code stays clean, the 10.7k-line monolith is excused).
+# NEVER write-mode-format the legacy file (surgical diffs only, BR-9.6).
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+extend-exclude = ["training", "firmware", "kenning_rvc_voice", "kenningVoiceAudio"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501"]  # length is the formatter's job, not a lint error
+
+[tool.ruff.lint.per-file-ignores]
+"src/kenning/pipeline/orchestrator.py" = ["ALL"]   # grandfather the legacy monolith
+"tests/**" = ["B", "E402"]
+
+[tool.mypy]
+python_version = "3.11"
+# ADVISORY / CI-only — NEVER a blocking changed-files hook (mypy errors are transitive). Stop-the-bleeding ratchet:
+disallow_untyped_defs = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+follow_imports = "silent"
+exclude = ["training", "firmware", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["kenning.pipeline.orchestrator", "kenning.audio.*"]   # grandfather the monolith + voice path
+disallow_untyped_defs = false
+ignore_errors = true

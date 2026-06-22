@@ -1420,7 +1420,9 @@ class Orchestrator:
             _sb = get_config().stop_button
             if getattr(_sb, "enabled", True):
                 self._stop_button = StopButtonOverlay(
-                    on_stop=self._cancel_all_playback,
+                    on_stop=self._stop_button_interrupt,
+                    on_restart=self._stop_button_restart,
+                    on_exit=self._stop_button_exit,
                     width=_sb.width,
                     bar_height=_sb.bar_height,
                     button_height=_sb.button_height,
@@ -1429,6 +1431,11 @@ class Orchestrator:
                     button_fill=_sb.button_fill,
                     always_on_top=_sb.always_on_top,
                     label=_sb.label,
+                    # FLAG button: logs the last turn (disliked / missed / unwanted
+                    # response) to logs/flagged_turns.jsonl for later review.
+                    on_flag=self._stop_button_flag,
+                    flag_height=_sb.flag_height,
+                    flag_label=_sb.flag_label,
                     x=_sb.x,
                     y=_sb.y,
                     # PTT toggle row: flips the auto team-mic key-press at runtime
@@ -1442,6 +1449,48 @@ class Orchestrator:
         except Exception as e:                                       # noqa: BLE001
             logger.debug("stop button init failed (%s); disabled", e)
             self._stop_button = None
+
+        # ULTRON 1.0: apply the route-everything-through-the-LLM default + the two
+        # verbosity axes from config (relay_speech.llm_route / .callout_verbosity /
+        # .conversation_verbosity) to the runtime flags, so the live build routes
+        # every response through the LLM by default at the configured verbosities.
+        # The relay_speech MODULE defaults stay test-friendly (route OFF) for the
+        # deterministic relay suite; this boot-apply is what makes the running
+        # assistant default-on. Voice commands flip all three at runtime. Fail-open
+        # -> leaves the module defaults.
+        try:
+            from kenning.audio.relay_speech import (
+                set_u1_llm_route_enabled, set_callout_verbosity,
+                set_conversation_verbosity,
+            )
+            from kenning.config import get_config as _gc_route
+            _rs_cfg = _gc_route().relay_speech
+            _route_on = bool(getattr(_rs_cfg, "llm_route", True))
+            set_u1_llm_route_enabled(_route_on)
+            set_callout_verbosity(getattr(_rs_cfg, "callout_verbosity", "medium"))
+            set_conversation_verbosity(getattr(_rs_cfg, "conversation_verbosity", "high"))
+            logger.info(
+                "u1.0 LLM route: %s | callout flavor=%s | conversation verbosity=%s",
+                "ON (every response via the LLM)" if _route_on
+                else "OFF (deterministic curated pools)",
+                getattr(_rs_cfg, "callout_verbosity", "medium"),
+                getattr(_rs_cfg, "conversation_verbosity", "high"))
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("u1.0 boot-apply skipped: %s", e)
+
+        # Voice-summoned LOG VIEWER ("show me the logs") -- a scrollable, copyable
+        # window tailing logs/kenning.log so the user can read + copy runtime logs
+        # to document issues. In-process tkinter like the STOP window; anticheat-
+        # neutral (reads our own log file). Fail-open.
+        self._log_viewer = None
+        try:
+            from kenning.audio.log_viewer import LogViewerOverlay
+            from kenning.config import get_config as _gc, resolve_path as _rp
+            _log_file = getattr(_gc().logging, "file", "logs/kenning.log")
+            self._log_viewer = LogViewerOverlay(str(_rp(_log_file)))
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("log viewer init failed (%s); disabled", e)
+            self._log_viewer = None
 
         # SOURCE-OF-TRUTH-AT-BOOT: discard any settings-panel overlay from the
         # previous session so this boot loads the PRISTINE config.yaml + code
@@ -3092,6 +3141,37 @@ class Orchestrator:
             self._speak("I couldn't move the stop button.")
         return True
 
+    def _maybe_handle_logs_command(self, user_text: str) -> bool:
+        """Voice show/hide for the scrollable, copyable LOG VIEWER window. "show me
+        the logs" / "pull up the logs" raises it (tailing logs/kenning.log so the
+        user can read + copy runtime logs to document issues); "close the logs"
+        tears it down. Strict matcher -> ordinary sentences fall through.
+        In-process tkinter, anticheat-neutral. Fail-open."""
+        try:
+            from kenning.audio.log_viewer import match_logs_command
+
+            action = match_logs_command(user_text)
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("logs matcher unavailable: %s", e)
+            return False
+        if action is None:
+            return False
+        lv = getattr(self, "_log_viewer", None)
+        if lv is None:
+            self._speak("The log viewer isn't available.")
+            return True
+        try:
+            if action == "open":
+                lv.show()
+                self._speak("Logs are up.")
+            else:
+                lv.hide()
+                self._speak("Hidden.")
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("log viewer show/hide failed: %s", e)
+            self._speak("I couldn't open the logs.")
+        return True
+
     def _reclaim_idle_vram(self) -> None:
         """Release torch's reserved-but-unused CUDA blocks during idle.
 
@@ -3181,14 +3261,14 @@ class Orchestrator:
             if self._last_scenario is not Scenario.PRIVATE_REPLY:
                 return False
             from kenning.audio.relay_speech import (
-                u1_llm_route_enabled, relay_verbosity, flavor_tails_enabled,
+                u1_llm_route_enabled, conversation_verbosity, flavor_tails_enabled,
             )
             if not u1_llm_route_enabled() or self.llm is None:
                 return False
             from kenning.audio import ultron_prompt
             pr = ultron_prompt.build_private_prompt(
                 user_text,
-                verbosity=relay_verbosity(),
+                verbosity=conversation_verbosity(),
                 flavor_tail=flavor_tails_enabled(),
             )
             text = "".join(self.llm.generate_stream(
@@ -3391,15 +3471,15 @@ class Orchestrator:
         return True
 
     def _maybe_handle_verbosity_command(self, user_text: str) -> bool:
-        """Ultron 1.0 verbosity command: "no flavor" / "low flavor" / "high flavor"
-        (and synonyms) -- the no/low/high axis controlling reply length/density on
-        the LLM relay route (relay_speech.relay_verbosity()). DISTINCT from the
-        flavor-tail on/off toggle (_maybe_handle_flavor_toggle): "no flavor" sets
-        verbosity to none; "flavor off" toggles the tail. Strict, fully-anchored
-        matcher -> ordinary speech falls through. Runtime + process-global."""
+        """Ultron 1.0 CALLOUT verbosity command: "no/low/medium/high/max flavor"
+        ("callout flavor high", "set flavor to medium" + synonyms) -- the callout
+        flavor-tail length axis (relay_speech.callout_verbosity()). DISTINCT from
+        the flavor-tail on/off toggle (_maybe_handle_flavor_toggle) AND from the
+        conversation axis (_maybe_handle_conversation_verbosity_command). Strict,
+        fully-anchored matcher -> ordinary speech falls through. Process-global."""
         try:
             from kenning.audio.relay_speech import (
-                match_verbosity_command, set_relay_verbosity,
+                match_verbosity_command, set_callout_verbosity,
             )
             level = match_verbosity_command(user_text)
         except Exception as e:                                       # noqa: BLE001
@@ -3407,13 +3487,42 @@ class Orchestrator:
             return False
         if level is None:
             return False
-        set_relay_verbosity(level)
-        logger.info("relay:verbosity | level=%s", level)
+        set_callout_verbosity(level)
+        logger.info("relay:callout_verbosity | level=%s", level)
         self._speak({
             "none": "No flavor. Bare callouts.",
             "low": "Low flavor.",
+            "medium": "Medium flavor.",
             "high": "High flavor.",
-        }.get(level, "Verbosity set."))
+            "max": "Max flavor.",
+        }.get(level, "Callout flavor set."))
+        return True
+
+    def _maybe_handle_conversation_verbosity_command(self, user_text: str) -> bool:
+        """Ultron 1.0 CONVERSATION verbosity command: "conversation/chat/talk
+        verbosity high", "chat flavor low", "set conversation verbosity to max" --
+        the reply-length axis for private/social/non-tactical responses
+        (relay_speech.conversation_verbosity()). REQUIRES the conversation axis
+        word, so the bare "flavor X" callout command is never claimed here. Strict,
+        fully-anchored matcher -> ordinary speech falls through. Process-global."""
+        try:
+            from kenning.audio.relay_speech import (
+                match_conversation_verbosity_command, set_conversation_verbosity,
+            )
+            level = match_conversation_verbosity_command(user_text)
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("conversation verbosity command probe failed: %s", e)
+            return False
+        if level is None:
+            return False
+        set_conversation_verbosity(level)
+        logger.info("relay:conversation_verbosity | level=%s", level)
+        self._speak({
+            "low": "Low conversation verbosity.",
+            "medium": "Medium conversation verbosity.",
+            "high": "High conversation verbosity.",
+            "max": "Max conversation verbosity.",
+        }.get(level, "Conversation verbosity set."))
         return True
 
     def _maybe_handle_thinking_toggle(self, user_text: str) -> bool:
@@ -3439,6 +3548,35 @@ class Orchestrator:
         logger.info("relay:thinking_toggle | enabled=%s", verdict)
         self._speak(
             "Thinking mode on." if verdict else "Thinking mode off."
+        )
+        return True
+
+    def _maybe_handle_llm_route_toggle(self, user_text: str) -> bool:
+        """Voice toggle for the ULTRON 1.0 LLM ROUTE -- the master switch for
+        whether EVERY response (tactical callouts, social/banter, identity,
+        private replies) is authored by the LLM (ON, the default) or served from
+        the deterministic curated/snap pools (OFF). "Switch to deterministic /
+        curated callouts" -> OFF; "back to smart callouts" / "route through the
+        model" -> ON. Distinct vocabulary from the thinking + flavor toggles so
+        they never collide. Strict matcher -> ordinary speech falls through.
+        Process-global; resets to the config default (relay_speech.llm_route) on
+        restart. The word-exact paths (verbatim / known-fact) stay deterministic
+        regardless of this flag."""
+        try:
+            from kenning.audio.relay_speech import (
+                match_llm_route_toggle, set_u1_llm_route_enabled,
+            )
+            verdict = match_llm_route_toggle(user_text)
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("llm route toggle probe failed: %s", e)
+            return False
+        if verdict is None:
+            return False
+        set_u1_llm_route_enabled(verdict)
+        logger.info("relay:llm_route_toggle | enabled=%s", verdict)
+        self._speak(
+            "Routing everything through the model."
+            if verdict else "Deterministic callouts. The curated pool."
         )
         return True
 
@@ -3677,6 +3815,7 @@ class Orchestrator:
                 rephrase=_rephrase,
                 max_chars=int(getattr(cfg, "max_line_chars", 280)),
                 recent_lines=list(ring),
+                raw_stt=getattr(self, "_current_raw_stt", None),
             )
         synthesize = getattr(getattr(self, "tts", None), "_synthesize", None)
         if synthesize is None:
@@ -5781,6 +5920,12 @@ class Orchestrator:
                 _sb.close()
             except Exception as e:                                  # noqa: BLE001
                 logger.debug("stop button close on shutdown failed: %s", e)
+        _lv = getattr(self, "_log_viewer", None)
+        if _lv is not None:
+            try:
+                _lv.close()
+            except Exception as e:                                  # noqa: BLE001
+                logger.debug("log viewer close on shutdown failed: %s", e)
 
         # Release + close the push-to-talk link so the team-mic key can never be
         # left held after Ultron exits (the hardware deadman also releases it).
@@ -6311,6 +6456,11 @@ class Orchestrator:
                 # prepends the relay lead ("save her off" -> "tell my team save
                 # her off"), which hides the toggle (live "flavor off" miss).
                 _raw_stt = user_text
+                # u1.0: stash the RAW STT (pre-normalization) so the relay LLM path can be
+                # shown BOTH the raw transcript and the normalized callout and reconcile a
+                # mistranscription against a normalization mangle.
+                self._current_raw_stt = _raw_stt
+                self._current_raw_stt_monotonic = time.monotonic()  # FLAG button: "last heard" time
                 try:
                     from kenning.audio.command_normalizer import normalize_command
                     _normed = normalize_command(user_text)
@@ -6540,6 +6690,14 @@ class Orchestrator:
                             via="verbosity_command", follow_up=False,
                         )
                         continue
+                    if self._maybe_handle_conversation_verbosity_command(user_text):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="conversation_verbosity_command", follow_up=False,
+                        )
+                        continue
                     if self._maybe_handle_flavor_toggle(user_text):
                         self._last_response_finished_monotonic = time.monotonic()
                         follow_up_until = None
@@ -6557,6 +6715,18 @@ class Orchestrator:
                         trace.tlog(
                             logger, "loop:iteration_end",
                             via="thinking_toggle", follow_up=False,
+                        )
+                        continue
+                    # LLM-route master toggle: "switch to deterministic / curated
+                    # callouts" (-> the curated pools) vs "back to smart callouts"
+                    # / "route through the model" (-> everything via the LLM, the
+                    # default). The LLM-vs-deterministic master switch.
+                    if self._maybe_handle_llm_route_toggle(user_text):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="llm_route_toggle", follow_up=False,
                         )
                         continue
                     # Relay mute toggle: "mute the team chat" / "you can
@@ -6632,7 +6802,8 @@ class Orchestrator:
                     # always-on-top clickable kill switch; "hide the stop
                     # button" tears it down. Strict matcher -> ordinary
                     # utterances fall through.
-                    if self._maybe_handle_stop_button(user_text):
+                    if (self._maybe_handle_stop_button(user_text)
+                            or self._maybe_handle_logs_command(user_text)):
                         self._last_response_finished_monotonic = time.monotonic()
                         if _addr_cfg.follow_up_enabled:
                             follow_up_until = (
@@ -6850,7 +7021,8 @@ class Orchestrator:
                 # -- anticheat-safe (an ordinary window message, not input
                 # monitoring) and loopback-immune (no wake watcher).
                 if self.coding_voice is None:
-                    if self._maybe_handle_stop_button(user_text):
+                    if (self._maybe_handle_stop_button(user_text)
+                            or self._maybe_handle_logs_command(user_text)):
                         self._last_response_finished_monotonic = time.monotonic()
                         follow_up_until = (
                             self._last_response_finished_monotonic
@@ -6888,6 +7060,14 @@ class Orchestrator:
                             via="verbosity_command-lean", follow_up=False,
                         )
                         continue
+                    if self._maybe_handle_conversation_verbosity_command(_raw_stt):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="conversation_verbosity_command-lean", follow_up=False,
+                        )
+                        continue
                     if self._maybe_handle_flavor_toggle(_raw_stt):
                         self._last_response_finished_monotonic = time.monotonic()
                         follow_up_until = None
@@ -6902,6 +7082,14 @@ class Orchestrator:
                         trace.tlog(
                             logger, "loop:iteration_end",
                             via="thinking_toggle-lean", follow_up=False,
+                        )
+                        continue
+                    if self._maybe_handle_llm_route_toggle(_raw_stt):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="llm_route_toggle-lean", follow_up=False,
                         )
                         continue
                     if self._maybe_handle_relay_toggle(user_text):
@@ -10839,6 +11027,144 @@ class Orchestrator:
             _mc()
         except Exception:                                        # noqa: BLE001
             pass
+
+    def _stop_button_interrupt(self) -> None:
+        """STOP-button click: cut every output channel AND give the run loop the
+        SAME recovery signals the voice 'Ultron, stop' watcher uses -- ``_interrupt``
+        to break the in-flight playback loop and ``_pending_capture`` to re-arm
+        capture. The button previously called only ``_cancel_all_playback``, which
+        silenced audio but left the loop with no interrupt signal, so it hung
+        mid-response and never recovered."""
+        self._cancel_all_playback()
+        try:
+            self._interrupt.set()
+        except Exception:                                        # noqa: BLE001
+            pass
+        try:
+            self._pending_capture.set()
+        except Exception:                                        # noqa: BLE001
+            pass
+
+    def _stop_button_flag(self) -> None:
+        """FLAG-button click: append the LAST turn (a disliked response, a MISSED
+        response -- heard but no reply -- or a response that should NOT have
+        happened) to logs/flagged_turns.jsonl for later review/refinement. The
+        record carries what was last heard + what was last said + how long ago
+        each was, plus the last scenario, so a reviewer can categorise it. Silent
+        (no TTS -- this fires mid-stream); fail-open (a logging error never
+        disrupts a turn)."""
+        try:
+            import json
+            import time as _t
+            from kenning.config import resolve_path
+            now = _t.monotonic()
+            heard = getattr(self, "_current_raw_stt", "") or ""
+            heard_at = getattr(self, "_current_raw_stt_monotonic", 0.0) or 0.0
+            resp = getattr(self, "_last_response_text", "") or ""
+            resp_at = getattr(self, "_last_response_finished_monotonic", 0.0) or 0.0
+            rec = {
+                "ts": round(_t.time(), 3),
+                "flagged_at": _t.strftime("%Y-%m-%d %H:%M:%S", _t.localtime()),
+                "last_heard": heard[:300],
+                "last_response": resp[:400],
+                "seconds_since_heard": (round(now - heard_at, 1)
+                                        if heard_at else None),
+                "seconds_since_response": (round(now - resp_at, 1)
+                                           if resp_at else None),
+                "last_scenario": str(getattr(self, "_last_scenario", None)),
+                "flag": "user_flagged_turn",
+            }
+            path = resolve_path("logs/flagged_turns.jsonl")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            logger.info(
+                "FLAGGED turn -> logs/flagged_turns.jsonl | heard=%r resp=%r "
+                "since_resp=%ss", heard[:60], resp[:60],
+                rec["seconds_since_response"])
+        except Exception as e:                                   # noqa: BLE001
+            logger.warning("stop-button flag failed: %s", e)
+
+    def _stop_button_exit(self) -> None:
+        """EXIT button: cut audio, run the full shutdown/cleanup (reap the embedder
+        sidecar, release PTT + the single-instance lock via process death, stop
+        every thread), then force the process to exit so NOTHING is left running.
+        A watchdog guarantees termination even if a teardown step blocks. Runs on
+        the Tk thread; we hard-exit because the main loop may be mid-playback."""
+        logger.info("EXIT requested from the STOP window")
+        try:
+            self._stop_button_interrupt()
+        except Exception:                                        # noqa: BLE001
+            pass
+        import os as _os
+        import threading as _th
+        # Hard backstop: die within 8 s even if a shutdown() join blocks.
+        _th.Timer(8.0, lambda: _os._exit(0)).start()
+        try:
+            self.shutdown()
+        except Exception as e:                                   # noqa: BLE001
+            logger.warning("shutdown during EXIT failed: %s", e)
+        _os._exit(0)
+
+    def _stop_button_restart(self) -> None:
+        """RESTART button: spawn a detached relauncher that waits for THIS process
+        to fully exit (freeing the single-instance lock + the embedder :8772
+        socket) and then boots a fresh ``python -m kenning`` with the same
+        interpreter / cwd / environment, then run the same full cleanup-and-exit
+        as EXIT."""
+        logger.info("RESTART requested from the STOP window")
+        self._spawn_relauncher()
+        self._stop_button_exit()
+
+    def _spawn_relauncher(self) -> None:
+        """Detached helper: wait for our PID to vanish, then launch a fresh Ultron
+        (same version + config). Fail-open -- a relauncher that can't start just
+        means no auto-restart (Ultron still exits cleanly), never a crash."""
+        try:
+            import os as _os
+            import sys as _sys
+            import subprocess as _sp
+            try:
+                from kenning.config import PROJECT_ROOT as _root
+                cwd = str(_root)
+            except Exception:                                    # noqa: BLE001
+                cwd = _os.getcwd()
+            pid = _os.getpid()
+            py = _sys.executable
+            code = (
+                "import os, sys, time, subprocess\n"
+                "try:\n"
+                "    import psutil\n"
+                "except Exception:\n"
+                "    psutil = None\n"
+                f"pid = {pid}\n"
+                "def alive(p):\n"
+                "    try:\n"
+                "        if psutil is not None:\n"
+                "            return psutil.pid_exists(p)\n"
+                "        os.kill(p, 0)\n"
+                "        return True\n"
+                "    except Exception:\n"
+                "        return False\n"
+                "for _ in range(300):\n"
+                "    if not alive(pid):\n"
+                "        break\n"
+                "    time.sleep(0.2)\n"
+                "time.sleep(1.5)\n"
+                "flags = (0x00000008 | 0x00000200) if os.name == 'nt' else 0\n"
+                f"subprocess.Popen([{py!r}, '-m', 'kenning'], cwd={cwd!r},\n"
+                "                 creationflags=flags, close_fds=True,\n"
+                "                 stdin=subprocess.DEVNULL)\n"
+            )
+            flags = 0
+            if _os.name == "nt":
+                flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | NEW_PROCESS_GROUP
+            _sp.Popen([py, "-c", code], cwd=cwd, env=dict(_os.environ),
+                      creationflags=flags, close_fds=True,
+                      stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+            logger.info("relauncher spawned -- Ultron will reboot after this exits")
+        except Exception as e:                                   # noqa: BLE001
+            logger.warning("relauncher spawn failed (no auto-restart): %s", e)
 
     def _interrupt_watcher(self) -> None:
         """Run wake-word detection during TTS playback for "Ultron, stop" /
