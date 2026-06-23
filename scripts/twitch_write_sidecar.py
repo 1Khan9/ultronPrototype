@@ -418,23 +418,19 @@ class _ServiceState:
 
 
 def _load_access_token(token_path: str) -> str:
-    """Load a live broadcaster OAuth access token, proactively refreshing if near expiry."""
+    """Load the broadcaster's stored OAuth access token (fail-quiet -> "").
+
+    Fast path — reads from disk only.  Call _proactive_token_refresh() ONCE
+    at startup to rotate an expired token; never do the HTTP refresh here
+    because this function is called on every Helix request via get_token().
+    """
     try:
-        from kenning.twitch.auth import TokenStore, TwitchAuth
+        from kenning.twitch.auth import TokenStore
     except Exception as exc:  # noqa: BLE001
         logger.warning("twitch auth import failed: %s", type(exc).__name__)
         return ""
-    store = TokenStore(token_path)
-    client_id = os.environ.get("KENNING_TWITCH_CLIENT_ID", "").strip()
-    if client_id and store.is_expired(margin_seconds=300.0):
-        try:
-            access = TwitchAuth(client_id, store).ensure_valid(margin_seconds=300.0)
-            if access:
-                return access
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("proactive token refresh skipped (%s)", type(exc).__name__)
     try:
-        tokens = store.load()
+        tokens = TokenStore(token_path).load()
     except Exception as exc:  # noqa: BLE001
         logger.warning("twitch token load failed path=%s: %s", token_path, type(exc).__name__)
         return ""
@@ -442,6 +438,25 @@ def _load_access_token(token_path: str) -> str:
         return ""
     access = tokens.get("access_token")
     return access if isinstance(access, str) else ""
+
+
+def _proactive_token_refresh(token_path: str, client_id: str) -> None:
+    """One-shot proactive refresh at sidecar startup (fail-quiet).
+
+    If the stored access token is expired or within 5 minutes of expiry,
+    rotates it using the stored refresh_token so the very first Helix call
+    uses a live token.  Never called inside get_token() — that path is
+    fast (disk-only) so per-request latency is unaffected.
+    """
+    if not client_id:
+        return
+    try:
+        from kenning.twitch.auth import TokenStore, TwitchAuth
+        store = TokenStore(token_path)
+        if store.is_expired(margin_seconds=300.0):
+            TwitchAuth(client_id, store).ensure_valid(margin_seconds=300.0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("proactive token refresh skipped (%s)", type(exc).__name__)
 
 
 def build_service_state() -> _ServiceState:
@@ -470,6 +485,9 @@ def build_service_state() -> _ServiceState:
             bool(client_id), bool(broadcaster_login),
         )
         return state
+
+    # Proactive one-shot refresh at startup (fail-quiet).
+    _proactive_token_refresh(token_path, client_id)
 
     # get_token re-reads the store each call so a rotated token is picked up.
     def get_token() -> str:
