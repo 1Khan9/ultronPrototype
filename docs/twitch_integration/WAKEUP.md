@@ -3,6 +3,27 @@
 Built autonomously overnight 2026-06-21 on branch `claude/affectionate-lehmann-c9fc0a`.
 Read `00_STATUS.md` for the full slice log; `03_spec/` for the spec; `02_board/MASTER.md` for the design.
 
+> ## ⚡ UPDATE 2026-06-23 — the live glue is now BUILT (the "NOT yet wired" section below is STALE)
+> The S10/S12/S13 wiring landed and was folded into `main`. **Booting Ultron with `twitch.enabled: true`
+> auto-spawns the read/guard/write/helper sidecars + the in-process overlay + the redeem→game router + voice
+> moderation + the chat-reply loop — no manual sidecar launching.** The games (Heist/Duel/Trivia/Raffle/spin/
+> slots), the channel-point redeem router, voice-commanded Helix moderation, and the live EventSub chat+redeem
+> subscription all work. **752 twitch tests pass offline** (no creds/models). `config.yaml` now ships a documented,
+> default-OFF `twitch:` template block — fill in your creds + `safety.guard_model_path`, flip `enabled: true`.
+>
+> **Finish-setup quickref:** (1) `python scripts/twitch_setup.py --client-id <ID> --identity broadcaster`
+> then `--identity bot` (mints `~/.kenning/twitch*.json`). (2) Fill the `twitch:` block in `config.yaml`
+> (`auth.client_id`/`broadcaster_login`/`bot_login`, `safety.guard_model_path`). (3) `scripts\validate_config.py`.
+> (4) Stop any running Ultron (BR-P3), then `python -m kenning` — verify sidecars via `curl 127.0.0.1:8773/healthz`
+> etc. and the guard `curl 127.0.0.1:8774/canary`. (5) Flip `chat.reply_enabled: true` to let Ultron speak to chat.
+>
+> **Gaps fixed 2026-06-23:** redeem outcomes now RENDER on the overlay (a `redeem_result→wheel/alert` adapter —
+> the overlay previously rejected the event type); voice **unban + untimeout** now execute (`HelixClient.unban_user`
+> = `DELETE /moderation/bans`, lifts a ban or a timeout) in addition to ban/timeout.
+> **Still open:** `delete` (delete-a-message) needs the target's last message-id threaded from the read sidecar;
+> and games are reachable only via channel-point redeems (no `!heist`/`!duel` CHAT-COMMAND drain) with fixed
+> 100-token pots (the redeem router does not yet write the SQLite economy ledger) — both are a sized follow-up.
+
 ## TL;DR — what landed (all committed, all tested, anticheat-clean, flag-gated default-OFF)
 **307 new tests pass.** Two pillars are complete:
 1. **The entire layered safety architecture** (the part you most wanted "so robust I don't worry"):

@@ -536,10 +536,49 @@ class RedeemRouter:
         except Exception as exc:  # noqa: BLE001 — a TTS hiccup never breaks the tick
             logger.warning("redeem announce failed: %s", exc)
 
+    @staticmethod
+    def _to_overlay_event(event: dict) -> dict | None:
+        """Translate an internal redeem / redeem_result event into one the dumb
+        overlay actually accepts (overlay.server.ALLOWED_EVENT_TYPES = {wheel,
+        alert, ticker}). A wheel spin animates the wheel to its server-decided
+        target angle; every other game + the generic non-game redeem render as an
+        alert banner. Returns None if it can't be mapped (the overlay then shows
+        nothing rather than erroring). This is the adapter that makes redeem
+        outcomes visible on stream (the router's own event shape is kept for the
+        spoken line + the outcomes log)."""
+        etype = str(event.get("type") or "")
+        viewer = str(event.get("viewer") or "someone")
+        if etype == "redeem_result":
+            game = str(event.get("game") or "game")
+            outcome = str(event.get("outcome") or "")
+            if game == "wheel":
+                detail = event.get("detail") or {}
+                try:
+                    angle = float(detail.get("target_angle", 0.0))
+                except (TypeError, ValueError):
+                    angle = 0.0
+                return {"type": "wheel", "angle": angle, "label": outcome[:200]}
+            return {
+                "type": "alert",
+                "title": f"{game.title()} · {viewer}"[:200],
+                "body": outcome[:500],
+            }
+        if etype == "redeem":
+            reward = str(event.get("reward") or "Redemption")
+            return {
+                "type": "alert",
+                "title": reward[:200],
+                "body": f"Redeemed by {viewer}"[:500],
+            }
+        return None
+
     def _emit(self, event: dict) -> None:
         if self._overlay is None:
             return
+        overlay_event = self._to_overlay_event(event)
+        if overlay_event is None:
+            return
         try:
-            self._overlay(event)
+            self._overlay(overlay_event)
         except Exception as exc:  # noqa: BLE001 — overlay down never breaks the tick
             logger.warning("redeem overlay emit failed: %s", exc)

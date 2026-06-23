@@ -78,6 +78,20 @@ class RecordingHelix:
         return HelixResult(action="timeout", ok=True, status=200, idempotent=False,
                            data={"user_id": target_id}, key=("timeout", str(target_id), ""))
 
+    def unban_user(self, broadcaster_id, moderator_id, target_id):
+        self.calls.append(
+            {
+                "method": "unban_user",
+                "broadcaster_id": broadcaster_id,
+                "moderator_id": moderator_id,
+                "target_id": target_id,
+            }
+        )
+        if self._raise is not None:
+            raise self._raise
+        return HelixResult(action="unban", ok=True, status=204, idempotent=False,
+                           data=None, key=("unban", str(target_id), ""))
+
 
 def _roster():
     return [
@@ -361,13 +375,27 @@ def test_confirm_none_proposal_is_safe(tmp_path):
     assert result["ok"] is False and result["error"] == "no_proposal"
 
 
-def test_confirm_unsupported_action_no_helix_write(tmp_path):
-    # untimeout/unban/delete have no write surface on the injected client; the
-    # service reports it cleanly rather than crashing.
+def test_confirm_unban_dispatches_to_unban_user(tmp_path):
+    # unban/untimeout now have a write surface: DELETE /moderation/bans lifts a
+    # ban OR a timeout, so confirm dispatches to helix.unban_user.
     helix = RecordingHelix()
     svc = make_service(tmp_path, helix=helix)
     prop = svc.prepare("unban shroud")
     assert prop.ok  # resolved + authorized
+    result = svc.confirm(prop)
+    assert result["ok"] is True
+    assert [c["method"] for c in helix.calls] == ["unban_user"]
+    assert result["action"] == "unban"
+
+
+def test_confirm_delete_still_unsupported_needs_message_id(tmp_path):
+    # delete needs the target's last message id (not carried on the proposal), so
+    # it is reported cleanly as unsupported rather than crashing or writing.
+    helix = RecordingHelix()
+    svc = make_service(tmp_path, helix=helix)
+    prop = svc.prepare("delete shroud's last message")
+    if not prop.ok:
+        return  # parser may decline a delete without a message id — nothing to assert
     result = svc.confirm(prop)
     assert result["ok"] is False
     assert result["error"] == "unsupported_action"

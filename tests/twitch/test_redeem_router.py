@@ -163,10 +163,16 @@ def test_wheel_redeem_runs_game_announces_and_emits() -> None:
     assert ev["game"] == "wheel"
     assert ev["viewer"] == "alice"
     assert ev["outcome"]  # a non-empty segment label
-    # announce + overlay were both called with the outcome.
     assert spoken and "alice" in spoken[0]
-    assert overlay and overlay[0] == ev
-    # The overlay event carries provably-fair provenance.
+    # The overlay gets a RENDERABLE event (the dumb overlay accepts only
+    # wheel/alert/ticker, not the internal redeem_result): a wheel spin animates
+    # to its server-decided angle carrying the winning label.
+    assert len(overlay) == 1
+    ov = overlay[0]
+    assert ov["type"] == "wheel"
+    assert ov["label"] == ev["outcome"]
+    assert "angle" in ov
+    # The internal outcome still carries provably-fair provenance.
     assert "commit" in ev["detail"] and "server_seed" in ev["detail"]
 
 
@@ -220,11 +226,39 @@ def test_unknown_reward_emits_generic_overlay_no_game() -> None:
     assert outcomes == []
     assert len(overlay) == 1
     g = overlay[0]
-    assert g["type"] == "redeem"
-    assert g["reward"] == "Hydrate Reminder"
-    assert g["viewer"] == "zoe"
+    # A generic non-game redeem renders as an alert banner (an overlay-accepted
+    # type), naming the reward + who redeemed it.
+    assert g["type"] == "alert"
+    assert g["title"] == "Hydrate Reminder"
+    assert "zoe" in g["body"]
     # No spoken line for a non-game redeem.
     assert spoken == []
+
+
+def test_emitted_overlay_events_pass_the_overlay_validator() -> None:
+    # GAP FIX: the router previously emitted 'redeem'/'redeem_result' events that
+    # the dumb overlay REJECTS (validate_event raises) -> redeems never rendered.
+    # The adapter now maps them to wheel/alert, so EVERY emitted event must pass
+    # the real overlay validator (proving redeem outcomes will actually show).
+    from kenning.twitch.overlay.server import validate_event
+
+    overlay: list[dict] = []
+    titles = ["Spin the Wheel", "Slots", "Heist", "Duel", "Trivia", "Raffle",
+              "Hydrate Reminder"]  # every game + one non-game redeem
+    router = RedeemRouter(
+        drain_fn=lambda: [_redeem(f"r{i}", t, login="alice")
+                          for i, t in enumerate(titles)],
+        rng=_seeded_rng(),
+        announce_fn=lambda _l: None,
+        overlay_emit=overlay.append,
+    )
+    router.tick()
+    assert overlay, "redeems must emit overlay events"
+    for ev in overlay:
+        out = validate_event(ev)  # must NOT raise OverlayError
+        assert out["type"] in ("wheel", "alert", "ticker")
+    types = [e["type"] for e in overlay]
+    assert "wheel" in types and "alert" in types  # wheel spins; others alert
 
 
 # --------------------------------------------------------------------------- #

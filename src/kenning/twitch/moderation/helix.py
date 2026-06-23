@@ -549,6 +549,52 @@ class HelixClient:
             return result
         return self._finish_write("delete_message", key, resp, success_statuses=(200, 204))
 
+    def unban_user(
+        self,
+        broadcaster_id: str,
+        moderator_id: str,
+        target_id: str,
+    ) -> HelixResult:
+        """DELETE /moderation/bans -> remove a ban OR a timeout for ``target_id``.
+
+        Twitch has NO separate untimeout endpoint: a timeout is a temporary ban,
+        so removing the ban entry lifts either one. Idempotent: a Twitch 400/404
+        whose body says the user is not banned (or an empty body) is treated as
+        already-applied (the unban already took effect), the same way
+        :meth:`delete_message` treats an already-gone message.
+        """
+        if not broadcaster_id or not moderator_id or not target_id:
+            raise ValueError("broadcaster_id, moderator_id and target_id are required")
+        key = ("unban", str(target_id), "")
+        cached = self._cached(key)
+        if cached is not None:
+            logger.info("helix unban short-circuit (local idempotency) key=%s", key)
+            return HelixResult(
+                action="unban", ok=True, status=0, idempotent=True,
+                data=cached.data, key=key,
+            )
+        resp = self._request(
+            "DELETE",
+            "/moderation/bans",
+            query={
+                "broadcaster_id": str(broadcaster_id),
+                "moderator_id": str(moderator_id),
+                "user_id": str(target_id),
+            },
+        )
+        _body = (resp.body or "").lower()
+        if resp.status in (400, 404) and (
+            "not banned" in _body or "isn't banned" in _body or not resp.body
+        ):
+            logger.info("helix unban already-not-banned (%s) key=%s", resp.status, key)
+            result = HelixResult(
+                action="unban", ok=True, status=resp.status, idempotent=True,
+                data=None, key=key,
+            )
+            self._cache(key, result)
+            return result
+        return self._finish_write("unban", key, resp, success_statuses=(200, 204))
+
     def update_chat_settings(
         self,
         broadcaster_id: str,

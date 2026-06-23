@@ -568,18 +568,26 @@ class ModerationService:
                     duration_s=cmd.duration_seconds or _DEFAULT_TIMEOUT_S,
                     reason=cmd.reason,
                 )
+            elif action in ("unban", "untimeout"):
+                # Twitch has no separate untimeout endpoint — a timeout is a
+                # temporary ban, so DELETE /moderation/bans lifts either one.
+                result = self._helix.unban_user(
+                    self._broadcaster_id, self._moderator_id, target
+                )
             else:
-                # untimeout / unban / delete: no write surface on this client.
+                # delete needs the target's LAST message id, which the proposal
+                # does not carry (it would have to be threaded from the read
+                # sidecar's chat buffer). Report a clear, non-raising result.
                 logger.info(
-                    "moderation confirm: action=%s needs an endpoint not on this "
-                    "client (target=%s); reporting unsupported", action, target,
+                    "moderation confirm: action=%s needs a message id not on the "
+                    "proposal (target=%s); reporting unsupported", action, target,
                 )
                 return {
                     "ok": False,
                     "action": action,
                     "target": proposal.resolved_name or target,
                     "error": "unsupported_action",
-                    "detail": "action has no write surface on the injected HelixClient",
+                    "detail": "delete needs the target's last message id (not yet plumbed)",
                 }
         except HelixError as e:
             logger.warning(
