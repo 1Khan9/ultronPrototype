@@ -29,6 +29,7 @@ v2, ...) rides the same wss session and is classified by
 from __future__ import annotations
 
 import base64
+import errno
 import hashlib
 import json
 import logging
@@ -75,6 +76,13 @@ DEFAULT_EVENTSUB_URL = "wss://eventsub.wss.twitch.tv/ws"
 _MAX_CONTROL_PAYLOAD = 125
 _MAX_MESSAGE_BYTES = 1 << 20  # 1 MiB hard ceiling for one reassembled message
 _RECV_CHUNK = 4096
+
+# errno values that mean "no data ready, try again" on a timeout/non-blocking
+# socket -- treated by the non-blocking recv path the same as socket.timeout
+# (return None, do NOT close). errno.EWOULDBLOCK is often an alias of EAGAIN.
+_WOULDBLOCK_ERRNOS = frozenset(
+    e for e in (getattr(errno, "EAGAIN", None), getattr(errno, "EWOULDBLOCK", None)) if e is not None
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -137,12 +145,18 @@ class FakeSocket:
     the ``socket.socket`` surface the client uses, so no real network is touched.
     """
 
-    def __init__(self, inbound: bytes = b"") -> None:
+    def __init__(self, inbound: bytes = b"", *, block_on_empty: bool = False) -> None:
         self._inbound = bytearray(inbound)
         self._pos = 0
         self.sent = bytearray()
         self.closed = False
         self.timeout: Optional[float] = None
+        # When True, ``recv`` on an exhausted buffer raises ``socket.timeout``
+        # (mirrors a live socket with no data yet) INSTEAD of returning b"" (EOF).
+        # Default False so existing FakeSocket EOF tests are unaffected; a test
+        # opts in to exercise the non-blocking ``recv_json_ready`` drain. The flag
+        # can be flipped at runtime (e.g. fed more bytes, then set to EOF).
+        self.block_on_empty = block_on_empty
 
     # -- server-side test helpers -------------------------------------------- #
     def feed(self, data: bytes) -> None:
@@ -152,6 +166,11 @@ class FakeSocket:
     # -- socket.socket surface ----------------------------------------------- #
     def recv(self, bufsize: int) -> bytes:
         if self._pos >= len(self._inbound):
+            if self.block_on_empty:
+                # No data available within the timeout window — a live socket in
+                # non-blocking/timeout mode raises socket.timeout here; b"" stays
+                # reserved for a genuine EOF (a closed peer).
+                raise socket.timeout("timed out")
             return b""  # EOF — mirrors a closed peer
         chunk = bytes(self._inbound[self._pos : self._pos + bufsize])
         self._pos += len(chunk)
@@ -408,6 +427,134 @@ class RFC6455Client:
             logger.warning("eventsub non-json message dropped: %s", exc)
             return {}
         return obj if isinstance(obj, dict) else {}
+
+    # ------------------------------------------------------------------ #
+    # Non-blocking receive (live-drain for the sidecar poll loop)
+    # ------------------------------------------------------------------ #
+    def recv_json_ready(self, timeout: float) -> Optional[dict]:
+        """Return ONE ready JSON message, or ``None`` if none arrived within ``timeout``.
+
+        The blocking :meth:`recv` / :meth:`recv_json` wait forever for a complete
+        message; the sidecar's poll loop instead wants to drain whatever is ready
+        each cycle WITHOUT blocking indefinitely. This sets the socket timeout to
+        ``timeout`` and attempts to read exactly one complete message:
+
+          * a complete TEXT message ready (possibly reassembled across frames that
+            are already buffered or arrive within the window) -> return it decoded
+            as a JSON object (``{}`` for a non-object/undecodable body, matching
+            :meth:`recv_json`);
+          * no data within ``timeout`` (``socket.timeout``) -> return ``None``
+            WITHOUT closing — the caller polls again next cycle;
+          * a real EOF / socket error / server CLOSE -> raise
+            :class:`WebSocketClosed` exactly as :meth:`recv` does (the caller
+            reconnects).
+
+        PING -> PONG and a stray PONG are handled inline (same as :meth:`recv`).
+        Fragmented messages are reassembled across reads within the window. The
+        existing blocking ``recv()``/``recv_json()`` semantics are UNCHANGED.
+        """
+        try:
+            self._sock.settimeout(timeout)
+        except (OSError, AttributeError) as exc:
+            logger.debug("eventsub settimeout failed: %s", exc)
+        text = self._recv_ready()
+        if text is None:
+            return None
+        try:
+            obj = json.loads(text)
+        except (ValueError, TypeError) as exc:
+            logger.warning("eventsub non-json message dropped: %s", exc)
+            return {}
+        return obj if isinstance(obj, dict) else {}
+
+    def _recv_ready(self) -> Optional[str]:
+        """Reassemble ONE TEXT message non-blocking. ``None`` on a clean timeout.
+
+        Mirrors :meth:`recv`'s frame handling (ping/pong/close/continuation) but a
+        ``socket.timeout`` while waiting for the NEXT frame surfaces as ``None``
+        (no data yet) rather than blocking. A timeout MID-message (we already have
+        the start of a fragmented message buffered) also yields ``None`` for this
+        cycle; the partial bytes stay in ``self._recv_buf`` and are completed on a
+        later call — at-least-once safety is unaffected (the message is not yet
+        emitted, so it cannot be lost or duplicated). A real EOF / error / CLOSE
+        raises :class:`WebSocketClosed` as :meth:`recv` does.
+        """
+        fragments: list[bytes] = []
+        frag_opcode: Optional[int] = None
+        total = 0
+        while True:
+            try:
+                frame = self._next_frame_ready()
+            except WebSocketError:
+                raise
+            if frame is None:
+                return None  # no complete frame available within the window
+            opcode, fin, payload = frame
+
+            if opcode == OPCODE_PING:
+                self.send_pong(payload)
+                continue
+            if opcode == OPCODE_PONG:
+                continue
+            if opcode == OPCODE_CLOSE:
+                code, reason = self._parse_close_payload(payload)
+                self._handle_server_close(code, reason)
+                raise WebSocketClosed(code, reason)
+
+            if opcode in (OPCODE_TEXT, OPCODE_BINARY):
+                frag_opcode = opcode
+                fragments = [payload]
+                total = len(payload)
+            elif opcode == OPCODE_CONT:
+                if frag_opcode is None:
+                    logger.warning("eventsub continuation without start frame — dropping")
+                    fragments = []
+                    continue
+                fragments.append(payload)
+                total += len(payload)
+            else:
+                logger.warning("eventsub unknown opcode 0x%x — dropping", opcode)
+                continue
+
+            if total > self._max_message_bytes:
+                raise WebSocketError("reassembled message exceeds max message size")
+            if fin:
+                data = b"".join(fragments)
+                return data.decode("utf-8", "replace")
+
+    def _next_frame_ready(self) -> Optional[tuple[int, bool, bytes]]:
+        """Like :meth:`_next_frame` but non-blocking: ``None`` on a clean timeout.
+
+        Returns the next complete frame, or ``None`` if no complete frame is
+        available within the socket's current timeout (a ``socket.timeout`` from
+        ``recv`` with no full frame buffered). A genuine EOF / socket error raises
+        :class:`WebSocketClosed`; an oversized buffer raises :class:`WebSocketError`.
+        """
+        while True:
+            parsed = self._parse_frame(bytes(self._recv_buf))
+            if parsed is not None:
+                opcode, fin, payload, consumed = parsed
+                del self._recv_buf[:consumed]
+                return opcode, fin, payload
+            try:
+                chunk = self._sock.recv(_RECV_CHUNK)
+            except socket.timeout:
+                # No bytes within the timeout window — not an error; the caller
+                # polls again. Any partial frame stays buffered for next time.
+                return None
+            except OSError as exc:
+                # A timeout may surface as an OSError with EAGAIN/EWOULDBLOCK on a
+                # non-blocking socket; treat that as "no data" too, anything else
+                # as a closed connection.
+                if isinstance(exc, ssl.SSLWantReadError) or getattr(exc, "errno", None) in _WOULDBLOCK_ERRNOS:
+                    return None
+                logger.warning("eventsub recv error: %s", exc)
+                raise WebSocketClosed(1006, f"recv error: {exc}") from exc
+            if not chunk:
+                raise WebSocketClosed(1006, "peer closed (eof)")
+            self._recv_buf.extend(chunk)
+            if len(self._recv_buf) > self._max_message_bytes + 16:
+                raise WebSocketError("incoming frame exceeds max message size")
 
     def recv(self) -> str:
         """Return the next reassembled TEXT message as ``str``.

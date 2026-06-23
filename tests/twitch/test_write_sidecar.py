@@ -1,0 +1,449 @@
+"""S11 — tests for the Twitch WRITE / Helix moderation sidecar
+(``scripts/twitch_write_sidecar.py``).
+
+Fully offline: a FAKE :class:`ModerationService` is injected into ``build_server``
+and an ephemeral-port (``port=0``) ``SingletonThreadingHTTPServer`` is driven with
+``urllib`` over loopback. No live Twitch connection, no creds, no models.
+
+Covered:
+  * GET /healthz reports ok + ready + broadcaster_id.
+  * POST /prepare on an OK proposal returns a token + the proposal fields.
+  * POST /prepare on a not-a-command returns {"ok":false,"not_a_command":true}.
+  * POST /prepare on a not-ok proposal returns ok=false + NO token + the block reason.
+  * POST /confirm with the prepared token CALLS service.confirm and returns its result.
+  * POST /confirm with an unknown/already-consumed token returns {"error":"expired"}.
+  * the token round-trip: prepare mints a token, confirm consumes it (single use).
+  * POST /cancel drops the pending token (a subsequent confirm is "expired").
+  * an unknown route -> 404; a bad/oversized body -> 400.
+  * the ProposalStore is bounded + TTL'd.
+  * the server binds 127.0.0.1 ONLY (not 0.0.0.0).
+"""
+from __future__ import annotations
+
+import importlib.util
+import json
+import sys
+import threading
+from pathlib import Path
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+
+import pytest
+
+# --------------------------------------------------------------------------- #
+# Load the sidecar module by path (scripts/ is not an importable package).
+# --------------------------------------------------------------------------- #
+_ROOT = Path(__file__).resolve().parents[2]
+_SIDECAR_PATH = _ROOT / "scripts" / "twitch_write_sidecar.py"
+
+
+def _load_sidecar():
+    spec = importlib.util.spec_from_file_location("twitch_write_sidecar", _SIDECAR_PATH)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("twitch_write_sidecar", mod)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+sidecar = _load_sidecar()
+
+
+# --------------------------------------------------------------------------- #
+# Fakes
+# --------------------------------------------------------------------------- #
+class FakeCommand:
+    def __init__(self, action: str) -> None:
+        self.action = action
+
+
+class FakeProposal:
+    """A ModProposal-shaped stand-in (only the attrs the handler reads)."""
+
+    def __init__(
+        self,
+        *,
+        action: str = "ban",
+        ok: bool = True,
+        readback: str = "",
+        reason_blocked: str = "",
+        candidates=None,
+        resolved_name: str = "",
+    ) -> None:
+        self.command = FakeCommand(action)
+        self.ok = ok
+        self.readback = readback
+        self.reason_blocked = reason_blocked
+        self.candidates = candidates or []
+        self.resolved_name = resolved_name
+
+
+class FakeService:
+    """A recording stand-in for ModerationService.
+
+    ``prepare`` returns whatever proposal was queued for the given text (or a
+    default keyed on the leading verb), recording the call. ``confirm`` records
+    the proposal it received and returns a canned result dict.
+    """
+
+    def __init__(self) -> None:
+        self.prepare_calls: list[str] = []
+        self.confirm_calls: list[FakeProposal] = []
+        self._scripted: dict[str, object] = {}
+
+    def script(self, text: str, proposal) -> None:
+        self._scripted[text] = proposal
+
+    def prepare(self, text):
+        self.prepare_calls.append(text)
+        if text in self._scripted:
+            return self._scripted[text]
+        # Default: not a moderation command.
+        return None
+
+    def confirm(self, proposal):
+        self.confirm_calls.append(proposal)
+        return {
+            "ok": True,
+            "action": proposal.command.action,
+            "target": proposal.resolved_name,
+            "detail": {"idempotent": False, "status": 200},
+        }
+
+
+# --------------------------------------------------------------------------- #
+# HTTP harness
+# --------------------------------------------------------------------------- #
+class _Served:
+    """Context manager: a built write sidecar serving on a background thread."""
+
+    def __init__(self, service=None, **kw):
+        self.server, self.store = sidecar.build_server(service, port=0, **kw)
+        self.host, self.port = self.server.server_address[:2]
+        self._thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    def __enter__(self):
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.server.shutdown()
+        self.server.server_close()
+        self._thread.join(timeout=3.0)
+
+    @property
+    def base(self) -> str:
+        return f"http://{self.host}:{self.port}"
+
+
+def _get(url: str) -> tuple[int, dict]:
+    with urlopen(url, timeout=5) as resp:  # noqa: S310 — loopback only
+        return resp.status, json.loads(resp.read().decode("utf-8"))
+
+
+def _post(url: str, body, *, raw: bool = False) -> tuple[int, object]:
+    data = body if raw else json.dumps(body).encode("utf-8")
+    if isinstance(data, str):
+        data = data.encode("utf-8")
+    req = Request(url, data=data, method="POST", headers={"Content-Type": "application/json"})
+    try:
+        with urlopen(req, timeout=5) as resp:  # noqa: S310 — loopback only
+            return resp.status, json.loads(resp.read().decode("utf-8"))
+    except HTTPError as exc:
+        payload = exc.read().decode("utf-8")
+        try:
+            return exc.code, json.loads(payload)
+        except (ValueError, TypeError):
+            return exc.code, payload
+
+
+# --------------------------------------------------------------------------- #
+# Tests — /healthz
+# --------------------------------------------------------------------------- #
+def test_healthz_ready_true() -> None:
+    svc = FakeService()
+    with _Served(svc, ready=True, broadcaster_id="12345") as s:
+        status, body = _get(f"{s.base}/healthz")
+    assert status == 200
+    assert body == {"ok": True, "ready": True, "broadcaster_id": "12345"}
+
+
+def test_healthz_not_ready_when_no_service() -> None:
+    # A None service serves a not-ready surface (the creds-absent case).
+    with _Served(None) as s:
+        status, body = _get(f"{s.base}/healthz")
+    assert status == 200
+    assert body["ok"] is True
+    assert body["ready"] is False
+    assert body["broadcaster_id"] == ""
+
+
+# --------------------------------------------------------------------------- #
+# Tests — /prepare
+# --------------------------------------------------------------------------- #
+def test_prepare_ok_proposal_returns_token_and_fields() -> None:
+    svc = FakeService()
+    svc.script(
+        "ban troll123",
+        FakeProposal(
+            action="ban", ok=True, readback="Ban viewer troll123. Confirm?",
+            resolved_name="troll123",
+        ),
+    )
+    with _Served(svc, ready=True, broadcaster_id="1") as s:
+        status, body = _post(f"{s.base}/prepare", {"text": "ban troll123"})
+    assert status == 200
+    assert body["ok"] is True
+    assert body["token"]  # a non-empty token was minted
+    assert body["readback"] == "Ban viewer troll123. Confirm?"
+    assert body["action"] == "ban"
+    assert body["target"] == "troll123"
+    assert body["reason_blocked"] == ""
+    assert body["candidates"] == []
+    assert svc.prepare_calls == ["ban troll123"]
+
+
+def test_prepare_not_a_command() -> None:
+    svc = FakeService()  # nothing scripted -> prepare returns None
+    with _Served(svc, ready=True, broadcaster_id="1") as s:
+        status, body = _post(f"{s.base}/prepare", {"text": "what's the weather"})
+    assert status == 200
+    assert body == {"ok": False, "not_a_command": True}
+
+
+def test_prepare_not_ok_proposal_returns_no_token() -> None:
+    svc = FakeService()
+    svc.script(
+        "ban ghost",
+        FakeProposal(
+            action="ban", ok=False, reason_blocked="not_found",
+            readback="No recent chatter named ghost. Nothing done.",
+            resolved_name="ghost",
+        ),
+    )
+    with _Served(svc, ready=True, broadcaster_id="1") as s:
+        status, body = _post(f"{s.base}/prepare", {"text": "ban ghost"})
+    assert status == 200
+    assert body["ok"] is False
+    assert body["token"] == ""  # NO token minted for a blocked proposal
+    assert body["reason_blocked"] == "not_found"
+    assert body["action"] == "ban"
+
+
+def test_prepare_ambiguous_surfaces_candidates() -> None:
+    svc = FakeService()
+    cands = [
+        {"user_id": "1", "login": "bob", "display_name": "Bob", "score": 92.0},
+        {"user_id": "2", "login": "bobby", "display_name": "Bobby", "score": 90.0},
+    ]
+    svc.script(
+        "ban bob",
+        FakeProposal(action="ban", ok=False, reason_blocked="ambiguous", candidates=cands),
+    )
+    with _Served(svc, ready=True, broadcaster_id="1") as s:
+        status, body = _post(f"{s.base}/prepare", {"text": "ban bob"})
+    assert status == 200
+    assert body["ok"] is False
+    assert body["reason_blocked"] == "ambiguous"
+    assert body["candidates"] == cands
+    assert body["token"] == ""
+
+
+def test_prepare_text_must_be_string() -> None:
+    svc = FakeService()
+    with _Served(svc, ready=True, broadcaster_id="1") as s:
+        status, body = _post(f"{s.base}/prepare", {"text": 42})
+    assert status == 400
+    assert body["ok"] is False
+
+
+# --------------------------------------------------------------------------- #
+# Tests — /confirm + the token round-trip
+# --------------------------------------------------------------------------- #
+def test_confirm_consumes_token_and_calls_service() -> None:
+    svc = FakeService()
+    prop = FakeProposal(action="timeout", ok=True, resolved_name="rascal")
+    svc.script("timeout rascal", prop)
+    with _Served(svc, ready=True, broadcaster_id="1") as s:
+        _, prep = _post(f"{s.base}/prepare", {"text": "timeout rascal"})
+        token = prep["token"]
+        assert token
+
+        status, body = _post(f"{s.base}/confirm", {"token": token})
+        assert status == 200
+        assert body["ok"] is True
+        assert body["action"] == "timeout"
+        assert body["target"] == "rascal"
+        # confirm was handed the SAME proposal object prepare stored.
+        assert svc.confirm_calls == [prop]
+
+        # The token is single-use: a second confirm is "expired".
+        status2, body2 = _post(f"{s.base}/confirm", {"token": token})
+        assert status2 == 200
+        assert body2 == {"ok": False, "error": "expired"}
+
+
+def test_confirm_unknown_token_is_expired() -> None:
+    svc = FakeService()
+    with _Served(svc, ready=True, broadcaster_id="1") as s:
+        status, body = _post(f"{s.base}/confirm", {"token": "nope-not-a-real-token"})
+    assert status == 200
+    assert body == {"ok": False, "error": "expired"}
+    assert svc.confirm_calls == []  # no write attempted
+
+
+def test_confirm_requires_token_string() -> None:
+    svc = FakeService()
+    with _Served(svc, ready=True, broadcaster_id="1") as s:
+        status, body = _post(f"{s.base}/confirm", {"token": ""})
+    assert status == 400
+    assert body["ok"] is False
+
+
+# --------------------------------------------------------------------------- #
+# Tests — /cancel
+# --------------------------------------------------------------------------- #
+def test_cancel_drops_pending_token() -> None:
+    svc = FakeService()
+    prop = FakeProposal(action="ban", ok=True, resolved_name="troll")
+    svc.script("ban troll", prop)
+    with _Served(svc, ready=True, broadcaster_id="1") as s:
+        _, prep = _post(f"{s.base}/prepare", {"text": "ban troll"})
+        token = prep["token"]
+
+        status, body = _post(f"{s.base}/cancel", {"token": token})
+        assert status == 200
+        assert body == {"ok": True}
+
+        # After cancel the token is gone -> confirm is "expired", no write.
+        status2, body2 = _post(f"{s.base}/confirm", {"token": token})
+        assert body2 == {"ok": False, "error": "expired"}
+        assert svc.confirm_calls == []
+
+
+def test_cancel_unknown_token_is_ok() -> None:
+    svc = FakeService()
+    with _Served(svc, ready=True, broadcaster_id="1") as s:
+        status, body = _post(f"{s.base}/cancel", {"token": "ghost"})
+    assert status == 200
+    assert body == {"ok": True}
+
+
+# --------------------------------------------------------------------------- #
+# Tests — routing + hostile input
+# --------------------------------------------------------------------------- #
+def test_unknown_route_404() -> None:
+    svc = FakeService()
+    with _Served(svc, ready=True, broadcaster_id="1") as s:
+        status, body = _post(f"{s.base}/nope", {"x": 1})
+    assert status == 404
+    assert body["ok"] is False
+
+
+def test_unknown_get_route_404() -> None:
+    svc = FakeService()
+    with _Served(svc, ready=True, broadcaster_id="1") as s:
+        try:
+            with urlopen(f"{s.base}/whatever", timeout=5):  # noqa: S310
+                code = 200
+        except HTTPError as exc:
+            code = exc.code
+    assert code == 404
+
+
+def test_bad_body_400() -> None:
+    svc = FakeService()
+    with _Served(svc, ready=True, broadcaster_id="1") as s:
+        status, body = _post(f"{s.base}/prepare", b"{not json", raw=True)
+    assert status == 400
+    assert body["ok"] is False
+
+
+def test_oversized_body_400() -> None:
+    svc = FakeService()
+    with _Served(svc, ready=True, broadcaster_id="1") as s:
+        url = f"{s.base}/prepare"
+        # Send a Content-Length way above the 1 MiB cap; the handler rejects on
+        # the header before reading the body.
+        req = Request(url, data=b"{}", method="POST")
+        req.add_header("Content-Length", str((1 << 20) + 1))
+        try:
+            with urlopen(req, timeout=5) as resp:  # noqa: S310
+                status = resp.status
+                payload = json.loads(resp.read().decode("utf-8"))
+        except HTTPError as exc:
+            status = exc.code
+            payload = json.loads(exc.read().decode("utf-8"))
+    assert status == 400
+    assert payload["ok"] is False
+
+
+# --------------------------------------------------------------------------- #
+# Tests — ProposalStore unit behaviour
+# --------------------------------------------------------------------------- #
+def test_proposal_store_cap_evicts_oldest() -> None:
+    store = sidecar.ProposalStore(cap=2)
+    t1 = store.put("p1")
+    t2 = store.put("p2")
+    t3 = store.put("p3")  # evicts t1 (oldest)
+    assert store.pop(t1) is None
+    assert store.pop(t2) == "p2"
+    assert store.pop(t3) == "p3"
+
+
+def test_proposal_store_ttl_expires() -> None:
+    clock = {"t": 1000.0}
+    store = sidecar.ProposalStore(ttl_s=10.0, monotonic=lambda: clock["t"])
+    tok = store.put("prop")
+    clock["t"] += 11.0  # past the TTL
+    assert store.pop(tok) is None
+
+
+def test_proposal_store_pop_is_single_use() -> None:
+    store = sidecar.ProposalStore()
+    tok = store.put("only-once")
+    assert store.pop(tok) == "only-once"
+    assert store.pop(tok) is None
+
+
+# --------------------------------------------------------------------------- #
+# Tests — loopback bind invariant + roster cache
+# --------------------------------------------------------------------------- #
+def test_binds_loopback_only() -> None:
+    svc = FakeService()
+    with _Served(svc, ready=True, broadcaster_id="1") as s:
+        assert s.host == "127.0.0.1"  # NEVER 0.0.0.0
+
+
+def test_roster_cache_harvests_chat_events_most_recent_wins() -> None:
+    def fake_opener(url: str) -> bytes:
+        assert url.endswith("/buffer?since=0")
+        payload = {
+            "events": [
+                {"seq": 1, "ts": 1.0, "event": {"type": "chat", "chatter_login": "Alice", "chatter_user_id": "10"}},
+                {"seq": 2, "ts": 2.0, "event": {"type": "chat", "chatter_login": "bob", "chatter_user_id": "20"}},
+                {"seq": 3, "ts": 3.0, "event": {"type": "redeem", "chatter_login": "carol", "chatter_user_id": "30"}},
+                # A later alice with a new id -> most-recent wins.
+                {"seq": 4, "ts": 4.0, "event": {"type": "chat", "chatter_login": "alice", "chatter_user_id": "11"}},
+            ],
+            "cursor": 4,
+        }
+        return json.dumps(payload).encode("utf-8")
+
+    cache = sidecar.RosterCache("http://127.0.0.1:8773", opener=fake_opener)
+    roster = cache()
+    assert roster == {"alice": "11", "bob": "20"}  # redeem ignored; alice updated
+
+
+def test_roster_cache_failsafe_on_down_sidecar() -> None:
+    def boom(url: str) -> bytes:
+        raise OSError("connection refused")
+
+    cache = sidecar.RosterCache("http://127.0.0.1:8773", opener=boom)
+    # A down read sidecar leaves an empty roster (never raises).
+    assert cache() == {}
+
+
+def test_parent_watchdog_check_alive_for_unset_pid() -> None:
+    assert sidecar.parent_watchdog_check(0) == "alive"
+    assert sidecar.parent_watchdog_check(-1) == "alive"

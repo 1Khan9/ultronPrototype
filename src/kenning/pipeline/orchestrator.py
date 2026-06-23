@@ -1442,6 +1442,15 @@ class Orchestrator:
                     # without touching the relay.
                     on_toggle_ptt=self._set_ptt_runtime_enabled,
                     ptt_enabled=self._ptt_runtime_enabled,
+                    # TURBO toggle row: flips auto-relay of inferred callouts at
+                    # runtime -- the SAME module flag the "turbo mode on/off" voice
+                    # command flips. Initial display reads the config default
+                    # (default OFF, like PTT); a click calls set_turbo_mode_enabled.
+                    on_toggle_turbo=self._set_turbo_runtime_enabled,
+                    turbo_enabled=bool(getattr(
+                        get_config().relay_speech, "turbo_mode", False)),
+                    turbo_height=getattr(_sb, "turbo_height", 26),
+                    turbo_label=getattr(_sb, "turbo_label", "TURBO"),
                 )
                 if getattr(_sb, "show_at_startup", False):
                     self._stop_button.show()
@@ -1477,6 +1486,30 @@ class Orchestrator:
                 getattr(_rs_cfg, "conversation_verbosity", "high"))
         except Exception as e:                                       # noqa: BLE001
             logger.debug("u1.0 boot-apply skipped: %s", e)
+
+        # ULTRON 1.0 TURBO MODE: apply the default-OFF turbo flag + sensitivity
+        # from config (relay_speech.turbo_mode / .turbo_aggressive) to the runtime
+        # flags. Default OFF -> boot is keyword-only (the stream/chat-safe default);
+        # the voice "turbo mode on" / the STOP-window TURBO button flip it live.
+        # The relay_speech module defaults stay test-friendly OFF; this boot-apply
+        # is what lets config.yaml set the live default. Fail-open.
+        try:
+            from kenning.audio.relay_speech import (
+                set_turbo_mode_enabled, set_turbo_aggressive,
+            )
+            from kenning.config import get_config as _gc_turbo
+            _ts_cfg = _gc_turbo().relay_speech
+            _turbo_on = bool(getattr(_ts_cfg, "turbo_mode", False))
+            _turbo_aggr = bool(getattr(_ts_cfg, "turbo_aggressive", False))
+            set_turbo_mode_enabled(_turbo_on)
+            set_turbo_aggressive(_turbo_aggr)
+            logger.info(
+                "u1.0 TURBO mode: %s (sensitivity=%s)",
+                "ON (auto-relay inferred callouts)" if _turbo_on
+                else "OFF (keyword relay only)",
+                "aggressive" if _turbo_aggr else "balanced")
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("u1.0 turbo boot-apply skipped: %s", e)
 
         # Voice-summoned LOG VIEWER ("show me the logs") -- a scrollable, copyable
         # window tailing logs/kenning.log so the user can read + copy runtime logs
@@ -3226,10 +3259,29 @@ class Orchestrator:
         """
         from kenning.audio import intent_gate
         try:
+            # TURBO MODE (default OFF): when ON, loosen the gate's RELAY_TO_TEAM
+            # precondition so a bare callout-shaped utterance relays without a
+            # "tell my team" prefix (the lexical recovery in _relay_signal). Read
+            # live so the voice / STOP-window turbo toggle takes effect immediately.
+            try:
+                from kenning.audio.relay_speech import turbo_mode_enabled as _tme
+                _turbo = bool(_tme())
+            except Exception:                                        # noqa: BLE001
+                _turbo = False
+            # Use the SAME addressee roster the dispatch relay matcher uses, so the
+            # turbo predicate (match_relay_command in _relay_signal) and
+            # _maybe_handle_relay_speech never disagree on a per-agent callout when a
+            # custom addressee_names is configured (empty -> DEFAULT_ADDRESSEE_NAMES).
+            try:
+                from kenning.config import get_config as _gc_names
+                _names = getattr(_gc_names().relay_speech, "addressee_names", None) or None
+            except Exception:                                        # noqa: BLE001
+                _names = None
             verdict = intent_gate.classify_scenario(
                 user_text,
                 seconds_since_response=seconds_since,
-                names=None,  # match_relay_command falls back to DEFAULT_ADDRESSEE_NAMES
+                names=_names,
+                turbo=_turbo,
             )
             if verdict.needs_llm:
                 verdict = intent_gate.resolve_with_llm(verdict, user_text, self.llm)
@@ -3585,6 +3637,41 @@ class Orchestrator:
             if verdict else "Deterministic callouts. The curated pool."
         )
         return True
+
+    def _maybe_handle_turbo_command(self, user_text: str) -> bool:
+        """Voice command for ULTRON 1.0 TURBO MODE -- auto-relay inferred team
+        callouts WITHOUT a "tell my team" prefix. "turbo mode on/off" flips it;
+        "turbo aggressive/balanced" tunes recall vs false relays. ON makes the loop
+        listen continuously (always-listening capture) and relay callout-shaped
+        speech straight to the team via the LLM; OFF is the keyword-only default
+        (safe to talk to the stream/chat). Strict matchers -> ordinary speech
+        (including a callout that merely says "turbo") falls through. Checked among
+        the toggles, BEFORE the relay handler, so the command never relays.
+        Process-global; resets to the config default on restart."""
+        try:
+            from kenning.audio.relay_speech import (
+                match_turbo_toggle, set_turbo_mode_enabled,
+                match_turbo_sensitivity, set_turbo_aggressive,
+            )
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("turbo command probe failed: %s", e)
+            return False
+        verdict = match_turbo_toggle(user_text)
+        if verdict is not None:
+            set_turbo_mode_enabled(verdict)
+            logger.info("relay:turbo_toggle | enabled=%s", verdict)
+            self._speak(
+                "Turbo mode on. Reading your callouts."
+                if verdict else "Turbo mode off. Command relay only."
+            )
+            return True
+        sens = match_turbo_sensitivity(user_text)
+        if sens is not None:
+            set_turbo_aggressive(sens)
+            logger.info("relay:turbo_sensitivity | aggressive=%s", sens)
+            self._speak("Turbo aggressive." if sens else "Turbo balanced.")
+            return True
+        return False
 
     def _maybe_handle_llm_device_switch(self, user_text: str) -> bool:
         """Voice command to hot-switch the 3B model between CPU and GPU
@@ -6030,6 +6117,17 @@ class Orchestrator:
             self._kill_embedder_sidecar()
         except Exception:                                            # noqa: BLE001
             pass
+        # Reap the Twitch sidecars (read/guard/helper) + stop the in-process
+        # overlay BEFORE stopping the reaper / exiting -- same ordering rationale
+        # as the embedder. No-op when twitch was never enabled.
+        try:
+            self._kill_twitch_sidecars()
+        except Exception:                                            # noqa: BLE001
+            pass
+        try:
+            self._stop_twitch_overlay()
+        except Exception:                                            # noqa: BLE001
+            pass
         # Stop the subprocess reaper thread so the process exits cleanly.
         killer = getattr(self, "_zombie_killer", None)
         if killer is not None:
@@ -6116,8 +6214,75 @@ class Orchestrator:
             tcfg = getattr(get_config(), "twitch", None)
             if tcfg is None or not getattr(tcfg, "enabled", False):
                 return
+            # Auto-spawn the loopback sidecars (read/guard/helper) + start the
+            # in-process overlay so the operator never launches them by hand. Done
+            # BEFORE the LLM check so chat READING, moderation, and the overlay work
+            # even when the 8B isn't loaded (only chat-REPLY needs the 8B). All
+            # gated behind twitch.enabled; each call is fail-open.
+            self._start_twitch_sidecars(tcfg)
+            self._start_twitch_overlay(tcfg)
+            # Voice-commanded moderation: a loopback client to the write sidecar
+            # (which holds the broadcaster token + does all Helix I/O off this
+            # process). Built only when moderation is enabled AND creds are present;
+            # the dispatch handler no-ops without it. The 8B is never in this path.
+            self._twitch_mod_remote = None
+            self._twitch_mod_pending = None
+            try:
+                mod_cfg = getattr(tcfg, "moderation", None)
+                auth_cfg = getattr(tcfg, "auth", None)
+                if (getattr(mod_cfg, "voice_commands_enabled", False)
+                        and getattr(auth_cfg, "client_id", None)
+                        and getattr(auth_cfg, "broadcaster_login", None)):
+                    from kenning.twitch.moderation.remote import ModerationRemote
+                    write_ep = str(getattr(tcfg, "write_sidecar_endpoint",
+                                           "http://127.0.0.1:8777"))
+                    self._twitch_mod_remote = ModerationRemote(write_ep)
+                    logger.info("twitch voice moderation armed (two-phase confirm; "
+                                "write sidecar %s)", write_ep)
+            except Exception as e:                                   # noqa: BLE001
+                logger.warning("twitch moderation client init failed: %s", e)
+                self._twitch_mod_remote = None
+            # Channel-point redeem -> game router. Independent of the 8B (games +
+            # announce + overlay only), so it runs in its own daemon loop started
+            # here -- before the LLM check -- gated on twitch.economy.enabled (which
+            # is also what makes the read sidecar subscribe to redeems).
+            self._twitch_redeem_router = None
+            try:
+                if getattr(getattr(tcfg, "economy", None), "enabled", False):
+                    from kenning.twitch.redeem_router import (
+                        RedeemRouter, make_redeem_drain_fn,
+                    )
+                    read_ep = str(getattr(tcfg, "read_sidecar_endpoint",
+                                          "http://127.0.0.1:8773"))
+                    ov = getattr(self, "_twitch_overlay_server", None)
+                    overlay_emit = getattr(ov, "emit", None) if ov is not None else None
+                    router = RedeemRouter(
+                        make_redeem_drain_fn(read_ep),
+                        announce_fn=self._speak,
+                        overlay_emit=overlay_emit,
+                    )
+                    self._twitch_redeem_router = router
+                    self._twitch_chat_stop = False
+                    import threading as _rth
+                    import time as _rtime
+
+                    def _redeem_loop() -> None:
+                        while not getattr(self, "_twitch_chat_stop", False):
+                            _rtime.sleep(1.5)
+                            try:
+                                router.tick()
+                            except Exception as re:                  # noqa: BLE001
+                                logger.debug("twitch redeem tick error: %s", re)
+
+                    _rth.Thread(target=_redeem_loop, daemon=True,
+                                name="twitch-redeem").start()
+                    logger.info("twitch redeem router started (channel-point games)")
+            except Exception as e:                                   # noqa: BLE001
+                logger.warning("twitch redeem router init failed: %s", e)
+                self._twitch_redeem_router = None
             if getattr(self, "llm", None) is None:
-                logger.warning("twitch chat-mode: no LLM engine loaded; chat-mode disabled")
+                logger.warning("twitch: no LLM engine loaded; chat-REPLY disabled "
+                               "(read/overlay/moderation/redeems still active)")
                 return
             from kenning.twitch.service import ChatModeService
 
@@ -6137,9 +6302,30 @@ class Orchestrator:
             except Exception:                                        # noqa: BLE001
                 embed_fn = None
 
+            # Inferred do-not-disturb: hold chat replies while a callout just fired
+            # so Twitch chat never talks over the team. callout_age uses the same
+            # monotonic the dispatch already stamps after every spoken response;
+            # VAD/PTT signals are not yet sourced (fail-quiet to "not busy").
+            busy_estimator = None
+            try:
+                import time as _bt
+                from kenning.twitch.busy import BusyEstimator
+                busy_estimator = BusyEstimator(
+                    vad_fn=lambda: False,
+                    ptt_fn=lambda: False,
+                    callout_age_fn=lambda: (
+                        (_bt.monotonic() - self._last_response_finished_monotonic)
+                        if self._last_response_finished_monotonic else float("inf")
+                    ),
+                )
+            except Exception as e:                                   # noqa: BLE001
+                logger.debug("twitch busy-estimator unavailable: %s", e)
+                busy_estimator = None
+
             svc = ChatModeService(
                 tcfg, llm_fn=_llm_fn, orchestrator_speak=self._speak,
                 embed_fn=embed_fn, on_flagged=None,
+                busy_estimator=busy_estimator,
             )
             self._twitch_chat_service = svc
             self._twitch_chat_stop = False
@@ -6162,6 +6348,237 @@ class Orchestrator:
         except Exception as e:                                       # noqa: BLE001 — never break boot
             logger.warning("twitch chat-mode init failed (chat-mode off): %s", e)
 
+    def _start_twitch_sidecars(self, tcfg: Any) -> None:
+        """Spawn the Twitch loopback sidecars (read + optional guard/helper) as
+        ISOLATED child processes, mirroring ``_start_embedder_sidecar``: a
+        ``subprocess.Popen`` of the standalone launcher script with a parent-death
+        deadman env key + ZombieKiller registration, so NO Twitch transport / GGUF
+        ever loads into THIS anticheat-pinned process and a crashed Ultron leaves no
+        orphan. The sidecars self-guard their port (``guard_singleton``/
+        ``write_role``), so we only Popen + track for reaping. Idempotent (skips if
+        already spawned this run) and fully fail-open — a missing script/model never
+        breaks boot. Caller has already confirmed ``twitch.enabled``."""
+        if getattr(self, "_twitch_sidecar_procs", None):
+            return  # already spawned this run
+        import subprocess
+        import sys as _sys
+        try:
+            from kenning.twitch.sidecar_launch import plan_sidecars
+            specs = plan_sidecars(tcfg)
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("twitch sidecar planning failed (%s); none spawned", e)
+            return
+        py = _sys.executable
+        if not py or not os.path.exists(py):
+            logger.warning("twitch sidecars: interpreter %r missing; none spawned", py)
+            return
+        procs: list = []
+        parent_pid = str(os.getpid())
+        zk = getattr(self, "_zombie_killer", None)
+        for spec in specs:
+            script_path = os.path.abspath(spec.script)
+            if not os.path.exists(script_path):
+                logger.warning("twitch %s sidecar script missing: %s", spec.role, script_path)
+                continue
+            env = dict(os.environ)
+            env["KENNING_TWITCH_PARENT_PID"] = parent_pid
+            env.update(spec.env)
+            try:
+                proc = subprocess.Popen(
+                    [py, script_path, str(spec.port)],
+                    env=env,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    cwd=os.getcwd(),
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except Exception as e:                                   # noqa: BLE001
+                logger.warning("twitch %s sidecar spawn failed: %s", spec.role, e)
+                continue
+            procs.append((spec.role, proc))
+            if zk is not None:
+                try:
+                    zk.register(proc.pid, f"{spec.role}-sidecar",
+                                persistent=False, hard_timeout_s=3600.0)
+                except Exception:                                    # noqa: BLE001
+                    pass
+            logger.info("twitch %s sidecar spawned (pid=%s) on 127.0.0.1:%d "
+                        "-- ISOLATED process, no transport/model in THIS process",
+                        spec.role, proc.pid, spec.port)
+        self._twitch_sidecar_procs = procs
+
+    def _kill_twitch_sidecars(self) -> None:
+        """Reap every spawned Twitch sidecar process TREE on shutdown. UNREGISTERS
+        each from the ZombieKiller FIRST (so the reaper can't race the kill),
+        tree-kills it, and clears its per-role pidfile. Never raises."""
+        procs = getattr(self, "_twitch_sidecar_procs", None) or []
+        if not procs:
+            return
+        zk = getattr(self, "_zombie_killer", None)
+        for role, proc in procs:
+            pid = getattr(proc, "pid", None)
+            if not pid:
+                continue
+            try:
+                if zk is not None:
+                    try:
+                        zk.unregister(pid)
+                    except Exception:                                # noqa: BLE001
+                        pass
+                from kenning.subprocess.kill_tree import kill_process_tree
+                res = kill_process_tree(int(pid), grace_seconds=5.0)
+                logger.info("twitch %s sidecar reaped (pid=%s killed=%s)",
+                            role, pid, getattr(res, "total_killed", None))
+                try:
+                    from kenning.subprocess import sidecar_lock
+                    sidecar_lock.clear_role(role)
+                except Exception:                                    # noqa: BLE001
+                    pass
+            except Exception as e:                                   # noqa: BLE001
+                logger.debug("twitch %s sidecar reap skipped (%s)", role, e)
+        self._twitch_sidecar_procs = []
+
+    def _start_twitch_overlay(self, tcfg: Any) -> None:
+        """Start the loopback OBS overlay server IN-PROCESS (it is pure-stdlib
+        ``http.server`` on 127.0.0.1, anticheat-clean) when ``twitch.overlay.enabled``
+        and surface its token-carrying URL to the operator + log so OBS can be
+        pointed at it. Fail-open; a port clash or import error just logs."""
+        ov = getattr(tcfg, "overlay", None)
+        if ov is None or not getattr(ov, "enabled", False):
+            return
+        try:
+            from kenning.twitch.overlay.server import OverlayServer
+            host = str(getattr(ov, "host", "127.0.0.1"))
+            port = int(getattr(ov, "port", 8775) or 0)
+            server = OverlayServer(host=host, port=port)
+            server.start()
+            self._twitch_overlay_server = server
+            url = server.url()
+            logger.info("twitch overlay ready: %s", url)
+            print(f"\n  Twitch overlay ready -- add this as an OBS Browser Source:\n    {url}\n")
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("twitch overlay start failed: %s", e)
+            self._twitch_overlay_server = None
+
+    def _stop_twitch_overlay(self) -> None:
+        """Stop the in-process overlay server on shutdown. Never raises."""
+        server = getattr(self, "_twitch_overlay_server", None)
+        if server is None:
+            return
+        try:
+            server.stop()
+        except Exception:                                            # noqa: BLE001
+            pass
+        self._twitch_overlay_server = None
+
+    def _maybe_handle_twitch_moderation(self, user_text: str) -> bool:
+        """Voice-commanded Twitch moderation (two-phase confirm). Returns True iff
+        this turn was a moderation command or a yes/no confirmation and was
+        consumed. Gated on a live ``_twitch_mod_remote`` (built only when
+        twitch.enabled + moderation enabled + creds) -> a None remote is ALWAYS a
+        clean False, so the feature-OFF path is byte-identical. The abliterated 8B
+        is NEVER in this path: parse + roster-resolve + authorize all happen in the
+        write sidecar; here we only relay text and speak the read-back/result."""
+        remote = getattr(self, "_twitch_mod_remote", None)
+        if remote is None:
+            return False
+        text = (user_text or "").strip()
+        if not text:
+            return False
+        pending = getattr(self, "_twitch_mod_pending", None)
+        # Phase 2: a proposal is awaiting the streamer's yes/no.
+        if pending is not None:
+            decision = self._twitch_mod_decision(text)
+            if decision == "yes":
+                self._twitch_mod_pending = None
+                try:
+                    res = remote.confirm(str(pending.get("token", "")))
+                except Exception:                                    # noqa: BLE001
+                    res = {"ok": False, "error": "remote_error"}
+                self._speak(self._twitch_mod_result_line(res, pending))
+                return True
+            if decision == "no":
+                self._twitch_mod_pending = None
+                try:
+                    remote.cancel(str(pending.get("token", "")))
+                except Exception:                                    # noqa: BLE001
+                    pass
+                self._speak("Stood down. No action taken.")
+                return True
+            # Neither yes nor no -> the streamer moved on; drop the stale proposal
+            # and fall through to parse this utterance as a fresh command.
+            self._twitch_mod_pending = None
+        # Phase 1: is this a moderation command at all?
+        try:
+            prop = remote.prepare(text)
+        except Exception:                                            # noqa: BLE001
+            return False
+        if not isinstance(prop, dict) or prop.get("not_a_command"):
+            return False
+        if prop.get("ok"):
+            self._twitch_mod_pending = {
+                "token": str(prop.get("token", "") or ""),
+                "action": str(prop.get("action", "") or ""),
+                "target": str(prop.get("target", "") or ""),
+            }
+            self._speak(str(prop.get("readback", "") or "Confirm?"))
+            return True
+        # Recognized as a mod command but not actionable (ambiguous/protected/...).
+        self._speak(self._twitch_mod_block_line(prop))
+        return True
+
+    @staticmethod
+    def _twitch_mod_decision(text: str) -> str:
+        """Classify a confirmation utterance as ``yes`` / ``no`` / ``other``."""
+        t = (text or "").strip().lower().rstrip(".!")
+        yes = ("yes", "yep", "yeah", "yup", "confirm", "confirmed", "do it",
+               "affirmative", "go ahead", "approved", "proceed", "ban them",
+               "ban him", "ban her")
+        no = ("no", "nope", "cancel", "stop", "stand down", "negative", "abort",
+              "never mind", "nevermind", "don't", "do not", "leave it")
+        if any(t == w or t.startswith(w + " ") for w in yes):
+            return "yes"
+        if any(t == w or t.startswith(w + " ") for w in no):
+            return "no"
+        return "other"
+
+    @staticmethod
+    def _twitch_mod_block_line(prop: dict) -> str:
+        """In-character line for a recognized-but-blocked moderation command."""
+        reason = str(prop.get("reason_blocked", "") or "")
+        target = str(prop.get("target", "") or "that user")
+        cands = prop.get("candidates") or []
+        if reason == "ambiguous":
+            names = ", ".join(
+                str(c.get("login", c) if isinstance(c, dict) else c) for c in cands[:5])
+            return (f"Ambiguous. Which one: {names}." if names
+                    else "That name is ambiguous. Be specific.")
+        if reason == "not_found":
+            return f"I cannot find {target} in chat."
+        if reason == "protected":
+            return f"I will not action {target}."
+        if reason == "rate_limited":
+            return "Too many actions too fast. Slow down."
+        return "I cannot do that."
+
+    @staticmethod
+    def _twitch_mod_result_line(res: dict, pending: dict) -> str:
+        """In-character line for the outcome of a confirmed moderation action."""
+        action = str(pending.get("action", "action") or "action")
+        target = str(pending.get("target", "") or "")
+        if isinstance(res, dict) and res.get("ok"):
+            verb = {
+                "ban": "Banned", "timeout": "Timed out",
+                "untimeout": "Lifted the timeout on", "unban": "Unbanned",
+                "delete": "Deleted a message from",
+            }.get(action, "Done with")
+            return f"{verb} {target}.".strip()
+        err = str((res or {}).get("error", "") or "")
+        if err == "unsupported_action":
+            return f"I cannot {action} from here yet."
+        if err == "expired":
+            return "That confirmation expired. Say the command again."
+        return ("That failed." + (f" {err}" if err else "")).strip()
+
     def run(self) -> None:
         """Block forever, processing wake events until shutdown."""
         from kenning.config import get_config
@@ -6180,6 +6597,23 @@ class Orchestrator:
             os.getenv("KENNING_ALWAYS_LISTENING", "").strip().lower()
             in ("1", "true", "yes", "on")
         )
+
+        def _listening_now() -> bool:
+            """Effective always-listening for THIS iteration: the config/env flag
+            OR Ultron 1.0 TURBO MODE. Turbo implies continuous capture so the
+            player can just talk and have un-prefixed callouts heard + relayed.
+            Read LIVE (not captured at boot like ``_always_listening``) so the
+            turbo voice / STOP-window toggle takes effect on the next iteration.
+            When turbo is OFF and always_listening is OFF this is False -> the
+            wake-required path is byte-identical to today."""
+            if _always_listening:
+                return True
+            try:
+                from kenning.audio.relay_speech import turbo_mode_enabled
+                return bool(turbo_mode_enabled())
+            except Exception:                                        # noqa: BLE001
+                return False
+
         self.audio.start()
         # Twitch chat-mode (flag-gated default-OFF; no-op + zero twitch import when
         # twitch.enabled is False -> voice/relay runtime byte-identical).
@@ -6277,7 +6711,7 @@ class Orchestrator:
                 # No-op when OFF (the wake-required path is unchanged); also
                 # independent of ``follow_up_enabled`` (which OFF-by-default
                 # disables only the *wake-word* follow-up window).
-                if _always_listening and follow_up_until is None:
+                if _listening_now() and follow_up_until is None:
                     follow_up_until = (
                         time.monotonic() + _addr_cfg.warm_mode_duration_seconds
                     )
@@ -6302,7 +6736,7 @@ class Orchestrator:
                     follow_up_until = None
                 elif (
                     follow_up_until is not None
-                    and (_addr_cfg.follow_up_enabled or _always_listening)
+                    and (_addr_cfg.follow_up_enabled or _listening_now())
                     and time.monotonic() < follow_up_until
                 ):
                     self._state = State.FOLLOW_UP_LISTENING
@@ -6478,8 +6912,12 @@ class Orchestrator:
                             logger, "addressing:wake_or_relay_override",
                             text=user_text[:160],
                         )
-                    elif _always_listening:
+                    elif _listening_now():
                         # Ultron 1.0 M5b -- 4-class always-listening intent gate
+                        # (also the carrier for TURBO MODE: _listening_now() is
+                        # True when always_listening OR turbo is on, and
+                        # _classify_always_listening passes turbo into the gate so
+                        # a bare callout relays without a "tell my team" prefix).
                         # (RELAY_TO_TEAM / PRIVATE_REPLY / COMMAND_LOCAL / IGNORE,
                         # fail-closed to IGNORE). IGNORE -> discard (the window
                         # stays armed via the loop-top re-arm); the other three
@@ -6812,6 +7250,25 @@ class Orchestrator:
                             via="conversation_verbosity_command", follow_up=False,
                         )
                         continue
+                    # Voice-commanded Twitch moderation (two-phase; default-OFF).
+                    # A pending proposal opens the warm window so the streamer's
+                    # "yes"/"no" is heard without re-waking.
+                    if self._maybe_handle_twitch_moderation(user_text):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        if (getattr(self, "_twitch_mod_pending", None) is not None
+                                and _addr_cfg.follow_up_enabled):
+                            follow_up_until = (
+                                self._last_response_finished_monotonic
+                                + _addr_cfg.warm_mode_duration_seconds
+                            )
+                        else:
+                            follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="twitch_moderation",
+                            follow_up=bool(follow_up_until),
+                        )
+                        continue
                     if self._maybe_handle_flavor_toggle(user_text):
                         self._last_response_finished_monotonic = time.monotonic()
                         follow_up_until = None
@@ -6841,6 +7298,22 @@ class Orchestrator:
                         trace.tlog(
                             logger, "loop:iteration_end",
                             via="llm_route_toggle", follow_up=False,
+                        )
+                        continue
+                    # TURBO MODE toggle: "turbo mode on/off" (auto-relay inferred
+                    # callouts, no "tell my team" needed) + "turbo aggressive/
+                    # balanced" (sensitivity). Among the toggles, BEFORE the relay
+                    # handler, so the command itself never relays. Matches on the
+                    # RAW STT (pre-normalization) like the other toggles: normalize
+                    # prepends a relay lead to callout-keyword phrasings ("kill
+                    # turbo" -> "tell my team kill turbo"), which would hide the
+                    # toggle AND broadcast it to the team.
+                    if self._maybe_handle_turbo_command(_raw_stt):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="turbo_command", follow_up=False,
                         )
                         continue
                     # Relay mute toggle: "mute the team chat" / "you can
@@ -7182,6 +7655,23 @@ class Orchestrator:
                             via="conversation_verbosity_command-lean", follow_up=False,
                         )
                         continue
+                    # Voice-commanded Twitch moderation in a lean gaming session.
+                    if self._maybe_handle_twitch_moderation(user_text):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        if (getattr(self, "_twitch_mod_pending", None) is not None
+                                and _addr_cfg.follow_up_enabled):
+                            follow_up_until = (
+                                self._last_response_finished_monotonic
+                                + _addr_cfg.warm_mode_duration_seconds
+                            )
+                        else:
+                            follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="twitch_moderation-lean",
+                            follow_up=bool(follow_up_until),
+                        )
+                        continue
                     if self._maybe_handle_flavor_toggle(_raw_stt):
                         self._last_response_finished_monotonic = time.monotonic()
                         follow_up_until = None
@@ -7204,6 +7694,14 @@ class Orchestrator:
                         trace.tlog(
                             logger, "loop:iteration_end",
                             via="llm_route_toggle-lean", follow_up=False,
+                        )
+                        continue
+                    if self._maybe_handle_turbo_command(_raw_stt):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="turbo_command-lean", follow_up=False,
                         )
                         continue
                     if self._maybe_handle_relay_toggle(user_text):
@@ -7277,6 +7775,39 @@ class Orchestrator:
                             via="relay-lean", follow_up=bool(follow_up_until),
                         )
                         continue
+
+                # TURBO MODE relay backstop: the always-listening gate already
+                # classified THIS turn RELAY_TO_TEAM, but no explicit relay/toggle
+                # handler above consumed it -- i.e. the AGGRESSIVE band (the strict
+                # matcher abstained, so the normal relay handler returned False) or
+                # any inferred callout the strict matcher couldn't parse. Force-relay
+                # it through the LLM so a turbo RELAY verdict ALWAYS reaches the team
+                # (closes the gate/dispatch mismatch the balanced band avoids by
+                # construction; force=True is the documented path for a callout the
+                # strict matcher can't parse). Gated on turbo_mode_enabled() so
+                # turbo-OFF is byte-identical -- the gate sets _last_scenario only in
+                # always-listening, and the explicit toggles/relay ran earlier, so
+                # command precedence holds. Fail-open: any error falls to the router.
+                try:
+                    from kenning.audio.relay_speech import turbo_mode_enabled as _tme_bs
+                    from kenning.audio.intent_gate import Scenario as _Scen_bs
+                    if (_tme_bs()
+                            and getattr(self, "_last_scenario", None) is _Scen_bs.RELAY_TO_TEAM
+                            and self._maybe_handle_relay_speech(user_text, force=True)):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = (
+                            self._last_response_finished_monotonic
+                            + _addr_cfg.warm_mode_duration_seconds
+                            if _addr_cfg.follow_up_enabled else None
+                        )
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="turbo_relay_backstop",
+                            follow_up=bool(follow_up_until),
+                        )
+                        continue
+                except Exception as e:                               # noqa: BLE001
+                    logger.debug("turbo relay backstop skipped: %s", e)
 
                 # SEMANTIC COMMAND ROUTER (additive fallback layer) -- the LAST
                 # deterministic attempt before the conversational LLM. Everything
@@ -11090,6 +11621,21 @@ class Orchestrator:
                 self._ptt_release()
             except Exception:                                        # noqa: BLE001
                 pass
+
+    def _set_turbo_runtime_enabled(self, enabled: bool) -> None:
+        """STOP-window TURBO toggle callback: flip the SAME module-global turbo
+        flag the voice "turbo mode on/off" command flips, so the GUI and voice
+        share one source of truth. Turbo ON makes the loop listen continuously and
+        auto-relay inferred callouts; OFF returns to keyword relay only (stream/
+        chat-safe). Fail-open so a callback error never kills the window."""
+        try:
+            from kenning.audio.relay_speech import set_turbo_mode_enabled
+            set_turbo_mode_enabled(bool(enabled))
+        except Exception as e:                                        # noqa: BLE001
+            logger.warning("turbo toggle (stop-window) failed: %s", e)
+            return
+        logger.info("TURBO mode %s (stop-window toggle)",
+                    "ON" if enabled else "OFF")
 
     def _stop_watcher_enabled(self) -> bool:
         """Whether to run the wake-word interrupt watcher during playback.

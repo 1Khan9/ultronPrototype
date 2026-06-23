@@ -315,3 +315,332 @@ def test_source_poll_raise_is_swallowed() -> None:
     loop = sidecar.PollLoop(_Boom(), buffer, interval=0.01)
     assert loop.run_once() == 0  # swallowed, zero appended
     assert len(buffer) == 0
+
+
+# --------------------------------------------------------------------------- #
+# Live EventSubChatSource (injected fake WS + fake Helix; no network/creds)
+# --------------------------------------------------------------------------- #
+class _FakeWSClient:
+    """A fake EventSub WS client exposing ``recv_json_ready`` + ``close``.
+
+    Queued dicts are returned one-per-call; ``None`` means "no data this cycle".
+    A queued ``"__CLOSE__"`` sentinel raises ``WebSocketClosed`` (to drive the
+    reconnect path). ``recv_timeout`` is recorded but unused (offline)."""
+
+    def __init__(self, messages):
+        self._queue = list(messages)
+        self.closed = False
+        self.recv_calls = 0
+
+    def recv_json_ready(self, timeout):
+        self.recv_calls += 1
+        from kenning.twitch.clients.eventsub import WebSocketClosed
+
+        if not self._queue:
+            return None
+        item = self._queue.pop(0)
+        if item == "__CLOSE__":
+            raise WebSocketClosed(1006, "test close")
+        return item
+
+    def feed(self, *messages):
+        self._queue.extend(messages)
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeHelix:
+    """A fake Helix client: canned login->id map + records subscription calls."""
+
+    def __init__(self, id_map=None):
+        self._ids = id_map or {"streamer": "B-100", "ultronbot": "U-200"}
+        self.chat_subs = []
+        self.redeem_subs = []
+
+    def get_user_id(self, login, *, token):
+        return self._ids.get(login)
+
+    def create_chat_subscription(self, *, broadcaster_id, bot_user_id, session_id, token):
+        self.chat_subs.append((broadcaster_id, bot_user_id, session_id, token))
+        return True
+
+    def create_redeem_subscription(self, *, broadcaster_id, session_id, token):
+        self.redeem_subs.append((broadcaster_id, session_id, token))
+        return True
+
+
+def _welcome(session_id: str = "sess-1") -> dict:
+    return {
+        "metadata": {"message_type": "session_welcome"},
+        "payload": {"session": {"id": session_id, "status": "connected",
+                                "keepalive_timeout_seconds": 10}},
+    }
+
+
+def _chat_notification(mid: str, login: str = "viewer", text: str = "hi") -> dict:
+    return {
+        "metadata": {"message_type": "notification", "subscription_type": "channel.chat.message"},
+        "payload": {
+            "subscription": {"type": "channel.chat.message"},
+            "event": {
+                "broadcaster_user_id": "B-100",
+                "chatter_user_id": "V-9",
+                "chatter_user_login": login,
+                "chatter_user_name": login.title(),
+                "message_id": mid,
+                "message": {"text": text, "fragments": [], "message_type": "text"},
+            },
+        },
+    }
+
+
+def _redeem_notification(rid: str, reward_title: str = "Spin", user_input: str = "go") -> dict:
+    return {
+        "metadata": {
+            "message_type": "notification",
+            "subscription_type": "channel.channel_points_custom_reward_redemption.add",
+        },
+        "payload": {
+            "subscription": {"type": "channel.channel_points_custom_reward_redemption.add"},
+            "event": {
+                "id": rid,
+                "broadcaster_user_id": "B-100",
+                "user_id": "V-9",
+                "user_login": "viewer",
+                "user_name": "Viewer",
+                "user_input": user_input,
+                "status": "unfulfilled",
+                "reward": {"id": "rw-1", "title": reward_title, "cost": 100},
+            },
+        },
+    }
+
+
+def _patch_tokens(monkeypatch) -> None:
+    """Make TokenStore(path).load() return a usable access token (no real file)."""
+    import kenning.twitch.auth as auth_mod
+
+    class _Store:
+        def __init__(self, path=None):
+            self.path = path
+
+        def load(self):
+            return {"access_token": "tok-" + str(self.path)}
+
+    monkeypatch.setattr(auth_mod, "TokenStore", _Store)
+
+
+def test_eventsub_source_subscribes_and_maps_chat(monkeypatch) -> None:
+    _patch_tokens(monkeypatch)
+    helix = _FakeHelix()
+    ws = _FakeWSClient([_welcome("sess-1"), _chat_notification("c1", "alice", "gg")])
+    src = sidecar.EventSubChatSource(
+        url="wss://test/ws",
+        client_id="cid",
+        broadcaster_login="streamer",
+        bot_login="ultronbot",
+        connect_factory=lambda url: ws,
+        helix_factory=lambda: helix,
+    )
+    out = src.poll()
+    # The chat notification mapped to the unchanged consumer shape.
+    chats = [e for e in out if e["type"] == "chat"]
+    assert chats == [
+        {
+            "type": "chat",
+            "message_id": "c1",
+            "chatter_login": "alice",
+            "chatter_name": "Alice",
+            "chatter_user_id": "V-9",
+            "text": "gg",
+        }
+    ]
+    # The chat subscription was created with the RESOLVED ids + the session id.
+    assert helix.chat_subs == [("B-100", "U-200", "sess-1", "tok-~/.kenning/twitch_bot.json")]
+    # Redeems off by default -> no redeem subscription.
+    assert helix.redeem_subs == []
+
+
+def test_eventsub_source_subscribes_redeems_and_maps_redeem(monkeypatch) -> None:
+    _patch_tokens(monkeypatch)
+    helix = _FakeHelix()
+    ws = _FakeWSClient([_welcome("sess-2"), _redeem_notification("r1", "Spin the Wheel", "spin!")])
+    src = sidecar.EventSubChatSource(
+        url="wss://test/ws",
+        client_id="cid",
+        broadcaster_login="streamer",
+        bot_login="ultronbot",
+        subscribe_redeems=True,
+        connect_factory=lambda url: ws,
+        helix_factory=lambda: helix,
+    )
+    out = src.poll()
+    redeems = [e for e in out if e["type"] == "redeem"]
+    assert redeems == [
+        {
+            "type": "redeem",
+            "redemption_id": "r1",
+            "reward_id": "rw-1",
+            "reward_title": "Spin the Wheel",
+            "user_input": "spin!",
+            "chatter_login": "viewer",
+            "chatter_name": "Viewer",
+            "chatter_user_id": "V-9",
+            "status": "unfulfilled",
+        }
+    ]
+    # Both subscriptions created; redeem sub used the BROADCASTER token path.
+    assert helix.chat_subs and helix.chat_subs[0][:3] == ("B-100", "U-200", "sess-2")
+    assert helix.redeem_subs == [("B-100", "sess-2", "tok-~/.kenning/twitch.json")]
+
+
+def test_eventsub_source_dedups_chat_and_redeem(monkeypatch) -> None:
+    _patch_tokens(monkeypatch)
+    helix = _FakeHelix()
+    ws = _FakeWSClient(
+        [
+            _welcome("s"),
+            _chat_notification("dup", "a", "1"),
+            _chat_notification("dup", "a", "1"),  # same message_id -> dropped
+            _redeem_notification("rdup"),
+            _redeem_notification("rdup"),  # same redemption id -> dropped
+        ]
+    )
+    src = sidecar.EventSubChatSource(
+        url="wss://test/ws",
+        client_id="cid",
+        broadcaster_login="streamer",
+        bot_login="ultronbot",
+        subscribe_redeems=True,
+        connect_factory=lambda url: ws,
+        helix_factory=lambda: helix,
+    )
+    out = src.poll()
+    assert [e["message_id"] for e in out if e["type"] == "chat"] == ["dup"]
+    assert [e["redemption_id"] for e in out if e["type"] == "redeem"] == ["rdup"]
+
+
+def test_eventsub_source_subscribes_once_per_session(monkeypatch) -> None:
+    _patch_tokens(monkeypatch)
+    helix = _FakeHelix()
+    ws = _FakeWSClient([_welcome("s"), _chat_notification("c1")])
+    src = sidecar.EventSubChatSource(
+        url="wss://test/ws", client_id="cid",
+        broadcaster_login="streamer", bot_login="ultronbot",
+        connect_factory=lambda url: ws, helix_factory=lambda: helix,
+    )
+    src.poll()
+    # A second welcome on the SAME live client must not re-subscribe.
+    ws.feed(_welcome("s"), _chat_notification("c2"))
+    src.poll()
+    assert len(helix.chat_subs) == 1
+
+
+def test_eventsub_source_reconnect_resubscribes(monkeypatch) -> None:
+    _patch_tokens(monkeypatch)
+    helix = _FakeHelix()
+    first = _FakeWSClient([_welcome("sess-A"), _chat_notification("a1")])
+    second = _FakeWSClient([_welcome("sess-B"), _chat_notification("b1")])
+    made = []
+
+    def connect(url):
+        made.append(url)
+        # The first connect returns `first`; after a close the source reconnects
+        # to the SAME _url (no reconnect message here) -> hand out `second`.
+        return first if len(made) == 1 else second
+
+    ws_close_msg = "__CLOSE__"
+    first.feed(ws_close_msg)  # after a1, the socket closes -> reconnect next poll
+
+    src = sidecar.EventSubChatSource(
+        url="wss://test/ws", client_id="cid",
+        broadcaster_login="streamer", bot_login="ultronbot",
+        connect_factory=connect, helix_factory=lambda: helix,
+    )
+    out1 = src.poll()  # welcome + a1, then close raises -> client reset
+    assert [e["message_id"] for e in out1 if e["type"] == "chat"] == ["a1"]
+    assert first.closed is True
+    out2 = src.poll()  # reconnect -> welcome(sess-B) + b1, re-subscribe
+    assert [e["message_id"] for e in out2 if e["type"] == "chat"] == ["b1"]
+    # Re-subscribed against the NEW session id.
+    assert [s[2] for s in helix.chat_subs] == ["sess-A", "sess-B"]
+
+
+def test_eventsub_source_handles_session_reconnect_url(monkeypatch) -> None:
+    _patch_tokens(monkeypatch)
+    helix = _FakeHelix()
+    new_client = _FakeWSClient([_welcome("sess-new"), _chat_notification("n1")])
+    dialed = []
+
+    def connect(url):
+        dialed.append(url)
+        if url == "wss://test/ws":
+            return _FakeWSClient(
+                [
+                    _welcome("sess-old"),
+                    {
+                        "metadata": {"message_type": "session_reconnect"},
+                        "payload": {"session": {"id": "sess-old",
+                                                "reconnect_url": "wss://test/ws?new"}},
+                    },
+                ]
+            )
+        return new_client
+
+    src = sidecar.EventSubChatSource(
+        url="wss://test/ws", client_id="cid",
+        broadcaster_login="streamer", bot_login="ultronbot",
+        connect_factory=connect, helix_factory=lambda: helix,
+    )
+    src.poll()  # welcome(old) -> subscribe; reconnect -> dial new url
+    out = src.poll()  # new client: welcome(new) -> re-subscribe + n1
+    assert [e["message_id"] for e in out if e["type"] == "chat"] == ["n1"]
+    assert "wss://test/ws?new" in dialed
+    assert [s[2] for s in helix.chat_subs] == ["sess-old", "sess-new"]
+
+
+def test_eventsub_source_no_client_id_never_subscribes(monkeypatch) -> None:
+    # No client id -> connects but NEVER subscribes (the flag-off/no-creds path).
+    _patch_tokens(monkeypatch)
+    helix = _FakeHelix()
+    ws = _FakeWSClient([_welcome("s"), _chat_notification("c1")])
+    src = sidecar.EventSubChatSource(
+        url="wss://test/ws", client_id="",  # <- no creds
+        broadcaster_login="streamer", bot_login="ultronbot",
+        connect_factory=lambda url: ws, helix_factory=lambda: helix,
+    )
+    out = src.poll()
+    # Chat notifications still parse (if Twitch sent any), but NO subscription was
+    # created -> in practice Twitch sends none; the contract we assert is "never
+    # subscribes without a client id".
+    assert helix.chat_subs == []
+    assert helix.redeem_subs == []
+    # The welcome is consumed without error; any chat in the queue is still mapped
+    # (harmless), proving the no-creds path does not crash.
+    assert all(e["type"] in ("chat", "redeem") for e in out)
+
+
+def test_eventsub_source_poll_never_raises(monkeypatch) -> None:
+    # A WS client whose recv_json_ready raises a non-close error must be swallowed
+    # and the client reset (fail-quiet).
+    _patch_tokens(monkeypatch)
+
+    class _Exploding:
+        def __init__(self):
+            self.closed = False
+
+        def recv_json_ready(self, timeout):
+            raise RuntimeError("kaboom")
+
+        def close(self):
+            self.closed = True
+
+    exploding = _Exploding()
+    src = sidecar.EventSubChatSource(
+        url="wss://test/ws", client_id="cid",
+        broadcaster_login="streamer", bot_login="ultronbot",
+        connect_factory=lambda url: exploding, helix_factory=lambda: _FakeHelix(),
+    )
+    assert src.poll() == []  # swallowed
+    assert exploding.closed is True  # reset for next poll

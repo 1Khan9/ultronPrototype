@@ -49,6 +49,8 @@ __all__ = [
     "RelayPlaybackResult",
     "match_relay_command",
     "match_relay_toggle",
+    "match_turbo_toggle",
+    "match_turbo_sensitivity",
     "is_complete_tactical_callout",
     "build_relay_line",
     "relay_route_info",
@@ -1317,6 +1319,59 @@ def u1_llm_route_enabled() -> bool:
     return _u1_llm_route_enabled
 
 
+# ---------------------------------------------------------------------------
+# ULTRON 1.0 TURBO MODE (2026-06-23): a runtime master switch that AUTO-RELAYS
+# inferred team callouts WITHOUT a "tell my team" prefix. When ON, the loop
+# listens continuously (always-listening capture) and the 4-class intent gate
+# treats a callout-shaped utterance as RELAY_TO_TEAM via the existing lexical
+# recovery (command_normalizer.recover_relay_lead) + the strict matcher, so a
+# bare "rotate" / "sova hit 84" / "they have breach ult, play off site" relays
+# straight to the team mic through the LLM. When OFF (the DEFAULT) every path is
+# byte-identical to today: only an explicit relay command ("tell my team X",
+# "ask <agent> Q") relays -- safe to talk to the stream/chat. Voice toggle
+# "turbo mode on/off"; the STOP-window TURBO button flips the SAME flag. The
+# trade-off (the user's explicit choice) is some false relays. Process-global;
+# resets to the env/config default (KENNING_TURBO_MODE / relay_speech.turbo_mode,
+# default OFF) on restart. Anticheat-clean (os/stdlib only here).
+_turbo_mode_enabled: bool = _os_flavor.getenv(
+    "KENNING_TURBO_MODE", "0").strip().lower() not in (
+    "0", "false", "no", "off", "")
+
+
+def set_turbo_mode_enabled(enabled: bool) -> None:
+    """Enable/disable TURBO MODE (auto-relay inferred callouts) at runtime (default OFF)."""
+    global _turbo_mode_enabled
+    _turbo_mode_enabled = bool(enabled)
+
+
+def turbo_mode_enabled() -> bool:
+    return _turbo_mode_enabled
+
+
+# Turbo SENSITIVITY: balanced (default) vs aggressive. BALANCED relays only lines
+# the lexical recovery (recover_relay_lead) structures into a team callout -- its
+# narration/musing + semantic relay-intent vetoes hold, so banter and bare
+# one-word/social lines ("yes"/"no"/"thank you") are NOT relayed. AGGRESSIVE ALSO
+# relays a line the semantic relay-intent gate scores as a relay even when the
+# lexical recovery abstained -- catches more callouts at the cost of more false
+# relays. Voice: "turbo balanced" / "turbo aggressive". Process-global; resets to
+# the env/config default (KENNING_TURBO_AGGRESSIVE / relay_speech.turbo_aggressive,
+# default balanced) on restart.
+_turbo_aggressive: bool = _os_flavor.getenv(
+    "KENNING_TURBO_AGGRESSIVE", "0").strip().lower() not in (
+    "0", "false", "no", "off", "")
+
+
+def set_turbo_aggressive(enabled: bool) -> None:
+    """Set turbo sensitivity: True = aggressive (more recall), False = balanced."""
+    global _turbo_aggressive
+    _turbo_aggressive = bool(enabled)
+
+
+def turbo_aggressive() -> bool:
+    return _turbo_aggressive
+
+
 # Relay verbosity for the u1.0 LLM route -- TWO axes (2026-06-20):
 #   * CALLOUT (none/low/medium/high/max): the flavor-tail length on a tactical
 #     relay callout (the "flavor"/"callout flavor" command flips it).
@@ -1457,6 +1512,74 @@ def match_llm_route_toggle(text: str) -> Optional[bool]:
         return False
     if _LLM_ROUTE_ON_RE.match(cleaned):
         return True
+    return None
+
+
+# ---------------------------------------------------------------------------
+# ULTRON 1.0 TURBO MODE (2026-06-23): the on/off + sensitivity voice toggles.
+# Distinct vocabulary ("turbo") from the thinking/route/flavor toggles so it
+# never collides; OFF checked before ON; fully anchored -> ordinary speech (a
+# callout that merely says "turbo") falls through. Callers pass the RAW
+# transcript (pre-normalization), like the other toggle matchers.
+_TURBO_NOUN = r"turbo(?:\s+mode)?"
+_TURBO_OFF_RE = re.compile(
+    r"^(?:please\s+)?(?:ultron[\s,]+)?(?:"
+    rf"(?:disable|turn\s+off|stop|kill|cut|end|exit|deactivate|no|no\s+more)\s+(?:the\s+|your\s+)?{_TURBO_NOUN}"
+    rf"|turn\s+(?:the\s+|your\s+)?{_TURBO_NOUN}\s+off"
+    rf"|{_TURBO_NOUN}\s+off"
+    r")\s*[.!?]*$",
+    re.IGNORECASE,
+)
+_TURBO_ON_RE = re.compile(
+    r"^(?:please\s+)?(?:ultron[\s,]+)?(?:"
+    rf"(?:enable|turn\s+on|activate|start|engage|go)\s+(?:the\s+|your\s+|into\s+)?{_TURBO_NOUN}"
+    rf"|turn\s+(?:the\s+|your\s+)?{_TURBO_NOUN}\s+on"
+    rf"|{_TURBO_NOUN}\s+(?:on|time|engaged?|activated?)"
+    r")\s*[.!?]*$",
+    re.IGNORECASE,
+)
+
+
+def match_turbo_toggle(text: str) -> Optional[bool]:
+    """Match the TURBO-MODE on/off toggle. True = "turbo mode on" forms, False =
+    "turbo mode off" forms, None otherwise. OFF checked before ON; strict +
+    anchored so ordinary speech falls through. Callers pass the RAW transcript."""
+    if not text:
+        return None
+    cleaned = text.strip()
+    if _TURBO_OFF_RE.match(cleaned):
+        return False
+    if _TURBO_ON_RE.match(cleaned):
+        return True
+    return None
+
+
+# Turbo SENSITIVITY voice command -- "turbo aggressive" (more recall) vs "turbo
+# balanced" (the safe default). Disjoint from the on/off words above ("aggressive"
+# / "balanced" are neither on nor off), so the on/off matcher is checked first and
+# this never shadows it.
+_TURBO_AGGR_RE = re.compile(
+    r"^(?:please\s+)?(?:ultron[\s,]+)?turbo\s+(?:mode\s+)?"
+    r"(?:aggressive|aggressively|max|maximum|high|sensitive|loose|loosen|wide)\b.*$",
+    re.IGNORECASE,
+)
+_TURBO_BAL_RE = re.compile(
+    r"^(?:please\s+)?(?:ultron[\s,]+)?turbo\s+(?:mode\s+)?"
+    r"(?:balanced|balance|safe|conservative|tight|tighten|strict|normal|low)\b.*$",
+    re.IGNORECASE,
+)
+
+
+def match_turbo_sensitivity(text: str) -> Optional[bool]:
+    """Match a turbo sensitivity command. True = aggressive, False = balanced,
+    None otherwise. Callers pass the RAW transcript."""
+    if not text:
+        return None
+    cleaned = text.strip()
+    if _TURBO_AGGR_RE.match(cleaned):
+        return True
+    if _TURBO_BAL_RE.match(cleaned):
+        return False
     return None
 
 

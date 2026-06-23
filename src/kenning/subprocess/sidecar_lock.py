@@ -131,6 +131,8 @@ SIDECAR_HINTS: dict[str, str] = {
     "embedder": "embedder_server",
     "twitch_guard": "twitch_guard_sidecar",
     "twitch_read": "twitch_read_sidecar",
+    "twitch_helper": "twitch_helper_sidecar",
+    "twitch_write": "twitch_write_sidecar",
     "twitch_overlay": "twitch_overlay",
 }
 

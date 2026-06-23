@@ -117,7 +117,13 @@ def _is_command_local(text: str) -> bool:
                 or rs.match_thinking_toggle(text) is not None
                 or rs.match_relay_toggle(text) is not None
                 or rs.match_verbosity_command(text) is not None
-                or rs.match_llm_device_switch(text) is not None):
+                or rs.match_llm_device_switch(text) is not None
+                # TURBO MODE toggle/sensitivity: classify as COMMAND_LOCAL so the
+                # "turbo mode off" voice command survives the gate (turbo turns the
+                # loop always-listening; without this the gate would IGNORE it and
+                # the user could never turn turbo off by voice).
+                or rs.match_turbo_toggle(text) is not None
+                or rs.match_turbo_sensitivity(text) is not None):
             return True
     except Exception:  # noqa: BLE001 - fail-open to "not a local command"
         pass
@@ -143,7 +149,9 @@ def _is_command_local(text: str) -> bool:
     return False
 
 
-def _relay_signal(text: str, names: Optional[Sequence[str]]) -> Optional[float]:
+def _relay_signal(
+    text: str, names: Optional[Sequence[str]], *, turbo: bool = False,
+) -> Optional[float]:
     """Return a confidence in [0,1] that this is a team relay, or None if no relay signal.
 
     Applies ONLY the L1 STT correction first (``correct_callout_stt`` -- fixes casing/agent-name
@@ -152,6 +160,10 @@ def _relay_signal(text: str, names: Optional[Sequence[str]]) -> Optional[float]:
     callouts and would FALSE-POSITIVE banter like 'the rotations feel clean' into RELAY -- the exact
     failure mode C_gate warns against). Strict matcher / complete-tactical-callout = high confidence;
     the semantic relay-intent gate = moderate. Fail-open to None (no relay) on any error.
+
+    ``turbo`` (Ultron 1.0 TURBO MODE, default OFF) is the user's explicit opt-in to that aggressive
+    recovery: when ON, a callout-shaped utterance the STRICT bands declined still relays (see the turbo
+    branch below). When OFF this function is byte-identical to the pre-turbo behaviour.
     """
     norm = text
     try:
@@ -194,6 +206,31 @@ def _relay_signal(text: str, names: Optional[Sequence[str]]) -> Optional[float]:
     # cost-asymmetric gate). RELAY_TO_TEAM therefore requires a STRONG, PRECISE signal
     # (strict matcher / complete tactical callout / agent+fact-token, above); a bare
     # directive-only callout the slot grammar can't structure is left to the wake word.
+    #
+    # TURBO MODE (the user's explicit opt-in): accept the AGGRESSIVE lexical recovery
+    # the strict path refuses above. Run the SAME normalizer the dispatch path uses
+    # (command_normalizer.normalize_command -> recover_relay_lead) and relay iff that
+    # recovers a team lead the strict matcher accepts -- so a turbo RELAY verdict
+    # ALWAYS actually relays downstream (no gate/dispatch mismatch), and
+    # recover_relay_lead's narration/musing + semantic relay-intent vetoes still hold
+    # (banter / questions / bare social lines are NOT relayed in balanced mode).
+    # AGGRESSIVE additionally relays a line the semantic relay-intent gate scores a
+    # relay even when the lexical recovery abstained (more recall, more false relays).
+    # Only reached for lines the strict bands already declined, and only under turbo;
+    # OFF -> this whole block is skipped and behaviour is byte-identical.
+    if turbo:
+        try:
+            from kenning.audio.command_normalizer import normalize_command
+            from kenning.audio import relay_speech as _rs
+            normed = normalize_command(text)
+            if normed and _rs.match_relay_command(normed, names=names) is not None:
+                return 0.75
+            if _rs.turbo_aggressive():
+                from kenning.audio._relay_intent import relay_intent_ok
+                if relay_intent_ok(text) is True:
+                    return 0.60
+        except Exception:  # noqa: BLE001 - fail-open to no relay
+            pass
     return None
 
 
@@ -213,11 +250,17 @@ def classify_scenario(
     no_speech_prob: float = 0.0,
     avg_logprob: float = 0.0,
     names: Optional[Sequence[str]] = None,
+    turbo: bool = False,
 ) -> ScenarioVerdict:
     """Classify a finalized transcript into a Scenario (cheap layers only; fail-CLOSED to IGNORE).
 
     ``wake_present`` overrides the leading-wake detection when the caller already knows (e.g. the
     audio-domain wake detector fired). ASR-confidence args come from faster-whisper.
+
+    ``turbo`` (Ultron 1.0 TURBO MODE, default OFF) loosens ONLY the RELAY_TO_TEAM precondition: a
+    callout-shaped utterance the strict bands declined is relayed via the lexical recovery (see
+    ``_relay_signal``). COMMAND_LOCAL still wins first, so explicit toggles/stop keep precedence; OFF
+    keeps this byte-identical to the pre-turbo gate.
     """
     raw = (text or "").strip()
     if not raw:
@@ -235,10 +278,13 @@ def classify_scenario(
     if _is_command_local(raw):
         return ScenarioVerdict(Scenario.COMMAND_LOCAL, 0.95, "local control command")
 
-    # 3) RELAY_TO_TEAM -- strict matcher / tactical callout / semantic relay-intent.
-    relay_conf = _relay_signal(raw, names)
+    # 3) RELAY_TO_TEAM -- strict matcher / tactical callout / semantic relay-intent
+    # (+ the turbo lexical-recovery branch when the caller opted in).
+    relay_conf = _relay_signal(raw, names, turbo=turbo)
     if relay_conf is not None:
-        return ScenarioVerdict(Scenario.RELAY_TO_TEAM, relay_conf, "relay signal")
+        return ScenarioVerdict(
+            Scenario.RELAY_TO_TEAM, relay_conf,
+            "relay signal (turbo)" if turbo and relay_conf <= 0.75 else "relay signal")
 
     # An explicit address signal -- a leading wake word OR an unambiguous Ultron name
     # token anywhere ('ultron' / 'kenning' / 'hey ai' / 'the ai') -- is the ONLY reliable

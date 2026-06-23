@@ -142,6 +142,10 @@ class StopButtonOverlay:
         on_toggle_ptt: Optional[Callable[[bool], None]] = None,
         ptt_enabled: bool = True,
         ptt_height: int = 30,
+        on_toggle_turbo: Optional[Callable[[bool], None]] = None,
+        turbo_enabled: bool = False,
+        turbo_height: int = 26,
+        turbo_label: str = "TURBO",
         on_restart: Optional[Callable[[], None]] = None,
         on_exit: Optional[Callable[[], None]] = None,
         restart_height: int = 28,
@@ -169,6 +173,15 @@ class StopButtonOverlay:
         self._on_toggle_ptt = on_toggle_ptt
         self._ptt_enabled = bool(ptt_enabled)
         self._ptt_h = max(0, int(ptt_height))
+        # Optional TURBO toggle row: when wired, clicking it flips auto-relay of
+        # INFERRED team callouts (the same runtime flag the "turbo mode on/off"
+        # voice command flips) -- ON = the loop reads your callouts and relays them
+        # without "tell my team"; OFF = keyword relay only (stream/chat-safe).
+        # ``_turbo_enabled`` tracks the displayed state across show/hide rebuilds.
+        self._on_toggle_turbo = on_toggle_turbo
+        self._turbo_enabled = bool(turbo_enabled)
+        self._turbo_h = max(0, int(turbo_height))
+        self._turbo_label = turbo_label or "TURBO"
         # Optional RESTART + EXIT action buttons (orchestrator-wired). Restart =
         # full cleanup then relaunch the same build; Exit = full cleanup then quit.
         self._on_restart = on_restart
@@ -248,13 +261,15 @@ class StopButtonOverlay:
             btn_h = self._btn_h
             _has_ptt = self._on_toggle_ptt is not None and self._ptt_h > 0
             ptt_h = self._ptt_h if _has_ptt else 0
+            _has_turbo = self._on_toggle_turbo is not None and self._turbo_h > 0
+            turbo_h = self._turbo_h if _has_turbo else 0
             _has_restart = self._on_restart is not None and self._restart_h > 0
             _has_exit = self._on_exit is not None and self._exit_h > 0
             _has_flag = self._on_flag is not None and self._flag_h > 0
             restart_h = self._restart_h if _has_restart else 0
             exit_h = self._exit_h if _has_exit else 0
             flag_h = self._flag_h if _has_flag else 0
-            height = bar_h + btn_h + restart_h + exit_h + flag_h + ptt_h
+            height = bar_h + btn_h + restart_h + exit_h + flag_h + ptt_h + turbo_h
             root = tk.Tk()
             root.title("ULTRON // STOP")
             root.geometry(f"{w}x{height}+{self._x}+{self._y}")
@@ -324,6 +339,53 @@ class StopButtonOverlay:
                 ptt_btn.configure(command=_toggle_ptt)
                 ptt_btn.pack(fill="x", side="bottom")
                 ptt_btn.bind("<Button-3>", lambda _e: self.hide())
+
+            # TURBO toggle -- amber "TURBO ON" = Ultron reads your callouts and
+            # relays them to the team without "tell my team"; grey "TURBO OFF" =
+            # keyword relay only (safe to talk to the stream/chat). Distinct amber
+            # accent so it is not confused with the green PTT toggle. Flips the same
+            # runtime flag the "turbo mode on/off" voice command flips.
+            if _has_turbo:
+                _t_on_fg, _t_on_fill = "#ff9d3d", "#23150a"      # amber = ON
+                _t_off_fg, _t_off_fill = "#8a8f98", "#141414"    # grey = OFF
+
+                def _turbo_colors():
+                    return ((_t_on_fg, _t_on_fill) if self._turbo_enabled
+                            else (_t_off_fg, _t_off_fill))
+
+                _tfg0, _tfill0 = _turbo_colors()
+                turbo_btn = tk.Button(
+                    root,
+                    text=f"{self._turbo_label} {'ON' if self._turbo_enabled else 'OFF'}",
+                    bg=_tfill0, fg=_tfg0,
+                    activebackground=_tfill0, activeforeground="#ffffff",
+                    relief="flat", bd=0, highlightthickness=1,
+                    highlightbackground=_tfg0, highlightcolor=_tfg0,
+                    font=("Segoe UI Semibold", 9), cursor="hand2",
+                )
+
+                def _toggle_turbo():
+                    self._turbo_enabled = not self._turbo_enabled
+                    fg, fill = _turbo_colors()
+                    try:
+                        turbo_btn.configure(
+                            text=f"{self._turbo_label} "
+                                 f"{'ON' if self._turbo_enabled else 'OFF'}",
+                            bg=fill, fg=fg, activebackground=fill,
+                            highlightbackground=fg, highlightcolor=fg)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    try:
+                        if self._on_toggle_turbo is not None:
+                            self._on_toggle_turbo(self._turbo_enabled)
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning("turbo toggle callback failed: %s", e)
+                    logger.info("turbo toggle -> %s",
+                                "ON" if self._turbo_enabled else "OFF")
+
+                turbo_btn.configure(command=_toggle_turbo)
+                turbo_btn.pack(fill="x", side="bottom")
+                turbo_btn.bind("<Button-3>", lambda _e: self.hide())
 
             # RESTART + EXIT action buttons -- packed at the bottom (above PTT,
             # below STOP). Each runs Ultron's full cleanup; Restart then relaunches

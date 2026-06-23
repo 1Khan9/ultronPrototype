@@ -131,9 +131,14 @@ def test_config_yaml_default_off():
 def test_run_loop_wires_always_listening():
     src = inspect.getsource(Orchestrator.run)
     assert "_always_listening = bool(getattr(_addr_cfg" in src        # captured once
-    assert "if _always_listening and follow_up_until is None:" in src  # perpetual-arm / wake bypass
-    assert "_addr_cfg.follow_up_enabled or _always_listening" in src   # follow-up branch admits it
-    assert "elif _always_listening:" in src                            # the 4-class gate branch
+    # 2026-06-23 TURBO MODE: the perpetual-arm / follow-up / 4-class-gate sites are
+    # now gated by _listening_now() (= _always_listening OR turbo, read LIVE) so
+    # turbo ON also drives continuous capture. The always-listening wiring is fully
+    # preserved -- _listening_now() returns True whenever _always_listening is True.
+    assert "def _listening_now()" in src
+    assert "if _listening_now() and follow_up_until is None:" in src   # perpetual-arm / wake bypass
+    assert "_addr_cfg.follow_up_enabled or _listening_now()" in src    # follow-up branch admits it
+    assert "elif _listening_now():" in src                             # the 4-class gate branch
     assert "_classify_always_listening(user_text, seconds_since)" in src
     assert "self._last_scenario = sv.scenario" in src                  # stashed for M6b
     assert "KENNING_ALWAYS_LISTENING" in src                           # env override enabler

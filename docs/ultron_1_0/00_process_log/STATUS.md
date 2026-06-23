@@ -1,5 +1,35 @@
 # Ultron 1.0 — Live Status
 
+**RELEASE 2026-06-23 — TURBO MODE shipped + folded with the twitch fleet:** turbo committed `27e0817`; merged with
+`claude/determined-sutherland-315683` (8 new twitch commits — games / moderation sidecars / redeem router / EventSub)
+at merge `785682a`; golden reconciled `5043b3b`. **Combined wrapper (turbo+twitch) regression-clean: 27 failed = the
+IDENTICAL pre-existing baseline (node-id diff vs turbo-only = empty), 12044 passed, all twitch+turbo tests green**
+(integration dir excluded for the infra-flaky `test_bridge_e2e` real-subprocess hang; orchestrator imports clean,
+twitch default-OFF). Next: ff local `main` to the fold (preserving the main-checkout local config.yaml), canon-excluded
+snapshot push to `origin/main`, restart Ultron. `main-backup-prerelease` ref saved at `1d533a1`.
+
+**TURBO MODE (flag-gated default-OFF):** a runtime
+master switch that AUTO-RELAYS inferred team callouts WITHOUT a "tell my team" prefix. ON => the loop listens
+continuously (`_listening_now()` = `_always_listening OR relay_speech.turbo_mode_enabled()`) and the 4-class
+intent gate treats a callout-shaped utterance as RELAY_TO_TEAM via the existing lexical recovery
+(`command_normalizer.recover_relay_lead`) + `match_relay_command`, so a bare "rotate" / "sova hit 84" / "they have
+breach ult, play off site" relays straight to the team through the LLM. OFF (default) => byte-identical keyword
+behaviour (only explicit "tell my team X" / "ask <agent> Q" relay; safe to talk to the stream/chat). Voice:
+"turbo mode on/off" + "turbo balanced/aggressive" (sensitivity); STOP-window amber TURBO button (flips the same
+flag). Implementation: `relay_speech.py` (flag/sensitivity triplets + `match_turbo_toggle`/`match_turbo_sensitivity`),
+`intent_gate.py` (the `turbo` branch in `_relay_signal` + `classify_scenario`; turbo matchers in `_is_command_local`
+so "turbo mode off" survives the gate), `orchestrator.py` (`_listening_now`, `_classify_always_listening` threads
+turbo + the configured addressee roster, boot-apply, `_maybe_handle_turbo_command` on RAW STT in both paths,
+`_set_turbo_runtime_enabled`, GUI wiring, **and the `turbo_mode_enabled()`-gated relay BACKSTOP** before the router
+that force-relays a RELAY_TO_TEAM verdict the strict matcher couldn't parse — closes the aggressive-band gate/dispatch
+mismatch), `stop_button.py` (TURBO button), `config.py`/`config.yaml` (`turbo_mode`/`turbo_aggressive`/`turbo_height`/
+`turbo_label`, all default OFF). Spec: `docs/ultron_1_0/04_implementation/10_turbo_mode_spec.md`. Adversarial 4-agent
+review: anticheat/stub/persona SOUND; 1 P1 (aggressive mismatch) + 2 P2 (kill-turbo leak, names drift) found + FIXED.
+Tests: `tests/audio/test_turbo_mode.py` (incl. full example-callout coverage under balanced; yes/no/thank-you held
+back) — 129 turbo+wiring+gate green; affected files green; `validate_config` 0. **PENDING: full-wrapper sign-off in a
+clean window (blocked by a concurrent user twitch-test sweep) + commit.** NOTE: a heavy-suite run earlier collided with
+the user's LIVE Ultron on port 8772 and took it down (BR-P3) — NEVER run the E2E/integration suite while `-m kenning` is up.
+
 **LIVE-FIX 2026-06-23 (`8f08254`):** Route-all compose commands now reach the LLM. `_maybe_handle_relay_speech`'s
 thinking-mode gate forced `rephrase=False` (thinking mode default OFF) even with route-all ON → every conversational
 relay ("explain to my team X", "Reyna asked you X") fell to `_fallback_line` = the canned "No soundboard, no strings."

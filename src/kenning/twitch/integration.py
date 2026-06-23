@@ -56,6 +56,7 @@ def build_chat_mode_runtime(
     bot_user_id: str = "",
     streamer_user_id: str = "",
     on_flagged: Optional[Callable[..., None]] = None,
+    busy_estimator: Optional[Any] = None,
 ) -> ChatModeRuntime:
     """Wire the full chat-reply stack into a runtime. ``twitch_cfg`` is the
     ``config.twitch`` section. The returned runtime starts OFF; the toggle calls
@@ -88,4 +89,5 @@ def build_chat_mode_runtime(
         pipeline=pipeline, drain_fn=drain_fn,
         is_reply_target=is_reply_target, select_fn=select_fn, reply_fn=reply_fn,
         guard_client=guard_client, guard_required=guard_required, on_flagged=on_flagged,
+        busy_estimator=busy_estimator,
     )

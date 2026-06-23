@@ -3850,6 +3850,17 @@ class RelaySpeechConfig(_Strict):
     #     "conversation/chat verbosity <level>". (Coerced to a valid level at boot.)
     callout_verbosity: str = "low"  # 2026-06-22: tighter tactical callouts by default (a brief cold tag, not a verbose tail); raise by voice ("medium/high flavor")
     conversation_verbosity: str = "low"
+    # ULTRON 1.0 TURBO MODE (2026-06-23): auto-relay INFERRED team callouts WITHOUT
+    # a "tell my team" prefix. Default OFF -> boot is keyword-only (safe to talk to
+    # the stream/chat); the voice "turbo mode on" / the STOP-window TURBO button
+    # flip it live. ON makes the loop listen continuously and relay callout-shaped
+    # speech ("rotate", "sova hit 84", "they have breach ult play off site")
+    # through the LLM. ``turbo_aggressive`` tunes recall vs false relays: balanced
+    # (default) relays only lines the lexical recovery structures into a callout;
+    # aggressive ALSO relays the semantic relay-intent gate's positives. Applied to
+    # the runtime flags at orchestrator boot; the trade-off is some false relays.
+    turbo_mode: bool = False
+    turbo_aggressive: bool = False
     # Named addressees for per-person callouts ("ask Clove to smoke
     # window", "tell Sova to drone sewers"). Empty -> the built-in
     # Valorant agent roster
@@ -3934,6 +3945,11 @@ class StopButtonConfig(_Strict):
     # Silent (no TTS); flashes a brief confirmation on click. 0 hides it.
     flag_height: int = Field(default=26, ge=0, le=200)
     flag_label: str = "FLAG LAST"
+    # TURBO toggle row (2026-06-23): an amber ON / grey OFF button that flips
+    # auto-relay of inferred callouts at runtime (the SAME flag the "turbo mode
+    # on/off" voice command flips). Default OFF at boot. 0 hides the row.
+    turbo_height: int = Field(default=26, ge=0, le=200)
+    turbo_label: str = "TURBO"
     x: int = Field(default=60, ge=0, le=10000)   # initial top-left position
     y: int = Field(default=60, ge=0, le=10000)
 
@@ -4065,7 +4081,8 @@ class TwitchAuthConfig(_Strict):
     (``~/.kenning/twitch.json``, gitignored, pre-push secret-denied). Only the
     public ``client_id`` and account logins live in config."""
     client_id: Optional[str] = None                  # public app client id (NOT a secret)
-    token_path: str = "~/.kenning/twitch.json"       # OS-secure-wrapped when available
+    token_path: str = "~/.kenning/twitch.json"       # broadcaster token store (redeems/mod scopes)
+    bot_token_path: str = "~/.kenning/twitch_bot.json"  # dedicated bot token store (chat read/write)
     broadcaster_login: Optional[str] = None
     bot_login: Optional[str] = None                  # dedicated bot account (Chat-Bot-Badge transparency)
     validate_interval_seconds: int = 3600            # startup + hourly /oauth2/validate
@@ -4077,6 +4094,8 @@ class TwitchSafetyConfig(_Strict):
     chat-reply mode is ON; if it cannot load/canary, chat-reply auto-disables
     (fail-CLOSED on the FEATURE, never on the relay)."""
     guard_model: str = "llama-guard-3-1b"            # selectable: shieldgemma-2b / granite-guardian-3b / mrguard-3b
+    guard_model_path: Optional[str] = None           # GGUF path the orchestrator hands the guard sidecar (e.g. E:/UltronModels/Llama-Guard-3-1B.Q5_K_M.gguf); None => auto-spawn skips the guard
+    guard_family: str = "llama-guard"                # prompt family: llama-guard|shieldgemma|granite|generic
     guard_endpoint: str = "http://127.0.0.1:8774"    # loopback guard sidecar
     guard_required: bool = True                      # chat-reply refuses to enable without a healthy guard
     prompt_guard_model: str = "meta-llama/Llama-Prompt-Guard-2-22M"
@@ -4151,7 +4170,10 @@ class TwitchHelperConfig(_Strict):
     routing. Constrained to a closed action enum; moderation is unreachable."""
     enabled: bool = False
     model: str = "qwen2.5-1.5b-instruct"
+    model_path: Optional[str] = None          # path to GGUF; required when enabled
     endpoint: str = "http://127.0.0.1:8776"
+    port: int = 8776
+    timeout_s: float = 5.0
 
 
 class TwitchConfig(_Strict):

@@ -4941,7 +4941,12 @@ Converts a user voice command into a line Kenning speaks on a **separate** PortA
 `match_verbosity_command(text) -> Optional[str]` (no/low/high "flavor"; off/on excluded so it stays disjoint
 from the tail toggle) + `relay_verbosity()` / `set_relay_verbosity(level)` (runtime no/low/high state, env
 `KENNING_U1_VERBOSITY`); `u1_llm_route_enabled()` / `set_u1_llm_route_enabled(b)` (env `KENNING_U1_LLM_ROUTE`,
-default OFF) gating the LEAN-LLM relay route; `match_thinking_toggle(text) -> Optional[bool]` +
+default OFF) gating the LEAN-LLM relay route; **TURBO MODE (2026-06-23):** `turbo_mode_enabled()` /
+`set_turbo_mode_enabled(b)` (env `KENNING_TURBO_MODE`, default OFF) + `turbo_aggressive()` /
+`set_turbo_aggressive(b)` (env `KENNING_TURBO_AGGRESSIVE`) + `match_turbo_toggle(text) -> Optional[bool]`
+("turbo mode on/off") + `match_turbo_sensitivity(text) -> Optional[bool]` ("turbo balanced/aggressive") —
+the runtime master switch that AUTO-RELAYS inferred callouts without "tell my team" (the inference itself
+lives in `intent_gate._relay_signal(..., turbo=)`); `match_thinking_toggle(text) -> Optional[bool]` +
 `thinking_mode_enabled()` (env `KENNING_THINKING_MODE`, default OFF); `match_llm_device_switch(text)`
 (GPU↔CPU hot-reload of the live model, anticheat-safe compute-location only); `is_complete_tactical_callout(text)`
 (sidecar-free conservative slot-grammar predicate, exported for E3 snap-early-endpoint);
@@ -5289,6 +5294,19 @@ Public API:
 - `resolve_with_llm(verdict, text, llm) -> ScenarioVerdict` — single-token {PRIVATE, IGNORE} LLM escalation
   for a `needs_llm` verdict (`enable_thinking=False`, fail-CLOSED on any non-PRIVATE token / error).
   RETAINED for callers + unit-tested in isolation, but `classify_scenario` no longer triggers it (2026-06-22).
+- **TURBO MODE (2026-06-23):** `classify_scenario(..., turbo=False)` threads a `turbo` flag into `_relay_signal`.
+  When ON (the user's opt-in), AFTER the strict bands decline, `_relay_signal` runs the FULL `normalize_command`
+  → `recover_relay_lead` → `match_relay_command` predicate (the SAME one dispatch uses) and returns 0.75 if it
+  recovers a relayable lead — so a bare callout ("rotate", "they have breach ult, play off site") relays without
+  a "tell my team" prefix, and a turbo RELAY verdict ALWAYS relays downstream (no gate/dispatch mismatch).
+  `turbo_aggressive` adds a 0.60 band via `_relay_intent.relay_intent_ok` (deliberately re-opens the dropped
+  semantic positive — double-gated, the spec's R6/R7 trade-off). `_is_command_local` includes the turbo matchers
+  so "turbo mode off" survives the gate. OFF → byte-identical. The orchestrator carries turbo via `_listening_now()`
+  (= `_always_listening OR relay_speech.turbo_mode_enabled()`, read live, so turbo implies continuous capture),
+  `_classify_always_listening` passes `turbo=` + the configured addressee roster, and a `turbo_mode_enabled()`-gated
+  RELAY backstop before the semantic router force-relays a RELAY_TO_TEAM verdict the strict matcher couldn't parse
+  (the aggressive-band case). Voice "turbo mode on/off" + STOP-window amber TURBO button. Spec:
+  `docs/ultron_1_0/04_implementation/10_turbo_mode_spec.md`. Tests: `tests/audio/test_turbo_mode.py`.
 - DEFAULT OFF (opt-in `addressing.always_listening`); wake-word stays the competitive default; thresholds
   are heuristic starting points to calibrate on the labeled battery + `logs/addressing.jsonl`. PREREQUISITE:
   VoiceMeeter mic isolation. Tests: `tests/audio/test_intent_gate.py`.

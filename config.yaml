@@ -1869,6 +1869,17 @@ relay_speech:
                                    # Voice: "<level> flavor" / "callout flavor <level>".
   conversation_verbosity: "low"    # reply length for private/social/non-tactical: low/medium/high/max.
                                    # Voice: "conversation/chat verbosity <level>".
+  # ULTRON 1.0 TURBO MODE: auto-relay INFERRED team callouts WITHOUT "tell my
+  # team". Default OFF -> boot is keyword-only (safe to talk to the stream/chat).
+  # ON makes Ultron listen continuously and relay callout-shaped speech ("rotate",
+  # "sova hit 84", "they have breach ult play off site") through the LLM.
+  # Voice: "turbo mode on/off"; or the STOP-window TURBO button. The trade-off is
+  # some false relays -- toggle it off to talk freely, on when the round starts.
+  turbo_mode: false
+  # Sensitivity: false = balanced (only callout-shaped lines; the safe default),
+  # true = aggressive (also relays the semantic relay-intent gate's positives --
+  # more recall, more false relays). Voice: "turbo balanced" / "turbo aggressive".
+  turbo_aggressive: false
   max_line_chars: 360         # ceiling for a full two-sentence reply; trims only at a sentence boundary
   echo_to_user: true          # ALSO play team callouts on your default speakers
                               # (local monitor tee -- so YOU hear your own callouts,
@@ -1944,6 +1955,10 @@ stop_button:
                                # response / a missed response / an unwanted response)
                                # to logs/flagged_turns.jsonl for later review. 0 hides it.
   flag_label: "FLAG LAST"
+  turbo_height: 26             # TURBO toggle: amber ON = read + relay my callouts
+                               # without "tell my team"; grey OFF = keyword relay
+                               # only. Flips the same flag as the voice command. 0 hides it.
+  turbo_label: "TURBO"
   x: 60                        # initial top-left position on screen
   y: 60
 

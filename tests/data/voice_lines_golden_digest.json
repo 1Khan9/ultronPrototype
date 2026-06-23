@@ -5968,7 +5968,7 @@
 "_ANSWER_SAMPLING": {
 "kind": "dict",
 "len": 7,
-"repr": "{'max_tokens': 80, 'temperature': 0.85, 'top_p': 0.92, 'top_k': 40, 'min_p': 0.08, 'repeat_penalty': 1.18, 'stop': ['\\n\\n', '\\nADDRESS:', '\\nTASK:', '\\nWHAT THEY', '\\nTHEIR ', '\\nUser:', '\\nUSER:', 'Ultron:', 'ADDRESS:']}"
+"repr": "{'max_tokens': 80, 'temperature': 0.85, 'top_p': 0.92, 'top_k': 40, 'min_p': 0.08, 'repeat_penalty': 1.18, 'stop': ['\\nADDRESS:', '\\nTASK:', '\\nWHAT THEY', '\\nTHEIR ', '\\nUser:', '\\nUSER:', 'Ultron:', 'ADDRESS:']}"
 },
 "_ASKER_FRAME_RE": {
 "flags": 34,
@@ -8367,6 +8367,40 @@
 "kind": "regex",
 "pattern": "[,;.]?\\s*(?:please\\s+)?(?P<directive>(?:respond(?:\\s+to\\s+(?:him|her|them|it|that))?|reply(?:\\s+to\\s+(?:him|her|them))?|answer(?:\\s+(?:him|her|them))?|acknowledge|agree(?:\\s+with\\s+(?:him|her|them))?|calm\\s+(?:him|her|them)\\s+down|de[\\s-]?escalate(?:\\s+(?:him|her|them))?|talk\\s+(?:him|her|them)\\s+down|ease\\s+(?:him|her|them)\\s+(?:off|up|down)|say\\s+something(?:\\s+(?:nice|back|funny|cool))?|handle\\s+(?:it|that|him|her)|deal\\s+with\\s+(?:it|that|him|her|them)|shut\\s+(?:him|her|it|that)\\s+down|clap\\s+back|back\\s+me\\s+up|defend\\s+me|set\\s+(?:him|her|them)\\s+straight|hype\\s+(?:him|her|them)\\s+up|reassure\\s+(?:him|her|them))(?:\\s+(?:and|then|&)\\s+(?:please\\s+)?(?:respond(?:\\s+to\\s+(?:him|her|them|it|that))?|reply(?:\\s+to\\s+(?:him|her|them))?|answer(?:\\s+(?:him|her|them))?|acknowledge|agree(?:\\s+with\\s+(?:him|her|them))?|calm\\s+(?:him|her|them)\\s+down|de[\\s-]?escalate(?:\\s+(?:him|her|them))?|talk\\s+(?:him|her|them)\\s+down|ease\\s+(?:him|her|them)\\s+(?:off|up|down)|say\\s+something(?:\\s+(?:nice|back|funny|cool))?|handle\\s+(?:it|that|him|her)|deal\\s+with\\s+(?:it|that|him|her|them)|shut\\s+(?:him|her|it|that)\\s+down|clap\\s+back|back\\s+me\\s+up|defend\\s+me|set\\s+(?:him|her|them)\\s+straight|hype\\s+(?:him|her|them)\\s+up|reassure\\s+(?:him|her|them)))*)\\s*[.!?]?$"
 },
+"_DO_INV_AGENTS_LC": {
+"items": [
+"astra",
+"breach",
+"brimstone",
+"chamber",
+"clove",
+"cypher",
+"deadlock",
+"fade",
+"gekko",
+"harbor",
+"iso",
+"jett",
+"kayo",
+"killjoy",
+"miks",
+"neon",
+"omen",
+"phoenix",
+"raze",
+"reyna",
+"sage",
+"skye",
+"sova",
+"tejo",
+"veto",
+"viper",
+"vyse",
+"waylay",
+"yoru"
+],
+"kind": "set"
+},
 "_DROP_WEAPON_RE": {
 "flags": 34,
 "kind": "regex",
@@ -10160,6 +10194,30 @@
 "kind": "regex",
 "pattern": "^(?:please\\s+)?(?:(?:unmute|enable|turn\\s+on|resume)\\s+(?:the\\s+)?(?:team\\s+(?:chat\\s+)?relay|relay|team\\s+chat|game\\s+chat)|(?:you\\s+can|go\\s+ahead\\s+and)\\s+(?:talk|speak)\\s+to\\s+(?:my|the)\\s+team(?:mates)?(?:\\s+(?:again|now))?|start\\s+(?:talking|speaking)\\s+to\\s+(?:my|the)\\s+team(?:mates)?(?:\\s+again)?)\\s*[.!?]?$"
 },
+"_TURBO_AGGR_RE": {
+"flags": 34,
+"kind": "regex",
+"pattern": "^(?:please\\s+)?(?:ultron[\\s,]+)?turbo\\s+(?:mode\\s+)?(?:aggressive|aggressively|max|maximum|high|sensitive|loose|loosen|wide)\\b.*$"
+},
+"_TURBO_BAL_RE": {
+"flags": 34,
+"kind": "regex",
+"pattern": "^(?:please\\s+)?(?:ultron[\\s,]+)?turbo\\s+(?:mode\\s+)?(?:balanced|balance|safe|conservative|tight|tighten|strict|normal|low)\\b.*$"
+},
+"_TURBO_NOUN": {
+"kind": "str",
+"value": "turbo(?:\\s+mode)?"
+},
+"_TURBO_OFF_RE": {
+"flags": 34,
+"kind": "regex",
+"pattern": "^(?:please\\s+)?(?:ultron[\\s,]+)?(?:(?:disable|turn\\s+off|stop|kill|cut|end|exit|deactivate|no|no\\s+more)\\s+(?:the\\s+|your\\s+)?turbo(?:\\s+mode)?|turn\\s+(?:the\\s+|your\\s+)?turbo(?:\\s+mode)?\\s+off|turbo(?:\\s+mode)?\\s+off)\\s*[.!?]*$"
+},
+"_TURBO_ON_RE": {
+"flags": 34,
+"kind": "regex",
+"pattern": "^(?:please\\s+)?(?:ultron[\\s,]+)?(?:(?:enable|turn\\s+on|activate|start|engage|go)\\s+(?:the\\s+|your\\s+|into\\s+)?turbo(?:\\s+mode)?|turn\\s+(?:the\\s+|your\\s+)?turbo(?:\\s+mode)?\\s+on|turbo(?:\\s+mode)?\\s+(?:on|time|engaged?|activated?))\\s*[.!?]*$"
+},
 "_ULT_KW_RE": {
 "flags": 34,
 "kind": "regex",
@@ -10217,6 +10275,14 @@
 "pattern": "\\b(?:we\\s+won|won\\s+(?:the|that|this)|gg\\s+we\\s+won|we\\s+win|victor(?:y|ious)|took\\s+(?:the|that|this)\\s+(?:game|match|one)|we\\s+got\\s+(?:the\\s+win|that|this)|stomped\\s+them|destroyed\\s+them|rolled\\s+them|smashed\\s+them|clean\\s+sweep|swept\\s+them|gg\\s+ez)\\b"
 },
 "_thinking_mode_enabled": {
+"kind": "bool",
+"value": false
+},
+"_turbo_aggressive": {
+"kind": "bool",
+"value": false
+},
+"_turbo_mode_enabled": {
 "kind": "bool",
 "value": false
 },

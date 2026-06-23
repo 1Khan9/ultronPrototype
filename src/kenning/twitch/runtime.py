@@ -35,6 +35,13 @@ logger = logging.getLogger("kenning.twitch.runtime")
 
 __all__ = ["ChatModeState", "ChatModeRuntime"]
 
+# BusyEstimator is imported lazily (TYPE_CHECKING only) so this module stays
+# importable without busy.py being present in older installs; at runtime the
+# caller passes an already-constructed instance via the keyword argument.
+from typing import TYPE_CHECKING  # noqa: E402
+if TYPE_CHECKING:  # pragma: no cover
+    from kenning.twitch.busy import BusyEstimator
+
 
 class ChatModeState(str, Enum):
     OFF = "off"            # buffering only; speaks nothing
@@ -55,6 +62,7 @@ class ChatModeRuntime:
         guard_required: bool = True,
         on_flagged: Optional[Callable[[FlaggedMessage], None]] = None,
         can_enable_fn: Callable[..., tuple] = chat_mode_can_enable,
+        busy_estimator: Optional[Any] = None,
     ) -> None:
         self._pipeline = pipeline
         self._drain = drain_fn
@@ -65,6 +73,7 @@ class ChatModeRuntime:
         self._guard_required = bool(guard_required)
         self._on_flagged = on_flagged
         self._can_enable = can_enable_fn
+        self._busy_estimator = busy_estimator  # Optional[BusyEstimator]; None = always speak
         self._state = ChatModeState.OFF
 
     @property
@@ -97,9 +106,25 @@ class ChatModeRuntime:
 
     def tick(self) -> Optional[BatchResult]:
         """Drain one batch and process it. Returns the BatchResult, or None when
-        OFF / nothing buffered. Never raises (fail-CLOSED to silence)."""
+        OFF / nothing buffered / player is busy. Never raises (fail-CLOSED to silence).
+
+        When a :class:`~kenning.twitch.busy.BusyEstimator` is wired in, the
+        batch is still selected+processed (so messages are consumed from the
+        buffer) but the speak step is skipped while the player is mid-round.
+        """
         if not self.active:
             return None
+
+        # Check busy signal before draining — if busy, hold the buffer until
+        # the player is free rather than silently discarding messages.
+        if self._busy_estimator is not None:
+            try:
+                if self._busy_estimator.is_busy():
+                    logger.debug("chat tick: player busy, holding buffer")
+                    return None
+            except Exception as e:  # noqa: BLE001
+                logger.debug("busy_estimator.is_busy() error: %s; proceeding", e)
+
         try:
             events = list(self._drain() or [])
         except Exception as e:  # noqa: BLE001 — buffer drain error -> skip this tick

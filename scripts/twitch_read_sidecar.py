@@ -50,12 +50,22 @@ Run directly with the flag off and no source configured, the sidecar simply
 serves an EMPTY buffer -- it is harmless on its own.
 
 Run:  python scripts/twitch_read_sidecar.py [PORT]
-Env:  KENNING_TWITCH_READ_PORT (default 8775),
+Env:  KENNING_TWITCH_READ_PORT (default 8773; 8775 is the overlay sidecar),
       KENNING_TWITCH_READ_BUFFER_MAX (deque maxlen, default 2000),
       KENNING_TWITCH_READ_TTL_SECONDS (event TTL, default 900),
       KENNING_TWITCH_READ_POLL_SECONDS (source poll cadence, default 0.5),
       KENNING_TWITCH_PARENT_PID (parent pid for the deadman watchdog),
       KENNING_TWITCH_EVENTSUB_URL (override the wss endpoint for the real source).
+
+Live EventSub subscription (the real source only subscribes when creds are set):
+      KENNING_TWITCH_CLIENT_ID (the Twitch app client id; REQUIRED to subscribe —
+        with it unset the source connects but never subscribes and serves empty),
+      KENNING_TWITCH_BROADCASTER_LOGIN (the channel whose chat to read),
+      KENNING_TWITCH_BOT_LOGIN (the bot identity reading chat),
+      KENNING_TWITCH_BOT_TOKEN_PATH (default ~/.kenning/twitch_bot.json),
+      KENNING_TWITCH_BROADCASTER_TOKEN_PATH (default ~/.kenning/twitch.json),
+      KENNING_TWITCH_SUBSCRIBE_REDEEMS ("1"/"0", default "0"),
+      KENNING_TWITCH_HELIX_BASE (default https://api.twitch.tv/helix).
 """
 from __future__ import annotations
 
@@ -129,16 +139,34 @@ class FakeSource:
 
 
 class EventSubChatSource:
-    """The default real source: drives the receive-only EventSub WebSocket client
-    and maps each ``channel.chat.message`` notification to a small event dict.
+    """The default real source: drives the receive-only EventSub WebSocket client,
+    creates the live subscriptions over Helix, and maps each notification to a
+    small event dict (a ``channel.chat.message`` -> a ``{"type":"chat",...}`` dict
+    and, when enabled, a redemption-add -> a ``{"type":"redeem",...}`` dict).
 
     Lazily connects on the first :meth:`poll`; every failure path is fail-quiet
     and returns ``[]`` (a transient socket error must never raise into the poll
-    loop). The EventSub transport is itself stdlib-only (``socket``/``ssl``) -- no
-    third-party ``websockets`` -- so importing it keeps the anticheat posture.
+    loop). The EventSub transport is itself stdlib-only (``socket``/``ssl``) and
+    the Helix client is stdlib ``urllib`` only -- no third-party ``websockets`` /
+    ``requests`` -- so importing them keeps the anticheat posture (BR-P1).
 
-    This source is best-effort and offline-untestable by design (it needs a live
-    ``wss`` + creds); the sidecar's behaviour is fully covered via ``FakeSource``.
+    Subscription lifecycle (per session):
+      1. connect the wss socket;
+      2. on the first ``session_welcome`` of a session, capture ``session_id``,
+         load the stored OAuth tokens, resolve the broadcaster + bot logins to
+         numeric user ids over Helix, then create the ``channel.chat.message``
+         subscription (and, when ``subscribe_redeems`` is set, the redemption-add
+         subscription) -- ONCE per session;
+      3. drain notifications each poll via the client's non-blocking
+         ``recv_json_ready``;
+      4. on ``session_reconnect`` dial the new url; on a closed/stale socket the
+         client is nulled so the next poll reconnects and re-subscribes.
+
+    When ``client_id`` is empty (no creds) the source connects but NEVER
+    subscribes -- Twitch then sends only the welcome + keepalives and the buffer
+    stays empty (the documented flag-off behaviour). The sidecar's full behaviour
+    is covered offline via injected fakes (``connect_factory`` + ``helix_factory``)
+    and via ``FakeSource``.
     """
 
     name = "eventsub"
@@ -148,18 +176,109 @@ class EventSubChatSource:
         url: Optional[str] = None,
         *,
         connect_factory: Optional[Callable[[str], Any]] = None,
+        helix_factory: Optional[Callable[[], Any]] = None,
+        client_id: Optional[str] = None,
+        broadcaster_login: Optional[str] = None,
+        bot_login: Optional[str] = None,
+        bot_token_path: Optional[str] = None,
+        broadcaster_token_path: Optional[str] = None,
+        subscribe_redeems: Optional[bool] = None,
+        helix_base: Optional[str] = None,
         recv_timeout: float = 0.25,
     ) -> None:
         self._url = url or os.environ.get(
             "KENNING_TWITCH_EVENTSUB_URL", "wss://eventsub.wss.twitch.tv/ws"
         )
         self._connect_factory = connect_factory
+        self._helix_factory = helix_factory
         self._recv_timeout = recv_timeout
+
+        # Subscription config (env-overridable; explicit args win for tests).
+        self._client_id = (
+            client_id if client_id is not None else os.environ.get("KENNING_TWITCH_CLIENT_ID", "")
+        )
+        self._broadcaster_login = (
+            broadcaster_login
+            if broadcaster_login is not None
+            else os.environ.get("KENNING_TWITCH_BROADCASTER_LOGIN", "")
+        )
+        self._bot_login = (
+            bot_login if bot_login is not None else os.environ.get("KENNING_TWITCH_BOT_LOGIN", "")
+        )
+        self._bot_token_path = (
+            bot_token_path
+            if bot_token_path is not None
+            else os.environ.get("KENNING_TWITCH_BOT_TOKEN_PATH", "~/.kenning/twitch_bot.json")
+        )
+        self._broadcaster_token_path = (
+            broadcaster_token_path
+            if broadcaster_token_path is not None
+            else os.environ.get("KENNING_TWITCH_BROADCASTER_TOKEN_PATH", "~/.kenning/twitch.json")
+        )
+        if subscribe_redeems is None:
+            subscribe_redeems = os.environ.get("KENNING_TWITCH_SUBSCRIBE_REDEEMS", "0") == "1"
+        self._subscribe_redeems = bool(subscribe_redeems)
+        self._helix_base = (
+            helix_base
+            if helix_base is not None
+            else os.environ.get("KENNING_TWITCH_HELIX_BASE", "https://api.twitch.tv/helix")
+        )
+
         self._client: Any = None
         self._session: Any = None
         self._dedup: Any = None
+        self._helix: Any = None
+        # True once subscriptions are created for the CURRENT session; reset on
+        # every (re)connect so a reconnect re-subscribes against the new session.
+        self._subscribed = False
         self._lock = threading.Lock()
 
+    # ---- credentials ---------------------------------------------------- #
+    def _subscribe_enabled(self) -> bool:
+        """Subscribe only when a client id is configured (else serve empty)."""
+        return bool(self._client_id)
+
+    def _load_token(self, path: str) -> str:
+        """Load the stored OAuth access token from ``path`` (fail-quiet -> "")."""
+        try:
+            from kenning.twitch.auth import TokenStore
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("twitch auth import failed: %s", exc)
+            return ""
+        try:
+            tokens = TokenStore(path).load()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("twitch token load failed path=%s: %s", path, type(exc).__name__)
+            return ""
+        if not isinstance(tokens, dict):
+            return ""
+        access = tokens.get("access_token")
+        return access if isinstance(access, str) else ""
+
+    def _ensure_helix(self) -> Any:
+        """Build (and cache) the Helix client. ``None`` if it cannot be built."""
+        if self._helix is not None:
+            return self._helix
+        if self._helix_factory is not None:
+            try:
+                self._helix = self._helix_factory()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("helix factory failed: %s", type(exc).__name__)
+                return None
+            return self._helix
+        try:
+            from kenning.twitch.clients.helix_eventsub import HelixEventSubClient
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("helix client import failed: %s", exc)
+            return None
+        try:
+            self._helix = HelixEventSubClient(self._client_id, base_url=self._helix_base)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("helix client construct failed: %s", type(exc).__name__)
+            return None
+        return self._helix
+
+    # ---- connection ----------------------------------------------------- #
     def _ensure_client(self) -> bool:
         if self._client is not None:
             return True
@@ -181,62 +300,245 @@ class EventSubChatSource:
                 self._client = client
             self._session = EventSubSession()
             self._dedup = DedupLRU()
+            self._subscribed = False  # a fresh socket has a fresh session
             return True
         except Exception as exc:  # noqa: BLE001
             logger.warning("eventsub connect failed: %s", exc)
-            self._client = None
+            self._reset_client()
             return False
 
+    def _reset_client(self) -> None:
+        """Drop the current client/session so the next poll reconnects + re-subscribes."""
+        try:
+            if self._client is not None and hasattr(self._client, "close"):
+                self._client.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("eventsub client close (reset) failed: %s", exc)
+        self._client = None
+        self._session = None
+        self._subscribed = False
+
+    def _reconnect(self, url: str) -> bool:
+        """Dial ``url`` (a session_reconnect target) on a fresh client."""
+        self._reset_client()
+        if url:
+            self._url = url
+        return self._ensure_client()
+
+    # ---- subscription bootstrap ---------------------------------------- #
+    def _subscribe(self, session_id: str) -> None:
+        """Create the chat (and optional redeem) subscriptions for ``session_id``.
+
+        ONCE per session. Resolves logins -> ids over Helix using the stored
+        tokens. Fail-quiet: a Helix hiccup logs + leaves ``_subscribed`` False so
+        the next poll retries (we never raise into the poll loop). The chat sub
+        uses the BOT token; the redeem sub uses the BROADCASTER token.
+        """
+        if self._subscribed or not session_id or not self._subscribe_enabled():
+            return
+        helix = self._ensure_helix()
+        if helix is None:
+            return
+        bot_token = self._load_token(self._bot_token_path)
+        if not bot_token:
+            logger.warning("eventsub subscribe skipped: no bot access token")
+            return
+        broadcaster_id = helix.get_user_id(self._broadcaster_login, token=bot_token)
+        bot_id = helix.get_user_id(self._bot_login, token=bot_token)
+        if not broadcaster_id or not bot_id:
+            logger.warning(
+                "eventsub subscribe skipped: unresolved ids broadcaster=%s bot=%s",
+                bool(broadcaster_id), bool(bot_id),
+            )
+            return
+        ok = helix.create_chat_subscription(
+            broadcaster_id=broadcaster_id,
+            bot_user_id=bot_id,
+            session_id=session_id,
+            token=bot_token,
+        )
+        if not ok:
+            logger.warning("eventsub chat subscription create failed; will retry next poll")
+            return
+        if self._subscribe_redeems:
+            broadcaster_token = self._load_token(self._broadcaster_token_path)
+            if broadcaster_token:
+                redeem_ok = helix.create_redeem_subscription(
+                    broadcaster_id=broadcaster_id,
+                    session_id=session_id,
+                    token=broadcaster_token,
+                )
+                if not redeem_ok:
+                    # Chat is up; a redeem-sub miss is non-fatal -- log + carry on.
+                    logger.warning("eventsub redeem subscription create failed (chat is up)")
+            else:
+                logger.warning("eventsub redeem subscribe skipped: no broadcaster access token")
+        # Mark subscribed only after the (required) chat subscription succeeded.
+        self._subscribed = True
+        logger.info("eventsub subscriptions established for session=%s", session_id)
+
+    # ---- poll ----------------------------------------------------------- #
     def poll(self) -> list[dict]:
         with self._lock:
             if not self._ensure_client():
                 return []
             try:
-                from kenning.twitch.clients.eventsub import ChatEvent
+                from kenning.twitch.clients.eventsub import (
+                    ChatEvent,
+                    WebSocketClosed,
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("eventsub ChatEvent import failed: %s", exc)
                 return []
             out: list[dict] = []
-            # Drain whatever messages are currently available, fail-quiet.
             try:
                 for _ in range(64):  # bounded per-poll so we never spin forever
-                    if not self._client_has_pending():
-                        break
-                    msg = self._client.recv_json()
+                    msg = self._client.recv_json_ready(self._recv_timeout)
+                    if msg is None:
+                        break  # no more data ready this cycle
                     if not isinstance(msg, dict):
                         continue
-                    cls = self._session.classify_message(msg) if self._session else "unknown"
-                    if cls == "welcome" and self._session is not None:
-                        self._session.parse_welcome(msg)
-                        continue
-                    if cls != "notification":
-                        continue
-                    ev = ChatEvent.from_eventsub(msg)
-                    if ev is None:
-                        continue
-                    if self._dedup is not None and self._dedup.seen(ev.message_id):
-                        continue
-                    out.append(
-                        {
-                            "type": "chat",
-                            "message_id": ev.message_id,
-                            "chatter_login": ev.chatter_login,
-                            "chatter_name": ev.chatter_name,
-                            "chatter_user_id": ev.chatter_user_id,
-                            "text": ev.text,
-                        }
-                    )
+                    handled = self._handle_message(msg, ChatEvent, out)
+                    if handled == "reconnect":
+                        break  # dialed a new url; resume draining next poll
+            except WebSocketClosed as exc:
+                # Clean/abnormal close or stale socket -> reconnect + re-subscribe
+                # next poll.
+                logger.info("eventsub socket closed (%s); will reconnect", exc)
+                self._reset_client()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("eventsub poll error: %s", exc)
-                self._client = None  # force a reconnect next poll
+                self._reset_client()  # force a reconnect + re-subscribe next poll
             return out
 
-    def _client_has_pending(self) -> bool:
-        # The hand-rolled client blocks on recv; without a non-blocking probe we
-        # cannot know if data is queued, so we conservatively stop after the first
-        # read each poll cycle (the real wiring sets a recv timeout). This keeps
-        # the poll loop responsive and is overridden in tests via FakeSource.
-        return False
+    def _handle_message(self, msg: dict, chat_event_cls: Any, out: list[dict]) -> str:
+        """Classify + map one EventSub message; append any event dicts to ``out``.
+
+        Returns ``"reconnect"`` if a ``session_reconnect`` was handled (the caller
+        stops draining this cycle), else ``"ok"``. Never raises.
+        """
+        if self._session is None:
+            return "ok"
+        # Any received message is liveness for the staleness clock.
+        try:
+            self._session.note_keepalive()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("eventsub note_keepalive failed: %s", exc)
+        cls = self._session.classify_message(msg)
+        if cls == "welcome":
+            sid = self._session.parse_welcome(msg)
+            if sid:
+                self._subscribe(sid)
+            return "ok"
+        if cls == "reconnect":
+            new_url = self._session.handle_reconnect(msg)
+            if new_url:
+                self._reconnect(new_url)
+            return "reconnect"
+        if cls == "revocation":
+            logger.warning("eventsub subscription revoked; dropping session to re-subscribe")
+            self._reset_client()
+            return "reconnect"
+        if cls != "notification":
+            return "ok"  # keepalive / unknown -> nothing to emit
+        self._map_notification(msg, chat_event_cls, out)
+        return "ok"
+
+    def _map_notification(self, msg: dict, chat_event_cls: Any, out: list[dict]) -> None:
+        """Map a notification to a chat or redeem event dict (fail-quiet)."""
+        sub_type = ""
+        meta = msg.get("metadata")
+        if isinstance(meta, dict):
+            st = meta.get("subscription_type")
+            if isinstance(st, str):
+                sub_type = st
+
+        # channel.chat.message -> {"type":"chat",...} (the unchanged consumer shape).
+        if sub_type == "" or sub_type == "channel.chat.message":
+            ev = chat_event_cls.from_eventsub(msg)
+            if ev is not None:
+                if self._dedup is not None and self._dedup.seen(ev.message_id):
+                    return
+                out.append(
+                    {
+                        "type": "chat",
+                        "message_id": ev.message_id,
+                        "chatter_login": ev.chatter_login,
+                        "chatter_name": ev.chatter_name,
+                        "chatter_user_id": ev.chatter_user_id,
+                        "text": ev.text,
+                    }
+                )
+                return
+            # Not a chat message under an unknown sub_type -> fall through to redeem.
+
+        if sub_type == "channel.channel_points_custom_reward_redemption.add":
+            self._map_redeem(msg, out)
+            return
+
+        # Unknown/unhandled subscription type -> ignore (fail-safe).
+        if sub_type:
+            logger.debug("eventsub notification ignored sub_type=%s", sub_type)
+
+    def _map_redeem(self, msg: dict, out: list[dict]) -> None:
+        """Map a redemption-add notification to a ``{"type":"redeem",...}`` dict.
+
+        Parses defensively from ``payload.event`` (the redemption-add shape). Dedup
+        is keyed on the redemption id (its own LRU, independent of the chat dedup).
+        """
+        event = self._locate_event(msg)
+        if not isinstance(event, dict):
+            return
+        redemption_id = self._coerce_str(event.get("id"))
+        if redemption_id and self._redeem_seen(redemption_id):
+            return
+        reward = event.get("reward")
+        if not isinstance(reward, dict):
+            reward = {}
+        out.append(
+            {
+                "type": "redeem",
+                "redemption_id": redemption_id,
+                "reward_id": self._coerce_str(reward.get("id")),
+                "reward_title": self._coerce_str(reward.get("title")),
+                "user_input": self._coerce_str(event.get("user_input")),
+                "chatter_login": self._coerce_str(event.get("user_login")),
+                "chatter_name": self._coerce_str(event.get("user_name")),
+                "chatter_user_id": self._coerce_str(event.get("user_id")),
+                "status": self._coerce_str(event.get("status")),
+            }
+        )
+
+    # ---- redeem dedup (lazily created; independent of the chat dedup) --- #
+    def _redeem_seen(self, redemption_id: str) -> bool:
+        dedup = getattr(self, "_redeem_dedup", None)
+        if dedup is None:
+            try:
+                from kenning.twitch.clients.eventsub import DedupLRU
+
+                dedup = DedupLRU()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("redeem dedup unavailable: %s", exc)
+                return False
+            self._redeem_dedup = dedup
+        return bool(dedup.seen(redemption_id))
+
+    @staticmethod
+    def _locate_event(msg: dict) -> Optional[dict]:
+        """Pull the ``event`` dict out of a full envelope or a bare payload."""
+        payload = msg.get("payload")
+        if isinstance(payload, dict):
+            ev = payload.get("event")
+            if isinstance(ev, dict):
+                return ev
+        ev = msg.get("event")
+        return ev if isinstance(ev, dict) else None
+
+    @staticmethod
+    def _coerce_str(value: Any) -> str:
+        if value is None:
+            return ""
+        return value if isinstance(value, str) else str(value)
 
     def close(self) -> None:
         try:

@@ -1,5 +1,40 @@
 # Ultron × Twitch — Live Status
 
+## LIVE WIRING BUILT (2026-06-23) — the previously-deferred glue is now in place
+**Honest finding that started this work:** the S0–S13 slices passed 519 tests but the LIVE
+ingestion was never built — the read sidecar opened an UNAUTHENTICATED WebSocket, got
+`session_welcome`, then received ZERO messages because nothing created the EventSub
+subscription (grep: zero hits for `eventsub/subscriptions` / `/users`). "Needs creds + OBS"
+undersold it: real code was missing. This session built it. All still flag-gated default-OFF.
+
+Landed this session (each a tested, committed slice; full `tests/twitch/` = **735 passed**):
+- **`5ef8958`** Heist/Duel/Trivia/Raffle games + `BusyEstimator` + `HelperClient` (the 3 unbuilt S12 items).
+- **`1573217`** LIVE EventSub chat **+ redeem** subscription in the read sidecar — `HelixEventSubClient`
+  (`GET /users` login→id, `POST /eventsub/subscriptions` for `channel.chat.message` w/ bot token +
+  `channel.channel_points_custom_reward_redemption.add` w/ broadcaster token), token load via `TokenStore`,
+  non-blocking `recv_json_ready`, reconnect+re-subscribe. (Twitch API verified live 2026-06-23.)
+- **`784dec1`** + **`b46fdcf`** moderation: the `ModerationService` (parse→resolve→authorize→Helix, two-phase)
+  + the write/Helix **sidecar on :8777** + `ModerationRemote` loopback client (Twitch write I/O off the pinned process).
+- **`7d873d3`** AUTO-SPAWN: `_start_twitch_sidecars` (read always; guard when a GGUF path is set+present;
+  helper when enabled) via the embedder Popen+deadman+ZombieKiller pattern + in-process OBS overlay
+  (`_start_twitch_overlay`, URL surfaced) + shutdown reaps. Pure-stdlib `sidecar_launch.plan_sidecars`.
+  New config: `twitch.auth.bot_token_path`, `twitch.safety.guard_model_path`/`guard_family`.
+- **`39adaae`** voice-moderation dispatch (`_maybe_handle_twitch_moderation`, two-phase "ban X"→read-back→
+  "yes", wired into BOTH command-dispatch paths) + auto-spawn of the write sidecar + `BusyEstimator` threaded
+  live (callout-recency → chat held while the team is being called out).
+- redeem→game router (drain redeems → match reward title → run game → announce + overlay) — see latest commit.
+
+**Auto-start:** with `twitch.enabled: true` the orchestrator now spawns read/guard/(helper)/(write) sidecars +
+the overlay at boot and reaps them on shutdown — no manual sidecar launches. The guard GGUF path comes from
+`twitch.safety.guard_model_path`.
+
+**STILL needs the user (live calibration, not code):** create channel-point rewards whose titles match the
+redeem map; OBS Browser-Source the overlay URL + VoiceMeeter route the chat bus off B1; one live token smoke-test
+(does EventSub actually flow + the guard co-resident VRAM). Moderation `untimeout`/`unban`/`delete` parse+authorize
+but `confirm()` returns `unsupported_action` (HelixClient has ban/timeout endpoints only — add the rest later).
+
+---
+
 **Created:** 2026-06-21 · **Branch:** `claude/affectionate-lehmann-c9fc0a` (worktree off `main`@`408b913`)
 **Goal (user, 2026-06-21):** Build the COMPLETE Twitch chat-interaction capability to its fullest end-goal
 vision — Ultron reads & responds to chat (batch, by-name, semantic addressing), runs channel-point redeems &
