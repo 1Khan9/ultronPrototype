@@ -418,14 +418,23 @@ class _ServiceState:
 
 
 def _load_access_token(token_path: str) -> str:
-    """Load the broadcaster's stored OAuth access token (fail-quiet -> "")."""
+    """Load a live broadcaster OAuth access token, proactively refreshing if near expiry."""
     try:
-        from kenning.twitch.auth import TokenStore
+        from kenning.twitch.auth import TokenStore, TwitchAuth
     except Exception as exc:  # noqa: BLE001
         logger.warning("twitch auth import failed: %s", type(exc).__name__)
         return ""
+    store = TokenStore(token_path)
+    client_id = os.environ.get("KENNING_TWITCH_CLIENT_ID", "").strip()
+    if client_id and store.is_expired(margin_seconds=300.0):
+        try:
+            access = TwitchAuth(client_id, store).ensure_valid(margin_seconds=300.0)
+            if access:
+                return access
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("proactive token refresh skipped (%s)", type(exc).__name__)
     try:
-        tokens = TokenStore(token_path).load()
+        tokens = store.load()
     except Exception as exc:  # noqa: BLE001
         logger.warning("twitch token load failed path=%s: %s", token_path, type(exc).__name__)
         return ""

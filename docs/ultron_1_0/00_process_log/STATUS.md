@@ -1,12 +1,19 @@
 # Ultron 1.0 — Live Status
 
-**ACTIVE (2026-06-23) — TWITCH SIDECAR PYTHONPATH FIX:** `orchestrator._start_twitch_sidecars` now
-injects `PYTHONPATH=<repo>/src` into each sidecar's env before spawn, so the sidecar can import
-kenning even when `sys.executable` is the system Python (launched via a launcher that patches its
-own sys.path at start-up but does NOT propagate the patch to child processes via the inherited env).
-Root cause: Twitch auth tokens also needed refresh (both expired ~4 hr TTL); rotated via
-`auth.TokenStore.refresh()` without re-auth (refresh tokens still valid). Both fixes committed;
-restart required to pick them up.
+**ACTIVE (2026-06-23) — PERSONA LOCK (BR-P2) + TOKEN AUTO-REFRESH:**
+
+(1) **BR-P2 persona lock** (`orchestrator._gaming_conversational_prompt`): when `u1_llm_route_enabled()`
+is True, the method now ALWAYS returns `ULTRON_GAMING_PERSONA`. Previously Mistral-7B (or any model
+without "abliterat"/"gaming" in its path) returned `None`, causing the workspace "You are Kenning"
+persona to leak through to every LLM call under route-all — a direct BR-P2 violation.
+
+(2) **Twitch token auto-refresh** (`TokenStore.is_expired` + `TwitchAuth.ensure_valid`): sidecars now
+call `ensure_valid(margin_seconds=300)` on startup — proactively rotates the access token if it is
+expired or within 5 min of expiry. Reactive 401 handling in `call_with_auth` is unchanged. 12 new
+tests green. Write sidecar's `_load_access_token` + read sidecar's `_load_token` both updated.
+
+**PREVIOUS — TWITCH SIDECAR PYTHONPATH FIX (2026-06-23 `62a213c`):** `orchestrator._start_twitch_sidecars`
+injects `PYTHONPATH=<repo>/src` into each sidecar env before spawn.
 
 **PREVIOUS — STOP-WINDOW CHAT TOGGLE (2026-06-23):** Added CHAT ON/OFF button to the stop-button GUI
 (`stop_button.py` + `config.py` `StopButtonConfig.chat_height`/`chat_label` + `orchestrator.py`

@@ -239,14 +239,23 @@ class EventSubChatSource:
         return bool(self._client_id)
 
     def _load_token(self, path: str) -> str:
-        """Load the stored OAuth access token from ``path`` (fail-quiet -> "")."""
+        """Load a live OAuth access token, proactively refreshing if near expiry."""
         try:
-            from kenning.twitch.auth import TokenStore
+            from kenning.twitch.auth import TokenStore, TwitchAuth
         except Exception as exc:  # noqa: BLE001
             logger.warning("twitch auth import failed: %s", exc)
             return ""
+        store = TokenStore(path)
+        client_id = os.environ.get("KENNING_TWITCH_CLIENT_ID", "").strip()
+        if client_id and store.is_expired(margin_seconds=300.0):
+            try:
+                access = TwitchAuth(client_id, store).ensure_valid(margin_seconds=300.0)
+                if access:
+                    return access
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("proactive token refresh skipped (%s)", type(exc).__name__)
         try:
-            tokens = TokenStore(path).load()
+            tokens = store.load()
         except Exception as exc:  # noqa: BLE001
             logger.warning("twitch token load failed path=%s: %s", path, type(exc).__name__)
             return ""

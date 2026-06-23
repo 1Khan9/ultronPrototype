@@ -10160,7 +10160,13 @@ class Orchestrator:
         Used by the conversational call sites to override the system prompt so a
         wake-addressed line that matched no deterministic route is answered AS
         Ultron -- never leaking the "Kenning" persona to the team. Fail-open:
-        any error returns None (legacy desktop behaviour)."""
+        any error returns None (legacy desktop behaviour).
+
+        PERSONA LOCK (BR-P2): when the Ultron 1.0 LLM-route flag is active, EVERY
+        LLM response must use the Ultron persona regardless of model path or gaming
+        flag state. Without this lock, the default model (Mistral-7B) doesn't match
+        the abliterat/gaming path check and the workspace "You are Kenning" persona
+        leaks through on every conversational call -- a direct BR-P2 violation."""
         try:
             from kenning.openclaw_routing.gaming_mode import (
                 is_gaming_mode_active,
@@ -10181,6 +10187,16 @@ class Orchestrator:
             if mp and ("abliterat" in mp or "llama-3.2-3b" in mp
                        or "gaming" in mp):
                 return ULTRON_GAMING_PERSONA
+            # Persona lock: u1_llm_route routes ALL relay/conversational turns
+            # through the LLM -- the persona MUST be Ultron, not "Kenning".
+            # Mistral-7B (and any future model without the abliterat/gaming tag)
+            # would otherwise fall through to the workspace source above.
+            try:
+                from kenning.audio.relay_speech import u1_llm_route_enabled
+                if u1_llm_route_enabled():
+                    return ULTRON_GAMING_PERSONA
+            except Exception:                                        # noqa: BLE001
+                pass
         except Exception:                                            # noqa: BLE001
             return None
         return None

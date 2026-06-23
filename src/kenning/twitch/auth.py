@@ -370,6 +370,22 @@ class TokenStore:
         except OSError:
             pass
 
+    def is_expired(self, margin_seconds: float = 0.0) -> bool:
+        """True if the stored access token has expired (or is absent).
+
+        ``margin_seconds`` adds a safety buffer: a token expiring within that
+        window is treated as already expired so callers can proactively refresh.
+        """
+        tokens = self.load()
+        if not tokens:
+            return True
+        expires_at = tokens.get("expires_at")
+        try:
+            expires_at = float(expires_at)
+        except (TypeError, ValueError):
+            return True
+        return time.time() + float(margin_seconds) >= expires_at
+
     def is_secure_perms(self) -> bool:
         """True iff the store file exists and is 0o600 on POSIX.
 
@@ -583,7 +599,39 @@ class TwitchAuth:
             )
         raise TwitchAuthError(f"token refresh failed (HTTP {status}): {err or 'unknown error'}")
 
-    # -- 5. authed request with one auto-refresh-on-401 -----------------------
+    # -- 5. proactive refresh (call on startup / before use) ------------------
+    def ensure_valid(self, margin_seconds: float = 300.0) -> str:
+        """Return a live access token, proactively refreshing if near expiry.
+
+        Checks whether the stored token expires within ``margin_seconds`` (default
+        5 minutes) and silently rotates it using the stored refresh_token if so.
+        This prevents sidecars from starting with a stale token that would cause
+        an immediate 401 on the first Helix/EventSub call.
+
+        Returns the access token string.  On any failure (no stored token,
+        refresh rejected, network error) logs a warning and returns whatever the
+        store holds (or "" if absent) — the caller proceeds and will hit a 401
+        which ``call_with_auth`` will handle reactively.
+        """
+        tokens = self.store.load() or {}
+        access = str(tokens.get("access_token") or "")
+        if not self.store.is_expired(margin_seconds):
+            return access  # still fresh
+        refresh_token = str(tokens.get("refresh_token") or "")
+        if not refresh_token:
+            logger.warning("token near/past expiry but no refresh_token; re-auth required")
+            return access
+        try:
+            new_tokens = self.refresh(refresh_token)
+            return str(new_tokens.get("access_token") or access)
+        except RevokedError as exc:
+            logger.warning("proactive token refresh failed (revoked): %s", exc)
+            return access
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("proactive token refresh failed: %s", type(exc).__name__)
+            return access
+
+    # -- 6. authed request with one auto-refresh-on-401 -----------------------
     def call_with_auth(self, do_request: Callable[[str], "tuple[int, Any]"]) -> Any:
         """Run ``do_request(access_token) -> (status, result)`` with the current
         access token; on a 401 refresh ONCE then retry; on a still-401 (or no
