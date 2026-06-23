@@ -1,0 +1,10 @@
+
+# Byte-identical canon — preserve exact bytes, no CRLF conversion. Updated 2026-06-20 (session 5)
+# for the expanded Frontier Claude Code Kit: the glob covers every byte-identical canon file
+# (the 7 kit docs + examples/) so a checkout never CRLF-mangles them. (Our own editable canon files
+# — README.md, ULTRON_INSTANTIATION.md — are pinned too; harmless, just disables autocrlf there.)
+docs/canon/** -text
+
+# Enforcement hook scripts — force LF so node/git-bash run them correctly under core.autocrlf=true (BR-21.4).
+.claude/hooks/*.mjs text eol=lf
+.claude/hooks/*.sh text eol=lf

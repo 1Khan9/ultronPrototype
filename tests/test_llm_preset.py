@@ -32,17 +32,16 @@ import pytest
 from kenning.config import LLM_PRESETS, LLMConfig, load_config
 
 
-def test_default_preset_is_josiefied_4b() -> None:
-    """2026-05-14: default flipped to Josiefied + abliterated Qwen3-4B-v2
-    Q5_K_M for VRAM relief. Same abliterated lineage as the 8B at
-    ~half the footprint. n_ctx=6144 (vs 8192 on the larger presets)
-    shaves another ~150 MB off the KV cache. The runtime tool-call
-    validator (``src/kenning/safety/``) still gates the actual capability
-    surface."""
+def test_default_preset_is_mistral_7b() -> None:
+    """2026-06-23: default changed to Mistral-7B-Instruct-v0.3-abliterated
+    (i1-Q4_K_M, ~4.4 GB). No paired draft model, so spec decoding is
+    auto-disabled. Reverted from iq3xs after a latency regression."""
     cfg = LLMConfig()
-    assert cfg.preset == "josiefied-qwen3-4b"
-    assert cfg.model_path == "models/Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf"
-    assert cfg.n_ctx == 6144
+    assert cfg.preset == "mistral-7b-v0.3-abliterated"
+    assert cfg.model_path == "models/Mistral-7B-Instruct-v0.3-abliterated.i1-Q4_K_M.gguf"
+    assert cfg.n_ctx == 4096
+    assert cfg.draft_model_path is None
+    assert cfg.draft_kind == "none"
 
 
 def test_llm_presets_match_literal() -> None:
@@ -313,11 +312,9 @@ llm:
 
 def test_yaml_load_default_preset_back_compat(tmp_path: Path) -> None:
     """A YAML config that does not specify ``preset`` falls back to the
-    schema default. As of 2026-05-14 the schema default is the
-    Josiefied + abliterated Qwen3-4B-v2 preset (was josiefied-qwen3-8b
-    before that, qwen3.5-4b before that, qwen3.5-9b before the 4B plan).
-    This test pins the schema default for documentation; the production
-    ``config.yaml`` always spells the preset out explicitly."""
+    schema default. As of 2026-06-23 the schema default is
+    mistral-7b-v0.3-abliterated (latency regression on iq3xs prompted the
+    revert). The production config.yaml always spells the preset explicitly."""
     yaml_text = """
 version: "1.0"
 llm:
@@ -326,14 +323,13 @@ llm:
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(yaml_text, encoding="utf-8")
     cfg = load_config(cfg_path)
-    assert cfg.llm.preset == "josiefied-qwen3-4b"
+    assert cfg.llm.preset == "mistral-7b-v0.3-abliterated"
     assert cfg.llm.model_path == (
-        "models/Josiefied-Qwen3-4B-abliterated-v2.Q4_K_M.gguf"
+        "models/Mistral-7B-Instruct-v0.3-abliterated.i1-Q4_K_M.gguf"
     )
-    # 4B abliterated preset uses n_ctx=6144 (KV-cache trim).
-    # Test omits an explicit n_ctx so the preset default applies.
-    assert cfg.llm.n_ctx == 6144
+    assert cfg.llm.n_ctx == 4096
     assert cfg.llm.draft_model_path is None
+    assert cfg.llm.draft_kind == "none"
 
 
 def test_yaml_load_custom_preset_with_explicit_paths(tmp_path: Path) -> None:
@@ -357,3 +353,53 @@ llm:
 def test_invalid_preset_rejected() -> None:
     with pytest.raises(Exception):  # pydantic ValidationError
         LLMConfig(preset="qwen2-7b")  # not in Literal
+
+
+# ---------------------------------------------------------------------------
+# Auto-toggle speculative decoding (2026-06-23)
+# _apply_preset enforces draft_kind based on whether the preset ships a
+# draft GGUF.  This fires at boot AND on every reload_config() call so
+# hot-swapping a preset never leaves a stale draft_kind.
+# ---------------------------------------------------------------------------
+
+def test_auto_toggle_draft_off_for_no_draft_preset() -> None:
+    """Presets without a draft_model_path (mistral, 4B, 8B Q5) must always
+    resolve to draft_kind='none', even if the user left draft_kind='model'
+    in config.yaml from a prior preset."""
+    for preset in (
+        "mistral-7b-v0.3-abliterated",
+        "josiefied-qwen3-4b",
+        "josiefied-qwen3-8b",
+        "llama-3.2-3b-abliterated",
+    ):
+        cfg = LLMConfig(preset=preset, draft_kind="model")  # user left stale value
+        assert cfg.draft_kind == "none", (
+            f"{preset}: expected draft_kind='none' (no draft GGUF), got {cfg.draft_kind!r}"
+        )
+
+
+def test_auto_toggle_draft_on_for_draft_preset() -> None:
+    """Presets that ship a draft GGUF auto-enable draft_kind='model' when
+    the user has not explicitly pinned draft_kind in config.yaml."""
+    for preset in ("josiefied-qwen3-8b-iq4xs", "josiefied-qwen3-8b-iq3xs"):
+        cfg = LLMConfig(preset=preset)  # draft_kind not in model_fields_set
+        assert cfg.draft_kind == "model", (
+            f"{preset}: expected draft_kind='model' (draft GGUF present), got {cfg.draft_kind!r}"
+        )
+        assert cfg.draft_model_path is not None
+
+
+def test_auto_toggle_respects_explicit_pld_override() -> None:
+    """If the user explicitly sets draft_kind='pld' on a draft-capable preset,
+    that explicit value is kept (only the no-user-pin branch auto-sets 'model')."""
+    cfg = LLMConfig(preset="josiefied-qwen3-8b-iq4xs", draft_kind="pld")
+    assert cfg.draft_kind == "pld"
+
+
+def test_auto_toggle_overrides_model_kind_when_no_draft_gguf() -> None:
+    """Even an EXPLICIT draft_kind='model' is overridden to 'none' when the
+    preset has no draft_model_path — spec decoding with a None path would
+    be a no-op at best and a crash at worst."""
+    cfg = LLMConfig(preset="mistral-7b-v0.3-abliterated", draft_kind="model")
+    assert cfg.draft_kind == "none"
+    assert cfg.draft_model_path is None

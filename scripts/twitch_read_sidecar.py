@@ -467,6 +467,9 @@ class EventSubChatSource:
                         "chatter_name": ev.chatter_name,
                         "chatter_user_id": ev.chatter_user_id,
                         "text": ev.text,
+                        # badges carry mod/broadcaster provenance for the chat-command
+                        # authz (commands.parse_command -> is_mod); a list of badge dicts.
+                        "badges": ev.badges,
                     }
                 )
                 return

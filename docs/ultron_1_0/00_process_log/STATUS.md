@@ -1,12 +1,39 @@
 # Ultron 1.0 — Live Status
 
-**RELEASE 2026-06-23 — TURBO MODE shipped + folded with the twitch fleet:** turbo committed `27e0817`; merged with
+**RELEASE 2026-06-23 — GAP-C + MISTRAL DEFAULT + SPEC-DECODING AUTO-TOGGLE folded + pushed:** local `main` at
+`ee3b2ba`; published to `origin/main` as a canon-excluded snapshot. **Wrapper regression-clean: 22 failed = exact
+frozen baseline, 12176 passed, 39 skipped.** All twitch/turbo/gap-c tests green.
+
+**GAP-C DELIVERED (2026-06-23, commits `aaedc26`–`c54a364`):** `src/kenning/twitch/economy/chat_games.py` —
+`ChatGameRouter` (own-cursor chat drain mirroring the redeem router) dispatches the existing `commands.parse_command`
+(which had no dispatcher) → ledger-backed `!gamble`/`!slots` (debit-first + RTP-derived multiplier payout, EV ==
+`gamble_rtp`, leg-distinct idempotency keys) + `!points`/`!balance`/`!leaderboard`/`!help`; watch-time earn
+(`earn_per_minute`, idempotent per minute); `per_stream_loss_cap` per-viewer ceiling; per-user cooldown. KEY: the
+read sidecar buffers a FLAT chat dict (`{type:chat, message_id, chatter_login, ...}`), NOT the nested EventSub shape
+`ChatEvent.from_eventsub` parses — use `chat_event_from_buffer`. Config `TwitchEconomyConfig.chat_commands_enabled`/
+`command_cooldown_seconds`/`min_bet`/`max_bet` (default OFF). Orchestrator builds one `Ledger` singleton + a daemon
+loop (gated on economy.enabled AND chat_commands_enabled), closed on shutdown. 22 unit tests. **TRIVIA** (commit
+`a13ccf5`): mod-started, draws a provably-fair question, first correct chat answer in the window wins a house prize
+(`trivia_prize`/`trivia_window_seconds`); round closes atomically BEFORE crediting (no double-award). +5 tests; full
+twitch suite 779 green. Spec: `docs/twitch_integration/03_spec/gap_c_chat_economy_spec.md`. STILL DEFERRED: heist
+join-window / duel challenge-accept / raffle / !give / RedeemRouter ledger-backing / delete message-id cross-process
+plumb (design documented in spec).
+
+**MISTRAL DEFAULT + SPEC-DECODING AUTO-TOGGLE (commit `7767b22`):** Reverted default from `josiefied-qwen3-8b-iq3xs`
+back to `mistral-7b-v0.3-abliterated` (latency regression on IQ3_XS + in-process draft). `_apply_preset` now
+auto-manages `draft_kind`: preset has NO `draft_model_path` → force `"none"` (even if stale "model" left in YAML);
+preset HAS `draft_model_path` AND user didn't pin → auto-set `"model"`. Effect: switching to iq4xs/iq3xs
+auto-enables spec decoding; switching away auto-disables. Gaming preset also reverted to Mistral. 37 preset + 16
+on-the-fly-switching tests green.
+
+**INTENT GATE TEST FIXES (commit `ee3b2ba`):** Updated `tests/pipeline/test_always_listening_wiring.py` to reflect
+the 2026-06-22 gate redesign (commit `1c7bb6f` — PRIVATE_REPLY now requires explicit name/wake; un-named utterances
+go direct to IGNORE, no LLM escalation). `test_config_yaml_default_off` made env-independent (tmp_path minimal YAML).
+
+**PREVIOUS: RELEASE 2026-06-23 — TURBO MODE shipped + folded with the twitch fleet:** turbo committed `27e0817`; merged with
 `claude/determined-sutherland-315683` (8 new twitch commits — games / moderation sidecars / redeem router / EventSub)
-at merge `785682a`; golden reconciled `5043b3b`. **Combined wrapper (turbo+twitch) regression-clean: 27 failed = the
-IDENTICAL pre-existing baseline (node-id diff vs turbo-only = empty), 12044 passed, all twitch+turbo tests green**
-(integration dir excluded for the infra-flaky `test_bridge_e2e` real-subprocess hang; orchestrator imports clean,
-twitch default-OFF). Next: ff local `main` to the fold (preserving the main-checkout local config.yaml), canon-excluded
-snapshot push to `origin/main`, restart Ultron. `main-backup-prerelease` ref saved at `1d533a1`.
+at merge `785682a`; golden reconciled `5043b3b`. Combined wrapper (turbo+twitch) regression-clean. Published to
+`origin/main` `e42277e`.
 
 **TURBO MODE (flag-gated default-OFF):** a runtime
 master switch that AUTO-RELAYS inferred team callouts WITHOUT a "tell my team" prefix. ON => the loop listens

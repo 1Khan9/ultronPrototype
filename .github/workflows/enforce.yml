@@ -1,0 +1,77 @@
+# Enforcement CI backstop (BR-21.4 / BR-5.5 / BR-8) — the un-overrideable layer.
+#
+# WHY light-only: a hosted runner CANNOT faithfully run Ultron's suite — it needs the .venv +
+# scripts/run_tests.py wrapper + the embeddinggemma sidecar (:8772) + a GPU + Windows. So the FULL
+# suite stays LOCAL (the pre-push hook + the wrapper). This workflow runs the runner-AGNOSTIC guards
+# that a within-session hook / --dangerously-skip-permissions / disableAllHooks cannot defeat.
+#
+# ACTIVATION: this file is committed to LOCAL main (kept off origin with the canon). It only RUNS once
+# it reaches origin AND Actions is enabled. To activate: include .github/ in the published snapshot and
+# add these jobs as REQUIRED status checks on the protected branch ("do not allow bypassing"). Until
+# then it is a ready, documented artifact (BR-2.4 wire-or-document).
+name: enforce
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history so we can diff against the base
+
+      - name: Resolve base + changed files
+        id: diff
+        run: |
+          BASE="origin/${GITHUB_BASE_REF:-main}"
+          git fetch --no-tags --depth=200 origin "${GITHUB_BASE_REF:-main}" || true
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          git diff --name-only "$BASE...HEAD" > .changed_all.txt || git diff --name-only HEAD~1...HEAD > .changed_all.txt
+          grep -E '\.py$' .changed_all.txt | grep -vE '(^|/)tests?/' > .changed_py.txt || true
+          echo "----- changed files -----"; cat .changed_all.txt
+
+      - name: No-test-deletion / no-weakening guard (BR-5.5)
+        run: |
+          BASE="${{ steps.diff.outputs.base }}"
+          # (1) no deleted test files
+          if git diff --name-status "$BASE...HEAD" -- 'tests/**' | grep -E '^D'; then
+            echo "::error::A test file was DELETED (BR-5.5). Fix the implementation, never remove a test."; exit 1
+          fi
+          # (2) skip/xfail count must not increase across the diff
+          before=$(git grep -hE '@pytest\.mark\.(skip|xfail)|pytest\.skip\(' "$BASE" -- 'tests/**' 2>/dev/null | wc -l || echo 0)
+          after=$(git grep -hE '@pytest\.mark\.(skip|xfail)|pytest\.skip\(' HEAD -- 'tests/**' 2>/dev/null | wc -l || echo 0)
+          echo "skip/xfail markers: before=$before after=$after"
+          if [ "$after" -gt "$before" ]; then
+            echo "::error::skip/xfail count increased ($before -> $after) — do not weaken tests to pass (BR-5.5)."; exit 1
+          fi
+
+      - name: Stub guard on changed non-test code (BR-2.1)
+        run: |
+          fail=0
+          while IFS= read -r f; do
+            [ -f "$f" ] || continue
+            if grep -nEH '#[^\n]*\b(TODO|FIXME|XXX|HACK)\b|\bNotImplementedError\b|\braise[[:space:]]+NotImplemented\b' "$f"; then fail=1; fi
+          done < .changed_py.txt
+          if [ "$fail" = 1 ]; then echo "::error::stub/placeholder marker in committed non-test code (BR-2.1)."; exit 1; fi
+
+      - name: Ruff (changed files only; legacy grandfathered in pyproject)
+        run: |
+          python -m pip install -q "ruff>=0.15"
+          if [ -s .changed_py.txt ]; then xargs -r ruff check --no-fix < .changed_py.txt; else echo "no changed .py"; fi
+
+      - name: Mypy (changed files; ADVISORY — legacy is transitive, never blocks)
+        continue-on-error: true
+        run: |
+          python -m pip install -q "mypy>=2.1"
+          if [ -s .changed_py.txt ]; then xargs -r mypy --no-error-summary < .changed_py.txt || true; fi
+
+      - name: Secret scan (gitleaks)
+        # SHA-PIN for production (CVE-2025-30066 tj-actions supply-chain class): replace @v2 with the commit SHA.
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

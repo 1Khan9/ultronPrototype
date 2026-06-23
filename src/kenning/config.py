@@ -933,7 +933,7 @@ class LLMConfig(_Strict):
         # 4B social/identity roughness. MUST mirror LLM_PRESETS.
         "mistral-7b-v0.3-abliterated",
         "custom",
-    ] = "josiefied-qwen3-4b"
+    ] = "mistral-7b-v0.3-abliterated"
     # Where the model actually runs:
     #   "in_process"  — load via llama-cpp-python in this Python process
     #                   (current default; what the voice pipeline uses today).
@@ -1097,6 +1097,20 @@ class LLMConfig(_Strict):
                 # through __dict__ directly. Safe here because we're
                 # still inside model construction.
                 object.__setattr__(self, field, value)
+        # Auto-manage draft_kind based on whether the preset ships a draft GGUF.
+        # Enforced here so it applies at boot AND on every reload_config() call
+        # (i.e., every hot-swap via reload_for_preset), without needing a manual
+        # config.yaml edit when switching presets.
+        preset_draft = defaults.get("draft_model_path")
+        if not preset_draft:
+            # Preset has no draft GGUF — spec decoding is impossible; override
+            # any explicit draft_kind the user may have left from a prior preset.
+            if self.draft_kind != "none":
+                object.__setattr__(self, "draft_kind", "none")
+        elif "draft_kind" not in self.model_fields_set:
+            # Preset ships a draft model and the user hasn't pinned draft_kind
+            # explicitly in config.yaml — auto-enable model-based spec decoding.
+            object.__setattr__(self, "draft_kind", "model")
         return self
 
 
@@ -4133,6 +4147,18 @@ class TwitchEconomyConfig(_Strict):
     transfers_enabled: bool = False                  # viewer->viewer transfers OFF by default
     lose_all_segment_enabled: bool = False           # AT-4: wheel 'lose ALL points' big-consequence
     refund_safety_cancels: bool = False              # safety-CANCELED redeems NOT refunded (anti-probe)
+    # Gap-c (2026-06-23): chat-command economy games — viewers play !gamble/!slots
+    # /!points from chat with ledger-backed balances + watch-time earning. Default
+    # OFF + separate from the redeem games (needs economy.enabled too). Payout EV is
+    # gamble_rtp (a net-negative sink); per_stream_loss_cap caps a viewer's net loss.
+    chat_commands_enabled: bool = False
+    command_cooldown_seconds: int = 5                # per-user throttle on bet commands (0 = none)
+    min_bet: int = 1                                 # minimum stake for a bet command
+    max_bet: int = 10000                             # maximum stake (0 = no maximum)
+    # Trivia (mod-started !trivia): a house-funded prize to the first correct
+    # chat answer within the window. A skill game (no per-viewer bet / no RTP).
+    trivia_prize: int = 100
+    trivia_window_seconds: int = 30
 
 
 class TwitchOverlayConfig(_Strict):

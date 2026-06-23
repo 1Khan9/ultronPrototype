@@ -6128,6 +6128,17 @@ class Orchestrator:
             self._stop_twitch_overlay()
         except Exception:                                            # noqa: BLE001
             pass
+        # Gap-c: stop the chat-command game loop + checkpoint/close the economy
+        # ledger so its WAL is flushed and the db is left consistent. No-op when
+        # the ledger was never built (chat games disabled).
+        self._twitch_chat_stop = True
+        _ledger = getattr(self, "_twitch_ledger", None)
+        if _ledger is not None:
+            try:
+                _ledger.close()
+            except Exception:                                        # noqa: BLE001
+                pass
+            self._twitch_ledger = None
         # Stop the subprocess reaper thread so the process exits cleanly.
         killer = getattr(self, "_zombie_killer", None)
         if killer is not None:
@@ -6280,6 +6291,54 @@ class Orchestrator:
             except Exception as e:                                   # noqa: BLE001
                 logger.warning("twitch redeem router init failed: %s", e)
                 self._twitch_redeem_router = None
+
+            # Gap-c: chat-command economy games (!gamble/!slots/!points) — a SECOND
+            # own-cursor drain over the read sidecar, ledger-backed. Default-OFF
+            # (needs economy.enabled AND economy.chat_commands_enabled). One Ledger
+            # singleton; the router's last_message_id index feeds voice
+            # delete-moderation. The abliterated model is never in this path.
+            self._twitch_chat_game_router = None
+            self._twitch_ledger = None
+            try:
+                _ecfg = getattr(tcfg, "economy", None)
+                if (getattr(_ecfg, "enabled", False)
+                        and getattr(_ecfg, "chat_commands_enabled", False)):
+                    from kenning.config import resolve_path as _rp
+                    from kenning.twitch.economy.chat_games import (
+                        ChatGameRouter, make_chat_command_drain_fn,
+                    )
+                    from kenning.twitch.economy.ledger import Ledger
+                    read_ep = str(getattr(tcfg, "read_sidecar_endpoint",
+                                          "http://127.0.0.1:8773"))
+                    ledger = Ledger(str(_rp(getattr(
+                        _ecfg, "db_path", "data/twitch/economy.db"))))
+                    self._twitch_ledger = ledger
+                    cgr = ChatGameRouter(
+                        make_chat_command_drain_fn(read_ep),
+                        ledger=ledger, cfg=_ecfg, announce_fn=self._speak,
+                    )
+                    self._twitch_chat_game_router = cgr
+                    self._twitch_chat_stop = False
+                    import threading as _cgth
+                    import time as _cgtime
+
+                    def _chat_game_loop() -> None:
+                        while not getattr(self, "_twitch_chat_stop", False):
+                            _cgtime.sleep(1.5)
+                            try:
+                                cgr.tick()
+                            except Exception as ce:                  # noqa: BLE001
+                                logger.debug("twitch chat-game tick error: %s", ce)
+
+                    _cgth.Thread(target=_chat_game_loop, daemon=True,
+                                 name="twitch-chat-games").start()
+                    logger.info("twitch chat-command games started (ledger db=%s)",
+                                getattr(_ecfg, "db_path", "?"))
+            except Exception as e:                                   # noqa: BLE001
+                logger.warning("twitch chat-game router init failed: %s", e)
+                self._twitch_chat_game_router = None
+                self._twitch_ledger = None
+
             if getattr(self, "llm", None) is None:
                 logger.warning("twitch: no LLM engine loaded; chat-REPLY disabled "
                                "(read/overlay/moderation/redeems still active)")

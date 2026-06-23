@@ -27,6 +27,34 @@
 > - Full runbook: **`docs/ultron_0_1_baseline.md`**. Post-0.1 roadmap:
 >   **`docs/latency_optimizations_V1.md`**.
 >
+> **Validating HEAD: GAP-C ECONOMY GAMES + TRIVIA + MISTRAL DEFAULT + SPEC-DECODING AUTO-TOGGLE (2026-06-23)**
+> **Wrapper result (22 failed = exact frozen baseline, 12176 passed, 39 skipped; local `main` `ee3b2ba`).**
+>
+> **Gap-c chat economy (commit `aaedc26`, spec `docs/twitch_integration/03_spec/gap_c_chat_economy_spec.md`):**
+> NEW `src/kenning/twitch/economy/chat_games.py` — `ChatGameRouter` (own-cursor chat drain mirroring `redeem_router`);
+> dispatches `!gamble`/`!slots` (ledger-backed, debit-first, RTP-derived multiplier payout, EV==`gamble_rtp`,
+> leg-distinct idempotency keys) + `!points`/`!balance`/`!leaderboard`/`!help`; watch-time `earn_per_minute`
+> (idempotent per `earn:{login}:{minute}`); `per_stream_loss_cap` per-viewer ceiling; per-user cooldown;
+> `chat_event_from_buffer` helper (the read sidecar buffers a FLAT chat dict, NOT the nested EventSub shape).
+> Config `TwitchEconomyConfig.chat_commands_enabled`/`command_cooldown_seconds`/`min_bet`/`max_bet` (default OFF).
+> Orchestrator: `Ledger` singleton + daemon loop (gated on economy.enabled + chat_commands_enabled); closed on
+> shutdown. 22 unit tests; full twitch suite 773 green.
+>
+> **Trivia (commit `a13ccf5`):** `ChatGameRouter` handles `!trivia` (mod-gated); first-correct chat answer in the
+> window wins a house-funded `trivia_prize`; round closes atomically BEFORE crediting → no double-award on replay.
+> Timeout path announces the answer. +5 tests; full twitch suite 779 green.
+>
+> **Mistral default revert + spec-decoding auto-toggle (commit `7767b22`):** default `preset` reverted from
+> `josiefied-qwen3-8b-iq3xs` back to `mistral-7b-v0.3-abliterated` (latency regression). `_apply_preset`
+> auto-manages `draft_kind`: if the preset has NO `draft_model_path` → force `"none"` (overrides any stale YAML
+> value); if the preset HAS `draft_model_path` AND user did not pin `draft_kind` → auto-set `"model"`. Effect:
+> switching to iq4xs/iq3xs auto-enables spec decoding; switching to mistral/4b/etc. auto-disables. Gaming preset
+> also reverted to Mistral.
+>
+> **Intent-gate test fixes (commit `ee3b2ba`):** `tests/pipeline/test_always_listening_wiring.py` updated for the
+> 2026-06-22 gate redesign (commit `1c7bb6f`): un-named utterances go direct to IGNORE (no LLM escalation);
+> `test_config_yaml_default_off` uses `tmp_path` minimal YAML (env-independent).
+>
 > **Validating HEAD: COMPOSE COMMANDS REACH THE LLM UNDER ROUTE-ALL + DO-INVERSION + IQ3_XS (2026-06-23)**
 > Live-session bug (IQ3_XS boot, flagged turns): EVERY conversational/compose relay command ("explain to my team
 > what the meaning of life is", "Reyna asked you what the meaning of life is") returned the SAME canned line —

@@ -77,26 +77,39 @@ def test_helper_ignore_addressing_no(text):
     assert o.llm.calls == 0  # a confident addressing-NO needs no escalation
 
 
-# --- helper: undecided band escalates via self.llm (resolve_with_llm) -----------------
+# --- helper: un-named utterances go directly to IGNORE (2026-06-22 gate redesign) -------
+#
+# The LLM escalation band was removed in the 2026-06-22 gate fix (commit 1c7bb6f):
+# unnamed utterances in the always-listening path now fall straight to IGNORE rather than
+# escalating to the 8B. Rationale: the LLM mislabelled un-named lines ('Follow orders.',
+# 'Respond.') as PRIVATE, causing false private replies to the player mid-match — the
+# highest-cost error in the cost-asymmetric gate. PRIVATE_REPLY now REQUIRES an explicit
+# Ultron name/wake token. The resolve_with_llm path and needs_llm field remain in the
+# codebase for potential future use, but classify_scenario never sets needs_llm=True for
+# un-named utterances.
 
-def test_helper_undecided_escalates_private():
+def test_helper_unnamed_undecided_goes_direct_ignore():
+    """Un-named game commentary ('the rotations feel pretty clean') is NOT escalated
+    to the LLM — the gate short-circuits to IGNORE (cost-asymmetric, 2026-06-22)."""
     o = _bare(llm=_StubLLM("PRIVATE"))
     v = o._classify_always_listening(_UNDECIDED, 999.0)
+    assert v.scenario is Scenario.IGNORE   # no name/wake → no reply
+    assert o.llm.calls == 0               # LLM was never consulted
+
+
+def test_helper_named_undecided_routes_private():
+    """An utterance that includes the wake/name token still reaches PRIVATE_REPLY
+    cheaply (no LLM needed) even without a strict relay or command signal."""
+    o = _bare(llm=_StubLLM("PRIVATE"))
+    v = o._classify_always_listening("ultron the rotations feel off this map", 999.0)
     assert v.scenario is Scenario.PRIVATE_REPLY
-    assert o.llm.calls == 1  # the 8B band escalation fired
-
-
-def test_helper_undecided_escalates_ignore_failclosed():
-    o = _bare(llm=_StubLLM("uhh maybe not sure"))
-    v = o._classify_always_listening(_UNDECIDED, 999.0)
-    assert v.scenario is Scenario.IGNORE  # non-PRIVATE token -> fail closed
-    assert o.llm.calls == 1
+    assert o.llm.calls == 0  # name token is decisive; LLM not needed
 
 
 def test_helper_undecided_llm_none_stays_ignore():
     o = _bare(llm=None)  # lean / bare boot: no LLM available
     v = o._classify_always_listening(_UNDECIDED, 999.0)
-    assert v.scenario is Scenario.IGNORE  # resolve_with_llm no-ops when llm is None
+    assert v.scenario is Scenario.IGNORE  # no name/wake → IGNORE (LLM irrelevant)
 
 
 # --- helper: fail-open to IGNORE on any internal error --------------------------------
@@ -121,9 +134,14 @@ def test_config_default_off():
     assert AddressingConfig().always_listening is False
 
 
-def test_config_yaml_default_off():
+def test_config_yaml_default_off(tmp_path):
+    # Use a minimal YAML (no always_listening key) so the test doesn't depend
+    # on the live config.yaml in the worktree (which the user sets to true for
+    # live gaming).  This exercises the schema default, not the operator value.
     from kenning.config import load_config
-    assert load_config().addressing.always_listening is False
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text('version: "1.0"\n', encoding="utf-8")
+    assert load_config(cfg_path).addressing.always_listening is False
 
 
 # --- run-loop wiring (source pins; driving run() needs live audio) --------------------

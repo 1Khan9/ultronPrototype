@@ -558,7 +558,7 @@ llm:
   # Kokoro adds ~1.5 GB) -> ~3 GB freed vs the 8B, which fixes the sysmem-fallback
   # spike. The voice model lab switches live (8B / 4B / 3.5 / 2507); "switch the
   # model to the CPU" hands the card back mid-match. Swap back: preset: "josiefied-qwen3-8b".
-  preset: "josiefied-qwen3-8b-iq3xs"  # 2026-06-23 8B IQ3_XS (~3.4GB) + Qwen3-0.6B Q4 draft, in-process speculative decoding (draft_kind: model below). full GPU, n_ctx 4096. QUALITY A/B vs IQ4_XS -- observe persona/instruction precision. Revert: "josiefied-qwen3-8b-iq4xs" (4.6GB), "mistral-7b-v0.3-abliterated" (7B), or "josiefied-qwen3-4b-2507g" (4B)
+  preset: "mistral-7b-v0.3-abliterated"  # 2026-06-23 Mistral-7B i1-Q4_K_M (~4.4GB, ~6-6.5GB resident). No draft model -- spec decoding auto-OFF (see _apply_preset). Swap: "josiefied-qwen3-8b-iq4xs" (8B+draft, spec ON), "josiefied-qwen3-8b-iq3xs" (8B IQ3_XS+draft), "josiefied-qwen3-4b-2507g" (4B)
   # u1.0 VRAM hard cap: the research synthesis (C_model) shows >8K context
   # risks exceeding 10 GB and 40K OOMs; relay prompts fit well under 4k.
   # This explicit value overrides the preset's 8192.
@@ -580,7 +580,10 @@ llm:
   #              30-50% gen speedup. Caveat: uses the same llama-cpp
   #              verification batch as PLD, so MAY hit the same bug.
   #              Flip with verification.
-  draft_kind: "model"  # 2026-06-23: load the preset's Qwen3-0.6B draft as a real model-based draft for the IQ3_XS/IQ4_XS 8B preset. Revert to "none" if it crashes (llama_decode -1).
+  # draft_kind is now AUTO-MANAGED by _apply_preset: "model" when the preset
+  # ships a draft GGUF (iq4xs/iq3xs), "none" otherwise (mistral/4B/etc.).
+  # Remove the line below to use the auto-toggle; set explicitly to override.
+  # draft_kind: "none"
   model_draft_num_pred_tokens: 4
   # 2026-06-23 TTFT/prefill batch change: llama-cpp-python defaults n_batch to
   # 512 (NOT 2048 like llama-server). Bumping it lets the GPU prefill a longer
@@ -1715,7 +1718,7 @@ gaming_mode:
   # Smaller LLM swapped in on engage to free ~1.5 GB VRAM for the game.
   # Disengage restores the prior preset. Set "" to disable the swap and
   # keep the standby LLM during gaming.
-  llm_preset: "josiefied-qwen3-8b-iq3xs"  # 2026-06-23 8B IQ3_XS + 0.6B draft; the lean gaming boot loads THIS preset (not llm.preset), on GPU via llm_gpu_layers=-1; the draft loads because llm.draft_kind=model + the preset's draft_model_path. QUALITY A/B vs IQ4_XS. Revert: "josiefied-qwen3-8b-iq4xs", "mistral-7b-v0.3-abliterated", or "josiefied-qwen3-4b-2507g"
+  llm_preset: "mistral-7b-v0.3-abliterated"  # 2026-06-23 Mistral-7B on GPU; spec decoding auto-OFF (no draft in preset). Swap to "josiefied-qwen3-8b-iq4xs" / "josiefied-qwen3-8b-iq3xs" for 8B+draft (spec decoding auto-ON).
 
 # ---------------------------------------------------------------------------
 # Desktop control (V1-spec gap C3) — voice routing for the OpenClaw

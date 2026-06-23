@@ -454,6 +454,9 @@ def test_eventsub_source_subscribes_and_maps_chat(monkeypatch) -> None:
             "chatter_name": "Alice",
             "chatter_user_id": "V-9",
             "text": "gg",
+            # badges carry mod/broadcaster provenance for chat-command authz
+            # (empty here -- the source event has no badges).
+            "badges": [],
         }
     ]
     # The chat subscription was created with the RESOLVED ids + the session id.
