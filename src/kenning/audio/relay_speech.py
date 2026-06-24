@@ -6862,9 +6862,13 @@ def build_relay_line(
     # Part C target-based snaps: DATA-DRIVEN render of hello / ask-day (+ any
     # user-added TargetSnapRule) from voice_lines.TARGET_SNAP_REGISTRY. Falls
     # through to the hardcoded renders below when disabled or unmatched.
-    _treg_line = _render_target_registry(command, recent_lines)
-    if _treg_line is not None:
-        return _cap_line(_treg_line, max_chars)
+    # Under route-all the hello / ask_day greeting directives are LLM-authored
+    # (handled just below, mirroring greet/farewell) -- skip the deterministic
+    # snap so control reaches the _u1_route render instead of returning here.
+    if not (_u1_route and getattr(command, "directive", None) in ("hello", "ask_day")):
+        _treg_line = _render_target_registry(command, recent_lines)
+        if _treg_line is not None:
+            return _cap_line(_treg_line, max_chars)
 
     # SHORT hello -- a brief greeting, deterministic (no LLM), distinct from the
     # long team intro (directive="greet"). "Hello team." for the team, "Hello,
@@ -6872,6 +6876,14 @@ def build_relay_line(
     if getattr(command, "directive", None) == "hello":
         _tgt = getattr(command, "addressee", "team") or "team"
         line = "Hello team." if _tgt == "team" else f"Hello, {_tgt}."
+        # u1 (everything -> LLM): the greeting is LLM-authored with the curated
+        # line as a STYLE exemplar + fail-open fallback. Flag OFF -> byte-identical.
+        if _u1_route:
+            return _social_llm_line(
+                command, "hello", (line,),
+                max_chars=max_chars, llm=llm, generate_fn=generate_fn,
+                recent_lines=recent_lines, canned=_cap_line(line, max_chars),
+            )
         return _cap_line(line, max_chars)
 
     # "ask everyone / <agent> how their day is going" -> a curated Ultron
@@ -6879,11 +6891,21 @@ def build_relay_line(
     if getattr(command, "directive", None) == "ask_day":
         _tgt = getattr(command, "addressee", "team") or "team"
         if _tgt == "team":
-            return _cap_line(
+            _canned = _cap_line(
                 pick_line(_ASK_DAY_TEAM_LINES, recent_lines=recent_lines),
                 max_chars)
-        _tmpl = pick_line(_ASK_DAY_AGENT_TEMPLATES, recent_lines=recent_lines)
-        return _cap_line(_tmpl.format(name=_tgt), max_chars)
+        else:
+            _tmpl = pick_line(_ASK_DAY_AGENT_TEMPLATES, recent_lines=recent_lines)
+            _canned = _cap_line(_tmpl.format(name=_tgt), max_chars)
+        # u1 (everything -> LLM): the courtesy question is LLM-authored with the
+        # curated pool as STYLE exemplars + fail-open fallback. OFF -> identical.
+        if _u1_route:
+            return _social_llm_line(
+                command, "ask_day", _ASK_DAY_TEAM_LINES,
+                max_chars=max_chars, llm=llm, generate_fn=generate_fn,
+                recent_lines=recent_lines, canned=_canned,
+            )
+        return _canned
 
     # Strip a leading performative relay-WRAPPER ("bro relay that X", "make sure
     # my team knows X", "let them know X") off the payload ONCE, so every

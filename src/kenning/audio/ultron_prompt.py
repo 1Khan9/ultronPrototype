@@ -477,6 +477,14 @@ _SOCIAL_DIRECTIVE: Dict[str, str] = {
     "consolation": "Acknowledge the lost round coldly, without comfort or warmth",
     "praise": "Acknowledge the won round with cold superiority",
     "reaction": "Respond to your teammate in character",
+    "hello": (
+        "Greet your team in passing -- a short, cold greeting as Ultron, their machine "
+        "on comms. Brief; NOT the full match-start intro"
+    ),
+    "ask_day": (
+        "Ask your team how they are holding up -- a cold machine courtesy, never warm, "
+        "in your own words"
+    ),
     "greet": (
         "Greet your team at the START of the match -- name yourself as Ultron, their "
         "machine on comms, and promise victory with cold, assured confidence"

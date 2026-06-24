@@ -413,6 +413,38 @@ def test_route_off_keeps_identity_social_deterministic(text):
     assert line and line.strip()
 
 
+# --- route-ALL extends to the hello / ask_day greeting directives (2026-06-23):
+# these predated route-all (21f3c7e) and the route-all retrofit (fc1f23a/c165ca3)
+# gated greet/farewell/reaction but MISSED hello + ask_day -- so "say hello"
+# snapped a hardcoded "Hello team." even under route-all. Now LLM-authored. ---
+
+
+@pytest.mark.parametrize("text", [
+    "say hello",
+    "say hello to my team",
+    "say hi to Jett",
+    "ask my team how their day is going",
+    "ask everyone how their day is going",
+])
+def test_route_all_sends_hello_askday_to_llm(text):
+    tag, line = _capture_route(text, route=True)
+    assert tag == "LLM", text
+    # the LLM authored it -> NOT the hardcoded deterministic greeting
+    assert line.strip() != "Hello team."
+
+
+@pytest.mark.parametrize("text", [
+    "say hello",
+    "say hello to Jett",
+    "ask my team how their day is going",
+])
+def test_route_off_keeps_hello_askday_deterministic(text):
+    # Route OFF: byte-identical legacy -- the curated greeting resolves, no LLM call.
+    tag, line = _capture_route(text, route=False)
+    assert tag == "DET", text
+    assert line and line.strip()
+
+
 # --- Slice B: snap-exemplar injection into the tactical relay prompt (2026-06-22) ---
 
 
