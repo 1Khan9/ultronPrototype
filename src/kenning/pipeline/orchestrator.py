@@ -1165,6 +1165,24 @@ class Orchestrator:
         self._speculative_llm_completed = False
         self._speculative_llm_active = False
         self._speculative_llm_invalidated = False
+        # 2026-06-23 latency: SPECULATIVE RELAY line. The relay path
+        # (_maybe_handle_relay_speech) builds its line via a full-collect LLM
+        # call (build_relay_line) AFTER the turn is confirmed, so the ~300ms
+        # matcher+LLM is purely additive on top of the ~400ms end-of-turn
+        # silence wait. When the speculative transcript parses as a clean
+        # route-all relay callout, build the line DURING the silence wait on
+        # the speculative-STT daemon thread and stash it here; the main handler
+        # consumes it if the final transcript matches, overlapping the LLM with
+        # the silence wait (~300ms felt win). ``_done`` is the serialisation
+        # gate: cleared while a relay speculation is in flight, set when it
+        # finishes -- the consumer WAITS on it so the speculative and main LLM
+        # calls never run concurrently (llama-cpp is not thread-safe).
+        self._speculative_relay_lock = threading.Lock()
+        self._speculative_relay_done = threading.Event()
+        self._speculative_relay_done.set()
+        self._speculative_relay_text: Optional[str] = None
+        self._speculative_relay_line: Optional[str] = None
+        self._speculative_relay_invalidated = False
         self.addressing = self._load_addressing_classifier()
         self.web_gate, self.web_executor, self.ack_source = (
             self._load_web_search_if_enabled()
@@ -3917,6 +3935,7 @@ class Orchestrator:
 
             ring = deque(maxlen=6)
             self._relay_recent_lines = ring
+        _t_line = time.perf_counter()  # relay line-build timing
         if getattr(command, "roast", False):
             # "Roast my team" -- VERBATIM from the user-curated lines
             # file (never LLM-authored); re-read per roast so edits
@@ -3967,14 +3986,29 @@ class Orchestrator:
                 )
             except Exception as e:                                   # noqa: BLE001
                 logger.debug("thinking-mode gate skipped: %s", e)
-            line = build_relay_line(
-                command,
-                getattr(self, "llm", None),
-                rephrase=_rephrase,
-                max_chars=int(getattr(cfg, "max_line_chars", 280)),
-                recent_lines=list(ring),
-                raw_stt=getattr(self, "_current_raw_stt", None),
-            )
+            # Speculative-relay consume: if the line was already built during the
+            # end-of-turn silence wait for this exact transcript, use it and skip
+            # the LLM here (overlaps the ~300ms build with the wait). Waits for any
+            # in-flight speculation first so the LLM is never called concurrently.
+            _spec_line = None
+            if _rephrase:
+                try:
+                    _spec_line = self._take_speculative_relay(user_text)
+                except Exception as _se:                             # noqa: BLE001
+                    logger.debug("speculative relay consume skipped (%s)", _se)
+            if _spec_line is not None:
+                line = _spec_line
+                logger.info("relay: used speculative line (LLM overlapped the "
+                            "end-of-turn wait)")
+            else:
+                line = build_relay_line(
+                    command,
+                    getattr(self, "llm", None),
+                    rephrase=_rephrase,
+                    max_chars=int(getattr(cfg, "max_line_chars", 280)),
+                    recent_lines=list(ring),
+                    raw_stt=getattr(self, "_current_raw_stt", None),
+                )
         synthesize = getattr(getattr(self, "tts", None), "_synthesize", None)
         if synthesize is None:
             self._speak("I can't reach the voice channel right now.")
@@ -3989,7 +4023,12 @@ class Orchestrator:
         try:
             # Synthesize the PRONOUNCED form ('A site' -> 'eigh site'); the
             # displayed/logged ``line`` stays clean.
+            _line_build_ms = (time.perf_counter() - _t_line) * 1000.0
+            _t_synth = time.perf_counter()
             pcm, sr = synthesize(relay_tts_text(line))
+            logger.info("relay timing: line_build(matcher+prompt+LLM)=%.0fms "
+                        "synth=%.0fms", _line_build_ms,
+                        (time.perf_counter() - _t_synth) * 1000.0)
             # Tee the relay line to the broadcast mirror (OBS capture) too, so
             # stream viewers hear team callouts as well. This is a SEPARATE
             # device from the mic B-bus -- teammates still only hear the relay
@@ -4047,6 +4086,17 @@ class Orchestrator:
                 # First line in the try so the paired finally ALWAYS releases it
                 # -- on a full clip, an "Ultron, stop"/barge cancel, or an error.
                 self._ptt_hold()
+                try:
+                    # Single concise latency metric for ongoing monitoring: time
+                    # from turn-close (capture_complete) to the first team-mic
+                    # sample. Pairs with the "relay timing" line above (line-build
+                    # + synth) to spot regressions without re-instrumenting.
+                    _t0 = getattr(self, "_turn_proc_t0", None)
+                    if _t0 is not None:
+                        logger.info("RESPONSE LATENCY: turn-close -> first audio "
+                                    "= %.0f ms", (time.perf_counter() - _t0) * 1000.0)
+                except Exception:                                    # noqa: BLE001
+                    pass
                 seconds = play_to_device(pcm, sr, device, cancel_event=_ri)
             finally:
                 if _relay_watcher is not None:
@@ -6240,6 +6290,63 @@ class Orchestrator:
                 logger.info("shutdown backstop: reaped %d stray sidecar(s) by cmdline", m)
         except Exception:                                            # noqa: BLE001
             pass
+        # Catch-all #3: reap a twin `-m kenning` PARENT (the venv->system handoff
+        # leaves the venv launcher as our parent when WE are the system child;
+        # kill_own_children only reaches DESCENDANTS, so the parent would linger).
+        # Done LAST so all sidecars are already reaped first. No-op + fail-open
+        # when the parent is a normal shell / launcher (not an `-m kenning` twin).
+        try:
+            self._reap_kenning_twin_parent()
+        except Exception:                                            # noqa: BLE001
+            pass
+
+    def _reap_kenning_twin_parent(self) -> int:
+        """Reap a twin ``-m kenning`` PARENT process on shutdown so closing Ultron
+        tears down the WHOLE process group, not just our own descendants.
+
+        Launching via the venv python spawns a system-python ``-m kenning`` TWIN
+        as a child (a venv->system handoff; BR-P3 still means ONE logical Ultron).
+        ``kill_own_children`` already reaps a twin that is our descendant (we are
+        the venv stub). This covers the other direction: when WE are the system
+        child, the stub is our PARENT -- not a descendant -- and would survive our
+        exit. Reap the parent process only (our sidecars are already reaped by the
+        backstops above). Fail-open; a NO-OP unless the parent's command line is an
+        ``-m kenning`` / ``kenning.__main__`` invocation (so a normal shell / the
+        pytest runner is never touched). Returns the number of processes reaped."""
+        try:
+            ppid = os.getppid()
+            if ppid is None or ppid <= 0:
+                return 0
+            import psutil
+            try:
+                pargs = list(psutil.Process(ppid).cmdline() or [])
+            except Exception:                                        # noqa: BLE001
+                return 0
+            # Match argv TOKENS, not a substring: a launching shell's cmdline
+            # (`bash -c "... python -m kenning ..."`) CONTAINS the text "-m kenning"
+            # inside its -c argument but is NOT a kenning process -- reaping it would
+            # kill the parent shell. A real twin is `<python> -m kenning` with "-m"
+            # and "kenning" as ADJACENT argv tokens (or a "kenning.__main__" token),
+            # and an executable that is a python interpreter.
+            _exe = (pargs[0].lower() if pargs else "")
+            _is_python = _exe.endswith(("python.exe", "pythonw.exe", "python", "python3"))
+            _is_kenning = any(
+                pargs[i] == "-m" and pargs[i + 1] == "kenning"
+                for i in range(len(pargs) - 1)
+            ) or any(a == "kenning.__main__" or a.endswith(".kenning.__main__")
+                     for a in pargs)
+            if not (_is_python and _is_kenning):
+                return 0  # parent is a shell / launcher / pytest, not a twin
+            from kenning.subprocess.kill_tree import kill_pid_if_alive
+            res = kill_pid_if_alive(ppid, grace_seconds=3.0)
+            n = len(res.terminated) + len(res.force_killed)
+            if n:
+                logger.info("shutdown backstop: reaped the `-m kenning` twin parent "
+                            "(pid=%s) so no orphaned Ultron instance survives", ppid)
+            return n
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("kenning twin-parent reap skipped (%s)", e)
+            return 0
 
     # --- main loop -----------------------------------------------------------
 
@@ -6472,6 +6579,38 @@ class Orchestrator:
             logger.warning("twitch sidecars: interpreter %r missing; none spawned", py)
             return
         procs: list = []
+        # Cross-process SPAWN LOCK (ROOT fix for the sidecar mutual-reap war):
+        # launching via the venv python spawns a system-python `-m kenning` twin
+        # (venv->system handoff for the CUDA build), and BOTH processes reach this
+        # method -- each spawning a full set of twitch sidecars. Each fresh
+        # sidecar's start-up guard_singleton then reclaims the port + reaps the
+        # live sibling, so ALL twitch sidecars die within seconds; the redeem /
+        # chat-game / chat-reply drain loops then time out against the dead
+        # sidecars on every tick, stalling each voice turn. A held byte-range lock
+        # (the same primitive as the single-instance guard; auto-released on the
+        # HOLDER's death) lets exactly ONE instance spawn; the other shares the
+        # bound loopback sidecars (read/moderation clients connect by PORT, not
+        # ownership). Topology/timing-agnostic -- unlike a parent/child probe it
+        # does not care which twin reaches here first. Skipped under pytest (the
+        # tests call this directly and assert spawn counts). Fail-OPEN.
+        import sys as _sys_mod
+        if "pytest" not in _sys_mod.modules:
+            try:
+                from pathlib import Path as _Path
+                from kenning.lifecycle.single_instance import (
+                    acquire_single_instance_lock,
+                )
+                _lk_path = _Path.home() / ".kenning" / "sidecars" / "twitch_spawn.lock"
+                _lk_path.parent.mkdir(parents=True, exist_ok=True)
+                _lk = acquire_single_instance_lock(path=_lk_path)
+                if _lk is None:
+                    logger.info("twitch sidecars: another `-m kenning` instance owns "
+                                "the spawn lock -- sharing its sidecars (no dup spawn)")
+                    self._twitch_sidecar_procs = []
+                    return
+                self._twitch_spawn_lock = _lk
+            except Exception as e:                                   # noqa: BLE001
+                logger.debug("twitch sidecar spawn-lock unavailable (%s); spawning", e)
         parent_pid = str(os.getpid())
         zk = getattr(self, "_zombie_killer", None)
         # Ensure kenning is importable in sidecars even when sys.executable is the
@@ -6544,6 +6683,14 @@ class Orchestrator:
             except Exception as e:                                   # noqa: BLE001
                 logger.debug("twitch %s sidecar reap skipped (%s)", role, e)
         self._twitch_sidecar_procs = []
+        # Release the cross-process spawn lock so the next boot can re-spawn.
+        _lk = getattr(self, "_twitch_spawn_lock", None)
+        if _lk is not None:
+            try:
+                _lk.release()
+            except Exception:                                        # noqa: BLE001
+                pass
+            self._twitch_spawn_lock = None
 
     def _start_twitch_overlay(self, tcfg: Any) -> None:
         """Start the loopback OBS overlay server IN-PROCESS (it is pure-stdlib
@@ -6729,6 +6876,22 @@ class Orchestrator:
                 return False
 
         self.audio.start()
+        # 2026-06-23 latency: warm the addressing/normalize hot path so the FIRST
+        # real callout doesn't eat the one-time cold-start (measured ~2.0 s of
+        # addr+norm on turn 1 -- the gate's first semantic/embedder inference plus
+        # the normalizer's first-call table build). The STT + LLM are already
+        # warmed above; this closes the last cold path the user feels on callout 1.
+        # SYNCHRONOUS at boot, fail-open: any error just leaves turn 1 to pay the
+        # cold cost as before. Cheap on every later call, so unconditional.
+        try:
+            from kenning.audio.command_normalizer import normalize_command
+            normalize_command("push b")                 # warm normalizer tables
+            if _always_listening:
+                self._classify_always_listening("push b", 5.0)   # warm the gate
+            logger.info("addressing/normalize hot path warmed -- first-callout "
+                        "cold-start moved off the critical path")
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("addressing/normalize warmup skipped (%s)", e)
         # Twitch chat-mode (flag-gated default-OFF; no-op + zero twitch import when
         # twitch.enabled is False -> voice/relay runtime byte-identical).
         self._start_twitch_chat_mode()
@@ -6928,6 +7091,7 @@ class Orchestrator:
                     continue
 
                 self._state = State.PROCESSING
+                self._turn_proc_t0 = time.perf_counter()  # latency: turn-close -> first audio
                 trace.tlog(
                     logger, "loop:capture_complete",
                     audio_samples=speech.size,
@@ -8509,6 +8673,15 @@ class Orchestrator:
                             # foreground STT re-runs on the FULL buffer with the
                             # accurate VAD-segmentation wake-strip (_strip_wake_audio).
                             self._invalidate_speculative_stt()
+                            # 2026-06-23 latency: re-ARM (like the SPEECH_START and
+                            # mid-pause invalidation sites do) so the speculative
+                            # re-fires on the FULL buffer during the extension wait
+                            # -- otherwise it stays disarmed and the foreground STT
+                            # re-runs cold after turn-close (~300 ms on the critical
+                            # path). The re-fire trims with the same onset anchor on
+                            # the full command, so it is no less accurate than the
+                            # speculative used on every non-floor turn.
+                            speculative_kicked = False
                     if band == "undecided":
                         # Inference failed; trust VAD's verdict at
                         # the fast-path baseline.
@@ -10488,6 +10661,11 @@ class Orchestrator:
                     pass
         # Phase 3: chain to LLM reset.
         self._reset_speculative_llm_state()
+        # 2026-06-23: clear the relay-speculation lane in lockstep.
+        try:
+            self._reset_speculative_relay()
+        except Exception:                                            # noqa: BLE001
+            pass
 
     def _kick_off_speculative_stt(self, audio: np.ndarray) -> None:
         """Start Whisper STT in a background thread on the captured audio.
@@ -10610,6 +10788,17 @@ class Orchestrator:
         with lock:
             if self._speculative_classification_invalidated:
                 return
+
+        # 2026-06-23 latency: if the speculative transcript is a clean route-all
+        # relay callout, speculate the relay LINE here (on this daemon thread,
+        # during the silence wait) and SKIP the conversational gate -- a turn is
+        # either a relay callout or a conversational reply, never both. Fail-open:
+        # any failure leaves the relay slot empty and the main loop builds fresh.
+        try:
+            if self._run_speculative_relay(user_text):
+                return
+        except Exception as e:                                           # noqa: BLE001
+            logger.debug("speculative relay skipped (%s)", e)
 
         verdict = None
         try:
@@ -10746,6 +10935,12 @@ class Orchestrator:
         with self._speculative_stt_lock:
             self._speculative_stt_invalidated = True
         self._invalidate_speculative_classification()
+        # The speculative relay line was built for the now-stale prefix; drop it
+        # and release any consumer waiting on the in-flight build.
+        try:
+            self._invalidate_speculative_relay()
+        except Exception:                                            # noqa: BLE001
+            pass
 
     def _peek_speculative_stt(self) -> Optional[str]:
         """Non-consuming peek at the in-flight speculative STT result.
@@ -10832,6 +11027,137 @@ class Orchestrator:
                     pass
             return None
         return state
+
+    # ----- 2026-06-23 latency: speculative RELAY line ------------------
+
+    def _run_speculative_relay(self, user_text: str) -> bool:
+        """If ``user_text`` parses as a clean route-all relay callout, build its
+        line NOW (on the speculative-STT daemon thread, during the end-of-turn
+        silence wait) and stash it so the main relay handler can consume it
+        instead of running the LLM after the turn confirms.
+
+        Returns True when a relay speculation was started (so the caller skips
+        the conversational gate). Fail-open: returns False on any miss / error,
+        leaving the slot empty so the main loop builds fresh. The build runs
+        SYNCHRONOUSLY on this thread (it is already a daemon, off the main loop);
+        ``_speculative_relay_done`` gates the consumer so the two LLM calls never
+        overlap. Only fires under the LLM route (verbatim / deterministic relays
+        build instantly with no LLM, so speculating them buys nothing)."""
+        lock = getattr(self, "_speculative_relay_lock", None)
+        llm = getattr(self, "llm", None)
+        if lock is None or llm is None or not user_text:
+            return False
+        try:
+            from kenning.audio.relay_speech import (
+                build_relay_line, match_relay_command, u1_llm_route_enabled,
+            )
+            from kenning.config import get_config
+            cfg = get_config().relay_speech
+        except Exception:                                                # noqa: BLE001
+            return False
+        if not getattr(cfg, "enabled", False) or not u1_llm_route_enabled():
+            return False
+        # The main loop NORMALIZES the transcript (command_normalizer) before the
+        # relay handler, so cache on the NORMALIZED text (what the consumer's
+        # user_text will be) -- otherwise the key never matches and the spec is
+        # wasted. ``user_text`` (raw STT) is still passed as ``raw_stt`` so the
+        # relay LLM can reconcile a mis-hear against the normalization.
+        norm_text = user_text
+        try:
+            from kenning.audio.command_normalizer import normalize_command
+            _normed = normalize_command(user_text)
+            if _normed and _normed != user_text:
+                norm_text = _normed
+        except Exception:                                                # noqa: BLE001
+            norm_text = user_text
+        try:
+            command = match_relay_command(
+                norm_text, names=getattr(cfg, "addressee_names", None) or None)
+        except Exception:                                                # noqa: BLE001
+            command = None
+        # Only the LLM-authored (non-verbatim) relay path is worth speculating;
+        # verbatim builds are instant and need no overlap.
+        if command is None or getattr(command, "verbatim", False):
+            return False
+        with lock:
+            if self._speculative_relay_invalidated:
+                return False
+            self._speculative_relay_text = norm_text
+            self._speculative_relay_line = None
+            self._speculative_relay_done.clear()   # in flight -> consumer waits
+        line = None
+        try:
+            ring = getattr(self, "_relay_recent_lines", None)
+            line = build_relay_line(
+                command, llm,
+                rephrase=bool(getattr(cfg, "rephrase", True)),
+                max_chars=int(getattr(cfg, "max_line_chars", 280)),
+                recent_lines=list(ring) if ring is not None else [],
+                raw_stt=user_text,
+            )
+        except Exception as e:                                           # noqa: BLE001
+            logger.debug("speculative relay build failed (%s); main builds fresh", e)
+            line = None
+        finally:
+            with lock:
+                if not self._speculative_relay_invalidated and line:
+                    self._speculative_relay_line = line
+                else:
+                    self._speculative_relay_text = None
+                    self._speculative_relay_line = None
+                self._speculative_relay_done.set()  # done -> release consumer
+        return True
+
+    def _take_speculative_relay(self, user_text: str) -> Optional[str]:
+        """Consume the speculative relay line for ``user_text`` if one matches.
+
+        ALWAYS waits for any in-flight relay speculation to finish first (the
+        ``_done`` event) so the main LLM call can never run concurrently with a
+        still-building speculation. Then returns the stashed line iff it was
+        built for this exact transcript and was not invalidated; clears the slot
+        either way (consume-once). Returns None on no-match -> caller builds
+        fresh. Fail-open."""
+        lock = getattr(self, "_speculative_relay_lock", None)
+        done = getattr(self, "_speculative_relay_done", None)
+        if lock is None or done is None:
+            return None
+        try:
+            done.wait(timeout=3.0)   # block until no relay speculation is in flight
+        except Exception:                                                # noqa: BLE001
+            return None
+        with lock:
+            line = self._speculative_relay_line
+            text = self._speculative_relay_text
+            invalid = self._speculative_relay_invalidated
+            self._speculative_relay_text = None
+            self._speculative_relay_line = None
+            if invalid or not line or text != user_text:
+                return None
+            return line
+
+    def _invalidate_speculative_relay(self) -> None:
+        """Mark the relay speculation invalid (the user resumed speaking, so the
+        speculative transcript is stale) and release any waiting consumer."""
+        lock = getattr(self, "_speculative_relay_lock", None)
+        done = getattr(self, "_speculative_relay_done", None)
+        if lock is None:
+            return
+        with lock:
+            self._speculative_relay_invalidated = True
+            self._speculative_relay_text = None
+            self._speculative_relay_line = None
+        if done is not None:
+            done.set()
+
+    def _reset_speculative_relay(self) -> None:
+        """Clear the relay-speculation invalidation latch for a fresh turn."""
+        lock = getattr(self, "_speculative_relay_lock", None)
+        if lock is None:
+            return
+        with lock:
+            self._speculative_relay_invalidated = False
+            self._speculative_relay_text = None
+            self._speculative_relay_line = None
 
     # ----- 2026-05-18 latency pass 3 (Phase 3): speculative LLM ---------
 

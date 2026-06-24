@@ -256,3 +256,73 @@ def test_moderation_decision_classifier() -> None:
     assert Orchestrator._twitch_mod_decision("cancel") == "no"
     assert Orchestrator._twitch_mod_decision("never mind") == "no"
     assert Orchestrator._twitch_mod_decision("what time is it") == "other"
+
+
+# --- shutdown twin-parent reap (kill the venv->system `-m kenning` twin) ------
+class _FakeKillRes:
+    def __init__(self, terminated=(), force_killed=()) -> None:
+        self.terminated = tuple(terminated)
+        self.force_killed = tuple(force_killed)
+
+
+def test_reap_kenning_twin_parent_noop_for_normal_parent(monkeypatch) -> None:
+    """A normal shell / launcher / pytest parent (no `-m kenning` in cmdline) is
+    NEVER reaped -- the twin reap must not touch the process that launched us."""
+    import os
+    import psutil
+    from kenning.subprocess import kill_tree
+    orch = Orchestrator.__new__(Orchestrator)
+    monkeypatch.setattr(os, "getppid", lambda: 4242)
+
+    class _Shell:
+        def cmdline(self):
+            return ["C:/Windows/System32/cmd.exe", "/c", "run.bat"]
+    monkeypatch.setattr(psutil, "Process", lambda pid: _Shell())
+    killed: list = []
+    monkeypatch.setattr(kill_tree, "kill_pid_if_alive",
+                        lambda pid, **k: killed.append(pid) or _FakeKillRes())
+    assert orch._reap_kenning_twin_parent() == 0
+    assert killed == []
+
+
+def test_reap_kenning_twin_parent_reaps_twin(monkeypatch) -> None:
+    """When the parent IS an `-m kenning` twin (the venv->system handoff stub),
+    reap it so no orphaned Ultron instance survives our shutdown."""
+    import os
+    import psutil
+    from kenning.subprocess import kill_tree
+    orch = Orchestrator.__new__(Orchestrator)
+    monkeypatch.setattr(os, "getppid", lambda: 9001)
+
+    class _Twin:
+        def cmdline(self):
+            return ["C:/STC/ultronPrototype/.venv/Scripts/python.exe", "-m", "kenning"]
+    monkeypatch.setattr(psutil, "Process", lambda pid: _Twin())
+    killed: list = []
+    monkeypatch.setattr(
+        kill_tree, "kill_pid_if_alive",
+        lambda pid, **k: killed.append(pid) or _FakeKillRes(terminated=(pid,)))
+    assert orch._reap_kenning_twin_parent() == 1
+    assert killed == [9001]
+
+
+def test_reap_kenning_twin_parent_ignores_launching_shell(monkeypatch) -> None:
+    """The launching shell's cmdline CONTAINS the text '-m kenning' inside its
+    -c argument (`bash -c "... python -m kenning ..."`) but is NOT a twin -- the
+    token-based match must never reap the shell that started us."""
+    import os
+    import psutil
+    from kenning.subprocess import kill_tree
+    orch = Orchestrator.__new__(Orchestrator)
+    monkeypatch.setattr(os, "getppid", lambda: 7777)
+
+    class _Bash:
+        def cmdline(self):
+            return ["C:/Program Files/Git/usr/bin/bash.exe", "-c",
+                    "source env; python -m kenning > log 2> err"]
+    monkeypatch.setattr(psutil, "Process", lambda pid: _Bash())
+    killed: list = []
+    monkeypatch.setattr(kill_tree, "kill_pid_if_alive",
+                        lambda pid, **k: killed.append(pid) or _FakeKillRes())
+    assert orch._reap_kenning_twin_parent() == 0
+    assert killed == []

@@ -242,10 +242,13 @@ class SmartTurnConfig(_Strict):
     # Additional silence required AFTER smart-turn says "incomplete"
     # before the orchestrator finally accepts end-of-turn. This is the
     # second-chance grace window for the user to resume speaking; if
-    # they don't, we submit anyway so we don't hang indefinitely. The
-    # default 700 ms takes the total from fast_path (500) to roughly
-    # the legacy 1200 ms backstop.
-    incomplete_extension_ms: int = Field(default=700, ge=0, le=3000)
+    # they don't, we submit anyway so we don't hang indefinitely.
+    # 2026-06-23: 700 -> 250. Decisive tactical callouts ("push B") end on a
+    # short payload and consistently mis-classify as "incomplete", so this was
+    # the dominant felt end-of-turn delay. 300 (fast) + 250 = 550 ms total.
+    # Trade-off: strung callouts with a >250 ms inter-callout pause may split
+    # into two turns; raise back toward 700 if stringing breaks.
+    incomplete_extension_ms: int = Field(default=250, ge=0, le=3000)
     # Audio window cap (seconds). Smart Turn V3 was trained on the
     # LAST 8 seconds of speech; longer utterances are truncated head-
     # first by the wrapper. Beyond this duration of contiguous speech,
@@ -996,7 +999,7 @@ class LLMConfig(_Strict):
     default_repeat_penalty: float = 1.1
     history_turns: int = Field(default=6, ge=0)
     flash_attn: bool = True
-    kv_cache_type: int = 8                    # 8=q8_0, 1=F16
+    kv_cache_type: int = 8                    # 8=q8_0 (halves KV VRAM, ~lossless), 1=F16. 2026-06-23: kept q8_0 -- the latency was NEVER the KV cache (measured ~40 tok/s decode either way); it was the twitch drain loops timing out on dead sidecars. q8_0+flash_attn is stable on the 0.3.22 wheel; revert to 1 (F16) only if llama.cpp issue #19036 ever crashes.
     # 2026-05-15 latency: explicit n_batch / n_ubatch tuning. Defaults
     # are llama.cpp's own (n_batch=512, n_ubatch=512 in 0.3.22). For
     # voice-length prompts (1-2 KB context) on this 4070 Ti, sweeping
@@ -3862,7 +3865,7 @@ class RelaySpeechConfig(_Strict):
     #   * conversation_verbosity (low/medium/high/max): the reply length for
     #     private replies + social/banter + non-tactical responses. Voice:
     #     "conversation/chat verbosity <level>". (Coerced to a valid level at boot.)
-    callout_verbosity: str = "low"  # 2026-06-22: tighter tactical callouts by default (a brief cold tag, not a verbose tail); raise by voice ("medium/high flavor")
+    callout_verbosity: str = "none"  # 2026-06-23: DEFAULT none = clean callout, NO flavor tail (user pref + latency: a tail 2-3x's the LLM generation + TTS length). Raise by voice ("low/medium/high flavor").
     conversation_verbosity: str = "low"
     # ULTRON 1.0 TURBO MODE (2026-06-23): auto-relay INFERRED team callouts WITHOUT
     # a "tell my team" prefix. Default OFF -> boot is keyword-only (safe to talk to
@@ -4060,10 +4063,12 @@ class PushToTalkConfig(_Strict):
     # bind + the firmware KEY to match.
     key: str = "v"
     # Pre-roll: hold the key this long BEFORE the first audio sample so the
-    # game's transmit channel is FULLY open before Ultron starts -- a generous
-    # margin so the first phoneme is NEVER clipped. This is dead air on the mic
-    # (no voice yet), so teammates perceive nothing; only over-clipping matters.
-    lead_ms: int = Field(default=200, ge=0, le=1000)
+    # game's transmit channel is FULLY open before Ultron starts -- a margin so
+    # the first phoneme is NEVER clipped. This is dead air on the mic (no voice
+    # yet), so teammates perceive nothing; only over-clipping matters. 2026-06-23:
+    # 200 -> 80 -- the lead adds directly to perceived response latency on every
+    # callout; 80ms still opens the channel ahead of the first phoneme.
+    lead_ms: int = Field(default=80, ge=0, le=1000)
     # Keep holding this long AFTER the clip drains -- covers the device's own
     # buffer drain + the game's transmit/codec tail so the LAST phoneme is never
     # clipped. Also dead air (silence on an open mic), so it is imperceptible;

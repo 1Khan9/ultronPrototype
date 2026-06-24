@@ -1,6 +1,105 @@
 # Ultron 1.0 — Live Status
 
-**ACTIVE (2026-06-23) — PERSONA LOCK (BR-P2) + TOKEN AUTO-REFRESH:**
+**ACTIVE (2026-06-23) — CALLOUT LATENCY: precise breakdown + 4 fixes (committed, changed-area tests green):**
+
+User reported callouts felt "well over a second" — and was right; the stitched second-precision estimates
+were wrong. A ms-precise instrument (`turn-close → first-audio`, since trimmed to one lean metric line) gave
+the REAL per-stage breakdown — the LLM was NEVER the cost:
+- **STT 197-451ms** — foreground Whisper on a ~2s "tell my team to X" clip; worse back-to-back (each STT
+  queues behind the previous callout's 8B relay LLM on the single GPU).
+- **end-of-turn 250ms** — the stringing buffer (was 400, was 700).
+- **line+synth ~90ms** when speculation hits; spikes to ~500-900ms only when it misses (long/conversational).
+- **synth→play 80ms** = the PTT `lead_ms`.
+- **first callout ~2.0s** — one-time addr+norm cold-start (gate/normalizer first call).
+
+Fixes (orchestrator.py +285, config.py): **(1) speculative relay LLM** — when the speculative transcript
+parses as a relay callout, build the line on the STT thread DURING the silence wait + consume it in
+`_maybe_handle_relay_speech` (`_run/_take/_invalidate_speculative_relay`; 6 tests) → `line_build` 1ms vs
+~500ms. **(2) STT re-arm** — the floor-downgrade invalidated the speculative but (unlike the SPEECH_START +
+mid-pause sites) never reset `speculative_kicked`, so Whisper re-ran cold; added the re-arm so it re-fires on
+the full buffer during the extension (+1 test). **(3) PTT lead 200→80ms + EOT 700→250ms + callout_verbosity
+none** (config.py defaults; live values in the uncommitted local config.yaml). **(4) boot warmup** of the
+normalize + addressing/gate hot path in `run()` → first-callout cold-start moved off the critical path
+("addressing/normalize hot path warmed"). Result: crisp callouts **~370-620ms** turn-close→audio (was
+700-970), LLM fully overlapped. EVIDENCE: test_speculative_relay 6 · test_speculative_stt 23 (incl. new
+re-arm) · golden+always-listening 14 · flavor-lint 0/0/0 · validate_config 0. Full wrapper DEFERRED (BR-P3,
+live instance up). STT (~200-300ms, GPU-contended back-to-back) is now the floor; a faster-STT swap is ruled
+out — no VRAM headroom beside 8B IQ3_XS (Parakeet/distil would need its own model).
+
+**ACTIVE (2026-06-23) — DEFAULT BACK TO 8B IQ3_XS + SPEC DECODING (`8676411`, origin `99caae1`):**
+
+Once the latency was traced to the twitch-moderation HTTP stall (NOT the model), the user asked to
+revert the Mistral switch. `config.yaml llm.preset` + `gaming_mode.llm_preset` + `config.py` schema
+default → `josiefied-qwen3-8b-iq3xs`; `_apply_preset`'s draft auto-management (kept from `7767b22`)
+auto-enables spec decoding (the preset ships `Qwen_Qwen3-0.6B-Q4_K_M.gguf`). **Verified live: boot logs
+`Speculative decoding enabled (real model draft, num_pred=4)`, preset=iq3xs, draft_kind=model.** Preset
+tests + back-compat updated; validate_config 0. (config.yaml committed as the placeholder template;
+the local working-tree copy keeps the real twitch creds, uncommitted.)
+
+**TWITCH SIDECAR DOUBLE-BOOT — DEEPER THAN A CODE HEURISTIC (attempts reverted, NOT fixed):** the
+read/guard/write sidecars die ~3-12s after spawn. Root cause confirmed via kill-trace: launching via the
+venv python spawns a SYSTEM-python `-m kenning` TWIN (the same venv→system handoff also affects the
+`.venv-embedder`), so there are TWO `-m kenning` processes; the sidecars' own `guard_singleton`→
+`reclaim_port`/`reap_stray_sidecars`→`_kill` then reap each other (mutual war). Tried (a) a reuse-if-serving
+check and (b) a parent-is-`-m kenning` twin-skip — BOTH reverted: the topology is stub→real (the venv
+process hands off and the SYSTEM child is the survivor), so a parent-check skips the wrong one and the
+reuse-check loses the spawn race. The venv→system relaunch is NOT in the codebase (a machine/venv-level
+behavior — likely the venv lacks the CUDA llama-cpp build so something re-execs to the system python that
+has it). **Does NOT affect voice relay** (the moderation pre-filter `0ffbc11` means relay never calls the
+write sidecar). Blocks only voice-moderation-of-chat + chat reading. Candidate real fixes: install CUDA
+llama-cpp INTO the venv so no relaunch happens (single instance → no war); OR make sidecars resilient to
+the relaunch (a held cross-process spawn-lock owned by the survivor + reuse). Tracked as a follow-up chip.
+
+**PREVIOUS (2026-06-23) — "I CANNOT DO THAT" + ~2s LATENCY + "Hello team" canned (3 fixes + 1 diagnosed):**
+
+The user reported: every command answered "I cannot do that", then after a partial fix every command
+had ~2s latency before a canned "Hello team." A workflow audit (`wf_b90fd51b`) root-caused TWO distinct
+regressions + a deeper diagnosed lifecycle bug.
+
+(1) **Moderation error fall-through (`4c633c2`):** `ModerationRemote.prepare()` never raises — on any
+sidecar failure it returns `{"ok": False, "error": ...}`. The orchestrator guard only filtered
+`not_a_command`, so every error response hit `_twitch_mod_block_line` → "I cannot do that." Added
+`or prop.get("error")` to the fall-through. (`bab3169` on origin/main.)
+
+(2) **Moderation latency pre-filter (`0ffbc11`):** since `39adaae` the voice loop calls
+`_maybe_handle_twitch_moderation` on EVERY utterance before relay, and it fired `remote.prepare()`
+(blocking HTTP to the write sidecar, 4.0s timeout) with NO check that the text was even a ban/timeout
+command. Dead sidecar → ~2s connect-stall on every command. NEW `_TWITCH_MOD_VERB_RE`: every command in
+the sidecar grammar starts with a moderation verb, so a leading-verb match is a sound necessary condition
+— non-commands bail before any network. 4 tests.
+
+(3) **hello/ask_day route-all gap (`b979934`):** the `hello`/`ask_day` directive blocks in
+`build_relay_line` predate route-all (`21f3c7e`) and returned a hardcoded "Hello team." BEFORE the
+`_u1_route` gate; the route-all retrofit gated greet/farewell/calm/reaction but MISSED these two. Now
+LLM-authored via `_social_llm_line` (curated line = exemplar + fail-open fallback), mirroring greet. Added
+`hello`/`ask_day` to `_SOCIAL_DIRECTIVE`. Route OFF byte-identical (golden digest unchanged). 8 tests.
+**131 targeted + 393 relay/golden tests green; validate_config 0.**
+
+(4) **DIAGNOSED, NOT YET FIXED — twitch sidecars die (double-boot mutual reap):** read/guard/write
+sidecars (8773/8774/8777) get SIGTERM'd ~3-12s after spawn. Root cause via kill-trace: the orchestrator
+boot has a SECOND `python -m kenning` child (system-python, PPID=orchestrator) that also loads
+`twitch.enabled` config and spawns its own sidecars; each sidecar's startup `guard_singleton` →
+`reap_stray_sidecars([role_hint])` → `_kill` reaps the OTHER instance's same-role sidecar (mutual war).
+The embedder survives (it has reuse-not-kill singleton logic; twitch sidecars only reap+respawn). This is
+SEPARATE from the user's report and does NOT affect voice relay (the pre-filter means relay never calls
+the dead write sidecar). It DOES block voice-moderation-of-chat. Candidate fixes: (a) don't let the boot
+canary / second instance spawn twitch sidecars; (b) make `reap_stray_sidecars` exclude a sibling that
+owns a live LISTEN socket (its docstring already says "FAILED to bind" — the check isn't implemented).
+
+**PREVIOUS (2026-06-23) — GET_TOKEN HOT-PATH FIX ("I cannot do that" bug):**
+
+**Commit `ae014c5`, pushed `origin/main` `1c0929e`.**
+`get_token()` in `twitch_write_sidecar` is a closure called on every Helix API request, including
+every `remote.prepare()` inside `_maybe_handle_twitch_moderation`. The prior commit (`338040b`) put
+`ensure_valid()` (up to 15-second HTTP timeout) inside `_load_access_token`, so it ran on every
+invocation. `prepare()` hung/misbehaved, the sidecar returned a "recognized but blocked" dict for
+every utterance → Ultron said "I cannot do that." to every command.
+
+Fix: `_load_access_token` restored to fast disk-only read. New `_proactive_token_refresh()` called
+ONCE in `build_service_state()` before the closure is defined. Read sidecar's `_load_token` was
+unaffected (only called once per session from `_subscribe`). 9 existing token tests green.
+
+**PREVIOUS (2026-06-23) — PERSONA LOCK (BR-P2) + TOKEN AUTO-REFRESH (`338040b`):**
 
 (1) **BR-P2 persona lock** (`orchestrator._gaming_conversational_prompt`): when `u1_llm_route_enabled()`
 is True, the method now ALWAYS returns `ULTRON_GAMING_PERSONA`. Previously Mistral-7B (or any model

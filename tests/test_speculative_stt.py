@@ -449,6 +449,44 @@ def test_floor_downgrade_invalidates_speculative(monkeypatch):
         "the foreground STT re-runs on the full (accurately wake-stripped) buffer")
 
 
+def _count_kickoffs(o):
+    """Replace ``_kick_off_speculative_stt`` with a synchronous counter so the
+    re-arm logic can be observed without real Whisper threads / idempotency
+    races. The capture loop's own ``speculative_kicked`` local still gates the
+    calls, so the count reflects how many times the loop ARMED speculation."""
+    n = {"calls": 0}
+
+    def _stub_kick(audio):
+        n["calls"] += 1
+        o._speculative_stt_active = False   # pretend it completed instantly
+
+    o._kick_off_speculative_stt = _stub_kick
+    return n
+
+
+def test_floor_downgrade_rearms_speculative(monkeypatch):
+    """2026-06-23 latency: after the floor downgrades a sub-floor fragment to
+    'incomplete' (extending the capture), the speculative must RE-ARM -- exactly
+    like the SPEECH_START and mid-pause invalidation sites do -- so it re-fires
+    on the trailing silence of the FULL buffer during the extension. Without the
+    re-arm it stayed disarmed and the foreground STT re-ran cold after turn-close
+    (~300 ms on the critical path). A single callout that hits the downgrade must
+    therefore arm speculation TWICE (initial fragment + the re-fire)."""
+    from kenning.audio.vad import SpeechEvent as E
+
+    o = _capture_orch(monkeypatch, [
+        (E.SPEECH_START, 1.0), (E.NONE, 1.0),
+        (E.NONE, 0.0), (E.NONE, 0.0),   # 2 silence chunks -> kickoff #1
+        (E.SPEECH_END, 0.0),            # early_complete -> floor -> incomplete + RE-ARM
+    ], smart_turn_band="early_complete", min_complete_ms=1000)
+    kicks = _count_kickoffs(o)
+    o._capture_utterance()
+    assert kicks["calls"] >= 2, (
+        "the floor downgrade must RE-ARM the speculative so it re-fires on the "
+        "full buffer during the extension (>=2 arms), not stay disarmed -- "
+        f"otherwise the foreground STT re-runs cold; got {kicks['calls']}")
+
+
 def test_smart_turn_above_floor_submits(monkeypatch):
     """speech_samples above the floor + 'early_complete' -> submit at the first
     SPEECH_END (the floor must not interfere with normal short callouts)."""
