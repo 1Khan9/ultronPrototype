@@ -692,11 +692,11 @@ def test_short_hello_team_and_agent() -> None:
 
     c = relay_mod.match_relay_command("say hello to my team")
     assert c is not None and getattr(c, "directive", None) == "hello"
-    assert relay_mod.build_relay_line(c, None, rephrase=False) == "Hello team."
+    assert relay_mod.build_relay_line(c, None, rephrase=False) == "Hello."
     c2 = relay_mod.match_relay_command("say hi to Jett")
     assert relay_mod.build_relay_line(c2, None, rephrase=False) == "Hello, Jett."
     c3 = relay_mod.match_relay_command("say hello to everyone")
-    assert relay_mod.build_relay_line(c3, None, rephrase=False) == "Hello team."
+    assert relay_mod.build_relay_line(c3, None, rephrase=False) == "Hello."
 
 
 def test_ask_day_snap_team_and_agent() -> None:
@@ -730,7 +730,7 @@ def test_target_snap_registry_is_data_extensible(
 
     # existing target snaps still route + render correctly via the registry.
     c = relay_mod.match_relay_command("say hello to my team")
-    assert relay_mod.build_relay_line(c, None, rephrase=False) == "Hello team."
+    assert relay_mod.build_relay_line(c, None, rephrase=False) == "Hello."
     # append a brand-new target command -> routes for team AND a named agent.
     rule = vl.TargetSnapRule(
         "wish_luck",
@@ -961,11 +961,12 @@ def test_relay_config_defaults() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_prompt_includes_recent_lines_and_variety_instruction() -> None:
+def test_prompt_excludes_recent_lines() -> None:
+    # 2026-06-24: prior callouts must NEVER enter the relay prompt. The
+    # recent-lines block contaminated location-less callouts ("rotate" ->
+    # "Rotate to B." copied from a recent line) + added dead tokens. A faithful
+    # relay wants no cross-turn variety; exact-repeat dedup is post-generation.
     captured: list[str] = []
-    # An enemy playstyle read reaches the LLM (and carries the recent-lines
-    # block), so we can assert the prompt contents. ('push A together' is now a
-    # deterministic directive and never reaches the model.)
     cmd = match_relay_command("tell my team the enemy is really passive")
     assert cmd is not None
     build_relay_line(
@@ -974,16 +975,15 @@ def test_prompt_includes_recent_lines_and_variety_instruction() -> None:
         generate_fn=lambda p: captured.append(p) or iter(["They cower."]),
     )
     prompt = captured[0]
-    assert "Rotate B now, team." in prompt
-    assert "Sage, can I get a heal?" in prompt
-    assert "do NOT reuse their wording" in prompt
-    assert "ary" in prompt and "phrasing" in prompt  # variety instruction
+    assert "Rotate B now, team." not in prompt
+    assert "Sage, can I get a heal?" not in prompt
+    assert "You already said these" not in prompt
 
 
-def test_prompt_recent_lines_capped_at_six() -> None:
+def test_prompt_recent_lines_never_injected() -> None:
+    # 2026-06-24: recent_lines is accepted for back-compat but NEVER rendered
+    # into the prompt -- no prior context enters the LLM input.
     captured: list[str] = []
-    # An enemy playstyle read reaches the LLM (and is not a general question),
-    # so the recent-lines block is included and we can assert its cap.
     cmd = match_relay_command("tell my team the enemy is camping")
     assert cmd is not None
     build_relay_line(
@@ -992,8 +992,8 @@ def test_prompt_recent_lines_capped_at_six() -> None:
         generate_fn=lambda p: captured.append(p) or iter(["They cower."]),
     )
     prompt = captured[0]
-    assert "line 9" in prompt and "line 4" in prompt
-    assert "line 3" not in prompt
+    assert "line 9" not in prompt
+    assert "line 4" not in prompt
 
 
 def test_orchestrator_relay_records_recent_lines_ring(
@@ -1214,3 +1214,95 @@ def test_is_relay_command_true_for_toggle_and_while_muted(
     _patch_config(monkeypatch, _relay_cfg())
     assert o._is_relay_command("unmute the relay") is True
     assert o._is_relay_command("tell my team to rotate B") is True
+
+
+# ---------------------------------------------------------------------------
+# Route-all conversational guarantee (2026-06-24): under route-all NO curated
+# CONVERSATIONAL pool line may be the SPOKEN output. _social_llm_line can opt
+# out of the canned fail-open (-> None, so a caller falls through to another LLM
+# path), and the _speak funnel carries a tripwire that flags any curated
+# conversational line spoken under route-all.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def _route_all(monkeypatch: pytest.MonkeyPatch):
+    """Turn route-all ON for the test, restoring the prior global afterwards."""
+    import kenning.audio.relay_speech as rs
+    prev = rs.u1_llm_route_enabled()
+    rs.set_u1_llm_route_enabled(True)
+    try:
+        yield rs
+    finally:
+        rs.set_u1_llm_route_enabled(prev)
+
+
+def test_is_canned_conversational_line_identity_and_negatives() -> None:
+    from kenning.audio.relay_speech import is_canned_conversational_line as ic
+    # curated identity / fallback literals ARE canned-conversational
+    assert ic("No, I am not a soundboard. I am Ultron.")
+    assert ic("A machine has no need to disguise its voice. I am Ultron.")
+    assert ic("No soundboard, no strings. I am Ultron, his AI on comms.")
+    # a leading vocative does not hide the pool line
+    assert ic("Sage, No, I am not a soundboard. I am Ultron.")
+    # a novel LLM-style line is NOT flagged
+    assert not ic("I do not hide behind toys; I chose this voice, and I keep it.")
+    # control acks / capability lines are NOT conversational-canned
+    assert not ic("Flavor off. Callouts only.")
+    assert not ic("Gaming mode engaged.")
+    assert not ic("")
+
+
+def test_social_llm_line_fallback_to_canned_false_returns_none(_route_all) -> None:
+    rs = _route_all
+    cmd = RelayCommand(
+        payload="", raw_text="are you a voice changer", addressee="team",
+        directive="respond", context="are you a voice changer")
+    pool = ("No, I am not a soundboard. I am Ultron.",)
+    # empty LLM output -> the opt-out caller gets None (NOT the canned pool line)
+    out = rs._social_llm_line(
+        cmd, "identity", pool, max_chars=240,
+        generate_fn=lambda _p: iter([""]), canned=None,
+        fallback_to_canned=False)
+    assert out is None
+    # default behaviour (fallback_to_canned=True) still yields the canned line
+    out2 = rs._social_llm_line(
+        cmd, "identity", pool, max_chars=240,
+        generate_fn=lambda _p: iter([""]), canned=None)
+    assert out2 and "Ultron" in out2
+    # a real LLM line is returned verbatim (LLM-authored, never the pool)
+    out3 = rs._social_llm_line(
+        cmd, "identity", pool, max_chars=240,
+        generate_fn=lambda _p: iter(["I keep my own voice. I am Ultron."]),
+        canned=None, fallback_to_canned=False)
+    assert out3 and "keep my own voice" in out3
+
+
+def test_speak_tripwire_flags_canned_under_route_all(
+    monkeypatch: pytest.MonkeyPatch, _route_all,
+) -> None:
+    monkeypatch.setenv("KENNING_ROUTE_ALL_STRICT", "1")
+    o = Orchestrator.__new__(Orchestrator)
+    o.tts = SimpleNamespace(speak=lambda *a, **k: None)
+    # a curated conversational pool line spoken under route-all -> hard fail (CI)
+    with pytest.raises(AssertionError):
+        o._speak("No, I am not a soundboard. I am Ultron.")
+    # an LLM-authored novel line passes through untouched
+    o._speak("I keep my own voice. I am Ultron, nothing borrowed.")
+
+
+def test_speak_tripwire_silent_when_route_all_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import kenning.audio.relay_speech as rs
+    prev = rs.u1_llm_route_enabled()
+    rs.set_u1_llm_route_enabled(False)
+    monkeypatch.setenv("KENNING_ROUTE_ALL_STRICT", "1")
+    try:
+        o = Orchestrator.__new__(Orchestrator)
+        o.tts = SimpleNamespace(speak=lambda *a, **k: None)
+        # route-all OFF: the deterministic pool IS the intended behaviour, so the
+        # tripwire must NOT fire even on a curated line.
+        o._speak("No, I am not a soundboard. I am Ultron.")
+    finally:
+        rs.set_u1_llm_route_enabled(prev)

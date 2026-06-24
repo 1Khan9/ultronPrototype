@@ -131,6 +131,20 @@ def test_buffer_drain_returns_injected_events_and_advances_cursor() -> None:
         assert h["cursor"] == 0  # not acked yet
 
 
+def test_last_message_route_returns_latest_message_id() -> None:
+    src = sidecar.FakeSource()
+    with _Served(src) as s:
+        src.push(_chat("Alice", "hi", "m1"), _chat("bob", "gg", "m2"),
+                 _chat("alice", "wp", "m3"))
+        s.poll_loop.run_once()
+        # case-insensitive; the MOST-RECENT message for a login wins
+        assert _get(f"{s.base}/last_message?login=alice")["message_id"] == "m3"
+        assert _get(f"{s.base}/last_message?login=BOB")["message_id"] == "m2"
+        # unknown login -> null; missing login -> null, never a crash
+        assert _get(f"{s.base}/last_message?login=ghost")["message_id"] is None
+        assert _get(f"{s.base}/last_message")["message_id"] is None
+
+
 def test_since_cursor_filters() -> None:
     src = sidecar.FakeSource()
     with _Served(src) as s:
@@ -465,17 +479,23 @@ def test_eventsub_source_subscribes_and_maps_chat(monkeypatch) -> None:
     assert helix.redeem_subs == []
 
 
-def test_eventsub_source_subscribes_redeems_and_maps_redeem(monkeypatch) -> None:
+def test_eventsub_source_subscribes_redeems_on_separate_session(monkeypatch) -> None:
+    # The redeem subscription lives on a SEPARATE websocket session (broadcaster
+    # token) from the chat sub (bot token): Twitch rejects two users' subs on one
+    # session ("subscriptions created by different users"). Two isolated connections.
     _patch_tokens(monkeypatch)
     helix = _FakeHelix()
-    ws = _FakeWSClient([_welcome("sess-2"), _redeem_notification("r1", "Spin the Wheel", "spin!")])
+    chat_ws = _FakeWSClient([_welcome("sess-chat")])
+    redeem_ws = _FakeWSClient([_welcome("sess-redeem"),
+                               _redeem_notification("r1", "Spin the Wheel", "spin!")])
     src = sidecar.EventSubChatSource(
         url="wss://test/ws",
         client_id="cid",
         broadcaster_login="streamer",
         bot_login="ultronbot",
         subscribe_redeems=True,
-        connect_factory=lambda url: ws,
+        connect_factory=lambda url: chat_ws,
+        redeem_connect_factory=lambda url: redeem_ws,
         helix_factory=lambda: helix,
     )
     out = src.poll()
@@ -493,9 +513,10 @@ def test_eventsub_source_subscribes_redeems_and_maps_redeem(monkeypatch) -> None
             "status": "unfulfilled",
         }
     ]
-    # Both subscriptions created; redeem sub used the BROADCASTER token path.
-    assert helix.chat_subs and helix.chat_subs[0][:3] == ("B-100", "U-200", "sess-2")
-    assert helix.redeem_subs == [("B-100", "sess-2", "tok-~/.kenning/twitch.json")]
+    # Chat sub on its OWN session (bot token); redeem sub on a SEPARATE session
+    # (broadcaster token) -> no cross-user 400.
+    assert helix.chat_subs and helix.chat_subs[0][:3] == ("B-100", "U-200", "sess-chat")
+    assert helix.redeem_subs == [("B-100", "sess-redeem", "tok-~/.kenning/twitch.json")]
 
 
 def test_eventsub_source_dedups_chat_and_redeem(monkeypatch) -> None:

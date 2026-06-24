@@ -50,6 +50,15 @@ PORT = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("KENNING_TW
 MODEL = os.environ.get("KENNING_TWITCH_GUARD_MODEL", "")
 FAMILY = os.environ.get("KENNING_TWITCH_GUARD_FAMILY", "llama-guard")
 NCTX = int(os.environ.get("KENNING_TWITCH_GUARD_NCTX", "2048"))
+# 2026-06-24 VRAM: the guard is a SEPARATE llama.cpp process, so on GPU it carries
+# its OWN CUDA context (~1-1.5 GB) on top of the ~1 GB model -- enabling twitch
+# pushed the 12 GB card past its throttle cap. Default the guard to CPU
+# (n_gpu_layers=0): chat moderation is latency-tolerant (a 1B on CPU is ~100-300 ms)
+# and a capped thread count keeps it from contending with the game / voice path.
+# Override KENNING_TWITCH_GUARD_GPU_LAYERS=-1 to put it back on the GPU if VRAM
+# allows; KENNING_TWITCH_GUARD_THREADS caps CPU threads (0 = llama.cpp default).
+GPU_LAYERS = int(os.environ.get("KENNING_TWITCH_GUARD_GPU_LAYERS", "0"))
+THREADS = int(os.environ.get("KENNING_TWITCH_GUARD_THREADS", "6"))
 
 _llm = None
 _load_error = ""
@@ -66,8 +75,13 @@ def _load() -> None:
         return
     try:
         from llama_cpp import Llama  # only present in .venv-twitch
-        _llm = Llama(model_path=MODEL, n_ctx=NCTX, n_gpu_layers=-1, verbose=False)
-        print(f"[guard] loaded {MODEL} family={FAMILY} n_ctx={NCTX} port={PORT}", flush=True)
+        _kw = {"model_path": MODEL, "n_ctx": NCTX,
+               "n_gpu_layers": GPU_LAYERS, "verbose": False}
+        if THREADS > 0:
+            _kw["n_threads"] = THREADS
+        _llm = Llama(**_kw)
+        print(f"[guard] loaded {MODEL} family={FAMILY} n_ctx={NCTX} "
+              f"n_gpu_layers={GPU_LAYERS} n_threads={THREADS} port={PORT}", flush=True)
     except Exception as e:  # noqa: BLE001
         _load_error = f"llama_cpp load failed: {e}"
         print(f"[guard] WARN {_load_error}", flush=True)
@@ -186,7 +200,12 @@ def _parent_watchdog() -> None:
 
 
 def main() -> None:
-    _load()  # best-effort; not-ready is reported via /healthz (fail-CLOSED)
+    # 2026-06-24 (findings 5/10): bind + serve BEFORE the blocking ~2-3s GGUF
+    # load, then load in a background thread, so /healthz answers immediately
+    # (ready=false) during load instead of timing out the orchestrator's
+    # drain/health probes (the boot-time "drain failed: timed out" / "guard not
+    # healthy" spam). _load is idempotent + fail-CLOSED (healthz reports ready
+    # only once _llm is set), so this changes ONLY startup ordering, not safety.
     # Anti-stale-sidecar guard: reap same-role strays + reclaim the port, THEN bind
     # EXCLUSIVELY so this is the ONLY live instance (a stale predecessor can never
     # co-serve). Record + clear a per-role pidfile for the cleanup process.
@@ -195,6 +214,7 @@ def main() -> None:
     server = SingletonThreadingHTTPServer(("127.0.0.1", PORT), _Handler)
     sidecar_lock.write_role(ROLE, os.getpid(), PORT)
     atexit.register(sidecar_lock.clear_role, ROLE)
+    threading.Thread(target=_load, daemon=True, name="guard-model-load").start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

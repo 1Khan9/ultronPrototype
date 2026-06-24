@@ -72,6 +72,21 @@ def test_trivia_parses_no_args():
     assert cmd is not None and cmd.kind is CommandKind.TRIVIA
 
 
+def test_accept_parses_no_args():
+    cmd = parse_command(make_event("!accept"))
+    assert cmd is not None and cmd.kind is CommandKind.ACCEPT and cmd.args == {}
+
+
+def test_raffle_parses_no_args():
+    cmd = parse_command(make_event("!raffle"))
+    assert cmd is not None and cmd.kind is CommandKind.RAFFLE and cmd.args == {}
+
+
+def test_enter_is_raffle_alias():
+    cmd = parse_command(make_event("!enter"))
+    assert cmd is not None and cmd.kind is CommandKind.RAFFLE
+
+
 def test_leaderboard_parses():
     cmd = parse_command(make_event("!leaderboard"))
     assert cmd is not None and cmd.kind is CommandKind.LEADERBOARD

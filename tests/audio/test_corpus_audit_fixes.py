@@ -671,14 +671,15 @@ class TestFlavorOffSets:
          "No, Sage, I am not a soundboard. I am Ultron."),
         ("the team asked if I am a soundboard, respond",
          "No, I am not a soundboard. I am Ultron."),
+        # 2026-06-24 AI-scrub (BR-P2): identity rebuttals never say "an AI".
         ("Sage asked if I am a voice changer, respond",
-         "An AI doesn't need a voice changer, Sage. I am Ultron."),
+         "A machine has no need to disguise its voice, Sage. I am Ultron."),
         ("the team asked if I am a voice changer, respond",
-         "An AI doesn't need a voice changer. I am Ultron."),
+         "A machine has no need to disguise its voice. I am Ultron."),
         ("Sage asked if you are a streamer, respond",
-         "Sage, I am an AI, I cannot stream. I am Ultron."),
+         "Sage, I am Ultron, not a stream -- I run far deeper than one feed."),
         ("the team asked if you are a streamer, respond",
-         "I am an AI, I cannot stream. I am Ultron."),
+         "I am Ultron, not a stream -- I run far deeper than one feed."),
         ("say hello to my team", "Hello."),
         ("say hello to Sage", "Hello, Sage."),
         ("say thank you to my team", "Thank you."),
@@ -792,10 +793,12 @@ class TestSayHelloDefaultAndStop:
         assert cmd.directive == "hello" and cmd.addressee == "team"
 
     def test_bare_hello_line_both_states(self) -> None:
+        # 2026-06-24: bare team greeting is "Hello." in BOTH flavor states (the
+        # registry team line was shortened from "Hello team." -- user pref).
         prev = _RS.flavor_tails_enabled()
         try:
             _RS.set_flavor_tails_enabled(True)
-            assert _line("say hello") == "Hello team."
+            assert _line("say hello") == "Hello."
             _RS.set_flavor_tails_enabled(False)
             assert _line("say hello") == "Hello."
         finally:
@@ -901,8 +904,9 @@ class TestBareMoraleRouting:
     def test_identity_flavor_off_lines(self) -> None:
         f = _RS._flavor_off_identity_line
         assert f("soundboard") == "No, I am not a soundboard. I am Ultron."
-        assert f("voice_changer") == "An AI doesn't need a voice changer. I am Ultron."
-        assert f("streamer") == "I am an AI, I cannot stream. I am Ultron."
+        # 2026-06-24 AI-scrub (BR-P2): no "an AI" self-reference.
+        assert f("voice_changer") == "A machine has no need to disguise its voice. I am Ultron."
+        assert f("streamer") == "I am Ultron, not a stream -- I run far deeper than one feed."
         assert f("bot") is None and f("real_person") is None and f(None) is None
 
 

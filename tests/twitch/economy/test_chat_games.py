@@ -70,6 +70,10 @@ class FakeRNG:
         m = re.search(r"reel(\d+)", str(client_seed))
         return (int(m.group(1)) if m else 0) % n
 
+    def weighted_choice(self, server_seed, client_seed, nonce, weights):
+        # delegate to the real RNG (the !wheel free-spin uses a weighted draw)
+        return self._real.weighted_choice(server_seed, client_seed, nonce, weights)
+
 
 def _cfg(**over):
     base = dict(earn_per_minute=10, gamble_rtp=0.90, per_stream_loss_cap=5000,
@@ -152,9 +156,13 @@ def test_leaderboard_lists_top_balances():
     led = Ledger(":memory:")
     led.credit("u1", 100, "s", "s1")
     led.credit("u2", 500, "s", "s2")
+    # The caller (default uid u1) chats as login "z", so the leaderboard renders
+    # u1 by its known display login "z"; u2 (never seen this session) shows its raw
+    # uid. Top balance first.
     r, led, replies = _router([_ev("!leaderboard", login="z")], ledger=led)
     r.tick()
-    assert replies and "u2 (500)" in replies[0] and replies[0].index("u2") < replies[0].index("u1")
+    assert replies and "u2 (500)" in replies[0] and "z (100)" in replies[0]
+    assert replies[0].index("u2") < replies[0].index("z (100)")
 
 
 # --------------------------------------------------------------------------- #
@@ -296,11 +304,213 @@ def test_last_message_id_index_for_delete():
 # --------------------------------------------------------------------------- #
 # economy invariants
 # --------------------------------------------------------------------------- #
-def test_coming_soon_for_unbuilt_games():
-    r, led, replies = _router([_ev("!heist 100", mid="h"), _ev("!duel @bob 50", mid="d")])
+# --------------------------------------------------------------------------- #
+# !give — viewer -> viewer transfer (gated transfers_enabled)
+# --------------------------------------------------------------------------- #
+def test_give_disabled_by_default():
+    led = Ledger(":memory:")
+    led.credit("u1", 100, "s", "s1")
+    evs = [_ev("hi", uid="ub", login="bob", mid="b0"),
+           _ev("!give @bob 40", uid="u1", login="alice", mid="g1")]
+    r, led, replies = _router(evs, ledger=led, cfg=_cfg(transfers_enabled=False, earn_per_minute=0))
     r.tick()
-    assert any("!heist is coming soon" in x for x in replies)
-    assert any("!duel is coming soon" in x for x in replies)
+    assert any("transfers are disabled" in x for x in replies)
+    assert led.balance("u1") == 100 and led.balance("ub") == 0
+
+
+def test_give_transfers_when_enabled_and_is_replay_idempotent():
+    led = Ledger(":memory:")
+    led.credit("u1", 100, "s", "s1")
+    evs = [_ev("hi", uid="ub", login="bob", mid="b0"),
+           _ev("!give @bob 40", uid="u1", login="alice", mid="g1")]
+    r, led, replies = _router(evs, ledger=led, cfg=_cfg(transfers_enabled=True, earn_per_minute=0))
+    r.tick()
+    assert led.balance("u1") == 60 and led.balance("ub") == 40
+    r.tick()   # EventSub replay of the same message_id -> deduped, no double-move
+    assert led.balance("u1") == 60 and led.balance("ub") == 40
+
+
+def test_give_rejects_unknown_recipient_and_self():
+    led = Ledger(":memory:")
+    led.credit("u1", 100, "s", "s1")
+    evs = [_ev("!give @ghost 10", uid="u1", login="alice", mid="g1"),
+           _ev("!give @alice 10", uid="u1", login="alice", mid="g2")]
+    r, led, replies = _router(evs, ledger=led, cfg=_cfg(transfers_enabled=True, earn_per_minute=0))
+    r.tick()
+    assert any("don't know" in x for x in replies)
+    assert any("can't give to yourself" in x for x in replies)
+    assert led.balance("u1") == 100
+
+
+# --------------------------------------------------------------------------- #
+# !wheel — free spin (per-stream cap, house-funded payout)
+# --------------------------------------------------------------------------- #
+def test_wheel_free_spin_credits_and_caps_per_stream():
+    led = Ledger(":memory:")
+    evs = [_ev("!wheel", uid="u1", login="alice", mid="w1"),
+           _ev("!wheel", uid="u1", login="alice", mid="w2")]
+    r, led, replies = _router(evs, ledger=led, cfg=_cfg(wheel_free_per_stream=1, earn_per_minute=0))
+    r.tick()
+    assert led.balance("u1") > 0                          # first spin paid out
+    assert any("no free spins left" in x for x in replies)  # second capped
+
+
+def test_wheel_disabled_when_cap_zero():
+    led = Ledger(":memory:")
+    r, led, replies = _router([_ev("!wheel", uid="u1", login="alice", mid="w1")],
+                              ledger=led, cfg=_cfg(wheel_free_per_stream=0, earn_per_minute=0))
+    r.tick()
+    assert led.balance("u1") == 0 and any("disabled" in x for x in replies)
+
+
+# --------------------------------------------------------------------------- #
+# !heist — group pooled bet, join window, house bonus
+# --------------------------------------------------------------------------- #
+def test_heist_win_pays_house_bonus_split():
+    led = Ledger(":memory:")
+    led.credit("u1", 100, "s", "a")
+    led.credit("u2", 100, "s", "b")
+    clock = [0.0]
+    evs = [_ev("!heist 100", uid="u1", login="alice", mid="h1"),
+           _ev("!heist 100", uid="u2", login="bob", mid="h2")]
+    r, led, replies = _router(
+        evs, ledger=led,
+        cfg=_cfg(heist_window_seconds=30, heist_house_bonus_pct=0.5,
+                 heist_min_players=1, earn_per_minute=0, command_cooldown_seconds=0),
+        rng=FakeRNG(uniform=0.9),   # draw 0.9 >= win_threshold 0.6 -> WIN
+        now=lambda: clock[0])
+    r.tick()
+    assert led.balance("u1") == 0 and led.balance("u2") == 0   # both staked
+    evs.clear()
+    clock[0] = 31.0
+    r.tick()   # deadline -> resolve. pot 200, +50% bonus = 300, per_head 150
+    assert led.balance("u1") == 150 and led.balance("u2") == 150
+    assert any("HEIST WIN" in x for x in replies)
+
+
+def test_heist_fail_loses_stakes():
+    led = Ledger(":memory:")
+    led.credit("u1", 100, "s", "a")
+    clock = [0.0]
+    evs = [_ev("!heist 100", uid="u1", login="alice", mid="h1")]
+    r, led, replies = _router(
+        evs, ledger=led,
+        cfg=_cfg(heist_window_seconds=30, heist_min_players=1, earn_per_minute=0),
+        rng=FakeRNG(uniform=0.1),   # draw 0.1 < partial_threshold 0.3 -> FAIL
+        now=lambda: clock[0])
+    r.tick()
+    evs.clear()
+    clock[0] = 31.0
+    r.tick()
+    assert led.balance("u1") == 0 and any("HEIST FAILED" in x for x in replies)
+
+
+def test_heist_refunds_when_below_min_players():
+    led = Ledger(":memory:")
+    led.credit("u1", 100, "s", "a")
+    clock = [0.0]
+    evs = [_ev("!heist 100", uid="u1", login="alice", mid="h1")]
+    r, led, replies = _router(
+        evs, ledger=led,
+        cfg=_cfg(heist_window_seconds=30, heist_min_players=3, earn_per_minute=0),
+        now=lambda: clock[0])
+    r.tick()
+    evs.clear()
+    clock[0] = 31.0
+    r.tick()
+    assert led.balance("u1") == 100 and any("refunded" in x for x in replies)
+
+
+# --------------------------------------------------------------------------- #
+# !duel + !accept — 1v1 escrow challenge
+# --------------------------------------------------------------------------- #
+def test_duel_challenge_accept_settles_to_winner():
+    led = Ledger(":memory:")
+    led.credit("u1", 100, "s", "a")
+    led.credit("u2", 100, "s", "b")
+    evs = [_ev("hi", uid="u2", login="bob", mid="b0"),
+           _ev("!duel @bob 50", uid="u1", login="alice", mid="d1"),
+           _ev("!accept", uid="u2", login="bob", mid="d2")]
+    r, led, replies = _router(
+        evs, ledger=led, cfg=_cfg(earn_per_minute=0, duel_window_seconds=60),
+        rng=FakeRNG(uniform=0.1))   # draw 0.1 < win_bias 0.5 -> challenger (alice) wins
+    r.tick()
+    assert led.balance("u1") == 150 and led.balance("u2") == 50
+    assert any("DUEL" in x and "alice" in x for x in replies)
+
+
+def test_duel_expires_and_refunds_challenger():
+    led = Ledger(":memory:")
+    led.credit("u1", 100, "s", "a")
+    clock = [0.0]
+    evs = [_ev("hi", uid="u2", login="bob", mid="b0"),
+           _ev("!duel @bob 50", uid="u1", login="alice", mid="d1")]
+    r, led, replies = _router(
+        evs, ledger=led, cfg=_cfg(earn_per_minute=0, duel_window_seconds=60),
+        now=lambda: clock[0])
+    r.tick()
+    assert led.balance("u1") == 50            # escrowed
+    evs.clear()
+    clock[0] = 61.0
+    r.tick()
+    assert led.balance("u1") == 100 and any("expired" in x for x in replies)
+
+
+def test_accept_with_no_pending_duel():
+    led = Ledger(":memory:")
+    r, led, replies = _router([_ev("!accept", uid="u1", login="alice", mid="a1")],
+                              ledger=led, cfg=_cfg(earn_per_minute=0))
+    r.tick()
+    assert any("no duel to accept" in x for x in replies)
+
+
+# --------------------------------------------------------------------------- #
+# !raffle — mod-opened entry window, house prize
+# --------------------------------------------------------------------------- #
+def test_raffle_mod_opens_then_draws_winner():
+    led = Ledger(":memory:")
+    clock = [0.0]
+    evs = [_ev("!raffle", uid="um", login="mod", mid="r0", mod=True),
+           _ev("!raffle", uid="u1", login="alice", mid="r1"),
+           _ev("!enter", uid="u2", login="bob", mid="r2")]
+    r, led, replies = _router(
+        evs, ledger=led,
+        cfg=_cfg(earn_per_minute=0, raffle_window_seconds=30, raffle_prize=500),
+        now=lambda: clock[0])
+    r.tick()
+    assert any("RAFFLE open" in x for x in replies)
+    assert any("entered the raffle" in x for x in replies)
+    evs.clear()
+    clock[0] = 31.0
+    r.tick()   # FakeRNG.outcome -> 0 -> first entrant (alice) wins
+    assert led.balance("u1") == 500 and any("RAFFLE winner" in x for x in replies)
+
+
+def test_raffle_non_mod_cannot_open():
+    led = Ledger(":memory:")
+    r, led, replies = _router([_ev("!raffle", uid="u1", login="alice", mid="r1")],
+                              ledger=led, cfg=_cfg(earn_per_minute=0))
+    r.tick()
+    assert any("no raffle is running" in x for x in replies)
+
+
+def test_empty_message_id_bet_is_replay_idempotent():
+    # A (malformed/synthetic) chat event with NO message_id must NOT double-spend on
+    # replay: the stable content-hash surrogate (_event_key) dedups it AND keys its
+    # ledger legs, so re-delivery applies the stake exactly once.
+    led = Ledger(":memory:")
+    led.credit("u1", 1000, "s", "s1")
+    flat = {"type": "chat", "message_id": "", "chatter_user_id": "u1",
+            "chatter_login": "alice", "chatter_name": "alice", "text": "!gamble 100"}
+    ev = chat_event_from_buffer(flat)
+    assert ev is not None and ev.message_id == ""
+    events = [ev]
+    r, led, _replies = _router(events, ledger=led, cfg=_cfg(earn_per_minute=0),
+                               rng=FakeRNG(uniform=0.99))   # draw >= 0.5 -> loss
+    r.tick()
+    assert led.balance("u1") == 900           # one 100 stake debited, lost
+    r.tick()                                   # SAME id-less event re-delivered
+    assert led.balance("u1") == 900           # deduped -> NOT 800, no double-spend
 
 
 def test_gamble_rtp_is_net_negative_over_many_rounds():

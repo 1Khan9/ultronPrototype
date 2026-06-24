@@ -181,3 +181,18 @@ class ModerationRemote:
         proposal. Never raises and ignores the result (a missing token is a no-op
         on the sidecar)."""
         self._request("POST", "/cancel", {"token": token})
+
+    def chat_settings(self, text: str) -> dict:
+        """POST /chat_settings ``{"text": text}`` -> the applied-result dict
+        (``ok`` + ``readback``, or ``not_a_command``). Chat-settings are reversible
+        + channel-scoped, so they apply directly (no two-phase). Fail-safe like
+        :meth:`prepare`."""
+        got = self._request("POST", "/chat_settings", {"text": text})
+        if got is None:
+            return {"ok": False, "error": "unavailable"}
+        status, body = got
+        if status < 200 or status >= 300:
+            return {"ok": False, "error": f"http_{status}"}
+        if not isinstance(body, dict):
+            return {"ok": False, "error": "bad_response"}
+        return body

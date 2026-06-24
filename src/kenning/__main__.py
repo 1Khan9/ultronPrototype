@@ -110,6 +110,14 @@ def main() -> int:
     import os as _os_flavor_default
     _os_flavor_default.environ.setdefault("KENNING_FLAVOR_TAILS", "0")
 
+    # 2026-06-24 VRAM: shrink torch's CUDA caching-allocator fragmentation so the
+    # reserved-but-unused slack is handed back to the driver (helps the LLM + the
+    # GPU STT/TTS coexist under the 12 GB cap beside a game). MUST be set BEFORE
+    # torch is imported -- the lazy Orchestrator import below pulls it in. setdefault
+    # so an explicit launcher env still wins.
+    _os_flavor_default.environ.setdefault(
+        "PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
     # 2026-06-15/06-17 audit hardening: install the anticheat import firewall as
     # the VERY FIRST action after logging -- BEFORE the single-instance lock,
     # BEFORE the Orchestrator MODULE is even imported (the import is lazy, below),

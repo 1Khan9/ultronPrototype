@@ -80,8 +80,10 @@ class CommandKind(Enum):
     SLOTS = "slots"
     HEIST = "heist"
     DUEL = "duel"
+    ACCEPT = "accept"        # accept a pending !duel challenge (no args)
     TRIVIA = "trivia"
     GIVE = "give"
+    RAFFLE = "raffle"        # open (mod) or enter a raffle window (no args)
     LEADERBOARD = "leaderboard"
     HELP = "help"
     UNKNOWN = "unknown"
@@ -96,7 +98,8 @@ class Command:
         on a bad amount, ``amount`` is ABSENT and ``error`` describes why.
       * DUEL: ``target`` -> login ``str``, ``amount`` -> ``int`` / sentinel.
       * GIVE: ``target`` -> login ``str``, ``amount`` -> ``int`` (no 'all').
-      * POINTS / WHEEL / TRIVIA / LEADERBOARD / HELP / UNKNOWN: no required args.
+      * POINTS / WHEEL / TRIVIA / ACCEPT / RAFFLE / LEADERBOARD / HELP / UNKNOWN:
+        no required args.
     ``raw`` is the original message text (untrusted; for audit/log only).
     """
 
@@ -231,8 +234,11 @@ _COMMAND_TABLE = {
     "slots": (CommandKind.SLOTS, lambda r: _args_bet(r, allow_all=True)),
     "heist": (CommandKind.HEIST, lambda r: _args_bet(r, allow_all=True)),
     "duel": (CommandKind.DUEL, _args_duel),
+    "accept": (CommandKind.ACCEPT, _NO_ARGS),     # accept the duel you were challenged to
     "trivia": (CommandKind.TRIVIA, _NO_ARGS),
     "give": (CommandKind.GIVE, _args_give),
+    "raffle": (CommandKind.RAFFLE, _NO_ARGS),     # mod: open a raffle; viewer: enter the open one
+    "enter": (CommandKind.RAFFLE, _NO_ARGS),      # alias to enter the open raffle
     "leaderboard": (CommandKind.LEADERBOARD, _NO_ARGS),
     "top": (CommandKind.LEADERBOARD, _NO_ARGS),   # common alias
     "help": (CommandKind.HELP, _NO_ARGS),

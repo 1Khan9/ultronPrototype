@@ -73,17 +73,19 @@ from kenning.openclaw_routing.intents import RoutingIntentKind
     ("switch to llm 4B", "josiefied-qwen3-4b"),
     ("switch to preset 9B", "qwen3.5-9b"),
     ("switch to qwen 4B", "josiefied-qwen3-4b"),
-    # 2026-05-14: 8B added as a switch target (swap-back from new 4B default).
-    ("switch to 8B", "josiefied-qwen3-8b"),
-    ("switch to the 8B", "josiefied-qwen3-8b"),
-    ("switch to the 8B model", "josiefied-qwen3-8b"),
-    ("switch to model 8B", "josiefied-qwen3-8b"),
-    ("use the 8B model", "josiefied-qwen3-8b"),
-    ("switch to eight B", "josiefied-qwen3-8b"),
-    ("load the 8B", "josiefied-qwen3-8b"),
-    ("activate 8B", "josiefied-qwen3-8b"),
-    ("switch to 8 B", "josiefied-qwen3-8b"),
-    ("switch to 8-B", "josiefied-qwen3-8b"),
+    # 2026-05-14: 8B added as a switch target. 2026-06-24: REMAPPED to the live
+    # default 8B "josiefied-qwen3-8b-iq3xs" (IQ3_XS + 0.6B spec draft) so "8B"
+    # round-trips to the user's optimized 8B for the 4B A/B; the Q5 is env-only.
+    ("switch to 8B", "josiefied-qwen3-8b-iq3xs"),
+    ("switch to the 8B", "josiefied-qwen3-8b-iq3xs"),
+    ("switch to the 8B model", "josiefied-qwen3-8b-iq3xs"),
+    ("switch to model 8B", "josiefied-qwen3-8b-iq3xs"),
+    ("use the 8B model", "josiefied-qwen3-8b-iq3xs"),
+    ("switch to eight B", "josiefied-qwen3-8b-iq3xs"),
+    ("load the 8B", "josiefied-qwen3-8b-iq3xs"),
+    ("activate 8B", "josiefied-qwen3-8b-iq3xs"),
+    ("switch to 8 B", "josiefied-qwen3-8b-iq3xs"),
+    ("switch to 8-B", "josiefied-qwen3-8b-iq3xs"),
 ])
 def test_classify_routes_to_model_switch(text: str, expected: str) -> None:
     intent = classify_routing(text)

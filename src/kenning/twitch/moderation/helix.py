@@ -595,6 +595,24 @@ class HelixClient:
             return result
         return self._finish_write("unban", key, resp, success_statuses=(200, 204))
 
+    def clear_chat(self, broadcaster_id: str, moderator_id: str) -> HelixResult:
+        """DELETE /moderation/chat — remove ALL messages from the channel's chat.
+
+        Channel-scoped (not user-keyed) and naturally idempotent (clearing already-
+        empty chat is a server-side no-op), so it is NOT locally cached. A 2xx
+        (200/204) is success; anything else raises LOUD.
+        """
+        if not broadcaster_id or not moderator_id:
+            raise ValueError("broadcaster_id and moderator_id are required")
+        resp = self._request(
+            "DELETE",
+            "/moderation/chat",
+            query={"broadcaster_id": str(broadcaster_id), "moderator_id": str(moderator_id)},
+        )
+        return self._finish_write(
+            "clear_chat", ("clear_chat", "", ""), resp, success_statuses=(200, 204),
+        )
+
     def update_chat_settings(
         self,
         broadcaster_id: str,

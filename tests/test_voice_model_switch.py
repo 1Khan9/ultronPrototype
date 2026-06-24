@@ -143,8 +143,8 @@ def test_model_switch_missing_intent_payload_speaks_clarification(tmp_path: Path
     ("load 4B", "josiefied-qwen3-4b"),
     ("swap over to the nine B", "qwen3.5-9b"),
     ("switch to model 4B", "josiefied-qwen3-4b"),
-    ("switch to the 8B", "josiefied-qwen3-8b"),
-    ("use the 8B model", "josiefied-qwen3-8b"),
+    ("switch to the 8B", "josiefied-qwen3-8b-iq3xs"),  # 2026-06-24 remap: 8B -> live spec default
+    ("use the 8B model", "josiefied-qwen3-8b-iq3xs"),
 ])
 def test_classifier_then_voice_controller_end_to_end(
     utterance: str, expected_target: str, tmp_path: Path,

@@ -109,8 +109,10 @@ def test_compound_mixed_flag_on_one_combined_llm_call():
     rs.set_u1_llm_route_enabled(True)
     prompt, line = _capture_compound("Sova hit 84 and they have no smokes left")
     assert prompt is not None, "mixed compound should reach the LLM when route ON"
-    assert "Relay ALL of these callouts" in prompt   # compound combine-all directive from build_relay_prompt
-    assert "cohesive" in prompt                       # u1.0: one cohesive natural relay, not a list of fragments
+    # compound combine-all directive from build_relay_prompt (2026-06-24 wording:
+    # "Relay these MULTIPLE tactical callouts to your team as ONE clean line").
+    assert "Relay these MULTIPLE tactical callouts" in prompt
+    assert "ONE clean line" in prompt                 # u1.0: one cohesive relay, not a list of fragments
     assert "Sova hit 84 and they have no smokes left" in prompt
     assert line
 
@@ -314,15 +316,18 @@ def test_two_verbosity_axes_independent():
     rs.set_relay_verbosity("high")            # alias -> callout
     assert rs.callout_verbosity() == "high"
     assert rs.conversation_verbosity() == "max"   # conversation untouched
-    # conversation has no "none" -> clamps to its lowest level
+    # conversation has no "none" -> clamps to its lowest level ("lowest", 1 sentence)
     rs.set_conversation_verbosity("no flavor")
-    assert rs.conversation_verbosity() == "low"
+    assert rs.conversation_verbosity() == "lowest"
 
 
 def test_config_verbosity_defaults():
     from kenning.config import RelaySpeechConfig
     c = RelaySpeechConfig()
-    assert c.callout_verbosity == "low"   # 2026-06-22: tighter tactical callouts by default
+    # 2026-06-24: callout default is "none" (clean callout, NO flavor tail) --
+    # the terse tactical-relay default the user wants; the stale "low" assertion
+    # predates that config change.
+    assert c.callout_verbosity == "none"
     assert c.conversation_verbosity == "low"
 
 

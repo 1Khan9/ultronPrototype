@@ -75,7 +75,7 @@ import os
 import sys
 import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable, Deque, Optional, Protocol, runtime_checkable
 from urllib.parse import parse_qs, urlsplit
@@ -176,6 +176,7 @@ class EventSubChatSource:
         url: Optional[str] = None,
         *,
         connect_factory: Optional[Callable[[str], Any]] = None,
+        redeem_connect_factory: Optional[Callable[[str], Any]] = None,
         helix_factory: Optional[Callable[[], Any]] = None,
         client_id: Optional[str] = None,
         broadcaster_login: Optional[str] = None,
@@ -190,6 +191,7 @@ class EventSubChatSource:
             "KENNING_TWITCH_EVENTSUB_URL", "wss://eventsub.wss.twitch.tv/ws"
         )
         self._connect_factory = connect_factory
+        self._redeem_connect_factory = redeem_connect_factory
         self._helix_factory = helix_factory
         self._recv_timeout = recv_timeout
 
@@ -232,6 +234,17 @@ class EventSubChatSource:
         # every (re)connect so a reconnect re-subscribes against the new session.
         self._subscribed = False
         self._lock = threading.Lock()
+
+        # Redeems run on a SEPARATE EventSub session. Twitch REJECTS a websocket
+        # session whose subscriptions are created by DIFFERENT users (400
+        # "subscriptions created by different users"): the chat sub uses the BOT
+        # token, but the redeem sub needs the BROADCASTER token. So a second,
+        # isolated connection carries ONLY the redeem subscription. Fully additive +
+        # fail-quiet -- a redeem-connection fault never touches the chat path.
+        self._redeem_client: Any = None
+        self._redeem_session: Any = None
+        self._redeem_subscribed = False
+        self._redeem_url = self._url
 
     # ---- credentials ---------------------------------------------------- #
     def _subscribe_enabled(self) -> bool:
@@ -336,12 +349,14 @@ class EventSubChatSource:
 
     # ---- subscription bootstrap ---------------------------------------- #
     def _subscribe(self, session_id: str) -> None:
-        """Create the chat (and optional redeem) subscriptions for ``session_id``.
+        """Create the CHAT subscription for ``session_id`` (BOT token).
 
         ONCE per session. Resolves logins -> ids over Helix using the stored
         tokens. Fail-quiet: a Helix hiccup logs + leaves ``_subscribed`` False so
-        the next poll retries (we never raise into the poll loop). The chat sub
-        uses the BOT token; the redeem sub uses the BROADCASTER token.
+        the next poll retries (we never raise into the poll loop). Redeems are NOT
+        created here -- they live on a SEPARATE session/connection (see
+        :meth:`_subscribe_redeem_only`) because the redeem sub needs the
+        BROADCASTER token and Twitch forbids two users' subs on one session.
         """
         if self._subscribed or not session_id or not self._subscribe_enabled():
             return
@@ -369,28 +384,123 @@ class EventSubChatSource:
         if not ok:
             logger.warning("eventsub chat subscription create failed; will retry next poll")
             return
-        if self._subscribe_redeems:
-            broadcaster_token = self._load_token(self._broadcaster_token_path)
-            if broadcaster_token:
-                redeem_ok = helix.create_redeem_subscription(
-                    broadcaster_id=broadcaster_id,
-                    session_id=session_id,
-                    token=broadcaster_token,
-                )
-                if not redeem_ok:
-                    # Chat is up; a redeem-sub miss is non-fatal -- log + carry on.
-                    logger.warning("eventsub redeem subscription create failed (chat is up)")
-            else:
-                logger.warning("eventsub redeem subscribe skipped: no broadcaster access token")
         # Mark subscribed only after the (required) chat subscription succeeded.
         self._subscribed = True
-        logger.info("eventsub subscriptions established for session=%s", session_id)
+        logger.info("eventsub chat subscription established for session=%s", session_id)
+
+    # ---- redeem connection (SEPARATE session, broadcaster token) -------- #
+    def _ensure_redeem_client(self) -> bool:
+        """Connect the SECOND websocket (redeems-only). Mirrors :meth:`_ensure_client`
+        but is fully isolated: a failure here never affects the chat connection."""
+        if self._redeem_client is not None:
+            return True
+        try:
+            from kenning.twitch.clients.eventsub import EventSubSession, RFC6455Client
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("eventsub redeem transport unavailable: %s", exc)
+            return False
+        try:
+            if self._redeem_connect_factory is not None:
+                self._redeem_client = self._redeem_connect_factory(self._redeem_url)
+            else:
+                client = RFC6455Client(timeout=30.0)
+                client.connect(self._redeem_url)
+                self._redeem_client = client
+            self._redeem_session = EventSubSession()
+            self._redeem_subscribed = False
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("eventsub redeem connect failed: %s", exc)
+            self._reset_redeem_client()
+            return False
+
+    def _reset_redeem_client(self) -> None:
+        try:
+            if self._redeem_client is not None and hasattr(self._redeem_client, "close"):
+                self._redeem_client.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("eventsub redeem client close failed: %s", exc)
+        self._redeem_client = None
+        self._redeem_session = None
+        self._redeem_subscribed = False
+
+    def _subscribe_redeem_only(self, session_id: str) -> None:
+        """Create ONLY the channel-points redeem subscription for ``session_id``,
+        with the BROADCASTER token (its own session -> no cross-user 400)."""
+        if self._redeem_subscribed or not session_id or not self._subscribe_enabled():
+            return
+        helix = self._ensure_helix()
+        if helix is None:
+            return
+        broadcaster_token = self._load_token(self._broadcaster_token_path)
+        if not broadcaster_token:
+            logger.warning("eventsub redeem subscribe skipped: no broadcaster access token")
+            return
+        broadcaster_id = helix.get_user_id(self._broadcaster_login, token=broadcaster_token)
+        if not broadcaster_id:
+            logger.warning("eventsub redeem subscribe skipped: unresolved broadcaster id")
+            return
+        ok = helix.create_redeem_subscription(
+            broadcaster_id=broadcaster_id,
+            session_id=session_id,
+            token=broadcaster_token,
+        )
+        if ok:
+            self._redeem_subscribed = True
+            logger.info("eventsub redeem subscription established for session=%s", session_id)
+        else:
+            logger.warning("eventsub redeem subscription create failed; will retry next poll")
+
+    def _poll_redeems(self, out: list[dict]) -> None:
+        """Drain the redeem connection: connect, subscribe on welcome, and map any
+        redemption notifications into ``out``. Fully fail-quiet + isolated."""
+        if not self._subscribe_redeems or not self._subscribe_enabled():
+            return
+        if not self._ensure_redeem_client():
+            return
+        try:
+            from kenning.twitch.clients.eventsub import WebSocketClosed
+        except Exception:  # noqa: BLE001
+            return
+        try:
+            for _ in range(64):
+                msg = self._redeem_client.recv_json_ready(self._recv_timeout)
+                if msg is None:
+                    break
+                if not isinstance(msg, dict) or self._redeem_session is None:
+                    continue
+                try:
+                    self._redeem_session.note_keepalive()
+                except Exception:  # noqa: BLE001
+                    pass
+                cls = self._redeem_session.classify_message(msg)
+                if cls == "welcome":
+                    sid = self._redeem_session.parse_welcome(msg)
+                    if sid:
+                        self._subscribe_redeem_only(sid)
+                elif cls == "reconnect":
+                    new_url = self._redeem_session.handle_reconnect(msg)
+                    self._reset_redeem_client()
+                    if new_url:
+                        self._redeem_url = new_url
+                    break
+                elif cls == "revocation":
+                    logger.warning("eventsub redeem subscription revoked; reconnecting")
+                    self._reset_redeem_client()
+                    break
+                elif cls == "notification":
+                    self._map_redeem(msg, out)
+        except WebSocketClosed as exc:
+            logger.info("eventsub redeem socket closed (%s); will reconnect", exc)
+            self._reset_redeem_client()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("eventsub redeem poll error: %s", exc)
+            self._reset_redeem_client()
 
     # ---- poll ----------------------------------------------------------- #
     def poll(self) -> list[dict]:
         with self._lock:
-            if not self._ensure_client():
-                return []
+            out: list[dict] = []
             try:
                 from kenning.twitch.clients.eventsub import (
                     ChatEvent,
@@ -398,26 +508,32 @@ class EventSubChatSource:
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("eventsub ChatEvent import failed: %s", exc)
-                return []
-            out: list[dict] = []
+                return out
+            # --- CHAT connection (bot token) ---
+            if self._ensure_client():
+                try:
+                    for _ in range(64):  # bounded per-poll so we never spin forever
+                        msg = self._client.recv_json_ready(self._recv_timeout)
+                        if msg is None:
+                            break  # no more data ready this cycle
+                        if not isinstance(msg, dict):
+                            continue
+                        handled = self._handle_message(msg, ChatEvent, out)
+                        if handled == "reconnect":
+                            break  # dialed a new url; resume draining next poll
+                except WebSocketClosed as exc:
+                    # Clean/abnormal close or stale socket -> reconnect + re-subscribe.
+                    logger.info("eventsub socket closed (%s); will reconnect", exc)
+                    self._reset_client()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("eventsub poll error: %s", exc)
+                    self._reset_client()  # force a reconnect + re-subscribe next poll
+            # --- REDEEM connection (broadcaster token, SEPARATE session) ---
+            # Independent of chat: a fault on either side never affects the other.
             try:
-                for _ in range(64):  # bounded per-poll so we never spin forever
-                    msg = self._client.recv_json_ready(self._recv_timeout)
-                    if msg is None:
-                        break  # no more data ready this cycle
-                    if not isinstance(msg, dict):
-                        continue
-                    handled = self._handle_message(msg, ChatEvent, out)
-                    if handled == "reconnect":
-                        break  # dialed a new url; resume draining next poll
-            except WebSocketClosed as exc:
-                # Clean/abnormal close or stale socket -> reconnect + re-subscribe
-                # next poll.
-                logger.info("eventsub socket closed (%s); will reconnect", exc)
-                self._reset_client()
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("eventsub poll error: %s", exc)
-                self._reset_client()  # force a reconnect + re-subscribe next poll
+                self._poll_redeems(out)
+            except Exception as exc:  # noqa: BLE001 — redeems never break the chat path
+                logger.warning("eventsub redeem drain error: %s", exc)
             return out
 
     def _handle_message(self, msg: dict, chat_event_cls: Any, out: list[dict]) -> str:
@@ -558,6 +674,7 @@ class EventSubChatSource:
                 self._client.close()
         except Exception as exc:  # noqa: BLE001
             logger.debug("eventsub source close failed: %s", exc)
+        self._reset_redeem_client()
 
 
 # --------------------------------------------------------------------------- #
@@ -585,6 +702,12 @@ class RollingBuffer:
         self._cursor = 0       # consumer-acked cursor
         self.dropped_total = 0  # events evicted before being acked (maxlen/TTL)
         self.appended_total = 0
+        # login_lower -> last chat message_id, for cross-process voice DELETE
+        # moderation (the write sidecar resolves a target's last message via
+        # GET /last_message). Bounded LRU, independent of the rolling buffer's TTL
+        # so a delete still works after the message scrolled out of /buffer.
+        self._last_msg: "OrderedDict[str, str]" = OrderedDict()
+        self._last_msg_max = 4096
 
     # -- mutation -------------------------------------------------------- #
     def append(self, event: dict, *, now: Optional[float] = None) -> int:
@@ -601,8 +724,32 @@ class RollingBuffer:
                 self.dropped_total += 1
             self._events.append(wrapped)
             self.appended_total += 1
+            self._index_last_message(event)
             self._prune_ttl(now)
             return self._seq
+
+    def _index_last_message(self, event: dict) -> None:
+        """Record a chat event's ``{login -> message_id}`` for voice DELETE
+        moderation (caller holds the lock). No-op for non-chat / id-less events."""
+        if not isinstance(event, dict) or event.get("type") != "chat":
+            return
+        login = str(event.get("chatter_login") or "").strip().lower()
+        mid = str(event.get("message_id") or "")
+        if not login or not mid:
+            return
+        self._last_msg[login] = mid
+        self._last_msg.move_to_end(login)
+        while len(self._last_msg) > self._last_msg_max:
+            self._last_msg.popitem(last=False)
+
+    def last_message_id(self, login: str) -> Optional[str]:
+        """The most-recent chat message_id seen for ``login`` (case-insensitive),
+        or ``None``. Backs the GET /last_message route for cross-process delete."""
+        key = (login or "").strip().lower()
+        if not key:
+            return None
+        with self._lock:
+            return self._last_msg.get(key)
 
     def _prune_ttl(self, now: float) -> None:
         """Drop events older than the TTL. Caller holds the lock."""
@@ -781,6 +928,18 @@ def make_handler(buffer: RollingBuffer, poll_loop: Optional[PollLoop], source_na
                 since = self._parse_since(parts.query)
                 events, cursor = buffer.drain(since=since)
                 self._send(200, {"events": events, "cursor": cursor})
+                return
+            if path == "/last_message":
+                # Voice DELETE moderation: the write sidecar resolves a target's
+                # last chat message_id here. Fail-safe -> {"message_id": null}.
+                login = ""
+                mid = None
+                try:
+                    login = parse_qs(parts.query or "").get("login", [""])[0] or ""
+                    mid = buffer.last_message_id(login)
+                except Exception:  # noqa: BLE001 - never raise on a hostile query
+                    mid = None
+                self._send(200, {"login": login, "message_id": mid})
                 return
             self._send(404, {"error": "not found"})
 

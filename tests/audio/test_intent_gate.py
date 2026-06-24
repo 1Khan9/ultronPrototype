@@ -14,6 +14,7 @@ from kenning.audio.intent_gate import Scenario
     "tell my team to rush B",
     "sova hit 84 on A main",
     "two on A site one rotating",
+    "explain quantum physics to my team",   # 2026-06-24: addressee-LAST team command
 ])
 def test_relay_to_team(text):
     v = ig.classify_scenario(text)
@@ -61,6 +62,15 @@ def test_named_factual_question_is_private():
 def test_ignore_addressing_no(text):
     v = ig.classify_scenario(text)
     assert v.scenario is Scenario.IGNORE, (text, v)
+
+
+def test_team_mention_not_a_command_stays_ignore():
+    # 2026-06-24 over-response guard: a non-directive team MENTION (past-tense
+    # narrative) never earns an ADDRESSED verdict, so it stays IGNORE even though
+    # it contains "my team" -- the stream/banter ignore-default is untouched while
+    # the addressee-LAST team COMMAND ("explain X to my team") relays.
+    v = ig.classify_scenario("I told my team earlier to rotate")
+    assert v.scenario is Scenario.IGNORE, v
 
 
 def test_asr_pre_reject_no_speech():

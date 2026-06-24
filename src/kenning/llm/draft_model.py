@@ -132,6 +132,22 @@ def make_qwen08b_draft_model(
                 model_path=str(draft_model_path),
                 n_gpu_layers=n_gpu_layers,
                 n_ctx=int(n_ctx),
+                # 2026-06-24 VRAM: quantize the draft KV to q8_0 (was the F16 default --
+                # the draft got no type_k/type_v) + flash_attn (required for quantized
+                # KV). The draft's KV correctness is irrelevant to output quality (the
+                # main model verifies every drafted token) so this is a free ~half-KV
+                # win. (q4_0 was tried + reverted to q8_0 to keep the spec-decode accept
+                # rate maximal -- the ~68 MiB it saved wasn't worth even a 1-2 ms decode
+                # question mark once VRAM was workable.) ALSO cap the draft's compute
+                # buffer: it silently inherited n_batch=2048 though it only evaluates ~4
+                # speculative tokens per step -- n_batch=512/n_ubatch=128 trims the reserve
+                # (~60-110 MiB) at zero cost (a couple extra micro-batches on the one-time
+                # prefill, hidden inside the main model's parallel work).
+                type_k=8,
+                type_v=8,
+                flash_attn=True,
+                n_batch=512,
+                n_ubatch=128,
                 # The draft must NOT itself wire a draft_model -- that
                 # would recurse. Keep logits_all OFF; we read logits
                 # via the C ptr below.

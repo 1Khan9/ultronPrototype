@@ -51,6 +51,30 @@ Live calibration of the gate thresholds and the latency pass remain before the f
 
 ---
 
+## 📺 In development — Twitch co-stream
+
+A fully-local **Twitch presence** layer (flag-gated, **default OFF** — `main` runtime is byte-identical until
+enabled) lets Ultron co-host a stream without touching the anticheat contract: every Twitch network call lives in
+**out-of-process sidecars** (chat read · Helix moderation write · a Llama-Guard safety model · an OBS overlay), so
+the anticheat-pinned main process never imports a network or automation library for any of it.
+
+- 💬 **In-character chat replies** — viewers address Ultron in chat; a Llama-Guard model gates every input *and*
+  output (fail-closed — an unhealthy guard means silence), and the reply plays only on the stream bus, never the
+  team mic.
+- 🛡️ **Voice moderation** — `"Ultron, ban / timeout / unban / delete <viewer>"` (two-phase voice confirm with a
+  spoken read-back) plus chat-settings (`slow mode` · `followers only` · `subscribers only` · `emote only` ·
+  `clear chat`); all writes go through the broadcaster-token sidecar with idempotency + a mass-action breaker.
+- 🎰 **Channel-point games + a "cores" economy** — a SQLite-WAL ledger with keyed-leg idempotency backs `!gamble` /
+  `!slots` / `!heist` / `!duel` / `!raffle` / `!give` / `!wheel` / `!trivia`, each provably-fair and replay-safe;
+  channel-point redeems drive the same games with the OBS overlay.
+- 📋 **Auto commands panel** — every 15 minutes the bot posts a barebones command list ending with a link to a
+  one-page viewer guide.
+
+Built and unit-tested offline (full `tests/twitch` green); first-stream live validation is the next step. Go-live
+runbook: [`docs/twitch_integration/FIRST_STREAM_CHECKLIST.md`](docs/twitch_integration/FIRST_STREAM_CHECKLIST.md).
+
+---
+
 ## ⚡ Why Kenning?
 
 > **What would a voice assistant feel like if it lived entirely on your GPU instead of in someone else's data center?**

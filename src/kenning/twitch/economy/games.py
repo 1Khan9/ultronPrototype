@@ -405,6 +405,7 @@ class Heist:
         win_threshold: float = 0.60,
         partial_threshold: float = 0.30,
         partial_fraction: float = 0.50,
+        house_bonus_pct: float = 0.0,
         allow_lose_all: bool = False,
     ) -> None:
         if not (0.0 < partial_threshold < win_threshold <= 1.0):
@@ -413,15 +414,26 @@ class Heist:
             )
         if not (0.0 < partial_fraction <= 1.0):
             raise GameError("partial_fraction must be in (0, 1]")
+        if house_bonus_pct < 0.0 or house_bonus_pct != house_bonus_pct:
+            raise GameError("house_bonus_pct must be a finite value >= 0")
         self._rng = rng or ProvablyFairRNG()
         self._win_threshold = float(win_threshold)
         self._partial_threshold = float(partial_threshold)
         self._partial_fraction = float(partial_fraction)
+        # The house tops the pot up by this fraction BEFORE the per-head split on a
+        # WIN/PARTIAL, so a win pays more than a player's own stake (a pure
+        # sum-of-stakes pot splits back to break-even). Default 0.0 keeps every
+        # existing caller (the redeem router, tests) byte-identical.
+        self._house_bonus_pct = float(house_bonus_pct)
         self._allow_lose_all = bool(allow_lose_all)
 
     @property
     def allow_lose_all(self) -> bool:
         return self._allow_lose_all
+
+    @property
+    def house_bonus_pct(self) -> float:
+        return self._house_bonus_pct
 
     def resolve(
         self,
@@ -447,13 +459,17 @@ class Heist:
         cseed = client_seed if client_seed is not None else self._rng.default_client_seed
         draw = self._rng.uniform_unit(server_seed, cseed, nonce)
 
+        # The house tops the pot up before the per-head split so a WIN pays out
+        # more than a player's own stake (a pure sum-of-stakes pot is break-even).
+        bonused_pot = int(pot * (1.0 + self._house_bonus_pct))
+
         if draw >= self._win_threshold:
             outcome = HeistOutcome.WIN
-            per_head = pot // max(len(participants), 1)
+            per_head = bonused_pot // max(len(participants), 1)
             all_in_wipe = False
         elif draw >= self._partial_threshold:
             outcome = HeistOutcome.PARTIAL
-            partial_pot = int(pot * self._partial_fraction)
+            partial_pot = int(bonused_pot * self._partial_fraction)
             per_head = partial_pot // max(len(participants), 1)
             all_in_wipe = False
         else:

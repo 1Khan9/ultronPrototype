@@ -100,6 +100,17 @@ _NAME_TOKEN_RE = re.compile(
 # the line just falls through to the addressing rules / IGNORE). (2026-06-22)
 _ADDRESS_NAME_RE = re.compile(
     r"\b(?:ultron|kenning|hey\s+ai|the\s+ai)\b", re.IGNORECASE)
+# 2026-06-24: an EXPLICIT team-directee phrase ("... to my team" / "for the
+# squad" / "to our teammates"). A RELAY address signal ONLY in combination with
+# an ADDRESSED (imperative/question) verdict below, so a bare team MENTION ("I
+# told my team earlier", "my team is so bad") -- which never earns ADDRESSED --
+# still falls through to the IGNORE default. Narrow on purpose; inlined to keep
+# intent_gate import-firewall-clean (no heavy relay_speech import at module load).
+_TEAM_DIRECTEE_RE = re.compile(
+    r"\b(?:to|for)\s+(?:my|our|the)\s+(?:whole\s+|entire\s+)?"
+    r"(?:team\s?mates?|teams?|squad|lobby|party|group|boys|crew|stack|"
+    r"fellas|guys|lads|homies|gang|mates|fam)\b",
+    re.IGNORECASE)
 
 
 def _wake_present(text: str) -> bool:
@@ -313,6 +324,17 @@ def classify_scenario(
             conf = max(hit.confidence if hit.decision == AddressingDecision.ADDRESSED
                        else 0.85, 0.85)
             return ScenarioVerdict(Scenario.PRIVATE_REPLY, conf, "addressed to Ultron (named/wake)")
+        # 5b) An imperative/question DIRECTED AT THE TEAM ("explain quantum physics
+        # to my team") is a RELAY even when the team directee TRAILS the payload
+        # (the addressee-FIRST forms -- "tell my team X", "explain to my team X" --
+        # already relay via _relay_signal). GATED to an ADDRESSED verdict, so a
+        # non-directive team MENTION ("I told my team earlier", "my team is so bad")
+        # never reaches here -> the stream/banter IGNORE-default is untouched.
+        if (hit.decision == AddressingDecision.ADDRESSED
+                and _TEAM_DIRECTEE_RE.search(raw)):
+            return ScenarioVerdict(
+                Scenario.RELAY_TO_TEAM, max(hit.confidence, 0.85),
+                f"team-directed imperative: {hit.reason}")
         # 6) No name/wake: question/command SHAPE alone is almost always to teammates in a
         # live always-listening match -> drop it. NO LLM escalation -- the LLM band
         # mislabelled un-named lines ('Follow orders.' / 'Respond.') as PRIVATE, and a

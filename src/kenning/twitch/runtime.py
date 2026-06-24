@@ -93,7 +93,14 @@ class ChatModeRuntime:
             return False, f"enable check failed: {e}"
         if not ok:
             self._state = ChatModeState.OFF
-            logger.warning("chat-reply NOT enabled: %s", why)
+            # 2026-06-24 (findings 5/10): the guard-still-loading case is an
+            # EXPECTED ~2-3s boot race (fail-CLOSED is correct), so log it at
+            # DEBUG instead of spamming a WARNING every reconcile tick. Genuine
+            # refusals (any other reason) still escalate to WARNING.
+            if "not loaded" in (why or "").lower():
+                logger.debug("chat-reply not enabled yet (guard warming up): %s", why)
+            else:
+                logger.warning("chat-reply NOT enabled: %s", why)
             return False, why
         self._state = ChatModeState.READY
         logger.info("chat-reply ENABLED (%s)", why)

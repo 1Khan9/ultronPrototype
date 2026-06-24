@@ -91,14 +91,18 @@ def test_exemplars_injected_custom_and_default():
     assert "Sova hit one for 84" not in custom.user  # custom replaces default
 
 
-def test_agent_context_and_recent_lines():
+def test_agent_context_present_recent_lines_excluded():
+    # 2026-06-24: agent facts stay (kit accuracy); recent lines must NEVER enter
+    # the prompt -- they contaminated location-less callouts ("rotate" -> copied
+    # "B" from a recent line) and added dead tokens.
     r = up.build_relay_prompt(
         "their sova ulted",
         agent_context=["Sova: initiator; ult = Hunter's Fury (3 damaging blasts)"],
         recent_lines=["Their smokes are gone. Take the space."],
     )
     assert "Agent facts" in r.user and "Hunter's Fury" in r.user
-    assert "do NOT repeat" in r.user and "Their smokes are gone" in r.user
+    assert "Their smokes are gone" not in r.user
+    assert "recently said" not in r.user.lower()
 
 
 def test_named_addressee_opens_with_name():
@@ -109,8 +113,9 @@ def test_named_addressee_opens_with_name():
 
 def test_compound_combines_into_one_line():
     r = up.build_relay_prompt("Jett hit 84, Breach hit 97, one rotating B", compound=True)
-    assert "Relay ALL of these callouts" in r.user   # combine-all-into-one directive
-    assert "cohesive" in r.user                       # u1.0: one cohesive natural relay, not a list
+    # combine-all-into-one directive (2026-06-24 wording).
+    assert "Relay these MULTIPLE tactical callouts" in r.user
+    assert "ONE clean line" in r.user                 # one cohesive relay, not a list
     assert "Jett hit 84, Breach hit 97, one rotating B" in r.user
 
 
@@ -169,9 +174,13 @@ def test_normalize_verbosity_medium_and_max():
     assert up.normalize_verbosity("max") == "max"
     assert up.normalize_verbosity("max flavor") == "max"
     assert up.normalize_verbosity("maximum") == "max"
-    # the conversation axis has no "none" -> clamp to the lowest level
-    assert up.normalize_verbosity("none", levels=up.CONVERSATION_VERBOSITY_LEVELS) == "low"
-    assert up.normalize_verbosity("no flavor", levels=up.CONVERSATION_VERBOSITY_LEVELS) == "low"
+    # the conversation axis has no "none" -> clamp to its lowest level ("lowest")
+    assert up.normalize_verbosity("none", levels=up.CONVERSATION_VERBOSITY_LEVELS) == "lowest"
+    assert up.normalize_verbosity("no flavor", levels=up.CONVERSATION_VERBOSITY_LEVELS) == "lowest"
+    # "lowest"/"least" -> the 1-sentence floor; "low" is now the 2-sentence default
+    assert up.normalize_verbosity("lowest", levels=up.CONVERSATION_VERBOSITY_LEVELS) == "lowest"
+    assert up.normalize_verbosity("least", levels=up.CONVERSATION_VERBOSITY_LEVELS) == "lowest"
+    assert up.normalize_verbosity("low", levels=up.CONVERSATION_VERBOSITY_LEVELS) == "low"
 
 
 def test_callout_axis_five_levels_distinct_and_monotonic():
@@ -183,13 +192,13 @@ def test_callout_axis_five_levels_distinct_and_monotonic():
     assert toks == sorted(toks) and len(set(toks)) == len(toks)  # none<low<medium<high<max
 
 
-def test_conversation_axis_four_levels_distinct_and_monotonic():
+def test_conversation_axis_five_levels_distinct_and_monotonic():
     prompts = {v: up.build_private_prompt("should I buy", verbosity=v)
                for v in up.CONVERSATION_VERBOSITY_LEVELS}
     for v in up.CONVERSATION_VERBOSITY_LEVELS:
         assert up._CONVERSATION_VERBOSITY_DIRECTIVE[v] in prompts[v].user
     toks = [prompts[v].sampling["max_tokens"] for v in up.CONVERSATION_VERBOSITY_LEVELS]
-    assert toks == sorted(toks) and len(set(toks)) == len(toks)  # low<medium<high<max
+    assert toks == sorted(toks) and len(set(toks)) == len(toks)  # lowest<low<medium<high<max
 
 
 def test_relay_and_private_use_separate_axes():

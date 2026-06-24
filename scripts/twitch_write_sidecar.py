@@ -71,6 +71,7 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler
 from typing import Any, Callable, Optional
@@ -258,7 +259,8 @@ class RosterCache:
 # HTTP handler
 # --------------------------------------------------------------------------- #
 def make_handler(service: Any, store: ProposalStore, *, ready_fn: Callable[[], bool],
-                 broadcaster_id_fn: Callable[[], str]):
+                 broadcaster_id_fn: Callable[[], str],
+                 chat_send_fn: "Optional[Callable[[str], bool]]" = None):
     """Build a ``BaseHTTPRequestHandler`` subclass bound to this sidecar's state.
 
     A factory (not module globals) so a test can stand up an isolated server with
@@ -328,7 +330,60 @@ def make_handler(service: Any, store: ProposalStore, *, ready_fn: Callable[[], b
             if path == "/cancel":
                 self._handle_cancel()
                 return
+            if path == "/say":
+                self._handle_say()
+                return
+            if path == "/chat_settings":
+                self._handle_chat_settings()
+                return
             self._send(404, {"ok": False, "error": "not found"})
+
+        def _handle_chat_settings(self) -> None:
+            """Apply a chat-settings voice command (slow/follower/sub/emote/unique/
+            clear). Parsed here (deterministic, no model) -> the service applies it."""
+            payload = self._read_json_body()
+            if payload is None:
+                return
+            text = payload.get("text")
+            if not isinstance(text, str):
+                self._send(400, {"ok": False, "error": "text must be a string"})
+                return
+            if service is None:
+                self._send(200, {"ok": False, "error": "not_ready"})
+                return
+            from kenning.twitch.moderation.chat_settings import parse_chat_settings
+            cmd = parse_chat_settings(text)
+            if cmd is None:
+                self._send(200, {"ok": False, "not_a_command": True})
+                return
+            try:
+                result = service.apply_chat_settings(cmd)
+            except Exception as exc:  # noqa: BLE001 — service is fail-safe; belt+braces
+                logger.warning("chat-settings apply failed: %s", exc)
+                self._send(500, {"ok": False, "error": "apply_failed"})
+                return
+            self._send(200, result)
+
+        def _handle_say(self) -> None:
+            """Post a chat message AS THE BOT (the periodic commands-panel poster).
+            Loopback-only; the orchestrator builds the text and POSTs it here."""
+            payload = self._read_json_body()
+            if payload is None:
+                return
+            text = payload.get("text")
+            if not isinstance(text, str) or not text.strip():
+                self._send(400, {"ok": False, "error": "text must be a non-empty string"})
+                return
+            if chat_send_fn is None:
+                self._send(200, {"ok": False, "error": "chat_send_unavailable"})
+                return
+            try:
+                sent = bool(chat_send_fn(text))
+            except Exception as exc:  # noqa: BLE001 — fail-safe
+                logger.warning("chat-send failed unexpectedly: %s", exc)
+                self._send(500, {"ok": False, "error": "send_failed"})
+                return
+            self._send(200, {"ok": sent})
 
         def _handle_prepare(self) -> None:
             payload = self._read_json_body()
@@ -411,6 +466,9 @@ class _ServiceState:
     def __init__(self) -> None:
         self.service: Any = None
         self.broadcaster_id: str = ""
+        # Optional bot chat-SEND callable (text -> bool); wired when a bot token +
+        # bot id resolve. Used by the periodic commands-panel poster via POST /say.
+        self.chat_send: Optional[Callable[[str], bool]] = None
 
     @property
     def ready(self) -> bool:
@@ -457,6 +515,31 @@ def _proactive_token_refresh(token_path: str, client_id: str) -> None:
             TwitchAuth(client_id, store).ensure_valid(margin_seconds=300.0)
     except Exception as exc:  # noqa: BLE001
         logger.warning("proactive token refresh skipped (%s)", type(exc).__name__)
+
+
+def _make_message_id_lookup(read_endpoint: str) -> Callable[[str], Optional[str]]:
+    """A ``login -> last message_id`` resolver backed by the read sidecar's
+    ``GET /last_message`` route (the cross-process delete plumb). Fail-safe: an
+    unreachable sidecar / bad body / no recent message -> ``None`` (the
+    ModerationService then reports ``no_message`` rather than deleting)."""
+    base = (read_endpoint or "").rstrip("/")
+
+    def _lookup(login: str) -> Optional[str]:
+        if not base or not login:
+            return None
+        url = f"{base}/last_message?login={urllib.parse.quote(str(login), safe='')}"
+        try:
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=_ROSTER_FETCH_TIMEOUT_S) as resp:  # noqa: S310 — loopback only
+                raw = resp.read()
+            body = json.loads(raw.decode("utf-8", errors="replace"))
+        except Exception as exc:  # noqa: BLE001 — a lookup miss is never fatal
+            logger.debug("message_id lookup failed for %r: %s", login, type(exc).__name__)
+            return None
+        mid = body.get("message_id") if isinstance(body, dict) else None
+        return str(mid) if mid else None
+
+    return _lookup
 
 
 def build_service_state() -> _ServiceState:
@@ -543,7 +626,18 @@ def build_service_state() -> _ServiceState:
             ]
 
         helix = HelixClient(client_id, get_token=get_token)
-        guard = ModerationGuard(guard_roster, protected_ids=protected_ids)
+        # Honour the configured mass-action breaker limit (the orchestrator passes
+        # twitch.moderation.mass_action_limit_per_60s as this env). 0/absent -> the
+        # guard's own default.
+        try:
+            breaker_limit = int(os.environ.get("KENNING_TWITCH_MOD_BREAKER_LIMIT", "0") or "0")
+        except (TypeError, ValueError):
+            breaker_limit = 0
+        guard = (
+            ModerationGuard(guard_roster, protected_ids=protected_ids, breaker_limit=breaker_limit)
+            if breaker_limit > 0
+            else ModerationGuard(guard_roster, protected_ids=protected_ids)
+        )
         service = ModerationService(
             helix,
             guard,
@@ -551,6 +645,7 @@ def build_service_state() -> _ServiceState:
             moderator_id=moderator_id,
             roster_provider=lambda: roster(),
             require_readback_confirm=require_confirm,
+            message_id_lookup=_make_message_id_lookup(read_endpoint),
         )
     except Exception as exc:  # noqa: BLE001 — any wiring fault => not-ready
         logger.warning("write sidecar: service wiring failed (%s); not-ready", type(exc).__name__)
@@ -562,6 +657,21 @@ def build_service_state() -> _ServiceState:
         "write sidecar service ready: broadcaster_id=%s protected=%d require_confirm=%s",
         broadcaster_id, len(protected_ids), require_confirm,
     )
+    # Bot chat-SEND (Helix POST /chat/messages, user:write:chat) for the periodic
+    # commands-panel poster. Wired only when a bot id resolved AND a bot token is on
+    # disk; optional, never blocks the moderation service.
+    try:
+        bot_token_path = os.environ.get(
+            "KENNING_TWITCH_BOT_TOKEN_PATH", "~/.kenning/twitch_bot.json")
+        if bot_id and _load_access_token(bot_token_path):
+            from kenning.twitch.clients.chat_send import ChatSendClient
+            sender = ChatSendClient(
+                client_id, get_token=lambda: _load_access_token(bot_token_path))
+            _bid, _sid = broadcaster_id, bot_id
+            state.chat_send = lambda text: sender.send(_bid, _sid, text)
+            logger.info("write sidecar: chat-send ready (bot sender_id=%s)", bot_id)
+    except Exception as exc:  # noqa: BLE001 — chat-send is optional
+        logger.warning("write sidecar: chat-send wiring failed (%s)", type(exc).__name__)
     return state
 
 
@@ -569,7 +679,8 @@ def build_service_state() -> _ServiceState:
 # Server assembly
 # --------------------------------------------------------------------------- #
 def build_server(service: Any, *, port: int = 0, ready: Optional[bool] = None,
-                 broadcaster_id: str = ""):
+                 broadcaster_id: str = "",
+                 chat_send: "Optional[Callable[[str], bool]]" = None):
     """Assemble a write-sidecar server bound to 127.0.0.1 ONLY.
 
     ``port=0`` binds an ephemeral port (read it back from ``server.server_address``
@@ -586,6 +697,7 @@ def build_server(service: Any, *, port: int = 0, ready: Optional[bool] = None,
         store,
         ready_fn=lambda: is_ready,
         broadcaster_id_fn=lambda: broadcaster_id,
+        chat_send_fn=chat_send,
     )
     from kenning.subprocess.sidecar_server import SingletonThreadingHTTPServer
 
@@ -687,7 +799,8 @@ def main() -> None:
     # Fail-safe assembly: a missing-creds state still serves (actions refused).
     state = build_service_state()
     server, _store = build_server(
-        state.service, port=port, ready=state.ready, broadcaster_id=state.broadcaster_id
+        state.service, port=port, ready=state.ready, broadcaster_id=state.broadcaster_id,
+        chat_send=state.chat_send,
     )
     sidecar_lock.write_role("twitch_write", os.getpid(), port)
     atexit.register(sidecar_lock.clear_role, "twitch_write")

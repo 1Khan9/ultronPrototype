@@ -110,6 +110,11 @@ class FakeService:
             "detail": {"idempotent": False, "status": 200},
         }
 
+    def apply_chat_settings(self, cmd):
+        self.chat_settings_calls = getattr(self, "chat_settings_calls", [])
+        self.chat_settings_calls.append(cmd)
+        return {"ok": True, "readback": getattr(cmd, "readback", "")}
+
 
 # --------------------------------------------------------------------------- #
 # HTTP harness
@@ -447,3 +452,41 @@ def test_roster_cache_failsafe_on_down_sidecar() -> None:
 def test_parent_watchdog_check_alive_for_unset_pid() -> None:
     assert sidecar.parent_watchdog_check(0) == "alive"
     assert sidecar.parent_watchdog_check(-1) == "alive"
+
+
+# --------------------------------------------------------------------------- #
+# /say — bot chat-send (the commands-panel poster)
+# --------------------------------------------------------------------------- #
+def test_say_sends_via_chat_send() -> None:
+    sent = []
+    with _Served(FakeService(), ready=True, broadcaster_id="B",
+                 chat_send=lambda t: (sent.append(t) or True)) as s:
+        status, body = _post(f"{s.base}/say", {"text": "hello chat"})
+    assert status == 200 and body == {"ok": True}
+    assert sent == ["hello chat"]
+
+
+def test_say_without_chat_send_reports_unavailable() -> None:
+    with _Served(FakeService(), ready=True, broadcaster_id="B") as s:   # no chat_send wired
+        status, body = _post(f"{s.base}/say", {"text": "hi"})
+    assert status == 200 and body["ok"] is False and body["error"] == "chat_send_unavailable"
+
+
+def test_say_rejects_empty_text() -> None:
+    with _Served(FakeService(), ready=True, broadcaster_id="B", chat_send=lambda t: True) as s:
+        status, body = _post(f"{s.base}/say", {"text": "   "})
+    assert status == 400 and body["ok"] is False
+
+
+def test_chat_settings_applies_recognized_command() -> None:
+    svc = FakeService()
+    with _Served(svc, ready=True, broadcaster_id="B") as s:
+        status, body = _post(f"{s.base}/chat_settings", {"text": "slow mode on"})
+    assert status == 200 and body["ok"] is True
+    assert getattr(svc, "chat_settings_calls", [])  # the parsed command reached the service
+
+
+def test_chat_settings_non_command_is_not_a_command() -> None:
+    with _Served(FakeService(), ready=True, broadcaster_id="B") as s:
+        status, body = _post(f"{s.base}/chat_settings", {"text": "rush B now"})
+    assert status == 200 and body.get("not_a_command") is True

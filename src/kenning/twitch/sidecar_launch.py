@@ -102,6 +102,11 @@ def plan_sidecars(
                     "KENNING_TWITCH_GUARD_PORT": str(guard_port),
                     "KENNING_TWITCH_GUARD_MODEL": gp,
                     "KENNING_TWITCH_GUARD_FAMILY": str(getattr(safety, "guard_family", "llama-guard")),
+                    # 2026-06-24 VRAM: keep the guard OFF the GPU by default (it's a
+                    # second llama.cpp process => its own CUDA context). CPU + a
+                    # thread cap; latency-tolerant chat moderation. Configurable.
+                    "KENNING_TWITCH_GUARD_GPU_LAYERS": str(int(getattr(safety, "guard_gpu_layers", 0))),
+                    "KENNING_TWITCH_GUARD_THREADS": str(int(getattr(safety, "guard_threads", 6))),
                 },
             ))
 
@@ -139,9 +144,13 @@ def plan_sidecars(
                 "KENNING_TWITCH_BROADCASTER_LOGIN": broadcaster_login,
                 "KENNING_TWITCH_BOT_LOGIN": bot_login,
                 "KENNING_TWITCH_BROADCASTER_TOKEN_PATH": broadcaster_token_path,
+                "KENNING_TWITCH_BOT_TOKEN_PATH": expanduser(
+                    str(getattr(auth, "bot_token_path", "~/.kenning/twitch_bot.json"))),
                 "KENNING_TWITCH_READ_ENDPOINT": f"http://127.0.0.1:{read_port}",
                 "KENNING_TWITCH_MOD_REQUIRE_CONFIRM":
                     "1" if getattr(moderation, "require_readback_confirm", True) else "0",
+                "KENNING_TWITCH_MOD_BREAKER_LIMIT":
+                    str(int(getattr(moderation, "mass_action_limit_per_60s", 0) or 0)),
             },
         ))
 

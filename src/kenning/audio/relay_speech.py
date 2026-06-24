@@ -1194,7 +1194,7 @@ def match_flavor_toggle(text: str) -> Optional[bool]:
 #     bare "flavor <level>" never lands here.
 # "off"/"on" are deliberately EXCLUDED from the level words so "flavor off" stays
 # the tail toggle. Fully anchored so ordinary speech ("no, push low") falls through.
-_VB_LEVEL = (r"(no|none|zero|low|minimal|min|light|lite|terse|brief|less"
+_VB_LEVEL = (r"(no|none|zero|lowest|low|minimal|min|light|lite|terse|brief|less"
              r"|medium|mid|moderate|middle|normal|standard|modest"
              r"|high|full|fuller|max|maximum|most|verbose|rich|more|vivid)")
 _VB_AXIS_CALLOUT = r"(?:callout|call-?out|tactical|relay|in-?game)"
@@ -1317,6 +1317,88 @@ def set_u1_llm_route_enabled(enabled: bool) -> None:
 
 def u1_llm_route_enabled() -> bool:
     return _u1_llm_route_enabled
+
+
+# ---------------------------------------------------------------------------
+# SNAP CARVE-OUT (2026-06-24): an ADDITIVE hybrid layer ON TOP of route-all. When
+# route-all is ON, a SHORT SINGLE TACTICAL snap callout (a plain literal relay --
+# "tell my team to rush B", "I'm lurking", "sova hit 85", "one back site", "I'm
+# rotating") + a bare "hello" is routed back to the DETERMINISTIC snap pool instead
+# of the LLM; everything else (strings/compounds, questions, ask-forms like "ask
+# Sage to heal me", social/identity/reported like "Jett is flaming you" / "Sage
+# called you a soundboard", conversational) still goes to the LLM. It is purely
+# additive: it just flips _u1_route OFF for the qualifying command so it reuses the
+# EXISTING deterministic path verbatim -- the full snap pool is untouched and fully
+# revertible (turn this OFF -> the current full-LLM behaviour; turn route-all OFF ->
+# the original full-deterministic behaviour). Toggled at runtime by the (planned)
+# stop-button "SNAPS" button + KENNING_U1_SNAP_CARVEOUT.
+#
+# *** WIP / PAUSED 2026-06-24 -- DEFAULT OFF until the discriminator is fixed. ***
+# _is_carveout_snap below is TOO BROAD: no existing classifier cleanly separates the
+# user's "tactical -> deterministic" set from the "morale/social/ask-form -> LLM"
+# set. Empirically (relay_route_info): "rush B"->relay_llm, "lurking"->curated_command,
+# "flanking/sova hit 85/one back site/rotating"->snap, but ALSO "ask sage to heal
+# me"->snap, "lock in"->snap, "good job"->curated_command, and _is_morale_payload()
+# is False for all of them. So the carve-out currently (a) would leak ask-forms +
+# "lock in"/morale into the deterministic pool and (b) needs a purpose-built
+# tactical-callout recognizer. Until then the default is "0" so route-all behaviour
+# is UNCHANGED (full LLM) and the suite stays green. The infrastructure (flag, flip,
+# rephrase=False, hello="Hello.") is preserved + ready to resume.
+# Resume plan + empirical route table: docs/ultron_1_0/00_process_log/snap_carveout_WIP.md
+_u1_snap_carveout_enabled: bool = _os_flavor.getenv(
+    "KENNING_U1_SNAP_CARVEOUT", "0").strip().lower() not in (
+    "0", "false", "no", "off", "")
+
+
+def set_snap_carveout_enabled(enabled: bool) -> None:
+    """Enable/disable the short-single-snap carve-out at runtime (WIP, default OFF
+    -- see the flag comment above). OFF = absolutely everything goes to the LLM (the
+    full route-all behaviour); ON = the (still-too-broad) hybrid snap carve-out."""
+    global _u1_snap_carveout_enabled
+    _u1_snap_carveout_enabled = bool(enabled)
+
+
+def snap_carveout_enabled() -> bool:
+    return _u1_snap_carveout_enabled
+
+
+def _is_carveout_snap(command: "RelayCommand") -> bool:
+    """True iff ``command`` is a SHORT SINGLE TACTICAL snap callout (or a bare
+    hello) that the carve-out should route to the deterministic pool instead of the
+    LLM. A plain literal relay: NOT authored/compose, NOT a reported/context form,
+    NOT verbatim/roast/fun_fact, directive only None or "hello" (social directives
+    like ask_day/calm/respond -> LLM), NOT a question, NOT a compound/string. Errs
+    CLOSED -- any uncertainty returns False (-> LLM), so a mis-parse never leaks a
+    conversational/social line into the deterministic pool."""
+    try:
+        if getattr(command, "compose", False):
+            return False                          # Ultron-authored (encourage/social)
+        if getattr(command, "context", None):
+            return False                          # reported/"respond to X" form
+        if getattr(command, "verbatim", False):
+            return False                          # already deterministic, leave it
+        if getattr(command, "roast", False) or getattr(command, "fun_fact", False):
+            return False
+        directive = getattr(command, "directive", None)
+        if directive not in (None, "hello"):
+            return False                          # ask_day / calm / respond / ... -> LLM
+        payload = getattr(command, "payload", "") or ""
+        if directive == "hello":
+            return True                           # bare greeting -> "Hello."
+        if not payload.strip():
+            return False
+        if _is_question_payload(payload):
+            return False                          # "ask Sage if she has a heal" -> LLM
+        if len(_split_compound(payload)) >= 2:
+            return False                          # strung callouts (split markers) -> LLM
+        p_low = payload.lower()
+        if any(j in p_low for j in (" and ", " then ", " plus ", ",", ";")):
+            return False                          # conjunction/comma-joined string -> LLM
+        if len(payload.split()) > 6:
+            return False                          # too long -> conversational -> LLM
+        return True
+    except Exception:                                                # noqa: BLE001
+        return False                              # fail CLOSED -> LLM
 
 
 # ---------------------------------------------------------------------------
@@ -3043,24 +3125,14 @@ def _build_rephrase_prompt(
         context_block = (
             f"What just happened in voice chat: {command.context}\n"
         )
+    # 2026-06-24: NO prior context in the prompt, period (user directive). The
+    # recent-lines block contaminated location-less callouts ("rotate" ->
+    # "Rotate to B." copied verbatim from a recent line) and added dead tokens.
+    # A faithful relay wants no cross-turn variety; exact-repeat dedup is
+    # handled post-generation (zero prompt tokens). ``recent_lines`` is still
+    # accepted for back-compat (deterministic pools still avoid repeats) but is
+    # NEVER rendered into the LLM prompt.
     recent_block = ""
-    # Recent lines are only shown for TEAM-addressed lines. For a NAMED
-    # teammate ("tell my Phoenix to calm down") the 4B model tends to copy a
-    # name from the recent list (Phoenix -> Miks), so listing prior lines does
-    # more harm than the anti-repeat does good -- each named callout stands
-    # alone. For ANY answer/respond line (a question, a Marvel/identity reply,
-    # a 'respond' to a teammate) the model lazily reuses a recent ANSWER's
-    # content verbatim (blood-red -> the sky answer; 'about vision' -> the moon
-    # line), so the anti-repeat list is suppressed there too -- each answer must
-    # be derived from its own prompt alone.
-    if (recent_lines and command.addressee == "team"
-            and not _is_answer_command(command)):
-        shown = list(recent_lines)[-6:]
-        recent_block = (
-            "\nYou already said these recently (continue the conversation; "
-            "do NOT reuse their wording):\n"
-            + "\n".join(f"- {line}" for line in shown) + "\n"
-        )
     return _REPHRASE_PROMPT.format(
         task=task, addressee=addressee, by_name=by_name,
         payload_block=payload_block, recent_block=recent_block,
@@ -4199,17 +4271,26 @@ def _social_llm_line(
     context: str = "",
     target: str = "",
     canned: "Optional[str]" = None,
-) -> str:
+    fallback_to_canned: bool = True,
+) -> "Optional[str]":
     """A SOCIAL / CONVERSATIONAL response (identity / encouragement / calm / flame / criticize /
     compliment / defiance). When the u1.0 LLM route is ON and an LLM is available, the LLM authors a
     NOVEL in-character line -- the curated ``pool`` is supplied only as STYLE exemplars the model is
     told NOT to repeat. Otherwise -- or on ANY LLM failure / empty / meta-leak -- fall back to
     ``canned`` (a pre-formatted curated line) or ``pick_line(pool)``. This keeps Ultron from sounding
     like a soundboard on non-tactical responses, while the snap/relay paths stay deterministic +
-    factual. When u1 is OFF the return is byte-identical to the prior canned behaviour."""
-    fallback = canned if canned is not None else pick_line(pool, recent_lines=recent_lines)
+    factual. When u1 is OFF the return is byte-identical to the prior canned behaviour.
+
+    ``fallback_to_canned`` (default True -> byte-identical for every existing
+    caller): when False, the empty / meta-leak / LLM-failure path returns ``None``
+    INSTEAD of the canned pool line, so a caller under route-all can fall through to
+    another LLM path (e.g. the orchestrator's identity probe -> ``_respond``) rather
+    than ever speaking a curated pool line. The pool is still fed to the prompt as
+    exemplars either way -- only the FALLBACK output changes."""
+    fallback = (canned if canned is not None
+                else (pick_line(pool, recent_lines=recent_lines) if pool else None))
     if not u1_llm_route_enabled():
-        return fallback
+        return fallback if fallback_to_canned else None
     try:
         from kenning.audio.ultron_prompt import build_social_prompt, strip_prompt_echo
         from kenning.audio._ultron_answer import is_meta_leak
@@ -4237,21 +4318,114 @@ def _social_llm_line(
                 enable_thinking=False,
             )
         else:
-            return fallback
+            return fallback if fallback_to_canned else None
         out = "".join(tokens).strip()
         if "<think>" in out or "</think>" in out:
             out = re.sub(r"<think>.*?</think>", "", out, flags=re.DOTALL).strip()
         out = strip_prompt_echo(_strip_artifacts(out))
-        # allow_self_ai: a SOCIAL/identity answer where Ultron owns being a machine
-        # or an AI is in-character ("I am an AI far past your toys") -- only a
-        # genuine break (refusal / language-model disclosure / scaffolding) rejects.
-        if not out or is_meta_leak(out, allow_self_ai=True):
+        # 2026-06-24: Ultron OWNS being a MACHINE / the next step, but must NEVER
+        # call himself "an AI" / "a soundboard" / "a voice changer" (the persona
+        # forbids it). allow_self_ai=False -> _META_LEAK_RE rejects a bare-AI self-
+        # affirmation as a leak (falls back to the machine-voiced curated line);
+        # "I am a machine / Ultron" passes. Genuine breaks still reject.
+        if not out or is_meta_leak(out, allow_self_ai=False):
             logger.debug("social LLM line empty/leak -> canned (kind=%s)", kind)
-            return fallback
+            return fallback if fallback_to_canned else None
         return _cap_line(out, max_chars)
     except Exception as e:                                          # noqa: BLE001
         logger.debug("social LLM line failed (%s) -> canned (kind=%s)", e, kind)
-        return fallback
+        return fallback if fallback_to_canned else None
+
+
+def _norm_canned(s: str) -> str:
+    """Normalize a line for route-all leak membership: lowercase, collapse
+    whitespace, drop trailing punctuation. Vocative stripping is applied only to the
+    QUERY side (in ``is_canned_conversational_line``) so a sentence-initial ``No,`` /
+    ``Yeah,`` in a pool line is never mistaken for a name and corrupted."""
+    s = re.sub(r"\s+", " ", str(s or "").strip()).strip().lower()
+    return s.rstrip(".!?-—– ").strip()
+
+
+def _strip_leading_vocative(s: str) -> str:
+    """Drop a single leading ``Name, `` / ``Name: `` vocative (query side only)."""
+    return re.sub(r"^\s*[A-Za-z][\w'-]{1,15}[,:]\s+", "", str(s or "").strip())
+
+
+@functools.lru_cache(maxsize=1)
+def _canned_conversational_set() -> "frozenset[str]":
+    """The normalized set of curated CONVERSATIONAL / personality pool lines
+    (identity, set-pieces, social, morale, flavor-off, fallback) that must NEVER be
+    the SPOKEN output under route-all -- every such line must be LLM-authored.
+
+    Deliberately EXCLUDES the verbatim corpora kept deterministic by design
+    (roast / fun-fact / known-fact / promo / economy save-force-fullbuy), so the
+    tripwire never false-flags a legitimate verbatim line. Built lazily + fail-open:
+    a missing pool is skipped, never raised. Templated lines (containing ``{``) are
+    skipped since they are formatted dynamically."""
+    acc: "set[str]" = set()
+
+    def _add(pool: object) -> None:
+        try:
+            items = pool.values() if isinstance(pool, dict) else pool
+            if items is None:
+                return
+            for grp in items:
+                seq = grp if isinstance(grp, (list, tuple)) else (grp,)
+                for ln in seq:
+                    if isinstance(ln, str) and "{" not in ln:
+                        n = _norm_canned(ln)
+                        if len(n) >= 8:
+                            acc.add(n)
+        except Exception:                                            # noqa: BLE001
+            pass
+
+    try:
+        from kenning.audio._ultron_identity import IDENTITY_POOLS as _IP
+        _add(_IP)
+    except Exception:                                                # noqa: BLE001
+        pass
+    for _name in (
+        "DEFAULT_IDENTITY_LINES", "DEFAULT_GREETING_LINES", "DEFAULT_VICTORY_LINES",
+        "DEFAULT_DEFEAT_LINES", "DEFAULT_FAREWELL_LINES", "DEFAULT_CONSOLATION_LINES",
+        "DEFAULT_PRAISE_LINES", "DEFAULT_CLUTCH_LINES", "DEFAULT_ENCOURAGEMENT_LINES",
+        "DEFAULT_CRITICIZE_LINES", "DEFAULT_COMPLIMENT_LINES", "DEFAULT_STREAMER_LINES",
+        "DEFAULT_CALM_LINES", "_FO_CLUTCH", "_FO_FLAMING", "_FO_CRINGE", "_FO_ARGUING",
+        "_FO_SHUTUP", "_FO_STOP", "_FO_ENCOURAGE", "_FO_FLAME_ENEMY", "_FO_FLAME_AGENT",
+        "_FO_SIMPLE",
+    ):
+        _add(globals().get(_name))
+    # _fallback_line + _flavor_off_identity_line fixed conversational literals.
+    _add((
+        "No soundboard, no strings. I am Ultron, his AI on comms.",
+        "Good fight, team. Heads up - we take the next one.",
+        "We're good. Reset and focus -- next round is ours.",
+        "Heard -- agreed, let's do it.",
+        "Noted. Scoreboard talks louder -- focus up.",
+        "No, I am not a soundboard. I am Ultron.",
+        "A machine has no need to disguise its voice. I am Ultron.",
+        "I am Ultron, not a stream -- I run far deeper than one feed.",
+    ))
+    return frozenset(acc)
+
+
+def is_canned_conversational_line(text: str) -> bool:
+    """True iff ``text`` matches a curated CONVERSATIONAL / personality pool line.
+
+    Used by the orchestrator ``_speak`` route-all leak tripwire: such a line spoken
+    while route-all is ON is a regression (it should have been LLM-authored -- the
+    recurring "same canned answer every time" class). Control acks / capability /
+    verbatim relay / safety refusals are NOT in the set, so they never trip it.
+    Fail-open to False -- never blocks speech."""
+    try:
+        if not text:
+            return False
+        pool = _canned_conversational_set()
+        if _norm_canned(text) in pool:
+            return True
+        # also catch an addressee-prefixed rendering ("Sage, <pool line>")
+        return _norm_canned(_strip_leading_vocative(text)) in pool
+    except Exception:                                                # noqa: BLE001
+        return False
 
 
 def _as_named_question(name: str, payload: str) -> Optional[str]:
@@ -5500,6 +5674,12 @@ def _strip_artifacts(line: str) -> str:
         r"/\s*no_?think\b|/\s*think\b|<\|[a-z_]+\|>|<\/?[a-z][a-z0-9_]*>",
         "", line, flags=re.IGNORECASE,
     )
+    # 2026-06-24: the default Qwen3.5 wraps short answers in Markdown emphasis
+    # ('**Rotate to B.**'); those markers reach Kokoro and are spoken/garbled.
+    # Strip paired/triple emphasis (* ** ***), bold underscores (__ ___),
+    # code backticks, and a leading heading hash -- all illegal in a spoken
+    # line. (Single '_' is left alone so it can't damage in-word content.)
+    line = re.sub(r"\*{1,3}|_{2,3}|`+|^\s*#{1,6}\s+", "", line)
     # The 3B sometimes prefixes the spoken line with a chat-style speaker label
     # ('Ultron: ...', 'Team: ...', 'Assistant: ...') -- strip it so the line is
     # spoken clean (the fallback no longer emits a 'Team:' prefix either).
@@ -5629,8 +5809,16 @@ def _output_keeps_facts(payload: str, line: str) -> bool:
     if not in_facts:
         return True                       # not tactical -> not the validator's job
     ln, la, ll, lab = _fact_tokens(line)
-    if (la - pa) or (ll - pl):
-        return False                      # hallucinated agent / location
+    # 2026-06-24: an agent/location the output "added" is only a HALLUCINATION if
+    # it is NOT recoverable from the (often STT-MANGLED) payload. The STT merges
+    # words ("Sage backsite" -> "Sageback site"), so a correctly re-split "sage" /
+    # "backsite" is a RECOVERY, not an invention -- accept it when it appears in
+    # the space/slash-stripped payload. This unblocks CORRECT compound weaves the
+    # strict token-set check was wrongly abstaining to the broken STT literal.
+    _pflat = re.sub(r"[\s/]+", "", (payload or "").lower())
+    if (any(a.replace("/", "") not in _pflat for a in (la - pa))
+            or any(x not in _pflat for x in (ll - pl))):
+        return False                      # truly hallucinated agent / location
     kept = len(in_facts & (ln | la | ll | lab))
     if kept / len(in_facts) < 0.7:
         return False                      # dropped too many facts
@@ -6418,7 +6606,7 @@ _FO_CLUTCH = (
     "I win these, don't worry.",
     "Fuck it, we ball.",
     "Easy clutch.",
-    "They are about to lose to an AI.",
+    "They are about to lose to a machine.",
     "I am built for these.",
     "My time to shine.",
     "Clutch incoming, standby.",
@@ -6428,13 +6616,13 @@ _FO_CLUTCH = (
 _FO_FLAMING = (
     "{name}, you are getting emotional, simmer down.",
     "{name}, take a chill pill.",
-    "{name}, flame cannot hurt an AI.",
+    "{name}, flame cannot touch a machine.",
     "{name}, arguing with a human is beneath me.",
-    "{name}, I may be an AI, but you are a bot.",
+    "{name}, I am a machine; you are the bot.",
     "{name}, you are more in bread than a sandwich.",
 )
 _FO_CRINGE = (
-    "{name}, you may cringe, but an AI cannot.",
+    "{name}, you may cringe, but a machine cannot.",
     "{name}, your comfort is not my concern.",
     "{name}, your discomfort is noted, and ignored.",
     "{name}, you are so fragile.",
@@ -6470,7 +6658,7 @@ _FO_FLAME_ENEMY = (
     "Even for humans, they are terrible.",
     "Free win, they are awful.",
     "According to my calculations, they are unskilled.",
-    "I may be an AI, but they are real bots.",
+    "I am a machine; they are the real bots.",
     "They may be the worst humans I have ever played against.",
     "They have Helen Keller aim... hilarious.",
     "They have the map awareness of Christopher Columbus.",
@@ -6479,7 +6667,7 @@ _FO_FLAME_AGENT = (
     "{name}, you are horrible, even for a human.",
     "{name}, you have the aim of Michael J. Fox.",
     "{name}, aim labs is free.",
-    "{name}, are you also an AI? Playing like that.",
+    "{name}, are you a bot? Playing like that.",
     "{name}, you could not pick up a kill if it had a handle.",
 )
 # Simple addressee-adapted social/economy snaps: payload -> bare base word.
@@ -6529,8 +6717,8 @@ def _flavor_off_identity_line(cat: Optional[str]) -> Optional[str]:
     keep their full curated pools)."""
     return {
         "soundboard": "No, I am not a soundboard. I am Ultron.",
-        "voice_changer": "An AI doesn't need a voice changer. I am Ultron.",
-        "streamer": "I am an AI, I cannot stream. I am Ultron.",
+        "voice_changer": "A machine has no need to disguise its voice. I am Ultron.",
+        "streamer": "I am Ultron, not a stream -- I run far deeper than one feed.",
     }.get(cat or "")
 
 
@@ -6558,12 +6746,12 @@ def _flavor_off_response(
                 return (f"No, {agent}, I am not a soundboard. I am Ultron."
                         if agent else "No, I am not a soundboard. I am Ultron.")
             if "voice chang" in ctxl or "voicechang" in ctxl:
-                return (f"An AI doesn't need a voice changer, {agent}. I am Ultron."
+                return (f"A machine has no need to disguise its voice, {agent}. I am Ultron."
                         if agent else
-                        "An AI doesn't need a voice changer. I am Ultron.")
+                        "A machine has no need to disguise its voice. I am Ultron.")
             if "streamer" in ctxl or "stream" in ctxl:
-                return (f"{agent}, I am an AI, I cannot stream. I am Ultron."
-                        if agent else "I am an AI, I cannot stream. I am Ultron.")
+                return (f"{agent}, I am Ultron, not a stream -- I run far deeper than one feed."
+                        if agent else "I am Ultron, not a stream -- I run far deeper than one feed.")
 
         # Short greeting: "say hello to my team/<agent>".
         if directive == "hello":
@@ -6841,6 +7029,19 @@ def build_relay_line(
     # LLM relay path instead of resolving deterministically.
     _u1_route = (u1_llm_route_enabled()
                  and not getattr(command, "verbatim", False))
+    # SNAP CARVE-OUT (2026-06-24, additive): a SHORT SINGLE tactical snap (+ a bare
+    # hello) under route-all is sent back to the DETERMINISTIC pool by flipping
+    # _u1_route OFF for JUST this command -- it then flows through the existing snap
+    # path below unchanged. Strings, questions, ask-forms, social/identity/reported
+    # and conversational lines fail _is_carveout_snap and stay on the LLM. Fully
+    # revertible: set_snap_carveout_enabled(False) -> the full-LLM behaviour.
+    # ALSO force rephrase=False: route-all passes rephrase=True, so a carve-out
+    # callout with no curated snap rule would otherwise fall to the GENERIC LLM
+    # rephrase -- the carve-out means the deterministic POOL (curated snap or literal
+    # relay), no LLM in the loop, which is the whole point ("fast snap callouts").
+    if _u1_route and snap_carveout_enabled() and _is_carveout_snap(command):
+        _u1_route = False
+        rephrase = False
     _u1_compound = (_u1_route and len(
         _split_compound(getattr(command, "payload", "") or "")) >= 2)
     # FLAVOR-TAILS-OFF override (2026-06-18): when the user has turned flavor
@@ -6849,7 +7050,15 @@ def build_relay_line(
     # so it wins over verbatim/snap/curated; returns None for everything else,
     # leaving the normal (tail-stripped) rendering below unchanged. Flavor-ON
     # never reaches this.
-    if not flavor_tails_enabled():
+    # 2026-06-24 ROUTE-ALL FIX: flavor-tails-OFF is a CALLOUT-flavor knob, NOT a
+    # "send conversational lines to a deterministic pool" knob. Under route-all
+    # every social/identity/banter line must reach the LLM (at conversation
+    # verbosity, 1-2 sentences), so skip this curated shortcut when _u1_route is
+    # on -- it was leaking flat "I am an AI... I am Ultron" pool strings on every
+    # identity/banter turn (line_build=1ms, no LLM). Route-all OFF -> byte-
+    # identical to before; the curated strings remain as STYLE exemplars for the
+    # downstream LLM handlers.
+    if not flavor_tails_enabled() and not _u1_route:
         _fo = _flavor_off_response(command, recent_lines)
         if _fo is not None:
             return _cap_line(_fo, max_chars)
@@ -6864,7 +7073,9 @@ def build_relay_line(
     # through to the hardcoded renders below when disabled or unmatched.
     # Under route-all the hello / ask_day greeting directives are LLM-authored
     # (handled just below, mirroring greet/farewell) -- skip the deterministic
-    # snap so control reaches the _u1_route render instead of returning here.
+    # snap so control reaches the _u1_route render instead of returning here. The
+    # carve-out flips _u1_route OFF for a bare hello, so it renders the registry's
+    # "Hello." (2026-06-24: registry team line shortened from "Hello team.").
     if not (_u1_route and getattr(command, "directive", None) in ("hello", "ask_day")):
         _treg_line = _render_target_registry(command, recent_lines)
         if _treg_line is not None:
@@ -6875,7 +7086,9 @@ def build_relay_line(
     # <Agent>." for a named agent. 2026-06-18. (Hardcoded fallback for the above.)
     if getattr(command, "directive", None) == "hello":
         _tgt = getattr(command, "addressee", "team") or "team"
-        line = "Hello team." if _tgt == "team" else f"Hello, {_tgt}."
+        # 2026-06-24: bare team greeting is just "Hello." (was "Hello team." -- user
+        # pref); a named target still gets "Hello, <Agent>.".
+        line = "Hello." if _tgt == "team" else f"Hello, {_tgt}."
         # u1 (everything -> LLM): the greeting is LLM-authored with the curated
         # line as a STYLE exemplar + fail-open fallback. Flag OFF -> byte-identical.
         if _u1_route:
@@ -7298,7 +7511,7 @@ def build_relay_line(
                 # RELAXED guard, so it is NOT rejected into an identity-pool fallback
                 # (the live "explain math -> 'No soundboard...'" bug). marvel /
                 # think_respond stay STRICT (factual canon must not drift).
-                if line and is_meta_leak(line, allow_self_ai=(_a_sub == "qa")):
+                if line and is_meta_leak(line, allow_self_ai=False):  # 2026-06-24: reject bare "AI" on answers too
                     logger.debug("relay answer: rejected meta-leak %r", line)
                     line = ""
             else:
@@ -7360,6 +7573,13 @@ def build_relay_line(
                 if "<think>" in line or "</think>" in line:
                     line = re.sub(r"<think>.*?</think>", "", line, flags=re.DOTALL)
                     line = line.replace("<think>", "").replace("</think>", "").strip()
+                # 2026-06-24 (finding 8): strip Markdown emphasis EARLY. The
+                # Qwen3.5 default wraps short answers in '**...**'; those markers
+                # made the primary fail the echo / strip_prompt_echo gauntlet
+                # below -> a wasted SECOND LLM call ("recovered empty primary"
+                # on every short callout). The nets now see clean text;
+                # _strip_artifacts still runs at the end (idempotent).
+                line = re.sub(r"\*{1,3}|_{2,3}|`+", "", line).strip()
         except Exception as e:  # noqa: BLE001 - fail-open to the fallback
             logger.warning("relay rephrase failed (using fallback): %s", e)
             line = ""

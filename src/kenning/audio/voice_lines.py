@@ -363,7 +363,9 @@ class TargetSnapRule:
 TARGET_SNAP_REGISTRY: tuple = (
     TargetSnapRule(
         "hello", _HELLO_RE,
-        team_lines=("Hello team.",),
+        # 2026-06-24: bare team greeting is just "Hello." (was "Hello team." --
+        # user pref); a named target still gets "Hello, <Agent>.".
+        team_lines=("Hello.",),
         agent_templates=("Hello, {name}.",),
         skip_if_contains=("introduce",),
     ),

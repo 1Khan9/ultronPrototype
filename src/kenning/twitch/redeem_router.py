@@ -48,6 +48,7 @@ from kenning.twitch.economy.games import (
     Trivia,
     WheelSegment,
 )
+from kenning.twitch.economy.ledger import Ledger
 from kenning.twitch.economy.rng import ProvablyFairRNG
 
 logger = logging.getLogger("kenning.twitch.redeem_router")
@@ -55,8 +56,19 @@ logger = logging.getLogger("kenning.twitch.redeem_router")
 __all__ = [
     "make_redeem_drain_fn",
     "DEFAULT_REWARD_MAP",
+    "REDEEM_SLOTS_WIN",
+    "REDEEM_DUEL_WAGER",
+    "REDEEM_HEIST_POT",
     "RedeemRouter",
 ]
+
+# House-funded payout amounts for the SINGLE-redeem games. A channel-point redeem
+# already cost the viewer Twitch's native points, so the economy game pays out
+# (credit only -- never a ledger debit). Keyed on the redemption id so an EventSub
+# replay never double-pays.
+REDEEM_SLOTS_WIN = 500     # paid on a redeem-slots triple
+REDEEM_HEIST_POT = 100     # the lone-redeemer heist pot (WIN pays it back, PARTIAL half)
+REDEEM_DUEL_WAGER = 100    # the duel-vs-house wager (paid on a redeemer win)
 
 
 # --------------------------------------------------------------------------- #
@@ -215,9 +227,15 @@ class RedeemRouter:
         announce_fn: Callable[[str], Any] | None = None,
         overlay_emit: Callable[[dict], Any] | None = None,
         games: dict[str, Any] | None = None,
+        ledger: Ledger | None = None,
         dedup_max: int = 2048,
     ) -> None:
         self._drain = drain_fn
+        # Optional ledger: when present, a redeem game's outcome credits the
+        # redeemer's balance (house-funded, keyed on the redemption id). None ->
+        # the games still run + announce + overlay, just without a currency move
+        # (byte-identical to the pre-ledger router for every existing caller).
+        self._ledger = ledger
         self._rng = rng if rng is not None else ProvablyFairRNG()
         # Lowercase the reward map keys defensively (callers may pass mixed case).
         rmap = reward_map if reward_map is not None else DEFAULT_REWARD_MAP
@@ -318,6 +336,7 @@ class RedeemRouter:
 
         title = str(ev.get("reward_title") or "")
         viewer = str(ev.get("chatter_login") or ev.get("chatter_name") or "")
+        uid = str(ev.get("chatter_user_id") or ev.get("user_id") or "")
         user_input = str(ev.get("user_input") or "")
         action = self._reward_map.get(title.strip().lower())
 
@@ -338,7 +357,7 @@ class RedeemRouter:
             logger.warning("redeem action %r has no runner; emitted generic", action)
             return None
 
-        line, event = runner(self, viewer or "someone", user_input, redemption_id)
+        line, event = runner(self, viewer or "someone", uid, user_input, redemption_id)
         if line:
             self._announce_safe(line)
         self._emit(event)
@@ -355,12 +374,13 @@ class RedeemRouter:
         """Mint a fresh provably-fair round (server_seed + commit)."""
         return self._rng.new_round()
 
-    def _run_wheel(self, viewer: str, user_input: str, rid: str) -> tuple[str, dict]:
+    def _run_wheel(self, viewer: str, uid: str, user_input: str, rid: str) -> tuple[str, dict]:
         rnd = self._round()
         nonce = self._next_nonce("wheel")
         res = self._wheel().spin(rnd.server_seed, nonce=nonce)
         label = res.segment.label
-        line = f"Wheel landed on {label} for {viewer}."
+        credited = self._credit(uid, res.segment.payout, "wheel", rid)
+        line = f"Wheel landed on {label} for {viewer}." + (f" +{credited}." if credited else "")
         event = {
             "type": "redeem_result",
             "game": "wheel",
@@ -369,6 +389,7 @@ class RedeemRouter:
             "detail": {
                 "index": res.index,
                 "payout": res.segment.payout,
+                "credited": credited,
                 "target_angle": res.target_angle,
                 "commit": rnd.commit,
                 "server_seed": rnd.server_seed,
@@ -377,13 +398,14 @@ class RedeemRouter:
         }
         return line, event
 
-    def _run_slots(self, viewer: str, user_input: str, rid: str) -> tuple[str, dict]:
+    def _run_slots(self, viewer: str, uid: str, user_input: str, rid: str) -> tuple[str, dict]:
         rnd = self._round()
         nonce = self._next_nonce("slots")
         res = self._slots().pull(rnd.server_seed, nonce=nonce)
         reels = " | ".join(res.reels)
+        credited = self._credit(uid, REDEEM_SLOTS_WIN if res.is_win else 0, "slots", rid)
         if res.is_win:
-            line = f"Slots hit triple {res.win_symbol} for {viewer}. Jackpot."
+            line = f"Slots hit triple {res.win_symbol} for {viewer}. Jackpot +{credited}."
             outcome = f"WIN:{res.win_symbol}"
         else:
             line = f"Slots landed {reels} for {viewer}. No match."
@@ -397,6 +419,7 @@ class RedeemRouter:
                 "reels": list(res.reels),
                 "is_win": res.is_win,
                 "win_symbol": res.win_symbol,
+                "credited": credited,
                 "commit": rnd.commit,
                 "server_seed": rnd.server_seed,
                 "nonce": nonce,
@@ -404,15 +427,16 @@ class RedeemRouter:
         }
         return line, event
 
-    def _run_heist(self, viewer: str, user_input: str, rid: str) -> tuple[str, dict]:
+    def _run_heist(self, viewer: str, uid: str, user_input: str, rid: str) -> tuple[str, dict]:
         rnd = self._round()
         nonce = self._next_nonce("heist")
         # Single-redeem heist: the redeemer is the lone participant with a fixed
         # token pot, resolved immediately (the simplest meaningful behaviour).
-        pot = 100
+        pot = REDEEM_HEIST_POT
         res = self._heist().resolve(rnd.server_seed, [viewer], pot, nonce=nonce)
+        credited = self._credit(uid, res.payout_per_head, "heist", rid)
         line = (
-            f"Heist {res.outcome} for {viewer}. Payout {res.payout_per_head}."
+            f"Heist {res.outcome} for {viewer}." + (f" +{credited}." if credited else " No payout.")
         )
         event = {
             "type": "redeem_result",
@@ -423,6 +447,7 @@ class RedeemRouter:
                 "participants": list(res.participants),
                 "pot": res.pot,
                 "payout_per_head": res.payout_per_head,
+                "credited": credited,
                 "commit": rnd.commit,
                 "server_seed": rnd.server_seed,
                 "nonce": nonce,
@@ -430,19 +455,20 @@ class RedeemRouter:
         }
         return line, event
 
-    def _run_duel(self, viewer: str, user_input: str, rid: str) -> tuple[str, dict]:
+    def _run_duel(self, viewer: str, uid: str, user_input: str, rid: str) -> tuple[str, dict]:
         rnd = self._round()
         nonce = self._next_nonce("duel")
         # Single-redeem duel: the redeemer challenges "the house". A distinct,
         # non-equal target keeps Duel.resolve happy and is deterministic.
         target = "the_house" if viewer != "the_house" else "the_challenger"
-        wager = 100
+        wager = REDEEM_DUEL_WAGER
         res = self._duel().resolve(
             rnd.server_seed, viewer, target, wager, nonce=nonce
         )
         won = res.winner == viewer
+        credited = self._credit(uid, wager if won else 0, "duel", rid)
         line = (
-            f"{viewer} won the duel against the house."
+            f"{viewer} won the duel against the house. +{credited}."
             if won
             else f"{viewer} lost the duel to the house."
         )
@@ -455,6 +481,7 @@ class RedeemRouter:
                 "winner": res.winner,
                 "loser": res.loser,
                 "wager": res.wager,
+                "credited": credited,
                 "challenger": res.challenger,
                 "target": res.target,
                 "commit": rnd.commit,
@@ -464,7 +491,7 @@ class RedeemRouter:
         }
         return line, event
 
-    def _run_trivia(self, viewer: str, user_input: str, rid: str) -> tuple[str, dict]:
+    def _run_trivia(self, viewer: str, uid: str, user_input: str, rid: str) -> tuple[str, dict]:
         rnd = self._round()
         nonce = self._next_nonce("trivia")
         # Single-redeem trivia: draw + announce a question (chat answers it later;
@@ -486,7 +513,7 @@ class RedeemRouter:
         }
         return line, event
 
-    def _run_raffle(self, viewer: str, user_input: str, rid: str) -> tuple[str, dict]:
+    def _run_raffle(self, viewer: str, uid: str, user_input: str, rid: str) -> tuple[str, dict]:
         rnd = self._round()
         nonce = self._next_nonce("raffle")
         raffle = self._raffle()
@@ -518,7 +545,7 @@ class RedeemRouter:
         return line, event
 
     # Action key -> bound runner. Defined once at class scope.
-    _RUNNERS: dict[str, Callable[[RedeemRouter, str, str, str], tuple[str, dict]]] = {
+    _RUNNERS: dict[str, Callable[[RedeemRouter, str, str, str, str], tuple[str, dict]]] = {
         "wheel": _run_wheel,
         "slots": _run_slots,
         "heist": _run_heist,
@@ -526,6 +553,27 @@ class RedeemRouter:
         "trivia": _run_trivia,
         "raffle": _run_raffle,
     }
+
+    # -- ledger (house-funded payout, redemption-id keyed) ----------------- #
+    def _credit(self, uid: str, amount: object, game: str, rid: str) -> int:
+        """Credit a house-funded payout to the redeemer's ledger balance, keyed on
+        the redemption id so an EventSub replay never double-pays. No-op without a
+        ledger / uid / positive amount. Returns the amount actually credited."""
+        if self._ledger is None or not uid:
+            return 0
+        try:
+            amt = int(amount)
+        except (TypeError, ValueError):
+            return 0
+        if amt <= 0:
+            return 0
+        key = f"redeem:{game}:{rid}" if rid else f"redeem:{game}:{uid}:{self._next_nonce(game + ':credit')}"
+        try:
+            self._ledger.credit(uid, amt, f"{game} redeem", key)
+            return amt
+        except Exception as exc:  # noqa: BLE001 — a credit fault never breaks the tick
+            logger.warning("redeem credit failed game=%s uid=%s: %s", game, uid, exc)
+            return 0
 
     # -- sinks (fail-safe) ------------------------------------------------- #
     def _announce_safe(self, line: str) -> None:

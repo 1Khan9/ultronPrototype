@@ -1490,8 +1490,11 @@ class CapabilityVoiceController:
         return {
             "qwen3.5-9b": "the 9B",
             "qwen3.5-4b": "the 4B",
-            "josiefied-qwen3-8b": "the 8B",
+            "josiefied-qwen3-8b": "the Q5 8B",
+            "josiefied-qwen3-8b-iq3xs": "the 8B",        # 2026-06-24: the live spec 8B
             "josiefied-qwen3-4b": "the 4B",
+            "huihui-qwen3.5-4b": "the 3.5",              # 2026-06-24 A/B
+            "josiefied-qwen3-4b-2507g": "the 2507 4B",   # 2026-06-24 A/B
         }.get(preset, preset)
 
     # --- Phase 13: system-status voice queries -----------------------------

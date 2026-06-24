@@ -80,6 +80,44 @@
 > window wins a house-funded `trivia_prize`; round closes atomically BEFORE crediting → no double-award on replay.
 > Timeout path announces the answer. +5 tests; full twitch suite 779 green.
 >
+> **All chat games + redeem/moderation gaps closed (2026-06-24):** `ChatGameRouter` now wires the multi-viewer /
+> transfer games too — `!heist` (join-window group bet; `economy/games.Heist` gained `house_bonus_pct` so a WIN
+> profits while staying a net sink), `!duel @user <bet>`+`!accept` (new `CommandKind.ACCEPT`; 1v1 escrow, winner
+> takes 2×), `!raffle`/`!enter` (new `CommandKind.RAFFLE`; mod-opened window via the stateful `Raffle`, house
+> `raffle_prize`), `!give @user <bet>` (gated `transfers_enabled`; login→uid from the presence map; two keyed legs),
+> `!wheel` (per-stream free spin → ledger payout). New `TwitchEconomyConfig` fields: `heist_window_seconds`/
+> `heist_house_bonus_pct`/`heist_min_players`/`duel_window_seconds`/`raffle_window_seconds`/`raffle_prize`/
+> `wheel_free_per_stream`. Timed games resolve in `tick()` at their deadline (`_expire_heist`/`_expire_duels`/
+> `_expire_raffle`). `redeem_router.py` is now ledger-backed (`ledger=` ctor arg; `_credit(uid, …, rid)` keyed on
+> `redemption_id`; `REDEEM_SLOTS_WIN`/`REDEEM_HEIST_POT`/`REDEEM_DUEL_WAGER`); the orchestrator shares ONE `Ledger`
+> between the redeem + chat-game routers. Voice **DELETE** plumbed cross-process: `twitch_read_sidecar.RollingBuffer`
+> keeps a `{login→last message_id}` index + `GET /last_message?login=X`; `ModerationService(message_id_lookup=…)`;
+> `twitch_write_sidecar._make_message_id_lookup` GETs it → `confirm()` calls `HelixClient.delete_message`. Redeem
+> **EventSub 400 fixed**: `EventSubChatSource` now opens a SEPARATE redeem websocket (`redeem_connect_factory`,
+> `_poll_redeems`, `_subscribe_redeem_only`) so the chat sub (bot token) and redeem sub (broadcaster token) never
+> share a session. `mass_action_limit_per_60s` threaded into `ModerationGuard`; `!leaderboard` shows logins. Full
+> `tests/twitch` suite **858 passed**. Go-live runbook: `docs/twitch_integration/FIRST_STREAM_CHECKLIST.md`.
+>
+> **Chat-reply/moderation completion + viewer comms (2026-06-24, pass 2):** NEW
+> `src/kenning/twitch/moderation/chat_settings.py` — a deterministic regex parser (`parse_chat_settings`,
+> stdlib-only) mapping spoken streamer commands to Helix chat-settings: slow / followers-only / subscribers-only
+> / emote-only / unique-chat toggles (with durations) + clear-chat. Wired end-to-end: `HelixClient.clear_chat`
+> (DELETE /moderation/chat) + `ModerationService.apply_chat_settings` (direct apply, fail-safe — these are
+> reversible + channel-scoped, so no two-phase read-back) + write-sidecar `POST /chat_settings` +
+> `ModerationRemote.chat_settings` + orchestrator `_maybe_handle_twitch_chat_settings` (CHEAP local parse gate so
+> ordinary speech never round-trips; wired into BOTH voice dispatch sites). NEW
+> `src/kenning/twitch/clients/chat_send.py` — `ChatSendClient` (Helix `POST /chat/messages`, bot token,
+> `user:write:chat`, 500-char clamp, injected transport, fail-safe) + write-sidecar `POST /say` + bot-token load
+> in `build_service_state` + `KENNING_TWITCH_BOT_TOKEN_PATH`. NEW `src/kenning/twitch/panel.py`
+> (`build_commands_panel_text`) + an orchestrator daemon thread (`twitch-commands-panel`, default-OFF
+> `twitch.chat.commands_panel_enabled`) that loopback-POSTs the barebones command list to the write sidecar `/say`
+> every `commands_panel_interval_minutes` (15), ending with `commands_panel_doc_url`; first post waits one
+> interval. One-page viewer guide `docs/twitch_integration/ULTRON_VIEWER_GUIDE.docx` (generated via
+> `scripts/_gen_viewer_guide.js`). Idempotency hardening: `chat_games._event_key` (message_id else a content-hash
+> surrogate) now keys BOTH the command-dedup and every ledger leg → an empty-message_id chat event can no longer
+> double-spend on replay (the wall-clock fallback is gone). Full `tests/twitch` **882 passed / 1 skip**
+> (982 with `tests/subprocess`); relay/intent 190 green; golden unchanged; stub-scan clean.
+>
 > **Mistral default revert + spec-decoding auto-toggle (commit `7767b22`):** default `preset` reverted from
 > `josiefied-qwen3-8b-iq3xs` back to `mistral-7b-v0.3-abliterated` (latency regression). `_apply_preset`
 > auto-manages `draft_kind`: if the preset has NO `draft_model_path` → force `"none"` (overrides any stale YAML
@@ -7011,7 +7049,20 @@ Production infra for never leaking child processes (the embedder sidecar + any s
   `reap_stray_sidecars(hints=None, keep_pid=None)` (cmdline reaper across roles; `reap_stray_embedders` now
   delegates), `reclaim_port(host, port)` (kill the LISTEN holder so a restart reclaims the port; never self),
   `guard_singleton(host, port, role)` (pre-bind: reap strays + reclaim port), per-role pidfiles
-  (`role_pidfile`/`write_role`/`clear_role`).
+  (`role_pidfile`/`write_role`/`clear_role`). **2026-06-23 venvlauncher SELF-REAP FIX:** `.venv\Scripts\
+  python.exe` is a launcher that spawns the base python as a CHILD, so every `Popen([sys.executable, X])`
+  is a launcher+child pair both carrying `X` in cmdline. A sidecar child's `guard_singleton`→
+  `reap_stray_sidecars` cmdline-matched its OWN launcher parent and `kill_process_tree`d it — killing
+  itself (~4-12 s). `reap_stray_sidecars` now skips `_ancestor_pids(me)` (never reap an ancestor — killing
+  it kills us) AND `keep_pid`'s descendants (the kept sidecar's launcher child); `KENNING_REAP_SKIP_
+  ANCESTORS=0` restores the old behaviour to reproduce the bug. Tests: `test_sidecar_singleton.py`
+  (`_ancestor_pids` parent, ancestor-skip launcher-spared/stray-reaped, env-off repro). Detail:
+  `docs/ultron_1_0/twitch_sidecar_selfreap_debug.md`.
+- `orchestrator._start_twitch_sidecars` (2026-06-23): sidecar stdout/stderr → `logs/twitch_sidecars/<role>.log`
+  (was DEVNULL — a startup death left zero trace, which hid the self-reap bug; handles kept on
+  `self._twitch_sidecar_logs`, closed in `_kill_twitch_sidecars`) + a boot **health canary** daemon that
+  probes every sidecar `/healthz` ~18 s after spawn and logs one `twitch sidecar health canary OK/DEGRADED`
+  line so a dead sidecar can never again be invisible.
 - `sidecar_server.py` — **`SingletonThreadingHTTPServer`** (2026-06-21): exclusive bind (`allow_reuse_address=False`
   + Windows `SO_EXCLUSIVEADDRUSE`) so a SECOND process can never co-bind a sidecar port (the fix for the stale
   guard sidecars co-bound to :8774). Used by the twitch guard/read/overlay sidecars; `embedder_server.py` has an

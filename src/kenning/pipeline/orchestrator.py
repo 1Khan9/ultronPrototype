@@ -1183,6 +1183,11 @@ class Orchestrator:
         self._speculative_relay_text: Optional[str] = None
         self._speculative_relay_line: Optional[str] = None
         self._speculative_relay_invalidated = False
+        # Latency: timestamp of the last speech chunk (~ when the user stopped
+        # talking). Pairs with _turn_proc_t0 (turn-close) so the latency log can
+        # report the TRUE speech-end -> first-audio latency (what the user feels)
+        # next to the misleading turn-close -> audio metric.
+        self._speech_end_t0: Optional[float] = None
         self.addressing = self._load_addressing_classifier()
         self.web_gate, self.web_executor, self.ack_source = (
             self._load_web_search_if_enabled()
@@ -4092,9 +4097,26 @@ class Orchestrator:
                     # sample. Pairs with the "relay timing" line above (line-build
                     # + synth) to spot regressions without re-instrumenting.
                     _t0 = getattr(self, "_turn_proc_t0", None)
+                    _se = getattr(self, "_speech_end_t0", None)
                     if _t0 is not None:
-                        logger.info("RESPONSE LATENCY: turn-close -> first audio "
-                                    "= %.0f ms", (time.perf_counter() - _t0) * 1000.0)
+                        _now = time.perf_counter()
+                        # TRUE perceived latency = speech-end -> first audio. The
+                        # turn-close -> audio metric HIDES the pre-turn-close wait
+                        # (silence window / early-complete), so it under-reports
+                        # what the user actually feels. Log both + the hidden gap.
+                        if _se is not None and _se <= _t0:
+                            logger.info(
+                                "RESPONSE LATENCY: SPEECH-END -> first audio = "
+                                "%.0f ms (turn-close -> audio = %.0f ms; "
+                                "pre-turn-close wait = %.0f ms)",
+                                (_now - _se) * 1000.0,
+                                (_now - _t0) * 1000.0,
+                                (_t0 - _se) * 1000.0,
+                            )
+                        else:
+                            logger.info(
+                                "RESPONSE LATENCY: turn-close -> first audio "
+                                "= %.0f ms", (_now - _t0) * 1000.0)
                 except Exception:                                    # noqa: BLE001
                     pass
                 seconds = play_to_device(pcm, sr, device, cancel_event=_ri)
@@ -6398,11 +6420,20 @@ class Orchestrator:
             # here -- before the LLM check -- gated on twitch.economy.enabled (which
             # is also what makes the read sidecar subscribe to redeems).
             self._twitch_redeem_router = None
+            self._twitch_ledger = None
             try:
                 if getattr(getattr(tcfg, "economy", None), "enabled", False):
+                    from kenning.config import resolve_path as _rp
+                    from kenning.twitch.economy.ledger import Ledger
                     from kenning.twitch.redeem_router import (
                         RedeemRouter, make_redeem_drain_fn,
                     )
+                    _ecfg0 = getattr(tcfg, "economy", None)
+                    # ONE ledger singleton, shared by the redeem router (here) and
+                    # the chat-game router (below) so a redeem payout and a chat-game
+                    # bet move the SAME balance. Closed once on shutdown.
+                    self._twitch_ledger = Ledger(str(_rp(getattr(
+                        _ecfg0, "db_path", "data/twitch/economy.db"))))
                     read_ep = str(getattr(tcfg, "read_sidecar_endpoint",
                                           "http://127.0.0.1:8773"))
                     ov = getattr(self, "_twitch_overlay_server", None)
@@ -6411,6 +6442,7 @@ class Orchestrator:
                         make_redeem_drain_fn(read_ep),
                         announce_fn=self._speak,
                         overlay_emit=overlay_emit,
+                        ledger=self._twitch_ledger,
                     )
                     self._twitch_redeem_router = router
                     self._twitch_chat_stop = False
@@ -6438,21 +6470,25 @@ class Orchestrator:
             # singleton; the router's last_message_id index feeds voice
             # delete-moderation. The abliterated model is never in this path.
             self._twitch_chat_game_router = None
-            self._twitch_ledger = None
             try:
                 _ecfg = getattr(tcfg, "economy", None)
                 if (getattr(_ecfg, "enabled", False)
                         and getattr(_ecfg, "chat_commands_enabled", False)):
-                    from kenning.config import resolve_path as _rp
                     from kenning.twitch.economy.chat_games import (
                         ChatGameRouter, make_chat_command_drain_fn,
                     )
-                    from kenning.twitch.economy.ledger import Ledger
                     read_ep = str(getattr(tcfg, "read_sidecar_endpoint",
                                           "http://127.0.0.1:8773"))
-                    ledger = Ledger(str(_rp(getattr(
-                        _ecfg, "db_path", "data/twitch/economy.db"))))
-                    self._twitch_ledger = ledger
+                    # Reuse the ONE ledger built in the redeem block above (economy.
+                    # enabled is a precondition of chat_commands_enabled). Build it
+                    # defensively only if that block somehow did not.
+                    ledger = self._twitch_ledger
+                    if ledger is None:
+                        from kenning.config import resolve_path as _rp
+                        from kenning.twitch.economy.ledger import Ledger
+                        ledger = Ledger(str(_rp(getattr(
+                            _ecfg, "db_path", "data/twitch/economy.db"))))
+                        self._twitch_ledger = ledger
                     cgr = ChatGameRouter(
                         make_chat_command_drain_fn(read_ep),
                         ledger=ledger, cfg=_ecfg, announce_fn=self._speak,
@@ -6477,7 +6513,57 @@ class Orchestrator:
             except Exception as e:                                   # noqa: BLE001
                 logger.warning("twitch chat-game router init failed: %s", e)
                 self._twitch_chat_game_router = None
-                self._twitch_ledger = None
+                # NOTE: do NOT null self._twitch_ledger here -- it is owned by the
+                # redeem block above and still in use by the redeem router; it is
+                # closed exactly once on shutdown.
+
+            # Periodic commands-panel poster: every N minutes the bot posts the
+            # command list to chat (a loopback POST to the write sidecar /say, which
+            # sends AS THE BOT). Default-OFF; independent of the LLM. The first post
+            # waits one full interval so boot is never spammed.
+            self._twitch_panel_thread = None
+            try:
+                _chcfg = getattr(tcfg, "chat", None)
+                if getattr(_chcfg, "commands_panel_enabled", False):
+                    from kenning.twitch.panel import build_commands_panel_text
+                    _write_ep = str(getattr(tcfg, "write_sidecar_endpoint",
+                                            "http://127.0.0.1:8777")).rstrip("/")
+                    _interval_s = max(
+                        60.0,
+                        float(getattr(_chcfg, "commands_panel_interval_minutes", 15)) * 60.0)
+                    import json as _pjson
+                    import threading as _pth
+                    import time as _ptime
+                    import urllib.request as _purl
+
+                    def _panel_loop() -> None:
+                        while not getattr(self, "_twitch_chat_stop", False):
+                            waited = 0.0
+                            while waited < _interval_s:        # 1s slices -> prompt shutdown
+                                if getattr(self, "_twitch_chat_stop", False):
+                                    return
+                                _ptime.sleep(1.0)
+                                waited += 1.0
+                            try:
+                                _body = _pjson.dumps(
+                                    {"text": build_commands_panel_text(_chcfg)}).encode("utf-8")
+                                _req = _purl.Request(
+                                    f"{_write_ep}/say", data=_body, method="POST",
+                                    headers={"Content-Type": "application/json"})
+                                with _purl.urlopen(_req, timeout=5) as _r:  # nosec B310 - loopback
+                                    _r.read()
+                            except Exception as _pe:           # noqa: BLE001 - never crash the loop
+                                logger.debug("twitch commands-panel post failed: %s", _pe)
+
+                    self._twitch_chat_stop = False
+                    _t = _pth.Thread(target=_panel_loop, daemon=True,
+                                     name="twitch-commands-panel")
+                    _t.start()
+                    self._twitch_panel_thread = _t
+                    logger.info("twitch commands-panel poster started (every %d min)",
+                                int(_interval_s // 60))
+            except Exception as e:                                       # noqa: BLE001
+                logger.warning("twitch commands-panel init failed: %s", e)
 
             if getattr(self, "llm", None) is None:
                 logger.warning("twitch: no LLM engine loaded; chat-REPLY disabled "
@@ -6579,6 +6665,11 @@ class Orchestrator:
             logger.warning("twitch sidecars: interpreter %r missing; none spawned", py)
             return
         procs: list = []
+        # Per-role sidecar log file handles (was DEVNULL -> every sidecar log,
+        # incl. a startup death, was silently discarded; that is why the self-reap
+        # bug stayed invisible). Kept on self so they outlive this method; closed in
+        # _kill_twitch_sidecars. 2026-06-23.
+        self._twitch_sidecar_logs = []
         # Cross-process SPAWN LOCK (ROOT fix for the sidecar mutual-reap war):
         # launching via the venv python spawns a system-python `-m kenning` twin
         # (venv->system handoff for the CUDA build), and BOTH processes reach this
@@ -6630,11 +6721,28 @@ class Orchestrator:
                 _pp = env.get("PYTHONPATH", "")
                 env["PYTHONPATH"] = _src_dir + (os.pathsep + _pp if _pp else "")
             env.update(spec.env)
+            # Sidecar stdout+stderr -> a per-role log file (was DEVNULL). Fail-open
+            # to DEVNULL. The child inherits the handle; we keep a ref so the GC
+            # can't close it mid-run, and close them all in _kill_twitch_sidecars.
+            _log_target = subprocess.DEVNULL
+            try:
+                _ld = os.path.join(os.getcwd(), "logs", "twitch_sidecars")
+                os.makedirs(_ld, exist_ok=True)
+                _log_target = open(                              # noqa: SIM115
+                    os.path.join(_ld, f"{spec.role}.log"),
+                    "a", buffering=1, encoding="utf-8", errors="replace",
+                )
+                self._twitch_sidecar_logs.append(_log_target)
+            except Exception:                                        # noqa: BLE001
+                _log_target = subprocess.DEVNULL
             try:
                 proc = subprocess.Popen(
                     [py, script_path, str(spec.port)],
                     env=env,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    stdout=_log_target,
+                    stderr=(subprocess.STDOUT
+                            if _log_target is not subprocess.DEVNULL
+                            else subprocess.DEVNULL),
                     cwd=os.getcwd(),
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
@@ -6652,6 +6760,53 @@ class Orchestrator:
                         "-- ISOLATED process, no transport/model in THIS process",
                         spec.role, proc.pid, spec.port)
         self._twitch_sidecar_procs = procs
+
+        # Boot health CANARY (2026-06-23): the self-reap bug was invisible for so
+        # long precisely because NOTHING checked the sidecars after spawn -- they
+        # died silently into DEVNULL. A daemon thread now probes every sidecar's
+        # /healthz a few seconds after spawn and logs ONE clear PASS/DEGRADED line,
+        # so a dead sidecar can never again pass unnoticed. Fail-open; never blocks
+        # boot. Skipped under pytest.
+        if "pytest" not in _sys_mod.modules:
+            _canary_targets = [(s.role, int(s.port)) for s in specs
+                               if getattr(s, "port", None)]
+
+            def _twitch_sidecar_canary(targets, delay=18.0):
+                import time as _t
+                import urllib.request as _u
+                _t.sleep(delay)
+                results = []
+                for role, port in targets:
+                    ok = False
+                    try:
+                        with _u.urlopen(
+                            f"http://127.0.0.1:{port}/healthz", timeout=2.5,
+                        ) as r:
+                            ok = (r.status == 200)
+                    except Exception:                                # noqa: BLE001
+                        ok = False
+                    results.append((role, port, ok))
+                summary = " ".join(
+                    f"{role}:{port}={'OK' if ok else 'DEAD'}"
+                    for role, port, ok in results)
+                dead = [f"{role}:{port}" for role, port, ok in results if not ok]
+                if dead:
+                    logger.error(
+                        "twitch sidecar health canary DEGRADED after %.0fs -- %s "
+                        "(DEAD: %s). See logs/twitch_sidecars/<role>.log.",
+                        delay, summary, ", ".join(dead))
+                else:
+                    logger.info(
+                        "twitch sidecar health canary OK after %.0fs -- %s",
+                        delay, summary)
+
+            try:
+                threading.Thread(
+                    target=_twitch_sidecar_canary, args=(_canary_targets,),
+                    daemon=True, name="twitch-sidecar-canary",
+                ).start()
+            except Exception as e:                                   # noqa: BLE001
+                logger.debug("twitch sidecar canary thread skipped (%s)", e)
 
     def _kill_twitch_sidecars(self) -> None:
         """Reap every spawned Twitch sidecar process TREE on shutdown. UNREGISTERS
@@ -6683,6 +6838,13 @@ class Orchestrator:
             except Exception as e:                                   # noqa: BLE001
                 logger.debug("twitch %s sidecar reap skipped (%s)", role, e)
         self._twitch_sidecar_procs = []
+        # Close the per-role sidecar log file handles (opened in the spawn).
+        for _fh in getattr(self, "_twitch_sidecar_logs", []) or []:
+            try:
+                _fh.close()
+            except Exception:                                        # noqa: BLE001
+                pass
+        self._twitch_sidecar_logs = []
         # Release the cross-process spawn lock so the next boot can re-spawn.
         _lk = getattr(self, "_twitch_spawn_lock", None)
         if _lk is not None:
@@ -6785,6 +6947,37 @@ class Orchestrator:
             return True
         # Recognized as a mod command but not actionable (ambiguous/protected/...).
         self._speak(self._twitch_mod_block_line(prop))
+        return True
+
+    def _maybe_handle_twitch_chat_settings(self, user_text: str) -> bool:
+        """Voice chat-settings moderation: slow / followers-only / subscribers-only
+        / emote-only / unique-chat toggles + clear-chat. Reversible + channel-scoped
+        -> applied DIRECTLY (no two-phase read-back), unlike ban/timeout. Gated on a
+        live ``_twitch_mod_remote``; a cheap LOCAL parse bails on any non-chat-
+        settings utterance BEFORE any HTTP round-trip (a relay callout / ordinary
+        speech never stalls on the sidecar). The abliterated model is never in this
+        path -- deterministic parse + the write sidecar's Helix call."""
+        remote = getattr(self, "_twitch_mod_remote", None)
+        if remote is None:
+            return False
+        text = (user_text or "").strip()
+        if not text:
+            return False
+        try:
+            from kenning.twitch.moderation.chat_settings import parse_chat_settings
+            cmd = parse_chat_settings(text)
+        except Exception:                                            # noqa: BLE001
+            return False
+        if cmd is None:
+            return False  # not a chat-settings command -> fall through
+        try:
+            res = remote.chat_settings(text)
+        except Exception:                                            # noqa: BLE001
+            res = {"ok": False, "error": "remote_error"}
+        if isinstance(res, dict) and res.get("ok"):
+            self._speak(str(res.get("readback", "") or "Done."))
+        else:
+            self._speak("I couldn't change the chat settings right now.")
         return True
 
     @staticmethod
@@ -7547,6 +7740,14 @@ class Orchestrator:
                             follow_up=bool(follow_up_until),
                         )
                         continue
+                    if self._maybe_handle_twitch_chat_settings(user_text):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="twitch_chat_settings", follow_up=False,
+                        )
+                        continue
                     if self._maybe_handle_flavor_toggle(user_text):
                         self._last_response_finished_monotonic = time.monotonic()
                         follow_up_until = None
@@ -7950,6 +8151,14 @@ class Orchestrator:
                             follow_up=bool(follow_up_until),
                         )
                         continue
+                    if self._maybe_handle_twitch_chat_settings(user_text):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="twitch_chat_settings-lean", follow_up=False,
+                        )
+                        continue
                     if self._maybe_handle_flavor_toggle(_raw_stt):
                         self._last_response_finished_monotonic = time.monotonic()
                         follow_up_until = None
@@ -8136,34 +8345,64 @@ class Orchestrator:
                                     _is_identity_question, pick_line,
                                     flavor_tails_enabled,
                                     _flavor_off_identity_line,
+                                    _social_llm_line, RelayCommand,
+                                    DEFAULT_IDENTITY_LINES,
+                                    u1_llm_route_enabled as _u1_on,
                                 )
                                 if _is_identity_question(user_text):
                                     _cat = classify_identity_question(user_text)
-                                    # Flavor OFF: a crisp tail-free rebuttal for
-                                    # soundboard / voice-changer / streamer (else
-                                    # the full curated pool). Same desktop channel.
-                                    _ans = None
-                                    if not flavor_tails_enabled():
-                                        _ans = _flavor_off_identity_line(_cat)
-                                    if _ans is None:
-                                        _pool = (IDENTITY_POOLS.get(_cat)
-                                                 if _cat else None)
-                                        _ans = pick_line(_pool) if _pool else None
+                                    _id_route = f"identity:{_cat}"
+                                    if _u1_on() and self.llm is not None:
+                                        # ROUTE-ALL: NEVER speak a curated pool line.
+                                        # Author the identity answer with the LLM via
+                                        # the SAME identity-categorized path used for a
+                                        # relayed probe -- the category classifier
+                                        # picks the prompt + IDENTITY_POOLS feeds the
+                                        # prompt as STYLE exemplars (prompt construction
+                                        # is unchanged) -- spoken on the DESKTOP. On LLM
+                                        # failure _ans is None (NOT a canned line:
+                                        # fallback_to_canned=False) so the turn falls
+                                        # through to _respond (still the LLM). Fixes the
+                                        # recurring "voice changer / soundboard answers
+                                        # the same every time" desktop-probe bug.
+                                        _ipool = ((IDENTITY_POOLS.get(_cat)
+                                                   if _cat else None)
+                                                  or DEFAULT_IDENTITY_LINES)
+                                        _icmd = RelayCommand(
+                                            payload="", raw_text=user_text,
+                                            addressee="team", directive="respond",
+                                            context=user_text)
+                                        _ans = _social_llm_line(
+                                            _icmd, "identity", _ipool,
+                                            max_chars=240, llm=self.llm,
+                                            context=user_text, canned=None,
+                                            fallback_to_canned=False)
+                                        _id_route = f"identity:{_cat}:llm"
+                                    else:
+                                        # route-all OFF: byte-identical legacy curated
+                                        # desktop pool (flavor-off rebuttal else pool).
+                                        _ans = None
+                                        if not flavor_tails_enabled():
+                                            _ans = _flavor_off_identity_line(_cat)
+                                        if _ans is None:
+                                            _pool = (IDENTITY_POOLS.get(_cat)
+                                                     if _cat else None)
+                                            _ans = pick_line(_pool) if _pool else None
                                     if _ans:
                                         self._speak(_ans)
                                         _router_consumed = True
-                                        # full-flow capture: a model-leak/identity
-                                        # probe answered from the curated DESKTOP
-                                        # pool (never the LLM).
+                                        # full-flow capture: identity/model-leak probe
+                                        # answered on the DESKTOP -- LLM-authored under
+                                        # route-all, curated pool when route-all is OFF.
                                         self._trace_turn_flow(
                                             raw=user_text,
-                                            route=f"identity:{_cat}",
-                                            reason="identity/leak probe -> curated "
-                                                   "desktop pool",
+                                            route=_id_route,
+                                            reason="identity/leak probe -> LLM "
+                                                   "(route-all) / curated desktop pool",
                                             subtype=_cat, final=_ans,
                                             channel="desktop")
                             except Exception as e:                   # noqa: BLE001
-                                logger.debug("identity-pool answer skipped: %s", e)
+                                logger.debug("identity answer skipped: %s", e)
                         elif not _rd.abstained and _rd.family == "desktop_refuse":
                             # A desktop / automation request the capability
                             # classifier missed. While a protected game is
@@ -8746,6 +8985,9 @@ class Orchestrator:
                     consecutive_silence_chunks += 1
                 else:
                     consecutive_silence_chunks = 0
+                    # Latency: stamp each speech chunk; the LAST one (before the
+                    # trailing silence that ends the turn) ~= speech-end.
+                    self._speech_end_t0 = time.perf_counter()
                     # 2026-06-18 truncation fix: speech RESUMED after a
                     # speculative kick-off WITHOUT a VAD SPEECH_END/START cycle.
                     # The kickoff fires after ~32 ms of silence, far below the
@@ -9178,6 +9420,7 @@ class Orchestrator:
                     consecutive_silence_chunks += 1
                 else:
                     consecutive_silence_chunks = 0
+                    self._speech_end_t0 = time.perf_counter()  # latency: ~speech-end
                     # 2026-06-18 truncation fix (mirror of _capture_utterance):
                     # speech resumed after a speculative kick-off without a VAD
                     # SPEECH_END/START cycle -> invalidate + re-arm so a mid-
@@ -9265,6 +9508,31 @@ class Orchestrator:
         the regular LLM streaming path uses ``speak_stream`` instead."""
         if not text:
             return
+        # ROUTE-ALL leak tripwire (2026-06-24): under route-all EVERY conversational
+        # line must be LLM-authored; a curated personality-pool line reaching the
+        # speaker is a regression (the recurring "same canned answer" class). This is
+        # the SINGLE funnel all non-stream orchestrator audio passes through, so it
+        # catches any future handler that forgets the gate -- the failure mode that
+        # kept recurring. Log-only in production (never blocks speech); raises only
+        # under KENNING_ROUTE_ALL_STRICT=1 (tests/CI). Control acks / capability /
+        # verbatim relay / safety refusals are NOT in the conversational set, so they
+        # never trip it. The LLM streaming path goes through speak_stream, not here.
+        try:
+            from kenning.audio.relay_speech import (
+                u1_llm_route_enabled as _u1_on,
+                is_canned_conversational_line as _is_canned,
+            )
+            if _u1_on() and _is_canned(text):
+                logger.error(
+                    "ROUTE-ALL LEAK: curated conversational pool line spoken under "
+                    "route-all (should be LLM-authored): %r", text)
+                if os.environ.get("KENNING_ROUTE_ALL_STRICT") == "1":
+                    raise AssertionError(
+                        f"route-all canned conversational leak: {text!r}")
+        except AssertionError:
+            raise
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("route-all speak tripwire skipped: %s", e)
         print(f"  kenning: {text}")
         try:
             self.tts.speak(text)

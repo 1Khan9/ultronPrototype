@@ -248,7 +248,11 @@ def _resolve_model_switch_target(matched_token: str) -> str:
     if t.startswith("4") or t.startswith("four") or t.startswith("for"):
         return "josiefied-qwen3-4b"
     if t.startswith("8") or t.startswith("eight") or t.startswith("ate"):
-        return "josiefied-qwen3-8b"
+        # 2026-06-24: remapped Q5 "josiefied-qwen3-8b" -> the LIVE default 8B
+        # "josiefied-qwen3-8b-iq3xs" (IQ3_XS + 0.6B spec draft) so "switch to 8B"
+        # round-trips to the user's actual optimized 8B for the 4B A/B. The Q5 8B is
+        # env/config-only now (KENNING_LLM_PRESET=josiefied-qwen3-8b).
+        return "josiefied-qwen3-8b-iq3xs"
     if t.startswith("9") or t.startswith("nine"):
         return "qwen3.5-9b"
     # Defensive — regex shouldn't allow other tokens through.

@@ -92,6 +92,39 @@ class RecordingHelix:
         return HelixResult(action="unban", ok=True, status=204, idempotent=False,
                            data=None, key=("unban", str(target_id), ""))
 
+    def delete_message(self, broadcaster_id, moderator_id, message_id):
+        self.calls.append(
+            {
+                "method": "delete_message",
+                "broadcaster_id": broadcaster_id,
+                "moderator_id": moderator_id,
+                "message_id": message_id,
+            }
+        )
+        if self._raise is not None:
+            raise self._raise
+        return HelixResult(action="delete_message", ok=True, status=204,
+                           idempotent=False, data=None,
+                           key=("delete_message", "", str(message_id)))
+
+    def update_chat_settings(self, broadcaster_id, moderator_id, settings):
+        self.calls.append({"method": "update_chat_settings",
+                           "broadcaster_id": broadcaster_id,
+                           "moderator_id": moderator_id, "settings": dict(settings)})
+        if self._raise is not None:
+            raise self._raise
+        return HelixResult(action="update_chat_settings", ok=True, status=200,
+                           idempotent=False, data=None,
+                           key=("update_chat_settings", "", ""))
+
+    def clear_chat(self, broadcaster_id, moderator_id):
+        self.calls.append({"method": "clear_chat", "broadcaster_id": broadcaster_id,
+                           "moderator_id": moderator_id})
+        if self._raise is not None:
+            raise self._raise
+        return HelixResult(action="clear_chat", ok=True, status=204, idempotent=False,
+                           data=None, key=("clear_chat", "", ""))
+
 
 def _roster():
     return [
@@ -120,7 +153,8 @@ def make_guard(tmp_path: Path, protected=(), clock=None, **kw) -> ModerationGuar
 
 
 def make_service(tmp_path: Path, *, helix=None, guard=None, protected=(), clock=None,
-                 roster_map=None, require_confirm=True, **kw) -> ModerationService:
+                 roster_map=None, require_confirm=True, message_id_lookup=None,
+                 **kw) -> ModerationService:
     helix = helix if helix is not None else RecordingHelix()
     guard = guard if guard is not None else make_guard(tmp_path, protected=protected, clock=clock, **kw)
     return ModerationService(
@@ -130,6 +164,7 @@ def make_service(tmp_path: Path, *, helix=None, guard=None, protected=(), clock=
         moderator_id="mod-id",
         roster_provider=roster_map if roster_map is not None else _roster_map,
         require_readback_confirm=require_confirm,
+        message_id_lookup=message_id_lookup,
     )
 
 
@@ -399,6 +434,58 @@ def test_confirm_delete_still_unsupported_needs_message_id(tmp_path):
     result = svc.confirm(prop)
     assert result["ok"] is False
     assert result["error"] == "unsupported_action"
+    assert helix.calls == []
+
+
+def test_confirm_delete_with_lookup_issues_real_helix_delete(tmp_path):
+    # With a message_id_lookup wired (the read sidecar's /last_message), confirm()
+    # resolves the target's last message and issues the real Helix delete.
+    helix = RecordingHelix()
+    svc = make_service(tmp_path, helix=helix, message_id_lookup=lambda login: "msg-123")
+    prop = svc.prepare("delete shroud's last message")
+    if not prop.ok:
+        return  # parser declined -> nothing to assert (covered elsewhere)
+    result = svc.confirm(prop)
+    assert result["ok"] is True and result["action"] == "delete"
+    assert helix.calls and helix.calls[-1]["method"] == "delete_message"
+    assert helix.calls[-1]["message_id"] == "msg-123"
+
+
+def test_apply_chat_settings_slow_mode(tmp_path):
+    from kenning.twitch.moderation.chat_settings import parse_chat_settings
+    helix = RecordingHelix()
+    svc = make_service(tmp_path, helix=helix)
+    res = svc.apply_chat_settings(parse_chat_settings("slow mode 20 seconds"))
+    assert res["ok"] is True and "Slow mode on" in res["readback"]
+    assert helix.calls[-1]["method"] == "update_chat_settings"
+    assert helix.calls[-1]["settings"] == {"slow_mode": True, "slow_mode_wait_time": 20}
+
+
+def test_apply_chat_settings_clear(tmp_path):
+    from kenning.twitch.moderation.chat_settings import parse_chat_settings
+    helix = RecordingHelix()
+    svc = make_service(tmp_path, helix=helix)
+    res = svc.apply_chat_settings(parse_chat_settings("clear chat"))
+    assert res["ok"] is True and helix.calls[-1]["method"] == "clear_chat"
+
+
+def test_apply_chat_settings_helix_error_is_fail_safe(tmp_path):
+    from kenning.twitch.moderation.chat_settings import parse_chat_settings
+    helix = RecordingHelix(raise_error=HelixError("boom", status=403))
+    svc = make_service(tmp_path, helix=helix)
+    res = svc.apply_chat_settings(parse_chat_settings("emote only"))
+    assert res["ok"] is False and res["error"] == "helix_error"
+
+
+def test_confirm_delete_no_recent_message_reports_no_message(tmp_path):
+    # A lookup that finds nothing -> a clean "no_message", never a blind delete.
+    helix = RecordingHelix()
+    svc = make_service(tmp_path, helix=helix, message_id_lookup=lambda login: None)
+    prop = svc.prepare("delete shroud's last message")
+    if not prop.ok:
+        return
+    result = svc.confirm(prop)
+    assert result["ok"] is False and result["error"] == "no_message"
     assert helix.calls == []
 
 

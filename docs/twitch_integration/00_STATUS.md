@@ -1,5 +1,60 @@
 # Ultron × Twitch — Live Status
 
+## ALL GAPS CLOSED (2026-06-24) — feature-complete for a first stream
+
+Every remaining gap from the 2026-06-24 audit is built, wired, and unit-tested. Full
+`tests/twitch` = **858 passed / 1 skipped** (was 779). All still flag-gated default-OFF;
+`main` runtime byte-identical with flags off; anticheat import-firewall invariant green.
+Go-live runbook + real-world test plan: **`FIRST_STREAM_CHECKLIST.md`**.
+
+Delivered this pass:
+- **Chat games wired** (`economy/chat_games.py` + `commands.py` grammar + config): `!heist`
+  (join-window group bet; `games.Heist` gained a `house_bonus_pct` so a WIN profits while the
+  game stays a net sink), `!duel @user <bet>` + new `!accept` (1v1 escrow, winner takes 2×),
+  `!raffle`/`!enter` (mod-opened window, house prize), `!give @user <bet>` (gated
+  `transfers_enabled`, login→uid via presence, two keyed legs), `!wheel` (per-stream free
+  spin → ledger payout). Each timed game resolves in `tick()` at its deadline; every
+  stake/payout is a keyed-leg ledger write (EventSub-replay-safe).
+- **RedeemRouter ledger-backed** (`redeem_router.py`): a redeem game now credits the
+  redeemer's balance (house-funded, keyed on `redemption_id`); the orchestrator shares ONE
+  ledger between the redeem router and the chat-game router.
+- **Voice DELETE plumbed (cross-process)**: the read sidecar maintains a `{login→last
+  message_id}` index + `GET /last_message?login=X`; `ModerationService` takes an injectable
+  `message_id_lookup`; the write sidecar wires it to the read sidecar → `confirm()` issues
+  the real `HelixClient.delete_message`. ban/timeout/unban/untimeout already executed.
+- **Redeem EventSub 400 FIXED** (`twitch_read_sidecar.py`): the chat sub (bot token) and the
+  redeem sub (broadcaster token) now run on **SEPARATE** websocket sessions — Twitch rejects
+  two users' subs on one session ("subscriptions created by different users"). The redeem
+  connection is fully isolated + fail-quiet; a fault on either side never affects the other.
+- **Polish**: `mass_action_limit_per_60s` now threaded into `ModerationGuard`'s breaker;
+  `!leaderboard` renders logins (not raw user_ids); the chat_games docstring corrected.
+
+Delivered 2026-06-24 (pass 2 — chat-reply/moderation completion + viewer comms):
+- **Voice chat-settings moderation** (`moderation/chat_settings.py` parser + `HelixClient.clear_chat`
+  + `ModerationService.apply_chat_settings` + write-sidecar `/chat_settings` + `ModerationRemote.chat_settings`
+  + orchestrator `_maybe_handle_twitch_chat_settings` wired into both dispatch paths): slow / followers-only /
+  subscribers-only / emote-only / unique-chat / clear-chat. Reversible -> applied directly (no read-back).
+- **Bot chat-SEND** (`clients/chat_send.py` Helix POST /chat/messages, bot token) + write-sidecar `/say` +
+  a **periodic commands-panel poster** (`twitch/panel.py`; orchestrator thread, default-OFF
+  `twitch.chat.commands_panel_enabled`, every `commands_panel_interval_minutes`=15, ends with
+  `commands_panel_doc_url`). First post waits one interval.
+- **One-page viewer guide** `ULTRON_VIEWER_GUIDE.docx` (commands + redeems + how cores work) for the
+  public link the panel points at.
+- **Review finding fixed (P1):** chat bet/give/wheel/heist/duel/trivia now key the ledger + command-dedup
+  on a STABLE `_event_key` (message_id, else a content hash) -- an empty-message_id event can no longer
+  double-spend on replay (the wall-clock fallback is gone). (The review's P0 "fabricated/not-on-branch" was
+  a worktree-vs-main-checkout artifact: the review ran in the clean worktree; all work is in the MAIN checkout,
+  proven by `git status` + 882 passing twitch tests.)
+- Reward "unfulfilled" queue is solved zero-code by ticking **"Skip the request queue"** on each reward
+  (auto-fulfilled server-side); code fulfill/refund stays optional (needs `channel:manage:redemptions`).
+
+Full `tests/twitch` = **882 passed / 1 skip**. Chat-reply pipeline + safety stack verified STUB-FREE (the only
+"deferred" items are content-creation clips + the deps-gated L6/L7 safety layers, which are complete-but-gated).
+
+Still user-side (not code): creds/tokens, channel-point reward titles (+ skip-queue), OBS Browser-Source,
+VoiceMeeter routing, the guard GGUF, live danger-score calibration, the VRAM check (BR-P3), and pasting the
+public guide URL into `commands_panel_doc_url`.
+
 ## LIVE WIRING BUILT (2026-06-23) — the previously-deferred glue is now in place
 **Honest finding that started this work:** the S0–S13 slices passed 519 tests but the LIVE
 ingestion was never built — the read sidecar opened an UNAUTHENTICATED WebSocket, got

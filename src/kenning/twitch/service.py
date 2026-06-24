@@ -127,7 +127,12 @@ class ChatModeService:
             if want_on and not self.active:
                 ok, why = self.set_chat_mode(True)
                 if not ok:
-                    logger.warning("chat-reply enable refused: %s", why)
+                    # 2026-06-24 (findings 5/10): guard-still-loading is an
+                    # expected ~2-3s boot race -> DEBUG, not a per-tick WARNING.
+                    if "not loaded" in (why or "").lower():
+                        logger.debug("chat-reply not enabled yet (guard warming up): %s", why)
+                    else:
+                        logger.warning("chat-reply enable refused: %s", why)
             elif not want_on and self.active:
                 self.set_chat_mode(False)
         except Exception as e:  # noqa: BLE001

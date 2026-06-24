@@ -60,6 +60,18 @@ class TestHeist:
         assert r.outcome == HeistOutcome.WIN
         assert r.payout_per_head == 50  # 100 // 2
 
+    def test_house_bonus_makes_a_win_profit(self, rng):
+        # No bonus (default): a 2-player WIN splits the pot back -> break-even.
+        plain = Heist(rng=rng, win_threshold=0.01, partial_threshold=0.005)
+        assert plain.house_bonus_pct == 0.0
+        assert plain.resolve(FIXED_SEED, ["alice", "bob"], 100, "client", 0).payout_per_head == 50
+        # +50% house bonus: pot 100 -> 150, per_head 75 > the 50 each staked.
+        bonused = Heist(rng=rng, win_threshold=0.01, partial_threshold=0.005,
+                        house_bonus_pct=0.5)
+        r = bonused.resolve(FIXED_SEED, ["alice", "bob"], 100, "client", 0)
+        assert r.outcome == HeistOutcome.WIN and r.payout_per_head == 75
+        assert bonused.house_bonus_pct == 0.5
+
     def test_partial_pays_fraction(self, rng):
         h = Heist(rng=rng, win_threshold=0.99, partial_threshold=0.01,
                   partial_fraction=0.50)

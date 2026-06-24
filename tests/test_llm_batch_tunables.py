@@ -29,14 +29,18 @@ from kenning.config import LLMConfig, KenningConfig
 # ---------------------------------------------------------------------------
 
 
-def test_n_batch_default_is_none():
+def test_n_batch_default_is_baseline():
+    # 2026-06-24 PER-MODEL REFACTOR: the schema default moved None -> 2048 (the
+    # voice-tuned common baseline) so the config.yaml globals could be removed from
+    # model_fields_set without changing behaviour. Per-model LLM_PRESETS entries
+    # override it; set None explicitly to inherit llama.cpp's own default.
     cfg = LLMConfig(model_path="x.gguf", preset="custom")
-    assert cfg.n_batch is None
+    assert cfg.n_batch == 2048
 
 
-def test_n_ubatch_default_is_none():
+def test_n_ubatch_default_is_baseline():
     cfg = LLMConfig(model_path="x.gguf", preset="custom")
-    assert cfg.n_ubatch is None
+    assert cfg.n_ubatch == 256
 
 
 def test_n_batch_accepts_explicit_value():
@@ -174,10 +178,13 @@ def test_build_llama_passes_both_when_set(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_full_config_default_keeps_batch_knobs_none():
+def test_full_config_default_uses_batch_baseline():
+    # 2026-06-24 PER-MODEL REFACTOR: schema baseline n_batch=2048 / n_ubatch=256
+    # (was None). The default preset (josiefied-qwen3-8b-iq3xs) carries neither, so
+    # the baseline applies.
     cfg = KenningConfig()
-    assert cfg.llm.n_batch is None
-    assert cfg.llm.n_ubatch is None
+    assert cfg.llm.n_batch == 2048
+    assert cfg.llm.n_ubatch == 256
 
 
 def test_full_config_accepts_batch_knobs():

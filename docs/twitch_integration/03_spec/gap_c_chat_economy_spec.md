@@ -66,7 +66,16 @@ ordinary-message drain) wins a house-funded prize (`trivia_prize`/`trivia_window
 atomically BEFORE crediting → first-correct-wins, no double-award on replay/second answer; timeout announces the
 answer. +5 tests; full twitch suite 779 green.
 
-## DEFERRED (next pass) — with refined design
+## DEFERRED (next pass) — ✅ ALL DELIVERED 2026-06-24
+
+> Every item below is now built + wired + unit-tested (heist join-window with a
+> `Heist.house_bonus_pct`; duel challenge/accept via a new `CommandKind.ACCEPT`; raffle via
+> `CommandKind.RAFFLE`/`enter`; `!give` gated `transfers_enabled` with presence-based
+> login→uid; RedeemRouter ledger-backing; the cross-process delete message-id plumb).
+> See `00_STATUS.md` (2026-06-24) + `FIRST_STREAM_CHECKLIST.md`. Original design retained
+> below for reference.
+
+### original deferred design — with refined design
 - **Remaining multi-viewer state machines:** heist join-window (collect `!heist <bet>` over a window → debit each →
   resolve → credit per head; needs a house bonus on the pot so a WIN profits — Heist.resolve splits a fixed pot, so
   a pure sum-of-stakes pot is break-even on win), duel challenge/accept (challenger debit → `!accept` → resolve →

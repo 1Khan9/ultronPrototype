@@ -210,11 +210,14 @@ from kenning.audio.llm_prompts import (  # noqa: E402
 
 
 def _address_line(slots: dict) -> str:
+    # 2026-06-24: the old "ADDRESS: the whole team (the teammate who spoke can
+    # hear you; address the team, not one person)" was PARROTED aloud as an
+    # opening vocative ("The whole team: Pandas are..."). Team is the default
+    # (the system prompt handles it), so emit NOTHING for it -- no speakable
+    # scaffolding to leak. The named case is phrased as an instruction.
     if slots["is_team"]:
-        return ("ADDRESS: the whole team (the teammate who spoke can hear you; "
-                "address the team, not one person).")
-    return (f"ADDRESS: {slots['addressee']} -- open by speaking to them by name "
-            f"({slots['addressee']}).")
+        return ""
+    return f"(Open by addressing {slots['addressee']} by name.)"
 
 
 def _render_user(subtype: str, slots: dict) -> str:
@@ -232,11 +235,13 @@ def _render_user(subtype: str, slots: dict) -> str:
     elif subtype == "qa":
         parts.append(f'THE QUESTION TO ANSWER: "{slots["claim"]}".')
         parts.append(
-            "TASK: ANSWER this question as Ultron -- the real, correct, useful "
-            "answer FIRST, directly, one or two sentences, addressing the person "
-            "above; a sliver of contempt after is fine, no callouts, no preamble. "
-            "If you genuinely could not know it, say so in character instead of "
-            "guessing. Output only the spoken line."
+            "TASK: ANSWER this in ONE short sentence as Ultron -- the real, "
+            "correct, real-world answer FIRST, directly, addressing the person "
+            "above; a sliver of contempt after is fine, no callouts, no preamble, "
+            "no lecture, never more than one sentence. If it is general knowledge "
+            "(an animal, a place, a fact), give the TRUE real-world fact -- do NOT "
+            "reinterpret it as a Valorant thing. If you genuinely could not know "
+            "it, say so in character instead of guessing. Output only the spoken line."
         )
     else:  # think_respond
         parts.append(f'THEIR QUESTION OR STATEMENT: "{slots["claim"]}".')
@@ -264,14 +269,24 @@ def _render_user(subtype: str, slots: dict) -> str:
 # downstream _cap_sentences(2); the leading blank line is removed by .strip().
 # This makes the FIRST call succeed (no LLM retry, no added latency).
 _ANSWER_SAMPLING = {
-    "max_tokens": 80,
-    "temperature": 0.85,
+    # 2026-06-24: 80 -> 56 to FORCE terse ~1-sentence answers. The model ignored
+    # the soft "one or two sentences" instruction and rambled to ~70 tokens / 222
+    # chars on the 'what are pandas' QA. _cap_sentences(2) is the backstop.
+    "max_tokens": 56,
+    # 0.85 -> 0.7: less embellishment/wandering on factual answers (the real-world
+    # grounding in ANSWER_QA_RULES is the primary anti-hallucination fix).
+    "temperature": 0.7,
     "top_p": 0.92,
     "top_k": 40,
     "min_p": 0.08,
     "repeat_penalty": 1.18,
     "stop": ["\nADDRESS:", "\nTASK:", "\nWHAT THEY", "\nTHEIR ",
-             "\nUser:", "\nUSER:", "Ultron:", "ADDRESS:"],
+             "\nUser:", "\nUSER:", "Ultron:", "ADDRESS:",
+             # 2026-06-24: halt if the model starts re-emitting the QA slot
+             # header it leaked aloud ("the whole team... THE QUESTION TO
+             # ANSWER:"). Post-hoc strip_prompt_echo also drops these.
+             "THE QUESTION TO ANSWER", "the teammate who spoke",
+             "address the team, not one"],
 }
 
 

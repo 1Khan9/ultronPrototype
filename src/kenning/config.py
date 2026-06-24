@@ -723,7 +723,9 @@ LLM_PRESETS: dict[str, dict[str, Any]] = {
     # test-load before relying on it; fall back to draft_kind: "none").
     "josiefied-qwen3-8b-iq3xs": {
         "model_path": "models/Josiefied-Qwen3-8B-abliterated-v1.i1-IQ3_XS.gguf",
-        "n_ctx": 4096,
+        "n_ctx": 3072,   # 2026-06-24 VRAM: 4096->3072 (~76 MiB KV). Gaming-mode loads
+                         # n_ctx from the PRESET (not config.yaml), so trim it here.
+                         # Relay prompts fit well under 3k.
         "draft_model_path": "models/Qwen_Qwen3-0.6B-Q4_K_M.gguf",
     },
     # 2026-05-14 -- Josiefied-Qwen3-4B-abliterated-v2 (Goekdeniz-Guelmez)
@@ -769,8 +771,25 @@ LLM_PRESETS: dict[str, dict[str, Any]] = {
     # E:\UltronModels (the models/ junction).
     "huihui-qwen3.5-4b": {
         "model_path": "models/Huihui-Qwen3.5-4B-abliterated.i1-Q4_K_M.gguf",
+        # 2026-06-24: n_ctx 4096. (Briefly cut to 2048 for ~100-180 MB VRAM, but
+        # the rich conversational/identity/social system prompts are large and
+        # risk TRUNCATION at 2048 -> degraded/parroted "I am an AI... I am Ultron"
+        # responses. The small VRAM saving is not worth that; guard-on-GPU still
+        # fits with ~2.4 GB headroom at 4096.)
         "n_ctx": 4096,
         "draft_model_path": None,
+        # 2026-06-24 LATENCY/VRAM tuning (deep-research findings):
+        # - kv_cache_type 1 (F16), NOT the q8_0 baseline: llama.cpp PR #23907 makes
+        #   q8_0-KV + flash_attn reserve an F16 dequant SCRATCH sized by the WHOLE KV
+        #   cache (ggml_nelements(K/V)), not the KV in use -> hidden VRAM overhead +
+        #   a ~65% decode collapse (122->42 t/s; we measured ~42). F16 KV has no
+        #   dequant -> no scratch, and Qwen3.5 Gated-DeltaNet keeps KV on only 8/32
+        #   layers so F16 KV is tiny regardless. (revert to 8/q8_0 to A/B.)
+        # - n_ubatch 256 (not 512): a smaller micro-batch trims ~30-80ms prefill
+        #   TTFT on short prompts + shrinks the CUDA compute buffer (VRAM). Matches
+        #   the 8B's tuned value; the 512 here was a wrong "bigger=faster" guess.
+        "n_ubatch": 256,
+        "kv_cache_type": 1,
     },
     # 2026-06-20 -- Ultron 1.0 VRAM A/B candidate (USER PICK: "may be the
     # best 4B"). Josiefied-Qwen3-4B-Instruct-2507-gabliterated-v2
@@ -784,6 +803,8 @@ LLM_PRESETS: dict[str, dict[str, Any]] = {
         "model_path": "models/Josiefied-Qwen3-4B-Instruct-2507-gabliterated-v2.i1-Q4_K_M.gguf",
         "n_ctx": 4096,
         "draft_model_path": None,
+        # 2026-06-24 PER-MODEL: roomy 4B -> n_ubatch 512 (see huihui-qwen3.5-4b).
+        "n_ubatch": 512,
     },
     # 2026-05-19 -- Gemma 3 4B abliterated (mradermacher quants of the
     # Goekdeniz-Guelmez Josiefied abliterated fine-tune over Google's
@@ -1000,15 +1021,18 @@ class LLMConfig(_Strict):
     history_turns: int = Field(default=6, ge=0)
     flash_attn: bool = True
     kv_cache_type: int = 8                    # 8=q8_0 (halves KV VRAM, ~lossless), 1=F16. 2026-06-23: kept q8_0 -- the latency was NEVER the KV cache (measured ~40 tok/s decode either way); it was the twitch drain loops timing out on dead sidecars. q8_0+flash_attn is stable on the 0.3.22 wheel; revert to 1 (F16) only if llama.cpp issue #19036 ever crashes.
-    # 2026-05-15 latency: explicit n_batch / n_ubatch tuning. Defaults
-    # are llama.cpp's own (n_batch=512, n_ubatch=512 in 0.3.22). For
-    # voice-length prompts (1-2 KB context) on this 4070 Ti, sweeping
-    # showed n_ubatch=256 trims ~30-80 ms of prefill TTFT vs the
-    # default; n_batch=1024 helps if context grows. Set to None to
-    # inherit llama.cpp's defaults (safest fallback on unknown
-    # hardware). Range bounds match llama.cpp's internal validation.
-    n_batch: Optional[int] = Field(default=None, ge=1, le=32768)
-    n_ubatch: Optional[int] = Field(default=None, ge=1, le=32768)
+    # 2026-05-15 latency: explicit n_batch / n_ubatch tuning. llama.cpp's own
+    # defaults are 512/512 (0.3.22). For voice-length prompts (1-2 KB context) on
+    # this 4070 Ti, sweeping showed n_ubatch=256 trims ~30-80 ms of prefill TTFT;
+    # n_batch=2048 lets a long prompt prefill in one logical batch.
+    # 2026-06-24 PER-MODEL REFACTOR: these are now the COMMON BASELINE defaults (was
+    # None = inherit-llama) so they survive the config.yaml globals being removed
+    # from model_fields_set -- an explicit value in config.yaml lands in
+    # model_fields_set and SHADOWS every preset (the precedence trap). With the
+    # globals commented out, a per-model LLM_PRESETS entry now overrides these (e.g.
+    # the roomy 4B presets set n_ubatch=512). Set None explicitly to inherit llama's.
+    n_batch: Optional[int] = Field(default=2048, ge=1, le=32768)
+    n_ubatch: Optional[int] = Field(default=256, ge=1, le=32768)
     # 2026-05-16 latency pass 2: prefix KV cache. When > 0, the in-process
     # Llama instance gets a ``LlamaRAMCache`` attached at init so completed
     # session KV state is stored in host RAM keyed by the longest-common-
@@ -4121,6 +4145,14 @@ class TwitchSafetyConfig(_Strict):
     guard_model: str = "llama-guard-3-1b"            # selectable: shieldgemma-2b / granite-guardian-3b / mrguard-3b
     guard_model_path: Optional[str] = None           # GGUF path the orchestrator hands the guard sidecar (e.g. E:/UltronModels/Llama-Guard-3-1B.Q5_K_M.gguf); None => auto-spawn skips the guard
     guard_family: str = "llama-guard"                # prompt family: llama-guard|shieldgemma|granite|generic
+    # 2026-06-24 VRAM: the guard runs as a SEPARATE llama.cpp process, so on GPU it
+    # carries its own CUDA context (~1-1.5 GB) on top of the ~1 GB model -- enough to
+    # push a 12 GB card past its throttle cap when twitch is enabled beside a game.
+    # Default it to CPU (0): chat moderation is latency-tolerant (~100-300 ms for a
+    # 1B on CPU) and guard_threads caps CPU usage so it never contends with the game.
+    # Set -1 to put all layers back on the GPU if VRAM allows.
+    guard_gpu_layers: int = Field(default=0, ge=-1, le=200)
+    guard_threads: int = Field(default=6, ge=0, le=256)   # CPU threads when on CPU (0 = llama.cpp default)
     guard_endpoint: str = "http://127.0.0.1:8774"    # loopback guard sidecar
     guard_required: bool = True                      # chat-reply refuses to enable without a healthy guard
     prompt_guard_model: str = "meta-llama/Llama-Prompt-Guard-2-22M"
@@ -4170,6 +4202,16 @@ class TwitchEconomyConfig(_Strict):
     # chat answer within the window. A skill game (no per-viewer bet / no RTP).
     trivia_prize: int = 100
     trivia_window_seconds: int = 30
+    # Multi-viewer state-machine games (gap-c next pass, 2026-06-24): each opens a
+    # timed window over the chat drain, resolves provably-fairly, and applies
+    # keyed-leg ledger idempotency so an EventSub replay never double-pays.
+    heist_window_seconds: int = 30           # join window for "!heist <bet>"
+    heist_house_bonus_pct: float = 0.5       # house adds this fraction of the pot so a WIN profits (overall EV still net-negative)
+    heist_min_players: int = 1               # below this at close the heist is cancelled + every stake refunded
+    duel_window_seconds: int = 60            # "!duel @user <bet>" challenge accept window before auto-refund
+    raffle_window_seconds: int = 60          # mod-opened "!raffle" entry window
+    raffle_prize: int = 500                  # house-funded prize credited to the drawn winner
+    wheel_free_per_stream: int = 1           # free "!wheel" spins per viewer per stream (0 = command disabled)
 
 
 class TwitchOverlayConfig(_Strict):
@@ -4192,6 +4234,12 @@ class TwitchChatConfig(_Strict):
     allow_during_ranked: bool = False                # strongest mitigation: OFF (cannot read game state)
     per_user_cooldown_seconds: int = 30
     datamarking: bool = True                         # interleave a marker in untrusted DATA (spotlighting++)
+    # Periodic auto-post of the command list to chat (every N minutes) so viewers
+    # always see how to play. Sent AS THE BOT via the write sidecar /say endpoint
+    # (Helix POST /chat/messages, user:write:chat). Default OFF.
+    commands_panel_enabled: bool = False
+    commands_panel_interval_minutes: int = Field(default=15, ge=1, le=720)
+    commands_panel_doc_url: str = ""                 # public guide URL appended to the panel message (set when ready)
 
 
 class TwitchSpeakToTeamConfig(_Strict):

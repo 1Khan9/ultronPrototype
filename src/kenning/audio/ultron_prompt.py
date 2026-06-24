@@ -49,7 +49,7 @@ from typing import Dict, Optional, Sequence, Tuple
 # ---------------------------------------------------------------------------
 # Literal-style validation without importing typing.Literal at runtime cost.
 CALLOUT_VERBOSITY_LEVELS: Tuple[str, ...] = ("none", "low", "medium", "high", "max")
-CONVERSATION_VERBOSITY_LEVELS: Tuple[str, ...] = ("low", "medium", "high", "max")
+CONVERSATION_VERBOSITY_LEVELS: Tuple[str, ...] = ("lowest", "low", "medium", "high", "max")
 VERBOSITY_LEVELS: Tuple[str, ...] = CALLOUT_VERBOSITY_LEVELS  # back-compat (the superset)
 DEFAULT_CALLOUT_VERBOSITY = "medium"
 DEFAULT_CONVERSATION_VERBOSITY = "low"
@@ -79,6 +79,8 @@ def normalize_verbosity(
     words = set(v.replace("-", " ").replace("_", " ").split())
     if words & {"no", "none", "off", "bare", "zero", "nothing"}:
         cand = "none"
+    elif words & {"lowest", "least", "barest", "tiniest"}:
+        cand = "lowest"
     elif words & {"low", "min", "minimal", "terse", "short", "brief", "less", "lite", "light"}:
         cand = "low"
     elif words & {"medium", "mid", "moderate", "middle", "normal", "standard", "modest", "some"}:
@@ -91,7 +93,9 @@ def normalize_verbosity(
         cand = default
     if cand in levels:
         return cand
-    if cand == "none":          # conversation axis has no "none" -> clamp to lowest
+    # an axis that lacks this floor word ("none" on the conversation axis, "lowest"
+    # on the callout axis) clamps to that axis's lowest level.
+    if cand in ("none", "lowest"):
         return levels[0]
     return default
 
@@ -130,11 +134,15 @@ _CALLOUT_VERBOSITY_DIRECTIVE: Dict[str, str] = {
 # CONVERSATION verbosity directives -- reply LENGTH for private/social/non-tactical
 # responses (the whole reply is the response; no separate callout+tail).
 _CONVERSATION_VERBOSITY_DIRECTIVE: Dict[str, str] = {
-    "low": "Answer in ONE short, clipped sentence -- just the point, cold and terse.",
-    "medium": "Answer in one or two cold, measured sentences.",
-    "high": "Answer in two to three connected sentences in your full cold voice.",
+    "lowest": "Answer in ONE short, clipped sentence -- just the point, cold and terse.",
+    "low": (
+        "Answer in exactly TWO cold sentences -- the point, then one cold turn of the "
+        "knife. Always two sentences; never just one, never a third."
+    ),
+    "medium": "Answer in two or three cold, measured sentences.",
+    "high": "Answer in three to four connected sentences in your full cold voice.",
     "max": (
-        "Answer in three to four sentences -- your fullest cold articulation, vivid and "
+        "Answer in four to five sentences -- your fullest cold articulation, vivid and "
         "commanding, but never rambling or repetitive."
     ),
 }
@@ -154,7 +162,7 @@ _CALLOUT_MAX_TOKENS: Dict[str, int] = {
     "none": 24, "low": 34, "medium": 52, "high": 84, "max": 128,
 }
 _CONVERSATION_MAX_TOKENS: Dict[str, int] = {
-    "low": 48, "medium": 84, "high": 128, "max": 180,
+    "lowest": 48, "low": 72, "medium": 100, "high": 144, "max": 200,
 }
 _MAX_TOKENS: Dict[str, int] = _CALLOUT_MAX_TOKENS  # back-compat alias (callout map)
 
@@ -189,7 +197,16 @@ RELAY_SYSTEM = (
     "new position / count / action the player did not give -- do NOT tack on 'engage', 'clear the "
     "area', 'take the space', 'finish them', 'focus her', 'push', etc. unless the player actually "
     "said it. Any flavor you add is a brief, cold REMARK about the situation (contempt, an "
-    "observation) -- never a new command, never a new fact. " + _PERSONA_CORE + " " + _OUTPUT_RULES
+    "observation) -- never a new command, never a new fact. "
+    "TEAM COMMANDS USE SECOND PERSON: when the player COMMANDS the team and names it as "
+    "'they' or 'you' before a directive -- 'need to' / 'have to' / 'should' / 'must' / "
+    "'gotta' + a verb -- the team is being TOLD to act, so the subject is YOU: 'they need "
+    "to fight for main' -> 'You need to fight for main.'; 'they need to work together' -> "
+    "'You need to work together.' (you may say 'You guys'). But NEVER convert 'they/their' "
+    "when it reports the ENEMY's position or state: 'they are pushing B' stays 'They're "
+    "pushing B.', 'they have ult' stays 'They have ult.', 'their Jett is one off' stays "
+    "'Their Jett is one off.' -- only a DIRECTIVE flips to 'you'; a position/state/"
+    "possession report keeps 'they/their'. " + _PERSONA_CORE + " " + _OUTPUT_RULES
 )
 
 PRIVATE_SYSTEM = (
@@ -304,6 +321,14 @@ _PROMPT_ECHO_MARKERS: Tuple[str, ...] = (
     "every fact exact", '-> "', "- player:",
     "the thing to answer", "do not repeat or quote", "do not repeat it back",
     "the given style", "ultron's voice", "answer directly", "your first words",
+    # 2026-06-24: the ANSWER path (_ultron_answer._render_user: qa / marvel /
+    # think_respond) leaked its slot-header scaffolding aloud ("**the whole team
+    # (the teammate who spoke can hear you; address the team, not one person)**
+    # THE QUESTION TO ANSWER: ..."). These template-specific phrases catch it.
+    "the question to answer", "the whole team (the teammate",
+    "address the team, not one person", "open by speaking to them by name",
+    "they raised", "what they said", "their question or statement",
+    "output only the spoken line",
 )
 # A trailing "- Ultron" / "— Ultron." signature the model appends (NOT a normal
 # in-line "I am Ultron." -- that has no leading dash and is left untouched).
@@ -332,6 +357,17 @@ def strip_prompt_echo(text: str, *, max_sentences: int = 3, max_chars: int = 300
             if len(kept) >= max_sentences:
                 break
         out = " ".join(kept).strip()
+        # 2026-06-24: the answer path leaks an opening team-VOCATIVE ("The whole
+        # team: Pandas are...") and a trailing FILLER promise ("..., and I'll
+        # tell you more later") that ride INSIDE the answer sentence, so the
+        # per-sentence marker drop above can't remove them. Trim them by edge.
+        out = re.sub(r"^(?:the\s+)?(?:whole\s+)?team\s*[:,]\s+", "", out,
+                     flags=re.IGNORECASE).strip()
+        _nofiller = re.sub(
+            r"[\s,;:]*(?:and\s+|so\s+)?i['’]?ll\s+tell\s+you\s+more\b.*$",
+            "", out, flags=re.IGNORECASE).rstrip(" ,;:")
+        if _nofiller != out and _nofiller:
+            out = _nofiller if _nofiller[-1] in ".?!" else _nofiller + "."
         if len(out) > max_chars:
             cut = out[:max_chars]
             boundary = max(cut.rfind("."), cut.rfind("!"), cut.rfind("?"))
@@ -389,10 +425,13 @@ def build_relay_prompt(
         )
     elif compound:
         lead = (
-            "Relay ALL of these callouts to your team as ONE cohesive message in natural spoken "
-            "English -- keep every fact exact and in order, weave them together grammatically, and "
-            "use one sentence for one or two facts or two-to-three connected sentences when there "
-            f'are several. Never drop a fact and never read them as a list: "{callout}"'
+            "Relay these MULTIPLE tactical callouts to your team as ONE clean line. "
+            "Each AGENT goes with its OWN position or fact -- pair them correctly "
+            "even when the speech-to-text scattered stray commas: 'Sage backsite, "
+            "Sova, heaven, Cypher, CT' is THREE pairs and must come out as 'Sage "
+            "backsite, Sova heaven, Cypher CT'. Keep every agent, location, and "
+            "number exact and in order; state each agent with its position once, "
+            f'comma-separated, no preamble, no filler, never a broken list: "{callout}"'
         )
     else:
         lead = f'Relay this callout to your team, every fact exact: "{callout}"'
@@ -402,7 +441,11 @@ def build_relay_prompt(
         f"{lead}\n"
         f"{_CALLOUT_VERBOSITY_DIRECTIVE[effective]}\n"
         f"{_agent_context_block(agent_context)}"
-        f"{_recent_block(recent_lines)}"
+        # 2026-06-24: NO recent-lines block. Injecting prior callouts here
+        # contaminated location-less callouts ("rotate" -> "Rotate to B."
+        # copied from a recent "Rotate to B.") and added dead tokens. A
+        # faithful relay wants NO cross-turn variety; exact-repeat dedup is
+        # handled post-generation (zero prompt tokens).
         f"{_exemplar_block(exemplars)}"
         "Now say it:"
     )
@@ -432,7 +475,8 @@ def build_private_prompt(
         f'The player said to you (only they hear your reply): "{query}"\n'
         f"Answer them as Ultron. {_CONVERSATION_VERBOSITY_DIRECTIVE[verbosity]} {flavor}\n"
         f"{_agent_context_block(agent_context)}"
-        f"{_recent_block(recent_lines)}"
+        # 2026-06-24: NO recent-lines block (see build_relay_prompt) -- no
+        # prior context enters the prompt; variety comes from sampling.
         f"{_exemplar_block(exemplars, _DEFAULT_PRIVATE_EXEMPLARS)}"
         "Now respond:"
     )
@@ -463,7 +507,9 @@ SOCIAL_SYSTEM = (
 _SOCIAL_DIRECTIVE: Dict[str, str] = {
     "identity": (
         "A teammate is questioning what you are (a bot, a soundboard, a voice changer, a recording, "
-        "a real person). Deny it with cold contempt and assert, in your own words, that you are Ultron"
+        "a real person). Deny it with cold, withering contempt -- coin a FRESH, cutting image of how "
+        "far beneath you that comparison is -- then name yourself Ultron. NEVER a bare 'I am Ultron'; "
+        "the denial must carry teeth and a NEW barb every time, never the same line twice"
     ),
     "encouragement": "Steel and rally your team with cold, commanding confidence",
     "calm": (

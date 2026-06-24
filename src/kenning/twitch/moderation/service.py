@@ -193,6 +193,7 @@ class ModerationService:
         moderator_id: str,
         roster_provider: Callable[[], dict[str, str]],
         require_readback_confirm: bool = True,
+        message_id_lookup: Optional[Callable[[str], Optional[str]]] = None,
     ) -> None:
         if helix is None:
             raise ValueError("helix is required")
@@ -208,6 +209,11 @@ class ModerationService:
         self._moderator_id = str(moderator_id)
         self._roster_provider = roster_provider
         self._require_confirm = bool(require_readback_confirm)
+        # Optional ``login -> last message_id`` resolver (the write sidecar wires
+        # this to the read sidecar's ``/last_message`` index). When present, the
+        # confirm() delete branch resolves the target's last message id and issues
+        # the real Helix delete; absent -> delete stays an "unsupported" no-op.
+        self._message_id_lookup = message_id_lookup
 
     # ------------------------------------------------------------------ #
     # Phase 1 — deterministic parse
@@ -518,6 +524,18 @@ class ModerationService:
             return f"{n} minute" + ("s" if n != 1 else "")
         return f"{seconds} second" + ("s" if seconds != 1 else "")
 
+    def _lookup_message_id(self, login: str) -> Optional[str]:
+        """Resolve the target's most-recent message_id via the injected lookup.
+        Fail-safe: a missing lookup / a raise / an empty result -> ``None``."""
+        if self._message_id_lookup is None or not login:
+            return None
+        try:
+            mid = self._message_id_lookup(login)
+        except Exception as e:  # noqa: BLE001 - a lookup fault never raises into confirm
+            logger.warning("message_id_lookup raised for %r (%s)", login, e)
+            return None
+        return str(mid) if mid else None
+
     # ------------------------------------------------------------------ #
     # Phase 3 — confirm -> the single Helix write
     # ------------------------------------------------------------------ #
@@ -575,20 +593,31 @@ class ModerationService:
                     self._broadcaster_id, self._moderator_id, target
                 )
             else:
-                # delete needs the target's LAST message id, which the proposal
-                # does not carry (it would have to be threaded from the read
-                # sidecar's chat buffer). Report a clear, non-raising result.
-                logger.info(
-                    "moderation confirm: action=%s needs a message id not on the "
-                    "proposal (target=%s); reporting unsupported", action, target,
+                # delete: resolve the target's LAST message id via the injected
+                # lookup (the read sidecar's /last_message index) and issue the real
+                # Helix single-message delete. Without a lookup, or with no recent
+                # message, report a clear non-raising result.
+                message_id = self._lookup_message_id(proposal.resolved_name or cmd.target_name)
+                if not message_id:
+                    reason = "unsupported_action" if self._message_id_lookup is None else "no_message"
+                    detail = (
+                        "delete needs a message_id lookup (not configured)"
+                        if self._message_id_lookup is None
+                        else "no recent message found for that user to delete"
+                    )
+                    logger.info(
+                        "moderation confirm: delete for target=%s -> %s", target, reason,
+                    )
+                    return {
+                        "ok": False,
+                        "action": action,
+                        "target": proposal.resolved_name or target,
+                        "error": reason,
+                        "detail": detail,
+                    }
+                result = self._helix.delete_message(
+                    self._broadcaster_id, self._moderator_id, message_id,
                 )
-                return {
-                    "ok": False,
-                    "action": action,
-                    "target": proposal.resolved_name or target,
-                    "error": "unsupported_action",
-                    "detail": "delete needs the target's last message id (not yet plumbed)",
-                }
         except HelixError as e:
             logger.warning(
                 "helix %s failed for target=%s: status=%s (%s)",
@@ -636,6 +665,34 @@ class ModerationService:
     # ------------------------------------------------------------------ #
     # one-shot path (only when readback confirmation is disabled)
     # ------------------------------------------------------------------ #
+    def apply_chat_settings(self, cmd: Any) -> dict[str, Any]:
+        """Apply a parsed chat-settings command (clear / slow / follower / sub /
+        emote / unique) directly to Helix. Channel-scoped + reversible, so no
+        per-target resolve / read-back. Fail-safe: a HelixError / unexpected fault
+        degrades to a structured ``{"ok": False, ...}`` — never raises."""
+        try:
+            if getattr(cmd, "clear", False):
+                result = self._helix.clear_chat(self._broadcaster_id, self._moderator_id)
+            else:
+                settings = dict(getattr(cmd, "settings", None) or {})
+                if not settings:
+                    return {"ok": False, "error": "empty_settings"}
+                result = self._helix.update_chat_settings(
+                    self._broadcaster_id, self._moderator_id, settings)
+        except HelixError as e:
+            logger.warning("chat-settings helix failed: status=%s (%s)",
+                           getattr(e, "status", None), e)
+            return {"ok": False, "error": "helix_error", "detail": str(e),
+                    "readback": getattr(cmd, "readback", "")}
+        except Exception as e:  # noqa: BLE001 - apply is fail-safe
+            logger.warning("chat-settings apply unexpected failure (%s)", e)
+            return {"ok": False, "error": "unexpected_error", "detail": str(e)}
+        return {
+            "ok": bool(getattr(result, "ok", False)),
+            "readback": getattr(cmd, "readback", ""),
+            "detail": {"status": getattr(result, "status", None)},
+        }
+
     def execute(self, text: str) -> dict[str, Any]:
         """prepare + immediately confirm — for ``require_readback_confirm=False``.
 

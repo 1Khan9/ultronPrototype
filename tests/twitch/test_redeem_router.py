@@ -176,6 +176,48 @@ def test_wheel_redeem_runs_game_announces_and_emits() -> None:
     assert "commit" in ev["detail"] and "server_seed" in ev["detail"]
 
 
+def test_wheel_redeem_credits_ledger_and_is_replay_idempotent() -> None:
+    from kenning.twitch.economy.ledger import Ledger
+    led = Ledger(":memory:")
+    router = RedeemRouter(
+        drain_fn=lambda: [_redeem("r1", "Spin the Wheel", login="alice")],
+        rng=_seeded_rng(),
+        ledger=led,
+    )
+    out = router.tick()
+    uid = "uid-r1"
+    credited = out[0]["detail"]["credited"]
+    assert credited == out[0]["detail"]["payout"]   # the segment's (all-positive) payout
+    assert led.balance(uid) == credited
+    router.tick()                                   # same redemption_id -> deduped
+    assert led.balance(uid) == credited             # no double-credit on EventSub replay
+
+
+def test_redeem_without_ledger_does_not_credit() -> None:
+    # The default (no ledger) router still runs games + announces — no currency move.
+    router = RedeemRouter(
+        drain_fn=lambda: [_redeem("r1", "Spin the Wheel")],
+        rng=_seeded_rng(),
+    )
+    out = router.tick()
+    assert out and out[0]["detail"]["credited"] == 0
+
+
+def test_slots_redeem_credits_only_on_win() -> None:
+    from kenning.twitch.economy.ledger import Ledger
+    from kenning.twitch.redeem_router import REDEEM_SLOTS_WIN
+    led = Ledger(":memory:")
+    router = RedeemRouter(
+        drain_fn=lambda: [_redeem("rs", "slots")],
+        rng=_seeded_rng(),
+        ledger=led,
+    )
+    out = router.tick()
+    detail = out[0]["detail"]
+    expected = REDEEM_SLOTS_WIN if detail["is_win"] else 0
+    assert detail["credited"] == expected and led.balance("uid-rs") == expected
+
+
 def test_title_lookup_is_case_and_whitespace_insensitive() -> None:
     overlay: list[dict] = []
     router = RedeemRouter(

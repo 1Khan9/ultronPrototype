@@ -441,6 +441,21 @@ def strip_thinking_text(text: str) -> str:
     return "".join(out).strip()
 
 
+# 2026-06-24: Qwen3.5 (Gated DeltaNet) leaks chain-of-thought WITHOUT <think>
+# tags, so the tag-based strip above is BLIND to it -- the ONLY real guard is
+# the <think></think> prefill suppressing GENERATION. This conservative opener
+# set is matched at the START of a raw Qwen3.5 reply to RAISE A WARNING when a
+# leak is suspected (never to truncate a real answer). Kept tight to avoid
+# false positives on legitimate short callouts.
+_QWEN35_THINK_PREAMBLE_RE = _re.compile(
+    r"^\s*(okay[,\s]|alright[,\s]|let me\b|let's\b|first[,\s]|the user\b|"
+    r"i need to\b|we need to\b|i should\b|hmm\b|so,\s|to answer\b|"
+    r"the question\b|i'll\b|i will\b|breaking this down\b|"
+    r"let me think\b|thinking about\b)",
+    _re.IGNORECASE,
+)
+
+
 def _resolve_current_mode_for_skills() -> str:
     """Return ``"gaming"`` when gaming mode is engaged, else ``"standby"``.
 
@@ -590,6 +605,9 @@ class LLMEngine:
         # only. ``""`` (default + balanced temperament) is byte-identical
         # to the pre-evolution prompt. NEVER touches the voice character.
         self._temperament_hint: str = ""
+        # Qwen3.5 prefix state-cache snapshot (prefix_text, LlamaState, n_tok)
+        # or None. Tied to the live ``_llm`` context -- cleared on reload.
+        self._qwen35_prefix_cache = None
 
         if runtime == "in_process":
             self._init_in_process(cfg, model_path, n_ctx, n_gpu_layers)
@@ -700,7 +718,11 @@ class LLMEngine:
                 flash_attn=flash_attn,
                 type_k=kv_cache_type,
                 type_v=kv_cache_type,
-                verbose=False,
+                # 2026-06-24: verbose ON by default during the VRAM-optimization push
+                # (llama.cpp prints the CUDA model/KV/compute buffer breakdown). Flip
+                # KENNING_LLM_VERBOSE=0 to silence; revert to False when optimization done.
+                verbose=(os.getenv("KENNING_LLM_VERBOSE", "1").strip().lower()
+                         not in ("0", "false", "no", "off")),
             )
             # Only pass batch tunables when explicitly set so we don't
             # override llama.cpp's per-version defaults when the user
@@ -709,6 +731,25 @@ class LLMEngine:
                 llama_kwargs["n_batch"] = int(n_batch)
             if n_ubatch is not None:
                 llama_kwargs["n_ubatch"] = int(n_ubatch)
+            # 2026-06-24: template-level no-think guard for Qwen3.5. Wire a
+            # chat handler that hardcodes the closed <think></think> so any
+            # create_chat_completion caller also gets no-think (defense in
+            # depth; the raw-completion gen paths are the primary guard).
+            # Fail-open -- never block the load on the handler.
+            _mp = str(model_path).lower()
+            if "qwen3.5" in _mp or "qwen35" in _mp:
+                _handler = self._build_qwen35_chat_handler()
+                if _handler is not None:
+                    llama_kwargs["chat_handler"] = _handler
+                    logger.info(
+                        "Qwen3.5 no-think chat handler wired "
+                        "(template-level enable_thinking=false guard)"
+                    )
+                else:
+                    logger.warning(
+                        "Qwen3.5 chat handler unavailable; relying on the "
+                        "raw-completion <think></think> prefill guard only"
+                    )
             # 2026-05-21 (Phase 1 frontier-enhancement pass) -- wire
             # prompt-lookup-decoding (PLD) into the in-process path,
             # closing the round-8d-surfaced gap where spec decoding
@@ -1576,6 +1617,7 @@ class LLMEngine:
         self._n_gpu_layers = new_gl
         self.n_ctx = new_ctx
         self._device = "cpu" if new_gl == 0 else "gpu"
+        self._qwen35_prefix_cache = None  # snapshot tied to the old context
         del old_llm
         try:
             import gc
@@ -1697,6 +1739,7 @@ class LLMEngine:
         self._n_gpu_layers = new_gl
         self.n_ctx = new_ctx
         self._device = target
+        self._qwen35_prefix_cache = None  # snapshot tied to the old context
         del old_llm
         try:
             import gc
@@ -1789,12 +1832,21 @@ class LLMEngine:
         t0 = time.monotonic()
         if self._runtime == "in_process":
             kwargs = self._chat_completion_kwargs(_llm_cfg, enable_thinking, stream=False)
-            out = self._llm.create_chat_completion(messages=messages, **kwargs)
+            if self._is_qwen35():
+                # Qwen3.5 no-think: raw-completion <think></think> prefill (see
+                # _build_qwen35_nothink_prompt). Output shape is ["text"], not
+                # ["message"]["content"] -- handled at the extraction below.
+                prompt = self._build_qwen35_nothink_prompt(messages)
+                kwargs["stop"] = self._qwen35_stops(kwargs.get("stop"))
+                out = self._llm.create_completion(prompt=prompt, **kwargs)
+            else:
+                out = self._llm.create_chat_completion(messages=messages, **kwargs)
         else:
             out = self._http_chat_completion(
                 messages, _llm_cfg, stream=False, enable_thinking=enable_thinking,
             )
-        raw_text = out["choices"][0]["message"]["content"]
+        _c0 = out["choices"][0]
+        raw_text = _c0["text"] if "text" in _c0 else _c0["message"]["content"]
         # 2026-05-14: defensively strip <think>...</think> blocks from the
         # blocking-path output too. Streaming callers already went through
         # _strip_thinking_blocks; blocking callers (screen-context Q&A,
@@ -1805,6 +1857,12 @@ class LLMEngine:
         text = strip_thinking_text(raw_text).strip()
         elapsed_s = time.monotonic() - t0
         completion_tokens = out.get("usage", {}).get("completion_tokens", -1)
+        if self._is_qwen35():
+            # Robustness audit: prove the no-think prefill held (raw, pre-strip).
+            self._audit_qwen35_output(
+                raw_text, completion_tokens, path="generate",
+                prompt_chars=len(user_message or ""),
+            )
         logger.info(
             "LLM: %d chars in %.2fs (%d tokens)",
             len(text),
@@ -1897,7 +1955,14 @@ class LLMEngine:
                     "max_tokens": int(max_tokens),
                     "repeat_penalty": _llm_cfg.default_repeat_penalty,
                 }
-                out = self._llm.create_chat_completion(messages=messages, **kwargs)
+                if self._is_qwen35():
+                    # Qwen3.5 no-think prefill (output shape ["text"]).
+                    prompt = self._build_qwen35_nothink_prompt(messages)
+                    kwargs["stop"] = self._qwen35_stops(kwargs.get("stop"))
+                    out = self._llm.create_completion(prompt=prompt, **kwargs)
+                else:
+                    out = self._llm.create_chat_completion(
+                        messages=messages, **kwargs)
             else:
                 # HTTP path uses the server-side default sampling knobs.
                 # The summarizer is the only opt-in caller right now and
@@ -1914,13 +1979,20 @@ class LLMEngine:
             )
             return ""
         try:
-            raw_text = out["choices"][0]["message"]["content"]
+            _c0 = out["choices"][0]
+            raw_text = _c0["text"] if "text" in _c0 else _c0["message"]["content"]
         except (KeyError, IndexError, TypeError) as e:
             logger.warning(
                 "generate_isolated response shape unexpected (%s); "
                 "returning empty.", e,
             )
             return ""
+        if self._is_qwen35():
+            self._audit_qwen35_output(
+                raw_text,
+                out.get("usage", {}).get("completion_tokens", -1),
+                path="generate_isolated", prompt_chars=len(user_prompt or ""),
+            )
         text = strip_thinking_text(raw_text).strip()
         elapsed_s = time.monotonic() - t0
         logger.info(
@@ -2061,11 +2133,28 @@ class LLMEngine:
         accumulated: List[str] = []
         completed = False
         canceled = False
+        # Raw (pre-strip) capture for the qwen3.5 no-think audit. For raw
+        # create_completion streaming each chunk is one token, so the chunk
+        # count is the token count -- the per-turn 'no hidden thinking' proof.
+        raw_chunks: List[str] = []
+        raw_token_count = 0
 
         if self._runtime == "in_process":
             kwargs = self._chat_completion_kwargs(
                 _llm_cfg, enable_thinking, stream=True, sampling=sampling)
-            stream = self._llm.create_chat_completion(messages=messages, **kwargs)
+            if self._is_qwen35():
+                # Qwen3.5 ignores /no_think AND create_chat_completion can't pass
+                # enable_thinking in 0.3.22 -> force non-think via a raw-completion
+                # <think></think> prefill (proven). The chunk shape differs (text vs
+                # delta.content); _raw_deltas handles both. Stop at the turn boundary.
+                prompt = self._build_qwen35_nothink_prompt(messages)
+                kwargs["stop"] = self._qwen35_stops(kwargs.get("stop"))
+                # Prefix state-cache when enabled (KENNING_QWEN35_STATE_CACHE);
+                # byte-identical to create_completion when off / on any failure.
+                stream = self._qwen35_stream(messages, prompt, kwargs)
+            else:
+                stream = self._llm.create_chat_completion(
+                    messages=messages, **kwargs)
             stream_iter = stream
         else:
             stream_iter = self._http_chat_completion(
@@ -2073,15 +2162,21 @@ class LLMEngine:
             )
 
         def _raw_deltas():
-            nonlocal canceled, first_token_time, completed
+            nonlocal canceled, first_token_time, completed, raw_token_count
             for chunk in stream_iter:
                 if self._cancel.is_set():
                     canceled = True
                     logger.info("LLM stream canceled by caller")
                     return
-                delta = chunk["choices"][0].get("delta", {}).get("content")
+                _ch = chunk["choices"][0]
+                delta = _ch.get("delta", {}).get("content")
+                if delta is None:
+                    # raw create_completion path (qwen3.5 no-think) -> chunk["text"]
+                    delta = _ch.get("text")
                 if not delta:
                     continue
+                raw_token_count += 1
+                raw_chunks.append(delta)
                 if first_token_time is None:
                     first_token_time = time.monotonic()
                     # Evolution guardrail instrumentation (#15+#65): stash
@@ -2120,10 +2215,19 @@ class LLMEngine:
                 logger.info("Skipping interrupted LLM stream in chat history")
             elapsed_s = time.monotonic() - t0
             logger.info(
-                "LLM stream: %d chars in %.2fs",
+                "LLM stream: %d chars in %.2fs (%d raw tokens)",
                 len(full),
                 elapsed_s,
+                raw_token_count,
             )
+            if self._is_qwen35():
+                # Robustness audit on the RAW (pre-strip) stream so an untagged
+                # reasoning leak -- which the tag-strip would pass through -- is
+                # still caught and flagged. Token count is the standing proof.
+                self._audit_qwen35_output(
+                    "".join(raw_chunks), raw_token_count,
+                    path="generate_stream", prompt_chars=len(user_message or ""),
+                )
             try:
                 from kenning.observations import observe_llm_call
 
@@ -2251,7 +2355,16 @@ class LLMEngine:
                     f"{getattr(llm_cfg, 'preset', '')} "
                     f"{getattr(llm_cfg, 'model_path', '')}"
                 )
-            if "qwen" not in ident.lower():
+            il = ident.lower()
+            if "qwen" not in il:
+                return messages
+            # 2026-06-24: Qwen3.5 (Gated DeltaNet) IGNORES the /no_think marker
+            # (llama.cpp #20182). It's suppressed instead via an empty
+            # <think></think> assistant prefill in generate_stream
+            # (_build_qwen35_nothink_prompt). Appending /no_think here is just noise
+            # the model REASONS ABOUT (observed: it narrates "the user included
+            # /no_think"), so skip the marker for qwen3.5.
+            if "qwen3.5" in il or "qwen35" in il:
                 return messages
         except Exception:  # noqa: BLE001 - fail-open to legacy behavior
             pass
@@ -2263,6 +2376,296 @@ class LLMEngine:
                     entry["content"] = content.rstrip() + " /no_think"
                 break
         return out
+
+    def _is_qwen35(self) -> bool:
+        """True when the live in-process model is a Qwen3.5 (Gated DeltaNet,
+        arch 'qwen35'). These IGNORE /no_think AND can't take chat_template_kwargs
+        in llama-cpp-python 0.3.22, so generate_stream forces non-think via a
+        raw-completion <think></think> prefill instead of create_chat_completion."""
+        try:
+            ident = str(getattr(self, "model_path", None) or "")
+            if not ident:
+                from kenning.config import get_config
+                ident = str(getattr(get_config().llm, "model_path", "") or "")
+            il = ident.lower()
+            return "qwen3.5" in il or "qwen35" in il
+        except Exception:  # noqa: BLE001
+            return False
+
+    @staticmethod
+    def _build_qwen35_nothink_prompt(messages: list) -> str:
+        """Render the message list to the Qwen ChatML prompt + an EMPTY
+        <think></think> assistant prefill. The closed think block makes Qwen3.5
+        skip reasoning and emit only the answer (proven in the bare-harness load
+        test; the /no_think marker + enable_thinking kwarg are both ignored/
+        unavailable for this model in 0.3.22). Qwen uses no BOS token
+        (tokenizer.ggml.add_bos_token=false), so the bare ChatML is correct."""
+        parts = []
+        for m in messages:
+            role = m.get("role", "user") or "user"
+            content = m.get("content", "") or ""
+            parts.append(f"<|im_start|>{role}\n{content}<|im_end|>\n")
+        parts.append("<|im_start|>assistant\n<think>\n\n</think>\n\n")
+        return "".join(parts)
+
+    @staticmethod
+    def _qwen35_stops(existing=None) -> list:
+        """Stop sequences for the Qwen3.5 raw-completion no-think path.
+
+        ``<|im_end|>`` ends the assistant turn. ``<think>`` is a HARD GUARD:
+        after the closed ``<think></think>`` prefill the model must emit the
+        answer directly -- if it ever RE-OPENS a reasoning block we halt
+        immediately instead of generating a hidden chain-of-thought that (for
+        Qwen3.5, which leaks reasoning UNTAGGED) the tag-strip can't catch.
+        Cheap insurance; the persona never emits a literal '<think>'. Stops
+        match GENERATED text only, so the prefill in the prompt is unaffected.
+        """
+        stops = list(existing or [])
+        for s in ("<|im_end|>", "<think>"):
+            if s not in stops:
+                stops.append(s)
+        return stops
+
+    def _audit_qwen35_output(
+        self, raw_text: str, token_count: int, *, path: str, prompt_chars: int,
+    ) -> None:
+        """Robustness telemetry that makes 'no hidden thinking' AUDITABLE.
+
+        The <think></think> prefill suppresses reasoning at GENERATION time;
+        this proves it held. Token count is a SOUND proof on its own -- an
+        autoregressive model cannot reason without emitting tokens, so a short
+        reply == no hidden thinking. On every qwen3.5 turn the caller logs the
+        raw token count (INFO); here we raise a loud WARNING + a
+        ``logs/thinking_audit.jsonl`` record whenever the raw output LOOKS like
+        leaked reasoning (a ``<think>`` tag, or a reasoning-preamble opener on a
+        long reply). With ``KENNING_THINK_AUDIT=1`` EVERY turn is recorded (full
+        proof trail for live testing); default off keeps the hot path clean.
+        Fail-open: telemetry must never break a turn.
+        """
+        raw = raw_text or ""
+        has_tag = "<think>" in raw
+        preamble = bool(_QWEN35_THINK_PREAMBLE_RE.match(raw))
+        try:
+            tok = int(token_count)
+        except Exception:  # noqa: BLE001
+            tok = -1
+        # Short tactical callouts are well under ~40 tokens; the leak
+        # signature is a long reply that ALSO opens like reasoning (or any
+        # literal <think> tag, regardless of length).
+        suspected = has_tag or (preamble and tok >= 80)
+        always_audit = os.environ.get("KENNING_THINK_AUDIT") == "1"
+        if suspected:
+            logger.warning(
+                "QWEN3.5 THINKING SUSPECTED on %s: tokens=%d tag=%s preamble=%s :: %r",
+                path, tok, has_tag, preamble, raw[:160],
+            )
+        if suspected or always_audit:
+            try:
+                import json as _json
+
+                rec = {
+                    "path": path,
+                    "tokens": tok,
+                    "prompt_chars": int(prompt_chars),
+                    "suspected": bool(suspected),
+                    "has_tag": bool(has_tag),
+                    "preamble": bool(preamble),
+                    "preview": raw[:200],
+                }
+                log_dir = os.path.join(os.getcwd(), "logs")
+                os.makedirs(log_dir, exist_ok=True)
+                with open(
+                    os.path.join(log_dir, "thinking_audit.jsonl"),
+                    "a", encoding="utf-8",
+                ) as fh:
+                    fh.write(_json.dumps(rec, ensure_ascii=False) + "\n")
+            except Exception:  # noqa: BLE001 - telemetry never breaks a turn
+                pass
+
+    @staticmethod
+    def _build_qwen35_chat_handler():
+        """A Jinja2 chat handler that HARDCODES no-think for Qwen3.5.
+
+        This is the template-level layer the user asked for -- the in-code
+        equivalent of editing the GGUF's chat template to force
+        ``enable_thinking = false``. It renders plain Qwen ChatML and ALWAYS
+        appends the closed ``<think></think>`` assistant prefill on the
+        generation turn, so EVERY ``create_chat_completion`` call -- including
+        a future caller that bypasses the raw-completion gen paths -- emits
+        no-think. Independent of flags and of the model's embedded template.
+
+        The raw-completion prefill in generate/_stream/_isolated is the
+        PRIMARY guard; this is defense-in-depth for the chat API surface.
+        Fail-open: returns None if this llama-cpp-python build lacks
+        ``Jinja2ChatFormatter`` (the gen-path prefill still protects us).
+        """
+        try:
+            from llama_cpp.llama_chat_format import Jinja2ChatFormatter
+        except Exception:  # noqa: BLE001
+            return None
+        template = (
+            "{% for message in messages %}"
+            "{{ '<|im_start|>' + message['role'] + '\n' "
+            "+ message['content'] + '<|im_end|>' + '\n' }}"
+            "{% endfor %}"
+            "{% if add_generation_prompt %}"
+            "{{ '<|im_start|>assistant\n<think>\n\n</think>\n\n' }}"
+            "{% endif %}"
+        )
+        try:
+            return Jinja2ChatFormatter(
+                template=template,
+                eos_token="<|im_end|>",
+                bos_token="",
+            ).to_chat_handler()
+        except Exception:  # noqa: BLE001 - signature drift -> fall back to prefill
+            return None
+
+    # --- Qwen3.5 prefix state-cache (latency workaround, default OFF) -------
+    #
+    # Qwen3.5 Gated-DeltaNet has NO prompt-cache reuse / context-shifting: the
+    # recurrent (SSM) state is sequential and cannot be rewound to an arbitrary
+    # prefix, so create_completion re-prefills the full ~900-token persona
+    # prompt EVERY turn. The workaround is state snapshot/restore (NOT a prefix
+    # rewind): eval the FIXED system prefix once -> save_state(); each turn
+    # load_state() that snapshot (exact recorded recurrent+KV state) and eval
+    # only the new suffix tokens FORWARD via generate(reset=False) -- which
+    # skips the kv_cache_seq_rm trim that DeltaNet rejects.
+    #
+    # GATED HARD-OFF behind KENNING_QWEN35_STATE_CACHE. When off, the path is
+    # byte-identical to today (plain create_completion). Fail-open: any error
+    # falls back to the full-prefill path. REQUIRES live verification that
+    # 0.3.22's save_state captures the DeltaNet SSM state before enabling --
+    # see scripts/_qwen35_state_cache_verify.py.
+
+    @staticmethod
+    def _state_cache_enabled() -> bool:
+        return os.environ.get("KENNING_QWEN35_STATE_CACHE", "").strip().lower() in (
+            "1", "true", "on", "yes",
+        )
+
+    def _qwen35_capture_state(self):
+        """LEAN state snapshot: the llama context bytes (KV + DeltaNet recurrent
+        state) + n_tokens + input_ids only. NOT the multi-GB scores buffer that
+        Llama.save_state copies and Llama.load_state re-zeros every call -- that
+        zeroing made the stock round-trip net-NEGATIVE (cached ~200-300ms SLOWER
+        than re-eval; proven by scripts/_qwen35_state_cache_verify.py). Returns
+        an opaque tuple for _qwen35_restore_state."""
+        import ctypes
+        import llama_cpp
+        ctx = self._llm._ctx.ctx
+        size = int(llama_cpp.llama_state_get_size(ctx))
+        buf = (ctypes.c_uint8 * size)()
+        n = int(llama_cpp.llama_state_get_data(ctx, buf, size))
+        return (bytes(buf[:n]), int(self._llm.n_tokens),
+                self._llm.input_ids[: int(self._llm.n_tokens)].copy())
+
+    def _qwen35_restore_state(self, snap) -> None:
+        """LEAN restore: set the context bytes + n_tokens + input_ids, skipping
+        the scores-buffer zeroing Llama.load_state does. A forward eval
+        (generate reset=False) then continues from the restored DeltaNet state."""
+        import ctypes
+        import llama_cpp
+        state_bytes, n_tokens, input_ids = snap
+        arr = (ctypes.c_uint8 * len(state_bytes)).from_buffer_copy(state_bytes)
+        if (llama_cpp.llama_state_set_data(
+                self._llm._ctx.ctx, arr, len(state_bytes)) != len(state_bytes)):
+            raise RuntimeError("llama_state_set_data size mismatch")
+        self._llm.n_tokens = n_tokens
+        self._llm.input_ids[:n_tokens] = input_ids
+
+    def _qwen35_stream(self, messages: list, full_prompt: str, kwargs: dict):
+        """Return a chunk-dict iterator for the qwen3.5 streaming path.
+
+        Uses the prefix state-cache when enabled + usable; otherwise (and on
+        ANY failure) the normal full-prefill create_completion. The returned
+        object is iterated identically by the caller either way.
+        """
+        if self._state_cache_enabled():
+            try:
+                cached = self._qwen35_cached_stream(full_prompt, kwargs)
+                if cached is not None:
+                    return cached
+            except Exception as e:  # noqa: BLE001 - never break a turn
+                logger.warning(
+                    "qwen3.5 state-cache failed (%s); full-prefill fallback", e,
+                )
+                try:
+                    self._llm.reset()
+                except Exception:  # noqa: BLE001
+                    pass
+        return self._llm.create_completion(prompt=full_prompt, **kwargs)
+
+    def _qwen35_cached_stream(self, full_prompt: str, kwargs: dict):
+        """Build/refresh the prefix snapshot, restore it, and return a token
+        stream that evaluates ONLY the suffix. Returns None to signal the
+        caller to use the full-prefill path (no clean static prefix)."""
+        marker = "<|im_start|>user"
+        split = full_prompt.find(marker)
+        if split <= 0:
+            return None  # no system prefix to cache
+        prefix_text = full_prompt[:split]
+        suffix_text = full_prompt[split:]
+
+        cache = getattr(self, "_qwen35_prefix_cache", None)
+        if cache is None or cache[0] != prefix_text:
+            # (Re)build the snapshot: eval the fixed prefix once, save state.
+            prefix_tokens = self._llm.tokenize(
+                prefix_text.encode("utf-8"), add_bos=False, special=True,
+            )
+            self._llm.reset()
+            self._llm.eval(prefix_tokens)
+            state = self._qwen35_capture_state()
+            self._qwen35_prefix_cache = (prefix_text, state, len(prefix_tokens))
+            logger.info(
+                "qwen3.5 state-cache: snapshot built (%d prefix tokens)",
+                len(prefix_tokens),
+            )
+            cache = self._qwen35_prefix_cache
+
+        # Restore the exact prefix state (recurrent + KV) and eval the suffix.
+        self._qwen35_restore_state(cache[1])
+        suffix_tokens = self._llm.tokenize(
+            suffix_text.encode("utf-8"), add_bos=False, special=True,
+        )
+        return self._qwen35_token_stream(suffix_tokens, kwargs)
+
+    def _qwen35_token_stream(self, suffix_tokens, kwargs: dict):
+        """Generate from the loaded state, yielding create_completion-shaped
+        chunk dicts ({"choices": [{"text": piece}]}) so the streaming caller
+        is unchanged. Stops on EOS, the <think> guard, or max_tokens."""
+        eos_id = self._llm.token_eos()
+        max_tokens = int(kwargs.get("max_tokens") or 512)
+        gen = self._llm.generate(
+            list(suffix_tokens),
+            reset=False,  # forward-eval from the restored state (no rewind)
+            temp=float(kwargs.get("temperature", 0.8)),
+            top_p=float(kwargs.get("top_p", 0.95)),
+            top_k=int(kwargs.get("top_k", 40)),
+            min_p=float(kwargs.get("min_p", 0.05)),
+            repeat_penalty=float(kwargs.get("repeat_penalty", 1.0)),
+        )
+        gen_toks: list = []
+        emitted = ""
+        for token in gen:
+            if token == eos_id:
+                break
+            gen_toks.append(token)
+            full = self._llm.detokenize(gen_toks).decode("utf-8", errors="ignore")
+            cut = full.find("<think>")  # defense: never emit a reopened block
+            if cut != -1:
+                piece = full[:cut][len(emitted):]
+                if piece:
+                    yield {"choices": [{"text": piece, "index": 0,
+                                        "logprobs": None, "finish_reason": None}]}
+                break
+            piece = full[len(emitted):]
+            emitted = full
+            if piece:
+                yield {"choices": [{"text": piece, "index": 0,
+                                    "logprobs": None, "finish_reason": None}]}
+            if len(gen_toks) >= max_tokens:
+                break
 
     # --- HTTP runtime helpers ----------------------------------------------
 
@@ -2296,11 +2699,22 @@ class LLMEngine:
             "repeat_penalty": _llm_cfg.default_repeat_penalty,
             "stream": stream,
         }
+        # Force no-think for Qwen3.5 even when the caller passed no explicit
+        # flag: this model reasons by default and must never leak chain-of-
+        # thought over the wire. CAVEAT: an OpenAI-compat server only honors
+        # this if its build forwards chat_template_kwargs / supports
+        # reasoning_budget; the pinned llama-cpp-python 0.3.22 server does NOT
+        # (same create_chat_completion limitation as in-process) -- a genuine
+        # independent second engine needs an upstream llama-server binary. The
+        # in-process raw-completion prefill is the ENFORCED guard today.
+        if enable_thinking is None and self._is_qwen35():
+            enable_thinking = False
         if enable_thinking is not None:
-            # llama-cpp-server passes chat_template_kwargs through to its
-            # underlying create_chat_completion call. Same Qwen3.5 toggle
-            # as the in-process path.
             payload["chat_template_kwargs"] = {"enable_thinking": enable_thinking}
+            if enable_thinking is False:
+                # Upstream llama-server's native no-reasoning switch; silently
+                # ignored by servers that don't implement it.
+                payload["reasoning_budget"] = 0
         if not stream:
             resp = requests.post(
                 url, headers=headers, json=payload,
