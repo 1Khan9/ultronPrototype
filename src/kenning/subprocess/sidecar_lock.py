@@ -137,13 +137,44 @@ SIDECAR_HINTS: dict[str, str] = {
 }
 
 
+def _ancestor_pids(pid: int) -> set:
+    """Every ANCESTOR PID of ``pid`` (parent, grandparent, ... to the root).
+
+    THE venvlauncher self-reap fix (2026-06-23): ``.venv\\Scripts\\python.exe`` is a
+    launcher that spawns the base ``Python311\\python.exe`` as a CHILD to run the
+    code, then waits -- so a sidecar's launcher PARENT carries the same sidecar
+    script in its command line. A cmdline-matching reaper would match that launcher
+    and ``kill_process_tree`` it -- which kills the launcher AND its descendants,
+    i.e. the sidecar itself. Killing ANY ancestor takes us down, so the reaper must
+    skip the whole parent chain. Empty set on any failure (fail-open: degrade to the
+    old behaviour rather than raise)."""
+    out: set = set()
+    try:
+        import psutil
+        p = psutil.Process(int(pid))
+        for _ in range(64):  # bound the walk against a pathological cycle
+            parent = p.parent()
+            if parent is None:
+                break
+            ppid = int(parent.pid)
+            if ppid <= 0 or ppid in out:
+                break
+            out.add(ppid)
+            p = parent
+    except Exception:                                            # noqa: BLE001
+        pass
+    return out
+
+
 def reap_stray_sidecars(hints: "list[str] | None" = None,
                         keep_pid: Optional[int] = None) -> int:
     """Reap ANY lingering sidecar process matched by command line against
     ``hints`` (default: ALL :data:`SIDECAR_HINTS`). The generic backstop for a
     duplicate/orphan that failed to bind its port (so it owns no LISTEN socket)
-    yet is still resident. Never reaps the current process or ``keep_pid``.
-    Returns the count reaped. Fail-open (0) — never raises into boot/shutdown."""
+    yet is still resident. Never reaps the current process, ``keep_pid``, or ANY
+    ANCESTOR of the current process (see :func:`_ancestor_pids` -- the
+    venvlauncher self-reap fix). Returns the count reaped. Fail-open (0) -- never
+    raises into boot/shutdown."""
     markers = [m for m in (hints if hints is not None else list(SIDECAR_HINTS.values())) if m]
     if not markers:
         return 0
@@ -152,6 +183,16 @@ def reap_stray_sidecars(hints: "list[str] | None" = None,
     except Exception:                                            # noqa: BLE001
         return 0
     me = os.getpid()
+    # Default ON. KENNING_REAP_SKIP_ANCESTORS=0 restores the old (buggy) behaviour
+    # so the self-reap can be reproduced for before/after evidence.
+    skip_ancestors = os.getenv(
+        "KENNING_REAP_SKIP_ANCESTORS", "1",
+    ).strip().lower() not in ("0", "false", "no", "off")
+    ancestors = _ancestor_pids(me) if skip_ancestors else set()
+    logger.info(
+        "reap_stray_sidecars: me=%d markers=%s ancestors=%s skip_ancestors=%s",
+        me, markers, sorted(ancestors), skip_ancestors,
+    )
     reaped = 0
     for proc in psutil.process_iter(["pid", "name", "cmdline"]):
         try:
@@ -163,6 +204,25 @@ def reap_stray_sidecars(hints: "list[str] | None" = None,
                 continue
             cmd = " ".join(proc.info.get("cmdline") or [])
             if any(m in cmd for m in markers):
+                if pid in ancestors:
+                    logger.info(
+                        "reap_stray_sidecars: SKIP ancestor pid=%d (our own "
+                        "launcher/parent -- killing it would kill us) cmd=%r",
+                        pid, cmd[:140],
+                    )
+                    continue
+                # keep_pid names the OWNED sidecar; with the venvlauncher that is a
+                # launcher+child pair, so the kept process's CHILD carries the same
+                # script too. Protect the whole kept TREE, not just the named pid,
+                # or we reap the real child of the very sidecar we meant to keep.
+                if (skip_ancestors and keep_pid
+                        and int(keep_pid) in _ancestor_pids(pid)):
+                    logger.info(
+                        "reap_stray_sidecars: SKIP keep_pid descendant pid=%d "
+                        "(launcher-child of the kept process %s) cmd=%r",
+                        pid, keep_pid, cmd[:140],
+                    )
+                    continue
                 killed = _kill(pid)
                 if killed:
                     reaped += 1

@@ -12,13 +12,28 @@ from kenning.audio.intent_gate import Scenario
 
 @pytest.mark.parametrize("text", [
     "tell my team to rush B",
-    "sova hit 84 on A main",
-    "two on A site one rotating",
     "explain quantum physics to my team",   # 2026-06-24: addressee-LAST team command
 ])
 def test_relay_to_team(text):
+    """EXPLICIT relay address -> RELAY in balanced always-listening (no wake needed)."""
     v = ig.classify_scenario(text)
     assert v.scenario is Scenario.RELAY_TO_TEAM, (text, v)
+
+
+# 2026-06-24 (user: "he's firing on commands not meant for him"): a BARE tactical callout
+# with NO explicit relay address is the player calling out to teammates DIRECTLY -> Ultron
+# must NOT echo it back to the team in balanced always-listening. Bare-callout auto-relay
+# is now TURBO-ONLY.
+@pytest.mark.parametrize("text", [
+    "sova hit 84 on A main",
+    "two on A site one rotating",
+    "they have Vyse ult for take",     # the exact live false-positive
+    "you, Gekko, ult for retake",      # the exact live false-positive
+])
+def test_bare_callout_balanced_ignore_turbo_relay(text):
+    assert ig.classify_scenario(text).scenario is Scenario.IGNORE, (text, "balanced")
+    assert (ig.classify_scenario(text, turbo=True).scenario
+            is Scenario.RELAY_TO_TEAM), (text, "turbo")
 
 
 @pytest.mark.parametrize("text", [
@@ -52,6 +67,36 @@ def test_named_factual_question_is_private():
     # The SAME question that names Ultron IS a private reply.
     v = ig.classify_scenario("ultron, what time is it right now")
     assert v.scenario is Scenario.PRIVATE_REPLY, v
+
+
+@pytest.mark.parametrize("text", [
+    "voltron, what time is it right now",   # STT mishears "Ultron" as "Voltron"
+    "altron, what map is this",             # ... and as "Altron"
+])
+def test_stt_misheard_name_registers_as_ultron_address(text):
+    # 2026-06-26: the streamer's STT transcribes "Ultron" as "Voltron"/"Altron" on
+    # always-listening, so the addressing gate used to drop the turn ("no addressing
+    # signal"). These unambiguous mishears now count as an Ultron name -> the named
+    # question is treated as addressed (PRIVATE_REPLY), same as "ultron, ...".
+    v = ig.classify_scenario(text)
+    assert v.scenario is Scenario.PRIVATE_REPLY, (text, v)
+
+
+def test_stt_mishear_address_regexes_match_both_aliases():
+    # Belt-and-suspenders at the regex layer: both the reaction-filter veto regex
+    # AND the narrower PRIVATE_REPLY/addressing-signal name set recognise the two
+    # mishears (so a "Voltron, ban X" moderation turn is addressed to Ultron).
+    for alias in ("voltron", "altron"):
+        assert ig._NAME_TOKEN_RE.search(alias) is not None, alias
+        assert ig._ADDRESS_NAME_RE.search(alias) is not None, alias
+
+
+def test_unmisheard_common_line_still_not_addressed():
+    # Guard against over-broadening: a normal non-addressed line (no Ultron name /
+    # no mishear alias) is still IGNORE, not falsely promoted to an address.
+    v = ig.classify_scenario("the rotations feel pretty clean this map")
+    assert v.scenario is Scenario.IGNORE, v
+    assert ig._ADDRESS_NAME_RE.search("the rotations feel pretty clean this map") is None
 
 
 @pytest.mark.parametrize("text", [
@@ -191,13 +236,12 @@ def test_opinion_with_location_word_not_relayed(text: str) -> None:
 
 
 @pytest.mark.parametrize("text", [
-    "they are pushing long",
-    "one long",
     "tell my team to rush B",
 ])
 def test_real_callout_still_relays(text: str) -> None:
-    # Strong relay signals (complete tactical callout / strict matcher) are
-    # unaffected by the opinion guard -- these must still relay.
+    # The STRICT matcher (explicit "tell my team X") is unaffected by the opinion
+    # guard -- it must still relay. (Bare callouts now require turbo; see
+    # test_bare_callout_balanced_ignore_turbo_relay.)
     v = ig.classify_scenario(text, seconds_since_response=5.0)
     assert v.scenario is Scenario.RELAY_TO_TEAM, (text, v)
 

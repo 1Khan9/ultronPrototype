@@ -97,6 +97,12 @@ def test_help_parses():
     assert cmd is not None and cmd.kind is CommandKind.HELP
 
 
+def test_ultron_parses():
+    cmd = parse_command(make_event("!ultron"))
+    assert cmd is not None and cmd.kind is CommandKind.ULTRON
+    assert cmd.args == {}
+
+
 def test_gamble_amount_parses():
     cmd = parse_command(make_event("!gamble 50"))
     assert cmd is not None

@@ -106,6 +106,33 @@ from kenning.observations import observe_llm_thinking_drift_sample
 logger = get_logger("pipeline.orchestrator")
 
 
+def _build_economy_ledger(ecfg):
+    """Build the Twitch economy ledger: the StreamElements-points backend when
+    ``economy.streamelements_enabled`` (viewers' !points = their SE loyalty
+    points), else the local append-only SQLite ledger. Falls back to SQLite on
+    any SE creds/init error so the economy still boots. Used by BOTH the redeem
+    block and the chat-game block so they share ONE backend (2026-06-26)."""
+    from kenning.config import resolve_path as _rp
+    from kenning.twitch.economy.ledger import Ledger
+    if getattr(ecfg, "streamelements_enabled", False):
+        try:
+            from kenning.twitch.economy.streamelements import build_se_ledger
+            led = build_se_ledger(
+                str(getattr(ecfg, "streamelements_creds_path",
+                            "~/.kenning/streamelements.json")),
+                str(_rp(getattr(ecfg, "streamelements_idempotency_db",
+                                "data/twitch/se_idempotency.db"))))
+            logger.info(
+                "twitch economy -> StreamElements points backend "
+                "(viewers' !points = SE loyalty points)")
+            return led
+        except Exception as e:  # noqa: BLE001
+            logger.error(
+                "StreamElements ledger init FAILED (%s); falling back to the "
+                "local SQLite ledger", e)
+    return Ledger(str(_rp(getattr(ecfg, "db_path", "data/twitch/economy.db"))))
+
+
 # Conversational fallback persona for the LEAN GAMING BOOT. When a wake-addressed
 # utterance matches NO deterministic route (not a relay callout, not Spotify, not
 # the curated identity/greet) it falls through to the LLM. On the desktop that
@@ -1444,6 +1471,16 @@ class Orchestrator:
         # so he is not pressing '6' on every line unless the user wants it.
         self._ptt_runtime_enabled = bool(settings.PUSH_TO_TALK_ENABLED)
 
+        # Runtime CHAT-AUDIO routing toggle (the STOP-window "HEAR CHAT" button
+        # flips it). Controls ONLY whether Ultron's CHAT-directed speech (the
+        # Twitch chat-reply path AND the "ultron says" SPEAK_SAY redeem) plays
+        # through the LOCAL default speakers. Default OFF = those clips go to the
+        # OBS / broadcast mirror ONLY (so chatter audio isn't distracting mid-
+        # game); ON = also heard on the local speakers. This is SEPARATE from the
+        # CHAT toggle (which enables/disables chat-reply entirely) and NEVER
+        # affects team callouts, the team-mic path, or the SPEAK_TEAM redeem.
+        self._chat_audio_to_speakers = False
+
         # Tiny always-on-top, mouse-clickable "STOP" window. Clicking it fires
         # the SAME all-channel cancel as voice "Ultron, stop" (_cancel_all_playback)
         # but WITHOUT the wake-word watcher -- which self-triggers on the
@@ -1507,6 +1544,18 @@ class Orchestrator:
                         "reply_enabled", False)),
                     chat_height=getattr(_sb, "chat_height", 26),
                     chat_label=getattr(_sb, "chat_label", "CHAT"),
+                    # HEAR-CHAT toggle: routes chat-directed audio (chat-reply +
+                    # the "ultron says" redeem) to the local speakers (ON) or
+                    # OBS-only (OFF, default). Only wired when twitch is enabled.
+                    on_toggle_chat_audio=(
+                        self._set_chat_audio_to_speakers
+                        if getattr(getattr(get_config(), "twitch", None),
+                                   "enabled", False)
+                        else None
+                    ),
+                    chat_audio_enabled=bool(self._chat_audio_to_speakers),
+                    chat_audio_height=getattr(_sb, "chat_audio_height", 26),
+                    chat_audio_label=getattr(_sb, "chat_audio_label", "HEAR CHAT"),
                 )
                 if getattr(_sb, "show_at_startup", False):
                     self._stop_button.show()
@@ -3438,6 +3487,34 @@ class Orchestrator:
             ) is not None
         except Exception as e:                                       # noqa: BLE001
             logger.debug("relay command probe failed: %s", e)
+            return False
+
+    def _is_bare_relay_lead(self, user_text: str) -> bool:
+        """True iff ``user_text`` is a relay LEAD ("tell my team" / "tell the
+        team") with NO routable callout payload yet -- the player started the
+        relay but the callout has not landed (a pause before "two garage"). Lets
+        the capture loop listen ONCE more for the callout instead of dropping the
+        turn to IGNORE. Fail-open to False, so any failure preserves today's
+        behaviour (the bare lead routes as before)."""
+        try:
+            from kenning.config import get_config
+            if not getattr(get_config().relay_speech, "enabled", False):
+                return False
+            # A complete callout is NOT a bare lead.
+            if self._is_relay_command(user_text):
+                return False
+            from kenning.audio.command_normalizer import (
+                normalize_command, _ANY_TEAM_LEAD_OUTER_RE,
+            )
+            norm = normalize_command(user_text)
+            m = _ANY_TEAM_LEAD_OUTER_RE.match(norm)
+            if m is None:
+                return False
+            # The relay lead is present but nothing routable follows it.
+            remainder = norm[m.end():].strip(" .,!?")
+            return len(remainder) <= 1
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("bare relay-lead probe failed: %s", e)
             return False
 
     def _maybe_handle_anticheat_toggle(self, user_text: str) -> bool:
@@ -6419,6 +6496,44 @@ class Orchestrator:
             # announce + overlay only), so it runs in its own daemon loop started
             # here -- before the LLM check -- gated on twitch.economy.enabled (which
             # is also what makes the read sidecar subscribe to redeems).
+            # Chat-post helpers (defined UNCONDITIONALLY so redeem / chat-game /
+            # chat-reply paths all reuse them). _twitch_chat_post sends a line to
+            # Twitch chat AS THE BOT (loopback -> write sidecar /say -> Helix POST
+            # /chat/messages, user:write:chat). _twitch_speak_and_post does BOTH the
+            # stream-bus TTS and the chat post. Routing policy (user 2026-06-24):
+            #   * channel-point REDEEMS + chat-REPLY  -> speak + post  (_speak_and_post)
+            #   * chat-COMMAND games (!points/!gamble/!give/insufficient/etc.) -> post
+            #     ONLY (chat is the response; no TTS, it was too chatty on the bus).
+            _twitch_write_ep = str(getattr(tcfg, "write_sidecar_endpoint",
+                                           "http://127.0.0.1:8777")).rstrip("/")
+
+            def _twitch_chat_post(text: str) -> None:
+                t = (text or "").strip()
+                if not t:
+                    return
+                try:
+                    import json as _cj
+                    import urllib.request as _cu
+                    _body = _cj.dumps({"text": t}).encode("utf-8")
+                    _req = _cu.Request(f"{_twitch_write_ep}/say", data=_body, method="POST",
+                                       headers={"Content-Type": "application/json"})
+                    with _cu.urlopen(_req, timeout=5) as _r:  # nosec B310 - loopback
+                        _r.read()
+                except Exception as _ce:                                 # noqa: BLE001
+                    logger.debug("twitch chat-post failed: %s", _ce)
+
+            def _twitch_speak_and_post(text: str) -> None:
+                try:
+                    # CHAT-directed audio: route via _chat_speak so the "HEAR
+                    # CHAT" toggle decides speakers-vs-OBS-only (default OFF =
+                    # OBS/broadcast mirror ONLY). The broadcast tee fires
+                    # regardless; only the local speaker output is gated.
+                    self._chat_speak(text)
+                finally:
+                    _twitch_chat_post(text)
+
+            self._twitch_chat_post = _twitch_chat_post
+
             self._twitch_redeem_router = None
             self._twitch_ledger = None
             try:
@@ -6432,17 +6547,28 @@ class Orchestrator:
                     # ONE ledger singleton, shared by the redeem router (here) and
                     # the chat-game router (below) so a redeem payout and a chat-game
                     # bet move the SAME balance. Closed once on shutdown.
-                    self._twitch_ledger = Ledger(str(_rp(getattr(
-                        _ecfg0, "db_path", "data/twitch/economy.db"))))
+                    self._twitch_ledger = _build_economy_ledger(_ecfg0)
                     read_ep = str(getattr(tcfg, "read_sidecar_endpoint",
                                           "http://127.0.0.1:8773"))
                     ov = getattr(self, "_twitch_overlay_server", None)
                     overlay_emit = getattr(ov, "emit", None) if ov is not None else None
+                    # SPEAK redeems (2026-06-26): "ultron says" -> broadcast bus +
+                    # chat; "ultron tells my team" -> team voice bus. Both gated by
+                    # redeem_speak.enabled (default OFF) + the SAME Llama-Guard the
+                    # chat-reply path uses (fail-CLOSED). The team title ALSO needs
+                    # redeem_speak.team_enabled (the chat->team boundary) AND a
+                    # non-ranked session. Wired via _build_redeem_speak_kwargs so the
+                    # construction stays readable; returns {} when the feature is OFF
+                    # (router byte-identical to the pre-speak behavior).
+                    speak_kwargs = self._build_redeem_speak_kwargs(
+                        tcfg, _twitch_speak_and_post, _twitch_chat_post,
+                    )
                     router = RedeemRouter(
                         make_redeem_drain_fn(read_ep),
-                        announce_fn=self._speak,
+                        announce_fn=_twitch_speak_and_post,   # redeems: spoken on stream + posted to chat
                         overlay_emit=overlay_emit,
                         ledger=self._twitch_ledger,
+                        **speak_kwargs,
                     )
                     self._twitch_redeem_router = router
                     self._twitch_chat_stop = False
@@ -6484,14 +6610,23 @@ class Orchestrator:
                     # defensively only if that block somehow did not.
                     ledger = self._twitch_ledger
                     if ledger is None:
-                        from kenning.config import resolve_path as _rp
-                        from kenning.twitch.economy.ledger import Ledger
-                        ledger = Ledger(str(_rp(getattr(
-                            _ecfg, "db_path", "data/twitch/economy.db"))))
+                        ledger = _build_economy_ledger(_ecfg)
                         self._twitch_ledger = ledger
+                    # Mirror the redeem router's overlay wiring: pass the SAME
+                    # OBS overlay sink so typed chat-game outcomes (!slots/!wheel/
+                    # !heist/!duel/!trivia/!raffle) render on-stream. None when the
+                    # overlay is disabled -> the games still run, just no card.
+                    _ov = getattr(self, "_twitch_overlay_server", None)
+                    _cg_overlay_emit = getattr(_ov, "emit", None) if _ov is not None else None
                     cgr = ChatGameRouter(
                         make_chat_command_drain_fn(read_ep),
-                        ledger=ledger, cfg=_ecfg, announce_fn=self._speak,
+                        ledger=ledger, cfg=_ecfg,
+                        announce_fn=_twitch_chat_post,   # chat commands: in-chat response ONLY (no TTS)
+                        overlay_emit=_cg_overlay_emit,
+                        # Thread the CHAT config so !ultron can build the full
+                        # commands-panel text (it reads commands_panel_doc_url, which
+                        # lives on the chat cfg, not the economy cfg in `cfg=`).
+                        chat_cfg=getattr(tcfg, "chat", None),
                     )
                     self._twitch_chat_game_router = cgr
                     self._twitch_chat_stop = False
@@ -6565,6 +6700,64 @@ class Orchestrator:
             except Exception as e:                                       # noqa: BLE001
                 logger.warning("twitch commands-panel init failed: %s", e)
 
+            # Talk-to-Ultron HINT poster: a SECOND periodic chat post, separate from
+            # the commands panel, nudging viewers that they can just say "Ultron
+            # <statement/question>" to get a reply. Same write-sidecar /say path.
+            # Staggered from the panel (a short first-post OFFSET) so the two never
+            # fire on the same instant. Fail-safe — an error never breaks the loop.
+            self._twitch_talk_hint_thread = None
+            try:
+                _hchcfg = getattr(tcfg, "chat", None)
+                if getattr(_hchcfg, "talk_hint_enabled", False):
+                    _hwrite_ep = str(getattr(tcfg, "write_sidecar_endpoint",
+                                             "http://127.0.0.1:8777")).rstrip("/")
+                    _hinterval_s = max(
+                        60.0,
+                        float(getattr(_hchcfg, "talk_hint_interval_minutes", 10)) * 60.0)
+                    _hint_text = str(getattr(
+                        _hchcfg, "talk_hint_text",
+                        '💬 Just type "Ultron" followed by a statement or '
+                        "question and he will talk to you!") or "").strip()
+                    # Offset the FIRST post by 30s so it never lands on the same
+                    # instant as the commands panel (whose first post waits a full
+                    # interval). Capped below the interval so the offset is harmless.
+                    _hoffset_s = min(30.0, _hinterval_s)
+                    from kenning.twitch.panel import run_interval_poster
+                    import json as _hjson
+                    import threading as _hth
+                    import time as _htime
+                    import urllib.request as _hurl
+
+                    def _hint_post(text: str) -> None:
+                        _hbody = _hjson.dumps({"text": text}).encode("utf-8")
+                        _hreq = _hurl.Request(
+                            f"{_hwrite_ep}/say", data=_hbody, method="POST",
+                            headers={"Content-Type": "application/json"})
+                        with _hurl.urlopen(_hreq, timeout=5) as _hr:  # nosec B310 - loopback
+                            _hr.read()
+
+                    def _talk_hint_loop() -> None:
+                        if not _hint_text:
+                            return   # nothing to post
+                        run_interval_poster(
+                            lambda: _hint_text,
+                            _hint_post,
+                            interval_s=_hinterval_s,
+                            should_stop=lambda: getattr(self, "_twitch_chat_stop", False),
+                            sleep_fn=_htime.sleep,
+                            first_offset_s=_hoffset_s,
+                        )
+
+                    self._twitch_chat_stop = False
+                    _ht = _hth.Thread(target=_talk_hint_loop, daemon=True,
+                                      name="twitch-talk-hint")
+                    _ht.start()
+                    self._twitch_talk_hint_thread = _ht
+                    logger.info("twitch talk-to-ultron hint poster started (every %d min)",
+                                int(_hinterval_s // 60))
+            except Exception as e:                                       # noqa: BLE001
+                logger.warning("twitch talk-hint init failed: %s", e)
+
             if getattr(self, "llm", None) is None:
                 logger.warning("twitch: no LLM engine loaded; chat-REPLY disabled "
                                "(read/overlay/moderation/redeems still active)")
@@ -6608,7 +6801,8 @@ class Orchestrator:
                 busy_estimator = None
 
             svc = ChatModeService(
-                tcfg, llm_fn=_llm_fn, orchestrator_speak=self._speak,
+                tcfg, llm_fn=_llm_fn,
+                orchestrator_speak=_twitch_speak_and_post,  # chat-reply: spoken on stream + posted to chat
                 embed_fn=embed_fn, on_flagged=None,
                 busy_estimator=busy_estimator,
             )
@@ -6866,7 +7060,8 @@ class Orchestrator:
             from kenning.twitch.overlay.server import OverlayServer
             host = str(getattr(ov, "host", "127.0.0.1"))
             port = int(getattr(ov, "port", 8775) or 0)
-            server = OverlayServer(host=host, port=port)
+            server = OverlayServer(host=host, port=port,
+                                   token=str(getattr(ov, "token", "") or ""))
             server.start()
             self._twitch_overlay_server = server
             url = server.url()
@@ -7335,6 +7530,42 @@ class Orchestrator:
                         print("  (no transcription; standing down)")
                     trace.tlog(logger, "stt:empty_transcript")
                     continue
+
+                # BARE RELAY LEAD ("tell my team" + a pause before the callout):
+                # the callout has not landed yet, so finalizing here would route it
+                # to IGNORE and lose it (live: "tell my team 2 garage" finalized at
+                # "Tell my team..."). Give the player more time -- capture the
+                # continuation ONCE and splice it onto the lead. Fully guarded and
+                # fail-through: on any failure / no continuation, user_text stays the
+                # bare lead and routes exactly as before. Bounded by
+                # _capture_utterance's own VAD/empty-capture timeout (no hang).
+                if self._is_bare_relay_lead(user_text):
+                    trace.tlog(
+                        logger, "relay:bare_lead_await_callout",
+                        text=user_text[:160],
+                    )
+                    _cont = None
+                    try:
+                        _cont = self._capture_utterance()
+                    except Exception:                                # noqa: BLE001
+                        _cont = None
+                    if _cont is not None and getattr(_cont, "size", 0):
+                        _cont_text = ""
+                        try:
+                            _cont_text = self.stt.transcribe(_cont) or ""
+                        except Exception:                            # noqa: BLE001
+                            _cont_text = ""
+                        if _cont_text.strip():
+                            user_text = (user_text.rstrip(" .,") + " "
+                                         + _cont_text.strip())
+                            try:
+                                speech = np.concatenate([speech, _cont])
+                            except Exception:                        # noqa: BLE001
+                                pass
+                            trace.tlog(
+                                logger, "relay:bare_lead_spliced",
+                                text=user_text[:160],
+                            )
 
                 # WAKE-WORD-ONLY utterance ("Ultron" / a bare wake remnant or
                 # filler, no command). Now that the cold pre-roll is VAD'd
@@ -9501,6 +9732,135 @@ class Orchestrator:
         return _FU_TIMEOUT
 
     # --- coding pipeline glue -----------------------------------------------
+
+    def _build_redeem_speak_kwargs(self, tcfg, say_and_post, chat_post) -> dict:
+        """Build the RedeemRouter speak-redeem kwargs from config (2026-06-26).
+
+        Returns ``{}`` when ``twitch.redeem_speak.enabled`` is OFF -> the redeem
+        router is byte-identical to its pre-speak behavior (games only). When ON,
+        wires:
+          * ``speak_reward_map``  -- the two configured titles -> SPEAK_SAY/TEAM,
+          * ``guard_classify_fn`` -- the SAME Llama-Guard sidecar chat-reply uses
+            (a urllib loopback client; ``classify`` raises -> the router fails
+            CLOSED and blocks the speak),
+          * ``say_speak_fn``      -- speak on the streamer/stream-broadcast bus +
+            chat (``_twitch_speak_and_post``),
+          * ``team_speak_fn``     -- speak onto the team voice bus, wired ONLY when
+            ``team_enabled`` is ON (the chat->team boundary); a per-call ranked
+            guard inside the helper also refuses during ranked,
+          * ``blocked_chat_fn``   -- optional brief chat note on a blocked message.
+        Fail-open: any error here -> ``{}`` (the feature stays off, games unaffected).
+        """
+        try:
+            rs = getattr(tcfg, "redeem_speak", None)
+            if rs is None or not getattr(rs, "enabled", False):
+                return {}
+            from kenning.twitch.redeem_router import SPEAK_SAY, SPEAK_TEAM
+            say_title = str(getattr(rs, "say_reward_title", "ultron says")).strip().lower()
+            team_title = str(getattr(rs, "team_reward_title",
+                                     "ultron tells my team")).strip().lower()
+            speak_map: dict[str, str] = {}
+            if say_title:
+                speak_map[say_title] = SPEAK_SAY
+            if team_title:
+                speak_map[team_title] = SPEAK_TEAM
+            # Guard client: reuse the chat-reply guard sidecar endpoint. classify()
+            # raises GuardUnavailable on any error -> the router's _guard_blocks
+            # catches it and fails CLOSED (blocks the speak).
+            guard_fn = None
+            try:
+                from kenning.twitch.guard import GuardModelClient
+                safety_cfg = getattr(tcfg, "safety", None)
+                guard_ep = str(getattr(safety_cfg, "guard_endpoint",
+                                       "http://127.0.0.1:8774"))
+                guard_fn = GuardModelClient(guard_ep).classify
+            except Exception as ge:                                  # noqa: BLE001
+                logger.warning("redeem-speak guard client init failed "
+                               "(speak will fail CLOSED): %s", ge)
+                guard_fn = None
+            # The team callback is wired only when the streamer opted the team
+            # redeem in. Without it, the team title is refused inside the router.
+            team_fn = None
+            if getattr(rs, "team_enabled", False):
+                team_fn = lambda framed: self._twitch_team_speak(framed, rs)  # noqa: E731
+            blocked_fn = chat_post if getattr(rs, "announce_blocked_in_chat", True) else None
+            return {
+                "speak_reward_map": speak_map,
+                "guard_classify_fn": guard_fn,
+                "say_speak_fn": say_and_post,
+                "team_speak_fn": team_fn,
+                "blocked_chat_fn": blocked_fn,
+                "speak_max_chars": int(getattr(rs, "max_chars", 200)),
+            }
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("redeem-speak wiring skipped (feature OFF): %s", e)
+            return {}
+
+    def _twitch_team_speak(self, framed_line: str, rs_cfg) -> None:
+        """Speak an ALREADY guard-screened + framed line onto the TEAM voice bus
+        for the "ultron tells my team" redeem (2026-06-26).
+
+        This is the streamer-OPTED team path (``redeem_speak.team_enabled``); it is
+        DISTINCT from the LOCAL_VOICE relay matcher (``_maybe_handle_relay_speech``)
+        which structurally refuses REDEEM provenance. The text reaching here has
+        already passed the mandatory Llama-Guard + sanitize + framing in the redeem
+        router, so this method only handles the audio mechanics, reusing the proven
+        relay device primitives (no duplication of the matcher/LLM path).
+
+        Refuses during ranked when ``disabled_during_ranked`` is set. Fail-open: a
+        synth/device error logs + drops the relay (never crashes the redeem tick)."""
+        line = (framed_line or "").strip()
+        if not line:
+            return
+        # Ranked guard (best-effort): a chat-sourced team callout during ranked is
+        # the worst case. The pipeline reads NO game state (anticheat-safe), so
+        # ``_ranked_active`` is only set if some future detector flips it; absent
+        # one it defaults False. The PRIMARY team-redeem protections are
+        # team_enabled (default OFF) + the mandatory guard upstream.
+        if getattr(rs_cfg, "disabled_during_ranked", True):
+            try:
+                if bool(getattr(self, "_ranked_active", False)):
+                    logger.info("redeem team-speak refused: ranked active")
+                    return
+            except Exception:                                        # noqa: BLE001
+                pass
+        try:
+            from kenning.audio.relay_speech import (
+                play_to_device, relay_tts_text, resolve_relay_device,
+            )
+            from kenning.config import get_config
+            cfg = get_config().relay_speech
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("redeem team-speak: relay_speech unavailable: %s", e)
+            return
+        synthesize = getattr(getattr(self, "tts", None), "_synthesize", None)
+        if synthesize is None:
+            logger.warning("redeem team-speak: no TTS synth seam")
+            return
+        device = resolve_relay_device(getattr(cfg, "output_device", None))
+        if device is None:
+            logger.warning("redeem team-speak: relay device unresolved")
+            return
+        try:
+            pcm, sr = synthesize(relay_tts_text(line))
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("redeem team-speak synth failed: %s", e)
+            return
+        # Tee to the broadcast mirror so stream viewers also hear it (same as the
+        # LOCAL_VOICE relay does); the team mic + viewer feed stay separate devices.
+        try:
+            from kenning.audio.broadcast import submit as _broadcast_submit
+            _broadcast_submit(pcm, sr)
+        except Exception:                                            # noqa: BLE001
+            pass
+        try:
+            self._ptt_hold()
+            try:
+                play_to_device(pcm, sr, device)
+            finally:
+                self._ptt_release()
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("redeem team-speak playback failed: %s", e)
 
     def _speak(self, text: str) -> None:
         """Synchronously speak a fixed string + print it. Used by the coding
@@ -12368,6 +12728,57 @@ class Orchestrator:
         self._twitch_chat_reply_enabled = bool(enabled)
         logger.info("twitch chat reply %s (stop-window toggle)",
                     "ON" if enabled else "OFF")
+
+    def _set_chat_audio_to_speakers(self, enabled: bool) -> None:
+        """STOP-window HEAR-CHAT toggle callback: flip whether CHAT-directed audio
+        (the Twitch chat-reply path + the "ultron says" SPEAK_SAY redeem) is heard
+        on the LOCAL default speakers. ON = speakers + OBS; OFF (default) = OBS /
+        broadcast mirror ONLY. Never affects team callouts / the team mic / the
+        SPEAK_TEAM redeem (those don't route through _chat_speak)."""
+        self._chat_audio_to_speakers = bool(enabled)
+        logger.info("chat audio -> local speakers %s (stop-window toggle)",
+                    "ON" if enabled else "OBS-ONLY")
+
+    def _chat_speak(self, text: str) -> None:
+        """Speak a CHAT-directed line, honoring the HEAR-CHAT routing toggle.
+
+        When ``_chat_audio_to_speakers`` is False (default), the LOCAL default-
+        speaker output is suppressed FOR THIS UTTERANCE ONLY via a per-call
+        ``set_live_speaker_mute(True)`` around ``_speak`` -- the BroadcastSink /
+        OBS mirror still receives the clip (the tee fires before the speaker write
+        in kokoro_engine._play / speak_stream), so chat audio reaches the stream
+        but not the streamer's ears mid-game. When True, behavior is the normal
+        ``_speak`` (speakers + OBS).
+
+        The mute override is RESTORED to its prior value in a finally, so this
+        never leaks into the team-callout / conversational path. Fail-open: if the
+        mute lever is unavailable, fall back to a plain ``_speak`` (audible) so a
+        chat line is never silently dropped."""
+        if not text:
+            return
+        if self._chat_audio_to_speakers:
+            self._speak(text)
+            return
+        try:
+            from kenning.tts.kokoro_engine import (
+                _live_speaker_mute as _prior_mute,  # current override (None/bool)
+            )
+            from kenning.tts.kokoro_engine import set_live_speaker_mute
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("chat-audio mute lever unavailable (%s); speaking "
+                         "normally", e)
+            self._speak(text)
+            return
+        try:
+            set_live_speaker_mute(True)   # suppress LOCAL speakers; OBS tee stays
+            self._speak(text)
+        finally:
+            # Restore the prior override (None = config-authoritative) so the
+            # next team callout / conversational line is unaffected.
+            try:
+                set_live_speaker_mute(_prior_mute)
+            except Exception:                                        # noqa: BLE001
+                pass
 
     def _stop_watcher_enabled(self) -> bool:
         """Whether to run the wake-word interrupt watcher during playback.

@@ -459,6 +459,34 @@ def test_apply_chat_settings_slow_mode(tmp_path):
     assert res["ok"] is True and "Slow mode on" in res["readback"]
     assert helix.calls[-1]["method"] == "update_chat_settings"
     assert helix.calls[-1]["settings"] == {"slow_mode": True, "slow_mode_wait_time": 20}
+    # The service MUST forward the configured (non-empty) broadcaster + moderator
+    # ids to Helix — the live 404 had a valid id but a wrong endpoint, and this
+    # guards against a regression where the ids arrive empty instead.
+    assert helix.calls[-1]["broadcaster_id"] == "bcast-id"
+    assert helix.calls[-1]["moderator_id"] == "mod-id"
+
+
+def test_apply_chat_settings_forwards_real_ids_moderator_equals_broadcaster(tmp_path):
+    """When the streamer moderates their OWN channel the broadcaster token's
+    moderator_id == broadcaster_id; the service must forward BOTH (non-empty) to
+    update_chat_settings. Mirrors the sidecar wiring (moderator_id = broadcaster_id)."""
+    from kenning.twitch.moderation.chat_settings import parse_chat_settings
+    helix = RecordingHelix()
+    svc = ModerationService(
+        helix,
+        make_guard(tmp_path),
+        broadcaster_id="495878337",
+        moderator_id="495878337",  # broadcaster moderates own channel
+        roster_provider=_roster_map,
+        require_readback_confirm=True,
+    )
+    res = svc.apply_chat_settings(parse_chat_settings("followers only"))
+    assert res["ok"] is True
+    call = helix.calls[-1]
+    assert call["method"] == "update_chat_settings"
+    assert call["broadcaster_id"] == "495878337"
+    assert call["moderator_id"] == "495878337"
+    assert call["broadcaster_id"] and call["moderator_id"]  # never empty
 
 
 def test_apply_chat_settings_clear(tmp_path):

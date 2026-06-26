@@ -574,6 +574,15 @@ def test_bot_and_broadcaster_scopes_are_distinct():
     assert "channel:manage:redemptions" in BROADCASTER_SCOPES
 
 
+def test_broadcaster_scopes_include_chat_messages_for_delete_and_clear():
+    """Delete-last-message + clear-chat (DELETE /chat/messages) require
+    moderator:manage:chat_messages. Without it Helix returns
+    401 'Missing scope: moderator:manage:chat_messages'."""
+    assert "moderator:manage:chat_messages" in BROADCASTER_SCOPES
+    # The chat-settings toggle scope must remain too (distinct from chat_messages).
+    assert "moderator:manage:chat_settings" in BROADCASTER_SCOPES
+
+
 # --------------------------------------------------------------------------- #
 # scripts/twitch_setup.py — import-safe + end-to-end with a mock              #
 # --------------------------------------------------------------------------- #

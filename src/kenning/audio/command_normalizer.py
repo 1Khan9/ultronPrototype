@@ -152,7 +152,33 @@ from kenning.audio.routing_rules import (  # noqa: E402
     NORM2_MANGLED_TEAM_LEAD_RE as _MANGLED_TEAM_LEAD_RE,
     NORM2_IRREGULAR_TEAM_LEAD_RE as _IRREGULAR_TEAM_LEAD_RE,
     NORM2_TELL_TEAM_LEAD_RE as _TELL_TEAM_LEAD_RE,
+    LOCATIONS as _LOCATIONS,
 )
+
+# STT digit homophones: a player's enemy-COUNT callout ("2 garage", "4 heaven")
+# is routinely transcribed as a preposition ("to/too garage", "for heaven"), which
+# then relays as the bare location and DROPS the count (live: "tell my team 2
+# garage" -> Whisper "tell my team to garage" -> relayed "garage"). When the
+# homophone IMMEDIATELY leads a KNOWN location at the START of the callout payload
+# (string start, or right after the "team " relay lead), restore the count. The
+# payload-start scope leaves real movement callouts untouched -- "rotate to garage"
+# / "fall back to heaven" keep "to" because a verb precedes it, so the homophone is
+# NOT at the payload start.
+_COUNT_HOMOPHONE = {"to": "two", "too": "two", "for": "four"}
+_COUNT_HOMOPHONE_RE = re.compile(
+    r"(?:^|(?<=team )|(?<=team, ))(to|too|for)\s+("
+    + "|".join(re.escape(_l) for _l in _LOCATIONS) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def _fix_count_homophone(s: str) -> str:
+    """Restore an enemy-count callout misheard as a leading preposition
+    ("to/too garage" -> "two garage", "for heaven" -> "four heaven"). Scoped to a
+    count-homophone immediately leading a known location at the payload start, so
+    movement callouts ("rotate to garage") are never altered."""
+    return _COUNT_HOMOPHONE_RE.sub(
+        lambda m: f"{_COUNT_HOMOPHONE[m.group(1).lower()]} {m.group(2)}", s, count=1)
 _ANY_TEAM_LEAD_OUTER_RE = re.compile(
     rf"^\s*(?:please\s+)?(?:{_TELL_CLASS_VERB}|ask|relay(?:\s+to)?)\s+(?:to\s+)?"
     rf"(?:my\s+|our\s+|the\s+)?{_TEAM_NOUN}\b(?:\s+know)?[\s,:.]*",
@@ -1080,5 +1106,10 @@ def normalize_command(text: str) -> str:
     # tokens) and the corrector snaps "Kay" -> "KAY/O", leaving a stray "O" that
     # breaks the named-addressee matcher ("ask KAY/O O to knife" -> no match).
     s = re.sub(r"\bKAY/O\s+[oO]\b", "KAY/O", s)
+    # Restore an enemy-count callout misheard as a leading preposition ("to/too
+    # garage" -> "two garage"). Runs ONLY on callout-bound text (after the
+    # NOT_A_CALLOUT gate above), scoped to the payload start so movement callouts
+    # are untouched.
+    s = _fix_count_homophone(s)
     s = recover_relay_lead(s)
     return s.strip()

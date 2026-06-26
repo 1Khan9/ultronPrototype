@@ -51,7 +51,7 @@ Live calibration of the gate thresholds and the latency pass remain before the f
 
 ---
 
-## 📺 In development — Twitch co-stream
+## 📺 Twitch co-stream
 
 A fully-local **Twitch presence** layer (flag-gated, **default OFF** — `main` runtime is byte-identical until
 enabled) lets Ultron co-host a stream without touching the anticheat contract: every Twitch network call lives in
@@ -64,14 +64,19 @@ the anticheat-pinned main process never imports a network or automation library 
 - 🛡️ **Voice moderation** — `"Ultron, ban / timeout / unban / delete <viewer>"` (two-phase voice confirm with a
   spoken read-back) plus chat-settings (`slow mode` · `followers only` · `subscribers only` · `emote only` ·
   `clear chat`); all writes go through the broadcaster-token sidecar with idempotency + a mass-action breaker.
-- 🎰 **Channel-point games + a "cores" economy** — a SQLite-WAL ledger with keyed-leg idempotency backs `!gamble` /
-  `!slots` / `!heist` / `!duel` / `!raffle` / `!give` / `!wheel` / `!trivia`, each provably-fair and replay-safe;
-  channel-point redeems drive the same games with the OBS overlay.
-- 📋 **Auto commands panel** — every 15 minutes the bot posts a barebones command list ending with a link to a
-  one-page viewer guide.
+- 🪙 **StreamElements-backed economy** — viewers' balances *are* their StreamElements loyalty points ("Credits"),
+  so there's one currency instead of several; `!slots` / `!wheel` / `!heist` / `!duel` / `!leaderboard` and the
+  channel-point game redeems are provably-fair, house-funded, and EventSub-replay-safe (a local idempotency layer
+  over the SE points API).
+- 🗣️ **Viewer speak-redeems** — channel-point rewards let a viewer make Ultron say their message via TTS
+  (Llama-Guard-screened, length-capped, framed) — to the stream, or (pricier) onto the team voice bus.
+- 🖼️ **Unified OBS overlay** — chat games, redeem games, and speak-redeems all render through one polished
+  bottom-left card renderer (spinning reels, wheel reveal, result cards), with a `?demo=1` preview mode.
+- 📋 **Chat helpers** — `!ultron` posts the command list on demand; an auto commands-panel every 15 min and a
+  "talk to Ultron" hint every 10 min, each linking a one-page viewer guide.
 
-Built and unit-tested offline (full `tests/twitch` green); first-stream live validation is the next step. Go-live
-runbook: [`docs/twitch_integration/FIRST_STREAM_CHECKLIST.md`](docs/twitch_integration/FIRST_STREAM_CHECKLIST.md).
+Built, unit-tested offline (full `tests/twitch` green), and live on-stream. Go-live runbook:
+[`docs/twitch_integration/FIRST_STREAM_CHECKLIST.md`](docs/twitch_integration/FIRST_STREAM_CHECKLIST.md).
 
 ---
 

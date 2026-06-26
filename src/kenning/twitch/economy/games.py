@@ -594,27 +594,46 @@ class Duel:
 
 @dataclass(frozen=True)
 class TriviaQuestion:
-    """One trivia question + answer."""
+    """One trivia question + answer (+ optional accepted-answer aliases).
+
+    :param question: the prompt text shown to chat.
+    :param answer: the concise canonical answer Ultron announces. Compared via
+        casefold+strip (no fuzzy — answers are short keywords).
+    :param accept: extra acceptable spellings/aliases for the SAME answer (e.g.
+        ``"13"`` with ``accept=("thirteen",)``). Each is matched the same way as
+        the canonical answer. Defaults to an empty tuple so every existing
+        ``TriviaQuestion(question, answer)`` call site stays valid.
+    """
 
     question: str
     answer: str          # casefolded, stripped — compared via casefold+strip
+    accept: tuple[str, ...] = ()   # additional acceptable answers (aliases)
 
 
-# Curated Valorant/gaming trivia pool (at least 10 questions, baked in).
-_TRIVIA_POOL: tuple[TriviaQuestion, ...] = (
-    TriviaQuestion("How many rounds does it take to win a standard Valorant match?", "13"),
-    TriviaQuestion("What is the name of Jett's ultimate ability?", "blade storm"),
-    TriviaQuestion("Which agent can resurrect a fallen ally?", "sage"),
-    TriviaQuestion("What is the buy phase timer in Valorant (in seconds)?", "30"),
-    TriviaQuestion("What is the name of Omen's ultimate ability?", "from the shadows"),
-    TriviaQuestion("Which Valorant map is set in Morocco?", "pearl"),
-    TriviaQuestion("How many agents are in each team during a match?", "5"),
-    TriviaQuestion("What is the name of Reyna's heal ability?", "devour"),
-    TriviaQuestion("What weapon fires the most bullets per second in Valorant?", "stinger"),
-    TriviaQuestion("Which agent uses a drone for scouting?", "sova"),
-    TriviaQuestion("What is the default plant time for the Spike in seconds?", "4"),
-    TriviaQuestion("Which map was the first to be added after the game launched?", "icebox"),
-)
+# The curated trivia pool — a LARGE, diverse, multi-topic bank (science, space,
+# history, geography, capitals, pop culture, movies/TV, music, sports, video
+# games, literature, food, nature, tech, mythology, art, math, general
+# knowledge), with the original Valorant/gaming questions kept. Sourced from the
+# sibling data module so this file stays code, not a 200-entry literal. A small
+# inline fallback keeps Trivia constructible if the data module ever fails to
+# import (defensive; the import is a pure-data sibling with no heavy deps).
+try:
+    from kenning.twitch.economy.trivia_questions import TRIVIA_QUESTIONS as _TRIVIA_POOL
+except Exception:  # noqa: BLE001 — never let a data-module hiccup break game import
+    logger.warning("trivia question bank failed to load; using the inline fallback pool")
+    _TRIVIA_POOL = (
+        TriviaQuestion("How many rounds does it take to win a standard Valorant match?", "13"),
+        TriviaQuestion("Which Valorant agent can resurrect a fallen ally?", "sage"),
+        TriviaQuestion("What is the capital of France?", "paris"),
+        TriviaQuestion("Which planet is known as the Red Planet?", "mars"),
+        TriviaQuestion("What is the chemical symbol for gold?", "au"),
+        TriviaQuestion("Who painted the Mona Lisa?", "leonardo da vinci",
+                       accept=("da vinci", "leonardo")),
+        TriviaQuestion("How many continents are there on Earth?", "7", accept=("seven",)),
+        TriviaQuestion("What is the largest planet in our solar system?", "jupiter"),
+        TriviaQuestion("In Greek mythology, who is the king of the gods?", "zeus"),
+        TriviaQuestion("How many bones are in the adult human body?", "206"),
+    )
 
 
 @dataclass(frozen=True)
@@ -673,8 +692,17 @@ class Trivia:
         return self._pool[idx], idx, prov
 
     def check_answer(self, question: TriviaQuestion, answer: str) -> bool:
-        """True iff answer matches (casefold+strip)."""
-        return question.answer.casefold().strip() == answer.casefold().strip()
+        """True iff ``answer`` matches the canonical answer OR any accepted alias
+        (each compared case-insensitively + whitespace-stripped)."""
+        guess = (answer or "").casefold().strip()
+        if not guess:
+            return False
+        if guess == question.answer.casefold().strip():
+            return True
+        for alias in getattr(question, "accept", ()) or ():
+            if guess == str(alias).casefold().strip():
+                return True
+        return False
 
     def resolve(
         self,

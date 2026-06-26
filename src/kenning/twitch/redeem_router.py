@@ -18,6 +18,22 @@ provably-fair round and surfaces the outcome two ways:
   * ``overlay_emit(event)``   -- a JSON-serializable overlay event the dumb overlay
                                  renderer shows.
 
+SPEAK REDEEMS (2026-06-26): two NON-game reward titles let a VIEWER make Ultron
+SPEAK their own typed message via TTS. The viewer text is UNTRUSTED, so every
+speak is gated by the SAME Llama-Guard sidecar that gates chat-reply (injected
+``guard_classify_fn``; FAIL-CLOSED — a guard error / unreachable sidecar BLOCKS
+the speak), then control-char-stripped + length-capped + framed (prefixed with
+the viewer name) before TTS:
+
+  * the ``say`` title  -> ``say_speak_fn(framed)``  (streamer speakers + the
+    stream/broadcast bus + chat post; NEVER the team mic), and
+  * the ``team`` title -> ``team_speak_fn(framed)`` (the team voice bus). Wired
+    only when the streamer opted the team redeem in (the chat->team boundary), so
+    a missing ``team_speak_fn`` simply blocks that title.
+
+Each speak redeem is dedup-idempotent on the redemption id (the same LRU dedup
+the games use), so an EventSub replay never re-speaks.
+
 ANTICHEAT (BR-P1): stdlib only (``json`` / ``urllib`` / ``logging`` / ``threading``
 / ``collections`` / ``dataclasses`` / ``typing``) + ``kenning.twitch.economy.*``.
 The ONLY network is :func:`make_redeem_drain_fn`'s loopback ``urllib`` GET against
@@ -59,8 +75,20 @@ __all__ = [
     "REDEEM_SLOTS_WIN",
     "REDEEM_DUEL_WAGER",
     "REDEEM_HEIST_POT",
+    "SPEAK_SAY",
+    "SPEAK_TEAM",
+    "sanitize_speak_text",
+    "frame_speak_line",
     "RedeemRouter",
 ]
+
+# Speak-redeem action keys (NON-game; map a reward title to one of these).
+SPEAK_SAY = "speak_say"     # speak on the streamer/stream-broadcast bus + chat
+SPEAK_TEAM = "speak_team"   # speak onto the team voice bus
+
+# Hard ceiling on a viewer's spoken text regardless of the configured cap (the
+# config cap is clamped to this; defends against a misconfigured huge max_chars).
+_SPEAK_HARD_MAX = 500
 
 # House-funded payout amounts for the SINGLE-redeem games. A channel-point redeem
 # already cost the viewer Twitch's native points, so the economy game pays out
@@ -207,6 +235,60 @@ class _LRUSet:
 
 
 # --------------------------------------------------------------------------- #
+# Speak-redeem text hygiene (UNTRUSTED viewer input)
+# --------------------------------------------------------------------------- #
+def sanitize_speak_text(raw: object, *, max_chars: int) -> str:
+    """Sanitize an UNTRUSTED viewer message for TTS: drop control characters,
+    collapse all whitespace runs to single spaces, strip the ends, and cap the
+    length to ``min(max_chars, _SPEAK_HARD_MAX)`` (trimmed back to a word
+    boundary when possible so a cut never splits a word mid-token).
+
+    Pure + stdlib-free (no ``re``): keeps the module's import surface within the
+    anticheat-pinned allowlist. Returns ``""`` for empty/whitespace-only input.
+    """
+    s = raw if isinstance(raw, str) else ("" if raw is None else str(raw))
+    # Drop control characters (C0 + DEL + C1) but turn tab/newline into spaces so
+    # words don't fuse; everything else printable is kept (incl. unicode letters).
+    out_chars: list[str] = []
+    for ch in s:
+        o = ord(ch)
+        if ch in ("\t", "\n", "\r", "\f", "\v"):
+            out_chars.append(" ")
+        elif o < 0x20 or o == 0x7F or 0x80 <= o <= 0x9F:
+            continue  # control char -> drop
+        else:
+            out_chars.append(ch)
+    # Collapse whitespace runs -> single spaces, strip ends.
+    collapsed = " ".join("".join(out_chars).split())
+    if not collapsed:
+        return ""
+    cap = max(1, min(int(max_chars), _SPEAK_HARD_MAX))
+    if len(collapsed) <= cap:
+        return collapsed
+    head = collapsed[:cap]
+    # Trim back to the last space so we don't cut a word in half (unless the very
+    # first token is already longer than the cap).
+    sp = head.rfind(" ")
+    if sp >= cap // 2:
+        head = head[:sp]
+    return head.rstrip()
+
+
+def frame_speak_line(viewer: str, text: str, *, to_team: bool = False) -> str:
+    """Frame a SAFE, sanitized viewer message in Ultron's cold register so the
+    listener knows it came from chat. The viewer name is itself sanitized (it is
+    also untrusted) and prefixed; the team variant is explicit it is relaying to
+    the squad. Returns ``""`` if there is nothing safe to say."""
+    body = (text or "").strip()
+    if not body:
+        return ""
+    who = sanitize_speak_text(viewer, max_chars=40).strip() or "A viewer"
+    if to_team:
+        return f"Relaying from chat. {who} says: {body}"
+    return f"{who} says: {body}"
+
+
+# --------------------------------------------------------------------------- #
 # The router
 # --------------------------------------------------------------------------- #
 class RedeemRouter:
@@ -229,8 +311,29 @@ class RedeemRouter:
         games: dict[str, Any] | None = None,
         ledger: Ledger | None = None,
         dedup_max: int = 2048,
+        speak_reward_map: dict[str, str] | None = None,
+        guard_classify_fn: Callable[[str], Any] | None = None,
+        say_speak_fn: Callable[[str], Any] | None = None,
+        team_speak_fn: Callable[[str], Any] | None = None,
+        blocked_chat_fn: Callable[[str], Any] | None = None,
+        speak_max_chars: int = 200,
     ) -> None:
         self._drain = drain_fn
+        # --- SPEAK-redeem wiring (UNTRUSTED viewer text -> guard -> TTS) ------ #
+        # ``speak_reward_map``: lowercased reward title -> SPEAK_SAY / SPEAK_TEAM.
+        # ``guard_classify_fn(text) -> result`` (result.unsafe truthy => blocked);
+        # FAIL-CLOSED: any exception OR a missing guard BLOCKS the speak. The say
+        # path speaks to the streamer/broadcast bus + chat; the team path speaks
+        # onto the team voice bus (wired only when the streamer opted it in -- a
+        # missing ``team_speak_fn`` blocks the team title). ``blocked_chat_fn`` is
+        # an optional short chat note when a message is refused as unsafe.
+        smap = speak_reward_map or {}
+        self._speak_map = {str(k).strip().lower(): str(v) for k, v in smap.items()}
+        self._guard_classify = guard_classify_fn
+        self._say_speak = say_speak_fn
+        self._team_speak = team_speak_fn
+        self._blocked_chat = blocked_chat_fn
+        self._speak_max_chars = max(1, int(speak_max_chars))
         # Optional ledger: when present, a redeem game's outcome credits the
         # redeemer's balance (house-funded, keyed on the redemption id). None ->
         # the games still run + announce + overlay, just without a currency move
@@ -338,7 +441,25 @@ class RedeemRouter:
         viewer = str(ev.get("chatter_login") or ev.get("chatter_name") or "")
         uid = str(ev.get("chatter_user_id") or ev.get("user_id") or "")
         user_input = str(ev.get("user_input") or "")
-        action = self._reward_map.get(title.strip().lower())
+        # SE-points backend: map uid -> login so a redeem payout can address the
+        # StreamElements API (keyed by login). No-op for the SQLite ledger.
+        if uid and viewer:
+            _reg = getattr(self._ledger, "register", None)
+            if _reg is not None:
+                try:
+                    _reg(uid, viewer)
+                except Exception:  # noqa: BLE001 — must never block a redeem
+                    pass
+        title_key = title.strip().lower()
+
+        # SPEAK redeems (checked BEFORE the game map; dedup above already ran so
+        # an EventSub replay never re-speaks). A viewer's typed message is guard-
+        # screened, sanitized, framed, then spoken on the say/team bus.
+        speak_action = self._speak_map.get(title_key)
+        if speak_action is not None:
+            return self._process_speak(speak_action, title, viewer, user_input)
+
+        action = self._reward_map.get(title_key)
 
         if action is None:
             # Not a game reward -> still emit a generic overlay event so the
@@ -365,6 +486,84 @@ class RedeemRouter:
             "redeem game=%s viewer=%r outcome=%r", action, viewer, event.get("outcome")
         )
         return event
+
+    # -- speak redeems (UNTRUSTED viewer text -> guard -> TTS) ------------- #
+    def _guard_blocks(self, text: str) -> tuple[bool, str]:
+        """Run the injected guard over ``text``. Returns ``(blocked, reason)``.
+        FAIL-CLOSED: no guard configured OR any guard error -> blocked. A truthy
+        ``result.unsafe`` (the GuardResult / GuardModelClient contract) -> blocked.
+        """
+        if self._guard_classify is None:
+            return True, "no guard configured (fail-closed)"
+        try:
+            result = self._guard_classify(text)
+        except Exception as exc:  # noqa: BLE001 — guard unreachable/error -> fail CLOSED
+            logger.warning("speak redeem guard error -> BLOCKED: %s", exc)
+            return True, f"guard error (fail-closed): {exc}"
+        unsafe = bool(getattr(result, "unsafe", result))
+        if unsafe:
+            cat = str(getattr(result, "category", "") or "")
+            return True, f"guard flagged unsafe{(': ' + cat) if cat else ''}"
+        return False, "safe"
+
+    def _process_speak(
+        self, speak_action: str, title: str, viewer: str, user_input: str,
+    ) -> dict | None:
+        """Handle a SPEAK redeem: sanitize the UNTRUSTED viewer message, guard-
+        screen it (FAIL-CLOSED), frame it, then speak via the say/team callback.
+        Returns an outcome dict (for tests + logging) or ``None`` when nothing was
+        spoken. Fully fail-safe: never raises into the tick."""
+        to_team = speak_action == SPEAK_TEAM
+        speak_fn = self._team_speak if to_team else self._say_speak
+        bus = "team" if to_team else "say"
+        viewer = viewer or "someone"
+        text = sanitize_speak_text(user_input, max_chars=self._speak_max_chars)
+        if not text:
+            logger.info("speak redeem (%s) empty after sanitize viewer=%r", bus, viewer)
+            return {"type": "redeem_speak", "bus": bus, "viewer": viewer,
+                    "spoken": False, "reason": "empty input"}
+        if speak_fn is None:
+            # The team title can land here when the streamer hasn't opted the
+            # team redeem in (no team callback wired) -> refuse to speak.
+            logger.info("speak redeem (%s) no speak callback wired viewer=%r", bus, viewer)
+            return {"type": "redeem_speak", "bus": bus, "viewer": viewer,
+                    "spoken": False, "reason": "speak path not enabled"}
+        blocked, reason = self._guard_blocks(text)
+        if blocked:
+            logger.info("speak redeem (%s) BLOCKED viewer=%r reason=%s", bus, viewer, reason)
+            self._note_blocked(viewer)
+            return {"type": "redeem_speak", "bus": bus, "viewer": viewer,
+                    "spoken": False, "reason": reason}
+        framed = frame_speak_line(viewer, text, to_team=to_team)
+        if not framed:
+            return {"type": "redeem_speak", "bus": bus, "viewer": viewer,
+                    "spoken": False, "reason": "empty after framing"}
+        try:
+            speak_fn(framed)
+        except Exception as exc:  # noqa: BLE001 — a TTS hiccup never breaks the tick
+            logger.warning("speak redeem (%s) speak failed: %s", bus, exc)
+            return {"type": "redeem_speak", "bus": bus, "viewer": viewer,
+                    "spoken": False, "reason": f"speak error: {exc}"}
+        logger.info("speak redeem (%s) spoke viewer=%r reward=%r", bus, viewer, title)
+        result = {"type": "redeem_speak", "bus": bus, "viewer": viewer,
+                  "spoken": True, "text": framed, "reason": "spoken"}
+        # Surface a unified bottom-left "speech" card on the overlay (fail-safe via
+        # _emit). The framed text is the SAME guard-screened + sanitized string that
+        # was spoken; the overlay re-length-checks + renders it as inert text.
+        self._emit(result)
+        return result
+
+    def _note_blocked(self, viewer: str) -> None:
+        """Optional brief chat note that a viewer's message was blocked. Fail-safe;
+        never reveals what tripped the guard (anti-probe)."""
+        if self._blocked_chat is None:
+            return
+        try:
+            self._blocked_chat(
+                f"@{viewer} your Ultron message was held back by the safety filter."
+            )
+        except Exception as exc:  # noqa: BLE001 — a chat-post hiccup never breaks the tick
+            logger.debug("speak redeem blocked-note failed: %s", exc)
 
     # -- per-game runners ------------------------------------------------- #
     # Each runner returns (spoken_line, overlay_event). The overlay event shape is
@@ -586,39 +785,127 @@ class RedeemRouter:
 
     @staticmethod
     def _to_overlay_event(event: dict) -> dict | None:
-        """Translate an internal redeem / redeem_result event into one the dumb
-        overlay actually accepts (overlay.server.ALLOWED_EVENT_TYPES = {wheel,
-        alert, ticker}). A wheel spin animates the wheel to its server-decided
-        target angle; every other game + the generic non-game redeem render as an
-        alert banner. Returns None if it can't be mapped (the overlay then shows
-        nothing rather than erroring). This is the adapter that makes redeem
-        outcomes visible on stream (the router's own event shape is kept for the
-        spoken line + the outcomes log)."""
+        """Translate an internal redeem / redeem_result / redeem_speak event into a
+        UNIFIED overlay card so a redeemed game looks IDENTICAL to the same typed
+        chat-command game (one visual language; the only difference is a REDEEM tag
+        instead of CHAT). Game outcomes -> a ``chat_game`` card (source="redeem");
+        a SPEAK redeem -> a ``speech`` card; the generic non-game redeem -> a small
+        ``chat_game``-less fallback card is intentionally NOT emitted (no game ->
+        nothing to render). Returns None when there is nothing to show (the overlay
+        then renders nothing rather than erroring). The router's own event shape is
+        kept for the spoken line + the outcomes log."""
         etype = str(event.get("type") or "")
         viewer = str(event.get("viewer") or "someone")
+
         if etype == "redeem_result":
-            game = str(event.get("game") or "game")
-            outcome = str(event.get("outcome") or "")
-            if game == "wheel":
-                detail = event.get("detail") or {}
-                try:
-                    angle = float(detail.get("target_angle", 0.0))
-                except (TypeError, ValueError):
-                    angle = 0.0
-                return {"type": "wheel", "angle": angle, "label": outcome[:200]}
+            return RedeemRouter._game_card(event, viewer)
+
+        if etype == "redeem_speak":
+            # Only the speaks that actually SPOKE get a card (a blocked/empty speak
+            # shows nothing). Render in the same bottom-left style as a speech card.
+            if not event.get("spoken"):
+                return None
             return {
-                "type": "alert",
-                "title": f"{game.title()} · {viewer}"[:200],
-                "body": outcome[:500],
+                "type": "speech",
+                "bus": "team" if event.get("bus") == "team" else "say",
+                "viewer": str(viewer)[:80],
+                "text": str(event.get("text") or "")[:300],
             }
-        if etype == "redeem":
-            reward = str(event.get("reward") or "Redemption")
-            return {
-                "type": "alert",
-                "title": reward[:200],
-                "body": f"Redeemed by {viewer}"[:500],
-            }
+
+        # A generic (non-game) redeem carries no game outcome -> nothing to render
+        # as a game card. (Previously an 'alert' banner; retired with the old style.)
         return None
+
+    @staticmethod
+    def _game_card(event: dict, viewer: str) -> dict | None:
+        """Map a redeem GAME result to the unified ``chat_game`` card schema
+        (source="redeem"). Mirrors the chat-game router's card so a redeemed Slots
+        and a typed ``!slots`` are byte-shape identical to the renderer."""
+        game = str(event.get("game") or "game")
+        outcome = str(event.get("outcome") or "")
+        detail = event.get("detail") or {}
+        try:
+            credited = int(detail.get("credited", 0) or 0)
+        except (TypeError, ValueError):
+            credited = 0
+
+        card: dict = {
+            "type": "chat_game",
+            "game": game,
+            "source": "redeem",
+            "viewer": str(viewer)[:80],
+            "title": game.upper()[:120],
+            "outcome": outcome[:120],
+            "won": False,
+            "amount": credited,
+            "detail": {},
+        }
+
+        if game == "wheel":
+            try:
+                payout = int(detail.get("payout", 0) or 0)
+            except (TypeError, ValueError):
+                payout = 0
+            card["outcome"] = outcome[:120]
+            card["won"] = payout > 0
+            card["amount"] = credited or payout
+            card["detail"] = {"segment": outcome[:60], "payout": payout}
+        elif game == "slots":
+            is_win = bool(detail.get("is_win"))
+            reels = detail.get("reels") or []
+            card["outcome"] = "WIN" if is_win else "LOSS"
+            card["won"] = is_win
+            card["amount"] = credited
+            card["detail"] = {
+                "reels": [str(s)[:40] for s in reels][:8],
+                "win_symbol": str(detail.get("win_symbol") or "")[:40] or None,
+                "payout": credited,
+            }
+        elif game == "heist":
+            up = outcome.upper()
+            won = up in ("WIN", "PARTIAL")
+            try:
+                pot = int(detail.get("pot", 0) or 0)
+            except (TypeError, ValueError):
+                pot = 0
+            crew = len(detail.get("participants") or []) or 1
+            card["outcome"] = up
+            card["won"] = won
+            card["amount"] = credited
+            card["detail"] = {"pot": pot, "crew": crew, "payout": credited}
+        elif game == "duel":
+            won = str(outcome).upper() == "WIN"
+            try:
+                wager = int(detail.get("wager", 0) or 0)
+            except (TypeError, ValueError):
+                wager = 0
+            card["outcome"] = "WIN" if won else "LOSS"
+            card["won"] = won
+            card["amount"] = credited
+            card["detail"] = {
+                "winner": str(detail.get("winner") or viewer)[:80],
+                "loser": str(detail.get("loser") or "the house")[:80],
+                "wager": wager,
+            }
+        elif game == "trivia":
+            # A redeem trivia surfaces the QUESTION (chat answers later) -> an
+            # open-phase card; no winner/answer yet.
+            card["outcome"] = "QUESTION"
+            card["won"] = False
+            card["amount"] = 0
+            card["detail"] = {"phase": "open", "answer": outcome[:200]}
+        elif game == "raffle":
+            entered = outcome == "entered"
+            card["outcome"] = "ENTERED" if entered else outcome.upper()[:120]
+            card["won"] = entered
+            card["amount"] = 0
+            card["detail"] = {
+                "phase": "open",
+                "entrants": len(detail.get("entrants") or []),
+            }
+        else:
+            return None
+        return card
 
     def _emit(self, event: dict) -> None:
         if self._overlay is None:

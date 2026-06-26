@@ -803,8 +803,38 @@ LLM_PRESETS: dict[str, dict[str, Any]] = {
         "model_path": "models/Josiefied-Qwen3-4B-Instruct-2507-gabliterated-v2.i1-Q4_K_M.gguf",
         "n_ctx": 4096,
         "draft_model_path": None,
-        # 2026-06-24 PER-MODEL: roomy 4B -> n_ubatch 512 (see huihui-qwen3.5-4b).
-        "n_ubatch": 512,
+        # 2026-06-24 LATENCY PARITY with the 3.5 (user: 2507g latency must be <= the 3.5):
+        # - kv_cache_type 1 (F16), NOT the q8_0 default: llama.cpp PR #23907 makes
+        #   q8_0-KV + flash_attn reserve an F16 dequant SCRATCH sized by the WHOLE KV
+        #   cache -> a ~65% decode collapse (122->42 t/s). F16 KV has no dequant scratch.
+        #   Standard-attention Qwen3 keeps KV on ALL layers, so F16 KV here is ~1.2 GB at
+        #   n_ctx 4096 (vs ~0.6 q8_0) -- worth it for the decode speed; fits beside guard.
+        # - n_ubatch 256 (not 512): smaller micro-batch trims ~30-80 ms prefill TTFT on
+        #   short prompts + shrinks the CUDA compute buffer (matches huihui-qwen3.5-4b).
+        "n_ubatch": 256,
+        "kv_cache_type": 1,
+    },
+    # 2026-06-26 (user A/B) -- p-e-w HERETIC build of Qwen3-4B-Instruct-2507: the
+    # NON-gabliterated variant. KL-minimized abliteration preserves instruction-
+    # following best (~99.6% MMLU retention), and the Q5/Q6 bump over Q4_K_M recovers
+    # the IF that aggressive quant erodes -- the direct lever for the curated-pool
+    # parity work. NON-THINKING (emits no <think>; slots into the non-think setup).
+    # Settings MIRROR josiefied-qwen3-4b-2507g EXACTLY (n_ctx 4096 / F16 KV /
+    # n_ubatch 256; n_batch 2048 + flash_attn from schema). On E:\ to spare C:.
+    "heretic-qwen3-4b-q6": {
+        "model_path": "E:/UltronModels/p-e-w_Qwen3-4B-Instruct-2507-heretic-Q6_K.gguf",
+        "n_ctx": 4096,
+        "draft_model_path": None,
+        "n_ubatch": 256,
+        "kv_cache_type": 1,
+    },
+    # Q5_K_M fallback -- ~0.4 GB lighter than Q6_K; swap here if Q6 is VRAM-tight.
+    "heretic-qwen3-4b-q5": {
+        "model_path": "E:/UltronModels/p-e-w_Qwen3-4B-Instruct-2507-heretic-Q5_K_M.gguf",
+        "n_ctx": 4096,
+        "draft_model_path": None,
+        "n_ubatch": 256,
+        "kv_cache_type": 1,
     },
     # 2026-05-19 -- Gemma 3 4B abliterated (mradermacher quants of the
     # Goekdeniz-Guelmez Josiefied abliterated fine-tune over Google's
@@ -956,8 +986,13 @@ class LLMConfig(_Strict):
         # 2026-06-22: 7B candidate to test whether the extra capacity fixes the
         # 4B social/identity roughness. MUST mirror LLM_PRESETS.
         "mistral-7b-v0.3-abliterated",
+        # 2026-06-26 (user A/B): non-gabliterated p-e-w HERETIC 4B (better instruction-
+        # following). Q6 is the default; q5 steps down if VRAM is tight. MUST mirror
+        # LLM_PRESETS (pinned by test_llm_presets_match_literal).
+        "heretic-qwen3-4b-q6",
+        "heretic-qwen3-4b-q5",
         "custom",
-    ] = "josiefied-qwen3-8b-iq3xs"
+    ] = "heretic-qwen3-4b-q6"
     # Where the model actually runs:
     #   "in_process"  — load via llama-cpp-python in this Python process
     #                   (current default; what the voice pipeline uses today).
@@ -4183,7 +4218,16 @@ class TwitchEconomyConfig(_Strict):
     ledger; net-negative-EV gambling; the wheel 'lose ALL' segment is AT-4."""
     enabled: bool = False
     db_path: str = "data/twitch/economy.db"
-    currency_name: str = "cores"
+    currency_name: str = "one taps"
+    # 2026-06-26: tie the economy to the channel's ONE StreamElements loyalty-points
+    # balance (viewers' !points ARE their SE points) instead of the local SQLite
+    # ledger. Default OFF; when ON, the orchestrator builds a StreamElementsLedger
+    # that reads the JWT + channel_id from streamelements_creds_path and uses
+    # streamelements_idempotency_db for EventSub-replay safety (the SE API has none).
+    # Falls back to the SQLite ledger if the creds are missing/invalid.
+    streamelements_enabled: bool = False
+    streamelements_creds_path: str = "~/.kenning/streamelements.json"
+    streamelements_idempotency_db: str = "data/twitch/se_idempotency.db"
     earn_per_minute: int = 10
     gamble_rtp: float = 0.90                          # house edge => sink (anti-hyperinflation)
     per_stream_loss_cap: int = 5000
@@ -4198,10 +4242,22 @@ class TwitchEconomyConfig(_Strict):
     command_cooldown_seconds: int = 5                # per-user throttle on bet commands (0 = none)
     min_bet: int = 1                                 # minimum stake for a bet command
     max_bet: int = 10000                             # maximum stake (0 = no maximum)
+    # 2026-06-26: the channel runs ONE economy on StreamElements, whose own chat
+    # bot already answers !points/!balance and !gamble. When this is True (default)
+    # the chat-game router DROPS those two command kinds BEFORE dispatch so viewers
+    # don't get a double reply (Ultron's + SE's). Every other command (!slots,
+    # !wheel, !heist, !duel, !accept, !raffle, !enter, !give, !trivia, !leaderboard,
+    # !help) stays handled by Ultron. Flip OFF to let Ultron answer them again.
+    defer_points_gamble_to_streamelements: bool = True
     # Trivia (mod-started !trivia): a house-funded prize to the first correct
     # chat answer within the window. A skill game (no per-viewer bet / no RTP).
     trivia_prize: int = 100
     trivia_window_seconds: int = 30
+    # 2026-06-26: auto-trivia — the router auto-starts a trivia round about every
+    # N minutes with NO mod command (using the same tick()/epoch clock that accrues
+    # watch-time earnings), so the stream always has a game running. 0 disables it;
+    # a round is never auto-started while one is already active.
+    trivia_auto_interval_minutes: int = 5
     # Multi-viewer state-machine games (gap-c next pass, 2026-06-24): each opens a
     # timed window over the chat drain, resolves provably-fairly, and applies
     # keyed-leg ledger idempotency so an EventSub replay never double-pays.
@@ -4220,6 +4276,7 @@ class TwitchOverlayConfig(_Strict):
     enabled: bool = False
     host: str = "127.0.0.1"
     port: int = 8775
+    token: str = ""                                  # PERMANENT overlay token; blank -> a stable token persisted at ~/.kenning/overlay_token so the OBS Browser-Source URL never changes across reboots
     obs_websocket_enabled: bool = False              # optional source show/hide (obsws-python); NEVER edits scenes
 
 
@@ -4240,6 +4297,13 @@ class TwitchChatConfig(_Strict):
     commands_panel_enabled: bool = False
     commands_panel_interval_minutes: int = Field(default=15, ge=1, le=720)
     commands_panel_doc_url: str = ""                 # public guide URL appended to the panel message (set when ready)
+    # A SECOND periodic chat poster (independent of the commands panel): a short
+    # nudge telling viewers they can simply say "Ultron <statement/question>" and
+    # he will reply. Same write-sidecar /say path; staggered from the panel so the
+    # two never post on the same instant. Default ON when the panel is enabled.
+    talk_hint_enabled: bool = True
+    talk_hint_interval_minutes: int = Field(default=10, ge=1, le=720)
+    talk_hint_text: str = "💬 Just type \"Ultron\" followed by a statement or question and he will talk to you!"
 
 
 class TwitchSpeakToTeamConfig(_Strict):
@@ -4248,6 +4312,36 @@ class TwitchSpeakToTeamConfig(_Strict):
     enabled: bool = False
     mode: str = "tier_a_allowlist"                   # tier_a_allowlist (enumerated low-tactical) | tier_b_manual
     disabled_during_ranked: bool = True
+
+
+class TwitchRedeemSpeakConfig(_Strict):
+    """Two channel-point redeems that let a VIEWER make Ultron SPEAK their own
+    (safety-screened) message via TTS. The viewer text is UNTRUSTED: every speak
+    is gated by the SAME Llama-Guard sidecar that gates chat-reply (fail-CLOSED
+    when the guard is unreachable), then control-char-stripped + length-capped +
+    framed in Ultron's cold register (prefixed with the viewer name).
+
+      * ``say`` redeem (``say_reward_title``, the CHEAPER one): a SAFE message is
+        spoken to the STREAMER speakers + the stream/broadcast (OBS) bus + posted
+        to Twitch chat. NEVER the team mic.
+      * ``team`` redeem (``team_reward_title``, the PRICIER one): a SAFE message is
+        spoken onto the TEAM voice bus (the VoiceMeeter team path). This crosses
+        the chat->team boundary, so it is INDEPENDENTLY gated by
+        ``team_enabled`` (default OFF) AND ``disabled_during_ranked`` — turning
+        ``enabled`` on alone only arms the (broadcast-only) ``say`` redeem.
+
+    Both redeems are dedup-idempotent on the redemption id (an EventSub replay
+    never re-speaks). Default OFF; when OFF the redeem router behaves exactly as
+    before (games + announce + overlay only). The COSTS are set by the streamer
+    in the Twitch dashboard (cheaper for ``say``, pricier for ``team``), not here.
+    """
+    enabled: bool = False                            # master switch for BOTH speak redeems
+    say_reward_title: str = "ultron says"            # Custom Reward title for the broadcast-bus speak (cheaper)
+    team_reward_title: str = "ultron tells my team"  # Custom Reward title for the team-bus speak (pricier)
+    team_enabled: bool = False                       # the team-bus redeem ALSO requires this (chat->team boundary)
+    disabled_during_ranked: bool = True              # never speak the team redeem onto the mic during ranked
+    max_chars: int = Field(default=200, ge=1, le=500)  # viewer text is capped to this many chars before TTS
+    announce_blocked_in_chat: bool = True            # post a brief chat note when a message is blocked as unsafe
 
 
 class TwitchHelperConfig(_Strict):
@@ -4273,6 +4367,7 @@ class TwitchConfig(_Strict):
     economy: TwitchEconomyConfig = Field(default_factory=TwitchEconomyConfig)
     overlay: TwitchOverlayConfig = Field(default_factory=TwitchOverlayConfig)
     speak_to_team: TwitchSpeakToTeamConfig = Field(default_factory=TwitchSpeakToTeamConfig)
+    redeem_speak: TwitchRedeemSpeakConfig = Field(default_factory=TwitchRedeemSpeakConfig)
     helper: TwitchHelperConfig = Field(default_factory=TwitchHelperConfig)
 
 

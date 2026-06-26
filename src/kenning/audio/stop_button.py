@@ -150,6 +150,10 @@ class StopButtonOverlay:
         chat_enabled: bool = False,
         chat_height: int = 26,
         chat_label: str = "CHAT",
+        on_toggle_chat_audio: Optional[Callable[[bool], None]] = None,
+        chat_audio_enabled: bool = False,
+        chat_audio_height: int = 26,
+        chat_audio_label: str = "HEAR CHAT",
         on_restart: Optional[Callable[[], None]] = None,
         on_exit: Optional[Callable[[], None]] = None,
         restart_height: int = 28,
@@ -192,6 +196,15 @@ class StopButtonOverlay:
         self._chat_enabled = bool(chat_enabled)
         self._chat_h = max(0, int(chat_height))
         self._chat_label = chat_label or "CHAT"
+        # Optional HEAR-CHAT toggle row: routes CHAT-directed audio (chat-reply +
+        # the "ultron says" redeem) to the LOCAL speakers (ON) or the OBS /
+        # broadcast mirror ONLY (OFF, default). Distinct from the CHAT toggle,
+        # which enables/disables chat-reply entirely. ``_chat_audio_enabled``
+        # tracks the displayed state across show/hide rebuilds.
+        self._on_toggle_chat_audio = on_toggle_chat_audio
+        self._chat_audio_enabled = bool(chat_audio_enabled)
+        self._chat_audio_h = max(0, int(chat_audio_height))
+        self._chat_audio_label = chat_audio_label or "HEAR CHAT"
         # Optional RESTART + EXIT action buttons (orchestrator-wired). Restart =
         # full cleanup then relaunch the same build; Exit = full cleanup then quit.
         self._on_restart = on_restart
@@ -275,13 +288,17 @@ class StopButtonOverlay:
             turbo_h = self._turbo_h if _has_turbo else 0
             _has_chat = self._on_toggle_chat is not None and self._chat_h > 0
             chat_h = self._chat_h if _has_chat else 0
+            _has_chat_audio = (self._on_toggle_chat_audio is not None
+                               and self._chat_audio_h > 0)
+            chat_audio_h = self._chat_audio_h if _has_chat_audio else 0
             _has_restart = self._on_restart is not None and self._restart_h > 0
             _has_exit = self._on_exit is not None and self._exit_h > 0
             _has_flag = self._on_flag is not None and self._flag_h > 0
             restart_h = self._restart_h if _has_restart else 0
             exit_h = self._exit_h if _has_exit else 0
             flag_h = self._flag_h if _has_flag else 0
-            height = bar_h + btn_h + restart_h + exit_h + flag_h + ptt_h + turbo_h + chat_h
+            height = (bar_h + btn_h + restart_h + exit_h + flag_h + ptt_h
+                      + turbo_h + chat_h + chat_audio_h)
             root = tk.Tk()
             root.title("ULTRON // STOP")
             root.geometry(f"{w}x{height}+{self._x}+{self._y}")
@@ -444,6 +461,54 @@ class StopButtonOverlay:
                 chat_btn.configure(command=_toggle_chat)
                 chat_btn.pack(fill="x", side="bottom")
                 chat_btn.bind("<Button-3>", lambda _e: self.hide())
+
+            # HEAR-CHAT toggle -- teal "HEAR CHAT ON" = you hear chat-directed
+            # audio (chat-reply + the "ultron says" redeem) through your speakers;
+            # grey "HEAR CHAT OFF" (default) = that audio goes to OBS / the
+            # broadcast mirror ONLY, so it isn't distracting mid-game. Distinct
+            # teal accent (audio-routing, not the purple chat-enable toggle).
+            if _has_chat_audio:
+                _ca_on_fg, _ca_on_fill = "#33d6c7", "#0a1f1d"    # teal = ON
+                _ca_off_fg, _ca_off_fill = "#8a8f98", "#141414"  # grey = OFF
+
+                def _chat_audio_colors():
+                    return ((_ca_on_fg, _ca_on_fill) if self._chat_audio_enabled
+                            else (_ca_off_fg, _ca_off_fill))
+
+                _cafg0, _cafill0 = _chat_audio_colors()
+                chat_audio_btn = tk.Button(
+                    root,
+                    text=f"{self._chat_audio_label} "
+                         f"{'ON' if self._chat_audio_enabled else 'OFF'}",
+                    bg=_cafill0, fg=_cafg0,
+                    activebackground=_cafill0, activeforeground="#ffffff",
+                    relief="flat", bd=0, highlightthickness=1,
+                    highlightbackground=_cafg0, highlightcolor=_cafg0,
+                    font=("Segoe UI Semibold", 9), cursor="hand2",
+                )
+
+                def _toggle_chat_audio():
+                    self._chat_audio_enabled = not self._chat_audio_enabled
+                    fg, fill = _chat_audio_colors()
+                    try:
+                        chat_audio_btn.configure(
+                            text=f"{self._chat_audio_label} "
+                                 f"{'ON' if self._chat_audio_enabled else 'OFF'}",
+                            bg=fill, fg=fg, activebackground=fill,
+                            highlightbackground=fg, highlightcolor=fg)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    try:
+                        if self._on_toggle_chat_audio is not None:
+                            self._on_toggle_chat_audio(self._chat_audio_enabled)
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning("chat-audio toggle callback failed: %s", e)
+                    logger.info("chat-audio toggle -> %s",
+                                "ON" if self._chat_audio_enabled else "OFF")
+
+                chat_audio_btn.configure(command=_toggle_chat_audio)
+                chat_audio_btn.pack(fill="x", side="bottom")
+                chat_audio_btn.bind("<Button-3>", lambda _e: self.hide())
 
             # RESTART + EXIT action buttons -- packed at the bottom (above PTT,
             # below STOP). Each runs Ultron's full cleanup; Restart then relaunches

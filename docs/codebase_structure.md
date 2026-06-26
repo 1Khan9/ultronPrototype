@@ -27,6 +27,80 @@
 > - Full runbook: **`docs/ultron_0_1_baseline.md`**. Post-0.1 roadmap:
 >   **`docs/latency_optimizations_V1.md`**.
 >
+> **TWITCH FULL STAND-UP — SE ECONOMY + SPEAK REDEEMS + UNIFIED OVERLAY + MODERATION FIX + !ultron/TALK-HINT (2026-06-26)**
+>
+> A full Twitch stand-up session — the channel is live with a StreamElements-backed economy, viewer text-to-speech
+> redeems, a single polished overlay, fixed moderation endpoints, and a talk-to-Ultron prompt.
+>
+> **NEW `src/kenning/twitch/economy/streamelements.py`** — a StreamElements loyalty-points economy backend so the
+> on-stream "Credits" balance is the SAME currency viewers already see in the StreamElements widget/dashboard (no
+> parallel SQLite ledger to reconcile). `class SEPointsClient` — kappa/v2 points API (`GET`/`PUT` a viewer's
+> points by channel+username, injected transport, fail-soft). `class StreamElementsLedger` — a DROP-IN for
+> `economy.ledger.Ledger` (same `balance`/`credit`/`debit` surface) backed by SEPointsClient: a `uid→login` map
+> (registered by the redeem/chat-game routers) resolves the StreamElements username, and a LOCAL idempotency table
+> makes EventSub-replay safe (a credit/debit keyed on the same redemption/message id is applied once even though
+> StreamElements itself has no idempotency). `build_se_ledger(...)` constructs it from config. Flag-gated
+> `twitch.economy.streamelements_enabled` (default OFF; LIVE ON now) — OFF keeps the SQLite `Ledger`.
+>
+> **NEW `src/kenning/twitch/economy/trivia_questions.py`** — an expanded trivia bank (**198 questions across 17
+> categories**) that feeds `chat_games._TRIVIA_POOL` (replacing the small inline starter set), so `!trivia` /
+> auto-trivia draw from a much larger, deduped pool.
+>
+> **`src/kenning/twitch/redeem_router.py`** — **2 SPEAK redeems** (`SPEAK_SAY` / `SPEAK_TEAM`): a viewer's redeem
+> text is run through **Llama-Guard** and, if safe, spoken via TTS (to the stream, or relayed to the team).
+> `sanitize_speak_text` / `frame_speak_line` clamp + frame the viewer text into an in-character Ultron line.
+> `_to_overlay_event` was reshaped to emit the UNIFIED chat_game/speech overlay schema (see overlay below). The
+> router now REGISTERS each redeemer's `uid→login` into the SE ledger so a StreamElements credit can resolve the
+> username.
+>
+> **`src/kenning/twitch/economy/chat_games.py`** — wired to the SE ledger (`register` uid→login on every command);
+> `overlay_emit` pushes a UNIFIED `chat_game` overlay card for slots / wheel / heist / duel / trivia / raffle;
+> NEW `!ultron` command (`_cmd_ultron`, `CommandKind.ULTRON`) so viewers can prompt Ultron from chat; `!points` /
+> `!gamble` are DEFERRED to StreamElements when `defer_points_gamble_to_streamelements` is set (StreamElements owns
+> the balance/loyalty UX); **auto-trivia** fires every `trivia_auto_interval_minutes`; the leaderboard is now
+> multi-line; the spoken/printed currency is **"Credits"** (`currency_name`).
+>
+> **`src/kenning/twitch/overlay/server.py` + `overlay/static/overlay.html`** — the overlay was unified into ONE
+> polished bottom-left card. A single event schema with two `type`s — `chat_game` (game-result cards) and
+> `speech` (Ultron/viewer speak lines) — with a validator on the server and a renderer in the HTML; `?demo=1`
+> renders a preview of every card type without a live event.
+>
+> **`src/kenning/twitch/panel.py`** — `build_commands_panel_text` (the periodic commands list) plus NEW
+> `run_interval_poster`, a shared periodic-poster helper used for BOTH the commands panel and a "talk to Ultron"
+> hint (the orchestrator schedules them on their own intervals).
+>
+> **`src/kenning/twitch/commands.py`** — `CommandKind.ULTRON` added for the new `!ultron` chat command.
+>
+> **`src/kenning/twitch/moderation/helix.py`** — FIXED moderation endpoints to match the current Helix surface:
+> `update_chat_settings` → `PATCH /chat/settings`; `delete_message` / `clear_chat` → `DELETE /chat/messages`
+> (previously wrong verbs/paths that 4xx'd live).
+>
+> **`src/kenning/twitch/auth.py`** — `moderator:manage:chat_messages` added to `BROADCASTER_SCOPES` (required for
+> the corrected delete-message / clear-chat endpoints).
+>
+> **`src/kenning/audio/intent_gate.py`** — `voltron` / `altron` added as STT-mishear wake-aliases (the model
+> frequently mishears "Ultron"); they resolve to the Ultron address signal so an addressed line is not dropped.
+>
+> **`src/kenning/audio/_ultron_answer.py`** — the meta-leak guard (`is_meta_leak`) was tightened to also catch the
+> "I am a language model" style self-admission (BR-P2 persona integrity on the answer path).
+>
+> **`src/kenning/audio/relay_speech.py` + `ultron_prompt.py`** — persona/identity polish: identity replies now
+> TARGET the accuser and ENFORCE the addressee name; more calm/respond variety; a fire-word guard; stronger
+> anti-repeat (live-test hardening, see STATUS.md 2026-06-26).
+>
+> **`src/kenning/audio/stop_button.py`** — NEW **HEAR CHAT** toggle: routes Twitch chat audio to OBS-only by
+> default (the streamer/team don't hear every chat line locally unless toggled on).
+>
+> **`src/kenning/pipeline/orchestrator.py`** — wired the whole stand-up: `_build_economy_ledger` returns the SE
+> ledger OR the SQLite `Ledger` per `streamelements_enabled`; the redeem SPEAK callbacks (`_chat_speak` + the
+> HEAR-CHAT routing); the `ChatGameRouter` is constructed with `overlay_emit` + the chat config; and the
+> talk-to-Ultron poster runs via `panel.run_interval_poster`.
+>
+> **`src/kenning/config.py`** — new fields: `economy.streamelements_*` /
+> `economy.defer_points_gamble_to_streamelements` / `economy.trivia_auto_interval_minutes` /
+> `economy.currency_name = "Credits"`; `twitch.redeem_speak.*`; `twitch.chat.commands_panel_*` /
+> `twitch.chat.talk_hint_*`.
+>
 > **Validating HEAD: PERSONA LOCK (BR-P2) + TWITCH TOKEN AUTO-REFRESH (2026-06-23 `338040b`)**
 > Targeted: 12 new tests green (test_token_auto_refresh.py × 9, test_persona_lock.py × 3).
 >
@@ -324,6 +398,12 @@
 >   gate's `_relay_signal` now applies `canonicalize_relay_lead` after the L1 STT correction — the SAFE subset
 >   that fixes an EXISTING team-directed lead but never invents one for a bare callout (so banter like "the
 >   rotations feel clean" still does NOT relay; the deliberate tightening of `e085d0d`/`1c7bb6f` is preserved).
+> - **Count-homophone + bare-lead (2026-06-26).** `command_normalizer._fix_count_homophone`: a count-homophone
+>   (to/too->two, for->four) immediately leading a KNOWN `routing_rules.LOCATIONS` at the callout-payload START becomes
+>   the count ("tell my team to garage"->"...two garage"); scoped to payload start so movement callouts ("rotate to
+>   garage") keep "to". `orchestrator._is_bare_relay_lead` + a guarded re-capture-and-splice in the capture loop: a
+>   bare "tell my team" + a pause captures the continuation ONCE and splices it (fail-through to today's IGNORE on any
+>   failure; bounded by `_capture_utterance`'s VAD timeout).
 >   BONUS: the gate now also catches mangled-VERB leads ("Call my team rotate B") it previously dropped.
 >   "Why is it not working?" correctly stays IGNORE (a muttered question, no Ultron name). Tests:
 >   `test_intent_gate.py` (`test_gate_relays_mangled_team_lead_mishears` + `test_canonicalize_relay_lead_self_mishear`).
@@ -374,6 +454,47 @@
 >   doesn't stand a chance against me." NOTE: a 4B at this size is still variable on short social one-liners
 >   (occasional mild topic echo / ramble); the curated pools remain the fail-open fallback. Tests:
 >   `test_ultron_prompt.py` (+3: frame-strip noun extraction, no-reconcile/no-raw-echo, leaked-instruction strip).
+> - **PER-POOL social system templates (2026-06-26).** `ultron_prompt._SOCIAL_SYSTEM_FOR` — a registry of 18
+>   dedicated, SHORT, self-contained SYSTEM prompts, one per social pool (identity/respond/reaction/encouragement/
+>   calm/criticize/compliment/flame_enemy/defiance/consolation/praise/clutch/hello/ask_day/greet/farewell×3). Each
+>   = `_social_sys(behaviour)` = compact `_SOCIAL_PERSONA` anchor + the pool's exact behaviour + `_SOCIAL_OUTPUT`
+>   rule (~710-940 chars vs the 1539-char general `SOCIAL_SYSTEM`). `build_social_prompt` selects
+>   `_SOCIAL_SYSTEM_FOR.get(kind, SOCIAL_SYSTEM)`; when a dedicated template exists the per-kind `_SOCIAL_DIRECTIVE`
+>   is DROPPED from the user turn (situation lives in the SYSTEM → no doubled instructions, the 4B's reliability
+>   lever). Pools without a template fall back to `SOCIAL_SYSTEM` + directive (additive, reversible). Mirrors the
+>   answer path's `llm_prompts.ANSWER_SYSTEM_FOR` (qa/marvel/think_respond), which was already per-subtype. To tune
+>   ONE pool edit ONLY its behaviour string. `test_social_novel.py` identity assertions moved to the new contract.
+>   TUNED 2026-06-26 (workflow `wf_c3fa042c` per-pool draft+adversarial-verify -> Opus synthesis) to match each pool's
+>   curated-line style: compliment/praise CREDIT the ally (never flame), respond crushes the insult (never reads it as
+>   praise), reaction defers tone to the injected EXAMPLES, identity never echoes the question, flame_enemy/clutch cold
+>   not chirpy. Behaviours are now LENGTH-LIGHT (no hardcoded sentence count -- length owned by the verbosity directive +
+>   the <=2 cap in `_social_llm_line`). ANSWER path (`llm_prompts.ANSWER_*_RULES`) also rewritten coherence-first/short;
+>   `_ultron_answer.build_answer_call` drops qa temperature 0.85->0.6 (nonsensical-fact fix; marvel/think keep 0.85).
+>   LENGTH CLAMP (every reply <=~5-7s): a CONCRETE per-sentence word cap is the primary lever (`<=7 words/sentence,
+>   <15 total, one breath ~5s` in `_CONVERSATION_VERBOSITY_DIRECTIVE` low/lowest + `_SOCIAL_OUTPUT` + `ANSWER_PERSONA_CORE`);
+>   token ceilings are a SAFETY NET with headroom (`_CONVERSATION_MAX_TOKENS` low 72->38; `_ANSWER_SAMPLING` 56->40) so a
+>   compliant reply finishes uncut; `relay_speech._cap_sentences` drops an unfinished trailing fragment (no mid-word cut).
+>   ANTI-ECHO + TTS-SAFE + curated-pool match: `_SOCIAL_OUTPUT` + `ANSWER_PERSONA_CORE` forbid the echo-opening (no
+>   "Reyna, trash." / "a voice changer?" / "Tony Stark?" -- after a name, go straight into the reply) and harden the
+>   no-sound ban (no Pfft/Heh/Hah/Tch -- real words only); `_social_exemplar_block` is now prescriptive (match the
+>   injected curated lines' voice/length/shape, cold declaratives never questions); `build_social_prompt` ctx line tells
+>   the model to answer WITHOUT echoing the provocation.
+> - **Curated-pool PARITY LOOP + Heretic-4B swap (2026-06-26).** `scripts/_pool_parity_harness.py` drives the real LLM
+>   offline over ~30 routes, capturing the route-OFF curated line next to the route-ON LLM line (`logs/_pool_parity.json`)
+>   so prompt tuning is empirical. DEFAULT MODEL swapped to the NON-gabliterated **p-e-w Heretic Qwen3-4B-Instruct-2507
+>   Q6_K** (`config.py` presets `heretic-qwen3-4b-q6` default / `-q5` VRAM step-down; on `E:\UltronModels`; ~3.9 GB LLM;
+>   non-think) -- better instruction-following fixed compliment/reaction/criticize/qa in one swap. Post-proc hardening in
+>   `strip_prompt_echo`: leaked-directive markers/trims, mouth-noise strip, "?"-as-dash normalize, stray-terminator
+>   collapse. `relay_speech._echoes_provocation` + the echo-guard runs on the FINAL CAPPED line (the cap can trim
+>   "{name}. {echo}? {content}" down to a bare echo) -> bare echo falls back to the curated line. `ask_day` pinned to a
+>   day-only question. KNOWN remaining: a marvel-topic "X asked about iron man, respond" routes to the social-respond
+>   path with an empty reaction pool -> empty on an empty generation (no marvel fallback).
+> - **Heretic live-test fixes (2026-06-26).** `relay_speech._match_qa_command` also matches "explain <X> to my team"
+>   (team at the END, not just the start) -> the qa ANSWER path; without it that phrasing fell through to the
+>   conversational `ULTRON_GAMING_PERSONA` and bled Tony Stark into factual answers. `ANSWER_QA_RULES` adds a no-origin/
+>   no-Marvel/no-Stark-unless-asked clause. `_SOCIAL_SYSTEM_FOR["identity"]` rewritten to DIRECTLY rebut the named
+>   accusation (soundboard/voice-changer/recording/bot). `_social_llm_line` (and `_ensure_addressee`) normalize a leading
+>   "{addressee}:" / "{addressee}." -> "{addressee}, " (the colon/period after a name TTS'd as a "weird sound").
 >
 > **Validating HEAD: u1.0 TRUE ROUTE-ALL + REPORTED-Q ANSWER + GATE TIGHTENING + "8B"→"LLM" RENAME (2026-06-21)**
 > On LOCAL `main` (route-all shipped 2026-06-20). Three live-testing fixes in `relay_speech.build_relay_line` +
@@ -4776,7 +4897,10 @@ monitoring/hooking — so it adds nothing to the anticheat surface.
 ("show/hide the stop button"); summon/dismiss by voice. Fail-open: no display /
 no Tk → the window never appears and the voice path is untouched. Configured by
 `StopButtonConfig` in `config.py` (`enabled`, `show_at_startup`, geometry +
-colours) / the `stop_button:` block in `config.yaml`.
+colours) / the `stop_button:` block in `config.yaml`. Stacked toggles below the
+STOP button: PTT (2026-06-15), CHAT/turbo (2026-06-23), and a **HEAR CHAT** toggle
+(2026-06-26) that routes Twitch chat audio to OBS-only by default (the streamer/team
+don't hear every chat line locally unless toggled on).
 
 #### `safety/anticheat.py` (NEW 2026-06-11 — anticheat-safe mode)
 
@@ -5386,7 +5510,8 @@ Public API:
   `is_complete_tactical_callout` 0.90 / agent+`_fact_tokens` 0.88 — the weak semantic `relay_intent_ok`
   signal was DROPPED 2026-06-21 (it false-relayed conversation to the team; RELAY needs a strong signal)) → addressing
   rules NO→IGNORE / **PRIVATE_REPLY requires an explicit Ultron address signal** (a leading wake word OR an
-  `_ADDRESS_NAME_RE` unambiguous name — `ultron`/`kenning`/`hey ai`/`the ai`, anywhere; the common nouns
+  `_ADDRESS_NAME_RE` unambiguous name — `ultron`/`kenning`/`hey ai`/`the ai`, plus the STT-mishear wake-aliases
+  `voltron`/`altron` (the model frequently mishears "Ultron"; NEW 2026-06-26), anywhere; the common nouns
   `machine`/`robot` are EXCLUDED from the gate so they don't false-fire on ordinary speech; NEW 2026-06-22) → else
   IGNORE. **The addressing RULES alone are NOT enough for PRIVATE** (they score a bare question/imperative
   ADDRESSED ≥0.80, which false-fired private replies on un-named conversation the player aimed at teammates —
@@ -5448,7 +5573,9 @@ social category an utterance is. Consumed by `relay_speech._as_curated_reaction`
 is_meta_leak, THINK_RESPOND_SUFFIX_RE]`. Builds the focused per-subtype system_prompt + slots + constrained
 sampling for Marvel / "think and respond" / **`qa`** (the 2026-06-22 dedicated QA-answer command —
 `directive=="qa"` → the `qa` subtype + `ANSWER_SYSTEM_FOR["qa"]`) answers (`build_answer_call`); `is_meta_leak`
-is the identity/model-leak gate on the LLM answer path. Consumed by `relay_speech.build_relay_line`'s answer path.
+is the identity/model-leak gate on the LLM answer path — TIGHTENED 2026-06-26 to also catch the
+"I am a language model" style self-admission (BR-P2 persona integrity). Consumed by
+`relay_speech.build_relay_line`'s answer path.
 
 ### `src/kenning/addressing/`
 

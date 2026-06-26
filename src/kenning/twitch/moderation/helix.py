@@ -513,7 +513,7 @@ class HelixClient:
         moderator_id: str,
         message_id: str,
     ) -> HelixResult:
-        """DELETE /moderation/chat for a single ``message_id``.
+        """DELETE /chat/messages for a single ``message_id``.
 
         Keyed on ``message_id`` (NOT a user) so deleting the same message twice is
         a cache hit; a Twitch 404 "message does not exist" is also treated as
@@ -529,9 +529,11 @@ class HelixClient:
                 action="delete_message", ok=True, status=0, idempotent=True,
                 data=cached.data, key=key,
             )
+        # Helix single-message delete lives under /chat/messages (NOT
+        # /moderation/chat, which 404s). moderator:manage:chat_messages scope.
         resp = self._request(
             "DELETE",
-            "/moderation/chat",
+            "/chat/messages",
             query={
                 "broadcaster_id": str(broadcaster_id),
                 "moderator_id": str(moderator_id),
@@ -596,7 +598,7 @@ class HelixClient:
         return self._finish_write("unban", key, resp, success_statuses=(200, 204))
 
     def clear_chat(self, broadcaster_id: str, moderator_id: str) -> HelixResult:
-        """DELETE /moderation/chat — remove ALL messages from the channel's chat.
+        """DELETE /chat/messages (no message_id) — remove ALL messages from chat.
 
         Channel-scoped (not user-keyed) and naturally idempotent (clearing already-
         empty chat is a server-side no-op), so it is NOT locally cached. A 2xx
@@ -604,9 +606,12 @@ class HelixClient:
         """
         if not broadcaster_id or not moderator_id:
             raise ValueError("broadcaster_id and moderator_id are required")
+        # Helix clears chat via DELETE /chat/messages WITHOUT a message_id (the
+        # same endpoint as a single delete; omitting message_id clears ALL).
+        # NOT /moderation/chat (404). moderator:manage:chat_messages scope.
         resp = self._request(
             "DELETE",
-            "/moderation/chat",
+            "/chat/messages",
             query={"broadcaster_id": str(broadcaster_id), "moderator_id": str(moderator_id)},
         )
         return self._finish_write(
@@ -619,7 +624,7 @@ class HelixClient:
         moderator_id: str,
         settings: Mapping[str, Any],
     ) -> HelixResult:
-        """PATCH /moderation/chat/settings with the given settings map.
+        """PATCH /chat/settings with the given settings map.
 
         Chat settings are not user-scoped, so this is NOT locally cached (an empty
         idempotency key) — Twitch itself treats a PATCH of the same settings as a
@@ -645,9 +650,12 @@ class HelixClient:
                 "settings contains no recognized chat-setting keys "
                 f"(allowed: {sorted(allowed)})"
             )
+        # Helix chat settings live under /chat/settings (NOT /moderation/...).
+        # The wrong /moderation/chat/settings path returns a bare 404
+        # ({"error":"Not Found","status":404,"message":""}).
         resp = self._request(
             "PATCH",
-            "/moderation/chat/settings",
+            "/chat/settings",
             query={"broadcaster_id": str(broadcaster_id), "moderator_id": str(moderator_id)},
             json_payload=payload,
         )

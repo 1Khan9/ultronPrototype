@@ -47,22 +47,22 @@ def test_default_preset_is_8b_iq3xs() -> None:
 
 
 def test_per_model_batch_settings_resolve() -> None:
-    """2026-06-24 PER-MODEL REFACTOR: each preset carries its own n_ubatch / n_ctx;
-    the schema baseline (n_batch 2048, n_ubatch 256, kv_cache_type 8, flash_attn
-    True) fills the rest. The roomy 4Bs override n_ubatch -> 512; the VRAM-tight 8B
-    control keeps 256. config.yaml no longer pins these globally (that shadowed every
+    """2026-06-24 PER-MODEL: each preset carries its own n_ubatch / n_ctx / kv;
+    the schema baseline (n_batch 2048, n_ubatch 256, kv_cache_type 8=q8_0, flash_attn
+    True) fills the rest. config.yaml no longer pins these globally (that shadowed every
     preset -- the precedence trap)."""
     iq3 = LLMConfig(preset="josiefied-qwen3-8b-iq3xs")
     assert (iq3.n_ctx, iq3.n_batch, iq3.n_ubatch, iq3.kv_cache_type) == (3072, 2048, 256, 8)
-    # 2026-06-24: the two 4Bs DIVERGED during latency/VRAM tuning. huihui (Gated-
-    # DeltaNet) is n_ctx 2048 (VRAM), n_ubatch 256, F16 KV (kv_cache_type 1 --
-    # PR #23907 makes q8_0+flash collapse decode). The standard-attention 2507g
-    # stays roomy: n_ctx 4096, n_ubatch 512, schema-baseline q8_0 KV (8).
+    # 2026-06-24: BOTH 4Bs use n_ctx 4096 + n_ubatch 256 + F16 KV (kv_cache_type 1).
+    # F16 KV avoids llama.cpp PR #23907's q8_0+flash_attn decode collapse (~65%, 122->42
+    # t/s). The 2507g was given the SAME latency settings as the huihui (3.5) at the
+    # user's request, so its latency is no higher than the 3.5's. (huihui n_ctx was
+    # reverted 2048->4096 earlier -- 2048 truncated the rich persona prompts.)
     huihui = LLMConfig(preset="huihui-qwen3.5-4b")
-    assert (huihui.n_ctx, huihui.n_batch, huihui.n_ubatch, huihui.kv_cache_type) == (2048, 2048, 256, 1)
+    assert (huihui.n_ctx, huihui.n_batch, huihui.n_ubatch, huihui.kv_cache_type) == (4096, 2048, 256, 1)
     assert huihui.flash_attn is True
     g2507 = LLMConfig(preset="josiefied-qwen3-4b-2507g")
-    assert (g2507.n_ctx, g2507.n_batch, g2507.n_ubatch, g2507.kv_cache_type) == (4096, 2048, 512, 8)
+    assert (g2507.n_ctx, g2507.n_batch, g2507.n_ubatch, g2507.kv_cache_type) == (4096, 2048, 256, 1)
     assert g2507.flash_attn is True
 
 

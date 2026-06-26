@@ -2199,10 +2199,21 @@ def _match_qa_command(
     if tm:
         addressee, q = "team", tm.group("q")
     else:
-        name, q = _split_leading_name(rest, vocabulary)
-        if name is None:
-            return None
-        addressee = _display_name(name)
+        # "explain <X> to my team" / "<X> for the team" -- the team is at the END,
+        # not the start (live: "Explain the concept of pandas to my team" fell
+        # through to the conversational LLM, whose Marvel/Stark persona bled Stark
+        # into a factual answer). Strip the trailing team phrase -> the qa path.
+        _end_team = re.search(
+            r"\s+(?:to|for|with)\s+(?:my\s+|the\s+|our\s+)?"
+            r"(?:team|squad|everyone|everybody|the\s+guys|the\s+boys|the\s+crew)"
+            r"\s*[.?!]*\s*$", rest, re.IGNORECASE)
+        if _end_team and rest[:_end_team.start()].strip():
+            addressee, q = "team", rest[:_end_team.start()].strip()
+        else:
+            name, q = _split_leading_name(rest, vocabulary)
+            if name is None:
+                return None
+            addressee = _display_name(name)
     q = (q or "").strip().strip(",;:.-? ").strip()
     if not q:
         return None
@@ -3033,10 +3044,12 @@ def _fact_report(payload: str) -> str:
 # a scaffold/prompt-example echo. Kept characterful (temp/min_p) but bounded.
 _RELAY_SAMPLING = {
     "max_tokens": 56,
-    "temperature": 0.8,
+    # STRICT callout tier (2026-06-25): legacy tactical relay (u1 flag OFF) -- keep
+    # agent names / sites / numbers precise with a low temp, matching the u1 callout.
+    "temperature": 0.4,
     "top_p": 0.92,
     "top_k": 40,
-    "min_p": 0.08,
+    "min_p": 0.05,
     "repeat_penalty": 1.18,
     "stop": ["\n\n", "\nADDRESS:", "\nTASK:", "\nWHAT THEY", "\nTHEIR ",
              "\nUser:", "\nUSER:", "Ultron:", "ADDRESS:", "\n-"],
@@ -4259,6 +4272,45 @@ def relay_tts_text(line: str) -> str:
     return line
 
 
+# Literal-fire vocabulary that betrays the 4B misreading "flaming"/"flamed" (= a
+# teammate trash-talking) as actual fire. Used ONLY to reject an insult-clapback /
+# reaction line on that misread (-> curated fallback). Word-bounded so it never
+# touches an unrelated line; "heat" included because "my heat signature does not
+# register" was a live failure, and Ultron has no thermal in-character reason to
+# mention heat in a clapback.
+_FIRE_WORD_RE = re.compile(
+    r"\b(?:fire|fires|fiery|flame|flames|flaming|flamed|ember|embers|"
+    r"burn|burns|burning|burned|burnt|ash|ashes|scorch\w*|smolder\w*|"
+    r"incinerat\w*|combust\w*|heat|heats|heated|inferno|blaze\w*|kindl\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def _echoes_provocation(line: str, context: str) -> bool:
+    """True iff the LLM line OPENS by parroting the bare provocation word as a
+    question/fragment ("Reyna, trash.", "Jett, a voice changer? ..."), which reads
+    as a bare echo in TTS (the '?' inflection is lost). The caller falls back to the
+    curated line -- exactly the quality we want for these. Fail-open to False."""
+    try:
+        from kenning.audio.ultron_prompt import _strip_reported_frame
+        prov = _strip_reported_frame((context or "").strip()).lower().strip(" .,!?")
+        if not prov or len(prov.split()) > 5:
+            return False
+        body = re.sub(r"^\s*[A-Za-z][\w'-]*[.,:]\s+", "", (line or "").strip()).lower()
+        if body.strip(" .,!?") == prov:
+            return True
+        head = re.escape(" ".join(prov.split()[:4]))
+        m = re.match(head + r"\s*[?.!]\s*", body)
+        if not m:
+            return False
+        # Only a BARE echo if little real content follows the parroted provocation
+        # ("trash." / "a soundboard?") -- a real comeback that merely OPENS with a
+        # rhetorical repeat ("Cringe? Reyna mistakes her reflection for me.") stands.
+        return len(body[m.end():].strip(" .,!?").split()) <= 2
+    except Exception:                                                # noqa: BLE001
+        return False
+
+
 def _social_llm_line(
     command: "RelayCommand",
     kind: str,
@@ -4270,6 +4322,7 @@ def _social_llm_line(
     recent_lines: "Optional[Sequence[str]]" = None,
     context: str = "",
     target: str = "",
+    accusation: str = "",
     canned: "Optional[str]" = None,
     fallback_to_canned: bool = True,
 ) -> "Optional[str]":
@@ -4301,6 +4354,7 @@ def _social_llm_line(
             addressee=addr,
             context=ctx,
             target=target,
+            accusation=accusation,
             verbosity=conversation_verbosity(),
             exemplars=tuple(pool),
             recent_lines=recent_lines,
@@ -4331,7 +4385,60 @@ def _social_llm_line(
         if not out or is_meta_leak(out, allow_self_ai=False):
             logger.debug("social LLM line empty/leak -> canned (kind=%s)", kind)
             return fallback if fallback_to_canned else None
-        return _cap_line(out, max_chars)
+        # Hard backstop on length (the user flagged a rambling "Reyna is flaming you"
+        # reply AND a "say hello" monologue). The social path had NO cap; the qa path
+        # caps the same way. Brief greetings ("hello"/"how are you") get ONE sentence;
+        # clapbacks/banter get two. This also drops a trailing truncated fragment.
+        from kenning.audio.ultron_prompt import _SHORT_SOCIAL_KINDS
+        _max_sent = 1 if kind in _SHORT_SOCIAL_KINDS else 2
+        capped = _cap_line(_cap_sentences(out, max_sentences=_max_sent), max_chars)
+        # Normalize the addressee opener punctuation: the model writes "{Name}:" /
+        # "{Name}." -- a colon/period after the name reads as an odd sound/break in
+        # TTS (user: "weird sound after the word reyna") -> a clean vocative comma.
+        if addr and addr != "team":
+            capped = re.sub(rf"^\s*{re.escape(addr)}\s*[:.]\s+", f"{addr}, ",
+                            capped, count=1, flags=re.IGNORECASE)
+            # Enforce the accuser/teammate's NAME when the model dropped it (user:
+            # identity replies lost "Jett"/"Sage" -- they should address the accuser).
+            # Prepend "{name}, " if the name is absent from the line.
+            if capped and not re.search(rf"\b{re.escape(addr)}\b", capped,
+                                        re.IGNORECASE):
+                _h = (capped[0].lower() if capped[:1].isupper()
+                      and not capped.startswith(("I ", "I'")) else capped[:1])
+                capped = f"{addr}, {_h}{capped[1:]}"
+        # ECHO GUARD on the FINAL line (2026-06-26 parity harness): the model opens
+        # "{name}. {provocation}? {real content}" and the sentence-cap trims it down
+        # to the bare "{name}. {provocation}?" -- the "{name}." opener eats a sentence
+        # slot, leaving a TTS-flattened echo ("Jett. A voice changer?"). Checking
+        # AFTER the cap catches that; a bare-echo final line falls back to the curated
+        # line (exactly the quality target). A real comeback that merely opens
+        # rhetorically (">2 words after the echo") stands -- see _echoes_provocation.
+        if ctx and _echoes_provocation(capped, ctx):
+            logger.debug("social LLM line echoes provocation -> canned (kind=%s)", kind)
+            return fallback if fallback_to_canned else None
+        # LITERAL-FIRE GUARD (2026-06-26): "Reyna is flaming you" = trash-talk, NOT
+        # fire. The 4B occasionally takes it literally ("Flame fades before my logic",
+        # "My heat signature does not register"). On the insult-clapback / reaction
+        # pools, a line that mentions fire/embers/burning/heat/ash is off-target ->
+        # fall back to the curated pool (which is clean). Other kinds (a real "flame
+        # the enemy" order) are NOT scrubbed -- only the reported-insult pools.
+        if kind in ("respond", "reaction") and _FIRE_WORD_RE.search(capped):
+            logger.debug("social LLM line read 'flaming' as fire -> canned (kind=%s)", kind)
+            return fallback if fallback_to_canned else None
+        # ANTI-REPEAT (2026-06-26): recent_lines is deliberately NOT in the prompt
+        # (it made the 4B parrot), so short social pools (clutch / defiance /
+        # compliment / identity) converge to the SAME line across turns. Dedup the
+        # FINAL line here: if it repeats a recent spoken line, take the LRU-varied
+        # curated fallback instead (which `pick_line(recent_lines=...)` already
+        # rotated). Normalized compare so trivial punctuation/case differences count.
+        if capped and recent_lines:
+            _nc = _norm_canned(capped)
+            if _nc and any(_norm_canned(r) == _nc for r in recent_lines if r):
+                logger.debug("social LLM line repeats a recent line -> canned (kind=%s)", kind)
+                if fallback and _norm_canned(fallback) != _nc:
+                    return fallback
+                return fallback if fallback_to_canned else None
+        return capped
     except Exception as e:                                          # noqa: BLE001
         logger.debug("social LLM line failed (%s) -> canned (kind=%s)", e, kind)
         return fallback if fallback_to_canned else None
@@ -5701,6 +5808,11 @@ def _ensure_addressee(line: str, command: "RelayCommand") -> str:
     name = getattr(command, "addressee", "team")
     if not line or name == "team":
         return line
+    # Normalize the opener punctuation: the model writes "{Name}:" / "{Name}." --
+    # a colon/period right after the name reads as an odd break/sound in TTS (user:
+    # "weird sound after the word reyna"). Make it a clean vocative comma "{Name}, ".
+    line = re.sub(rf"^\s*{re.escape(name)}\s*[:.]\s+", f"{name}, ", line,
+                  count=1, flags=re.IGNORECASE)
     if re.search(rf"\b{re.escape(name)}\b", line, re.IGNORECASE):
         return line
     head = (line[0].lower() if line[:1].isupper()
@@ -5970,11 +6082,19 @@ def _cap_sentences(line: str, max_sentences: int = 3) -> str:
     Split on sentence enders followed by a capital/quote/dash so decimals
     ('13.8 billion', '384,400') and the '--' aside never split a sentence.
     Applied ONLY to model/fallback output -- the curated set-pieces (greet,
-    identity, farewell) return earlier and keep their intended length."""
+    identity, farewell) return earlier and keep their intended length.
+
+    2026-06-26: a trailing fragment the model never finished (no sentence-ender --
+    e.g. a max_tokens cut mid-sentence) is DROPPED when a complete sentence remains,
+    so a cut speaks only WHOLE sentences, never a mid-word tail (the user's coherence
+    requirement). A complete line is returned byte-identical (unchanged path)."""
     line = (line or "").strip()
     if not line:
         return line
     parts = re.split(r'(?<=[.!?])\s+(?=[A-Z"—])', line)
+    if len(parts) > 1 and not re.search(r'[.!?]["’”)]?$', parts[-1].strip()):
+        parts = parts[:-1]
+        line = " ".join(parts).strip()
     if len(parts) <= max_sentences:
         return line
     return " ".join(parts[:max_sentences]).strip()
@@ -6929,6 +7049,33 @@ def _relay_llm_retry(
         return ""
     if llm is None or not hasattr(llm, "generate_stream"):
         return ""
+    # qa/answer commands: a recovered line must still ANSWER the question, not
+    # RELAY the bare interrogative. The live "explain pandas" -> "What pandas are"
+    # / "They're on C." came from re-prompting the TACTICAL relay on the bare
+    # question. Re-run the ANSWER pipeline first (with the leading "\n\n" stop
+    # dropped -- that stop firing at position 0 is what zeroed the primary), so a
+    # genuine-empty recovery stays on-topic. Falls through to the generic relay
+    # retry below if the answer pipeline is also unresponsive.
+    if getattr(command, "directive", "") == "qa":
+        try:
+            from kenning.audio._ultron_answer import build_answer_call
+            _ans = build_answer_call(command)
+            if _ans is not None:
+                _a_sys, _a_usr, _a_samp, _a_sub2 = _ans
+                _a_samp2 = dict(_a_samp) if isinstance(_a_samp, dict) else {}
+                _a_samp2["stop"] = [s for s in (_a_samp2.get("stop") or [])
+                                    if s not in ("\n\n", "\n")]
+                _atoks = llm.generate_stream(
+                    _a_usr, system_prompt=_a_sys, sampling=_a_samp2,
+                    record_history=False, suppress_memory_context=True,
+                    enable_thinking=False)
+                _aout = re.sub(r"\*{1,3}|_{2,3}|`+", "",
+                               "".join(_atoks).strip()).strip()
+                if _aout:
+                    logger.info("relay: recovered empty qa via answer re-prompt")
+                    return _aout
+        except Exception as e:  # noqa: BLE001 - fall through to the generic retry
+            logger.debug("relay qa re-answer failed: %s", e)
     _addr = getattr(command, "addressee", "team") or "team"
     _payload = (getattr(command, "payload", "") or "").strip()
     if not _payload:
@@ -7314,6 +7461,7 @@ def build_relay_line(
             command, "identity", pool,
             max_chars=max_chars, llm=llm, generate_fn=generate_fn,
             recent_lines=recent_lines, context=(_ctx or _pl),
+            accusation=(_cat or ""),
             canned=_cap_line(line, max_chars),
         )
 
@@ -7338,7 +7486,8 @@ def build_relay_line(
             _ipool = IDENTITY_POOLS.get(_icat) if _icat else DEFAULT_IDENTITY_LINES
             return _social_llm_line(
                 command, "identity", _ipool, max_chars=max_chars, llm=llm,
-                generate_fn=generate_fn, recent_lines=recent_lines, context=_rctx)
+                generate_fn=generate_fn, recent_lines=recent_lines, context=_rctx,
+                accusation=(_icat or ""))
         from kenning.audio.ultron_prompt import _strip_reported_frame
         if _is_question_payload(_strip_reported_frame(_rctx)):
             from dataclasses import replace as _dc_replace
@@ -7347,10 +7496,27 @@ def build_relay_line(
             except Exception:                                    # noqa: BLE001
                 pass
         else:
+            # A social STATEMENT / flame to clap back at (NOT an identity question) ->
+            # the MATCHED reaction/flame pool as style exemplars, not identity
+            # deflections (the wrong-pool bug that made the clapback nonsense).
+            _rpool = _social_reaction_pool(command) or ()
+            # A clean, NAME-substituted curated fallback for the guard paths (fire
+            # scrub / echo / anti-repeat): the raw pool carries '{name}' templates, so
+            # without this the fallback could speak a literal "{name}". LRU-varied.
+            _rcanned = None
+            if _rpool:
+                _raddr = getattr(command, "addressee", "team")
+                _rline = pick_line(tuple(_rpool), recent_lines=recent_lines)
+                if _raddr and _raddr != "team":
+                    _rline = _rline.replace("{name}", _raddr)
+                else:
+                    _rline = (_rline.replace("{name}, ", "")
+                              .replace("{name} ", "").replace("{name}", ""))
+                _rcanned = _cap_line(_rline.strip(), max_chars)
             return _social_llm_line(
-                command, "respond", DEFAULT_IDENTITY_LINES, max_chars=max_chars,
+                command, "respond", tuple(_rpool), max_chars=max_chars,
                 llm=llm, generate_fn=generate_fn, recent_lines=recent_lines,
-                context=_rctx)
+                context=_rctx, canned=_rcanned)
 
     # Curated CORRECT answer to a recognized general-knowledge question -- the
     # 3B gets several wrong ('first president' -> 'Lincoln'). Spoken in Ultron's
@@ -7365,11 +7531,16 @@ def build_relay_line(
     if (not getattr(command, "compose", False)
             and not getattr(command, "context", None)
             and not getattr(command, "verbatim", False)):
-        if _is_morale_phrase(getattr(command, "payload", "")) and not _u1_route:
-            return _cap_line(
-                pick_line(DEFAULT_ENCOURAGEMENT_LINES, recent_lines=recent_lines),
-                max_chars,
-            )
+        if _is_morale_phrase(getattr(command, "payload", "")):
+            _enc = pick_line(DEFAULT_ENCOURAGEMENT_LINES, recent_lines=recent_lines)
+            # route-all: the encouragement POOL guides the LLM (style examples), the
+            # curated line is the fail-open fallback. Flag OFF -> the curated line.
+            if _u1_route:
+                return _social_llm_line(
+                    command, "encouragement", tuple(DEFAULT_ENCOURAGEMENT_LINES),
+                    max_chars=max_chars, llm=llm, generate_fn=generate_fn,
+                    recent_lines=recent_lines, canned=_cap_line(_enc, max_chars))
+            return _cap_line(_enc, max_chars)
         # Part C: DATA-DRIVEN snap registry first (clutch / nice-try / consolation
         # / praise + any user-added SnapRule in voice_lines.SNAP_REGISTRY). First
         # match wins. Identical order/result to the hardcoded snaps below, which
@@ -7381,12 +7552,29 @@ def build_relay_line(
         # clutch line. Before consolation/praise so "I'll clutch this" -> the
         # clutch pool (a bare "clutch" after a teammate's play stays praise).
         clutch = _as_clutch(getattr(command, "payload", ""), recent_lines)
-        if clutch is not None and not _u1_route:
+        if clutch is not None:
+            # route-all: the clutch POOL guides the LLM (the user-flagged "I got this"
+            # gap -- it used to fall to the tactical-relay template with NO clutch pool).
+            if _u1_route:
+                return _social_llm_line(
+                    command, "clutch", tuple(DEFAULT_CLUTCH_LINES),
+                    max_chars=max_chars, llm=llm, generate_fn=generate_fn,
+                    recent_lines=recent_lines, canned=_cap_line(clutch, max_chars))
             return _cap_line(clutch, max_chars)
         # Consolation ('nice try', 'unlucky') / praise ('good half', 'clutch')
         # -- short formulaic morale the 3B mangles; curated + varied.
         cp = _as_consolation_or_praise(getattr(command, "payload", ""), recent_lines)
-        if cp is not None and not _u1_route:
+        if cp is not None:
+            if _u1_route:
+                _pl = getattr(command, "payload", "") or ""
+                if _NICE_TRY_RE.match(_pl) or _CONSOLATION_RE.match(_pl):
+                    _ck, _cpool = "consolation", DEFAULT_CONSOLATION_LINES
+                else:
+                    _ck, _cpool = "praise", DEFAULT_PRAISE_LINES
+                return _social_llm_line(
+                    command, _ck, tuple(_cpool), max_chars=max_chars, llm=llm,
+                    generate_fn=generate_fn, recent_lines=recent_lines,
+                    canned=_cap_line(_name_social_snap(cp, command), max_chars))
             return _cap_line(_name_social_snap(cp, command), max_chars)
 
     # Deterministic SNAP callout (positions / counts / self+enemy status /
@@ -7487,10 +7675,14 @@ def build_relay_line(
         # than the full tactical relay prompt. Returns None for every other
         # command, which keeps the proven generic path below unchanged.
         from kenning.audio._ultron_answer import build_answer_call, is_meta_leak
+        # NO prior-output injection (2026-06-25 directive): the answer is built from
+        # the current question ONLY; variety comes from the answer-path temperature.
         _answer = build_answer_call(command)
+        _answer_sub = None  # answer subtype (qa/marvel/think_respond) when taken
         try:
             if _answer is not None:
                 _a_system, _a_user, _a_sampling, _a_sub = _answer
+                _answer_sub = _a_sub
                 if generate_fn is not None:
                     tokens: Iterable[str] = generate_fn(_a_user)
                 elif llm is not None and hasattr(llm, "generate_stream"):
@@ -7505,13 +7697,36 @@ def build_relay_line(
                 else:
                     tokens = ()
                 line = "".join(tokens).strip()
+                # Strip a leading echo of the QUESTION the model sometimes restates
+                # before answering ("what pandas are -> Pandas are...", "why pandas
+                # suck: ...") -- jarring spoken aloud, and more frequent at the higher
+                # answer temp. Only strips when real content follows.
+                _q_echo = (getattr(command, "context", "")
+                           or getattr(command, "payload", "") or "").strip().rstrip("?.!").lower()
+                if (_q_echo and len(_q_echo) >= 4
+                        and line.lstrip().lower().startswith(_q_echo)):
+                    _rest = line.lstrip()[len(_q_echo):].lstrip(" \t-:>?.→")
+                    # Do NOT strip when a VERB follows -- then the echo is the SUBJECT
+                    # of a declarative answer, not a restatement ("explain dolphins"
+                    # -> "Dolphins ARE intelligent..."; stripping left "are
+                    # intelligent..." with no subject). 2026-06-26.
+                    if _rest and not re.match(
+                            r"(?:is|are|was|were|has|have|had|can|could|do|does|"
+                            r"did|will|would)\b", _rest, re.IGNORECASE):
+                        line = _rest
                 # The abliterated model can still break character / refuse / leak
                 # scaffolding -> drop it to the deterministic fallback. A 'qa' answer
                 # OWNS being a machine/AI ("As an AI, math is the study of...") -> the
                 # RELAXED guard, so it is NOT rejected into an identity-pool fallback
                 # (the live "explain math -> 'No soundboard...'" bug). marvel /
                 # think_respond stay STRICT (factual canon must not drift).
-                if line and is_meta_leak(line, allow_self_ai=False):  # 2026-06-24: reject bare "AI" on answers too
+                # qa answers OWN being a machine/AI ("my favorite color? Crimson --
+                # fitting for an AI", "math is...") -> the RELAXED guard, so they are
+                # NOT dumped to the "No soundboard, no strings" pool (the recurring
+                # 'explain math -> No soundboard' bug; a flat allow_self_ai=False on
+                # 2026-06-24 reintroduced it). marvel / think_respond stay STRICT
+                # (factual canon must not drift, no AI-affirmation needed).
+                if line and is_meta_leak(line, allow_self_ai=(_a_sub == "qa")):
                     logger.debug("relay answer: rejected meta-leak %r", line)
                     line = ""
             else:
@@ -7585,7 +7800,16 @@ def build_relay_line(
             line = ""
         # Safety net: if the model parroted a recent line VERBATIM (contamination
         # the recent-line suppression did not prevent), reject it -> fallback.
-        if line and recent_lines:
+        # EXEMPT the ANSWER subtypes (qa / marvel / think_respond): a FACTUAL answer
+        # to an identical question is CORRECT to repeat verbatim. Rejecting it here
+        # was THE repeat-degradation bug (2026-06-24): "explain pandas" generated
+        # "Pandas: black-and-white bears..." fine, but on every repeat the echo-net
+        # nulled it -> _relay_llm_retry relayed the BARE question via the tactical
+        # prompt -> "What pandas are" / "They're on C." (proven by the offline
+        # harness: Layer A2 degraded byte-identically with AND without a KV clear).
+        # The net stays ON for the tactical relay path (_answer_sub is None), where
+        # varied callouts are desirable.
+        if line and recent_lines and _answer_sub is None:
             norm = line.strip().rstrip(".!?").lower()
             if any(norm == r.strip().rstrip(".!?").lower()
                    for r in list(recent_lines)[-8:]):

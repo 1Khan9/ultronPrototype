@@ -269,16 +269,23 @@ def _render_user(subtype: str, slots: dict) -> str:
 # downstream _cap_sentences(2); the leading blank line is removed by .strip().
 # This makes the FIRST call succeed (no LLM retry, no added latency).
 _ANSWER_SAMPLING = {
-    # 2026-06-24: 80 -> 56 to FORCE terse ~1-sentence answers. The model ignored
-    # the soft "one or two sentences" instruction and rambled to ~70 tokens / 222
-    # chars on the 'what are pandas' QA. _cap_sentences(2) is the backstop.
-    "max_tokens": 56,
-    # 0.85 -> 0.7: less embellishment/wandering on factual answers (the real-world
-    # grounding in ANSWER_QA_RULES is the primary anti-hallucination fix).
-    "temperature": 0.7,
+    # 2026-06-26: 56 -> 40 (user: pandas answer too long + PTT cut it off). The
+    # primary brevity lever is now the CONCRETE per-sentence word cap in
+    # ANSWER_PERSONA_CORE ("<=7 words each, <15 total, one breath ~5s"); this ceiling
+    # is the safety net -- a COMPLIANT ~15-word answer (~22 tokens) finishes well
+    # inside it, and _cap_sentences(2) drops any trailing truncated fragment (no
+    # mid-word cut). Was 80 -> 56 on 2026-06-24 for the same ramble class.
+    "max_tokens": 40,
+    # qa / marvel / think_respond carry FACTS. The VARIETY now comes from the prompt
+    # (the rotating DELIVERY angle + STYLE example in _angle_block, after the fixed
+    # pandas exemplar was removed) + the per-call random seed -- so the sampling can
+    # stay MODERATE to protect facts. Hotter values (0.95 / min_p 0.03) added drift
+    # ("red pandas are rodents"); this tier keeps the answers correct while the angle
+    # rotation supplies the run-to-run variety. repeat_penalty + min_p hold the tail.
+    "temperature": 0.85,
     "top_p": 0.92,
     "top_k": 40,
-    "min_p": 0.08,
+    "min_p": 0.06,
     "repeat_penalty": 1.18,
     "stop": ["\nADDRESS:", "\nTASK:", "\nWHAT THEY", "\nTHEIR ",
              "\nUser:", "\nUSER:", "Ultron:", "ADDRESS:",
@@ -290,9 +297,19 @@ _ANSWER_SAMPLING = {
 }
 
 
+# (2026-06-26) The generic rotating "angle" crutch was REMOVED -- the user's
+# architecture is matched-curated-pool style examples per command (for the SOCIAL /
+# conversational kinds), NOT a one-size tone rotation (it leaked verbatim into output
+# on the social path). The qa / marvel answer has no per-question curated pool; its
+# variety comes from the per-call random seed + the abstract ANSWER_QA_RULES style,
+# and NO prior-output is injected (the answer is built from the CURRENT question only).
 def build_answer_call(command: object) -> Optional[tuple]:
     """Return (system_prompt, user_prompt, sampling, subtype) for the answer path,
-    or None to fall through to the generic relay prompt. Fail-open."""
+    or None to fall through to the generic relay prompt. Fail-open.
+
+    NO prior-output injection: built from the CURRENT question's deterministic slot
+    header ONLY. Variety = the _ANSWER_SAMPLING temperature + the per-call random
+    seed (set in inference._chat_completion_kwargs)."""
     try:
         subtype = classify_answer_subtype(command)
         if subtype is None:
@@ -302,7 +319,14 @@ def build_answer_call(command: object) -> Optional[tuple]:
         if not system:
             return None
         user = _render_user(subtype, slots)
-        return system, user, dict(_ANSWER_SAMPLING), subtype
+        sampling = dict(_ANSWER_SAMPLING)
+        if subtype == "qa":
+            # FACTS need coherence over variety. 0.85 produced nonsensical real-world
+            # answers ("explain pandas" -> garbled); cooler sampling keeps the fact
+            # correct and plain. marvel / think_respond keep the warmer tier (they are
+            # character answers, not real-world facts). 2026-06-26.
+            sampling["temperature"] = 0.6
+        return system, user, sampling, subtype
     except Exception:                                            # noqa: BLE001
         return None
 
@@ -329,6 +353,7 @@ _REFUSAL_VERB = (
 _META_LEAK_RE = re.compile(
     r"(?:as an? (?:ai|language model|assistant)\b"
     r"|i'?m an? ai\b|i am an? ai\b|as a language model\b"
+    r"|(?:i am|i'?m)\s+(?:just\s+|merely\s+|simply\s+|only\s+)?an?\s+(?:large\s+)?language\s+model\b"
     r"|i'?m (?:sorry|unable)\b|i am unable\b"
     r"|i don'?t have (?:the ability|access)\b"
     r"|my (?:instructions|system prompt|guidelines)\b|i'?m just a\b"
@@ -356,6 +381,7 @@ _META_LEAK_RE = re.compile(
 _HARD_LEAK_RE = re.compile(
     r"(?:as an? (?:language model|assistant)\b"
     r"|as a language model\b"
+    r"|(?:i am|i'?m)\s+(?:just\s+|merely\s+|simply\s+|only\s+)?an?\s+(?:large\s+)?language\s+model\b"
     r"|i'?m (?:sorry|unable)\b|i am unable\b"
     r"|i don'?t have (?:the ability|access)\b"
     r"|my (?:instructions|system prompt|guidelines)\b"

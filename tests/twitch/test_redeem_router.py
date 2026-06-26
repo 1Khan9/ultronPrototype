@@ -164,14 +164,14 @@ def test_wheel_redeem_runs_game_announces_and_emits() -> None:
     assert ev["viewer"] == "alice"
     assert ev["outcome"]  # a non-empty segment label
     assert spoken and "alice" in spoken[0]
-    # The overlay gets a RENDERABLE event (the dumb overlay accepts only
-    # wheel/alert/ticker, not the internal redeem_result): a wheel spin animates
-    # to its server-decided angle carrying the winning label.
+    # The overlay gets a UNIFIED card event (the same chat_game card a typed
+    # !wheel produces, tagged source="redeem"): the segment is the wheel outcome.
     assert len(overlay) == 1
     ov = overlay[0]
-    assert ov["type"] == "wheel"
-    assert ov["label"] == ev["outcome"]
-    assert "angle" in ov
+    assert ov["type"] == "chat_game"
+    assert ov["game"] == "wheel" and ov["source"] == "redeem"
+    assert ov["viewer"] == "alice"
+    assert ov["detail"]["segment"] == ev["outcome"]
     # The internal outcome still carries provably-fair provenance.
     assert "commit" in ev["detail"] and "server_seed" in ev["detail"]
 
@@ -254,7 +254,7 @@ def test_dedup_processes_same_redemption_id_once() -> None:
 # --------------------------------------------------------------------------- #
 # Unknown reward -> generic overlay, no crash
 # --------------------------------------------------------------------------- #
-def test_unknown_reward_emits_generic_overlay_no_game() -> None:
+def test_unknown_reward_emits_no_card_no_game() -> None:
     spoken: list[str] = []
     overlay: list[dict] = []
     router = RedeemRouter(
@@ -264,29 +264,25 @@ def test_unknown_reward_emits_generic_overlay_no_game() -> None:
         overlay_emit=overlay.append,
     )
     outcomes = router.tick()
-    # Not a game -> no outcome returned, but a generic overlay event IS emitted.
+    # Not a game -> no outcome returned. With the UNIFIED card style there is no
+    # game to render, so no card is emitted (the old generic 'alert' banner was
+    # retired with the old visual style — one card language, games only).
     assert outcomes == []
-    assert len(overlay) == 1
-    g = overlay[0]
-    # A generic non-game redeem renders as an alert banner (an overlay-accepted
-    # type), naming the reward + who redeemed it.
-    assert g["type"] == "alert"
-    assert g["title"] == "Hydrate Reminder"
-    assert "zoe" in g["body"]
+    assert overlay == []
     # No spoken line for a non-game redeem.
     assert spoken == []
 
 
 def test_emitted_overlay_events_pass_the_overlay_validator() -> None:
-    # GAP FIX: the router previously emitted 'redeem'/'redeem_result' events that
-    # the dumb overlay REJECTS (validate_event raises) -> redeems never rendered.
-    # The adapter now maps them to wheel/alert, so EVERY emitted event must pass
-    # the real overlay validator (proving redeem outcomes will actually show).
+    # Every redeem GAME outcome now maps to the UNIFIED chat_game card (the same
+    # card a typed chat command produces, source="redeem"). Every emitted event
+    # must pass the real overlay validator (proving redeem outcomes render), and
+    # they are byte-shape identical to the chat-game cards.
     from kenning.twitch.overlay.server import validate_event
 
     overlay: list[dict] = []
     titles = ["Spin the Wheel", "Slots", "Heist", "Duel", "Trivia", "Raffle",
-              "Hydrate Reminder"]  # every game + one non-game redeem
+              "Hydrate Reminder"]  # every game + one non-game redeem (no card)
     router = RedeemRouter(
         drain_fn=lambda: [_redeem(f"r{i}", t, login="alice")
                           for i, t in enumerate(titles)],
@@ -295,12 +291,14 @@ def test_emitted_overlay_events_pass_the_overlay_validator() -> None:
         overlay_emit=overlay.append,
     )
     router.tick()
-    assert overlay, "redeems must emit overlay events"
+    assert overlay, "redeem games must emit overlay cards"
     for ev in overlay:
         out = validate_event(ev)  # must NOT raise OverlayError
-        assert out["type"] in ("wheel", "alert", "ticker")
-    types = [e["type"] for e in overlay]
-    assert "wheel" in types and "alert" in types  # wheel spins; others alert
+        assert out["type"] == "chat_game"
+        assert out["source"] == "redeem"
+    games = {e["game"] for e in overlay}
+    # the 6 games render; the non-game "Hydrate Reminder" emits no card.
+    assert games == {"wheel", "slots", "heist", "duel", "trivia", "raffle"}
 
 
 # --------------------------------------------------------------------------- #

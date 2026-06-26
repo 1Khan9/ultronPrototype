@@ -125,6 +125,66 @@ def test_validate_event_rejects_non_finite_and_oversize():
         validate_event("not a dict")
 
 
+# --- chat_game event (typed chat-command game cards) ------------------------
+def test_validate_event_accepts_chat_game_slots():
+    ev = validate_event({
+        "type": "chat_game", "game": "slots", "source": "chat",
+        "viewer": "alice", "outcome": "WIN", "title": "SLOTS",
+        "won": True, "amount": 9000,
+        "detail": {"reels": ["seven", "seven", "seven"], "win_symbol": "seven",
+                   "stake": 1000, "payout": 9000, "net": 8000},
+    })
+    assert ev["type"] == "chat_game"
+    assert ev["game"] == "slots"
+    assert ev["source"] == "chat"          # discriminator injected by the validator
+    assert ev["viewer"] == "alice" and ev["won"] is True and ev["amount"] == 9000
+    assert ev["detail"]["reels"] == ["seven", "seven", "seven"]
+    assert ev["detail"]["win_symbol"] == "seven"
+    assert ev["duration_ms"] == 7000.0     # default hold
+
+
+def test_validate_event_accepts_every_chat_game_kind():
+    for game in ("slots", "wheel", "heist", "duel", "trivia", "raffle"):
+        ev = validate_event({"type": "chat_game", "game": game, "viewer": "v",
+                             "outcome": "X", "title": game.upper(), "amount": 1})
+        assert ev["game"] == game and ev["source"] == "chat"
+
+
+def test_validate_event_rejects_unknown_chat_game():
+    with pytest.raises(OverlayError):
+        validate_event({"type": "chat_game", "game": "rocket_league",
+                        "viewer": "v", "outcome": "x"})
+
+
+def test_validate_event_chat_game_drops_unknown_detail_keys():
+    ev = validate_event({"type": "chat_game", "game": "duel", "viewer": "v",
+                        "outcome": "WIN", "amount": 600,
+                        "detail": {"winner": "v", "loser": "u", "wager": 300,
+                                   "evil": "rm -rf /", "server_seed": "leak"}})
+    # only the known, vetted detail keys survive; secret/unknown keys are dropped.
+    assert "evil" not in ev["detail"] and "server_seed" not in ev["detail"]
+    assert ev["detail"]["winner"] == "v" and ev["detail"]["wager"] == 300
+
+
+def test_validate_event_chat_game_rejects_oversize_and_bad_detail():
+    with pytest.raises(OverlayError):
+        validate_event({"type": "chat_game", "game": "trivia", "viewer": "v",
+                        "outcome": "x", "detail": {"answer": "a" * 5000}})
+    with pytest.raises(OverlayError):
+        validate_event({"type": "chat_game", "game": "slots", "viewer": "v",
+                        "outcome": "x", "detail": {"reels": ["x"] * 99}})
+    with pytest.raises(OverlayError):
+        validate_event({"type": "chat_game", "game": "slots", "viewer": "v",
+                        "outcome": "x", "detail": "not-a-dict"})
+
+
+def test_chat_game_emit_streams_through_server(server):
+    # a chat_game event passes validation and is accepted by emit()
+    assert server.emit({"type": "chat_game", "game": "heist", "viewer": "crew",
+                        "outcome": "WIN", "title": "HEIST", "won": True,
+                        "amount": 420, "detail": {"pot": 1500, "crew": 6}}) is True
+
+
 # --- SSE end-to-end ----------------------------------------------------------
 def _read_one_sse_frame(url: str, ready: threading.Event, holder: dict, timeout: float = 6.0) -> None:
     """Open the SSE stream, signal ready, read until one full event frame arrives."""
@@ -273,3 +333,28 @@ def test_emit_with_no_clients_is_safe():
         assert srv.emit({"type": "alert", "title": "noone", "body": "listening"}) is True
     finally:
         srv.stop()
+
+
+# --------------------------------------------------------------------------- #
+# PERMANENT token (stable across reboots) — 2026-06-24
+# --------------------------------------------------------------------------- #
+def test_explicit_config_token_is_used_verbatim() -> None:
+    from kenning.twitch.overlay.server import OverlayServer
+    srv = OverlayServer(port=0, token="MY-PERMANENT-TOKEN")
+    assert srv.token == "MY-PERMANENT-TOKEN"
+    assert srv.url().endswith("?token=MY-PERMANENT-TOKEN")
+
+
+def test_blank_token_persists_and_is_stable_across_reboots(tmp_path, monkeypatch) -> None:
+    """No config token -> generate once, persist to ~/.kenning/overlay_token, and
+    reuse it on every later boot so the OBS Browser-Source URL never changes."""
+    import kenning.twitch.overlay.server as srv_mod
+    token_file = tmp_path / ".kenning" / "overlay_token"
+    monkeypatch.setattr(srv_mod, "_OVERLAY_TOKEN_FILE", token_file)
+
+    first = srv_mod.OverlayServer(port=0).token
+    assert first and len(first) > 20
+    assert token_file.read_text(encoding="utf-8").strip() == first
+    # a "reboot" (new server, same persisted file) reuses the SAME token
+    second = srv_mod.OverlayServer(port=0).token
+    assert second == first

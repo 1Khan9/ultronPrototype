@@ -155,19 +155,12 @@ def chat_event_from_buffer(event: dict) -> Optional[ChatEvent]:
     "text"[,"badges"]}`` (twitch_read_sidecar._map_notification). NOTE: this is NOT
     the raw EventSub envelope ``ChatEvent.from_eventsub`` parses (which reads the
     NESTED ``message.text`` / ``chatter_user_login``) — the sidecar already flattened
-    it, so we map the flat fields directly. Returns None on a non-chat / unusable dict."""
-    if not isinstance(event, dict) or event.get("type") != "chat":
-        return None
-    badges = event.get("badges")
-    return ChatEvent(
-        broadcaster_user_id=str(event.get("broadcaster_user_id") or ""),
-        chatter_user_id=str(event.get("chatter_user_id") or ""),
-        chatter_login=str(event.get("chatter_login") or ""),
-        chatter_name=str(event.get("chatter_name") or ""),
-        text=str(event.get("text") or ""),
-        badges=badges if isinstance(badges, list) else [],
-        message_id=str(event.get("message_id") or ""),
-    )
+    it, so we map the flat fields directly. Returns None on a non-chat / unusable dict.
+
+    Delegates to the canonical :meth:`ChatEvent.from_buffer` so the flat-shape mapping
+    has a SINGLE source of truth shared with the chat-reply drain (they drifted apart
+    once — the reply drain used ``from_eventsub`` and silently dropped every line)."""
+    return ChatEvent.from_buffer(event)
 
 
 class ChatGameRouter:
@@ -187,15 +180,28 @@ class ChatGameRouter:
         cfg: object,
         rng: ProvablyFairRNG | None = None,
         announce_fn: Callable[[str], object] | None = None,
+        overlay_emit: Callable[[dict], object] | None = None,
         now_fn: Callable[[], float] = time.monotonic,
         epoch_fn: Callable[[], float] = time.time,
         dedup_max: int = _MSG_INDEX_MAX,
+        chat_cfg: object | None = None,
     ) -> None:
         self._drain = drain_fn
         self._ledger = ledger
         self._cfg = cfg
+        # The CHAT config (TwitchChatConfig) — only ``commands_panel_doc_url`` is
+        # read, to build the on-demand !ultron commands-panel reply. None (or a
+        # config lacking the field) just omits the guide link; the panel still
+        # posts. Kept separate from the ECONOMY cfg in ``self._cfg``.
+        self._chat_cfg = chat_cfg
         self._rng = rng or ProvablyFairRNG()
         self._announce = announce_fn
+        # Optional overlay sink (the orchestrator wires this to the OBS overlay
+        # server's ``emit``, the SAME sink the redeem router uses). None => the
+        # games still run + announce, just without an on-stream card (byte-identical
+        # to the pre-overlay router for every existing caller / the overlay-OFF
+        # boot). Every emit is fail-safe: an overlay error never breaks a game/tick.
+        self._overlay = overlay_emit
         self._now = now_fn
         self._epoch = epoch_fn
         self._slots = Slots(DEFAULT_SLOT_SYMBOLS, reels=3, rng=self._rng)
@@ -223,6 +229,7 @@ class ChatGameRouter:
         self._net_loss: dict[str, int] = {}                  # user_id -> net loss this session
         self._cooldown: dict[str, float] = {}                # user_id -> last command monotonic
         self._last_earn_minute: Optional[int] = None
+        self._last_auto_trivia_epoch: Optional[float] = None   # arms on first tick
         self._nonce = 0
 
     # -- public surface ---------------------------------------------------- #
@@ -263,6 +270,11 @@ class ChatGameRouter:
                     # drive is a trivia answer during an active round.
                     self._maybe_trivia_answer(ev)
                     continue
+                if self._deferred_to_streamelements(cmd):
+                    # !points/!balance and !gamble are answered by StreamElements'
+                    # own chat bot — Ultron stays silent so viewers don't get a
+                    # double reply. Drop BEFORE dedup so the event is a true no-op.
+                    continue
                 mid = self._event_key(ev)
                 if not self._dedup.add(mid):
                     continue  # EventSub replay of an already-processed command
@@ -275,6 +287,7 @@ class ChatGameRouter:
         self._expire_duels()
         self._expire_raffle()
         self._accrue_earnings()
+        self._maybe_auto_trivia()
         return handled
 
     # -- presence / message-id / earn ------------------------------------- #
@@ -286,6 +299,14 @@ class ChatGameRouter:
             if login:
                 self._login_to_uid[login] = uid   # for !give / !duel target resolution
                 self._uid_to_login[uid] = login   # for the leaderboard display
+                # SE-points backend: map uid -> login so the ledger can address the
+                # StreamElements API (keyed by login). No-op for the SQLite ledger.
+                _reg = getattr(self._ledger, "register", None)
+                if _reg is not None:
+                    try:
+                        _reg(uid, login)
+                    except Exception:  # noqa: BLE001 — must never break ingest
+                        pass
         if login:
             mid = getattr(ev, "message_id", "") or ""
             if mid:
@@ -315,6 +336,19 @@ class ChatGameRouter:
             except Exception as exc:  # noqa: BLE001 — earn must never break the tick
                 logger.debug("earn credit skipped for %s: %s", login or uid, exc)
 
+    # -- StreamElements deferral ------------------------------------------- #
+    def _deferred_to_streamelements(self, cmd: Command) -> bool:
+        """True iff this command must be left to StreamElements' chat bot.
+
+        The channel runs ONE economy on StreamElements, whose bot already answers
+        ``!points``/``!balance`` (POINTS) and ``!gamble`` (GAMBLE). When
+        ``economy.defer_points_gamble_to_streamelements`` is set (default True),
+        Ultron does NOT handle those two kinds — every other command still runs.
+        """
+        if not bool(getattr(self._cfg, "defer_points_gamble_to_streamelements", True)):
+            return False
+        return cmd.kind in (CommandKind.POINTS, CommandKind.GAMBLE)
+
     # -- dispatch ---------------------------------------------------------- #
     def _dispatch(self, ev: ChatEvent, cmd: Command) -> bool:
         k = cmd.kind
@@ -330,6 +364,8 @@ class ChatGameRouter:
             return self._cmd_leaderboard(cmd)
         if k is CommandKind.HELP:
             return self._cmd_help(cmd)
+        if k is CommandKind.ULTRON:
+            return self._cmd_ultron(cmd)
         if k is CommandKind.HEIST:
             return self._cmd_heist(ev, cmd)
         if k is CommandKind.DUEL:
@@ -361,22 +397,49 @@ class ChatGameRouter:
             return False
         top = sorted(balances.items(), key=lambda kv: kv[1], reverse=True)[:5]
         if not top:
-            self._reply("No one has any cores yet. Start chatting!")
+            self._reply(f"No one has any {self._currency()} yet. Start chatting!")
             return True
-        parts = [
-            f"{i + 1}. {self._uid_to_login.get(uid, uid)} ({bal})"
-            for i, (uid, bal) in enumerate(top)
-        ]
-        self._reply("Top " + self._currency() + ": " + " · ".join(parts))
+        # Twitch chat is ONE line per message, so to get the stacked layout the
+        # streamer wants we post a short header then EACH rank as its own message
+        # ("1. name (count)", "2. ...", up to top 5). Each _reply is fail-safe, so a
+        # dead announce channel mid-list never breaks the tick.
+        self._reply("Top " + self._currency() + ":")
+        for i, (uid, bal) in enumerate(top):
+            self._reply(f"{i + 1}. {self._uid_to_login.get(uid, uid)} ({bal})")
         return True
 
     def _cmd_help(self, cmd: Command) -> bool:
+        deferred = bool(getattr(self._cfg, "defer_points_gamble_to_streamelements", True))
+        # Only advertise !points/!gamble as Ultron commands when Ultron actually
+        # handles them; otherwise StreamElements' bot owns those two.
+        head = "Commands: " if deferred else "Commands: !points, !gamble <amount|all>, "
         self._reply(
-            "Commands: !points, !gamble <amount|all>, !slots <amount|all>, "
+            head + "!slots <amount|all>, "
             "!wheel (free spin), !heist <amount>, !duel @user <amount> + !accept, "
             "!raffle, !give @user <amount>, !trivia (mods), !leaderboard. Earn "
             + self._currency() + " by watching."
         )
+        return True
+
+    def _cmd_ultron(self, cmd: Command) -> bool:
+        """``!ultron`` — post the SAME condensed commands-panel message viewers see
+        on the periodic auto-post, on demand. Reads the chat config's
+        ``commands_panel_doc_url`` (threaded in at construction) so the guide link is
+        appended. Per-user cooldown (the shared throttle the bet games use) so a
+        spammer can't flood the panel; fail-safe (a missing/empty config just omits
+        the link, an import/build error is swallowed and the tick continues)."""
+        uid = cmd.user_id or ""
+        if uid and self._cooldown_active(uid):
+            return False
+        try:
+            from kenning.twitch.panel import build_commands_panel_text
+            text = build_commands_panel_text(self._chat_cfg)
+        except Exception as exc:  # noqa: BLE001 — never break the tick on a panel build
+            logger.debug("ultron panel build failed: %s", exc)
+            return False
+        if uid:
+            self._mark_cooldown(uid)
+        self._reply(text)
         return True
 
     # -- shared helpers for the multi-viewer / transfer games ------------- #
@@ -498,6 +561,16 @@ class ChatGameRouter:
             f"@{login} spun the wheel -> {res.segment.label}. +{payout} "
             f"{self._currency()}. Balance {self._ledger.balance(uid)}."
         )
+        # On-stream wheel card: reveal the landed segment + the payout (always a
+        # win for the free spin -> green accent unless the segment paid 0).
+        self._emit_overlay(
+            "wheel", login,
+            outcome=str(res.segment.label),
+            title="WHEEL",
+            won=payout > 0,
+            amount=payout,
+            detail={"segment": str(res.segment.label), "payout": payout},
+        )
         return True
 
     # -- !heist (group pooled bet, join window, house bonus) --------------- #
@@ -587,13 +660,30 @@ class ChatGameRouter:
             for puid in participants:
                 self._safe_credit(puid, per_head, "heist win", f"{round_id}:{puid}:win")
         crew = ", ".join(f"@{pl}" for pl in logins)
+        lead = logins[0] if logins else "the crew"
         if res.outcome in ("win", "partial"):
             self._reply(
                 f"HEIST {res.outcome.upper()}! The crew ({crew}) each take "
                 f"{per_head} {self._currency()}."
             )
+            self._emit_overlay(
+                "heist", lead,
+                outcome=str(res.outcome).upper(),
+                title="HEIST",
+                won=True,
+                amount=per_head,
+                detail={"pot": int(h["pot"]), "crew": len(logins), "payout": per_head},
+            )
         else:
             self._reply(f"HEIST FAILED. The crew ({crew}) lost their stakes.")
+            self._emit_overlay(
+                "heist", lead,
+                outcome="FAIL",
+                title="HEIST",
+                won=False,
+                amount=int(h["pot"]),
+                detail={"pot": int(h["pot"]), "crew": len(logins), "payout": 0},
+            )
 
     # -- !duel + !accept (1v1 escrow challenge) ---------------------------- #
     def _cmd_duel(self, ev: ChatEvent, cmd: Command) -> bool:
@@ -695,6 +785,14 @@ class ChatGameRouter:
         pot = wager * 2
         self._safe_credit(winner_uid, pot, "duel win", f"{round_id}:win")
         self._reply(f"DUEL: @{winner_login} beat @{loser_login} and takes {pot} {self._currency()}.")
+        self._emit_overlay(
+            "duel", winner_login,
+            outcome="WIN",
+            title="DUEL",
+            won=True,
+            amount=pot,
+            detail={"winner": winner_login, "loser": loser_login, "wager": int(wager)},
+        )
         return True
 
     def _refund_duel(self, duel: dict) -> None:
@@ -784,6 +882,18 @@ class ChatGameRouter:
             f"RAFFLE winner: @{res.winner}! +{prize} {self._currency()} "
             f"({len(res.entrants)} entered)."
         )
+        self._emit_overlay(
+            "raffle", str(res.winner),
+            outcome="WINNER",
+            title="RAFFLE",
+            won=True,
+            amount=int(prize),
+            detail={
+                "winner": str(res.winner),
+                "entrants": len(res.entrants),
+                "phase": "result",
+            },
+        )
 
     def _safe_credit(self, uid: str, amount: int, reason: str, key: str) -> None:
         """Ledger credit that never raises into a game-resolution path (a credit is
@@ -802,9 +912,19 @@ class ChatGameRouter:
         if not cmd.is_mod:
             self._reply(f"@{cmd.user_login} only mods can start trivia.")
             return False
-        if self._trivia is not None and self._now() < self._trivia["deadline"]:
+        if self._trivia_active():
             self._reply("A trivia round is already running.")
             return False
+        self._start_trivia()
+        return True
+
+    def _trivia_active(self) -> bool:
+        """True iff a trivia round is currently open (not past its deadline)."""
+        return self._trivia is not None and self._now() < self._trivia["deadline"]
+
+    def _start_trivia(self) -> None:
+        """Draw a provably-fair question, open the window, and announce it. Shared
+        by the mod ``!trivia`` command and the periodic auto-trivia trigger."""
         rnd = self._rng.new_round()
         self._nonce += 1
         question, _idx, _prov = self._trivia_game.draw_question(rnd.server_seed, nonce=self._nonce)
@@ -815,7 +935,28 @@ class ChatGameRouter:
             f"TRIVIA for {prize} {self._currency()} — first correct answer wins: "
             f"{question.question}"
         )
-        return True
+
+    def _maybe_auto_trivia(self) -> None:
+        """Auto-start a trivia round about every ``trivia_auto_interval_minutes``
+        with NO mod command (0 disables). Uses the SAME injectable epoch clock as
+        watch-time earning so it is unit-testable with a fake clock. Never starts
+        a round while one is already active (the mod command and auto share the
+        single ``self._trivia`` slot)."""
+        interval_min = _as_int(getattr(self._cfg, "trivia_auto_interval_minutes", 0))
+        if interval_min <= 0:
+            return
+        now = self._epoch()
+        if self._last_auto_trivia_epoch is None:
+            # Arm on the first tick; fire from the next interval so a fresh boot
+            # doesn't immediately blast a round.
+            self._last_auto_trivia_epoch = now
+            return
+        if (now - self._last_auto_trivia_epoch) < interval_min * 60.0:
+            return
+        if self._trivia_active():
+            return   # a round (mod- or auto-started) is live -> don't stack
+        self._last_auto_trivia_epoch = now
+        self._start_trivia()
 
     def _maybe_trivia_answer(self, ev: ChatEvent) -> None:
         """Scan one ordinary chat message for the trivia answer. The FIRST correct
@@ -841,6 +982,14 @@ class ChatGameRouter:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("trivia credit failed for %s: %s", uid, exc)
         self._reply(f"@{login} got it! The answer was '{answer}'. +{prize} {self._currency()}.")
+        self._emit_overlay(
+            "trivia", login,
+            outcome="WINNER",
+            title="TRIVIA",
+            won=True,
+            amount=int(prize),
+            detail={"winner": str(login), "answer": str(answer), "phase": "result"},
+        )
 
     def _expire_trivia(self) -> None:
         t = self._trivia
@@ -893,7 +1042,7 @@ class ChatGameRouter:
             logger.warning("%s debit failed for %s: %s", game, uid, exc)
             return False
 
-        payout = self._resolve_payout(game, stake, mid)
+        payout, detail = self._resolve_payout(game, stake, mid)
         if payout > 0:
             try:
                 self._ledger.credit(uid, payout, f"{game} win", f"{game}:{mid}:win")
@@ -904,10 +1053,31 @@ class ChatGameRouter:
         if net < 0:
             self._net_loss[uid] = self._net_loss.get(uid, 0) + (-net)
         self._reply(self._bet_line(login, game, stake, payout, net, self._ledger.balance(uid)))
+        if game == "slots":
+            # On-stream slots card: the reels settle on the ACTUAL pulled symbols;
+            # color-coded WIN (triple) vs loss; amount = net (won) / stake (lost).
+            won = payout > 0
+            self._emit_overlay(
+                "slots", login,
+                outcome=("WIN" if won else "LOSS"),
+                title="SLOTS",
+                won=won,
+                amount=(net if won else stake),
+                detail={
+                    "reels": detail.get("reels"),
+                    "win_symbol": detail.get("win_symbol"),
+                    "stake": stake,
+                    "payout": payout,
+                    "net": net,
+                },
+            )
         return True
 
     # -- game payouts (EV == gamble_rtp) ---------------------------------- #
-    def _resolve_payout(self, game: str, stake: int, mid: str) -> int:
+    def _resolve_payout(self, game: str, stake: int, mid: str) -> tuple[int, dict]:
+        """Resolve a single-shot bet payout. Returns ``(payout, detail)`` where
+        ``detail`` carries the on-stream specifics (the slot reels + win symbol).
+        ``detail`` is ``{}`` for games without extra overlay data."""
         rtp = _as_float(getattr(self._cfg, "gamble_rtp", 0.90)) or 0.90
         rnd = self._rng.new_round()
         self._nonce += 1
@@ -917,16 +1087,17 @@ class ChatGameRouter:
             # EV = 0.5*payout - stake = stake*(rtp-1) (net-negative house edge).
             draw = self._rng.uniform_unit(rnd.server_seed, str(mid), nonce)
             if draw < _GAMBLE_WIN_P:
-                return int(stake * rtp / _GAMBLE_WIN_P)
-            return 0
+                return int(stake * rtp / _GAMBLE_WIN_P), {}
+            return 0, {}
         if game == "slots":
             res = self._slots.pull(rnd.server_seed, client_seed=str(mid), nonce=nonce)
+            detail = {"reels": list(res.reels), "win_symbol": res.win_symbol}
             if res.is_win:
                 s = len(DEFAULT_SLOT_SYMBOLS)
                 mult = int(rtp * s * s)   # P(win)=1/s^2 -> EV = (1/s^2)*stake*mult = stake*rtp
-                return stake * mult
-            return 0
-        return 0
+                return stake * mult, detail
+            return 0, detail
+        return 0, {}
 
     # -- replies ----------------------------------------------------------- #
     def _bet_line(self, login: str, game: str, stake: int, payout: int, net: int, bal: int) -> str:
@@ -937,7 +1108,7 @@ class ChatGameRouter:
         return f"@{login} {game}: lost {stake} {cur}. Balance {bal}."
 
     def _currency(self) -> str:
-        c = getattr(self._cfg, "currency_name", "") or "cores"
+        c = getattr(self._cfg, "currency_name", "") or "one taps"
         return str(c)
 
     def _reply(self, text: str) -> None:
@@ -947,6 +1118,45 @@ class ChatGameRouter:
             self._announce(text)
         except Exception as exc:  # noqa: BLE001 — a dead announce channel never breaks the loop
             logger.debug("chat-game reply failed: %s", exc)
+
+    # -- overlay (on-stream chat-game card) -------------------------------- #
+    def _emit_overlay(
+        self,
+        game: str,
+        viewer: str,
+        *,
+        outcome: str,
+        title: str,
+        won: bool = False,
+        amount: int = 0,
+        detail: dict | None = None,
+    ) -> None:
+        """Emit ONE on-stream overlay card for a chat-game OUTCOME (fail-safe).
+
+        Builds a ``{"type":"chat_game", ...}`` event matching the overlay
+        validator's schema (``game`` discriminator + ``source:"chat"`` so the card
+        is distinguishable from a channel-point redeem). ``amount`` is the "one
+        taps" value (payout / wager / prize); ``won`` color-codes the card. Any
+        exception is swallowed so a stalled/erroring overlay NEVER breaks the game
+        or the tick (BR-2.3 error handling)."""
+        sink = self._overlay
+        if sink is None:
+            return
+        try:
+            event = {
+                "type": "chat_game",
+                "game": str(game),
+                "source": "chat",
+                "viewer": str(viewer or "someone")[:80],
+                "outcome": str(outcome or "")[:120],
+                "title": str(title or "")[:120],
+                "won": bool(won),
+                "amount": int(amount),
+                "detail": {k: v for k, v in (detail or {}).items() if v is not None},
+            }
+            sink(event)
+        except Exception as exc:  # noqa: BLE001 — overlay down never breaks a game/tick
+            logger.debug("chat-game overlay emit failed (game=%s): %s", game, exc)
 
 
 def _as_int(value: object, default: int = 0) -> int:

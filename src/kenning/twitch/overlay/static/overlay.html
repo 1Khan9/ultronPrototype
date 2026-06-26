@@ -74,6 +74,177 @@
   #ticker.show { opacity: 1; }
   #ticker-label { color: #aab4ff; }
   #ticker-points { color: #8effc1; margin-left: 10px; }
+
+  /* ====================================================================== */
+  /* CHAT-GAME CARDS — bottom-left, condensed, never over the crosshair.    */
+  /* Production look: glassy dark glass, Valorant-red (#ff4655) accent, cold */
+  /* angular Ultron machine aesthetic. GPU-light: transform/opacity only.    */
+  /* ====================================================================== */
+  :root {
+    --val-red: #ff4655;
+    --val-red-dim: #d63a47;
+    --win: #43e0a0;
+    --loss: #ff4655;
+    --card-bg: rgba(13, 16, 28, 0.82);
+    --card-bg-2: rgba(18, 22, 38, 0.72);
+    --hairline: rgba(255, 255, 255, 0.10);
+    --ink: #eef1ff;
+    --ink-dim: #9aa3c4;
+  }
+
+  /* Anchored to the LOWER-LEFT quarter. Cards stack UPWARD (column-reverse) so
+     the newest sits at the bottom and older ones rise + fade. pointer-events
+     none so it never eats OBS interactions. */
+  #chat-games {
+    position: fixed; left: 24px; bottom: 24px;
+    width: 360px; max-width: 32vw;
+    display: flex; flex-direction: column-reverse; gap: 10px;
+    pointer-events: none; z-index: 50;
+    font-family: "Segoe UI Semibold", "Segoe UI", system-ui, sans-serif;
+  }
+
+  .cg-card {
+    position: relative; overflow: hidden;
+    background: linear-gradient(160deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+    -webkit-backdrop-filter: blur(9px) saturate(1.1);
+    backdrop-filter: blur(9px) saturate(1.1);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255,255,255,0.04) inset;
+    padding: 12px 14px 12px 16px;
+    /* sharp angular Valorant cut on the top-right corner */
+    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
+    color: var(--ink);
+    transform: translateX(-118%);
+    opacity: 0;
+    will-change: transform, opacity;
+    transition: transform 420ms cubic-bezier(0.16, 0.84, 0.24, 1), opacity 360ms ease;
+  }
+  .cg-card.cg-in  { transform: translateX(0); opacity: 1; }
+  .cg-card.cg-out { transform: translateX(-12%); opacity: 0;
+                    transition: transform 480ms ease, opacity 480ms ease; }
+
+  /* left accent rail — red default, recolored to win/loss by a modifier */
+  .cg-card::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    background: var(--val-red);
+    box-shadow: 0 0 14px var(--val-red);
+  }
+  .cg-card.cg-win::before  { background: var(--win);  box-shadow: 0 0 14px var(--win); }
+  .cg-card.cg-loss::before { background: var(--loss); box-shadow: 0 0 14px var(--loss); }
+
+  .cg-head {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase;
+    color: var(--ink-dim); font-weight: 700;
+  }
+  .cg-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 20px; height: 20px; padding: 0 5px;
+    border-radius: 4px; background: rgba(255, 70, 85, 0.16);
+    border: 1px solid rgba(255, 70, 85, 0.45);
+    color: var(--val-red); font-size: 13px; line-height: 1;
+  }
+  .cg-game { color: var(--ink); letter-spacing: 2px; }
+  .cg-tag {
+    margin-left: auto; font-size: 10px; letter-spacing: 1px;
+    color: var(--ink-dim); opacity: 0.7;
+  }
+
+  .cg-body { margin-top: 9px; display: flex; align-items: center; gap: 12px; }
+  .cg-main { min-width: 0; flex: 1; }
+  .cg-viewer {
+    font-size: 16px; font-weight: 800; color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    letter-spacing: 0.2px;
+  }
+  .cg-outcome {
+    margin-top: 2px; font-size: 13px; color: var(--ink-dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .cg-amount {
+    flex: none; text-align: right; font-weight: 800; font-size: 19px;
+    line-height: 1; letter-spacing: 0.3px;
+    font-variant-numeric: tabular-nums; color: var(--win);
+  }
+  .cg-card.cg-loss .cg-amount { color: var(--loss); }
+  .cg-amount .cg-amt-unit { display: block; font-size: 9px; font-weight: 600;
+    letter-spacing: 1px; color: var(--ink-dim); margin-top: 3px; text-transform: uppercase; }
+
+  /* --- slots reels (3 cells, quick spin then settle on the real symbols) -- */
+  .cg-reels { display: flex; gap: 6px; }
+  .cg-reel {
+    width: 34px; height: 40px; border-radius: 6px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--hairline);
+    overflow: hidden; position: relative;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4) inset;
+  }
+  .cg-reel-strip {
+    position: absolute; left: 0; right: 0; top: 0;
+    display: flex; flex-direction: column; align-items: center;
+    /* the strip is pre-stacked with filler glyphs + the final glyph last; a
+       transform slide settles it on the final cell. */
+    transform: translateY(0);
+    transition: transform var(--reel-ms, 900ms) cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .cg-reel-cell {
+    width: 34px; height: 40px; display: flex; align-items: center;
+    justify-content: center; font-size: 22px; line-height: 1;
+  }
+  .cg-card.cg-win .cg-reel { border-color: rgba(67, 224, 160, 0.6); }
+
+  /* --- wheel mini reveal (a sleek landed-on ticker, not a heavy canvas) ---- */
+  .cg-wheel {
+    display: flex; align-items: center; gap: 9px;
+  }
+  .cg-wheel-dial {
+    flex: none; width: 38px; height: 38px; border-radius: 50%;
+    background: conic-gradient(from 0deg,
+      #20243f 0 60deg, #2c3152 60deg 120deg, #20243f 120deg 180deg,
+      #2c3152 180deg 240deg, #20243f 240deg 300deg, var(--val-red) 300deg 360deg);
+    border: 2px solid rgba(255,255,255,0.14);
+    position: relative;
+    animation: cg-dial-spin 900ms cubic-bezier(0.15, 0.75, 0.15, 1) 1;
+  }
+  .cg-wheel-dial::after {
+    content: ""; position: absolute; top: -5px; left: 50%; margin-left: -4px;
+    border-left: 4px solid transparent; border-right: 4px solid transparent;
+    border-top: 7px solid var(--val-red);
+  }
+  @keyframes cg-dial-spin { from { transform: rotate(0); } to { transform: rotate(1080deg); } }
+  .cg-seg {
+    font-size: 15px; font-weight: 800; color: var(--ink); letter-spacing: 0.4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* --- result icon chip (heist/duel/trivia/raffle) ------------------------ */
+  .cg-icon {
+    flex: none; width: 38px; height: 38px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
+    background: rgba(255, 70, 85, 0.12);
+    border: 1px solid rgba(255, 70, 85, 0.4);
+  }
+  .cg-card.cg-win .cg-icon  { background: rgba(67,224,160,0.12); border-color: rgba(67,224,160,0.45); }
+  .cg-card.cg-loss .cg-icon { background: rgba(255,70,85,0.14); border-color: rgba(255,70,85,0.5); }
+
+  .cg-sub {
+    margin-top: 7px; font-size: 11px; color: var(--ink-dim);
+    letter-spacing: 0.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* --- speech card (a SPEAK redeem: viewer + quote, team variant tinted) --- */
+  .cg-quote {
+    margin-top: 8px; font-size: 14px; line-height: 1.32; color: var(--ink);
+    /* clamp to 3 lines so a long message never grows the card unbounded */
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .cg-card.cg-speech .cg-icon { font-size: 18px; }
+  .cg-card.cg-team::before { background: #6c8cff; box-shadow: 0 0 14px #6c8cff; }
+  .cg-card.cg-team .cg-icon {
+    background: rgba(108, 140, 255, 0.14); border-color: rgba(108, 140, 255, 0.5);
+  }
 </style>
 </head>
 <body>
@@ -93,6 +264,11 @@
     <span id="ticker-label"></span>
     <span id="ticker-points"></span>
   </div>
+
+  <!-- Chat-command game cards: anchored bottom-left, stack upward, auto-dismiss.
+       Built entirely via createElement + textContent in script (markup-setting
+       sinks are never used), so a hostile chatter name is inert literal text. -->
+  <div id="chat-games"></div>
 </div>
 
 <!--
@@ -120,13 +296,32 @@
   var tickerLabel = document.getElementById("ticker-label");
   var tickerPts   = document.getElementById("ticker-points");
 
+  var chatGamesEl = document.getElementById("chat-games");
+
   var alertTimer  = null;
   var wheelTurns  = 0; // accumulate full turns so each spin rotates forward
+
+  // Chat-game card queue config: cap the visible stack so the corner never
+  // floods; the OLDEST is dismissed first when over the cap.
+  var CG_MAX_VISIBLE = 3;
+  var CG_HOLD_MS = 7000;      // default per-card on-screen hold before auto-dismiss
+  var CG_OUT_MS  = 520;       // must exceed the .cg-out CSS transition
+  var cgCards = [];            // live card records { el, hideTimer, removeTimer }
 
   // setText: the ONLY way dynamic strings reach the DOM. textContent escapes
   // everything; markup-setting sinks are deliberately never used.
   function setText(el, value) {
     el.textContent = (value === undefined || value === null) ? "" : String(value);
+  }
+
+  // makeEl: small createElement helper (className + optional text). Never parses
+  // markup — only textContent is ever set (the security tests assert no
+  // markup-setting sink appears anywhere in this page).
+  function makeEl(tag, cls, text) {
+    var el = document.createElement(tag);
+    if (cls) { el.className = cls; }
+    if (text !== undefined && text !== null && text !== "") { el.textContent = String(text); }
+    return el;
   }
 
   function num(value, fallback) {
@@ -169,12 +364,199 @@
     tickerEl.classList.add("show");
   }
 
+  // --- chat-game cards (bottom-left, game-accurate, auto-dismiss) ----------
+  var CG_ICON = { heist: "💰", duel: "⚔", trivia: "❓", raffle: "🎟", wheel: "◉", slots: "🎰" };
+  var SLOT_GLYPH = {
+    cherry: "🍒", lemon: "🍋", bell: "🔔",
+    star: "⭐", seven: "7️⃣", skull: "💀"
+  };
+  var SLOT_FILLERS = ["🍒", "🍋", "🔔", "⭐", "7️⃣", "💀"];
+
+  function slotGlyph(sym) {
+    if (sym === undefined || sym === null) { return "❔"; }
+    var key = String(sym).toLowerCase();
+    return SLOT_GLYPH[key] || String(sym).slice(0, 2);
+  }
+
+  function fmtAmount(n) {
+    var v = num(n, 0);
+    var s = (v > 0 ? "+" : "") + Math.round(v);
+    return s;
+  }
+
+  // Build the slots card body: three reel cells that quick-spin then settle on
+  // the ACTUAL pulled symbols (pure CSS transform, no JS animation loop).
+  function buildSlotsBody(ev, detail) {
+    var body = makeEl("div", "cg-body");
+    var reels = makeEl("div", "cg-reels");
+    var symbols = (detail.reels && detail.reels.length) ? detail.reels : ["star", "star", "star"];
+    for (var i = 0; i < symbols.length && i < 5; i++) {
+      var reel = makeEl("div", "cg-reel");
+      var strip = makeEl("div", "cg-reel-strip");
+      // pre-stack a few filler glyphs, with the FINAL real symbol last; sliding
+      // the strip up settles on that final cell.
+      var pre = 5;
+      for (var f = 0; f < pre; f++) {
+        strip.appendChild(makeEl("div", "cg-reel-cell", SLOT_FILLERS[(i + f) % SLOT_FILLERS.length]));
+      }
+      strip.appendChild(makeEl("div", "cg-reel-cell", slotGlyph(symbols[i])));
+      // settle offset = move up by `pre` cells (40px each); staggered per reel.
+      var ms = 700 + i * 220;
+      strip.style.setProperty("--reel-ms", ms + "ms");
+      reel.appendChild(strip);
+      reels.appendChild(reel);
+      // kick the slide on the next frame so the transition runs.
+      (function (s, offset) {
+        window.requestAnimationFrame(function () {
+          window.requestAnimationFrame(function () { s.style.transform = "translateY(-" + offset + "px)"; });
+        });
+      })(strip, pre * 40);
+    }
+    body.appendChild(reels);
+    var main = makeEl("div", "cg-main");
+    main.appendChild(makeEl("div", "cg-viewer", ev.viewer));
+    main.appendChild(makeEl("div", "cg-outcome", ev.won ? "Triple " + slotGlyph(detail.win_symbol) + " — jackpot" : "No match"));
+    body.appendChild(main);
+    body.appendChild(buildAmount(ev));
+    return body;
+  }
+
+  function buildWheelBody(ev, detail) {
+    var body = makeEl("div", "cg-body");
+    var wheel = makeEl("div", "cg-wheel");
+    wheel.appendChild(makeEl("div", "cg-wheel-dial"));
+    var seg = makeEl("div", "cg-seg", detail.segment || ev.outcome);
+    wheel.appendChild(seg);
+    body.appendChild(wheel);
+    var main = makeEl("div", "cg-main");
+    main.appendChild(makeEl("div", "cg-viewer", ev.viewer));
+    main.appendChild(makeEl("div", "cg-outcome", "landed the spin"));
+    body.appendChild(main);
+    body.appendChild(buildAmount(ev));
+    return body;
+  }
+
+  // Generic result card (heist/duel/trivia/raffle): an icon chip + winner + amount.
+  function buildResultBody(ev, detail) {
+    var body = makeEl("div", "cg-body");
+    body.appendChild(makeEl("div", "cg-icon", CG_ICON[ev.game] || "✦"));
+    var main = makeEl("div", "cg-main");
+    main.appendChild(makeEl("div", "cg-viewer", detail.winner || ev.viewer));
+    var sub = ev.outcome;
+    if (ev.game === "heist")  { sub = ev.outcome + " · pot " + (detail.pot || 0) + " · " + (detail.crew || 1) + " crew"; }
+    if (ev.game === "duel")   { sub = "beat " + (detail.loser || "the house"); }
+    if (ev.game === "raffle") {
+      sub = (detail.phase === "open") ? "entered the raffle" : ((detail.entrants || 0) + " entered");
+    }
+    if (ev.game === "trivia") {
+      sub = (detail.phase === "open") ? "trivia started" : "got it right";
+    }
+    main.appendChild(makeEl("div", "cg-outcome", sub));
+    body.appendChild(main);
+    body.appendChild(buildAmount(ev));
+    return body;
+  }
+
+  function buildAmount(ev) {
+    var amt = makeEl("div", "cg-amount", fmtAmount(ev.amount));
+    amt.appendChild(makeEl("span", "cg-amt-unit", "taps"));
+    return amt;
+  }
+
+  function renderChatGame(ev) {
+    if (!chatGamesEl) { return; }
+    var detail = (ev.detail && typeof ev.detail === "object") ? ev.detail : {};
+    var card = makeEl("div", "cg-card");
+    if (ev.won) { card.classList.add("cg-win"); }
+    else if (ev.game === "heist" || ev.game === "duel") { card.classList.add("cg-loss"); }
+
+    // header: badge + game name + source tag (CHAT vs REDEEM — one card style,
+    // the tag is the only difference between a typed game and a redeemed one).
+    var head = makeEl("div", "cg-head");
+    head.appendChild(makeEl("span", "cg-badge", CG_ICON[ev.game] || "✦"));
+    head.appendChild(makeEl("span", "cg-game", ev.title || (ev.game || "GAME").toUpperCase()));
+    head.appendChild(makeEl("span", "cg-tag", ev.source === "redeem" ? "REDEEM" : "CHAT"));
+    card.appendChild(head);
+
+    var body;
+    if (ev.game === "slots")      { body = buildSlotsBody(ev, detail); }
+    else if (ev.game === "wheel") { body = buildWheelBody(ev, detail); }
+    else                          { body = buildResultBody(ev, detail); }
+    card.appendChild(body);
+
+    // trivia footer: the winning answer (result phase) or the question (a redeem
+    // that just surfaced the prompt — open phase). Never label a question "Answer".
+    if (ev.game === "trivia" && detail.answer) {
+      var label = (detail.phase === "open") ? "Q: " : "Answer: ";
+      card.appendChild(makeEl("div", "cg-sub", label + detail.answer));
+    }
+
+    pushCard(card, num(ev.duration_ms, CG_HOLD_MS));
+  }
+
+  // Speak-redeem card: same bottom-left card language; a speaker icon + the
+  // viewer + the spoken quote. The team variant gets a cool-blue accent.
+  function renderSpeech(ev) {
+    if (!chatGamesEl) { return; }
+    var team = ev.bus === "team";
+    var card = makeEl("div", "cg-card cg-speech");
+    if (team) { card.classList.add("cg-team"); }
+
+    var head = makeEl("div", "cg-head");
+    head.appendChild(makeEl("span", "cg-badge", "🗣"));
+    head.appendChild(makeEl("span", "cg-game", team ? "SPEAK · TEAM" : "ULTRON SPEAKS"));
+    head.appendChild(makeEl("span", "cg-tag", "REDEEM"));
+    card.appendChild(head);
+
+    var body = makeEl("div", "cg-body");
+    body.appendChild(makeEl("div", "cg-icon", team ? "📡" : "💬"));
+    var main = makeEl("div", "cg-main");
+    main.appendChild(makeEl("div", "cg-viewer", ev.viewer));
+    main.appendChild(makeEl("div", "cg-quote", ev.text));
+    body.appendChild(main);
+    card.appendChild(body);
+
+    pushCard(card, num(ev.duration_ms, CG_HOLD_MS));
+  }
+
+  // Queue: append at the END of column-reverse so the newest renders at the
+  // bottom; cap visible cards (oldest dismissed first); auto-dismiss each.
+  function pushCard(card, holdMs) {
+    chatGamesEl.appendChild(card);
+    var rec = { el: card, hideTimer: null, removeTimer: null };
+    cgCards.push(rec);
+    // slide+fade in on the next frame.
+    window.requestAnimationFrame(function () {
+      window.requestAnimationFrame(function () { card.classList.add("cg-in"); });
+    });
+    // over the cap -> dismiss the oldest immediately.
+    while (cgCards.length > CG_MAX_VISIBLE) {
+      dismissCard(cgCards[0]);
+    }
+    rec.hideTimer = window.setTimeout(function () { dismissCard(rec); }, Math.max(0, holdMs));
+  }
+
+  function dismissCard(rec) {
+    if (!rec || rec._dismissed) { return; }
+    rec._dismissed = true;
+    if (rec.hideTimer) { window.clearTimeout(rec.hideTimer); rec.hideTimer = null; }
+    var idx = cgCards.indexOf(rec);
+    if (idx >= 0) { cgCards.splice(idx, 1); }
+    rec.el.classList.remove("cg-in");
+    rec.el.classList.add("cg-out");
+    rec.removeTimer = window.setTimeout(function () {
+      if (rec.el && rec.el.parentNode) { rec.el.parentNode.removeChild(rec.el); }
+    }, CG_OUT_MS);
+  }
+
   function dispatch(ev) {
     if (!ev || typeof ev !== "object") { return; }
     switch (ev.type) {
-      case "wheel":  renderWheel(ev);  break;
-      case "alert":  renderAlert(ev);  break;
-      case "ticker": renderTicker(ev); break;
+      case "wheel":     renderWheel(ev);     break;
+      case "alert":     renderAlert(ev);     break;
+      case "ticker":    renderTicker(ev);    break;
+      case "chat_game": renderChatGame(ev);  break;
+      case "speech":    renderSpeech(ev);    break;
       default: /* unknown type -> ignore (the server already rejects these) */ break;
     }
   }
@@ -199,10 +581,68 @@
     });
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", connect);
-  } else {
+  // --- DEMO / PREVIEW mode -------------------------------------------------
+  // Append ?demo=1 to the overlay URL to cycle a sample of EVERY chat-game card
+  // every few seconds WITHOUT any live game / SSE connection. Lets the streamer
+  // dial in the look in OBS first. Runs purely client-side; no network.
+  var DEMO_DECK = [
+    { type: "chat_game", game: "slots", title: "SLOTS", viewer: "shroud_fan", outcome: "WIN",
+      won: true, amount: 9000, detail: { reels: ["seven", "seven", "seven"], win_symbol: "seven" } },
+    { type: "chat_game", game: "slots", title: "SLOTS", viewer: "whiffmaster", outcome: "LOSS",
+      won: false, amount: -250, detail: { reels: ["cherry", "lemon", "bell"] } },
+    { type: "chat_game", game: "wheel", title: "WHEEL", viewer: "tarik_2026", outcome: "JACKPOT 1000",
+      won: true, amount: 1000, detail: { segment: "JACKPOT 1000", payout: 1000 } },
+    { type: "chat_game", game: "heist", title: "HEIST", viewer: "crewlead", outcome: "WIN",
+      won: true, amount: 420, detail: { pot: 1500, crew: 6, payout: 420 } },
+    { type: "chat_game", game: "heist", title: "HEIST", viewer: "crewlead", outcome: "FAIL",
+      won: false, amount: 1500, detail: { pot: 1500, crew: 6, payout: 0 } },
+    { type: "chat_game", game: "duel", title: "DUEL", viewer: "aimgod", outcome: "WIN",
+      won: true, amount: 600, detail: { winner: "aimgod", loser: "spray_n_pray", wager: 300 } },
+    { type: "chat_game", game: "trivia", title: "TRIVIA", viewer: "lore_keeper", outcome: "WINNER",
+      won: true, amount: 100, detail: { winner: "lore_keeper", answer: "Killjoy" } },
+    { type: "chat_game", game: "raffle", title: "RAFFLE", viewer: "lucky_one", outcome: "WINNER",
+      won: true, amount: 500, detail: { winner: "lucky_one", entrants: 38 } },
+    // --- channel-point REDEEM cards (same card language, REDEEM tag) ---------
+    { type: "chat_game", game: "slots", title: "SLOTS", viewer: "redeemer_99", outcome: "WIN",
+      source: "redeem", won: true, amount: 500,
+      detail: { reels: ["bell", "bell", "bell"], win_symbol: "bell", payout: 500 } },
+    { type: "chat_game", game: "wheel", title: "WHEEL", viewer: "pointspender", outcome: "DOUBLE",
+      source: "redeem", won: true, amount: 200, detail: { segment: "DOUBLE", payout: 200 } },
+    { type: "chat_game", game: "heist", title: "HEIST", viewer: "soloheist", outcome: "PARTIAL",
+      source: "redeem", won: true, amount: 50, detail: { pot: 100, crew: 1, payout: 50 } },
+    { type: "chat_game", game: "duel", title: "DUEL", viewer: "challenger", outcome: "WIN",
+      source: "redeem", won: true, amount: 100,
+      detail: { winner: "challenger", loser: "the house", wager: 100 } },
+    // --- SPEAK redeems ------------------------------------------------------
+    { type: "speech", bus: "say", viewer: "chatty_cathy",
+      text: "GG everyone, that clutch was insane — Ultron carried the comms." },
+    { type: "speech", bus: "team", viewer: "igl_brain",
+      text: "Relaying from chat: rotate B now, they over-committed to A." }
+  ];
+
+  function startDemo() {
+    var i = 0;
+    function step() {
+      dispatch(DEMO_DECK[i % DEMO_DECK.length]);
+      i++;
+      window.setTimeout(step, 3200);
+    }
+    step();
+  }
+
+  function init() {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get("demo") === "1") {
+      startDemo();   // standalone preview: no SSE, just cycle the sample deck
+      return;
+    }
     connect();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
   }
 })();
 </script>

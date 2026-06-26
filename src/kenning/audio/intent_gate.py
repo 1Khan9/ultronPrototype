@@ -89,8 +89,12 @@ _REACTION_OPENERS: frozenset[str] = frozenset({
     "thats", "that's", "mhm", "mmhm", "yikes", "oof", "sheesh", "welp", "mm",
 })
 # A direct name/address token for Ultron -- its presence vetoes the reaction filter.
+# 'voltron'/'altron' are the streamer's recurring STT mishears of "Ultron" on
+# always-listening (Whisper near-misses); they are unambiguous (not common words),
+# so registering them as Ultron names recovers the dropped moderation/PRIVATE_REPLY
+# turns ("Voltron, ban X" / "Voltron, <question>") without widening to real words.
 _NAME_TOKEN_RE = re.compile(
-    r"\b(?:ultron|kenning|machine|robot|hey\s+ai|the\s+ai)\b", re.IGNORECASE)
+    r"\b(?:ultron|voltron|altron|kenning|machine|robot|hey\s+ai|the\s+ai)\b", re.IGNORECASE)
 # The PRIVATE_REPLY address gate uses ONLY the UNAMBIGUOUS Ultron names (anywhere):
 # 'ultron' / 'kenning' / 'hey ai' / 'the ai'. The common nouns 'machine' / 'robot' in
 # _NAME_TOKEN_RE are deliberately EXCLUDED here -- as a private-reply TRIGGER they
@@ -99,7 +103,7 @@ _NAME_TOKEN_RE = re.compile(
 # stay in _NAME_TOKEN_RE only as a reaction-filter VETO (a false veto is harmless --
 # the line just falls through to the addressing rules / IGNORE). (2026-06-22)
 _ADDRESS_NAME_RE = re.compile(
-    r"\b(?:ultron|kenning|hey\s+ai|the\s+ai)\b", re.IGNORECASE)
+    r"\b(?:ultron|voltron|altron|kenning|hey\s+ai|the\s+ai)\b", re.IGNORECASE)
 # 2026-06-24: an EXPLICIT team-directee phrase ("... to my team" / "for the
 # squad" / "to our teammates"). A RELAY address signal ONLY in combination with
 # an ADDRESSED (imperative/question) verdict below, so a bare team MENTION ("I
@@ -196,16 +200,23 @@ def _relay_signal(
     try:
         from kenning.audio import relay_speech as rs
         if rs.match_relay_command(norm, names=names) is not None:
-            return 0.95
-        if rs.is_complete_tactical_callout(norm):
-            return 0.90
-        # An AGENT + a concrete tactical token (count/location/ability) is a callout even when a
-        # loose token like "main" keeps the strict slot parser from firing ("Sova hit 84 on A main").
-        # Mirrors build_relay_line's tactical-literal pre-route; requires BOTH so a question that
-        # merely contains a number ("what round is it") is not mistaken for a relay.
-        nums, ags, locs, abils = rs._fact_tokens(norm)
-        if ags and (len(nums) + len(locs) + len(abils)) >= 1:
-            return 0.88
+            return 0.95  # EXPLICIT relay address ("tell my team X" / named relay) -- ALL modes
+        # 2026-06-24 (user: "he's firing on commands not meant for him"): a BARE tactical
+        # callout with NO explicit relay address -- "they have Vyse ult for take", "you Gekko
+        # ult for retake" -- is the player calling out to teammates DIRECTLY; Ultron must NOT
+        # echo it back to the team. Auto-relaying bare callouts is now TURBO-ONLY. Balanced
+        # always-listening relays ONLY an explicit "tell my team"/named address (match_relay_command
+        # above) or the trailing-directee "... to my team" path in classify_scenario.
+        if turbo:
+            if rs.is_complete_tactical_callout(norm):
+                return 0.90
+            # An AGENT + a concrete tactical token (count/location/ability) is a callout even when a
+            # loose token like "main" keeps the strict slot parser from firing ("Sova hit 84 on A main").
+            # Mirrors build_relay_line's tactical-literal pre-route; requires BOTH so a question that
+            # merely contains a number ("what round is it") is not mistaken for a relay.
+            nums, ags, locs, abils = rs._fact_tokens(norm)
+            if ags and (len(nums) + len(locs) + len(abils)) >= 1:
+                return 0.88
     except Exception:  # noqa: BLE001
         pass
     # NB (2026-06-21): the semantic relay-intent gate (_relay_intent.relay_intent_ok)

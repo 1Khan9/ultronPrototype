@@ -737,6 +737,32 @@ class ChatEvent:
             logger.warning("eventsub chat-message parse failed: %s", exc)
             return None
 
+    @classmethod
+    def from_buffer(cls, event: dict) -> Optional["ChatEvent"]:
+        """Build a ChatEvent from the read sidecar's FLAT buffered chat dict
+        ``{"type":"chat","message_id","chatter_login","chatter_name",
+        "chatter_user_id","text"[,"badges"]}`` (``twitch_read_sidecar._map_notification``).
+
+        This is the CANONICAL flat-shape parser. It is NOT the nested EventSub
+        envelope that :meth:`from_eventsub` parses (``message.text`` /
+        ``chatter_user_login``) — the sidecar already flattened the notification, so
+        the flat fields are mapped directly. Using ``from_eventsub`` on a flat dict
+        yields an EMPTY-text, empty-login event (every line then reads as IGNORE) —
+        which is exactly the chat-reply silence bug this method exists to prevent.
+        Returns ``None`` on a non-chat / unusable dict."""
+        if not isinstance(event, dict) or event.get("type") != "chat":
+            return None
+        badges = event.get("badges")
+        return cls(
+            broadcaster_user_id=cls._coerce_str(event.get("broadcaster_user_id")),
+            chatter_user_id=cls._coerce_str(event.get("chatter_user_id")),
+            chatter_login=cls._coerce_str(event.get("chatter_login")),
+            chatter_name=cls._coerce_str(event.get("chatter_name")),
+            text=cls._coerce_str(event.get("text")),
+            badges=badges if isinstance(badges, list) else [],
+            message_id=cls._coerce_str(event.get("message_id")),
+        )
+
     # -- helpers -------------------------------------------------------- #
     @staticmethod
     def _locate_event(payload_dict: Any) -> Optional[dict]:

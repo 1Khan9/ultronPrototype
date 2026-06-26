@@ -200,6 +200,13 @@ def test_delete_message_keys_on_message_id():
     assert res.ok and res.action == "delete_message"
     call = tr.calls[0]
     assert call["method"] == "DELETE"
+    # Helix single-message delete lives under /chat/messages — NOT the
+    # /moderation/chat path (a regression that 404s; broadcaster_id/moderator_id
+    # are non-empty query params).
+    assert "/helix/chat/messages?" in call["url"]
+    assert "/moderation/chat" not in call["url"]
+    assert "broadcaster_id=bcast" in call["url"]
+    assert "moderator_id=mod" in call["url"]
     assert "message_id=msg-1" in call["url"]
     # Re-deleting the SAME message id short-circuits (no second call).
     res2 = client.delete_message("bcast", "mod", "msg-1")
@@ -234,9 +241,19 @@ def test_update_chat_settings_filters_to_allowed_keys():
         {"slow_mode": True, "slow_mode_wait_time": 10, "evil_key": "x"},
     )
     assert res.ok
-    body = tr.calls[0]["body"]
+    call = tr.calls[0]
+    body = call["body"]
     assert body["slow_mode"] is True and body["slow_mode_wait_time"] == 10
     assert "evil_key" not in body
+    # PATCH /helix/chat/settings — NOT /moderation/chat/settings (that path
+    # returns a bare 404; this is the live-stream regression we are guarding).
+    assert call["method"] == "PATCH"
+    assert "/helix/chat/settings?" in call["url"]
+    assert "/moderation/chat/settings" not in call["url"]
+    # The broadcaster_id + moderator_id (the moderator == broadcaster on the
+    # streamer's own channel) flow through as non-empty query params.
+    assert "broadcaster_id=bcast" in call["url"]
+    assert "moderator_id=mod" in call["url"]
 
 
 def test_update_chat_settings_rejects_no_known_keys():
@@ -244,6 +261,24 @@ def test_update_chat_settings_rejects_no_known_keys():
     client = make_client(ScriptedTransport(), clock)
     with pytest.raises(ValueError):
         client.update_chat_settings("bcast", "mod", {"nonsense": 1})
+
+
+def test_clear_chat_uses_chat_messages_endpoint_without_message_id():
+    """clear_chat must DELETE /chat/messages WITHOUT a message_id (omitting it
+    clears ALL). The old /moderation/chat path 404s; this guards the regression."""
+    clock = FakeClock()
+    tr = ScriptedTransport().queue(TransportResponse(status=204, body=""))
+    client = make_client(tr, clock)
+    res = client.clear_chat("bcast", "mod")
+    assert res.ok and res.action == "clear_chat"
+    call = tr.calls[0]
+    assert call["method"] == "DELETE"
+    assert "/helix/chat/messages?" in call["url"]
+    assert "/moderation/chat" not in call["url"]
+    assert "broadcaster_id=bcast" in call["url"]
+    assert "moderator_id=mod" in call["url"]
+    # No specific message -> NO message_id param (clear-all semantics).
+    assert "message_id=" not in call["url"]
 
 
 # --------------------------------------------------------------------------- #

@@ -52,7 +52,17 @@ def make_read_drain_fn(read_endpoint: str, *, timeout: float = 1.0) -> Callable[
         out = []
         for raw in data.get("events", []) or []:
             try:
-                ev = ChatEvent.from_eventsub(raw) if isinstance(raw, dict) else None
+                if not isinstance(raw, dict):
+                    continue
+                # The read sidecar buffers a FLAT chat dict under "event" (NOT the
+                # nested EventSub envelope) -> parse the flat shape, mirroring the
+                # chat-games drain. from_eventsub reads message.text and would yield
+                # an EMPTY-text event here -> every line classifies as IGNORE and the
+                # bot never replies. (Tolerate a bare flat dict too, for safety.)
+                event = raw.get("event", raw)
+                if not isinstance(event, dict) or event.get("type") != "chat":
+                    continue
+                ev = ChatEvent.from_buffer(event)
                 if ev is not None:
                     out.append(ev)
             except Exception:  # noqa: BLE001 — skip a malformed event, never crash

@@ -197,6 +197,59 @@ def test_named_rephrase_prompt_mentions_name() -> None:
     assert "meaning of life" in captured[0]
 
 
+def test_qa_answer_repeats_and_is_not_rejected_as_recent_echo() -> None:
+    """A FACTUAL qa answer must repeat on an identical question -- the verbatim
+    recent-echo safety net must NOT reject it. This is the 2026-06-24 repeat-
+    degradation bug: 'explain pandas to my team' answered correctly on turn 1,
+    then on every repeat the echo-net saw the identical answer already in
+    ``recent_lines`` and nulled it -> the tactical retry relayed the BARE
+    question -> 'What pandas are' / 'They're on C.'. Proven by the offline
+    end-to-end harness (Layer A2 degraded byte-identically with AND without a KV
+    clear, ruling out the KV cache). The net stays ON for the tactical relay path.
+    """
+    answer = "Pandas are bears from China that eat bamboo."
+
+    def fake_generate(prompt: str):
+        return iter([answer])
+
+    cmd = match_relay_command("explain to my team what pandas are")
+    assert cmd is not None
+    recent: list[str] = []
+    outs: list[str] = []
+    for _ in range(4):
+        line = build_relay_line(cmd, generate_fn=fake_generate,
+                                recent_lines=list(recent))
+        outs.append(line)
+        recent.append(line)
+    # The factual answer REPEATS every turn -- no collapse to the deterministic
+    # fallback / a bare-question relay once the answer is already in recent_lines.
+    assert all("pandas are bears" in o.lower() for o in outs), outs
+
+
+def test_qa_answer_prompt_has_no_injected_prior_lines() -> None:
+    """NO prior-output injection (2026-06-25 user directive): recent_lines must NOT
+    appear in the ANSWER prompt. Feeding the prior answer back in made the small 4B
+    PARROT it across DIFFERENT questions -- every pandas question ("what pandas are",
+    "why pandas suck", "why pandas can't reproduce") returned the byte-identical prior
+    answer. Variety now comes from the answer-path sampling temperature, not the prompt."""
+    captured: list[str] = []
+
+    def fake_generate(prompt: str):
+        captured.append(prompt)
+        return iter(["Pandas are bears."])
+
+    cmd = match_relay_command("explain to my team what pandas are")
+    assert cmd is not None
+    build_relay_line(
+        cmd, generate_fn=fake_generate,
+        recent_lines=["Pandas: black-and-white bears from China.",
+                      "You recently said something else."])
+    assert captured, "the answer path should have been invoked"
+    # the recent lines must NOT be rendered into the answer prompt.
+    assert "black-and-white bears from China" not in captured[0]
+    assert "recently said" not in captured[0].lower()
+
+
 def test_compose_prompt_has_no_reported_speech() -> None:
     # A directive-compose ("respond") authors the line, so its prompt must NOT
     # carry a literal "reported speech" payload block. (Uses a non-calm

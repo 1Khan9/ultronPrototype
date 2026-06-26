@@ -76,13 +76,20 @@ class FakeRNG:
 
 
 def _cfg(**over):
+    # defer_points_gamble_to_streamelements defaults False HERE so the existing
+    # !points/!gamble mechanics tests keep exercising Ultron's dispatch path; the
+    # dedicated deferral tests pass the flag explicitly. trivia_auto_interval_minutes
+    # defaults 0 (disabled) so legacy tests aren't perturbed by auto-trivia.
     base = dict(earn_per_minute=10, gamble_rtp=0.90, per_stream_loss_cap=5000,
-                currency_name="cores", command_cooldown_seconds=0, min_bet=1, max_bet=10000)
+                currency_name="cores", command_cooldown_seconds=0, min_bet=1, max_bet=10000,
+                defer_points_gamble_to_streamelements=False,
+                trivia_auto_interval_minutes=0)
     base.update(over)
     return types.SimpleNamespace(**base)
 
 
-def _router(events, *, ledger=None, rng=None, cfg=None, replies=None, now=None, epoch=None):
+def _router(events, *, ledger=None, rng=None, cfg=None, replies=None, now=None,
+            epoch=None, chat_cfg=None):
     ledger = ledger or Ledger(":memory:")
     replies = replies if replies is not None else []
     kw = {}
@@ -90,6 +97,8 @@ def _router(events, *, ledger=None, rng=None, cfg=None, replies=None, now=None, 
         kw["now_fn"] = now
     if epoch is not None:
         kw["epoch_fn"] = epoch
+    if chat_cfg is not None:
+        kw["chat_cfg"] = chat_cfg
     r = ChatGameRouter(lambda: list(events), ledger=ledger, cfg=cfg or _cfg(),
                        rng=rng or FakeRNG(), announce_fn=replies.append, **kw)
     return r, ledger, replies
@@ -152,17 +161,70 @@ def test_help_and_unknown():
     assert any("unknown command" in x for x in replies)
 
 
+def test_ultron_posts_commands_panel_with_doc_link():
+    # !ultron posts the SAME condensed commands-panel text viewers see on the
+    # periodic auto-post, including the guide link from the chat cfg's
+    # commands_panel_doc_url (threaded in via chat_cfg).
+    chat_cfg = types.SimpleNamespace(commands_panel_doc_url="https://example.test/guide")
+    r, _led, replies = _router([_ev("!ultron", mid="ul")], chat_cfg=chat_cfg)
+    r.tick()
+    assert len(replies) == 1
+    assert "Ultron games" in replies[0]
+    assert "!slots" in replies[0] and "!help" in replies[0]
+    assert "https://example.test/guide" in replies[0]   # doc link appended
+
+
+def test_ultron_without_chat_cfg_still_posts_panel():
+    # No chat cfg threaded (None) -> the panel still posts, just without a link.
+    r, _led, replies = _router([_ev("!ultron", mid="ul")])
+    r.tick()
+    assert len(replies) == 1
+    assert "Ultron games" in replies[0]
+    assert "Full guide" not in replies[0]
+
+
+def test_ultron_cooldown_throttles_spam():
+    # A second !ultron from the SAME user inside the cooldown window is dropped
+    # (mirrors the bet-game per-user throttle); a different user is not throttled.
+    chat_cfg = types.SimpleNamespace(commands_panel_doc_url="")
+    cfg = _cfg(command_cooldown_seconds=5)
+    clock = {"t": 0.0}
+    r, _led, replies = _router(
+        [_ev("!ultron", uid="u1", mid="a"),
+         _ev("!ultron", uid="u1", mid="b"),
+         _ev("!ultron", uid="u2", login="bob", mid="c")],
+        cfg=cfg, chat_cfg=chat_cfg, now=lambda: clock["t"])
+    r.tick()
+    # u1's first + u2's post fire; u1's second is throttled within the window.
+    assert len(replies) == 2
+
+
 def test_leaderboard_lists_top_balances():
     led = Ledger(":memory:")
     led.credit("u1", 100, "s", "s1")
     led.credit("u2", 500, "s", "s2")
     # The caller (default uid u1) chats as login "z", so the leaderboard renders
     # u1 by its known display login "z"; u2 (never seen this session) shows its raw
-    # uid. Top balance first.
+    # uid. Top balance first. The board posts as SEPARATE chat messages (one line
+    # per Twitch message): a header then "1. ...", "2. ..." so it stacks in chat.
     r, led, replies = _router([_ev("!leaderboard", login="z")], ledger=led)
     r.tick()
-    assert replies and "u2 (500)" in replies[0] and "z (100)" in replies[0]
-    assert replies[0].index("u2") < replies[0].index("z (100)")
+    assert replies[0].startswith("Top ") and "cores" in replies[0]   # header line
+    assert replies[1] == "1. u2 (500)"      # top balance ranked first, own message
+    assert replies[2] == "2. z (100)"
+    assert len(replies) == 3                 # header + 2 ranks (no extra noise)
+
+
+def test_leaderboard_caps_at_top_five_messages():
+    led = Ledger(":memory:")
+    for i in range(8):
+        led.credit(f"u{i}", (i + 1) * 10, "s", f"s{i}")
+    r, led, replies = _router([_ev("!leaderboard")], ledger=led)
+    r.tick()
+    # 1 header + at most 5 ranked rows = 6 messages, never more.
+    assert len(replies) == 6
+    assert replies[0].startswith("Top ")
+    assert replies[1].startswith("1. ") and replies[5].startswith("5. ")
 
 
 # --------------------------------------------------------------------------- #
@@ -632,3 +694,437 @@ def test_no_banned_imports():
             roots.add(node.module.split(".")[0])
     banned = {"pyautogui", "mss", "pynput", "keyboard", "mouse", "win32api", "torch"}
     assert not (roots & banned), roots & banned
+
+
+# --------------------------------------------------------------------------- #
+# Change 1 — defer !points / !gamble to StreamElements (no double reply)
+# --------------------------------------------------------------------------- #
+def test_points_deferred_to_streamelements_no_reply():
+    led = Ledger(":memory:")
+    led.credit("u1", 250, "seed", "seed")
+    r, led, replies = _router([_ev("!points")], ledger=led,
+                              cfg=_cfg(defer_points_gamble_to_streamelements=True))
+    handled = r.tick()
+    # Ultron stays SILENT — StreamElements' bot answers !points.
+    assert replies == [] and handled == 0
+
+
+def test_gamble_deferred_to_streamelements_no_reply_no_ledger_touch():
+    led = Ledger(":memory:")
+    led.credit("u1", 1000, "seed", "seed")
+    r, led, replies = _router([_ev("!gamble 100", mid="m2")], ledger=led,
+                              cfg=_cfg(defer_points_gamble_to_streamelements=True),
+                              rng=FakeRNG(uniform=0.1))
+    handled = r.tick()
+    assert replies == [] and handled == 0
+    assert led.balance("u1") == 1000               # never debited/credited
+    assert led.history("u1", limit=10)[:] == led.history("u1", limit=10)  # no game legs
+    keys = {e.idempotency_key for e in led.history("u1", limit=10)}
+    assert "gamble:m2:bet" not in keys and "gamble:m2:win" not in keys
+
+
+def test_balance_alias_also_deferred():
+    led = Ledger(":memory:")
+    led.credit("u1", 50, "seed", "seed")
+    r, led, replies = _router([_ev("!balance")], ledger=led,
+                              cfg=_cfg(defer_points_gamble_to_streamelements=True))
+    assert r.tick() == 0 and replies == []
+
+
+def test_other_commands_still_handled_when_deferring():
+    # With deferral ON, every NON-points/gamble command still works.
+    led = Ledger(":memory:")
+    led.credit("u1", 1000, "seed", "seed")
+    cfg = _cfg(defer_points_gamble_to_streamelements=True, earn_per_minute=0,
+               wheel_free_per_stream=1)
+    # !slots, !wheel, !leaderboard, !help — all should produce replies.
+    evs = [_ev("!slots 10", uid="u1", login="alice", mid="s1", ),
+           _ev("!wheel", uid="u1", login="alice", mid="w1"),
+           _ev("!leaderboard", uid="u1", login="alice", mid="lb"),
+           _ev("!help", uid="u1", login="alice", mid="hp")]
+    r, led, replies = _router(evs, ledger=led, cfg=cfg, rng=FakeRNG(slots_win=False))
+    r.tick()
+    joined = " || ".join(replies)
+    assert "slots" in joined.lower()
+    assert "spun the wheel" in joined.lower()
+    assert "Top" in joined            # leaderboard
+    assert "Commands:" in joined      # help
+
+
+def test_help_omits_points_gamble_when_deferring():
+    r, _led, replies = _router([_ev("!help", mid="h")],
+                               cfg=_cfg(defer_points_gamble_to_streamelements=True))
+    r.tick()
+    help_line = next(x for x in replies if "Commands:" in x)
+    assert "!points" not in help_line and "!gamble" not in help_line
+    assert "!slots" in help_line and "!trivia" in help_line
+
+
+def test_deferral_off_still_handles_points():
+    led = Ledger(":memory:")
+    led.credit("u1", 250, "seed", "seed")
+    r, led, replies = _router([_ev("!points")], ledger=led,
+                              cfg=_cfg(defer_points_gamble_to_streamelements=False))
+    r.tick()
+    assert replies == ["@alice you have 250 cores."]
+
+
+# --------------------------------------------------------------------------- #
+# Change 2 — currency renamed to 'one taps'
+# --------------------------------------------------------------------------- #
+def test_replies_use_one_taps_currency():
+    led = Ledger(":memory:")
+    led.credit("u1", 100, "seed", "seed")
+    cfg = _cfg(currency_name="one taps", defer_points_gamble_to_streamelements=False)
+    r, led, replies = _router([_ev("!points")], ledger=led, cfg=cfg)
+    r.tick()
+    assert replies == ["@alice you have 100 one taps."]
+
+
+def test_config_default_currency_is_one_taps():
+    from kenning.config import TwitchEconomyConfig
+    assert TwitchEconomyConfig().currency_name == "one taps"
+
+
+def test_config_defaults_defer_and_auto_trivia():
+    from kenning.config import TwitchEconomyConfig
+    c = TwitchEconomyConfig()
+    assert c.defer_points_gamble_to_streamelements is True
+    assert c.trivia_auto_interval_minutes == 5
+
+
+# --------------------------------------------------------------------------- #
+# Change 3 — auto-trivia on the periodic clock
+# --------------------------------------------------------------------------- #
+def test_auto_trivia_fires_on_interval_via_injected_clock():
+    led = Ledger(":memory:")
+    clock = {"mono": 0.0, "epoch": 0.0}
+    cfg = _cfg(earn_per_minute=0, trivia_auto_interval_minutes=5,
+               trivia_window_seconds=30)
+    r = ChatGameRouter(lambda: [], ledger=led, cfg=cfg,
+                       rng=ProvablyFairRNG(default_client_seed="t"),
+                       announce_fn=(replies := []).append,
+                       now_fn=lambda: clock["mono"], epoch_fn=lambda: clock["epoch"])
+    r.tick()                       # arms the auto-trivia clock at epoch 0
+    assert r._trivia is None and replies == []
+    clock["epoch"] = 4 * 60.0      # 4 minutes — still before the 5-minute interval
+    r.tick()
+    assert r._trivia is None and replies == []
+    clock["epoch"] = 5 * 60.0      # 5 minutes elapsed -> auto-start
+    r.tick()
+    assert r._trivia is not None
+    assert any("TRIVIA" in x for x in replies)
+
+
+def test_auto_trivia_does_not_start_while_round_active():
+    led = Ledger(":memory:")
+    clock = {"mono": 0.0, "epoch": 0.0}
+    cfg = _cfg(earn_per_minute=0, trivia_auto_interval_minutes=5,
+               trivia_window_seconds=600)   # long window so the manual round stays open
+    batch = []
+    r = ChatGameRouter(lambda: list(batch), ledger=led, cfg=cfg,
+                       rng=ProvablyFairRNG(default_client_seed="t"),
+                       announce_fn=(replies := []).append,
+                       now_fn=lambda: clock["mono"], epoch_fn=lambda: clock["epoch"])
+    # A mod starts a round at t=0.
+    batch[:] = [_ev("!trivia", login="modder", mod=True, mid="t1")]
+    r.tick()
+    active_q = r._trivia
+    assert active_q is not None
+    starts_before = sum("TRIVIA for" in x for x in replies)
+    # Advance past the auto interval; the manual round is still open (mono unchanged).
+    batch[:] = []
+    clock["epoch"] = 6 * 60.0
+    r.tick()
+    # No NEW trivia announced — the active round was not displaced.
+    assert r._trivia is active_q
+    assert sum("TRIVIA for" in x for x in replies) == starts_before
+
+
+def test_auto_trivia_disabled_when_interval_zero():
+    led = Ledger(":memory:")
+    clock = {"mono": 0.0, "epoch": 0.0}
+    cfg = _cfg(earn_per_minute=0, trivia_auto_interval_minutes=0)
+    r = ChatGameRouter(lambda: [], ledger=led, cfg=cfg,
+                       rng=ProvablyFairRNG(default_client_seed="t"),
+                       announce_fn=(replies := []).append,
+                       now_fn=lambda: clock["mono"], epoch_fn=lambda: clock["epoch"])
+    r.tick()
+    clock["epoch"] = 60 * 60.0     # an hour later
+    r.tick()
+    assert r._trivia is None and replies == []
+
+
+def test_auto_trivia_can_restart_after_a_round_times_out():
+    led = Ledger(":memory:")
+    clock = {"mono": 0.0, "epoch": 0.0}
+    cfg = _cfg(earn_per_minute=0, trivia_auto_interval_minutes=5,
+               trivia_window_seconds=30)
+    r = ChatGameRouter(lambda: [], ledger=led, cfg=cfg,
+                       rng=ProvablyFairRNG(default_client_seed="t"),
+                       announce_fn=(replies := []).append,
+                       now_fn=lambda: clock["mono"], epoch_fn=lambda: clock["epoch"])
+    r.tick()                       # arm
+    clock["epoch"] = 5 * 60.0
+    r.tick()                       # first auto round
+    assert r._trivia is not None
+    first_starts = sum("TRIVIA for" in x for x in replies)
+    # Let the window lapse (advance the monotonic clock past the 30s deadline) so
+    # _expire_trivia clears it, then advance another interval -> a second round.
+    clock["mono"] = 100.0
+    clock["epoch"] = 10 * 60.0
+    r.tick()
+    assert r._trivia is not None
+    assert sum("TRIVIA for" in x for x in replies) == first_starts + 1
+
+
+# --------------------------------------------------------------------------- #
+# Change 4 — the expanded, multi-topic trivia question bank
+# --------------------------------------------------------------------------- #
+def test_expanded_trivia_bank_is_large_and_structurally_valid():
+    from kenning.twitch.economy.games import Trivia, TriviaQuestion, _TRIVIA_POOL
+    from kenning.twitch.economy.trivia_questions import TRIVIA_QUESTIONS
+
+    assert _TRIVIA_POOL is TRIVIA_QUESTIONS            # default pool = the expanded bank
+    assert len(TRIVIA_QUESTIONS) > 150, len(TRIVIA_QUESTIONS)
+    t = Trivia()                                       # constructs with the default pool
+    for i, q in enumerate(TRIVIA_QUESTIONS):
+        assert isinstance(q, TriviaQuestion), i
+        assert isinstance(q.question, str) and q.question.strip(), i
+        assert isinstance(q.answer, str) and q.answer.strip(), i
+        assert isinstance(q.accept, tuple), i
+        # The canonical answer must be accepted by the matcher (case-insensitive).
+        assert t.check_answer(q, q.answer), (i, q.answer)
+        assert t.check_answer(q, q.answer.upper()), (i, q.answer)
+        # Every declared alias must also match.
+        for alias in q.accept:
+            assert t.check_answer(q, alias), (i, alias)
+        # A clearly-wrong answer must not match.
+        assert not t.check_answer(q, "__definitely_wrong__"), i
+
+
+def test_no_duplicate_trivia_questions():
+    from kenning.twitch.economy.trivia_questions import TRIVIA_QUESTIONS
+    prompts = [q.question.strip().casefold() for q in TRIVIA_QUESTIONS]
+    assert len(prompts) == len(set(prompts)), "duplicate trivia prompts present"
+
+
+def test_trivia_alias_answer_wins_round():
+    # End-to-end: a chatter answering with an ACCEPTED ALIAS (not the canonical
+    # answer) still wins the round.
+    from kenning.twitch.economy.games import Trivia, TriviaQuestion
+    led = Ledger(":memory:")
+    pool = (TriviaQuestion("How many?", "13", accept=("thirteen",)),)
+    cfg = _cfg(trivia_prize=100, trivia_window_seconds=30,
+               defer_points_gamble_to_streamelements=True)
+    replies, batch = [], []
+    r = ChatGameRouter(lambda: list(batch), ledger=led, cfg=cfg,
+                       rng=ProvablyFairRNG(default_client_seed="t"),
+                       announce_fn=replies.append)
+    r._trivia_game = Trivia(rng=ProvablyFairRNG(default_client_seed="t"), pool=pool)
+    batch[:] = [_ev("!trivia", login="modder", mod=True, mid="t1")]
+    r.tick()
+    assert r._trivia is not None
+    batch[:] = [_ev("thirteen", uid="u2", login="bob", mid="a1")]   # the ALIAS
+    r.tick()
+    assert led.balance("u2") == 100 and r._trivia is None
+
+
+# --------------------------------------------------------------------------- #
+# overlay emit — each chat-game OUTCOME emits a chat_game event that PASSES the
+# real overlay validator; an overlay-emit exception never breaks the game/tick.
+# --------------------------------------------------------------------------- #
+from kenning.twitch.overlay.server import validate_event as _validate_overlay_event  # noqa: E402
+
+
+def _overlay_router(events, *, ledger=None, rng=None, cfg=None, now=None, epoch=None):
+    """A ChatGameRouter with a capturing overlay sink. Returns
+    (router, ledger, replies, overlay_events)."""
+    ledger = ledger or Ledger(":memory:")
+    overlay_events: list = []
+    replies: list = []
+    kw = {}
+    if now is not None:
+        kw["now_fn"] = now
+    if epoch is not None:
+        kw["epoch_fn"] = epoch
+    r = ChatGameRouter(
+        lambda: list(events), ledger=ledger, cfg=cfg or _cfg(),
+        rng=rng or FakeRNG(), announce_fn=replies.append,
+        overlay_emit=overlay_events.append, **kw,
+    )
+    return r, ledger, replies, overlay_events
+
+
+def _assert_valid_overlay(ev: dict) -> dict:
+    """Every emitted chat_game event must pass the PRODUCTION overlay validator
+    (the same one OverlayServer.emit runs) and carry the chat discriminators."""
+    assert ev["type"] == "chat_game"
+    assert ev["source"] == "chat"
+    vetted = _validate_overlay_event(ev)   # raises OverlayError if the shape is bad
+    assert vetted["game"] == ev["game"]
+    assert vetted["source"] == "chat"
+    return vetted
+
+
+def test_overlay_emits_slots_win_with_settled_reels():
+    led = Ledger(":memory:")
+    led.credit("u1", 1000, "seed", "seed")
+    r, led, _replies, ov = _overlay_router(
+        [_ev("!slots 10", mid="w")], ledger=led, rng=FakeRNG(slots_win=True))
+    r.tick()
+    cards = [e for e in ov if e.get("game") == "slots"]
+    assert len(cards) == 1
+    card = cards[0]
+    _assert_valid_overlay(card)
+    assert card["won"] is True and card["outcome"] == "WIN"
+    # the reels carry the ACTUAL pulled symbols (all the win symbol on a triple)
+    assert len(card["detail"]["reels"]) == 3
+    assert card["detail"]["win_symbol"] == card["detail"]["reels"][0]
+    assert card["amount"] > 0
+
+
+def test_overlay_emits_slots_loss():
+    led = Ledger(":memory:")
+    led.credit("u1", 1000, "seed", "seed")
+    r, led, _replies, ov = _overlay_router(
+        [_ev("!slots 10", mid="l")], ledger=led, rng=FakeRNG(slots_win=False))
+    r.tick()
+    card = [e for e in ov if e.get("game") == "slots"][0]
+    _assert_valid_overlay(card)
+    assert card["won"] is False and card["outcome"] == "LOSS"
+    assert card["amount"] == 10        # stake lost
+
+
+def test_overlay_emits_wheel_segment():
+    led = Ledger(":memory:")
+    r, led, _replies, ov = _overlay_router(
+        [_ev("!wheel", uid="u1", login="alice", mid="w1")],
+        ledger=led, cfg=_cfg(wheel_free_per_stream=1, earn_per_minute=0))
+    r.tick()
+    card = [e for e in ov if e.get("game") == "wheel"][0]
+    _assert_valid_overlay(card)
+    assert card["detail"]["segment"]   # the landed segment label is surfaced
+    assert card["viewer"] == "alice"
+
+
+def test_overlay_emits_heist_win_and_fail():
+    # WIN
+    led = Ledger(":memory:")
+    led.credit("u1", 100, "s", "a")
+    led.credit("u2", 100, "s", "b")
+    clock = [0.0]
+    evs = [_ev("!heist 100", uid="u1", login="alice", mid="h1"),
+           _ev("!heist 100", uid="u2", login="bob", mid="h2")]
+    r, led, _replies, ov = _overlay_router(
+        evs, ledger=led,
+        cfg=_cfg(heist_window_seconds=30, heist_house_bonus_pct=0.5,
+                 heist_min_players=1, earn_per_minute=0, command_cooldown_seconds=0),
+        rng=FakeRNG(uniform=0.9), now=lambda: clock[0])
+    r.tick()
+    evs.clear(); clock[0] = 31.0
+    r.tick()
+    card = [e for e in ov if e.get("game") == "heist"][0]
+    _assert_valid_overlay(card)
+    assert card["won"] is True and card["outcome"] in ("WIN", "PARTIAL")
+    assert card["detail"]["crew"] == 2 and card["detail"]["pot"] == 200
+    # FAIL
+    led2 = Ledger(":memory:")
+    led2.credit("u1", 100, "s", "a")
+    clock2 = [0.0]
+    evs2 = [_ev("!heist 100", uid="u1", login="alice", mid="hf1")]
+    r2, led2, _r2, ov2 = _overlay_router(
+        evs2, ledger=led2,
+        cfg=_cfg(heist_window_seconds=30, heist_min_players=1, earn_per_minute=0),
+        rng=FakeRNG(uniform=0.1), now=lambda: clock2[0])
+    r2.tick()
+    evs2.clear(); clock2[0] = 31.0
+    r2.tick()
+    fail = [e for e in ov2 if e.get("game") == "heist"][0]
+    _assert_valid_overlay(fail)
+    assert fail["won"] is False and fail["outcome"] == "FAIL"
+
+
+def test_overlay_emits_duel_winner():
+    led = Ledger(":memory:")
+    led.credit("u1", 100, "s", "a")
+    led.credit("u2", 100, "s", "b")
+    evs = [_ev("hi", uid="u2", login="bob", mid="b0"),
+           _ev("!duel @bob 50", uid="u1", login="alice", mid="d1"),
+           _ev("!accept", uid="u2", login="bob", mid="d2")]
+    r, led, _replies, ov = _overlay_router(
+        evs, ledger=led, cfg=_cfg(earn_per_minute=0, duel_window_seconds=60),
+        rng=FakeRNG(uniform=0.1))   # challenger (alice) wins
+    r.tick()
+    card = [e for e in ov if e.get("game") == "duel"][0]
+    _assert_valid_overlay(card)
+    assert card["won"] is True
+    assert card["detail"]["winner"] == "alice" and card["detail"]["loser"] == "bob"
+    assert card["amount"] == 100       # pot = wager * 2
+
+
+def test_overlay_emits_trivia_winner_with_answer():
+    led = Ledger(":memory:")
+    r, batch, replies = _trivia_router(led, prize=100)
+    ov: list = []
+    r._overlay = ov.append   # attach a capturing sink
+    batch[:] = [_ev("!trivia", login="modder", mod=True, mid="t1")]
+    r.tick()
+    answer = r._trivia["question"].answer
+    batch[:] = [_ev(answer, uid="u2", login="bob", mid="a1")]
+    r.tick()
+    card = [e for e in ov if e.get("game") == "trivia"][0]
+    _assert_valid_overlay(card)
+    assert card["won"] is True
+    assert card["detail"]["answer"] == answer
+    assert card["detail"]["winner"] == "bob"
+
+
+def test_overlay_emits_raffle_winner():
+    led = Ledger(":memory:")
+    clock = [0.0]
+    evs = [_ev("!raffle", uid="um", login="mod", mid="r0", mod=True),
+           _ev("!raffle", uid="u1", login="alice", mid="r1"),
+           _ev("!enter", uid="u2", login="bob", mid="r2")]
+    r, led, _replies, ov = _overlay_router(
+        evs, ledger=led,
+        cfg=_cfg(earn_per_minute=0, raffle_window_seconds=30, raffle_prize=500),
+        now=lambda: clock[0])
+    r.tick()
+    evs.clear(); clock[0] = 31.0
+    r.tick()
+    card = [e for e in ov if e.get("game") == "raffle"][0]
+    _assert_valid_overlay(card)
+    assert card["won"] is True and card["amount"] == 500
+    assert card["detail"]["winner"] and card["detail"]["entrants"] >= 1
+
+
+def test_overlay_emit_exception_never_breaks_the_game():
+    # A throwing overlay sink must NOT prevent the bet from settling (the slots
+    # game still debits/credits the ledger + replies) and tick() must not raise.
+    led = Ledger(":memory:")
+    led.credit("u1", 1000, "seed", "seed")
+
+    def _boom(_ev):
+        raise RuntimeError("overlay down")
+
+    replies: list = []
+    r = ChatGameRouter(
+        lambda: [_ev("!slots 10", mid="w")], ledger=led, cfg=_cfg(),
+        rng=FakeRNG(slots_win=True), announce_fn=replies.append, overlay_emit=_boom)
+    r.tick()   # must not raise despite the throwing overlay
+    s = len(DEFAULT_SLOT_SYMBOLS)
+    mult = int(0.90 * s * s)
+    assert led.balance("u1") == 1000 - 10 + 10 * mult   # game still settled
+    assert any("WON" in x for x in replies)
+
+
+def test_overlay_none_sink_is_safe():
+    # No overlay wired (the overlay-disabled boot) -> games still run, no error.
+    led = Ledger(":memory:")
+    led.credit("u1", 1000, "seed", "seed")
+    r, led, replies = _router([_ev("!slots 10", mid="w")], ledger=led,
+                              rng=FakeRNG(slots_win=True))
+    # _router does not pass overlay_emit -> self._overlay is None
+    r.tick()
+    assert any("WON" in x for x in replies)

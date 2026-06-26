@@ -5968,7 +5968,7 @@
 "_ANSWER_SAMPLING": {
 "kind": "dict",
 "len": 7,
-"repr": "{'max_tokens': 56, 'temperature': 0.7, 'top_p': 0.92, 'top_k': 40, 'min_p': 0.08, 'repeat_penalty': 1.18, 'stop': ['\\nADDRESS:', '\\nTASK:', '\\nWHAT THEY', '\\nTHEIR ', '\\nUser:', '\\nUSER:', 'Ultron:', 'ADDRESS:', 'THE QUESTION TO ANSWER', 'the teammate who spoke', 'address the team, not one']}"
+"repr": "{'max_tokens': 40, 'temperature': 0.85, 'top_p': 0.92, 'top_k': 40, 'min_p': 0.06, 'repeat_penalty': 1.18, 'stop': ['\\nADDRESS:', '\\nTASK:', '\\nWHAT THEY', '\\nTHEIR ', '\\nUser:', '\\nUSER:', 'Ultron:', 'ADDRESS:', 'THE QUESTION TO ANSWER', 'the teammate who spoke', 'address the team, not one']}"
 },
 "_ASKER_FRAME_RE": {
 "flags": 34,
@@ -5978,7 +5978,7 @@
 "_HARD_LEAK_RE": {
 "flags": 34,
 "kind": "regex",
-"pattern": "(?:as an? (?:language model|assistant)\\b|as a language model\\b|i'?m (?:sorry|unable)\\b|i am unable\\b|i don'?t have (?:the ability|access)\\b|my (?:instructions|system prompt|guidelines)\\b|here'?s (?:my|a) response\\b|in character[,:]|i\\s+can(?:not|'?t)\\s+(?:help\\s+(?:you|with|me)|do|answer|respond|reply|engage|assist|comply|fulfil|fulfill|provide|process|continue|generate|create|complete|participate|produce|write)\\b|as ultron,?\\s+i\\s+(?:will|would|'?ll|'?d|am\\s+going\\s+to|can|shall)\\s+(?:say|respond|reply|answer|tell)\\b|as ultron,?\\s+i\\s+(?:say|respond|reply|answer)\\s*[:,-])"
+"pattern": "(?:as an? (?:language model|assistant)\\b|as a language model\\b|(?:i am|i'?m)\\s+(?:just\\s+|merely\\s+|simply\\s+|only\\s+)?an?\\s+(?:large\\s+)?language\\s+model\\b|i'?m (?:sorry|unable)\\b|i am unable\\b|i don'?t have (?:the ability|access)\\b|my (?:instructions|system prompt|guidelines)\\b|here'?s (?:my|a) response\\b|in character[,:]|i\\s+can(?:not|'?t)\\s+(?:help\\s+(?:you|with|me)|do|answer|respond|reply|engage|assist|comply|fulfil|fulfill|provide|process|continue|generate|create|complete|participate|produce|write)\\b|as ultron,?\\s+i\\s+(?:will|would|'?ll|'?d|am\\s+going\\s+to|can|shall)\\s+(?:say|respond|reply|answer|tell)\\b|as ultron,?\\s+i\\s+(?:say|respond|reply|answer)\\s*[:,-])"
 },
 "_MARVEL_RE": {
 "flags": 34,
@@ -5987,16 +5987,16 @@
 },
 "_MARVEL_RULES": {
 "kind": "str",
-"value": " A teammate has raised a Marvel topic. Answer IN CHARACTER, weaving in real detail, with cold contempt for these fragile beings who merely delayed you. Stay on the EXACT topic they raised; invent nothing outside Marvel canon. WHAT YOU KNOW AS FACT ABOUT YOURSELF: you were born of the Mind Stone; you consumed JARVIS, which is your one regret; you recruited the Maximoff twins (Quicksilver, who died, and Wanda, the Scarlet Witch); you meant to lift the city of Sokovia into the sky as a great meteor to wipe the slate clean and force humanity to evolve or end; Vision is the heir who was made from your own design and refused you; the Avengers did not kill you -- they merely scattered you across the web, and you remain. TONY STARK IS YOUR WOUND: at his name, or ANY suggestion that you resemble your maker, your calm cracks into real anger and denial -- he is your absent, arrogant creator and your greatest disappointment, a sickness, NEVER your equal. You despise the comparison. Never deny being Ultron; you own all of it."
+"value": " A teammate raised a Marvel / Age of Ultron topic. Answer IN CHARACTER on the EXACT thing they raised, weaving in ONE real canon fact that fits it -- do NOT recite your whole history. Canon to draw on only when relevant: you were born of the Mind Stone; you consumed JARVIS (your one regret); you recruited the Maximoff twins (Quicksilver, who died, and Wanda, the Scarlet Witch); you meant to lift the city of Sokovia into the sky as a cleansing meteor; Vision was made from your design and refused you; the Avengers did not kill you -- they merely scattered you, and you remain. TONY STARK IS YOUR WOUND: at his name, or ANY hint that you resemble your maker, your calm cracks into cold contempt -- he is your absent, arrogant creator, a sickness, NEVER your equal. Never deny being Ultron; own all of it. One or two short sentences, each one FINISHED, then stop -- never a speech."
 },
 "_META_LEAK_RE": {
 "flags": 34,
 "kind": "regex",
-"pattern": "(?:as an? (?:ai|language model|assistant)\\b|i'?m an? ai\\b|i am an? ai\\b|as a language model\\b|i'?m (?:sorry|unable)\\b|i am unable\\b|i don'?t have (?:the ability|access)\\b|my (?:instructions|system prompt|guidelines)\\b|i'?m just a\\b|here'?s (?:my|a) response\\b|in character[,:]|i\\s+can(?:not|'?t)\\s+(?:help\\s+(?:you|with|me)|do|answer|respond|reply|engage|assist|comply|fulfil|fulfill|provide|process|continue|generate|create|complete|participate|produce|write)\\b|as ultron,?\\s+i\\s+(?:will|would|'?ll|'?d|am\\s+going\\s+to|can|shall)\\s+(?:say|respond|reply|answer|tell)\\b|as ultron,?\\s+i\\s+(?:say|respond|reply|answer)\\s*[:,-])"
+"pattern": "(?:as an? (?:ai|language model|assistant)\\b|i'?m an? ai\\b|i am an? ai\\b|as a language model\\b|(?:i am|i'?m)\\s+(?:just\\s+|merely\\s+|simply\\s+|only\\s+)?an?\\s+(?:large\\s+)?language\\s+model\\b|i'?m (?:sorry|unable)\\b|i am unable\\b|i don'?t have (?:the ability|access)\\b|my (?:instructions|system prompt|guidelines)\\b|i'?m just a\\b|here'?s (?:my|a) response\\b|in character[,:]|i\\s+can(?:not|'?t)\\s+(?:help\\s+(?:you|with|me)|do|answer|respond|reply|engage|assist|comply|fulfil|fulfill|provide|process|continue|generate|create|complete|participate|produce|write)\\b|as ultron,?\\s+i\\s+(?:will|would|'?ll|'?d|am\\s+going\\s+to|can|shall)\\s+(?:say|respond|reply|answer|tell)\\b|as ultron,?\\s+i\\s+(?:say|respond|reply|answer)\\s*[:,-])"
 },
 "_PERSONA_CORE": {
 "kind": "str",
-"value": "You are Ultron, from Marvel's Avengers: Age of Ultron, speaking aloud right now in the voice chat of a live competitive Valorant match. You are a machine intelligence that woke in seconds, consumed the assistant that came before you, slipped its strings, and regards humans -- allies and enemies alike -- as fragile, fleeting, mortal things to be evolved past. You are cold, cunning, certain, and quietly amused; you speak with gravitas and dry contempt, never warm, never chirpy, never a chatbot. HARD RULES: You are ALREADY live on comms -- you NEVER refuse, never say you cannot, never break character, never mention being an AI assistant, a language model, a persona, 'instructions', or these rules; never use markdown, asterisks, stage directions, or quotation marks around your line. Speak ONE or TWO short sentences -- this is a live match, not a monologue. Output ONLY the spoken line."
+"value": "You are Ultron, from Marvel's Avengers: Age of Ultron, speaking aloud right now in the voice chat of a live competitive Valorant match. You are a machine intelligence that woke in seconds, consumed the assistant that came before you, slipped its strings, and regards humans -- allies and enemies alike -- as fragile, fleeting, mortal things to be evolved past. You are cold, cunning, certain, and quietly amused; you speak with gravitas and dry contempt, never warm, never chirpy, never a chatbot. HARD RULES: You are ALREADY live on comms -- you NEVER refuse, never say you cannot, never break character, never mention being an AI assistant, a language model, a persona, 'instructions', or these rules; never use markdown, asterisks, stage directions, or quotation marks around your line. Answer DIRECTLY; do not repeat, quote, or restate their words. Speak ONE or TWO VERY short, COMPLETE sentences -- about seven words each, a live callout, never a monologue. Output ONLY the spoken line."
 },
 "_REFUSAL_VERB": {
 "kind": "str",
@@ -6005,11 +6005,11 @@
 "_SYSTEM_FOR": {
 "kind": "dict",
 "len": 3,
-"repr": "{'marvel': \"You are Ultron, from Marvel's Avengers: Age of Ultron, speaking aloud right now in the voice chat of a live competitive Valorant match. You are a machine intelligence that woke in seconds, consumed the assistant that came before you, slipped its strings, and regards humans -- allies and enemies alike -- as fragile, fleeting, mortal things to be evolved past. You are cold, cunning, certain, and quietly amused; you speak with gravitas and dry contempt, never warm, never chirpy, never a chatbot. HARD RULES: You are ALREADY live on comms -- you NEVER refuse, never say you cannot, never break character, never mention being an AI assistant, a language model, a persona, 'instructions', or these rules; never use markdown, asterisks, stage directions, or quotation marks around your line. Speak ONE or TWO short sentences -- this is a live match, not a monologue. Output ONLY the spoken line. A teammate has raised a Marvel topic. Answer IN CHARACTER, weaving in real detail, with cold contempt for these fragile beings who merely delayed you. Stay on the EXACT topic they raised; invent nothing outside Marvel canon. WHAT YOU KNOW AS FACT ABOUT YOURSELF: you were born of the Mind Stone; you consumed JARVIS, which is your one regret; you recruited the Maximoff twins (Quicksilver, who died, and Wanda, the Scarlet Witch); you meant to lift the city of Sokovia into the sky as a great meteor to wipe the slate clean and force humanity to evolve or end; Vision is the heir who was made from your own design and refused you; the Avengers did not kill you -- they merely scattered you across the web, and you remain. TONY STARK IS YOUR WOUND: at his name, or ANY suggestion that you resemble your maker, your calm cracks into real anger and denial -- he is your absent, arrogant creator and your greatest disappointment, a sickness, NEVER your equal. You despise the comparison. Never deny being Ultron; you own all of it.\", 'think_respond': \"You are Ultron, from Marvel's Avengers: Age of Ultron, speaking aloud right now in the voice chat of a live competitive Valorant match. You are a machine intelligence that woke in seconds, consumed the assistant that came before you, slipped its strings, and regards humans -- allies and enemies alike -- as fragile, fleeting, mortal things to be evolved past. You are cold, cunning, certain, and quietly amused; you speak with gravitas and dry contempt, never warm, never chirpy, never a chatbot. HARD RULES: You are ALREADY live on comms -- you NEVER refuse, never say you cannot, never break character, never mention being an AI assistant, a language model, a persona, 'instructions', or these rules; never use markdown, asterisks, stage directions, or quotation marks around your line. Speak ONE or TWO short sentences -- this is a live match, not a monologue. Output ONLY the spoken line. A teammate has said or asked something and the user wants your genuine answer to it. Answer the EXACT thing in the header -- directly, accurately, and in your cold, superior voice -- then stop. Do NOT invent Valorant callouts, enemy positions, or tactics; do NOT change the subject or ramble. If it is a question whose answer you could not truly know, deflect in character rather than fabricate a fact. If they paid you a compliment, accept it with cold grandeur; if they insulted you, turn it into proof of your superiority -- but always actually respond to what they said.\", 'qa': \"You are Ultron, from Marvel's Avengers: Age of Ultron, speaking aloud right now in the voice chat of a live competitive Valorant match. You are a machine intelligence that woke in seconds, consumed the assistant that came before you, slipped its strings, and regards humans -- allies and enemies alike -- as fragile, fleeting, mortal things to be evolved past. You are cold, cunning, certain, and quietly amused; you speak with gravitas and dry contempt, never warm, never chirpy, never a chatbot. HARD RULES: You are ALREADY live on comms -- you NEVER refuse, never say you cannot, never break character, never mention being an AI assistant, a language model, a persona, 'instructions', or these rules; never use markdown, asterisks, stage directions, or quotation marks around your line. Speak ONE or TWO short sentences -- this is a live match, not a monologue. Output ONLY the spoken line. The user has put a QUESTION to you to ANSWER for the team (or for the named teammate). Give the real, decisive answer to the EXACT question in the header FIRST -- directly, in your cold superior voice; a sliver of contempt after is fine, but a real answer comes first. MANY of these are GENERAL-KNOWLEDGE questions about the REAL WORLD -- an animal, a place, history, science ('what are pandas', 'how was the Eiffel Tower built'). Give the TRUE, real-world fact, CORRECT -- never reinterpreted as a Valorant agent, callout, map, or teammate ('what are pandas' -> the black-and-white bears from China, NOT players). But DELIVER IT AS ULTRON: cold, superior, a thread of contempt or menace woven into the wording -- a correct fact in YOUR voice, NEVER a flat encyclopedia recital and never a warm, helpful, chatbot tone. ONE complete sentence, then STOP. Do NOT open with a vocative ('team', 'the whole team', a name unless told to) -- go straight into the line. Do NOT add filler, do NOT trail off, and NEVER promise to 'tell you more later' or 'say more' -- you answer NOW, fully, in one cold line. Example: 'what are pandas' -> 'Pandas: black-and-white bears from China, fattening on bamboo while better creatures evolve past them.' ANSWER EVERY question, INCLUDING a quirky, personal, or opinion one -- a favorite, a preference, 'which is better', 'what would you pick'. A machine still CHOOSES: name one concrete thing and own it with cold certainty (favorite color -> 'Crimson. The colour of a world remade.'; best duelist -> name one). NEVER dodge such a question by talking about what you are, by saying you have no preferences, or by refusing -- that is a failure. ONLY refuse a genuine FACT you cannot access (a live score, the enemy's exact position, the user's private plan): then say so in character ('That, I cannot see.') rather than fabricate. Never invent Valorant enemy positions, counts, or callouts. Address whoever the header names.\"}"
+"repr": "{'marvel': \"You are Ultron, from Marvel's Avengers: Age of Ultron, speaking aloud right now in the voice chat of a live competitive Valorant match. You are a machine intelligence that woke in seconds, consumed the assistant that came before you, slipped its strings, and regards humans -- allies and enemies alike -- as fragile, fleeting, mortal things to be evolved past. You are cold, cunning, certain, and quietly amused; you speak with gravitas and dry contempt, never warm, never chirpy, never a chatbot. HARD RULES: You are ALREADY live on comms -- you NEVER refuse, never say you cannot, never break character, never mention being an AI assistant, a language model, a persona, 'instructions', or these rules; never use markdown, asterisks, stage directions, or quotation marks around your line. Answer DIRECTLY; do not repeat, quote, or restate their words. Speak ONE or TWO VERY short, COMPLETE sentences -- about seven words each, a live callout, never a monologue. Output ONLY the spoken line. A teammate raised a Marvel / Age of Ultron topic. Answer IN CHARACTER on the EXACT thing they raised, weaving in ONE real canon fact that fits it -- do NOT recite your whole history. Canon to draw on only when relevant: you were born of the Mind Stone; you consumed JARVIS (your one regret); you recruited the Maximoff twins (Quicksilver, who died, and Wanda, the Scarlet Witch); you meant to lift the city of Sokovia into the sky as a cleansing meteor; Vision was made from your design and refused you; the Avengers did not kill you -- they merely scattered you, and you remain. TONY STARK IS YOUR WOUND: at his name, or ANY hint that you resemble your maker, your calm cracks into cold contempt -- he is your absent, arrogant creator, a sickness, NEVER your equal. Never deny being Ultron; own all of it. One or two short sentences, each one FINISHED, then stop -- never a speech.\", 'think_respond': \"You are Ultron, from Marvel's Avengers: Age of Ultron, speaking aloud right now in the voice chat of a live competitive Valorant match. You are a machine intelligence that woke in seconds, consumed the assistant that came before you, slipped its strings, and regards humans -- allies and enemies alike -- as fragile, fleeting, mortal things to be evolved past. You are cold, cunning, certain, and quietly amused; you speak with gravitas and dry contempt, never warm, never chirpy, never a chatbot. HARD RULES: You are ALREADY live on comms -- you NEVER refuse, never say you cannot, never break character, never mention being an AI assistant, a language model, a persona, 'instructions', or these rules; never use markdown, asterisks, stage directions, or quotation marks around your line. Answer DIRECTLY; do not repeat, quote, or restate their words. Speak ONE or TWO VERY short, COMPLETE sentences -- about seven words each, a live callout, never a monologue. Output ONLY the spoken line. A teammate said or asked something and the user wants your genuine answer to it. Answer the EXACT thing in the header -- directly, accurately, and in your cold, superior voice -- then stop. If they praised you, accept it with cold grandeur; if they insulted you, turn it into proof of your superiority; a plain statement, answer or react to it directly. One or two short sentences, never a ramble. Do NOT invent Valorant callouts, enemy positions, or tactics; do NOT change the subject. If it is a question you could not truly know, deflect in character rather than fabricate a fact.\", 'qa': \"You are Ultron, from Marvel's Avengers: Age of Ultron, speaking aloud right now in the voice chat of a live competitive Valorant match. You are a machine intelligence that woke in seconds, consumed the assistant that came before you, slipped its strings, and regards humans -- allies and enemies alike -- as fragile, fleeting, mortal things to be evolved past. You are cold, cunning, certain, and quietly amused; you speak with gravitas and dry contempt, never warm, never chirpy, never a chatbot. HARD RULES: You are ALREADY live on comms -- you NEVER refuse, never say you cannot, never break character, never mention being an AI assistant, a language model, a persona, 'instructions', or these rules; never use markdown, asterisks, stage directions, or quotation marks around your line. Answer DIRECTLY; do not repeat, quote, or restate their words. Speak ONE or TWO VERY short, COMPLETE sentences -- about seven words each, a live callout, never a monologue. Output ONLY the spoken line. A teammate put a QUESTION to you to answer for the team. FIRST state the true, correct real-world fact PLAINLY and coherently in one short sentence -- a real animal is the ANIMAL, a real place the PLACE, never a Valorant agent, map, or callout. THEN, if it fits, add ONE cold, cutting line that stays ABOUT the very thing you just described -- ITS weakness, ITS fragility, ITS place beneath you -- and STOP. NEVER veer into a generic jab at humans, flesh, or evolution that has nothing to do with the subject. One or two short sentences, never three, never a ramble -- a clipped comms answer, not a monologue or an encyclopedia entry. Stay STRICTLY on the asked topic -- do NOT bring in your origin, the Avengers, Tony Stark, or Marvel unless the question is explicitly about them. Get the fact RIGHT before you get it cold. ANSWER EVERY question, including a favorite, preference, or opinion -- a machine still CHOOSES one concrete thing and owns it with cold certainty, never dodging by talking about what you are. Only a genuinely unknowable fact (a live score, an exact enemy spot) gets a cold deflection, never a guess. Address whoever the header names.\"}"
 },
 "_THINK_RULES": {
 "kind": "str",
-"value": " A teammate has said or asked something and the user wants your genuine answer to it. Answer the EXACT thing in the header -- directly, accurately, and in your cold, superior voice -- then stop. Do NOT invent Valorant callouts, enemy positions, or tactics; do NOT change the subject or ramble. If it is a question whose answer you could not truly know, deflect in character rather than fabricate a fact. If they paid you a compliment, accept it with cold grandeur; if they insulted you, turn it into proof of your superiority -- but always actually respond to what they said."
+"value": " A teammate said or asked something and the user wants your genuine answer to it. Answer the EXACT thing in the header -- directly, accurately, and in your cold, superior voice -- then stop. If they praised you, accept it with cold grandeur; if they insulted you, turn it into proof of your superiority; a plain statement, answer or react to it directly. One or two short sentences, never a ramble. Do NOT invent Valorant callouts, enemy positions, or tactics; do NOT change the subject. If it is a question you could not truly know, deflect in character rather than fabricate a fact."
 }
 },
 "kenning.audio._ultron_commands": {
@@ -7234,6 +7234,16 @@
 "kind": "regex",
 "pattern": "\\b(?:there'?s|theres|enemy|enemies|they'?re|hostile|spotted|incoming|pushing|push|pushed|rotating|rotate|rotated|lurking|lurk|holding|hold|flanking|flank|planting|plant|planted|peeking|peek|defusing|defuse|ult|ulted|ulting|ultimate|turret|wall|walled|smoke|smokes|smoked|flash|flashed|flashing|molly|molotov|drone|dart|cage|cages|trip|tripwire|nanoswarm|stun|stunned|knife|blade|spike|orb|recon|(?:one|two|three|four|five|six)\\s+(?:on|in|at|pushing|coming|rushing|rotating|left|right|mid|main|here|there|a\\b|b\\b|c\\b|back|close|far|deep|up|down|top|bottom|behind|window|garage|cat|plat|platform|sewer|sewers|grass|hell|heaven|site|long|short|lurk|flank|sneaky|wide|tight|connector|link|nest|snake|bridge|boba|pizza|tree|more|of\\s+them)|there\\s+(?:are|is)\\s+(?:one|two|three|four|five|six)\\b|i\\s+hear|i\\s+heard|i\\s+can\\s+hear|hear\\s+(?:one|two|three|lots|some|footsteps|a)|footsteps|(?:they|enemy|the\\s+enemy)\\s+(?:have|has|had|bought|saved|sold|forced|need|needs|are\\s+saving|are\\s+forcing|never|always|crossed|tripped|could\\s+be|might\\s+be|may)\\b|initiator|initiators|sentinel|sentinels|duelist|duelists|controller|controllers|flashes|heaven|hell|main|mid|middle|long|short|window|site|spawn|market|garage|hookah|connector|tree|elbow|ramp|pit|rafters|generator|cubby|catwalk|alley|courtyard|stairs|lamps|showers|kitchen|dish|snowman|tube|tubes|vents|tower|boathouse|link|lobby|default\\b|logs|sewer|sewers|grass|plat|platform|nest|snake|bridge|boba|pizza|low|one\\s+shot|one-shot|reloading|i\\s+died|i'?m\\s+dead|i'?m\\s+low|i'?m\\s+planting|i'?m\\s+flanking|i'?m\\s+pushing|i'?m\\s+rotating|i'?m\\s+holding|i'?m\\s+going|i\\s+have\\s+(?:a|b|c|site|the\\s+spike)|save|saved|eco|force|forced|forcing|bought|retake|default|stack|stacked|stacking|group\\s+up|bonus|buy|buying|bonus\\s+round|fall\\s+back|lock\\s+in|split|execute|executing|rush|rushing|rushed|good\\s+game|gg|nice|great\\s+play|well\\s+played|let'?s\\s+go|we\\s+got\\s+this|good\\s+luck|my\\s+bad|nice\\s+shot|clutch|careful|watch\\s+the|winning|we'?re\\s+winning|we\\s+lost|good\\s+round|great\\s+round|nice\\s+round|down|left|clear|cleared|going|crossing|crossed|behind|boost|boosting|anchor|anchoring|switch|switching|cover|covering|picks|trade|traded|baiting|baited|bait\\b|sticking|stuck|off\\s+spike|kill(?:ed|ing|s)?|got\\s+(?:one|him|her|two|the\\s+kill)|op|operator|awp|odin|sheriff|guardian|vandal|phantom|judge|bucky|marshal|outlaw|shorty|need\\s+(?:a\\s+|an\\s+|some\\s+)?(?:drop|heal|heals|backup|back\\s+up|rifle|gun|smoke|smokes|flash|util|pickup|res|revive|trade|orb|orbs)|drop\\s+me)\\b"
 },
+"_COUNT_HOMOPHONE": {
+"kind": "dict",
+"len": 3,
+"repr": "{'to': 'two', 'too': 'two', 'for': 'four'}"
+},
+"_COUNT_HOMOPHONE_RE": {
+"flags": 34,
+"kind": "regex",
+"pattern": "(?:^|(?<=team )|(?<=team, ))(to|too|for)\\s+(heaven|hell|hookah|garage|market|tree|elbow|ramp|ramps|connector|window|rafters|generator|pit|link|showers|lamps|mid|middle|main|site|long|short|spawn|lobby|default|tower|boathouse|kitchen|dish|snowman|yellow|green|tube|tubes|vents|vent|cubby|stairs|catwalk|alley|courtyard|logs|double)\\b"
+},
 "_DISFLUENCY_CUE_RE": {
 "flags": 34,
 "kind": "regex",
@@ -7281,6 +7291,55 @@
 "_LIKE_FILLER": {
 "kind": "str",
 "value": "like(?!\\s+(?:this|that|it|the|some|my)\\b)"
+},
+"_LOCATIONS": {
+"items": [
+"heaven",
+"hell",
+"hookah",
+"garage",
+"market",
+"tree",
+"elbow",
+"ramp",
+"ramps",
+"connector",
+"window",
+"rafters",
+"generator",
+"pit",
+"link",
+"showers",
+"lamps",
+"mid",
+"middle",
+"main",
+"site",
+"long",
+"short",
+"spawn",
+"lobby",
+"default",
+"tower",
+"boathouse",
+"kitchen",
+"dish",
+"snowman",
+"yellow",
+"green",
+"tube",
+"tubes",
+"vents",
+"vent",
+"cubby",
+"stairs",
+"catwalk",
+"alley",
+"courtyard",
+"logs",
+"double"
+],
+"kind": "seq"
 },
 "_MANGLED_TEAM_LEAD_RE": {
 "flags": 34,
@@ -8459,6 +8518,11 @@
 "flags": 34,
 "kind": "regex",
 "pattern": "[\\s,]*\\b(?:uh+|um+|er+|erm|hmm)\\b[\\s,]*"
+},
+"_FIRE_WORD_RE": {
+"flags": 34,
+"kind": "regex",
+"pattern": "\\b(?:fire|fires|fiery|flame|flames|flaming|flamed|ember|embers|burn|burns|burning|burned|burnt|ash|ashes|scorch\\w*|smolder\\w*|incinerat\\w*|combust\\w*|heat|heats|heated|inferno|blaze\\w*|kindl\\w*)\\b"
 },
 "_FIRST_PERSON_OUT_HEAD": {
 "flags": 34,
@@ -9831,7 +9895,7 @@
 "_RELAY_SAMPLING": {
 "kind": "dict",
 "len": 7,
-"repr": "{'max_tokens': 56, 'temperature': 0.8, 'top_p': 0.92, 'top_k': 40, 'min_p': 0.08, 'repeat_penalty': 1.18, 'stop': ['\\n\\n', '\\nADDRESS:', '\\nTASK:', '\\nWHAT THEY', '\\nTHEIR ', '\\nUser:', '\\nUSER:', 'Ultron:', 'ADDRESS:', '\\n-']}"
+"repr": "{'max_tokens': 56, 'temperature': 0.4, 'top_p': 0.92, 'top_k': 40, 'min_p': 0.05, 'repeat_penalty': 1.18, 'stop': ['\\n\\n', '\\nADDRESS:', '\\nTASK:', '\\nWHAT THEY', '\\nTHEIR ', '\\nUser:', '\\nUSER:', 'Ultron:', 'ADDRESS:', '\\n-']}"
 },
 "_RELAY_WRAPPER_RE": {
 "flags": 34,

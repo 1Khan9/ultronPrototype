@@ -14,7 +14,9 @@ from kenning.audio.relay_speech import (
     _social_llm_line, match_relay_command, build_relay_line,
     set_u1_llm_route_enabled, DEFAULT_ENCOURAGEMENT_LINES,
 )
-from kenning.audio.ultron_prompt import build_social_prompt, SOCIAL_SYSTEM
+from kenning.audio.ultron_prompt import (
+    build_social_prompt, SOCIAL_SYSTEM, _SOCIAL_SYSTEM_FOR,
+)
 
 
 class _StubLLM:
@@ -48,12 +50,14 @@ def test_social_prompt_is_conversational_and_forbids_repeating():
         exemplars=("I am Ultron.", "A soundboard repeats; I evolve."),
     )
     assert pr.enable_thinking is False
-    assert pr.system == SOCIAL_SYSTEM
-    assert "SOCIAL or CONVERSATIONAL" in pr.system
-    assert "NEVER repeat" in pr.system
+    # identity now has its OWN dedicated per-pool template, distinct from the general one.
+    assert pr.system == _SOCIAL_SYSTEM_FOR["identity"]
+    assert pr.system != SOCIAL_SYSTEM
     assert "Ultron" in pr.system
-    assert "questioning what you are" in pr.user   # the identity directive
-    assert "soundboard" in pr.user                 # the situation/context
+    assert "machine" in pr.system.lower()          # cold-machine persona anchor
+    assert "soundboard" in pr.system.lower()       # the identity behaviour names + rebuts the accusation
+    assert "repeat" in pr.system.lower()           # never-repeat-the-style-examples guard
+    assert "soundboard" in pr.user                 # the situation/context (teammate's words)
     assert "do NOT repeat" in pr.user              # the style-exemplar guard
 
 
@@ -116,7 +120,9 @@ def test_identity_off_canned_on_novel():
     novel = "I am Ultron. A soundboard echoes; I do not."
     off = _relay("Sage asked if you're a soundboard, respond.", False, None)
     on = _relay("Sage asked if you're a soundboard, respond.", True, _StubLLM(novel))
-    assert on == novel
+    # The novel line is spoken, with the accuser's NAME enforced as the opener
+    # (2026-06-26 user: identity replies must address the accuser by name).
+    assert on == "Sage, " + novel
     assert off != on            # OFF is a canned pool line, not the novel one
 
 

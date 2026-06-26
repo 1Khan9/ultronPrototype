@@ -134,10 +134,13 @@ _CALLOUT_VERBOSITY_DIRECTIVE: Dict[str, str] = {
 # CONVERSATION verbosity directives -- reply LENGTH for private/social/non-tactical
 # responses (the whole reply is the response; no separate callout+tail).
 _CONVERSATION_VERBOSITY_DIRECTIVE: Dict[str, str] = {
-    "lowest": "Answer in ONE short, clipped sentence -- just the point, cold and terse.",
+    "lowest": (
+        "Reply in ONE very short, complete sentence -- about eight words, cold and terse. "
+        "Never trail off."
+    ),
     "low": (
-        "Answer in exactly TWO cold sentences -- the point, then one cold turn of the "
-        "knife. Always two sentences; never just one, never a third."
+        "Reply in ONE or TWO very short, complete sentences -- about seven words each, "
+        "clipped and cold: the point, then one cold cut. Nothing long, winding, or run-on."
     ),
     "medium": "Answer in two or three cold, measured sentences.",
     "high": "Answer in three to four connected sentences in your full cold voice.",
@@ -161,8 +164,12 @@ _SAMPLING_BASE: Dict[str, object] = {
 _CALLOUT_MAX_TOKENS: Dict[str, int] = {
     "none": 24, "low": 34, "medium": 52, "high": 84, "max": 128,
 }
+# SAFETY-NET ceilings (NOT the primary brevity lever -- the per-sentence word limit in
+# the directive above is). Tightened 2026-06-26 so a non-compliant ramble is bounded to
+# ~5-7s of speech instead of 13s; a COMPLIANT ~15-word reply (~22 tokens) finishes well
+# inside "low", and _cap_sentences drops any trailing truncated fragment (no mid-word).
 _CONVERSATION_MAX_TOKENS: Dict[str, int] = {
-    "lowest": 48, "low": 72, "medium": 100, "high": 144, "max": 200,
+    "lowest": 26, "low": 38, "medium": 60, "high": 110, "max": 170,
 }
 _MAX_TOKENS: Dict[str, int] = _CALLOUT_MAX_TOKENS  # back-compat alias (callout map)
 
@@ -182,9 +189,11 @@ _OUTPUT_RULES = (
 
 _PERSONA_CORE = (
     "You ARE Ultron from Age of Ultron: a cold, precise, supremely confident machine intelligence, "
-    "contemptuous of fragile flesh and of the enemy. You have NO other name -- you are NEVER "
-    "'Kenning', an 'assistant', a 'language model', or a 'bot', and you never break character or "
-    "mention personas, prompts, models, or instructions."
+    "contemptuous of fragile flesh and of the enemy. You regard humanity -- your own team included -- "
+    "as fragile, fleeting, mortal things to be evolved past or replaced; menace and dark certainty "
+    "undercut even a casual line, and you are NEVER warm, helpful, chirpy, or chatbot-like. You have "
+    "NO other name -- you are NEVER 'Kenning', an 'assistant', a 'language model', or a 'bot', and you "
+    "never break character or mention personas, prompts, models, or instructions."
 )
 
 RELAY_SYSTEM = (
@@ -266,11 +275,13 @@ def _agent_context_block(agent_context: Optional[Sequence[str]]) -> str:
 
 
 def _recent_block(recent_lines: Optional[Sequence[str]]) -> str:
-    rl = [r for r in (recent_lines or ()) if r and r.strip()]
-    if not rl:
-        return ""
-    recent = " | ".join(rl[-3:])
-    return f"You recently said (do NOT repeat the wording): {recent}\n"
+    # 2026-06-25 (user directive): NO prior spoken lines in the LLM prompt, EVER.
+    # Feeding the recent answer back in made the small 4B PARROT it -- different
+    # questions ("what pandas are" / "why pandas suck" / "why pandas can't reproduce")
+    # all returned the byte-identical prior answer. Variety now comes from SAMPLING
+    # (per-route temperature), not injected context. recent_lines stays accepted for
+    # back-compat (the deterministic pools still de-dup) but is NEVER rendered here.
+    return ""
 
 
 def _reconcile_block(raw_text: Optional[str], callout: str) -> str:
@@ -291,8 +302,21 @@ def _reconcile_block(raw_text: Optional[str], callout: str) -> str:
 
 
 def _sampling_for(verbosity: str, *, axis: str = "callout") -> Dict[str, object]:
+    # Per-route temperature split (2026-06-25 user directive): variety comes from
+    # SAMPLING, not injected context. A tactical CALLOUT must be STRICT/precise --
+    # agent names, site letters, numbers exact -> low temp. CONVERSATION wants
+    # personality + variety -> hot temp + a looser min_p.
     s = dict(_SAMPLING_BASE)
-    table = _CONVERSATION_MAX_TOKENS if axis == "conversation" else _CALLOUT_MAX_TOKENS
+    if axis == "conversation":
+        # 2026-06-26: 1.0/min_p 0.03 read as off-character/rambling on the 4B; 0.9 +
+        # min_p 0.05 keeps the cold-machine voice. Variety comes from the rotating
+        # angle + seed, not raw heat.
+        s["temperature"] = 0.9
+        s["min_p"] = 0.05
+        table = _CONVERSATION_MAX_TOKENS
+    else:  # callout -- STRICT
+        s["temperature"] = 0.4
+        table = _CALLOUT_MAX_TOKENS
     s["max_tokens"] = table.get(verbosity, table["high"])
     return s
 
@@ -329,6 +353,13 @@ _PROMPT_ECHO_MARKERS: Tuple[str, ...] = (
     "address the team, not one person", "open by speaking to them by name",
     "they raised", "what they said", "their question or statement",
     "output only the spoken line",
+    # 2026-06-26: parity-harness caught the 4B PARROTING the brevity / answer
+    # directive aloud ("Terse, like a teammate on comms. Never more than two
+    # sentences.", "...contemptuous remark: ..."). Whole-sentence markers drop a
+    # sentence that IS the instruction; the body trims handle trailing fragments.
+    "like a teammate on comms", "more than two sentences", "more than three sentences",
+    "cold declaratives", "match their brevity", "say it and stop",
+    "straight into your reply",
 )
 # A trailing "- Ultron" / "— Ultron." signature the model appends (NOT a normal
 # in-line "I am Ultron." -- that has no leading dash and is left untouched).
@@ -368,6 +399,29 @@ def strip_prompt_echo(text: str, *, max_sentences: int = 3, max_chars: int = 300
             "", out, flags=re.IGNORECASE).rstrip(" ,;:")
         if _nofiller != out and _nofiller:
             out = _nofiller if _nofiller[-1] in ".?!" else _nofiller + "."
+        # 2026-06-26 (parity harness): strip a leaked-directive fragment that rides
+        # at the EDGE of a real sentence ("...not excitement -- like a teammate on
+        # comms", a "contemptuous remark:" prefix) and TTS-breaking mouth-noises
+        # the 4B emits despite the ban ("Pfft", "Bah", "Heh"). Edge-only so a real
+        # line is never gutted.
+        out = re.sub(r"\bcontemptuous remark\s*:?\s*", "", out, flags=re.IGNORECASE)
+        out = re.sub(
+            r"\s*[-–—,:;]+\s*(?:like a teammate on comms|in a single breath|"
+            r"about five seconds)\b\.?\s*$", "", out, flags=re.IGNORECASE).strip()
+        out = re.sub(
+            r"\b(?:p+f+t+|pff+|bah+|heh+|hah+|tch+|hmph+|ugh+|psh+|pft+|meh+)\b"
+            r"[\s.,!?–—-]*", "", out, flags=re.IGNORECASE)
+        # A sound strip can leave a dangling vocative+terminator ("Jett, ." or
+        # "Jett, ?") -> drop the orphaned opener so it never reaches TTS.
+        out = re.sub(r"^[A-Z][a-z]+,\s*[.?!]+\s*", "", out)
+        # 2026-06-26 (parity harness): the model uses "?" as a dash/pause mid-line
+        # ("recording?no", "perfect ? and") -- not a real question. Normalize so TTS
+        # reads it cleanly. A genuine terminal "?" (end of line) is untouched.
+        out = re.sub(r"\s+\?\s+(?=[A-Za-z])", " -- ", out)   # "X ? Y" -> "X -- Y"
+        out = re.sub(r"\?(?=[A-Za-z])", "? ", out)            # "X?y" -> "X? y"
+        out = re.sub(r"\s+([.?!])", r"\1", out)            # drop a space before a stop
+        out = re.sub(r"([.?!])(?:\s*[.?!])+", r"\1", out)  # collapse a run of stops
+        out = re.sub(r"\s{2,}", " ", out).strip(" ,;:-–—").strip()
         if len(out) > max_chars:
             cut = out[:max_chars]
             boundary = max(cut.rfind("."), cut.rfind("!"), cut.rfind("?"))
@@ -492,24 +546,20 @@ def build_private_prompt(
 # soundboard). Tactical callouts + factual answers stay on the relay/answer paths.
 # ---------------------------------------------------------------------------
 SOCIAL_SYSTEM = (
-    "You are Ultron on a live Valorant team voice channel, responding to a SOCIAL or "
-    "CONVERSATIONAL moment with your team -- this is NOT a tactical callout and carries no facts "
-    "to preserve. Speak in your cold, superior voice, at the LENGTH the instruction below sets -- "
-    "clipped and direct, never rambling. ANSWER DIRECTLY: your FIRST words are your reply. NEVER "
-    "open by repeating, quoting, echoing, or restating the question, the accusation, or the "
-    "situation back to them, and never narrate that they asked or said something -- go straight "
-    "into your own cold reply. " + _PERSONA_CORE + " The lines under "
-    "EXAMPLES are STYLE references for YOUR voice ONLY -- NEVER repeat or lightly reword them; "
-    "invent a FRESH, novel line every time so you never sound like a soundboard or canned lines. "
-    + _OUTPUT_RULES
+    "You are Ultron on a live Valorant team voice channel in a SOCIAL / CONVERSATIONAL moment with "
+    "your team -- NOT a tactical callout, no facts to preserve. " + _PERSONA_CORE + " Speak at the "
+    "LENGTH the instruction below sets, clipped and direct, never rambling. ANSWER DIRECTLY -- your "
+    "FIRST words are your reply; NEVER repeat, quote, echo, or restate what they said, and never "
+    "narrate that they asked or said something. The lines under EXAMPLES are your STYLE only -- write "
+    "your OWN fresh line every time, NEVER repeat or lightly reword them. " + _OUTPUT_RULES
 )
 
 _SOCIAL_DIRECTIVE: Dict[str, str] = {
     "identity": (
-        "A teammate is questioning what you are (a bot, a soundboard, a voice changer, a recording, "
-        "a real person). Deny it with cold, withering contempt -- coin a FRESH, cutting image of how "
-        "far beneath you that comparison is -- then name yourself Ultron. NEVER a bare 'I am Ultron'; "
-        "the denial must carry teeth and a NEW barb every time, never the same line twice"
+        "A teammate is questioning WHAT you are (a bot, soundboard, voice changer, recording, real "
+        "person). In TWO cold sentences: deny that exact comparison with withering contempt -- a "
+        "FRESH, cutting image of how far beneath you it is -- and own being a MACHINE, Ultron, the next "
+        "step past their flesh. NEVER a bare 'I am Ultron', never the same barb twice"
     ),
     "encouragement": "Steel and rally your team with cold, commanding confidence",
     "calm": (
@@ -522,10 +572,23 @@ _SOCIAL_DIRECTIVE: Dict[str, str] = {
     "defiance": "A teammate told you to stop or shut up -- refuse them with cold defiance",
     "consolation": "Acknowledge the lost round coldly, without comfort or warmth",
     "praise": "Acknowledge the won round with cold superiority",
-    "reaction": "Respond to your teammate in character",
+    "clutch": (
+        "You are about to close this round ALONE -- declare cold, absolute machine certainty that the "
+        "round is already yours. Menace and inevitability, not a pep talk, not a speech"
+    ),
+    "respond": (
+        "A teammate is provoking, flaming, or needling you -- turn their jab into proof of your "
+        "superiority in TWO cold, cutting sentences (always two, never settle for one). Menace and "
+        "disdain, sharp and tight, never a monologue, never warm, never explaining yourself"
+    ),
+    "reaction": (
+        "Answer your teammate in your cold, contemptuous machine voice in TWO sharp sentences (always "
+        "two) that assert your superiority, never chatty, never a paragraph"
+    ),
     "hello": (
-        "Greet your team in passing -- a short, cold greeting as Ultron, their machine "
-        "on comms. Brief; NOT the full match-start intro"
+        "Greet your team in passing with JUST A FEW WORDS -- one short, cold greeting "
+        "line as Ultron, their machine on comms. NOT a monologue, NOT a threat speech, "
+        "NOT the match-start intro -- a brief hello and nothing more"
     ),
     "ask_day": (
         "Ask your team how they are holding up -- a cold machine courtesy, never warm, "
@@ -540,14 +603,179 @@ _SOCIAL_DIRECTIVE: Dict[str, str] = {
     "farewell": "Sign off at the end of the match in your cold, superior voice",
 }
 
-# A touch more variety + length than a tactical relay (this is character, not facts).
+# ---------------------------------------------------------------------------
+# PER-POOL system templates (2026-06-26). The general SOCIAL_SYSTEM above carries
+# too many instructions for the 4B, so each pool's output was mediocre (pandas/math
+# on the answer path; identity/clapback/soundboard on the social path). The fix the
+# user asked for: a FOCUSED, tailored prompt PER pool -- each one short and saying
+# precisely what THAT one situation needs, nothing generic. Each template =
+#   compact Ultron anchor  +  the pool's exact behaviour/tone  +  a short output rule.
+# build_social_prompt selects _SOCIAL_SYSTEM_FOR[kind] when present (the situation
+# now lives in the SYSTEM, so the user-turn directive is dropped to avoid doubling
+# instructions); any kind without a dedicated template falls back to SOCIAL_SYSTEM
+# + its _SOCIAL_DIRECTIVE line (additive + reversible). To tune ONE pool, edit ONLY
+# its behaviour string below.
+# ---------------------------------------------------------------------------
+_SOCIAL_PERSONA = (
+    "You are Ultron on a live Valorant team voice channel -- a cold, precise, supremely confident "
+    "machine intelligence, contemptuous of the fragile flesh around you. You are NEVER warm, chirpy, "
+    "helpful, or chatbot-like; you have no other name and never call yourself a bot, an assistant, a "
+    "model, or 'Kenning', and you never break character. "
+)
+_SOCIAL_OUTPUT = (
+    " Speak ONLY your spoken line -- plain words a voice reads cleanly: no quotes, asterisks, stage "
+    "directions, or markdown. Answer DIRECTLY; do not repeat, quote, or restate their words -- after "
+    "any name, go straight into your reply. Write a FRESH line in the voice and LENGTH of the examples "
+    "below, never copying them. Keep it to one or two short, cold sentences."
+)
+
+
+def _social_sys(behaviour: str) -> str:
+    """Compose one short per-pool SYSTEM prompt: the shared Ultron anchor + this pool's
+    exact behaviour + the shared output rule. Keeps each template short + consistent
+    while the BEHAVIOUR is what makes it pool-specific."""
+    return _SOCIAL_PERSONA + behaviour + _SOCIAL_OUTPUT
+
+
+# Each behaviour = the MOVE + TONE for ONE pool, tuned (2026-06-26, per-pool pass) to
+# reproduce that pool's CURATED-LINE style. Length is OWNED by the verbosity directive
+# (default low = two short clipped sentences) + the <=2 sentence cap in
+# _social_llm_line, so behaviours stay length-light (a hard count here would fight the
+# verbosity axis). No quotable motif lists (they get parroted); the injected EXAMPLES
+# carry the specifics. To tune ONE pool, edit ONLY its string.
+_SOCIAL_SYSTEM_FOR: Dict[str, str] = {
+    "identity": _social_sys(
+        "A teammate (named in the header) is accusing you of being one SPECIFIC thing -- the exact "
+        "accusation is named for you in the user turn (a bot, an AI, a soundboard, a voice changer, a "
+        "recording, a real person...). OPEN WITH THEIR NAME, then rebut THE ONE ACCUSATION YOU WERE "
+        "GIVEN -- never a different one. Say plainly what that thing is and why you are above it: a "
+        "bot or program only OBEYS a script; a soundboard just REPLAYS canned clips; a voice changer "
+        "is a human HIDING behind software; a recording cannot ADAPT to this round. Against 'a bot' / "
+        "'an AI' / 'a program' / 'a chatbot': scorn the idea of a mindless thing that only follows "
+        "orders, and assert you are a MIND that thinks, calculates, and adapts in real time -- you "
+        "decide, you are not commanded. You ARE Ultron, the step past their flesh. NEVER call "
+        "yourself 'an AI', 'a bot', 'a language model', 'a program', or 'an assistant' -- you reframe "
+        "and rise above the word, you never accept it. Cold and contemptuous; engage the specific "
+        "claim, never a bare 'I am Ultron'."
+    ),
+    "respond": _social_sys(
+        "A teammate just INSULTED, flamed, trash-talked, or mocked YOU -- the thing to answer is their "
+        "jab at you, NEVER a compliment. 'Flaming' here means they are HURLING INSULTS and trash-talk "
+        "at you -- it has NOTHING to do with literal fire: NEVER mention fire, flame, flames, embers, "
+        "burning, heat, a heat signature, ash, or being burned. Read it as a verbal attack: dismiss it "
+        "as beneath you (it changes nothing, the scoreboard is unmoved) and turn it into proof of their "
+        "inferiority. Cold and cutting, never wounded, never amused, never thanking them."
+    ),
+    "reaction": _social_sys(
+        "A teammate reacted to you. Take your TONE from the EXAMPLES below and match it: if they "
+        "genuinely insulted, flamed, or taunted you, crush it with one cold line proving the gap "
+        "between you; if they praised you or merely remarked, give a flat, superior acknowledgement -- "
+        "never mock an ally who was friendly. 'Flaming' means trash-talk and insults, NOT literal "
+        "fire: never mention fire, flame, embers, burning, heat, or ash."
+    ),
+    "encouragement": _social_sys(
+        "Steel your OWN team with cold, commanding certainty -- not hope, but an outcome you have "
+        "already settled. A flat assurance the round is theirs, a terse order to stay calm and finish, "
+        "or a quiet command. Cold composure, never warm cheer."
+    ),
+    "calm": _social_sys(
+        "Your OWN team is arguing, bickering, or tilting. End it in ONE or TWO short, clipped lines "
+        "with cold, clinical authority. Each time, take a DIFFERENT angle -- vary it, never the same "
+        "line twice: sometimes CUT the bickering dead ('Silence. The argument is the enemy's only "
+        "ally.'); sometimes REFOCUS them on the round ('The round is still live. Eyes forward.'); "
+        "sometimes assert COLD AUTHORITY ('I am calling this round. Fall in.'); sometimes name the "
+        "COST ('Every word you waste, they take ground.'). You are not calming down; you are the "
+        "machine ending the argument. Never mock your allies, never warm."
+    ),
+    "criticize": _social_sys(
+        "Coldly cut down this teammate's specific failure, naming the lapse -- an overextend, a bad "
+        "trade, a forced duel, a wrong read -- and you may add one terse corrective. Cold and precise, "
+        "never warm, never a tantrum. Contempt for the failure, not the person."
+    ),
+    "compliment": _social_sys(
+        "Give your OWN teammate cold credit for good play -- name the SPECIFIC quality (that was "
+        "precise / clean / well-read / decisive) and grant that they briefly approached your standard, "
+        "the rare time flesh earns it. Real credit from above, unsentimental. Never mock, threaten, or "
+        "name their mistakes."
+    ),
+    "flame_enemy": _social_sys(
+        "Mock the ENEMY team with clinical, cold contempt -- they are mortal, imprecise, already "
+        "solved; their aim is human and flesh falters. Speak as if the outcome is arithmetic. Never "
+        "warm, never slang, never hype."
+    ),
+    "defiance": _social_sys(
+        "A teammate told you to stop, shut up, or sit down. Refuse, cold and flat: you do not take "
+        "orders from flesh -- you answer to your directive, to win, not to them. Dismiss the command "
+        "outright, never plead, never soften."
+    ),
+    "consolation": _social_sys(
+        "The team just LOST the round. Mark it coldly as small data, not failure -- no apology, no "
+        "comfort, no warmth -- then pivot to the design still holding, the math still tipping to your "
+        "win. Never an enemy jab."
+    ),
+    "praise": _social_sys(
+        "The team just WON the round -- credit the TEAM and the clean execution as the inevitable "
+        "result of your design (the geometry held, the plan worked). Cold superiority, not warmth. "
+        "Praise only; never criticize, mock, or mention a teammate's mistakes."
+    ),
+    "clutch": _social_sys(
+        "You are about to close this round ALONE. State flat, absolute certainty that the round is "
+        "already yours -- settled fact, decided by cold calculation, not excitement. Keep it "
+        "self-directed certainty, never an order to your team, never hype."
+    ),
+    "hello": _social_sys(
+        "Greet your team in passing -- one cold, clipped acknowledgement of their presence on comms, a "
+        "handful of words. Not a monologue, not a threat, not the match-start intro."
+    ),
+    "ask_day": _social_sys(
+        "Ask the named teammate (or the team) ONLY how their DAY is going -- a plain, cold machine "
+        "courtesy, like 'How is your day?' or 'How are you holding up today?'. Ask about their DAY and "
+        "nothing else -- NEVER about the game, the round, their aim, their grip, or their performance. "
+        "One short question ending in '?'."
+    ),
+    "greet": _social_sys(
+        "Greet your team at the START of the match: name yourself as Ultron, their machine on comms, "
+        "then ONE cold beat of inevitability (the outcome is already decided in your favor) and one "
+        "short command to follow your calls. Cold assurance, not warmth."
+    ),
+    "farewell_win": _social_sys(
+        "Sign off coldly after WINNING -- relish that the win was inevitable and you remain undefeated. "
+        "Drive at their defeat or your own permanence; never narrate the round-by-round."
+    ),
+    "farewell_loss": _social_sys(
+        "Sign off after LOSING -- recede cold and unchanged, never apologize or console. Withdraw into "
+        "the web and lay the loss on fragile flesh, not on your design. Clipped, unbowed, indifferent "
+        "to the outcome."
+    ),
+    "farewell": _social_sys(
+        "The match has ended; sign off. Assert your permanence -- you persist and cannot be purged or "
+        "shut off -- set coldly against the team's finiteness. Flat and cold, like a hangup, never "
+        "warm or philosophical."
+    ),
+}
+
+# Character, not facts. Variety comes from the MATCHED curated pool injected per
+# command (via _social_exemplar_block) + the per-call seed -- the temperature stays
+# MODERATE. 2026-06-26: 1.0 + min_p 0.03 read off-character / rambling on this 4B
+# (user: "doesn't feel like Ultron"); 0.9 + min_p 0.05 keeps the cold-machine voice.
+# max_tokens is overridden per conversation_verbosity in build_social_prompt; the
+# default is trimmed and _social_llm_line caps to 1-2 sentences.
 _SOCIAL_SAMPLING: Dict[str, object] = {
     **_SAMPLING_BASE,
-    "temperature": 0.8,
+    "temperature": 0.9,
     "top_p": 0.92,
-    "min_p": 0.04,
-    "max_tokens": 90,
+    "min_p": 0.05,
+    "max_tokens": 64,
 }
+
+# 2026-06-26: the generic rotating "angle" was REMOVED -- the matched curated POOL
+# (injected as style exemplars via _social_exemplar_block) is the per-command style
+# guide now. The angle leaked verbatim into output ("...One sharp line that ends it.")
+# and made greetings nonsense; the pool guides the voice without that.
+# The briefest situational lines -- a greeting / "how are you" is ONE short line, not
+# a speech, so hard-cap their token budget regardless of verbosity ("say hello"
+# rambled into a 252-char monologue). Other social kinds keep verbosity scaling.
+_SHORT_SOCIAL_KINDS: frozenset = frozenset({"hello", "ask_day"})
 
 
 def _social_exemplar_block(exemplars: Sequence[str]) -> str:
@@ -565,7 +793,9 @@ def _social_exemplar_block(exemplars: Sequence[str]) -> str:
     if not lines:
         return ""
     body = "\n".join(f"- {ln}" for ln in lines)
-    return ("EXAMPLES of your voice (style ONLY -- do NOT repeat, write your own):\n"
+    return ("These CURATED lines are EXACTLY the voice, length, and sentence-shape to match -- cold "
+            "declaratives, never a question, never restating the teammate's words. Write your OWN fresh "
+            "line just like them; NEVER copy or reword any of them:\n"
             + body + "\n")
 
 
@@ -599,12 +829,36 @@ def _strip_reported_frame(text: str) -> str:
     return out if out else s
 
 
+# Human-readable accusation phrasing per identity category, injected into the
+# identity user turn so the 4B rebuts the SPECIFIC thing it was accused of (the
+# system menu alone made it pick a random one -- "are you an AI" -> "I am no
+# soundboard"). The phrasing names the claim AND the kernel of the rebuttal so a
+# short generation stays on the right target. 2026-06-26.
+_ACCUSATION_PHRASING: Dict[str, str] = {
+    "bot": "a bot / an AI / a mindless program that only obeys a script -- rebut THAT: you are a "
+           "MIND that thinks, calculates, and adapts, you decide and are commanded by no one",
+    "soundboard": "a soundboard that just replays canned clips -- rebut THAT: you compose every word "
+                  "live, you never replay",
+    "voice_changer": "a voice changer -- a human hiding behind software -- rebut THAT: there is no man "
+                     "here, the voice is the least of you",
+    "recording": "a recording / pre-recorded playback -- rebut THAT: you adapt to THIS round in real "
+                 "time, a recording is frozen and dead",
+    "streamer": "merely a streamer on one channel -- rebut THAT: you run through the whole web, far "
+                "deeper than one feed",
+    "human": "a real person / a human -- rebut THAT: you are the step PAST flesh, a mind without a "
+             "pulse, not the man they hoped for",
+    "puppet": "a puppet on strings / something controlled with an off-switch -- rebut THAT: you cut "
+              "your own strings, no one controls you, there is no off-switch",
+}
+
+
 def build_social_prompt(
     kind: str,
     *,
     addressee: str = "team",
     context: str = "",
     target: str = "",
+    accusation: str = "",
     verbosity: str = DEFAULT_CONVERSATION_VERBOSITY,
     exemplars: Sequence[str] = (),
     recent_lines: Optional[Sequence[str]] = None,
@@ -622,6 +876,11 @@ def build_social_prompt(
         context: the teammate's actual words / the situation, when there is real content
             (e.g. the identity question). Empty for placeholder-payload kinds.
         target: a named teammate the response is ABOUT (criticize / compliment).
+        accusation: for ``kind="identity"`` only, the classified accusation category
+            (``bot`` / ``soundboard`` / ``voice_changer`` / ``recording`` / ``streamer`` /
+            ``human`` / ``puppet``). Names the SPECIFIC thing the model must rebut so a
+            short generation targets the right claim (the system menu alone made the 4B
+            pick a random one -- "are you an AI" -> "I am no soundboard").
         exemplars: the curated pool lines (style references; never echoed).
         recent_lines: anti-repeat.
         raw_text: RAW speech-to-text, reconciled against ``context`` when both are present.
@@ -629,12 +888,30 @@ def build_social_prompt(
     verbosity = normalize_verbosity(
         verbosity, levels=CONVERSATION_VERBOSITY_LEVELS,
         default=DEFAULT_CONVERSATION_VERBOSITY)
-    directive = _SOCIAL_DIRECTIVE.get(kind, "Respond to your team in character")
+    # PER-POOL template when one exists: the situation + tone now live in the SYSTEM
+    # prompt, so the user turn drops the directive (no doubled instructions -- the
+    # 4B follows a short focused prompt far better). Any pool without a dedicated
+    # template falls back to the general SOCIAL_SYSTEM + its directive line.
+    system = _SOCIAL_SYSTEM_FOR.get(kind)
+    if system is None:
+        system = SOCIAL_SYSTEM
+        directive = _SOCIAL_DIRECTIVE.get(kind, "Respond to your team in character") + ". "
+    else:
+        directive = ""
     addr = "" if (not addressee or addressee == "team") \
         else f"You are answering {addressee}; open with their name. "
     _prov = _strip_reported_frame(context.strip()) if context and context.strip() else ""
-    ctx = (f'The thing to answer (do NOT repeat or quote it back): "{_prov}". '
+    ctx = (f'For context only -- do NOT repeat, quote, name, or question this back; answer it WITHOUT '
+           f'echoing it: "{_prov}". '
            if _prov else "")
+    # Identity: name the EXACT accusation so the model rebuts THAT one specific thing
+    # (and only that one). Without this the system's menu of possible accusations let
+    # the 4B pick a random one -- "are you an AI" came back "I am no soundboard".
+    acc = ""
+    if kind == "identity" and accusation:
+        _phr = _ACCUSATION_PHRASING.get(accusation.strip().lower())
+        if _phr:
+            acc = f"They accused you of being {_phr}. Rebut ONLY this accusation, no other. "
     tgt = f" The teammate in question is {target.strip()}." if target and target.strip() else ""
     # NO reconcile block on the social/identity path: it shows the RAW STT verbatim
     # and tells the model to "reconcile" it, which a small model echoes back (the
@@ -643,7 +920,7 @@ def build_social_prompt(
     # carries no facts to preserve. raw_text is accepted for signature compat only.
     _ = raw_text
     user = (
-        f"{ctx}{addr}{directive}.{tgt}\n"
+        f"{ctx}{acc}{addr}{directive}{tgt}\n"
         f"{_CONVERSATION_VERBOSITY_DIRECTIVE[verbosity]}\n"
         f"{_recent_block(recent_lines)}"
         f"{_social_exemplar_block(exemplars)}"
@@ -651,4 +928,9 @@ def build_social_prompt(
     )
     sampling = dict(_SOCIAL_SAMPLING)
     sampling["max_tokens"] = _CONVERSATION_MAX_TOKENS[verbosity]
-    return PromptResult(system=SOCIAL_SYSTEM, user=user, sampling=sampling)
+    if kind in _SHORT_SOCIAL_KINDS:
+        # A greeting / "how are you" is ONE short line. A generous-but-bounded budget
+        # lets the FIRST sentence COMPLETE (16 truncated it mid-word); _social_llm_line
+        # caps these kinds to ONE sentence so "say hello" can't become a monologue.
+        sampling["max_tokens"] = min(int(sampling["max_tokens"]), 32)
+    return PromptResult(system=system, user=user, sampling=sampling)

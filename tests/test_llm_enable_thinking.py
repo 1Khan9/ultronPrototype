@@ -80,7 +80,7 @@ def test_chat_completion_kwargs_never_emits_chat_template_kwargs() -> None:
 def _qwen_engine() -> LLMEngine:
     """Bare engine whose LIVE model is a Qwen GGUF (marker SHOULD apply)."""
     eng = LLMEngine.__new__(LLMEngine)
-    eng.model_path = "C:/models/qwen3.5-4b-instruct.gguf"
+    eng.model_path = "C:/models/qwen3-8b-instruct.gguf"
     return eng
 
 
@@ -156,7 +156,7 @@ def _make_engine_with_mock_llm() -> LLMEngine:
     eng._runtime = "in_process"
     # 2026-06-15: the marker check now reads the LIVE model_path; a Qwen GGUF
     # means the /no_think marker still applies on the in-process path.
-    eng.model_path = "C:/models/qwen3.5-4b-instruct.gguf"
+    eng.model_path = "C:/models/qwen3-8b-instruct.gguf"
     eng._llm = MagicMock()
     eng._cancel = __import__("threading").Event()
     eng._history = __import__("collections").deque()

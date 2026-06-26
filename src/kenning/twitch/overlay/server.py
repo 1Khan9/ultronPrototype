@@ -57,8 +57,25 @@ CSP_POLICY = (
 )
 
 # The closed set of event types the overlay renders. Anything else is rejected at
-# emit() time and never streamed.
-ALLOWED_EVENT_TYPES: frozenset[str] = frozenset({"wheel", "alert", "ticker"})
+# emit() time and never streamed. ``chat_game`` is the UNIFIED game-card type fed
+# by BOTH the typed chat-command games AND the channel-point redeem games (they
+# render as the SAME compact bottom-left card, distinguished only by ``source``);
+# ``speech`` is the speak-redeem card. The legacy ``wheel``/``alert``/``ticker``
+# types remain accepted for back-compat but are no longer produced by the routers.
+ALLOWED_EVENT_TYPES: frozenset[str] = frozenset(
+    {"wheel", "alert", "ticker", "chat_game", "speech"}
+)
+
+# The closed set of game discriminators a ``chat_game`` event may carry. The
+# overlay renders a tailored, game-accurate card per value; an unknown game is
+# rejected at validate_event() time so a typo never reaches a client.
+ALLOWED_CHAT_GAMES: frozenset[str] = frozenset(
+    {"slots", "wheel", "heist", "duel", "trivia", "raffle"}
+)
+
+# Where a unified game/speech card originated. Drives a small CHAT/REDEEM tag on
+# the card; an unknown source is coerced to "chat" (never rejected).
+ALLOWED_CARD_SOURCES: frozenset[str] = frozenset({"chat", "redeem"})
 
 _HTML_PATH = Path(__file__).resolve().parent / "static" / "overlay.html"
 
@@ -129,6 +146,90 @@ def validate_event(event: Any) -> dict[str, Any]:
     elif etype == "ticker":
         out["label"] = _require_str(event, "label", max_len=120)
         out["points"] = _require_number(event, "points", lo=-1.0e12, hi=1.0e12)
+    elif etype == "chat_game":
+        # A typed chat-command game OUTCOME (!slots/!wheel/!heist/!duel/!trivia/
+        # !raffle). The discriminator ``game`` selects the overlay card; ``won``
+        # color-codes win vs loss; ``detail`` is a SMALL, length-checked sub-dict
+        # of per-game specifics the card renders game-accurately (reels, landed
+        # segment, crew size, the trivia answer, ...). Every field is range/length
+        # checked so a hostile chatter display name can only ever land as inert
+        # text inside a vetted shape.
+        game = _require_str(event, "game", max_len=32)
+        if game not in ALLOWED_CHAT_GAMES:
+            raise OverlayError(f"unknown chat_game game: {game!r}")
+        out["game"] = game
+        # discriminator: typed chat command vs a channel-point redeem. Both render
+        # as the SAME card; the only visible difference is a CHAT/REDEEM tag.
+        src = event.get("source", "chat")
+        out["source"] = src if src in ALLOWED_CARD_SOURCES else "chat"
+        out["viewer"] = _require_str(event, "viewer", max_len=80)
+        out["outcome"] = _require_str(event, "outcome", max_len=120)
+        out["title"] = _require_str(event, "title", max_len=120)
+        out["amount"] = int(_require_number(event, "amount", lo=-1.0e12, hi=1.0e12, default=0.0))
+        out["won"] = bool(event.get("won", False))
+        out["detail"] = _validate_chat_game_detail(event.get("detail"))
+        out["duration_ms"] = _require_number(
+            event, "duration_ms", lo=0.0, hi=60000.0, default=7000.0
+        )
+    elif etype == "speech":
+        # A SPEAK redeem: a viewer paid points to have Ultron speak their (already
+        # guard-screened + sanitized) message. Rendered as the same bottom-left
+        # card with a speaker/quote icon. ``bus`` distinguishes the stream-broadcast
+        # "say" from the "team" voice variant (a subtle accent change on the card).
+        bus = event.get("bus", "say")
+        out["bus"] = bus if bus in ("say", "team") else "say"
+        out["viewer"] = _require_str(event, "viewer", max_len=80)
+        out["text"] = _require_str(event, "text", max_len=300)
+        out["duration_ms"] = _require_number(
+            event, "duration_ms", lo=0.0, hi=60000.0, default=7000.0
+        )
+    return out
+
+
+# Per-game ``detail`` keys the overlay actually renders, with their validators.
+# Anything not listed here is DROPPED (defense in depth: the card only ever sees a
+# vetted shape). String values are length-capped; the browser renders them via
+# textContent so they are inert regardless.
+_CHAT_GAME_DETAIL_STR_KEYS: dict[str, int] = {
+    "win_symbol": 40,
+    "segment": 60,
+    "answer": 200,
+    "winner": 80,
+    "loser": 80,
+    "phase": 16,    # "open" / "result" — lets the card distinguish a join window from a payout
+}
+_CHAT_GAME_DETAIL_NUM_KEYS: tuple[str, ...] = (
+    "payout", "pot", "crew", "wager", "entrants", "net", "stake", "multiplier",
+)
+
+
+def _validate_chat_game_detail(detail: Any) -> dict[str, Any]:
+    """Validate a chat_game ``detail`` sub-dict: only the known, range/length-checked
+    keys survive (unknown keys dropped). ``reels`` is a short list of short strings
+    (the slot symbols the card settles on). Fail-CLOSED on a bad type."""
+    out: dict[str, Any] = {}
+    if detail is None:
+        return out
+    if not isinstance(detail, dict):
+        raise OverlayError("chat_game 'detail' must be an object")
+    # A None value means "absent" (e.g. slots win_symbol on a loss) -> skip it
+    # rather than reject, so producers can pass an optional key unconditionally.
+    for key, max_len in _CHAT_GAME_DETAIL_STR_KEYS.items():
+        if key in detail and detail[key] is not None:
+            out[key] = _require_str(detail, key, max_len=max_len)
+    for key in _CHAT_GAME_DETAIL_NUM_KEYS:
+        if key in detail and detail[key] is not None:
+            out[key] = _require_number(detail, key, lo=-1.0e12, hi=1.0e12)
+    reels = detail.get("reels")
+    if reels is not None:
+        if not isinstance(reels, (list, tuple)) or len(reels) > 8:
+            raise OverlayError("chat_game detail 'reels' must be a list of <=8 symbols")
+        clean_reels: list[str] = []
+        for sym in reels:
+            if not isinstance(sym, str) or len(sym) > 40:
+                raise OverlayError("chat_game detail 'reels' entries must be short strings")
+            clean_reels.append(sym)
+        out["reels"] = clean_reels
     return out
 
 
@@ -256,6 +357,36 @@ class _OverlayHandler(BaseHTTPRequestHandler):
             return False
 
 
+_OVERLAY_TOKEN_FILE = Path.home() / ".kenning" / "overlay_token"
+
+
+def _resolve_overlay_token(configured: str = "") -> str:
+    """Return a STABLE overlay token so the OBS Browser-Source URL survives reboots.
+
+    Priority: an explicit ``configured`` token (``twitch.overlay.token``) -> a token
+    persisted at ``~/.kenning/overlay_token`` -> a freshly generated one (written back
+    so it is reused next boot). Fail-safe: any filesystem error degrades to a fresh
+    ephemeral token rather than refusing to start. (Previously the token was a fresh
+    ``secrets.token_urlsafe`` every boot, so the OBS source URL had to be re-pasted
+    after each restart.)"""
+    configured = (configured or "").strip()
+    if configured:
+        return configured
+    try:
+        if _OVERLAY_TOKEN_FILE.is_file():
+            tok = _OVERLAY_TOKEN_FILE.read_text(encoding="utf-8").strip()
+            if tok:
+                return tok
+        tok = secrets.token_urlsafe(32)
+        _OVERLAY_TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _OVERLAY_TOKEN_FILE.write_text(tok, encoding="utf-8")
+        logger.info("overlay token persisted to %s (stable across reboots)", _OVERLAY_TOKEN_FILE)
+        return tok
+    except Exception as e:  # noqa: BLE001 — never block boot on token persistence
+        logger.warning("overlay token persistence failed (%s); using an ephemeral token", e)
+        return secrets.token_urlsafe(32)
+
+
 class OverlayServer:
     """Local 127.0.0.1 overlay HTTP/SSE server for the OBS Browser Source.
 
@@ -268,12 +399,12 @@ class OverlayServer:
         ``0`` (default) picks an ephemeral port; read it back via :meth:`url`.
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 0) -> None:
+    def __init__(self, host: str = "127.0.0.1", port: int = 0, token: str = "") -> None:
         if host not in ("127.0.0.1", "localhost", "::1"):
             raise OverlayError(f"overlay must bind loopback only, got {host!r}")
         self._host = "127.0.0.1" if host == "localhost" else host
         self._req_port = int(port)
-        self.token = secrets.token_urlsafe(32)
+        self.token = _resolve_overlay_token(token)
 
         self._httpd: Optional[_OverlayHTTPServer] = None
         self._thread: Optional[threading.Thread] = None

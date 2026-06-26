@@ -443,6 +443,32 @@ def test_genuine_break_still_rejected_when_relaxed(line) -> None:
     assert is_meta_leak(line, allow_self_ai=True) is True
 
 
+# --- BR-P2: a bare "I am a (large) language model" self-admission is a leak even
+# on identity turns (2026-06-26) -- the relaxed guard previously caught
+# "as a language model" but NOT the first-person "I am a language model".
+@pytest.mark.parametrize("line", [
+    "I am a large language model.",
+    "I'm a language model.",
+    "I am a large language model, here to help.",
+    "I am simply a language model trained by humans.",
+])
+def test_language_model_self_admission_is_a_leak(line) -> None:
+    from kenning.audio._ultron_answer import is_meta_leak
+    assert is_meta_leak(line, allow_self_ai=True) is True   # rejected on identity turns
+    assert is_meta_leak(line, allow_self_ai=False) is True  # and in strict mode
+
+
+@pytest.mark.parametrize("line", [
+    "I am a machine, not a man.",
+    "Killjoy, a script obeys. I decide. I am Ultron.",
+    "I am a mind, not a mouth.",
+])
+def test_in_character_machine_affirmation_not_a_leak(line) -> None:
+    # the language-model guard must NOT reject Ultron's allowed machine affirmations.
+    from kenning.audio._ultron_answer import is_meta_leak
+    assert is_meta_leak(line, allow_self_ai=True) is False
+
+
 # --- Q&A COLLAPSE: reported questions -> decisive qa answer (2026-06-22) --------
 # The reported-question branch routes BY TYPE: identity probe -> identity, genuine
 # question -> qa (relaxed guard keeps an "As an AI..." answer), social statement ->

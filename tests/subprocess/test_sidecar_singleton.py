@@ -82,6 +82,55 @@ def test_reap_stray_sidecars_spares_keep_pid() -> None:
         proc.kill()
 
 
+class _FakeProc:
+    def __init__(self, pid: int, cmd: str) -> None:
+        self.info = {"pid": pid, "name": "python.exe", "cmdline": ["python", cmd]}
+
+
+def test_ancestor_pids_includes_real_parent() -> None:
+    """The ancestor walk must report at least the immediate parent -- the basis
+    for the venvlauncher self-reap fix."""
+    anc = sidecar_lock._ancestor_pids(os.getpid())
+    assert os.getppid() in anc, "immediate parent missing from the ancestor set"
+
+
+def test_reap_stray_sidecars_skips_ancestors(monkeypatch) -> None:
+    """THE venvlauncher self-reap fix (2026-06-23): ``.venv\\Scripts\\python.exe`` is
+    a launcher that spawns the base python as a CHILD, so a sidecar's launcher
+    PARENT carries the same script in its cmdline. Reaping it (kill_process_tree)
+    would kill the sidecar itself. An ANCESTOR matching the marker must be SKIPPED
+    while a non-ancestor stray with the same marker is still reaped."""
+    marker = "twitch_read_sidecar"
+    killed: list[int] = []
+    monkeypatch.setattr(sidecar_lock, "_ancestor_pids", lambda _pid: {1001})
+    monkeypatch.setattr(psutil, "process_iter",
+                        lambda *a, **k: iter([_FakeProc(1001, f"{marker}_LAUNCHER"),
+                                              _FakeProc(1002, f"{marker}_STRAY")]))
+    monkeypatch.setattr(sidecar_lock, "_kill",
+                        lambda pid: (killed.append(int(pid)) or 1))
+    n = sidecar_lock.reap_stray_sidecars([marker])
+    assert 1001 not in killed, "ancestor (our own launcher) must NOT be reaped"
+    assert 1002 in killed, "a non-ancestor stray must still be reaped"
+    assert n == 1
+
+
+def test_reap_env_off_disables_ancestor_skip(monkeypatch) -> None:
+    """KENNING_REAP_SKIP_ANCESTORS=0 restores the OLD (buggy) behaviour used to
+    reproduce the self-reap for before/after evidence: with the skip off, even a
+    process in the ancestor set is reaped (the ancestor walk is not even consulted)."""
+    marker = "twitch_write_sidecar"
+    killed: list[int] = []
+    monkeypatch.setenv("KENNING_REAP_SKIP_ANCESTORS", "0")
+    monkeypatch.setattr(sidecar_lock, "_ancestor_pids", lambda _pid: {1001})
+    monkeypatch.setattr(psutil, "process_iter",
+                        lambda *a, **k: iter([_FakeProc(1001, f"{marker}_LAUNCHER")]))
+    monkeypatch.setattr(sidecar_lock, "_kill",
+                        lambda pid: (killed.append(int(pid)) or 1))
+    n = sidecar_lock.reap_stray_sidecars([marker])
+    assert 1001 in killed, "with skip OFF, even an 'ancestor' is reaped (repro mode)"
+    assert n == 1
+
+
 def test_reap_stray_embedders_back_compat_delegates() -> None:
     marker = "embedder_server_GUARDTEST_DELEGATE"
     proc = _spawn_sleeper(marker)

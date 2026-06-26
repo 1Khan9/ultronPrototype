@@ -86,6 +86,7 @@ class CommandKind(Enum):
     RAFFLE = "raffle"        # open (mod) or enter a raffle window (no args)
     LEADERBOARD = "leaderboard"
     HELP = "help"
+    ULTRON = "ultron"        # post the condensed commands panel on demand (no args)
     UNKNOWN = "unknown"
 
 
@@ -243,6 +244,7 @@ _COMMAND_TABLE = {
     "top": (CommandKind.LEADERBOARD, _NO_ARGS),   # common alias
     "help": (CommandKind.HELP, _NO_ARGS),
     "commands": (CommandKind.HELP, _NO_ARGS),     # common alias
+    "ultron": (CommandKind.ULTRON, _NO_ARGS),     # post the condensed commands panel on demand
 }
 
 

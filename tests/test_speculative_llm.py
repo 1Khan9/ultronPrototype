@@ -162,6 +162,11 @@ class TestLLMEngineHistoryDefer:
 
         e = object.__new__(inference.LLMEngine)
         e._runtime = "in_process"
+        # Pin a MARKER-path model identity so generate_stream uses
+        # create_chat_completion (which this test stubs), not the qwen3.5/2507
+        # raw-completion prefill path. Without this the engine falls through to the
+        # live config (a 2507g -> prefill path -> create_completion, unstubbed).
+        e.model_path = "C:/models/qwen3-8b-instruct.gguf"
         e._memory = None
         e._history = []
         e._cancel = threading.Event()
@@ -187,9 +192,10 @@ class TestLLMEngineHistoryDefer:
         # Stub _apply_no_think_marker -- pass-through.
         e._apply_no_think_marker = staticmethod(lambda m, t: m)
 
-        # Stub _chat_completion_kwargs -- minimal.
+        # Stub _chat_completion_kwargs -- minimal. (Accept the `sampling` kwarg the
+        # production signature gained; the stub had drifted -> TypeError.)
         e._chat_completion_kwargs = staticmethod(
-            lambda c, t, *, stream: {"stream": stream},
+            lambda c, t, *, stream, sampling=None: {"stream": stream},
         )
 
         # Stub _llm.create_chat_completion to emit a fixed token list.
@@ -223,6 +229,48 @@ class TestLLMEngineHistoryDefer:
         assert "".join(result) == "abc"
         # NOT recorded.
         assert log == []
+
+    def test_generate_stream_serializes_in_process_gen_under_llm_lock(self):
+        """llama.cpp's Llama is NOT thread-safe; the speculative relay generates on the
+        STT thread while the main thread may too. generate_stream MUST serialize the
+        in-process generation under the engine's _llm_lock -- but as a BOUNDED `with`
+        block (buffer, then yield with no lock held), NOT held across the yields. The
+        held-across version LEAKED the lock when a consumer abandoned the generator and
+        FROZE the loop (2026-06-25). The `with` block always releases."""
+        e = self._build_engine(record_turn_log=[])
+        events = []
+
+        class _TrackLock:
+            def __enter__(self):
+                events.append("enter"); return self
+
+            def __exit__(self, *exc):
+                events.append("exit"); return False
+
+        e._llm_lock = _TrackLock()
+        out = "".join(e.generate_stream("hello"))
+        assert out == "abc"
+        # the lock is entered + exited exactly once, around the buffered generation.
+        assert events == ["enter", "exit"], events
+
+    def test_partial_generate_stream_does_not_hold_llm_lock(self):
+        """THE freeze regression (2026-06-25): consuming generate_stream partially
+        and then NOT exhausting/closing it must leave _llm_lock FREE. The old code
+        held the lock across the yields, so an abandoned (still-referenced, not
+        GC'd) generator leaked it -> the next generation blocked forever -> the
+        whole loop froze. The buffered `with` block releases during the first
+        advance, so the lock is free even while the generator object lives on."""
+        import threading
+
+        e = self._build_engine(record_turn_log=[])
+        e._llm_lock = threading.Lock()
+        g = e.generate_stream("hello")
+        next(g)  # triggers buffering: lock acquired + RELEASED here, not held
+        # g is still referenced (simulating an abandoned-but-not-GC'd generator).
+        acquired = e._llm_lock.acquire(timeout=2.0)
+        assert acquired, "_llm_lock leaked after a partial generate_stream (would freeze)"
+        e._llm_lock.release()
+        g.close()
 
     def test_record_completed_turn_records_explicitly(self):
         log = []

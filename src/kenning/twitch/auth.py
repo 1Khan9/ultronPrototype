@@ -88,6 +88,7 @@ BROADCASTER_SCOPES = (
     "moderator:manage:automod",
     "moderator:read:chat_settings",
     "moderator:manage:chat_settings",
+    "moderator:manage:chat_messages",
     "moderator:manage:shield_mode",
     "moderator:manage:banned_users",
     "channel:moderate",

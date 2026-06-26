@@ -255,3 +255,30 @@ def test_hey_agent_blend_dropped():
     out = normalize_command("Hellsage nice job")
     assert "hell" not in out.lower(), out
     assert "Sage" in out
+
+
+@pytest.mark.parametrize("text,expect", [
+    ("tell my team to garage", "tell my team two garage"),
+    ("tell my team too garage", "tell my team two garage"),
+    ("tell my team for heaven", "tell my team four heaven"),
+    ("tell my team to mid", "tell my team two mid"),
+    ("to garage", "tell my team two garage"),  # bare callout -> lead recovered
+])
+def test_count_homophone_restored_before_location(text, expect):
+    # STT mishears the enemy-count digit as a preposition ("2 garage" -> "to
+    # garage"); restore the count when it leads a known location at the payload
+    # start so the callout relays "two garage", not the bare "garage".
+    assert normalize_command(text) == expect
+
+
+@pytest.mark.parametrize("text", [
+    "tell my team rotate to garage",     # verb before "to" -> not payload-start
+    "tell my team fall back to heaven",
+    "tell my team go to market",
+    "tell my team to push",              # "push" is not a location
+])
+def test_count_homophone_leaves_movement_callouts(text):
+    # A movement callout (a verb precedes "to") or a non-location must keep "to".
+    out = normalize_command(text)
+    assert not out.startswith("tell my team two") and " two " not in out, out
+    assert "four" not in out, out

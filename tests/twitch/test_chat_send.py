@@ -11,7 +11,11 @@ import json
 import types
 
 from kenning.twitch.clients.chat_send import MAX_MESSAGE_CHARS, ChatSendClient
-from kenning.twitch.panel import MAX_CHAT_CHARS, build_commands_panel_text
+from kenning.twitch.panel import (
+    MAX_CHAT_CHARS,
+    build_commands_panel_text,
+    run_interval_poster,
+)
 
 
 def _ok_transport(record=None):
@@ -73,7 +77,10 @@ def test_chat_send_trims_to_500():
 
 def test_panel_text_without_url():
     t = build_commands_panel_text(types.SimpleNamespace(commands_panel_doc_url=""))
-    assert "!gamble" in t and "!help" in t and "!heist" in t
+    # The current condensed panel advertises the live games + the Credits currency
+    # (the !gamble/!points line is handled by StreamElements, so it's not listed).
+    assert "!slots" in t and "!help" in t and "!heist" in t
+    assert "Credits" in t
     assert "Full guide" not in t and len(t) <= MAX_CHAT_CHARS
 
 
@@ -81,3 +88,74 @@ def test_panel_text_with_url_and_length_cap():
     t = build_commands_panel_text(types.SimpleNamespace(commands_panel_doc_url="https://docs.example/g"))
     assert "Full guide" in t and "https://docs.example/g" in t
     assert len(t) <= MAX_CHAT_CHARS
+
+
+# --------------------------------------------------------------------------- #
+# run_interval_poster — the talk-to-Ultron hint poster (injected clock)
+# --------------------------------------------------------------------------- #
+class _FakeClock:
+    """Counts sleep() ticks and stops the poster after enough virtual seconds so a
+    test never blocks (1s slices, like the real loop)."""
+
+    def __init__(self, stop_after_s):
+        self.t = 0.0
+        self._stop_after = stop_after_s
+
+    def sleep(self, dt):
+        self.t += dt
+
+    def should_stop(self):
+        return self.t >= self._stop_after
+
+
+def test_interval_poster_fires_on_interval_with_offset():
+    posts = []
+    # offset 5s, interval 10s, stop at 28s -> posts at t=5, 15, 25 (3 posts).
+    clock = _FakeClock(stop_after_s=28.0)
+    run_interval_poster(
+        lambda: "💬 hint", posts.append,
+        interval_s=10.0, should_stop=clock.should_stop,
+        sleep_fn=clock.sleep, first_offset_s=5.0,
+    )
+    assert posts == ["💬 hint", "💬 hint", "💬 hint"]
+
+
+def test_interval_poster_empty_text_posts_nothing():
+    posts = []
+    clock = _FakeClock(stop_after_s=25.0)
+    run_interval_poster(
+        lambda: "", posts.append,
+        interval_s=10.0, should_stop=clock.should_stop,
+        sleep_fn=clock.sleep, first_offset_s=5.0,
+    )
+    assert posts == []   # an empty build never posts
+
+
+def test_interval_poster_swallows_post_errors():
+    calls = {"n": 0}
+
+    def boom(_text):
+        calls["n"] += 1
+        raise RuntimeError("sidecar down")
+
+    clock = _FakeClock(stop_after_s=28.0)
+    # Must NOT raise even though every post raises; the loop survives.
+    run_interval_poster(
+        lambda: "x", boom,
+        interval_s=10.0, should_stop=clock.should_stop,
+        sleep_fn=clock.sleep, first_offset_s=5.0,
+    )
+    assert calls["n"] == 3   # tried each scheduled post, none crashed the loop
+
+
+def test_talk_hint_config_defaults():
+    from kenning.config import TwitchChatConfig
+    c = TwitchChatConfig()
+    assert c.talk_hint_enabled is True
+    assert c.talk_hint_interval_minutes == 10
+    assert c.talk_hint_text == (
+        '💬 Just type "Ultron" followed by a statement or question '
+        "and he will talk to you!"
+    )
+    # commands panel interval default bumped to 15.
+    assert c.commands_panel_interval_minutes == 15

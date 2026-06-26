@@ -86,6 +86,55 @@ def test_make_read_drain_fn_is_failsafe_when_sidecar_down() -> None:
     assert drain() == []
 
 
+def test_drain_parses_FLAT_buffer_shape_and_classifies_to_ultron(monkeypatch) -> None:
+    """Regression (live 2026-06-24): the read sidecar buffers a FLAT chat dict
+    (``{"seq","ts","event":{"type":"chat","chatter_login","text",...}}``). The drain
+    MUST parse the flat shape — using ``ChatEvent.from_eventsub`` (which reads the
+    nested ``message.text`` / ``chatter_user_login``) yields an EMPTY-text, empty-login
+    event, so ``classify_chat`` returns IGNORE and the bot never replies. This is the
+    exact shape + message that produced silence on the first live test."""
+    import json
+    from kenning.twitch import service as svc_mod
+    from kenning.twitch.addressing import ChatAddress, classify_chat
+
+    buffer_json = json.dumps({
+        "cursor": 2,
+        "events": [{
+            "seq": 2, "ts": 1.0,
+            "event": {
+                "type": "chat", "message_id": "m1",
+                "chatter_login": "1v9khan", "chatter_name": "1v9khan",
+                "chatter_user_id": "495878337",
+                "text": "Ultron, what is the spike timer?",
+                "badges": [{"set_id": "broadcaster", "id": "1", "info": ""}],
+            },
+        }],
+    }).encode("utf-8")
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return buffer_json
+
+    monkeypatch.setattr(svc_mod.urllib.request, "urlopen", lambda *a, **k: _Resp())
+    events = make_read_drain_fn("http://127.0.0.1:8773")()
+    assert len(events) == 1
+    ev = events[0]
+    # The flat fields must survive — NOT empty (the from_eventsub mis-parse bug).
+    assert ev.text == "Ultron, what is the spike timer?"
+    assert ev.chatter_login == "1v9khan"
+    assert ev.chatter_user_id == "495878337"
+    # ...and addressing must now resolve it to a reply target.
+    v = classify_chat(ev, bot_login="ultron_kenning", bot_user_id="999",
+                      streamer_login="1v9khan", streamer_user_id="495878337")
+    assert v.address == ChatAddress.TO_ULTRON, v
+
+
 def test_sync_and_tick_reconciles_to_flag() -> None:
     spoken = []
     s = _svc(drain=lambda: [_ev("@ultronbot hi")], spoken=spoken)
