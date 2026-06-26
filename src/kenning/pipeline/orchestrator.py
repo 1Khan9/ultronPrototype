@@ -31,6 +31,7 @@ Three threads matter:
 
 from __future__ import annotations
 
+import contextlib
 import os
 import random
 import re
@@ -1481,6 +1482,27 @@ class Orchestrator:
         # affects team callouts, the team-mic path, or the SPEAK_TEAM redeem.
         self._chat_audio_to_speakers = False
 
+        # Runtime TWITCH RESULT/RAID toggles (the STOP-window "HEAR RAID" / "HEAR
+        # RESULTS" / "ANNOUNCE RESULTS" buttons flip these). Read their boot state
+        # from the stop_button config (default ON). Fail-open to True so a missing
+        # config never silences a feature.
+        #   * _hear_raid_to_speakers     -> raid welcome on local speakers (OBS always)
+        #   * _hear_results_to_speakers  -> game-result announce on local speakers
+        #                                   (OBS/stream bus output is independent)
+        #   * _announce_results_enabled  -> MASTER: announce game results at all
+        #                                   (OFF = no TTS + no chat; overlay still shows)
+        try:
+            from kenning.config import get_config as _gc_sb
+            _sb_cfg0 = _gc_sb().stop_button
+        except Exception:                                            # noqa: BLE001
+            _sb_cfg0 = None
+        self._hear_raid_to_speakers = bool(
+            getattr(_sb_cfg0, "hear_raid_default", True))
+        self._hear_results_to_speakers = bool(
+            getattr(_sb_cfg0, "hear_results_default", True))
+        self._announce_results_enabled = bool(
+            getattr(_sb_cfg0, "announce_results_default", True))
+
         # Tiny always-on-top, mouse-clickable "STOP" window. Clicking it fires
         # the SAME all-channel cancel as voice "Ultron, stop" (_cancel_all_playback)
         # but WITHOUT the wake-word watcher -- which self-triggers on the
@@ -1568,6 +1590,42 @@ class Orchestrator:
                     say_name_enabled=True,
                     say_name_height=getattr(_sb, "say_name_height", 26),
                     say_name_label=getattr(_sb, "say_name_label", "SAY NAME"),
+                    # HEAR-RAID toggle: gates the incoming-raid welcome on the local
+                    # speakers (OBS always plays). Default ON. Twitch-only row.
+                    on_toggle_hear_raid=(
+                        self._set_hear_raid_to_speakers
+                        if getattr(getattr(get_config(), "twitch", None),
+                                   "enabled", False)
+                        else None
+                    ),
+                    hear_raid_enabled=bool(self._hear_raid_to_speakers),
+                    hear_raid_height=getattr(_sb, "hear_raid_height", 26),
+                    hear_raid_label=getattr(_sb, "hear_raid_label", "HEAR RAID"),
+                    # HEAR-RESULTS toggle: gates the game-result announcement on the
+                    # local speakers (OBS/stream bus independent). Default ON.
+                    on_toggle_hear_results=(
+                        self._set_hear_results_to_speakers
+                        if getattr(getattr(get_config(), "twitch", None),
+                                   "enabled", False)
+                        else None
+                    ),
+                    hear_results_enabled=bool(self._hear_results_to_speakers),
+                    hear_results_height=getattr(_sb, "hear_results_height", 26),
+                    hear_results_label=getattr(
+                        _sb, "hear_results_label", "HEAR RESULTS"),
+                    # ANNOUNCE-RESULTS toggle (MASTER): OFF = no result announcement
+                    # at all (overlay still shows). Default ON. Twitch-only row.
+                    on_toggle_announce_results=(
+                        self._set_announce_results_enabled
+                        if getattr(getattr(get_config(), "twitch", None),
+                                   "enabled", False)
+                        else None
+                    ),
+                    announce_results_enabled=bool(self._announce_results_enabled),
+                    announce_results_height=getattr(
+                        _sb, "announce_results_height", 26),
+                    announce_results_label=getattr(
+                        _sb, "announce_results_label", "ANNOUNCE RESULTS"),
                 )
                 if getattr(_sb, "show_at_startup", False):
                     self._stop_button.show()
@@ -1874,11 +1932,15 @@ class Orchestrator:
         zk = getattr(self, "_zombie_killer", None)
         if zk is not None:
             try:
-                # NOT persistent: a finite (~1h) reaper backstop for a
-                # crash-orphaned sidecar -- never auto-killed in a normal gaming
-                # session, and shutdown() reaps it explicitly first anyway.
-                zk.register(proc.pid, "embedder-sidecar",
-                            persistent=False, hard_timeout_s=3600.0)
+                # PERSISTENT: a session-lifetime daemon (same class as the MCP /
+                # Parakeet / Kokoro daemons the ZombieKiller exempts), NOT a
+                # transient background command. The earlier finite ~1h timeout was
+                # a bug -- a long stream outlives 3600s, so the reaper force-killed
+                # a perfectly healthy sidecar mid-session, leaving the orchestrator
+                # alone (chat/router silently broke). Orphan-on-crash is already
+                # covered by the parent-death deadman + exclusive port bind, and a
+                # clean shutdown reaps it explicitly via _kill_embedder_sidecar().
+                zk.register(proc.pid, "embedder-sidecar", persistent=True)
             except Exception:                                        # noqa: BLE001
                 pass
         logger.info("embedder sidecar spawned (pid=%s) model=%s backend=%s on "
@@ -6566,6 +6628,40 @@ class Orchestrator:
             # local; the test-panel dispatch reads it off self).
             self._twitch_speak_and_post = _twitch_speak_and_post
 
+            # GAME-RESULT announce sink (2026-06-26 streamer toggles) for the REDEEM-
+            # game path. A redeem game RESULT announces through this so the two STOP-
+            # window toggles apply (the chat-game router applies the master gate
+            # itself via announce_results_enabled_fn, since its announce_fn also
+            # carries non-result replies):
+            #   * ANNOUNCE RESULTS (master): OFF -> NO announce at all (no TTS, no
+            #     chat post); the overlay graphic still shows. Checked first.
+            #   * HEAR RESULTS: gates ONLY the local-speaker copy of the result TTS
+            #     (the OBS/stream-bus tee is independent and always fed). Read via
+            #     _result_speak (mirrors _chat_speak's per-utterance mute lever).
+            def _twitch_result_speak_and_post(text: str) -> None:
+                # Redeem-game result: TTS (HEAR-RESULTS-gated speakers + OBS) + chat.
+                if not getattr(self, "_announce_results_enabled", True):
+                    logger.debug("game-result announce suppressed (announce OFF)")
+                    return
+                try:
+                    self._result_speak(text)
+                finally:
+                    _twitch_chat_post(text)
+
+            self._twitch_result_speak_and_post = _twitch_result_speak_and_post
+
+            # RAID welcome sink (2026-06-26 HEAR-RAID toggle): always tees to the
+            # OBS/stream bus; ALSO plays on the streamer's local speakers when HEAR
+            # RAID is on. Distinct from the chat-reply path -- the raid is its own
+            # streamer-facing announcement. Wired as the RaidHandler announce_fn.
+            def _twitch_raid_speak_and_post(text: str) -> None:
+                try:
+                    self._twitch_raid_speak(text)
+                finally:
+                    _twitch_chat_post(text)
+
+            self._twitch_raid_speak_and_post = _twitch_raid_speak_and_post
+
             self._twitch_redeem_router = None
             self._twitch_ledger = None
             try:
@@ -6597,9 +6693,16 @@ class Orchestrator:
                     )
                     router = RedeemRouter(
                         make_redeem_drain_fn(read_ep),
-                        announce_fn=_twitch_speak_and_post,   # redeems: spoken on stream + posted to chat
+                        # redeem-GAME results: gated by ANNOUNCE RESULTS (master) +
+                        # HEAR RESULTS (local-speaker copy) toggles. SPEAK redeems
+                        # use say_speak_fn/team_speak_fn (in speak_kwargs), NOT this.
+                        announce_fn=_twitch_result_speak_and_post,
                         overlay_emit=overlay_emit,
                         ledger=self._twitch_ledger,
+                        # VISUAL-LEADS-VOCAL: emit the overlay card first, then defer
+                        # the announce by overlay_lead_seconds (default 3s spin).
+                        overlay_lead_seconds=float(
+                            getattr(tcfg, "overlay_lead_seconds", 3.0) or 0.0),
                         **speak_kwargs,
                     )
                     self._twitch_redeem_router = router
@@ -6656,7 +6759,9 @@ class Orchestrator:
 
                     raid_handler = RaidHandler(
                         make_raid_drain_fn(read_ep),
-                        announce_fn=_twitch_speak_and_post,   # raid: spoken on stream + posted to chat
+                        # raid: OBS/stream bus ALWAYS + local speakers when HEAR RAID
+                        # on (default ON) + posted to chat (CHANGE 3, 2026-06-26).
+                        announce_fn=_twitch_raid_speak_and_post,
                         shoutout_fn=_raid_shoutout if _raid_shoutout_enabled else None,
                         shoutout_enabled=_raid_shoutout_enabled,
                     )
@@ -6718,6 +6823,15 @@ class Orchestrator:
                         # commands-panel text (it reads commands_panel_doc_url, which
                         # lives on the chat cfg, not the economy cfg in `cfg=`).
                         chat_cfg=getattr(tcfg, "chat", None),
+                        # VISUAL-LEADS-VOCAL: emit the game card first, then defer the
+                        # chat post by twitch.overlay_lead_seconds (default 3s spin).
+                        twitch_cfg=tcfg,
+                        # MASTER ANNOUNCE-RESULTS toggle (stop-window): OFF -> the
+                        # card shows but no chat post. Result path only; non-result
+                        # replies (!points/!help/errors) are never suppressed.
+                        announce_results_enabled_fn=(
+                            lambda: bool(getattr(
+                                self, "_announce_results_enabled", True))),
                     )
                     self._twitch_chat_game_router = cgr
                     self._twitch_chat_stop = False
@@ -7496,8 +7610,14 @@ class Orchestrator:
             procs.append((spec.role, proc))
             if zk is not None:
                 try:
-                    zk.register(proc.pid, f"{spec.role}-sidecar",
-                                persistent=False, hard_timeout_s=3600.0)
+                    # PERSISTENT: session-lifetime daemon (read/guard/write live
+                    # for the whole stream). The earlier finite ~1h timeout was a
+                    # bug -- a stream outlives 3600s, so the reaper force-killed
+                    # healthy sidecars ~1h in, silently stopping chat/redeems/
+                    # moderation/raid. Orphan-on-crash is covered by the per-sidecar
+                    # parent-death deadman + exclusive port bind; a clean shutdown
+                    # reaps them explicitly via _kill_twitch_sidecars().
+                    zk.register(proc.pid, f"{spec.role}-sidecar", persistent=True)
                 except Exception:                                    # noqa: BLE001
                     pass
             logger.info("twitch %s sidecar spawned (pid=%s) on 127.0.0.1:%d "
@@ -13391,46 +13511,181 @@ class Orchestrator:
         logger.info("twitch team-speak SAY-NAME %s (stop-window toggle)",
                     "ON" if enabled else "OFF")
 
+    def _set_hear_raid_to_speakers(self, enabled: bool) -> None:
+        """STOP-window HEAR-RAID toggle callback: flip whether the incoming-RAID
+        welcome plays on the streamer's LOCAL speakers (ON, default) or only on the
+        OBS/stream bus (OFF). The OBS/broadcast tee is ALWAYS fed regardless; only
+        the local speaker copy is gated. Read by ``_twitch_raid_speak`` per raid."""
+        self._hear_raid_to_speakers = bool(enabled)
+        logger.info("raid welcome -> local speakers %s (stop-window toggle)",
+                    "ON" if enabled else "OBS-ONLY")
+
+    def _set_hear_results_to_speakers(self, enabled: bool) -> None:
+        """STOP-window HEAR-RESULTS toggle callback: flip whether the game-result
+        VOCAL announcement plays on the streamer's LOCAL speakers (ON, default) or
+        only on the OBS/stream bus (OFF). Read by ``_twitch_announce_result`` per
+        announcement; the OBS/stream-bus output stays independent."""
+        self._hear_results_to_speakers = bool(enabled)
+        logger.info("game results -> local speakers %s (stop-window toggle)",
+                    "ON" if enabled else "OBS-ONLY")
+
+    def _set_announce_results_enabled(self, enabled: bool) -> None:
+        """STOP-window ANNOUNCE-RESULTS toggle callback (the MASTER): when OFF,
+        Ultron does NOT announce game results at all (no TTS, no chat post); the
+        overlay graphic still shows. When ON, results are announced (after the
+        overlay lead). Read by ``_twitch_announce_result`` before any speak/post."""
+        self._announce_results_enabled = bool(enabled)
+        logger.info("game-result announce %s (stop-window toggle)",
+                    "ON" if enabled else "OFF (overlay only)")
+
     def _chat_speak(self, text: str) -> None:
         """Speak a CHAT-directed line, honoring the HEAR-CHAT routing toggle.
 
         When ``_chat_audio_to_speakers`` is False (default), the LOCAL default-
-        speaker output is suppressed FOR THIS UTTERANCE ONLY via a per-call
-        ``set_live_speaker_mute(True)`` around ``_speak`` -- the BroadcastSink /
-        OBS mirror still receives the clip (the tee fires before the speaker write
-        in kokoro_engine._play / speak_stream), so chat audio reaches the stream
-        but not the streamer's ears mid-game. When True, behavior is the normal
-        ``_speak`` (speakers + OBS).
+        speaker output is suppressed via the REFERENCE-COUNTED speaker-mute scope
+        (``_speaker_mute_scope`` -> kokoro_engine ``_enter/_exit_chat_speaker_mute``)
+        -- the BroadcastSink / OBS mirror still receives the clip (the tee fires
+        before the speaker write in kokoro_engine._play / speak_stream), so chat
+        audio reaches the stream but not the streamer's ears mid-game. When True,
+        behavior is the normal ``_speak`` (speakers + OBS).
 
-        The mute override is RESTORED to its prior value in a finally, so this
-        never leaks into the team-callout / conversational path. Fail-open: if the
-        mute lever is unavailable, fall back to a plain ``_speak`` (audible) so a
-        chat line is never silently dropped."""
+        The ref-counted scope (CHANGE 4, 2026-06-26) replaces the old per-clip
+        save/restore, which RACED when a speak redeem + chat-reply overlapped from
+        different threads (one clip's restore unmuted while the other was still
+        playing -> a leak to the speakers). The speakers stay muted while ANY gated
+        clip (HEAR CHAT or HEAR RESULTS) is active; the LAST leaver restores the
+        prior override. Fail-open: if the lever is unavailable, fall back to a
+        plain ``_speak`` (audible) so a chat line is never silently dropped."""
         if not text:
             return
         if self._chat_audio_to_speakers:
             self._speak(text)
             return
+        with self._speaker_mute_scope():
+            self._speak(text)
+
+    @contextlib.contextmanager
+    def _speaker_mute_scope(self):
+        """REFERENCE-COUNTED local-speaker mute scope shared by every HEAR-CHAT /
+        HEAR-RESULTS-gated speak (CHANGE 4, 2026-06-26).
+
+        Enters the kokoro_engine ref-counted mute on ``__enter__`` and leaves it on
+        ``__exit__``: the FIRST active gated clip saves the prior override + mutes
+        the local speakers; nested/concurrent clips (a speak redeem + a chat-reply
+        overlapping from different threads) only bump the counter, so the mute is
+        held the WHOLE time ANY gated clip is playing; the LAST clip restores the
+        prior override. This eliminates the race where one clip's restore unmuted
+        while another was still playing -> a leak to the streamer's speakers.
+
+        Fail-open: if the kokoro lever is unavailable the scope is a no-op (the
+        caller still speaks; audible, never silently dropped) and the OBS tee is
+        unaffected either way."""
         try:
             from kenning.tts.kokoro_engine import (
-                _live_speaker_mute as _prior_mute,  # current override (None/bool)
+                _enter_chat_speaker_mute, _exit_chat_speaker_mute,
             )
-            from kenning.tts.kokoro_engine import set_live_speaker_mute
         except Exception as e:                                       # noqa: BLE001
-            logger.debug("chat-audio mute lever unavailable (%s); speaking "
+            logger.debug("speaker-mute lever unavailable (%s); speaking "
                          "normally", e)
-            self._speak(text)
+            yield
             return
+        _enter_chat_speaker_mute()
         try:
-            set_live_speaker_mute(True)   # suppress LOCAL speakers; OBS tee stays
-            self._speak(text)
+            yield
         finally:
-            # Restore the prior override (None = config-authoritative) so the
-            # next team callout / conversational line is unaffected.
             try:
-                set_live_speaker_mute(_prior_mute)
+                _exit_chat_speaker_mute()
             except Exception:                                        # noqa: BLE001
                 pass
+
+    def _result_speak(self, text: str) -> None:
+        """Speak a GAME-RESULT line, honoring the HEAR-RESULTS routing toggle.
+
+        Identical mechanism to :meth:`_chat_speak` but reads
+        ``_hear_results_to_speakers`` instead of the HEAR-CHAT flag: when False the
+        LOCAL default-speaker output is suppressed via the REFERENCE-COUNTED
+        speaker-mute scope (the SAME scope ``_chat_speak`` uses, so a result
+        announce and a chat reply overlapping never clobber each other's mute)
+        while the BroadcastSink / OBS mirror still receives the clip. The MASTER
+        ANNOUNCE-RESULTS gate is checked by the caller before reaching here. Fail-
+        open: an unavailable lever falls back to an audible ``_speak`` so a result
+        is never silently dropped."""
+        if not text:
+            return
+        if getattr(self, "_hear_results_to_speakers", True):
+            self._speak(text)
+            return
+        with self._speaker_mute_scope():
+            self._speak(text)
+
+    def _twitch_raid_speak(self, text: str) -> None:
+        """Speak the incoming-RAID welcome to the OBS/stream bus (ALWAYS) and the
+        streamer's LOCAL speakers (gated by the HEAR-RAID toggle, default ON).
+
+        Mirrors the team-redeem-speaker primitive (``_twitch_team_speak``): one
+        synthesis, tee'd to ``broadcast.submit`` for OBS/viewers, and ALSO played to
+        the resolved speaker device on a daemon thread (full-band, no team DSP) when
+        ``_hear_raid_to_speakers`` is on. Unlike the team redeem this NEVER touches
+        the team mic / PTT -- the raid welcome is a streamer/stream announcement.
+        Fail-open: a synth / device error logs + drops the speaker copy; the OBS tee
+        and the chat post (done by the caller) are unaffected."""
+        line = (text or "").strip()
+        if not line:
+            return
+        try:
+            from kenning.audio.relay_speech import (
+                play_to_device, relay_tts_text, resolve_speaker_device,
+            )
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("raid speak: relay_speech unavailable: %s", e)
+            return
+        synthesize = getattr(getattr(self, "tts", None), "_synthesize", None)
+        if synthesize is None:
+            logger.warning("raid speak: no TTS synth seam")
+            return
+        try:
+            pcm, sr = synthesize(relay_tts_text(line))
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("raid speak synth failed: %s", e)
+            return
+        # Drive the on-stream waveform overlay so the GUI animates during the raid
+        # welcome too. Fail-open.
+        try:
+            from kenning.audio.waveform import submit as _viz_submit
+            _viz_submit(pcm, sr)
+        except Exception:                                            # noqa: BLE001
+            pass
+        # OBS / broadcast mirror -- ALWAYS fed so stream viewers hear the welcome.
+        try:
+            from kenning.audio.broadcast import submit as _broadcast_submit
+            _broadcast_submit(pcm, sr)
+        except Exception:                                            # noqa: BLE001
+            pass
+        # LOCAL speakers -- only when HEAR RAID is on. Full-band (no comms DSP). Run
+        # on a daemon thread so it overlaps rather than blocking the raid tick.
+        if not getattr(self, "_hear_raid_to_speakers", True):
+            logger.info("raid speak: HEAR RAID off -> OBS only")
+            return
+        try:
+            speaker_index = resolve_speaker_device()
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("raid speak: speaker device resolve failed: %s", e)
+            speaker_index = None
+        if speaker_index is None:
+            logger.info("raid speak: speaker device unresolved; OBS only")
+            return
+
+        def _speaker_play(_pcm=pcm, _sr=sr, _idx=speaker_index) -> None:
+            try:
+                play_to_device(_pcm, _sr, _idx, shape_for_team=False)
+            except Exception as se:                                  # noqa: BLE001
+                logger.warning("raid speak speaker play failed: %s", se)
+        try:
+            threading.Thread(
+                target=_speaker_play, name="raid-welcome-speaker", daemon=True,
+            ).start()
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("raid speak: speaker thread start failed: %s", e)
 
     def _stop_watcher_enabled(self) -> bool:
         """Whether to run the wake-word interrupt watcher during playback.

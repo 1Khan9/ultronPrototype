@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import types
 
 import pytest
@@ -1128,3 +1129,137 @@ def test_overlay_none_sink_is_safe():
     # _router does not pass overlay_emit -> self._overlay is None
     r.tick()
     assert any("WON" in x for x in replies)
+
+
+# --------------------------------------------------------------------------- #
+# CHANGE 1 (2026-06-26) — VISUAL-LEADS-VOCAL: overlay card FIRST, then the chat
+# announce DEFERRED by twitch.overlay_lead_seconds (non-blocking).
+# --------------------------------------------------------------------------- #
+class _Clock:
+    """A fake scheduler: records deferred (delay, fn) jobs WITHOUT running them,
+    so a test can assert the announce was deferred (not inline) and then fire the
+    due jobs deterministically. Mirrors how the live daemon threading.Timer fires
+    later, but with zero wall-clock wait."""
+
+    def __init__(self) -> None:
+        self.jobs: list = []
+
+    def defer(self, delay_s, fn):
+        self.jobs.append((delay_s, fn))
+
+    def run_due(self):
+        pending, self.jobs = self.jobs, []
+        for _delay, fn in pending:
+            fn()
+
+
+def _twitch_cfg(lead=3.0):
+    return types.SimpleNamespace(overlay_lead_seconds=lead)
+
+
+def _ordered_router(events, *, lead=3.0, clock=None, rng=None, cfg=None,
+                    announce_enabled_fn=None):
+    """A ChatGameRouter whose overlay sink + announce sink record into ONE ordered
+    log so the test can prove the card was emitted BEFORE the announce, with an
+    injected clock so the announce defer is observable. Returns (router, log,
+    clock)."""
+    led = Ledger(":memory:")
+    led.credit("u1", 1000, "seed", "seed")
+    clock = clock or _Clock()
+    log: list = []
+    r = ChatGameRouter(
+        lambda: list(events), ledger=led, cfg=cfg or _cfg(),
+        rng=rng or FakeRNG(slots_win=True),
+        announce_fn=lambda t: log.append(("announce", t)),
+        overlay_emit=lambda e: log.append(("overlay", e.get("game"))),
+        twitch_cfg=_twitch_cfg(lead),
+        defer_fn=clock.defer,
+        announce_results_enabled_fn=announce_enabled_fn,
+    )
+    return r, log, clock
+
+
+def test_overlay_emitted_before_announce_and_announce_is_deferred():
+    r, log, clock = _ordered_router([_ev("!slots 10", mid="w")])
+    r.tick()
+    # The overlay card fired during the tick; the announce did NOT (it is deferred).
+    assert log == [("overlay", "slots")]
+    assert len(clock.jobs) == 1 and clock.jobs[0][0] == 3.0  # one 3s-deferred job
+    # Firing the due job lands the announce AFTER the card.
+    clock.run_due()
+    assert [kind for kind, _ in log] == ["overlay", "announce"]
+    assert "WON" in log[1][1]
+
+
+def test_zero_lead_announces_inline_in_order():
+    # overlay_lead_seconds=0 -> legacy ordering: card then immediate announce, no
+    # deferred job left pending.
+    r, log, clock = _ordered_router([_ev("!slots 10", mid="w")], lead=0.0)
+    r.tick()
+    assert [kind for kind, _ in log] == ["overlay", "announce"]
+    assert clock.jobs == []
+
+
+def test_defer_does_not_block_other_commands_in_same_tick():
+    # Two slots commands in one tick: with a 3s lead, NEITHER announce blocks the
+    # tick (both are deferred); both cards emit synchronously during the tick.
+    evs = [_ev("!slots 10", uid="u1", login="a", mid="w1"),
+           _ev("!slots 10", uid="u1", login="a", mid="w2")]
+    r, log, clock = _ordered_router(evs)
+    r.tick()
+    assert [k for k, _ in log] == ["overlay", "overlay"]   # both cards, no announces yet
+    assert len(clock.jobs) == 2
+    clock.run_due()
+    assert [k for k, _ in log] == ["overlay", "overlay", "announce", "announce"]
+
+
+def test_default_threading_timer_defer_runs_announce(monkeypatch):
+    # Without an injected defer_fn the router schedules a daemon threading.Timer;
+    # with a tiny lead the announce still lands (proves the real path works).
+    led = Ledger(":memory:")
+    led.credit("u1", 1000, "seed", "seed")
+    replies: list = []
+    r = ChatGameRouter(
+        lambda: [_ev("!slots 10", mid="w")], ledger=led, cfg=_cfg(),
+        rng=FakeRNG(slots_win=True), announce_fn=replies.append,
+        overlay_emit=lambda e: None, twitch_cfg=_twitch_cfg(0.01))
+    r.tick()
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline and not replies:
+        time.sleep(0.02)
+    assert replies and "WON" in replies[0]
+
+
+def test_announce_results_master_off_shows_card_but_no_announce():
+    # CHANGE 2 master gate (chat-game side): the predicate False -> the card still
+    # emits, but nothing is announced (not even deferred).
+    r, log, clock = _ordered_router(
+        [_ev("!slots 10", mid="w")], announce_enabled_fn=lambda: False)
+    r.tick()
+    assert log == [("overlay", "slots")]
+    assert clock.jobs == []          # not even scheduled
+    clock.run_due()
+    assert all(kind != "announce" for kind, _ in log)
+
+
+def test_announce_results_master_on_announces():
+    r, log, clock = _ordered_router(
+        [_ev("!slots 10", mid="w")], announce_enabled_fn=lambda: True)
+    r.tick()
+    clock.run_due()
+    assert ("announce", log[-1][1]) == log[-1] and "WON" in log[-1][1]
+
+
+def test_non_result_replies_never_suppressed_by_master_gate():
+    # !points (a non-result reply) must post even when ANNOUNCE RESULTS is OFF --
+    # the master gate is result-only (it lives in _emit_then_reply).
+    led = Ledger(":memory:")
+    led.credit("u1", 250, "seed", "seed")
+    replies: list = []
+    r = ChatGameRouter(
+        lambda: [_ev("!points", mid="p")], ledger=led, cfg=_cfg(),
+        rng=FakeRNG(), announce_fn=replies.append, overlay_emit=lambda e: None,
+        twitch_cfg=_twitch_cfg(3.0),
+        announce_results_enabled_fn=lambda: False)
+    r.tick()
+    assert any("250" in x for x in replies)   # balance reply still posted

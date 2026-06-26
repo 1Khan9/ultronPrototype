@@ -39,6 +39,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import threading
 import time
 import urllib.request
 from collections import OrderedDict
@@ -185,6 +186,9 @@ class ChatGameRouter:
         epoch_fn: Callable[[], float] = time.time,
         dedup_max: int = _MSG_INDEX_MAX,
         chat_cfg: object | None = None,
+        twitch_cfg: object | None = None,
+        defer_fn: Callable[[float, Callable[[], None]], object] | None = None,
+        announce_results_enabled_fn: Callable[[], bool] | None = None,
     ) -> None:
         self._drain = drain_fn
         # 2026-06-26: dev TEST PANEL injection buffer. inject() appends a synthetic
@@ -207,6 +211,25 @@ class ChatGameRouter:
         # to the pre-overlay router for every existing caller / the overlay-OFF
         # boot). Every emit is fail-safe: an overlay error never breaks a game/tick.
         self._overlay = overlay_emit
+        # VISUAL-LEADS-VOCAL (2026-06-26): a game RESULT emits its overlay card
+        # FIRST, then the chat post / vocal announce is DEFERRED by this many
+        # seconds (matching the overlay client's ~3s spin) so the streamer sees the
+        # graphic before the announcement. Read off the top-level twitch cfg (the
+        # ONE place the redeem router reads it too). 0 -> announce immediately
+        # (legacy ordering). The defer is NON-blocking (a daemon timer, see
+        # ``_defer``) so a 3s lead never stalls the router tick loop.
+        self._overlay_lead_s = max(
+            0.0, _as_float(getattr(twitch_cfg, "overlay_lead_seconds", 0.0), 0.0))
+        # Injectable scheduler ``(delay_s, fn) -> handle``; defaults to a daemon
+        # threading.Timer. Tests inject a synchronous/clock-driven stub so the
+        # deferred announce is observable without real wall-clock waits.
+        self._defer_fn = defer_fn
+        # MASTER ANNOUNCE-RESULTS predicate (the STOP-window toggle): when it
+        # returns False, a game RESULT emits its overlay card but does NOT announce
+        # (no chat post). Consulted ONLY by ``_emit_then_reply`` (result path), so
+        # non-result replies (!points/!help/errors/"joined the heist") are NEVER
+        # suppressed. None -> always announce (byte-identical to pre-toggle).
+        self._announce_results_enabled_fn = announce_results_enabled_fn
         self._now = now_fn
         self._epoch = epoch_fn
         self._slots = Slots(DEFAULT_SLOT_SYMBOLS, reels=3, rng=self._rng)
@@ -581,14 +604,13 @@ class ChatGameRouter:
                 self._ledger.credit(uid, payout, "wheel", f"wheel:{mid}:win")
             except Exception as exc:  # noqa: BLE001
                 logger.warning("wheel credit failed for %s: %s", uid, exc)
-        self._reply(
+        # VISUAL-LEADS-VOCAL: the wheel card spins FIRST, then the chat post lands
+        # after the overlay lead. On-stream wheel card reveals the landed segment +
+        # the payout (always a win for the free spin -> green accent unless 0).
+        self._emit_then_reply(
             f"@{login} spun the wheel -> {res.segment.label}. +{payout} "
-            f"{self._currency()}. Balance {self._ledger.balance(uid)}."
-        )
-        # On-stream wheel card: reveal the landed segment + the payout (always a
-        # win for the free spin -> green accent unless the segment paid 0).
-        self._emit_overlay(
-            "wheel", login,
+            f"{self._currency()}. Balance {self._ledger.balance(uid)}.",
+            game="wheel", viewer=login,
             outcome=str(res.segment.label),
             title="WHEEL",
             won=payout > 0,
@@ -686,12 +708,10 @@ class ChatGameRouter:
         crew = ", ".join(f"@{pl}" for pl in logins)
         lead = logins[0] if logins else "the crew"
         if res.outcome in ("win", "partial"):
-            self._reply(
+            self._emit_then_reply(
                 f"HEIST {res.outcome.upper()}! The crew ({crew}) each take "
-                f"{per_head} {self._currency()}."
-            )
-            self._emit_overlay(
-                "heist", lead,
+                f"{per_head} {self._currency()}.",
+                game="heist", viewer=lead,
                 outcome=str(res.outcome).upper(),
                 title="HEIST",
                 won=True,
@@ -699,9 +719,9 @@ class ChatGameRouter:
                 detail={"pot": int(h["pot"]), "crew": len(logins), "payout": per_head},
             )
         else:
-            self._reply(f"HEIST FAILED. The crew ({crew}) lost their stakes.")
-            self._emit_overlay(
-                "heist", lead,
+            self._emit_then_reply(
+                f"HEIST FAILED. The crew ({crew}) lost their stakes.",
+                game="heist", viewer=lead,
                 outcome="FAIL",
                 title="HEIST",
                 won=False,
@@ -808,9 +828,9 @@ class ChatGameRouter:
         loser_login = (cmd.user_login or login) if winner_is_challenger else challenger_login
         pot = wager * 2
         self._safe_credit(winner_uid, pot, "duel win", f"{round_id}:win")
-        self._reply(f"DUEL: @{winner_login} beat @{loser_login} and takes {pot} {self._currency()}.")
-        self._emit_overlay(
-            "duel", winner_login,
+        self._emit_then_reply(
+            f"DUEL: @{winner_login} beat @{loser_login} and takes {pot} {self._currency()}.",
+            game="duel", viewer=winner_login,
             outcome="WIN",
             title="DUEL",
             won=True,
@@ -902,12 +922,10 @@ class ChatGameRouter:
         winner_uid = self._uid_for_login(res.winner)
         if prize > 0 and winner_uid:
             self._safe_credit(winner_uid, prize, "raffle win", f"{r['round_id']}:win")
-        self._reply(
+        self._emit_then_reply(
             f"RAFFLE winner: @{res.winner}! +{prize} {self._currency()} "
-            f"({len(res.entrants)} entered)."
-        )
-        self._emit_overlay(
-            "raffle", str(res.winner),
+            f"({len(res.entrants)} entered).",
+            game="raffle", viewer=str(res.winner),
             outcome="WINNER",
             title="RAFFLE",
             won=True,
@@ -1005,9 +1023,9 @@ class ChatGameRouter:
                 self._ledger.credit(uid, prize, "trivia win", f"trivia:{mid}:win")
             except Exception as exc:  # noqa: BLE001
                 logger.warning("trivia credit failed for %s: %s", uid, exc)
-        self._reply(f"@{login} got it! The answer was '{answer}'. +{prize} {self._currency()}.")
-        self._emit_overlay(
-            "trivia", login,
+        self._emit_then_reply(
+            f"@{login} got it! The answer was '{answer}'. +{prize} {self._currency()}.",
+            game="trivia", viewer=login,
             outcome="WINNER",
             title="TRIVIA",
             won=True,
@@ -1076,13 +1094,16 @@ class ChatGameRouter:
         net = payout - stake
         if net < 0:
             self._net_loss[uid] = self._net_loss.get(uid, 0) + (-net)
-        self._reply(self._bet_line(login, game, stake, payout, net, self._ledger.balance(uid)))
+        line = self._bet_line(login, game, stake, payout, net, self._ledger.balance(uid))
         if game == "slots":
-            # On-stream slots card: the reels settle on the ACTUAL pulled symbols;
-            # color-coded WIN (triple) vs loss; amount = net (won) / stake (lost).
+            # VISUAL-LEADS-VOCAL: the slot reels settle on-stream FIRST, then the
+            # chat post lands after the overlay lead. On-stream slots card shows the
+            # ACTUAL pulled symbols; color-coded WIN (triple) vs loss; amount = net
+            # (won) / stake (lost).
             won = payout > 0
-            self._emit_overlay(
-                "slots", login,
+            self._emit_then_reply(
+                line,
+                game="slots", viewer=login,
                 outcome=("WIN" if won else "LOSS"),
                 title="SLOTS",
                 won=won,
@@ -1095,6 +1116,9 @@ class ChatGameRouter:
                     "net": net,
                 },
             )
+        else:
+            # Games with no overlay card (e.g. !gamble) announce immediately.
+            self._reply(line)
         return True
 
     # -- game payouts (EV == gamble_rtp) ---------------------------------- #
@@ -1142,6 +1166,64 @@ class ChatGameRouter:
             self._announce(text)
         except Exception as exc:  # noqa: BLE001 — a dead announce channel never breaks the loop
             logger.debug("chat-game reply failed: %s", exc)
+
+    def _defer(self, delay_s: float, fn: Callable[[], None]) -> None:
+        """Schedule ``fn`` to run after ``delay_s`` seconds WITHOUT blocking the
+        caller (the router tick loop is a daemon thread; a synchronous sleep would
+        stall every other command for the lead window). Uses the injected
+        ``defer_fn`` when present (tests drive a fake clock), else a daemon
+        ``threading.Timer``. ``delay_s <= 0`` runs ``fn`` inline (legacy ordering).
+        Fail-safe: a scheduler error falls back to running ``fn`` inline so a
+        result is never silently dropped."""
+        if delay_s <= 0:
+            fn()
+            return
+        if self._defer_fn is not None:
+            try:
+                self._defer_fn(delay_s, fn)
+                return
+            except Exception as exc:  # noqa: BLE001 — bad scheduler -> run inline
+                logger.debug("chat-game defer_fn failed (%s); running inline", exc)
+                fn()
+                return
+        try:
+            t = threading.Timer(delay_s, fn)
+            t.daemon = True
+            t.start()
+        except Exception as exc:  # noqa: BLE001 — timer start failed -> run inline
+            logger.debug("chat-game defer timer failed (%s); running inline", exc)
+            fn()
+
+    def _emit_then_reply(
+        self,
+        reply_text: str,
+        *,
+        game: str,
+        viewer: str,
+        outcome: str,
+        title: str,
+        won: bool = False,
+        amount: int = 0,
+        detail: dict | None = None,
+    ) -> None:
+        """VISUAL-LEADS-VOCAL: emit the on-stream overlay card NOW, then DEFER the
+        chat post / vocal announce by ``overlay_lead_seconds`` so the streamer sees
+        the spin before the announcement. The overlay emit is immediate + fail-safe
+        (``_emit_overlay`` swallows its own errors); the reply is scheduled
+        non-blocking via :meth:`_defer`. With a 0 lead this is the exact legacy
+        order (overlay then immediate reply)."""
+        self._emit_overlay(
+            game, viewer,
+            outcome=outcome, title=title, won=won, amount=amount, detail=detail,
+        )
+        # MASTER ANNOUNCE-RESULTS gate: OFF -> the card shows but nothing is posted.
+        if self._announce_results_enabled_fn is not None:
+            try:
+                if not bool(self._announce_results_enabled_fn()):
+                    return
+            except Exception as exc:  # noqa: BLE001 — a bad predicate never blocks the card
+                logger.debug("announce-results predicate failed (%s); announcing", exc)
+        self._defer(self._overlay_lead_s, lambda: self._reply(reply_text))
 
     # -- overlay (on-stream chat-game card) -------------------------------- #
     def _emit_overlay(

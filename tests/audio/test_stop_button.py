@@ -342,3 +342,145 @@ def test_open_within_noisy_always_listening_capture(text: str) -> None:
 def test_button_complaint_does_not_summon(text: str) -> None:
     # A STATEMENT about the button (a complaint / narration) must NOT summon it.
     assert match_stop_button_command(text) is None
+
+
+# ---------------------------------------------------------------------------
+# CHANGE 2 (2026-06-26): HEAR RAID / HEAR RESULTS / ANNOUNCE RESULTS toggles
+# ---------------------------------------------------------------------------
+
+
+def test_overlay_accepts_hear_raid_toggle() -> None:
+    hits: list[bool] = []
+    ov = StopButtonOverlay(on_stop=lambda: None,
+                           on_toggle_hear_raid=lambda v: hits.append(v),
+                           hear_raid_enabled=True,
+                           hear_raid_height=30, hear_raid_label="RAID IT")
+    assert ov._on_toggle_hear_raid is not None
+    assert ov._hear_raid_enabled is True
+    assert ov._hear_raid_h == 30
+    assert ov._hear_raid_label == "RAID IT"
+    ov._on_toggle_hear_raid(False)
+    assert hits == [False]
+
+
+def test_overlay_accepts_hear_results_toggle() -> None:
+    hits: list[bool] = []
+    ov = StopButtonOverlay(on_stop=lambda: None,
+                           on_toggle_hear_results=lambda v: hits.append(v),
+                           hear_results_enabled=True)
+    assert ov._on_toggle_hear_results is not None
+    assert ov._hear_results_enabled is True
+    ov._on_toggle_hear_results(False)
+    assert hits == [False]
+
+
+def test_overlay_accepts_announce_results_toggle() -> None:
+    hits: list[bool] = []
+    ov = StopButtonOverlay(on_stop=lambda: None,
+                           on_toggle_announce_results=lambda v: hits.append(v),
+                           announce_results_enabled=True)
+    assert ov._on_toggle_announce_results is not None
+    assert ov._announce_results_enabled is True
+    ov._on_toggle_announce_results(False)
+    assert hits == [False]
+
+
+def test_overlay_new_toggle_defaults_and_clamp() -> None:
+    ov = StopButtonOverlay(on_stop=lambda: None)
+    # absent by default (rows hidden in non-twitch sessions)
+    assert ov._on_toggle_hear_raid is None
+    assert ov._on_toggle_hear_results is None
+    assert ov._on_toggle_announce_results is None
+    # default ON + default heights/labels
+    assert ov._hear_raid_enabled is True and ov._hear_raid_h == 26
+    assert ov._hear_results_enabled is True and ov._hear_results_h == 26
+    assert ov._announce_results_enabled is True and ov._announce_results_h == 26
+    assert ov._hear_raid_label == "HEAR RAID"
+    assert ov._hear_results_label == "HEAR RESULTS"
+    assert ov._announce_results_label == "ANNOUNCE RESULTS"
+    # height clamps to >= 0; empty label falls back to the default
+    ov2 = StopButtonOverlay(on_stop=lambda: None,
+                            hear_raid_height=-5, hear_raid_label="",
+                            hear_results_height=-1, hear_results_label="",
+                            announce_results_height=-9, announce_results_label="")
+    assert ov2._hear_raid_h == 0 and ov2._hear_raid_label == "HEAR RAID"
+    assert ov2._hear_results_h == 0 and ov2._hear_results_label == "HEAR RESULTS"
+    assert (ov2._announce_results_h == 0
+            and ov2._announce_results_label == "ANNOUNCE RESULTS")
+
+
+def test_config_new_toggle_defaults() -> None:
+    from kenning.config import StopButtonConfig
+    c = StopButtonConfig()
+    assert c.hear_raid_height == 26 and c.hear_raid_label == "HEAR RAID"
+    assert c.hear_raid_default is True
+    assert c.hear_results_height == 26 and c.hear_results_label == "HEAR RESULTS"
+    assert c.hear_results_default is True
+    assert (c.announce_results_height == 26
+            and c.announce_results_label == "ANNOUNCE RESULTS")
+    assert c.announce_results_default is True
+
+
+def test_construction_wires_new_toggles() -> None:
+    import inspect
+    src = inspect.getsource(Orchestrator.__init__)
+    assert "on_toggle_hear_raid=" in src
+    assert "on_toggle_hear_results=" in src
+    assert "on_toggle_announce_results=" in src
+
+
+# ---------------------------------------------------------------------------
+# CHANGE 2 setters: runtime flags flip + are read by the announce paths
+# ---------------------------------------------------------------------------
+
+
+def test_setters_flip_runtime_flags() -> None:
+    o = Orchestrator.__new__(Orchestrator)
+    o._hear_raid_to_speakers = True
+    o._hear_results_to_speakers = True
+    o._announce_results_enabled = True
+    o._set_hear_raid_to_speakers(False)
+    o._set_hear_results_to_speakers(False)
+    o._set_announce_results_enabled(False)
+    assert o._hear_raid_to_speakers is False
+    assert o._hear_results_to_speakers is False
+    assert o._announce_results_enabled is False
+    o._set_hear_raid_to_speakers(True)
+    assert o._hear_raid_to_speakers is True
+
+
+def test_result_speak_hear_on_uses_plain_speak() -> None:
+    # HEAR RESULTS on -> the result is spoken via the normal _speak (speakers+OBS),
+    # with no per-utterance mute toggling.
+    o = Orchestrator.__new__(Orchestrator)
+    o._hear_results_to_speakers = True
+    said: list[str] = []
+    o._speak = lambda t: said.append(t)
+    o._result_speak("RAFFLE winner: alice!")
+    assert said == ["RAFFLE winner: alice!"]
+
+
+def test_result_speak_hear_off_mutes_local_speakers(monkeypatch) -> None:
+    # HEAR RESULTS off -> the local speaker is muted for THIS utterance only (the
+    # OBS tee, inside _speak, still fires); the mute is restored afterwards. Now via
+    # the REFERENCE-COUNTED scope (CHANGE 4) -- a single clip still mutes True then
+    # restores the prior (None).
+    import kenning.tts.kokoro_engine as ke
+    monkeypatch.setattr(ke, "_live_speaker_mute", None, raising=False)
+    monkeypatch.setattr(ke, "_chat_mute_depth", 0, raising=False)
+    monkeypatch.setattr(ke, "_chat_mute_saved", None, raising=False)
+    o = Orchestrator.__new__(Orchestrator)
+    o._hear_results_to_speakers = False
+    spoke: list[str] = []
+
+    def _spk(t):
+        # Inside the scope the live mute must be held True (the speaker is gated).
+        assert ke._live_speaker_mute is True
+        spoke.append(t)
+
+    o._speak = _spk
+    o._result_speak("HEIST WIN")
+    assert spoke == ["HEIST WIN"]
+    # After the only clip, the prior override (None) is restored + depth back to 0.
+    assert ke._live_speaker_mute is None
+    assert ke.chat_speaker_mute_depth() == 0

@@ -528,12 +528,19 @@ class OverlayServer:
 
     # --- the overlay page -----------------------------------------------------
     def overlay_html_bytes(self) -> bytes:
-        if self._html_cache is None:
-            try:
-                self._html_cache = _HTML_PATH.read_bytes()
-            except OSError as e:
-                logger.error("overlay.html unreadable at %s: %s", _HTML_PATH, e)
-                raise OverlayError(f"overlay.html missing: {e}") from e
+        # Served FRESH on every request (re-read from disk) so a streamer's
+        # overlay tweak takes effect on a plain OBS browser-source refresh -- no
+        # reboot needed. The page is fetched rarely (OBS loads it once, then
+        # holds the long-lived SSE), so the per-request read is negligible. A
+        # transient read error falls back to the last good cache if we have one.
+        try:
+            self._html_cache = _HTML_PATH.read_bytes()
+        except OSError as e:
+            if self._html_cache is not None:
+                logger.warning("overlay.html re-read failed (%s); serving cache", e)
+                return self._html_cache
+            logger.error("overlay.html unreadable at %s: %s", _HTML_PATH, e)
+            raise OverlayError(f"overlay.html missing: {e}") from e
         return self._html_cache
 
     # --- SSE fan-out ----------------------------------------------------------

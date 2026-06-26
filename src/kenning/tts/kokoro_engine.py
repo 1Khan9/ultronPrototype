@@ -69,6 +69,53 @@ def set_live_speaker_mute(value: Optional[bool]) -> None:
     _live_speaker_mute = None if value is None else bool(value)
 
 
+# Reference-counted, LOCKED scoped speaker-mute (2026-06-26, CHANGE 4). The
+# per-clip "save prior -> set True -> speak -> restore prior in finally" pattern
+# RACES when two HEAR-CHAT/HEAR-RESULTS-gated clips overlap from DIFFERENT threads
+# (the speak redeem on the redeem-tick thread + the chat-reply on its own thread):
+# clip A's restore/unmute runs while clip B is still playing, so B leaks to the
+# streamer's speakers. The fix: a single global counter under a lock. The FIRST
+# entrant SAVES the pre-existing override and forces mute=True; nested/concurrent
+# entrants only bump the counter (the speakers stay muted while ANY gated clip is
+# active); the LAST leaver RESTORES the saved override exactly once. So a back-to-
+# back speak-redeem + chat-reply never unmutes between clips.
+_chat_mute_lock = threading.Lock()
+_chat_mute_depth: int = 0
+_chat_mute_saved: Optional[bool] = None
+
+
+def _enter_chat_speaker_mute() -> None:
+    """Enter a HEAR-CHAT/HEAR-RESULTS speaker-mute scope (ref-counted). On the
+    0->1 transition save the current live override + force mute True; otherwise
+    just bump the counter (the mute is already held). Thread-safe."""
+    global _chat_mute_depth, _chat_mute_saved
+    with _chat_mute_lock:
+        if _chat_mute_depth == 0:
+            _chat_mute_saved = _live_speaker_mute
+            set_live_speaker_mute(True)
+        _chat_mute_depth += 1
+
+
+def _exit_chat_speaker_mute() -> None:
+    """Leave a speaker-mute scope (ref-counted). Only the 1->0 transition (the
+    LAST active gated clip) restores the saved override; nested/concurrent
+    entrants leave the mute held. Thread-safe + underflow-safe."""
+    global _chat_mute_depth, _chat_mute_saved
+    with _chat_mute_lock:
+        if _chat_mute_depth <= 0:
+            _chat_mute_depth = 0
+            return
+        _chat_mute_depth -= 1
+        if _chat_mute_depth == 0:
+            set_live_speaker_mute(_chat_mute_saved)
+            _chat_mute_saved = None
+
+
+def chat_speaker_mute_depth() -> int:
+    """Current ref-count of active speaker-mute scopes (for tests / diagnostics)."""
+    return _chat_mute_depth
+
+
 def _speakers_muted() -> bool:
     """Live read of the speaker-mute state. The instant GUI override wins when
     set; otherwise fall back to ``audio.mute_speakers`` (config-driven). When

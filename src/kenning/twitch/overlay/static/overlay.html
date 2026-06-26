@@ -173,48 +173,118 @@
   .cg-amount .cg-amt-unit { display: block; font-size: 9px; font-weight: 600;
     letter-spacing: 1px; color: var(--ink-dim); margin-top: 3px; text-transform: uppercase; }
 
-  /* --- slots reels (3 cells, quick spin then settle on the real symbols) -- */
-  .cg-reels { display: flex; gap: 6px; }
+  /* --- slots reels: BIG reels that spin ~3s then LAND on the real symbols --- */
+  /* A wide slots card so the three reels read clearly on stream. The slots card
+     is given the .cg-card-slots modifier which widens it + stacks the reels above
+     the viewer/amount line. */
+  .cg-card.cg-card-slots { width: 420px; max-width: 40vw; }
+  .cg-card-slots .cg-body { flex-direction: column; align-items: stretch; gap: 12px; }
+  .cg-reels { display: flex; gap: 12px; justify-content: center; }
   .cg-reel {
-    width: 34px; height: 40px; border-radius: 6px;
-    background: rgba(0, 0, 0, 0.35);
-    border: 1px solid var(--hairline);
+    width: 96px; height: 116px; border-radius: 12px;
+    background: radial-gradient(120% 120% at 50% 0%, rgba(40,46,82,0.6) 0%, rgba(0,0,0,0.5) 100%);
+    border: 2px solid var(--hairline);
     overflow: hidden; position: relative;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.4) inset;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.5) inset, 0 1px 0 rgba(255,255,255,0.05);
+  }
+  /* a subtle center pay-line so the eye knows where the symbol settles */
+  .cg-reel::after {
+    content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px;
+    margin-top: -1px; background: rgba(255, 70, 85, 0.35); pointer-events: none;
   }
   .cg-reel-strip {
     position: absolute; left: 0; right: 0; top: 0;
     display: flex; flex-direction: column; align-items: center;
-    /* the strip is pre-stacked with filler glyphs + the final glyph last; a
-       transform slide settles it on the final cell. */
+    /* the strip is pre-stacked with many filler glyphs + the final glyph last; a
+       transform slide settles it on the final cell. Per-reel duration set in JS so
+       the LAST reel finishes at ~3s (staggered, decelerating). */
     transform: translateY(0);
-    transition: transform var(--reel-ms, 900ms) cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: transform var(--reel-ms, 3000ms) cubic-bezier(0.12, 0.62, 0.12, 1);
   }
   .cg-reel-cell {
-    width: 34px; height: 40px; display: flex; align-items: center;
-    justify-content: center; font-size: 22px; line-height: 1;
+    width: 96px; height: 116px; display: flex; align-items: center;
+    justify-content: center; font-size: 64px; line-height: 1;
   }
-  .cg-card.cg-win .cg-reel { border-color: rgba(67, 224, 160, 0.6); }
+  .cg-card.cg-win .cg-reel { border-color: rgba(67, 224, 160, 0.65);
+    box-shadow: 0 0 18px rgba(67,224,160,0.35), 0 4px 14px rgba(0,0,0,0.5) inset; }
 
-  /* --- wheel mini reveal (a sleek landed-on ticker, not a heavy canvas) ---- */
+  /* ====================================================================== */
+  /* BIG SPINNING WHEEL CARD — dominant, readable wheel that spins ~3s then  */
+  /* decelerates + LANDS on the outcome wedge; the earned amount is revealed */
+  /* ON the landed wedge under the pointer.                                  */
+  /* ====================================================================== */
+  .cg-card.cg-card-wheel { width: 440px; max-width: 46vw; }
+  .cg-card-wheel .cg-body { flex-direction: column; align-items: center; gap: 10px; }
+
+  /* The wheel stage: a big square holding the rotating disc + a fixed pointer + a
+     fixed center hub. The disc rotates; the pointer/hub/amount stay put. */
+  .cg-bigwheel {
+    position: relative; width: 300px; height: 300px; margin: 4px auto 2px;
+  }
+  .cg-bigwheel-disc {
+    position: absolute; inset: 0; border-radius: 50%;
+    border: 5px solid rgba(120,140,255,0.45);
+    box-shadow: 0 0 36px rgba(80,100,255,0.4), 0 0 0 3px rgba(0,0,0,0.5) inset;
+    /* conic-gradient wedges are painted in JS via setProperty('background', ...)
+       so the slice count matches the live segment list; transform spins it. */
+    transform: rotate(0deg);
+    /* ~3s decelerating spin; duration set per-spin via --bigwheel-ms. */
+    transition: transform var(--bigwheel-ms, 3000ms) cubic-bezier(0.10, 0.55, 0.10, 1);
+  }
+  /* per-wedge labels are absolutely positioned children of the disc (so they spin
+     WITH it); each is rotated to its wedge center + pushed to the rim. */
+  .cg-bigwheel-seg {
+    position: absolute; top: 50%; left: 50%; width: 50%; height: 22px;
+    margin-top: -11px; transform-origin: 0 50%;
+    display: flex; align-items: center; justify-content: flex-end;
+    padding-right: 16px; box-sizing: border-box;
+    font-size: 14px; font-weight: 800; letter-spacing: 0.3px; color: #fff;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.85); white-space: nowrap;
+    pointer-events: none;
+  }
+  /* fixed pointer at the TOP (12 o'clock) — the wedge under it is the winner. */
+  .cg-bigwheel-pointer {
+    position: absolute; top: -10px; left: 50%; margin-left: -15px; z-index: 3;
+    width: 0; height: 0;
+    border-left: 15px solid transparent; border-right: 15px solid transparent;
+    border-top: 26px solid #ffd166;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.7));
+  }
+  /* fixed center hub that the landed amount is revealed inside. */
+  .cg-bigwheel-hub {
+    position: absolute; top: 50%; left: 50%; z-index: 4;
+    width: 110px; height: 110px; margin: -55px 0 0 -55px; border-radius: 50%;
+    background: radial-gradient(circle at 50% 38%, rgba(28,32,58,0.96), rgba(10,12,24,0.96));
+    border: 3px solid rgba(120,140,255,0.5);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity 320ms ease;
+  }
+  .cg-bigwheel-hub.cg-landed { opacity: 1; }
+  .cg-card.cg-win  .cg-bigwheel-hub { border-color: rgba(67,224,160,0.6);
+    box-shadow: 0 0 24px rgba(67,224,160,0.4), 0 6px 20px rgba(0,0,0,0.6); }
+  .cg-card.cg-loss .cg-bigwheel-hub { border-color: rgba(255,70,85,0.6); }
+  .cg-bigwheel-amount {
+    font-size: 38px; font-weight: 900; line-height: 1; letter-spacing: 0.3px;
+    font-variant-numeric: tabular-nums; color: var(--win);
+  }
+  .cg-card.cg-loss .cg-bigwheel-amount { color: var(--loss); }
+  .cg-bigwheel-amount-unit {
+    margin-top: 5px; font-size: 11px; font-weight: 700; letter-spacing: 1.5px;
+    color: var(--ink-dim); text-transform: uppercase;
+  }
+  /* the landed segment label shown under the wheel (mirrors the wedge it stopped on) */
+  .cg-bigwheel-foot {
+    text-align: center; font-size: 15px; font-weight: 800; color: var(--ink);
+    letter-spacing: 0.4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .cg-bigwheel-foot .cg-bigwheel-foot-seg { color: #ffd166; }
+
+  /* legacy compact wheel reveal (kept for back-compat; no longer the primary). */
   .cg-wheel {
     display: flex; align-items: center; gap: 9px;
   }
-  .cg-wheel-dial {
-    flex: none; width: 38px; height: 38px; border-radius: 50%;
-    background: conic-gradient(from 0deg,
-      #20243f 0 60deg, #2c3152 60deg 120deg, #20243f 120deg 180deg,
-      #2c3152 180deg 240deg, #20243f 240deg 300deg, var(--val-red) 300deg 360deg);
-    border: 2px solid rgba(255,255,255,0.14);
-    position: relative;
-    animation: cg-dial-spin 900ms cubic-bezier(0.15, 0.75, 0.15, 1) 1;
-  }
-  .cg-wheel-dial::after {
-    content: ""; position: absolute; top: -5px; left: 50%; margin-left: -4px;
-    border-left: 4px solid transparent; border-right: 4px solid transparent;
-    border-top: 7px solid var(--val-red);
-  }
-  @keyframes cg-dial-spin { from { transform: rotate(0); } to { transform: rotate(1080deg); } }
   .cg-seg {
     font-size: 15px; font-weight: 800; color: var(--ink); letter-spacing: 0.4px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -234,6 +304,42 @@
     margin-top: 7px; font-size: 11px; color: var(--ink-dim);
     letter-spacing: 0.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+
+  /* ====================================================================== */
+  /* RESULT-CARD SUSPENSE — heist/duel/raffle/trivia play out for ~3s then  */
+  /* SETTLE on the real outcome from the event (winner / amount / detail),  */
+  /* so the card lands exactly as the server announces. The "playing out"   */
+  /* phase is .cg-suspense; settling adds .cg-settled (a small flag flip in  */
+  /* JS at SPIN_MS) which stops the animation + reveals the true result.     */
+  /* ====================================================================== */
+  .cg-card.cg-suspense .cg-icon { animation: cg-suspense-pulse 700ms ease-in-out infinite; }
+  @keyframes cg-suspense-pulse {
+    0%, 100% { transform: scale(1);    filter: none; }
+    50%      { transform: scale(1.16); filter: brightness(1.5); }
+  }
+  /* the rolling "playing out" line: a faint scan shimmer while undecided. */
+  .cg-roll {
+    margin-top: 2px; font-size: 13px; color: var(--ink-dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    position: relative;
+  }
+  .cg-card.cg-suspense .cg-roll {
+    background: linear-gradient(90deg, transparent 0%, rgba(255,70,85,0.18) 50%, transparent 100%);
+    background-size: 200% 100%;
+    animation: cg-roll-scan 1100ms linear infinite;
+  }
+  @keyframes cg-roll-scan { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  /* the amount + outcome reveal — hidden until settle, then fades in. */
+  .cg-card .cg-reveal { opacity: 0; transition: opacity 320ms ease; }
+  .cg-card.cg-settled .cg-reveal { opacity: 1; }
+  /* a duel shows the two combatants tug back and forth, then the loser dims. */
+  .cg-duel { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .cg-duel-side { font-weight: 800; color: var(--ink); transition: opacity 300ms ease, color 300ms ease; }
+  .cg-duel-vs { color: var(--ink-dim); font-size: 10px; letter-spacing: 1px; }
+  .cg-card.cg-suspense .cg-duel-side { animation: cg-duel-flicker 800ms ease-in-out infinite alternate; }
+  @keyframes cg-duel-flicker { from { opacity: 0.5; } to { opacity: 1; } }
+  .cg-duel-side.cg-duel-lost  { opacity: 0.35; color: var(--ink-dim); text-decoration: line-through; }
+  .cg-duel-side.cg-duel-won   { color: var(--win); }
 
   /* --- speech card (a SPEAK redeem: viewer + quote, team variant tinted) --- */
   .cg-quote {
@@ -386,24 +492,38 @@
     return s;
   }
 
-  // Build the slots card body: three reel cells that quick-spin then settle on
-  // the ACTUAL pulled symbols (pure CSS transform, no JS animation loop).
-  function buildSlotsBody(ev, detail) {
+  // ~3s spin window for BOTH slots + wheel: the server emits the overlay FIRST,
+  // waits ~3s, THEN announces. The reels/wheel must finish at ~SPIN_MS so the
+  // land lines up with the spoken result.
+  var SPIN_MS = 3000;          // total spin window (slot last reel / wheel disc)
+  var REEL_CELL_PX = 116;      // must equal .cg-reel-cell height in the CSS
+  var REEL_PRESTACK = 24;      // tall filler stack so the spin reads as a real blur
+
+  // Build the slots card body: three BIG reels that spin for ~3s then land,
+  // staggered (left reel lands first), settling on the ACTUAL pulled symbols.
+  // Pure CSS transform — no JS animation loop. The amount reveals after the LAST
+  // reel lands (handed back via onLanded so the card can flip win/loss color too).
+  function buildSlotsBody(ev, detail, onLanded) {
     var body = makeEl("div", "cg-body");
     var reels = makeEl("div", "cg-reels");
     var symbols = (detail.reels && detail.reels.length) ? detail.reels : ["star", "star", "star"];
-    for (var i = 0; i < symbols.length && i < 5; i++) {
+    var n = Math.min(symbols.length, 3);
+    if (n < 1) { n = 1; }
+    var lastReelMs = SPIN_MS;
+    for (var i = 0; i < n; i++) {
       var reel = makeEl("div", "cg-reel");
       var strip = makeEl("div", "cg-reel-strip");
-      // pre-stack a few filler glyphs, with the FINAL real symbol last; sliding
-      // the strip up settles on that final cell.
-      var pre = 5;
+      // pre-stack many filler glyphs (a tall blur), with the FINAL real symbol
+      // last; sliding the strip up by `pre` cells settles on that final cell.
+      var pre = REEL_PRESTACK;
       for (var f = 0; f < pre; f++) {
-        strip.appendChild(makeEl("div", "cg-reel-cell", SLOT_FILLERS[(i + f) % SLOT_FILLERS.length]));
+        strip.appendChild(makeEl("div", "cg-reel-cell", SLOT_FILLERS[(i * 3 + f) % SLOT_FILLERS.length]));
       }
       strip.appendChild(makeEl("div", "cg-reel-cell", slotGlyph(symbols[i])));
-      // settle offset = move up by `pre` cells (40px each); staggered per reel.
-      var ms = 700 + i * 220;
+      // Staggered land: reel 0 finishes earlier, the LAST reel finishes at SPIN_MS
+      // so the whole spin reads as ~3s. Each reel still spins the full tall stack.
+      var ms = SPIN_MS - (n - 1 - i) * 360;
+      if (i === n - 1) { lastReelMs = ms; }
       strip.style.setProperty("--reel-ms", ms + "ms");
       reel.appendChild(strip);
       reels.appendChild(reel);
@@ -412,38 +532,142 @@
         window.requestAnimationFrame(function () {
           window.requestAnimationFrame(function () { s.style.transform = "translateY(-" + offset + "px)"; });
         });
-      })(strip, pre * 40);
+      })(strip, pre * REEL_CELL_PX);
     }
     body.appendChild(reels);
     var main = makeEl("div", "cg-main");
     main.appendChild(makeEl("div", "cg-viewer", ev.viewer));
-    main.appendChild(makeEl("div", "cg-outcome", ev.won ? "Triple " + slotGlyph(detail.win_symbol) + " — jackpot" : "No match"));
+    var outcome = makeEl("div", "cg-outcome", "spinning…");
+    main.appendChild(outcome);
     body.appendChild(main);
-    body.appendChild(buildAmount(ev));
+    var amount = buildAmount(ev);
+    amount.style.opacity = "0";
+    amount.style.transition = "opacity 300ms ease";
+    body.appendChild(amount);
+    // After the last reel lands, reveal the outcome text + amount together.
+    window.setTimeout(function () {
+      setText(outcome, ev.won ? "Triple " + slotGlyph(detail.win_symbol) + " — jackpot" : "No match");
+      amount.style.opacity = "1";
+      if (typeof onLanded === "function") { onLanded(); }
+    }, Math.max(0, lastReelMs));
     return body;
   }
 
-  function buildWheelBody(ev, detail) {
+  // Canonical wheel face. The live event only tells us the LANDED segment
+  // (detail.segment / ev.outcome), not the full slice list, so we render a fixed
+  // readable face and land the pointer on the wedge that matches. If the landed
+  // label isn't one of these, we substitute it into a neutral slot so the pointer
+  // still stops on the real outcome text.
+  var WHEEL_FACE = [
+    { label: "JACKPOT 1000", color: "#ffd166" },
+    { label: "BUST",         color: "#3a2030" },
+    { label: "DOUBLE",       color: "#43e0a0" },
+    { label: "SMALL WIN",    color: "#2c3a73" },
+    { label: "TRIPLE",       color: "#6c8cff" },
+    { label: "NOTHING",      color: "#23263f" },
+    { label: "BIG WIN",      color: "#ff4655" },
+    { label: "HALF BACK",    color: "#3a3f73" }
+  ];
+
+  function norm(s) { return String(s === undefined || s === null ? "" : s).trim().toUpperCase(); }
+
+  // Build the conic-gradient + place the rotating segment labels; return the
+  // wedge index that matches `landed` (or the slot we substituted it into).
+  function paintWheelFace(disc, landed) {
+    var face = WHEEL_FACE.slice();
+    var want = norm(landed);
+    var idx = -1;
+    for (var i = 0; i < face.length; i++) {
+      if (norm(face[i].label) === want) { idx = i; break; }
+    }
+    if (idx < 0 && want) {
+      // landed label isn't on the canonical face — drop it into a neutral wedge so
+      // the pointer still stops on the true outcome string.
+      idx = 5; // the "NOTHING" slot, recolored below to read as the real outcome
+      face[idx] = { label: landed, color: "#2c3a73" };
+    }
+    if (idx < 0) { idx = 0; }
+    var n = face.length;
+    var per = 360 / n;
+    // conic-gradient stops, wedge i spanning [i*per, (i+1)*per).
+    var stops = [];
+    for (var j = 0; j < n; j++) {
+      stops.push(face[j].color + " " + (j * per).toFixed(3) + "deg " + ((j + 1) * per).toFixed(3) + "deg");
+    }
+    disc.style.setProperty("background", "conic-gradient(from 0deg, " + stops.join(", ") + ")");
+    // place each label rotated to its wedge CENTER, anchored at the disc center,
+    // pushed to the rim (the .cg-bigwheel-seg is a half-width bar from center out).
+    // The conic-gradient measures angles clockwise from 12 o'clock (North); a CSS
+    // rotate(0) points East (3 o'clock), so subtract 90deg to align the label with
+    // the same wedge the gradient painted.
+    for (var k = 0; k < n; k++) {
+      var seg = makeEl("div", "cg-bigwheel-seg", face[k].label);
+      var center = (k + 0.5) * per;        // degrees, clockwise from 12 o'clock(0)
+      seg.style.transform = "rotate(" + (center - 90) + "deg)";
+      disc.appendChild(seg);
+    }
+    return { idx: idx, per: per, label: face[idx].label };
+  }
+
+  // Big spinning wheel: paints the face, then on the next frames spins forward
+  // several whole turns + decelerates over ~SPIN_MS, LANDING the matched wedge
+  // under the top pointer. After it lands, the earned amount is revealed on the
+  // center hub (over the landed wedge) and the win/loss color is applied.
+  function buildWheelBody(ev, detail, onLanded) {
+    var landed = detail.segment || ev.outcome;
     var body = makeEl("div", "cg-body");
-    var wheel = makeEl("div", "cg-wheel");
-    wheel.appendChild(makeEl("div", "cg-wheel-dial"));
-    var seg = makeEl("div", "cg-seg", detail.segment || ev.outcome);
-    wheel.appendChild(seg);
-    body.appendChild(wheel);
-    var main = makeEl("div", "cg-main");
-    main.appendChild(makeEl("div", "cg-viewer", ev.viewer));
-    main.appendChild(makeEl("div", "cg-outcome", "landed the spin"));
-    body.appendChild(main);
-    body.appendChild(buildAmount(ev));
+
+    var stage = makeEl("div", "cg-bigwheel");
+    stage.appendChild(makeEl("div", "cg-bigwheel-pointer"));
+    var disc = makeEl("div", "cg-bigwheel-disc");
+    var placed = paintWheelFace(disc, landed);
+    stage.appendChild(disc);
+
+    // center hub holds the earned amount, revealed only AFTER the wheel lands.
+    var hub = makeEl("div", "cg-bigwheel-hub");
+    var hubAmt = makeEl("div", "cg-bigwheel-amount", fmtAmount(ev.amount));
+    hub.appendChild(hubAmt);
+    hub.appendChild(makeEl("div", "cg-bigwheel-amount-unit", "taps"));
+    stage.appendChild(hub);
+    body.appendChild(stage);
+
+    // viewer line + (after-land) landed segment under the wheel.
+    var foot = makeEl("div", "cg-bigwheel-foot");
+    foot.appendChild(makeEl("span", null, (ev.viewer ? ev.viewer + " · " : "")));
+    var footSeg = makeEl("span", "cg-bigwheel-foot-seg", "spinning…");
+    foot.appendChild(footSeg);
+    body.appendChild(foot);
+
+    // To land wedge `idx` under the TOP pointer (12 o'clock = 0deg), the wedge
+    // center must rotate to 0deg, i.e. disc rotates by -(center). Add whole turns
+    // so it always spins forward, plus a tiny random jitter within the wedge so it
+    // doesn't look mechanically perfect.
+    var center = (placed.idx + 0.5) * placed.per;
+    var jitter = (Math.random() - 0.5) * (placed.per * 0.5);
+    var turns = 6;
+    var target = turns * 360 - center + jitter;
+    disc.style.setProperty("--bigwheel-ms", SPIN_MS + "ms");
+    window.requestAnimationFrame(function () {
+      window.requestAnimationFrame(function () {
+        void disc.offsetWidth;                  // force a reflow so the transition runs
+        disc.style.transform = "rotate(" + target + "deg)";
+      });
+    });
+
+    // After the spin lands: reveal the hub amount + the landed segment text.
+    window.setTimeout(function () {
+      hub.classList.add("cg-landed");
+      setText(footSeg, placed.label);
+      if (typeof onLanded === "function") { onLanded(); }
+    }, SPIN_MS);
+
     return body;
   }
 
-  // Generic result card (heist/duel/trivia/raffle): an icon chip + winner + amount.
-  function buildResultBody(ev, detail) {
-    var body = makeEl("div", "cg-body");
-    body.appendChild(makeEl("div", "cg-icon", CG_ICON[ev.game] || "✦"));
-    var main = makeEl("div", "cg-main");
-    main.appendChild(makeEl("div", "cg-viewer", detail.winner || ev.viewer));
+  // The real settled sub-line for a result card, computed from the ACTUAL event
+  // data (winner / loser / pot / crew / entrants / phase). This is what the card
+  // shows AFTER the ~3s suspense plays out.
+  function resultSettledSub(ev, detail) {
     var sub = ev.outcome;
     if (ev.game === "heist")  { sub = ev.outcome + " · pot " + (detail.pot || 0) + " · " + (detail.crew || 1) + " crew"; }
     if (ev.game === "duel")   { sub = "beat " + (detail.loser || "the house"); }
@@ -453,9 +677,83 @@
     if (ev.game === "trivia") {
       sub = (detail.phase === "open") ? "trivia started" : "got it right";
     }
-    main.appendChild(makeEl("div", "cg-outcome", sub));
+    return sub;
+  }
+
+  // The "playing out" line shown DURING the ~3s suspense, per game. An "open"
+  // phase (a raffle/trivia that just opened a window) has no winner to resolve, so
+  // it settles instantly on its real state rather than faking a draw.
+  function resultRollText(ev, detail) {
+    if (ev.game === "heist")  { return "cracking the vault…"; }
+    if (ev.game === "duel")   { return "trading shots…"; }
+    if (ev.game === "raffle") { return (detail.phase === "open") ? "" : "drawing a winner…"; }
+    if (ev.game === "trivia") { return (detail.phase === "open") ? "" : "checking the answer…"; }
+    return "resolving…";
+  }
+
+  // Generic result card (heist/duel/trivia/raffle + any future game): an icon chip
+  // that PLAYS OUT for ~3s (suspense), then SETTLES on the real winner/outcome and
+  // reveals the true amount — landing exactly as the server announces. A pure
+  // outcome-open card (raffle/trivia just opened) has nothing to resolve, so it
+  // settles immediately on its real state.
+  function buildResultBody(ev, detail, onLanded) {
+    var body = makeEl("div", "cg-body");
+    var icon = makeEl("div", "cg-icon", CG_ICON[ev.game] || "✦");
+    body.appendChild(icon);
+    var main = makeEl("div", "cg-main");
+
+    var rollText = resultRollText(ev, detail);
+    var animates = rollText !== "";   // open-phase cards have no draw to play out
+    var settledSub = resultSettledSub(ev, detail);
+    var winnerName = detail.winner || ev.viewer;
+
+    // DUEL gets a two-combatant resolve; everyone else gets a winner line.
+    var viewerEl, subEl, duelA, duelB;
+    if (ev.game === "duel" && animates) {
+      // show both combatants flickering, then the loser dims + winner lights up.
+      var duel = makeEl("div", "cg-duel");
+      duelA = makeEl("span", "cg-duel-side", winnerName);
+      duel.appendChild(duelA);
+      duel.appendChild(makeEl("span", "cg-duel-vs", "VS"));
+      duelB = makeEl("span", "cg-duel-side", detail.loser || "the house");
+      duel.appendChild(duelB);
+      main.appendChild(duel);
+      subEl = makeEl("div", "cg-roll", rollText);
+      main.appendChild(subEl);
+    } else {
+      viewerEl = makeEl("div", "cg-viewer", animates ? "…" : winnerName);
+      main.appendChild(viewerEl);
+      subEl = makeEl("div", animates ? "cg-roll" : "cg-outcome", animates ? rollText : settledSub);
+      main.appendChild(subEl);
+    }
     body.appendChild(main);
-    body.appendChild(buildAmount(ev));
+
+    var amount = buildAmount(ev);
+    if (animates) { amount.classList.add("cg-reveal"); }   // hidden until settle
+    body.appendChild(amount);
+
+    // settle: stop the suspense + write the REAL winner/outcome from the event.
+    function settle() {
+      if (viewerEl) { setText(viewerEl, winnerName); }
+      if (ev.game === "duel" && duelA && duelB) {
+        duelA.classList.add("cg-duel-won");
+        duelB.classList.add("cg-duel-lost");
+      }
+      // turn the rolling line into the real settled outcome line.
+      subEl.className = "cg-outcome";
+      setText(subEl, settledSub);
+      if (typeof onLanded === "function") { onLanded(); }
+    }
+
+    if (animates) {
+      window.setTimeout(settle, SPIN_MS);
+    } else {
+      // nothing to resolve (open phase) — it's already on its true state; still
+      // notify so the caller can apply the (already-known) outcome accent.
+      if (typeof onLanded === "function") { onLanded(); }
+    }
+
+    body._animates = animates;   // tells renderChatGame whether to hold for the spin
     return body;
   }
 
@@ -465,12 +763,23 @@
     return amt;
   }
 
+  // win/loss accent applied to a card. For the SPINNING games (slots/wheel) this
+  // is deferred until the spin LANDS so the color reveal lands with the result.
+  function applyOutcomeClass(card, ev) {
+    if (ev.won) { card.classList.add("cg-win"); }
+    else if (ev.game === "heist" || ev.game === "duel" || ev.game === "slots" || ev.game === "wheel") {
+      card.classList.add("cg-loss");
+    }
+  }
+
   function renderChatGame(ev) {
     if (!chatGamesEl) { return; }
     var detail = (ev.detail && typeof ev.detail === "object") ? ev.detail : {};
     var card = makeEl("div", "cg-card");
-    if (ev.won) { card.classList.add("cg-win"); }
-    else if (ev.game === "heist" || ev.game === "duel") { card.classList.add("cg-loss"); }
+    var spinning = (ev.game === "slots" || ev.game === "wheel");
+    // wider card variants for the big spinning slots / wheel so they read on stream.
+    if (ev.game === "slots") { card.classList.add("cg-card-slots"); }
+    else if (ev.game === "wheel") { card.classList.add("cg-card-wheel"); }
 
     // header: badge + game name + source tag (CHAT vs REDEEM — one card style,
     // the tag is the only difference between a typed game and a redeemed one).
@@ -480,10 +789,26 @@
     head.appendChild(makeEl("span", "cg-tag", ev.source === "redeem" ? "REDEEM" : "CHAT"));
     card.appendChild(head);
 
+    // onLanded fires when the spin/suspense SETTLES: clear the suspense state,
+    // mark the card settled (reveals deferred amount), and apply the win/loss
+    // accent so the color flips exactly as the result resolves.
+    function onLanded() {
+      card.classList.remove("cg-suspense");
+      card.classList.add("cg-settled");
+      applyOutcomeClass(card, ev);
+    }
+
     var body;
-    if (ev.game === "slots")      { body = buildSlotsBody(ev, detail); }
-    else if (ev.game === "wheel") { body = buildWheelBody(ev, detail); }
-    else                          { body = buildResultBody(ev, detail); }
+    if (ev.game === "slots")      { body = buildSlotsBody(ev, detail, onLanded); }
+    else if (ev.game === "wheel") { body = buildWheelBody(ev, detail, onLanded); }
+    else                          { body = buildResultBody(ev, detail, onLanded); }
+    // A card that PLAYS OUT (spins/suspense) starts in the suspense state; its
+    // win/loss accent + amount reveal are deferred to onLanded. A card with nothing
+    // to resolve (open-phase raffle/trivia) already had onLanded run synchronously.
+    var animates = spinning || body._animates;
+    if (animates && !card.classList.contains("cg-settled")) {
+      card.classList.add("cg-suspense");
+    }
     card.appendChild(body);
 
     // trivia footer: the winning answer (result phase) or the question (a redeem
@@ -493,7 +818,13 @@
       card.appendChild(makeEl("div", "cg-sub", label + detail.answer));
     }
 
-    pushCard(card, num(ev.duration_ms, CG_HOLD_MS));
+    // Hold: any card that PLAYS OUT (spin or suspense) must stay on screen for the
+    // ~3s animation PLUS a readable post-land window. The server's duration_ms is
+    // the post-announce hold; for an animating card we add SPIN_MS so the
+    // land/settle + reveal are fully visible.
+    var hold = num(ev.duration_ms, CG_HOLD_MS);
+    if (animates) { hold = SPIN_MS + Math.max(hold, 2500); }
+    pushCard(card, hold);
   }
 
   // Speak-redeem card: same bottom-left card language; a speaker icon + the
@@ -634,6 +965,10 @@
   // every few seconds WITHOUT any live game / SSE connection. Lets the streamer
   // dial in the look in OBS first. Runs purely client-side; no network.
   var DEMO_DECK = [
+    // lead with the big spinning wheel (the streamer's exact SMALL WIN shape) so
+    // the preview showcases the ~3s spin -> land -> amount-on-wedge reveal first.
+    { type: "chat_game", game: "wheel", title: "WHEEL", viewer: "spinner_one", outcome: "SMALL WIN",
+      won: true, amount: 50, detail: { segment: "SMALL WIN", payout: 50 }, duration_ms: 7000 },
     { type: "chat_game", game: "slots", title: "SLOTS", viewer: "shroud_fan", outcome: "WIN",
       won: true, amount: 9000, detail: { reels: ["seven", "seven", "seven"], win_symbol: "seven" } },
     { type: "chat_game", game: "slots", title: "SLOTS", viewer: "whiffmaster", outcome: "LOSS",
@@ -668,12 +1003,26 @@
       text: "Relaying from chat: rotate B now, they over-committed to A." }
   ];
 
+  // Games that PLAY OUT for ~3s before settling (so the demo paces them with room
+  // to watch the resolve). Open-phase raffle/trivia settle instantly -> short gap.
+  function demoAnimates(ev) {
+    if (!ev || ev.type !== "chat_game") { return false; }
+    if (ev.game === "slots" || ev.game === "wheel") { return true; }
+    var phase = (ev.detail && ev.detail.phase) || "result";
+    if ((ev.game === "raffle" || ev.game === "trivia") && phase === "open") { return false; }
+    return ev.game === "heist" || ev.game === "duel" || ev.game === "raffle" || ev.game === "trivia";
+  }
+
   function startDemo() {
     var i = 0;
     function step() {
-      dispatch(DEMO_DECK[i % DEMO_DECK.length]);
+      var ev = DEMO_DECK[i % DEMO_DECK.length];
+      dispatch(ev);
       i++;
-      window.setTimeout(step, 3200);
+      // An animating game takes ~3s to settle; give it extra room so the
+      // play-out -> settle -> amount reveal is fully visible before the next card.
+      var gap = demoAnimates(ev) ? 4600 : 3200;
+      window.setTimeout(step, gap);
     }
     step();
   }

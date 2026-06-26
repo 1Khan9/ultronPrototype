@@ -27,6 +27,67 @@
 > - Full runbook: **`docs/ultron_0_1_baseline.md`**. Post-0.1 roadmap:
 >   **`docs/latency_optimizations_V1.md`**.
 >
+> **TWITCH STREAMER UX — VISUAL-LEADS-VOCAL + 3 RESULT/RAID TOGGLES + RAID-TO-SPEAKERS + MUTE-RACE FIX (2026-06-26)**
+>
+> Four streamer-requested behavior changes (additive, config-flag-gated; a reboot deploys). All mocked-tested.
+>
+> **CHANGE 1 — overlay graphic FIRST, then announce (visual leads vocal).** A chat-game / redeem-game RESULT now
+> emits its overlay card FIRST, then the chat post + vocal announce is DEFERRED by `twitch.overlay_lead_seconds`
+> (NEW, default 3.0, matches the overlay client's ~3s spin) so the streamer sees the spin before the announcement.
+> The defer is NON-blocking (a daemon `threading.Timer`, or an injected `defer_fn` for tests) so a 3s lead never
+> stalls the router tick loop. GENERIC across EVERY game (no per-game special-casing):
+> - `src/kenning/twitch/economy/chat_games.py` — NEW `_defer(delay_s, fn)` + `_emit_then_reply(reply_text, *, game,
+>   viewer, outcome, title, won, amount, detail)`: emits the card immediately, then defers `_reply`. Every result
+>   site (slots/wheel/heist/duel/trivia/raffle) routes through it; non-result replies (`!points`/`!help`/errors/
+>   "joined the heist") stay IMMEDIATE. `!give` has no card → unchanged. Ctor gains `twitch_cfg` (reads
+>   `overlay_lead_seconds`), `defer_fn`, and `announce_results_enabled_fn` (the master gate, below).
+> - `src/kenning/twitch/redeem_router.py` — `_process_one` flips to `_emit(event)` FIRST then `_defer(...,
+>   _announce_safe)`; NEW `_defer` mirrors the chat-game one. Ctor gains `overlay_lead_seconds` + `defer_fn`. SPEAK
+>   redeems keep their immediate flow (their card IS the spoken text). 0 lead = exact legacy ordering.
+>
+> **CHANGE 2 — three stop-button audio toggles** (`src/kenning/audio/stop_button.py`, mirroring the HEAR CHAT /
+> SAY NAME rows via a NEW generic `_make_toggle_row` builder): **HEAR RAID** (orange, default ON), **HEAR RESULTS**
+> (teal, default ON), **ANNOUNCE RESULTS** (green, default ON, the MASTER). Ctor params + `_*_enabled`/`_*_h`/
+> `_*_label` fields; only wired when twitch is enabled. Config defaults in `StopButtonConfig`:
+> `{hear_raid,hear_results,announce_results}_{height,label,default}`. Orchestrator runtime flags
+> `_hear_raid_to_speakers` / `_hear_results_to_speakers` / `_announce_results_enabled` (boot from the stop_button
+> config defaults) + setters `_set_hear_raid_to_speakers` / `_set_hear_results_to_speakers` /
+> `_set_announce_results_enabled`. Wiring: the game-announce path reads HEAR RESULTS (`_result_speak`, uses the
+> ref-counted `_speaker_mute_scope` — see CHANGE 4 — so OBS stays fed while local speakers are gated) + ANNOUNCE
+> RESULTS (master: redeem games via `_twitch_result_speak_and_post` returns early when OFF; chat games via the
+> `announce_results_enabled_fn` predicate inside `_emit_then_reply`, so non-result replies are never suppressed —
+> overlay still shows when OFF). The raid path reads HEAR RAID (CHANGE 3).
+>
+> **CHANGE 3 — raid welcome to OBS + speakers** (`src/kenning/pipeline/orchestrator.py` NEW `_twitch_raid_speak`,
+> mirroring the team-redeem-speaker pattern in `_twitch_team_speak`): one synthesis → `audio.broadcast.submit` (OBS,
+> ALWAYS) + `audio.waveform.submit` + `play_to_device(resolve_speaker_device(), shape_for_team=False)` on a daemon
+> thread WHEN `_hear_raid_to_speakers` is on (default ON). NEVER touches the team mic / PTT. The `RaidHandler`'s
+> `announce_fn` is now `_twitch_raid_speak_and_post` (`_twitch_raid_speak` + chat post) instead of
+> `_twitch_speak_and_post`. So: OBS always; speakers when HEAR RAID on, OBS-only when off. (Note: the raid gate is at
+> the device-resolution level, NOT the shared `_live_speaker_mute` global, so it is independent of CHANGE 4.)
+>
+> **CHANGE 4 — REFERENCE-COUNTED speaker mute (race fix).** The HEAR-CHAT / HEAR-RESULTS speaker gating was a PER-CLIP
+> "save prior → `set_live_speaker_mute(True)` → speak → restore prior" wrapper that RACED: a "Make Ultron Speak"
+> redeem (on the redeem-tick thread, via `_twitch_speak_and_post`→`_chat_speak`) immediately followed by a chat
+> reply (its own thread) overlapped, and the first clip's restore UNMUTED while the second was still playing → the
+> streamer HEARD the chat reply on their desktop speakers despite HEAR CHAT being OFF. FIX (`src/kenning/tts/
+> kokoro_engine.py`): a single ref-counted, LOCKED scope — `_enter_chat_speaker_mute` (0→1 saves the prior override +
+> forces mute) / `_exit_chat_speaker_mute` (only 1→0 restores; underflow-safe) + `chat_speaker_mute_depth()`. The
+> speakers stay muted while ANY gated clip is active; only the LAST leaver restores. `orchestrator.py` NEW
+> `_speaker_mute_scope()` (a `contextlib.contextmanager` over enter/exit, fail-open) — BOTH `_chat_speak` and
+> `_result_speak` now use it (so a chat reply + a game-result announce overlapping SHARE the one scope and never
+> clobber each other's mute). The per-clip save/restore was removed. Single-clip semantics (restore the prior
+> override, incl. a non-default global MUTE) are byte-identical.
+>
+> Tests: `tests/twitch/economy/test_chat_games.py` (emit-before-announce ordering + injected-clock defer + master
+> gate + non-result-never-suppressed), `tests/twitch/test_redeem_router.py` (same ordering/defer; speak-not-deferred),
+> `tests/audio/test_stop_button.py` (3 toggles construct/clamp/fire + config defaults + `_result_speak` mute gating
+> + setters), `tests/twitch/test_raid.py` (raid → OBS+speakers when HEAR RAID on, OBS-only when off, fail-open),
+> `tests/twitch/test_chat_audio_routing.py` (CHANGE 4: back-to-back + cross-path + true-threaded overlapping clips
+> stay muted with NO unmute between; prior-override preserved under nesting). `validate_config` 0;
+> `tests/safety/test_anticheat.py` green (`threading`/`contextlib` are stdlib; relay_speech imports reuse the
+> team-speak set). No voice line changed. A reboot is needed to deploy.
+>
 > **TWITCH FULL STAND-UP — SE ECONOMY + SPEAK REDEEMS + UNIFIED OVERLAY + MODERATION FIX + !ultron/TALK-HINT (2026-06-26)**
 >
 > A full Twitch stand-up session — the channel is live with a StreamElements-backed economy, viewer text-to-speech

@@ -474,3 +474,121 @@ def test_module_imports_only_stdlib_and_economy() -> None:
     }
     non_kenning = imported_roots - {"kenning"}
     assert non_kenning <= allowed_stdlib, non_kenning
+
+
+# --------------------------------------------------------------------------- #
+# CHANGE 1 (2026-06-26) — VISUAL-LEADS-VOCAL: the redeem-game overlay card emits
+# FIRST, then the spoken/chat announce is DEFERRED by overlay_lead_seconds.
+# --------------------------------------------------------------------------- #
+class _Clock:
+    """Records deferred (delay, fn) jobs WITHOUT running them, then fires them on
+    demand -- so a test sees the announce was deferred (not inline)."""
+
+    def __init__(self) -> None:
+        self.jobs: list = []
+
+    def defer(self, delay_s, fn) -> None:
+        self.jobs.append((delay_s, fn))
+
+    def run_due(self) -> None:
+        pending, self.jobs = self.jobs, []
+        for _delay, fn in pending:
+            fn()
+
+
+def test_redeem_overlay_emitted_before_announce_and_deferred() -> None:
+    clock = _Clock()
+    log: list = []
+    router = RedeemRouter(
+        drain_fn=lambda: [_redeem("r1", "Spin the Wheel", login="alice")],
+        rng=_seeded_rng(),
+        announce_fn=lambda t: log.append(("announce", t)),
+        overlay_emit=lambda e: log.append(("overlay", e.get("game"))),
+        overlay_lead_seconds=3.0,
+        defer_fn=clock.defer,
+    )
+    router.tick()
+    # The card emitted during the tick; the announce is deferred (one 3s job).
+    assert log == [("overlay", "wheel")]
+    assert len(clock.jobs) == 1 and clock.jobs[0][0] == 3.0
+    clock.run_due()
+    assert [k for k, _ in log] == ["overlay", "announce"]
+    assert "alice" in log[1][1]
+
+
+def test_redeem_zero_lead_announces_inline() -> None:
+    clock = _Clock()
+    log: list = []
+    router = RedeemRouter(
+        drain_fn=lambda: [_redeem("r1", "Spin the Wheel", login="bob")],
+        rng=_seeded_rng(),
+        announce_fn=lambda t: log.append(("announce", t)),
+        overlay_emit=lambda e: log.append(("overlay", e.get("game"))),
+        overlay_lead_seconds=0.0,
+        defer_fn=clock.defer,
+    )
+    router.tick()
+    # 0 lead -> inline: card then immediate announce, no deferred job.
+    assert [k for k, _ in log] == ["overlay", "announce"]
+    assert clock.jobs == []
+
+
+def test_redeem_default_timer_defer_lands_announce() -> None:
+    # No injected defer_fn -> a daemon threading.Timer fires the announce.
+    import time
+    spoken: list = []
+    router = RedeemRouter(
+        drain_fn=lambda: [_redeem("r1", "Spin the Wheel", login="carol")],
+        rng=_seeded_rng(),
+        announce_fn=spoken.append,
+        overlay_emit=lambda e: None,
+        overlay_lead_seconds=0.01,
+    )
+    router.tick()
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline and not spoken:
+        time.sleep(0.02)
+    assert spoken and "carol" in spoken[0]
+
+
+def test_redeem_defer_does_not_block_the_tick() -> None:
+    # Two redeem games in one batch: both cards emit during the tick; with a 3s
+    # lead NEITHER announce runs inline (both deferred) -> the tick never blocks.
+    clock = _Clock()
+    log: list = []
+    router = RedeemRouter(
+        drain_fn=lambda: [_redeem("r1", "Spin the Wheel", login="a"),
+                          _redeem("r2", "Slots", login="b")],
+        rng=_seeded_rng(),
+        announce_fn=lambda t: log.append(("announce", t)),
+        overlay_emit=lambda e: log.append(("overlay", e.get("game"))),
+        overlay_lead_seconds=3.0,
+        defer_fn=clock.defer,
+    )
+    router.tick()
+    assert [k for k, _ in log] == ["overlay", "overlay"]   # both cards, no announces
+    assert len(clock.jobs) == 2
+    clock.run_due()
+    assert [k for k, _ in log].count("announce") == 2
+
+
+def test_redeem_speak_is_not_deferred() -> None:
+    # A SPEAK redeem (not a game) keeps its own immediate flow -- it is NOT routed
+    # through the game-result announce defer (its card IS the spoken text).
+    clock = _Clock()
+    spoken: list = []
+    router = RedeemRouter(
+        drain_fn=lambda: [_redeem("r1", "ultron says", login="dee",
+                                  user_input="hello stream")],
+        rng=_seeded_rng(),
+        overlay_emit=lambda e: None,
+        overlay_lead_seconds=3.0,
+        defer_fn=clock.defer,
+        speak_reward_map={"ultron says": "speak_say"},
+        guard_classify_fn=lambda _t: False,   # safe
+        say_speak_fn=spoken.append,
+    )
+    router.tick()
+    # The speak happened inline; the game-result defer was never used.
+    assert spoken and "hello stream" in spoken[0]
+    assert clock.jobs == []

@@ -600,3 +600,127 @@ def test_write_sidecar_shoutout_rejects_empty_target() -> None:
     with _Served(None, shoutout=lambda t: True) as s:
         status, body = _post(f"{s.base}/shoutout", {"to_broadcaster_id": "  "})
     assert status == 400 and body["ok"] is False
+
+
+# --------------------------------------------------------------------------- #
+# CHANGE 3 (2026-06-26) — the raid welcome reaches OBS (always) AND the local
+# speakers (gated by the HEAR-RAID toggle). Exercises Orchestrator._twitch_raid_
+# speak as an UNBOUND method on a tiny fake self (no boot, no model). Mirrors the
+# team-speak audio-routing harness.
+# --------------------------------------------------------------------------- #
+import threading as _t  # noqa: E402
+import time as _time  # noqa: E402
+
+import numpy as _np  # noqa: E402
+
+from kenning.pipeline.orchestrator import Orchestrator  # noqa: E402
+
+
+class _FakeTTS:
+    def _synthesize(self, _text):
+        return (_np.zeros(2400, dtype=_np.int16), 24000)
+
+
+class _FakeRaidOrch:
+    """Stand-in carrying only what _twitch_raid_speak touches."""
+
+    def __init__(self, *, hear_raid: bool) -> None:
+        self.tts = _FakeTTS()
+        self._hear_raid_to_speakers = hear_raid
+
+
+@pytest.fixture
+def _raid_patched(monkeypatch):
+    """Patch the relay_speech speaker primitives + the broadcast/waveform tees so
+    the method routes through them without real audio. Returns
+    (speaker_plays, broadcast_calls)."""
+    plays: list[tuple] = []
+
+    def _fake_play(pcm, sr, idx, *, shape_for_team=True, **_kw):
+        plays.append((idx, shape_for_team))
+        return float(len(pcm)) / float(sr)
+
+    broadcast_calls: list[int] = []
+    monkeypatch.setattr("kenning.audio.relay_speech.play_to_device", _fake_play,
+                        raising=True)
+    monkeypatch.setattr("kenning.audio.relay_speech.resolve_speaker_device",
+                        lambda: 3, raising=True)
+    monkeypatch.setattr("kenning.audio.relay_speech.relay_tts_text",
+                        lambda s: s, raising=True)
+    monkeypatch.setattr("kenning.audio.broadcast.submit",
+                        lambda pcm, sr: broadcast_calls.append(int(sr)),
+                        raising=True)
+    return plays, broadcast_calls
+
+
+def _run_raid_speak(orch, line):
+    Orchestrator._twitch_raid_speak(orch, line)
+    # The speaker copy runs on a daemon thread; join it for deterministic asserts.
+    deadline = _time.monotonic() + 5.0
+    while _time.monotonic() < deadline:
+        live = [t for t in _t.enumerate() if t.name == "raid-welcome-speaker"]
+        if not live:
+            break
+        for t in live:
+            t.join(timeout=1.0)
+
+
+def test_raid_welcome_obs_always_and_speakers_when_hear_raid_on(_raid_patched):
+    plays, broadcast_calls = _raid_patched
+    orch = _FakeRaidOrch(hear_raid=True)
+    _run_raid_speak(orch, "A raid arrives. Welcome, raiders.")
+    # OBS/broadcast tee fired, AND the streamer's speakers (device 3) played.
+    assert broadcast_calls == [24000]
+    assert [idx for idx, _ in plays] == [3]
+    # Full-band (no team comms DSP) on the streamer's own speakers.
+    assert plays[0][1] is False
+
+
+def test_raid_welcome_obs_only_when_hear_raid_off(_raid_patched):
+    plays, broadcast_calls = _raid_patched
+    orch = _FakeRaidOrch(hear_raid=False)
+    _run_raid_speak(orch, "A raid arrives. Welcome, raiders.")
+    # OBS still fed; NO local speaker play.
+    assert broadcast_calls == [24000]
+    assert plays == []
+
+
+def test_raid_welcome_unresolved_speaker_still_feeds_obs(monkeypatch,
+                                                         _raid_patched):
+    plays, broadcast_calls = _raid_patched
+    monkeypatch.setattr("kenning.audio.relay_speech.resolve_speaker_device",
+                        lambda: None, raising=True)
+    orch = _FakeRaidOrch(hear_raid=True)
+    _run_raid_speak(orch, "welcome raiders")
+    assert broadcast_calls == [24000]
+    assert plays == []          # speakers unresolved -> OBS only, no crash
+
+
+def test_raid_welcome_speaker_play_error_never_raises(monkeypatch,
+                                                      _raid_patched):
+    plays, broadcast_calls = _raid_patched
+
+    def _boom(pcm, sr, idx, *, shape_for_team=True, **_kw):
+        raise RuntimeError("device busy")
+
+    monkeypatch.setattr("kenning.audio.relay_speech.play_to_device", _boom,
+                        raising=True)
+    orch = _FakeRaidOrch(hear_raid=True)
+    _run_raid_speak(orch, "welcome")     # must not raise
+    assert broadcast_calls == [24000]    # OBS still fed despite the speaker error
+
+
+def test_raid_welcome_empty_line_is_noop(_raid_patched):
+    plays, broadcast_calls = _raid_patched
+    orch = _FakeRaidOrch(hear_raid=True)
+    _run_raid_speak(orch, "   ")
+    assert plays == [] and broadcast_calls == []
+
+
+def test_orchestrator_wires_raid_speak_announce_fn() -> None:
+    # The RaidHandler's announce_fn must be the OBS+speakers raid sink, not the
+    # plain chat-reply speak path.
+    import inspect
+    src = inspect.getsource(Orchestrator._start_twitch_chat_mode)
+    assert "announce_fn=_twitch_raid_speak_and_post" in src
+    assert "self._twitch_raid_speak(text)" in src

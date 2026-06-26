@@ -185,3 +185,119 @@ def test_direct_bridge_finalize_releases_tracking(tmp_path):
     job = reg.get("claude-fin1")
     assert job is not None and job.state == JobState.EXITED
     assert killer.lookup(7777) is None
+
+
+# ---------------------------------------------------------------------------
+# Session-lifetime sidecars (embedder + twitch read/guard/write) MUST be
+# registered PERSISTENT so the ZombieKiller's staleness reaper never force-
+# kills a healthy long-lived sidecar mid-stream.
+#
+# REGRESSION (2026-06-26): these were registered ``persistent=False,
+# hard_timeout_s=3600.0``. On a stream that runs longer than an hour the
+# reaper terminated all of them at ~age 3600s (observed in reboot6.err:
+# "terminated stale subprocess: ... twitch_read-sidecar age=3630s"), leaving
+# only the orchestrator alive so chat/redeems/moderation/raid silently died.
+# ---------------------------------------------------------------------------
+
+
+def _bare_orchestrator():
+    """An Orchestrator shell (``__new__``) with only the attrs the sidecar
+    spawn path touches -- no audio/LLM/STT stack is constructed."""
+    from kenning.pipeline.orchestrator import Orchestrator
+
+    orch = Orchestrator.__new__(Orchestrator)
+    orch._zombie_killer = get_zombie_killer()
+    orch._twitch_sidecar_procs = None
+    return orch
+
+
+def test_twitch_sidecars_registered_persistent(monkeypatch):
+    """``_start_twitch_sidecars`` must register each spawned sidecar with the
+    ZombieKiller as PERSISTENT (never auto-killed by the staleness reaper)."""
+    import kenning.pipeline.orchestrator as orch_mod
+    from kenning.twitch.sidecar_launch import SidecarSpec
+
+    orch = _bare_orchestrator()
+    killer = orch._zombie_killer
+
+    # Plan two sidecars deterministically (avoid depending on live config).
+    specs = [
+        SidecarSpec(role="twitch_read",
+                    script="scripts/twitch_read_sidecar.py", port=8773, env={}),
+        SidecarSpec(role="twitch_guard",
+                    script="scripts/twitch_guard_sidecar.py", port=8774, env={}),
+    ]
+    monkeypatch.setattr(orch_mod, "plan_sidecars", lambda _tcfg: specs,
+                        raising=False)
+    # The method imports plan_sidecars locally from kenning.twitch.sidecar_launch.
+    import kenning.twitch.sidecar_launch as sl_mod
+    monkeypatch.setattr(sl_mod, "plan_sidecars", lambda _tcfg: specs)
+
+    # Script-path existence check must pass; never touch the real FS/interpreter.
+    monkeypatch.setattr(orch_mod.os.path, "exists", lambda _p: True)
+
+    pids = iter([41001, 41002])
+
+    class _FakeProc:
+        def __init__(self, *_a, **_k):
+            self.pid = next(pids)
+
+    import subprocess as _sp
+    monkeypatch.setattr(_sp, "Popen", _FakeProc)
+
+    orch._start_twitch_sidecars(tcfg=object())
+
+    read = killer.lookup(41001)
+    guard = killer.lookup(41002)
+    assert read is not None and read.persistent is True
+    assert guard is not None and guard.persistent is True
+    # And NO finite 1h timeout left behind (the regression's smoking gun).
+    assert read.hard_timeout_s is None
+    assert guard.hard_timeout_s is None
+
+
+def test_persistent_sidecar_survives_staleness_sweep_past_one_hour():
+    """The exact bug condition: a sidecar that lived past the old 3600s cap is
+    NOT killed by the staleness sweep when registered persistent."""
+    from kenning.subprocess import zombie_killer as zk_mod
+
+    clock = {"t": 0.0}
+    killed: list[int] = []
+    killer = zk_mod.ZombieKiller(
+        hard_timeout_s=3600.0,            # the OLD finite cap
+        poll_interval_s=1000.0,
+        clock=lambda: clock["t"],
+        terminator=lambda pid: (killed.append(pid) or True),
+        rss_probe=lambda _pid: 0,
+    )
+    killer.register(55001, "twitch_read-sidecar", persistent=True)
+    killer.register(55002, "embedder-sidecar", persistent=True)
+
+    clock["t"] = 4000.0                   # well past one hour (the observed ~3630s)
+    killer.sweep_once()
+
+    assert killed == []                   # neither healthy daemon was reaped
+    assert killer.lookup(55001) is not None
+    assert killer.lookup(55002) is not None
+
+
+def test_nonpersistent_with_finite_timeout_would_have_been_killed():
+    """Pins the OLD (buggy) behaviour so the regression can't silently return:
+    a non-persistent 3600s registration IS reaped past the cap. Documents what
+    the fix prevents."""
+    from kenning.subprocess import zombie_killer as zk_mod
+
+    clock = {"t": 0.0}
+    killed: list[int] = []
+    killer = zk_mod.ZombieKiller(
+        hard_timeout_s=600.0,
+        poll_interval_s=1000.0,
+        clock=lambda: clock["t"],
+        terminator=lambda pid: (killed.append(pid) or True),
+        rss_probe=lambda _pid: 0,
+    )
+    killer.register(56001, "twitch_read-sidecar",
+                    persistent=False, hard_timeout_s=3600.0)
+    clock["t"] = 3630.0
+    killer.sweep_once()
+    assert killed == [56001]              # the pre-fix outcome the bug produced

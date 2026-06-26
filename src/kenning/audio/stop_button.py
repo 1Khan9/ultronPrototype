@@ -158,6 +158,18 @@ class StopButtonOverlay:
         say_name_enabled: bool = True,
         say_name_height: int = 26,
         say_name_label: str = "SAY NAME",
+        on_toggle_hear_raid: Optional[Callable[[bool], None]] = None,
+        hear_raid_enabled: bool = True,
+        hear_raid_height: int = 26,
+        hear_raid_label: str = "HEAR RAID",
+        on_toggle_hear_results: Optional[Callable[[bool], None]] = None,
+        hear_results_enabled: bool = True,
+        hear_results_height: int = 26,
+        hear_results_label: str = "HEAR RESULTS",
+        on_toggle_announce_results: Optional[Callable[[bool], None]] = None,
+        announce_results_enabled: bool = True,
+        announce_results_height: int = 26,
+        announce_results_label: str = "ANNOUNCE RESULTS",
         on_restart: Optional[Callable[[], None]] = None,
         on_exit: Optional[Callable[[], None]] = None,
         restart_height: int = 28,
@@ -218,6 +230,30 @@ class StopButtonOverlay:
         self._say_name_enabled = bool(say_name_enabled)
         self._say_name_h = max(0, int(say_name_height))
         self._say_name_label = say_name_label or "SAY NAME"
+        # Optional HEAR-RAID toggle row (2026-06-26): gates whether the incoming-RAID
+        # welcome plays on the streamer's LOCAL speakers (ON, default) or only on the
+        # OBS/stream bus (OFF). The OBS/broadcast tee is ALWAYS on regardless; only
+        # the local speaker copy is gated. ``_hear_raid_enabled`` tracks the
+        # displayed state across show/hide rebuilds.
+        self._on_toggle_hear_raid = on_toggle_hear_raid
+        self._hear_raid_enabled = bool(hear_raid_enabled)
+        self._hear_raid_h = max(0, int(hear_raid_height))
+        self._hear_raid_label = hear_raid_label or "HEAR RAID"
+        # Optional HEAR-RESULTS toggle row (2026-06-26): gates whether the game-
+        # result VOCAL announcement plays on the streamer's LOCAL speakers (ON,
+        # default) or only on the OBS/stream bus (OFF). Independent of the OBS feed.
+        self._on_toggle_hear_results = on_toggle_hear_results
+        self._hear_results_enabled = bool(hear_results_enabled)
+        self._hear_results_h = max(0, int(hear_results_height))
+        self._hear_results_label = hear_results_label or "HEAR RESULTS"
+        # Optional ANNOUNCE-RESULTS toggle row (2026-06-26): the MASTER for game-
+        # result announcements. ON (default) = results are announced (TTS + chat
+        # post, after the overlay lead). OFF = NO announcement at all (no TTS, no
+        # chat post); the overlay graphic still shows.
+        self._on_toggle_announce_results = on_toggle_announce_results
+        self._announce_results_enabled = bool(announce_results_enabled)
+        self._announce_results_h = max(0, int(announce_results_height))
+        self._announce_results_label = announce_results_label or "ANNOUNCE RESULTS"
         # Optional RESTART + EXIT action buttons (orchestrator-wired). Restart =
         # full cleanup then relaunch the same build; Exit = full cleanup then quit.
         self._on_restart = on_restart
@@ -307,6 +343,16 @@ class StopButtonOverlay:
             _has_say_name = (self._on_toggle_say_name is not None
                              and self._say_name_h > 0)
             say_name_h = self._say_name_h if _has_say_name else 0
+            _has_hear_raid = (self._on_toggle_hear_raid is not None
+                              and self._hear_raid_h > 0)
+            hear_raid_h = self._hear_raid_h if _has_hear_raid else 0
+            _has_hear_results = (self._on_toggle_hear_results is not None
+                                 and self._hear_results_h > 0)
+            hear_results_h = self._hear_results_h if _has_hear_results else 0
+            _has_announce_results = (self._on_toggle_announce_results is not None
+                                     and self._announce_results_h > 0)
+            announce_results_h = (self._announce_results_h
+                                  if _has_announce_results else 0)
             _has_restart = self._on_restart is not None and self._restart_h > 0
             _has_exit = self._on_exit is not None and self._exit_h > 0
             _has_flag = self._on_flag is not None and self._flag_h > 0
@@ -314,7 +360,8 @@ class StopButtonOverlay:
             exit_h = self._exit_h if _has_exit else 0
             flag_h = self._flag_h if _has_flag else 0
             height = (bar_h + btn_h + restart_h + exit_h + flag_h + ptt_h
-                      + turbo_h + chat_h + chat_audio_h + say_name_h)
+                      + turbo_h + chat_h + chat_audio_h + say_name_h
+                      + hear_raid_h + hear_results_h + announce_results_h)
             root = tk.Tk()
             root.title("ULTRON // STOP")
             root.geometry(f"{w}x{height}+{self._x}+{self._y}")
@@ -572,6 +619,79 @@ class StopButtonOverlay:
                 say_name_btn.configure(command=_toggle_say_name)
                 say_name_btn.pack(fill="x", side="bottom")
                 say_name_btn.bind("<Button-3>", lambda _e: self.hide())
+
+            # Generic ON/OFF toggle-row builder (2026-06-26) -- the three new
+            # streamer toggles (HEAR RAID / HEAR RESULTS / ANNOUNCE RESULTS) share
+            # the identical structure of the SAY-NAME / HEAR-CHAT rows: a labeled
+            # "<LABEL> ON|OFF" button whose color tracks the bool, a click that
+            # flips an attribute + fires the orchestrator callback, all fail-open.
+            # ``get`` reads the current bool; ``setattr_name`` is the attr it flips;
+            # ``cb`` is the orchestrator-wired setter. Returns nothing (packs the
+            # button). Mirrors the bespoke rows above so the visual language matches.
+            def _make_toggle_row(label, get, setattr_name, cb, on_fg, on_fill):
+                _off_fg, _off_fill = "#8a8f98", "#141414"   # grey = OFF (shared)
+
+                def _colors():
+                    return ((on_fg, on_fill) if get() else (_off_fg, _off_fill))
+
+                _fg0, _fill0 = _colors()
+                tbtn = tk.Button(
+                    root,
+                    text=f"{label} {'ON' if get() else 'OFF'}",
+                    bg=_fill0, fg=_fg0,
+                    activebackground=_fill0, activeforeground="#ffffff",
+                    relief="flat", bd=0, highlightthickness=1,
+                    highlightbackground=_fg0, highlightcolor=_fg0,
+                    font=("Segoe UI Semibold", 9), cursor="hand2",
+                )
+
+                def _toggle(_btn=tbtn, _label=label, _set=setattr_name, _cb=cb):
+                    setattr(self, _set, not get())
+                    fg, fill = _colors()
+                    try:
+                        _btn.configure(
+                            text=f"{_label} {'ON' if get() else 'OFF'}",
+                            bg=fill, fg=fg, activebackground=fill,
+                            highlightbackground=fg, highlightcolor=fg)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    try:
+                        if _cb is not None:
+                            _cb(get())
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning("%s toggle callback failed: %s", _label, e)
+                    logger.info("%s toggle -> %s", _label,
+                                "ON" if get() else "OFF")
+
+                tbtn.configure(command=_toggle)
+                tbtn.pack(fill="x", side="bottom")
+                tbtn.bind("<Button-3>", lambda _e: self.hide())
+
+            # HEAR-RAID toggle -- orange "HEAR RAID ON" (default) = the incoming-raid
+            # welcome plays on your LOCAL speakers; grey OFF = OBS/stream bus only.
+            if _has_hear_raid:
+                _make_toggle_row(
+                    self._hear_raid_label,
+                    lambda: self._hear_raid_enabled, "_hear_raid_enabled",
+                    self._on_toggle_hear_raid, "#ff9d3d", "#23150a")
+
+            # HEAR-RESULTS toggle -- teal "HEAR RESULTS ON" (default) = game-result
+            # announcements play on your LOCAL speakers; grey OFF = OBS bus only.
+            if _has_hear_results:
+                _make_toggle_row(
+                    self._hear_results_label,
+                    lambda: self._hear_results_enabled, "_hear_results_enabled",
+                    self._on_toggle_hear_results, "#33d6c7", "#0a1f1d")
+
+            # ANNOUNCE-RESULTS toggle -- green "ANNOUNCE RESULTS ON" (default) =
+            # results are announced (TTS + chat) after the overlay lead; grey OFF =
+            # NO announcement at all (overlay graphic still shows).
+            if _has_announce_results:
+                _make_toggle_row(
+                    self._announce_results_label,
+                    lambda: self._announce_results_enabled,
+                    "_announce_results_enabled",
+                    self._on_toggle_announce_results, "#3ddc84", "#0c1f13")
 
             # RESTART + EXIT action buttons -- packed at the bottom (above PTT,
             # below STOP). Each runs Ultron's full cleanup; Restart then relaunches

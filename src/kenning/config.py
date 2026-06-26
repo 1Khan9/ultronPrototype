@@ -4038,6 +4038,27 @@ class StopButtonConfig(_Strict):
     # when twitch.enabled is True. 0 hides the row entirely.
     say_name_height: int = Field(default=26, ge=0, le=200)
     say_name_label: str = "SAY NAME"
+    # HEAR-RAID toggle row (2026-06-26): an orange ON (default) / grey OFF button
+    # gating whether the incoming-RAID welcome plays on the streamer's LOCAL
+    # speakers (the OBS/stream bus is ALWAYS fed). Only visible when twitch.enabled.
+    # 0 hides the row. ``hear_raid_default`` is the boot state of the toggle.
+    hear_raid_height: int = Field(default=26, ge=0, le=200)
+    hear_raid_label: str = "HEAR RAID"
+    hear_raid_default: bool = True
+    # HEAR-RESULTS toggle row (2026-06-26): a teal ON (default) / grey OFF button
+    # gating whether game-result VOCAL announcements play on the streamer's LOCAL
+    # speakers (the OBS/stream bus output is independent). Only visible when
+    # twitch.enabled. 0 hides the row. ``hear_results_default`` is the boot state.
+    hear_results_height: int = Field(default=26, ge=0, le=200)
+    hear_results_label: str = "HEAR RESULTS"
+    hear_results_default: bool = True
+    # ANNOUNCE-RESULTS toggle row (2026-06-26): a green ON (default) / grey OFF
+    # MASTER button. ON = game results are announced (TTS + chat post, after the
+    # overlay lead). OFF = NO announcement at all (no TTS, no chat); the overlay
+    # graphic still shows. Only visible when twitch.enabled. 0 hides the row.
+    announce_results_height: int = Field(default=26, ge=0, le=200)
+    announce_results_label: str = "ANNOUNCE RESULTS"
+    announce_results_default: bool = True
     x: int = Field(default=60, ge=0, le=10000)   # initial top-left position
     y: int = Field(default=60, ge=0, le=10000)
 
@@ -4406,6 +4427,13 @@ class TwitchConfig(_Strict):
     enabled: bool = False                            # master switch; env KENNING_TWITCH_ENABLED
     read_sidecar_endpoint: str = "http://127.0.0.1:8773"   # EventSub read sidecar (read-scope token)
     write_sidecar_endpoint: str = "http://127.0.0.1:8777"  # Helix write sidecar (write-scope token, least-privilege)
+    # 2026-06-26: VISUAL-LEADS-VOCAL ordering for chat-game / redeem-game results.
+    # The overlay card is emitted FIRST (so the streamer sees the wheel/slots spin),
+    # then after this lead delay the chat post + vocal announcement fire. Matches the
+    # overlay client's ~3s spin animation. The defer is NON-blocking (a daemon timer
+    # thread), so it never stalls the router tick loop. 0 = announce immediately
+    # (legacy ordering, no defer). See chat_games.ChatGameRouter / redeem_router.
+    overlay_lead_seconds: float = Field(default=3.0, ge=0.0, le=30.0)
     # 2026-06-26: a streamer-facing dev TEST PANEL (always-on-top, clickable) that
     # fires a SYNTHETIC event for every Twitch feature (speak redeem / raid / each
     # chat-game / each redeem-game / chat-reply) exactly as if a real viewer did it,

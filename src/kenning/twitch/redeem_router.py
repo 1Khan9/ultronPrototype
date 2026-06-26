@@ -350,6 +350,8 @@ class RedeemRouter:
         team_speak_fn: Callable[[str], Any] | None = None,
         blocked_chat_fn: Callable[[str], Any] | None = None,
         speak_max_chars: int = 200,
+        overlay_lead_seconds: float = 0.0,
+        defer_fn: Callable[[float, Callable[[], None]], Any] | None = None,
     ) -> None:
         self._drain = drain_fn
         # 2026-06-26: dev TEST PANEL injection buffer. inject() appends a synthetic
@@ -383,6 +385,18 @@ class RedeemRouter:
         self._reward_map = {str(k).strip().lower(): str(v) for k, v in rmap.items()}
         self._announce = announce_fn
         self._overlay = overlay_emit
+        # VISUAL-LEADS-VOCAL (2026-06-26): a redeem GAME result emits its overlay
+        # card FIRST, then the spoken/chat announce is DEFERRED by this many seconds
+        # (matching the overlay client's ~3s spin) so the streamer sees the graphic
+        # before the announcement. 0 -> announce immediately (legacy ordering). The
+        # defer is NON-blocking (a daemon timer, see ``_defer``) so a 3s lead never
+        # stalls the redeem tick loop. Speak redeems are NOT deferred (their card is
+        # the spoken text itself). Read off the top-level twitch cfg by the orch.
+        self._overlay_lead_s = max(0.0, float(overlay_lead_seconds or 0.0))
+        # Injectable scheduler ``(delay_s, fn) -> handle``; defaults to a daemon
+        # threading.Timer. Tests inject a clock-driven stub so the deferred announce
+        # is observable without real wall-clock waits.
+        self._defer_fn = defer_fn
         self._games: dict[str, Any] = dict(games) if games else {}
         self._dedup = _LRUSet(dedup_max)
         # Per-action nonce so every redeem of the same game advances the round
@@ -533,9 +547,14 @@ class RedeemRouter:
             return None
 
         line, event = runner(self, viewer or "someone", uid, user_input, redemption_id)
-        if line:
-            self._announce_safe(line)
+        # VISUAL-LEADS-VOCAL: emit the overlay card NOW (it animates ~3s), then
+        # DEFER the spoken/chat announce by the overlay lead so the streamer sees
+        # the graphic first. GENERIC across every game runner (wheel/slots/heist/
+        # duel/trivia/raffle) -- no per-game special-casing. With a 0 lead this is
+        # the exact legacy order (announce then emit collapses to immediate).
         self._emit(event)
+        if line:
+            self._defer(self._overlay_lead_s, lambda _l=line: self._announce_safe(_l))
         logger.info(
             "redeem game=%s viewer=%r outcome=%r", action, viewer, event.get("outcome")
         )
@@ -836,6 +855,33 @@ class RedeemRouter:
             self._announce(line)
         except Exception as exc:  # noqa: BLE001 — a TTS hiccup never breaks the tick
             logger.warning("redeem announce failed: %s", exc)
+
+    def _defer(self, delay_s: float, fn: Callable[[], None]) -> None:
+        """Schedule ``fn`` after ``delay_s`` seconds WITHOUT blocking the caller
+        (the redeem tick loop is a daemon thread; a synchronous sleep would stall
+        every other redeem for the lead window). Uses the injected ``defer_fn``
+        when present (tests drive a fake clock), else a daemon ``threading.Timer``.
+        ``delay_s <= 0`` runs ``fn`` inline (legacy ordering). Fail-safe: a
+        scheduler error falls back to running ``fn`` inline so the announce is
+        never silently dropped."""
+        if delay_s <= 0:
+            fn()
+            return
+        if self._defer_fn is not None:
+            try:
+                self._defer_fn(delay_s, fn)
+                return
+            except Exception as exc:  # noqa: BLE001 — bad scheduler -> run inline
+                logger.debug("redeem defer_fn failed (%s); running inline", exc)
+                fn()
+                return
+        try:
+            t = threading.Timer(delay_s, fn)
+            t.daemon = True
+            t.start()
+        except Exception as exc:  # noqa: BLE001 — timer start failed -> run inline
+            logger.debug("redeem defer timer failed (%s); running inline", exc)
+            fn()
 
     @staticmethod
     def _to_overlay_event(event: dict) -> dict | None:
