@@ -157,6 +157,18 @@ def _is_command_local(text: str) -> bool:
             return True
     except Exception:  # noqa: BLE001
         pass
+    # The MODERATION-panel + dev TEST-panel summon/dismiss are local UI commands
+    # too (Twitch clickable panels), so "show me the test panel" / "open the
+    # moderation panel" reach the dispatch handlers in always-listening mode
+    # without an Ultron address. Pure-regex matchers -> no tkinter import here.
+    try:
+        from kenning.twitch.test_panel import match_test_panel_command
+        from kenning.twitch.moderation_gui import match_moderation_panel_command
+        if (match_test_panel_command(text) is not None
+                or match_moderation_panel_command(text) is not None):
+            return True
+    except Exception:  # noqa: BLE001
+        pass
     # "ultron stop" / "stop" all-channel cancel is a local command too.
     import re
     if re.match(r"^\s*(?:ultron[\s,]+)?stop\b\s*[.!?]*$", text, re.IGNORECASE):
