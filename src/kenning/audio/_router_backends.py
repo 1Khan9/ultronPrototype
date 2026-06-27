@@ -200,6 +200,16 @@ class EmbeddingBackend(SimilarityBackend):
         self._cache_val = result
         return result
 
+    def embed(self, texts: Sequence[str]) -> list:
+        """Public per-text embed for EXTERNAL callers (e.g. the Twitch addressing
+        residual tie-breaker, which the orchestrator injects as ``embed_fn`` via
+        ``(_eb.embed([t]) or [None])[0]``). Returns a list of L2-normalized
+        vectors, one per input text ([] for no texts); raises (through ``_embed``)
+        on a sidecar failure so the caller falls back to None. Reuses the same
+        cached sidecar round-trip + default ("document") prompt kind as the router
+        so a query and the exemplar clouds embed consistently for cosine."""
+        return [row for row in self._embed(list(texts))]
+
     def prepare(self, exemplars: Sequence[str]) -> Any:
         # Exemplars are the "documents" in the retrieval framing. This batch
         # embed (dozens of texts, possibly a cold model) runs ONCE at build, so
