@@ -202,7 +202,7 @@ def _raw_at_logins(text: str) -> list[str]:
 def _cosine(a: Sequence[float], b: Sequence[float]) -> Optional[float]:
     """Cosine similarity of two vectors; None on shape/zero/NaN problems."""
     try:
-        if not a or not b or len(a) != len(b):
+        if a is None or b is None or len(a) == 0 or len(b) == 0 or len(a) != len(b):
             return None
         dot = 0.0
         na = 0.0
@@ -225,21 +225,33 @@ def _cosine(a: Sequence[float], b: Sequence[float]) -> Optional[float]:
 
 
 def _embed(embed_fn: Callable[[str], Optional[Sequence[float]]], text: str) -> Optional[Sequence[float]]:
-    """Call the injected embedder, fail-safe to None on any error/empty result."""
+    """Call the injected embedder, fail-safe to None on any error/empty result.
+
+    The injected embedder (the orchestrator's loopback EmbeddingGemma shim) returns a
+    numpy ndarray of ``np.float32`` -- whose truthiness is AMBIGUOUS (``if not vec``
+    raises "truth value of an array ... is ambiguous") and whose elements are NOT
+    Python ``int``/``float`` (so an ``isinstance`` numeric check rejects every element).
+    Both bugs made the residual classifier raise and fail CLOSED to IGNORE on every
+    chat message. Normalize to a plain ``list[float]`` ONCE here so the cosine math
+    below stays numpy-agnostic and never raises into the classifier.
+    """
     try:
         vec = embed_fn(text)
     except Exception as exc:  # noqa: BLE001 — never raise into the classifier
         logger.warning("twitch addressing embed_fn raised: %s", exc)
         return None
-    if not vec:
+    if vec is None:
         return None
     try:
-        # Reject a non-finite / non-numeric vector early.
-        if any((not isinstance(v, (int, float)) or v != v) for v in vec):
-            return None
-    except TypeError:
+        out = [float(v) for v in vec]
+    except (TypeError, ValueError):
         return None
-    return vec
+    if not out:
+        return None
+    # Reject a non-finite vector (NaN/inf) early.
+    if any(not math.isfinite(v) for v in out):
+        return None
+    return out
 
 
 def _mean_sim(query: Sequence[float],

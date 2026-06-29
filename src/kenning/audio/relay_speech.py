@@ -1381,6 +1381,37 @@ def _is_carveout_snap(command: "RelayCommand") -> bool:
 
 
 # ---------------------------------------------------------------------------
+# STREAM-PROMO RELAY (2026-06-28): the self-promo / stream-plug matcher
+# (``_PROMO_RE`` -> a curated ``DEFAULT_PROMO_LINES`` shout relayed to the team
+# mic). RETIRED-not-removed at user request: its trigger set ("my stream",
+# "my twitch", "my channel", "twitch.tv", "follow me on twitch", ...) is exactly
+# the phrasing the streamer uses while talking TO CHAT, so it MISFIRED constantly
+# -- speaking the stream promo to the team on any passing mention of the stream.
+# The user does not use the feature, so the speech path is CLOSED OFF by default.
+# The regex, the curated pool, and the directive routing all remain DEFINED (the
+# path is fully reversible: set ``KENNING_PROMO_RELAY=1`` or call
+# ``set_promo_relay_enabled(True)`` to restore it); only the matcher HOOK that
+# constructs the promo command is gated off. Anticheat-clean (os/stdlib only).
+_promo_relay_enabled: bool = _os_flavor.getenv(
+    "KENNING_PROMO_RELAY", "0").strip().lower() not in (
+    "0", "false", "no", "off", "")
+
+
+def set_promo_relay_enabled(enabled: bool) -> None:
+    """Enable/disable the stream-promo relay matcher at runtime (default OFF,
+    2026-06-28). OFF = a mention of "my stream"/"twitch.tv"/"follow me on twitch"
+    while talking is NEVER turned into a team promo -- it falls through to the
+    normal routing (talk to chat freely); ON = restores the curated stream-plug
+    shout to the team mic."""
+    global _promo_relay_enabled
+    _promo_relay_enabled = bool(enabled)
+
+
+def promo_relay_enabled() -> bool:
+    return _promo_relay_enabled
+
+
+# ---------------------------------------------------------------------------
 # ULTRON 1.0 TURBO MODE (2026-06-23): a runtime master switch that AUTO-RELAYS
 # inferred team callouts WITHOUT a "tell my team" prefix. When ON, the loop
 # listens continuously (always-listening capture) and the 4-class intent gate
@@ -2357,7 +2388,11 @@ def match_relay_command(
 
     # Self-promo / stream plug ("gg and go check me out at twitch.tv/1v9 Khan")
     # -> a curated, TTS-friendly channel shout (the raw URL is STT/TTS garbage).
-    if _PROMO_RE.search(cleaned):
+    # RETIRED 2026-06-28 (user): CLOSED OFF by default -- the triggers ("my
+    # stream"/"my twitch"/"twitch.tv"/"follow me on twitch"/...) misfire while
+    # talking to chat, speaking the promo to the team. Reversible via
+    # KENNING_PROMO_RELAY=1 / set_promo_relay_enabled(True).
+    if promo_relay_enabled() and _PROMO_RE.search(cleaned):
         return RelayCommand(
             payload="promo", raw_text=text, addressee="team",
             compose=True, directive="promo",

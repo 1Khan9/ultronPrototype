@@ -55,6 +55,28 @@ def test_exclusive_bind_refuses_a_second_instance_on_a_live_port() -> None:
         s1.server_close()
 
 
+def test_diagnose_port_holder_reports_a_live_listener() -> None:
+    """A port a process is actively LISTENING on -> a non-None holder string. This
+    is the diagnostic that turns a silent 'twitch won't come back on restart' (a
+    stale/elevated orphan still holding the port) into an actionable log line."""
+    s = SingletonThreadingHTTPServer(("127.0.0.1", 0), _H)
+    try:
+        port = s.server_address[1]
+        who = sidecar_lock.diagnose_port_holder("127.0.0.1", port)
+        assert who is not None            # SOMETHING is holding the port
+    finally:
+        s.server_close()
+
+
+def test_diagnose_port_holder_returns_none_for_a_free_port() -> None:
+    """A free/closed port -> None: the sidecar failed for some OTHER reason, not a
+    stale orphan holding the port (so the canary won't mis-blame a held port)."""
+    s = SingletonThreadingHTTPServer(("127.0.0.1", 0), _H)
+    port = s.server_address[1]
+    s.server_close()                      # release the port so it is now free
+    assert sidecar_lock.diagnose_port_holder("127.0.0.1", port) is None
+
+
 def test_reap_stray_sidecars_by_cmdline() -> None:
     marker = "twitch_guard_sidecar_GUARDTEST_STRAY"
     proc = _spawn_sleeper(marker)

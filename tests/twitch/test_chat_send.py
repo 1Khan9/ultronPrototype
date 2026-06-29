@@ -59,6 +59,76 @@ def test_chat_send_non_2xx_is_false():
     assert c.send("B1", "U1", "x") is False
 
 
+# --- reactive refresh-on-401 (the bot token lapses ~every 4h mid-session) ----- #
+def _seq_transport(responses, record=None):
+    """Returns responses[i] for the i-th call (last entry repeats). Records the
+    request headers per call when ``record`` is given."""
+    calls = {"n": 0}
+
+    def t(method, url, headers, body):
+        i = min(calls["n"], len(responses) - 1)
+        calls["n"] += 1
+        if record is not None:
+            record.append(dict(headers))
+        return responses[i]
+
+    return t, calls
+
+
+def test_chat_send_401_refreshes_and_retries_then_succeeds():
+    rec = []
+    t, calls = _seq_transport(
+        [(401, b'{"message":"Invalid OAuth token"}'),
+         (200, json.dumps({"data": [{"is_sent": True}]}).encode())], rec)
+    refreshes = {"n": 0}
+
+    def on_unauth():
+        refreshes["n"] += 1
+        return "fresh-tok"
+
+    c = ChatSendClient("cid", get_token=lambda: "stale-tok", transport=t,
+                       on_unauthorized=on_unauth)
+    assert c.send("B1", "U1", "hello") is True
+    assert refreshes["n"] == 1            # refreshed exactly once
+    assert calls["n"] == 2               # one retry after the refresh
+    assert rec[0]["Authorization"] == "Bearer stale-tok"
+    assert rec[1]["Authorization"] == "Bearer fresh-tok"   # retry used the new token
+
+
+def test_chat_send_401_twice_refreshes_once_and_returns_false():
+    # Still 401 after the refresh -> give up; refresh + retry happen EXACTLY once
+    # (no infinite loop), fail-safe to False.
+    t, calls = _seq_transport([(401, b"x"), (401, b"x")])
+    refreshes = {"n": 0}
+
+    def on_unauth():
+        refreshes["n"] += 1
+        return "fresh-tok"
+
+    c = ChatSendClient("cid", get_token=lambda: "stale", transport=t,
+                       on_unauthorized=on_unauth)
+    assert c.send("B1", "U1", "hi") is False
+    assert refreshes["n"] == 1
+    assert calls["n"] == 2
+
+
+def test_chat_send_401_without_hook_is_unchanged():
+    # No on_unauthorized -> byte-identical to before: one POST, no refresh, False.
+    t, calls = _seq_transport([(401, b'{"message":"unauthorized"}')])
+    c = ChatSendClient("cid", get_token=lambda: "tok", transport=t)
+    assert c.send("B1", "U1", "x") is False
+    assert calls["n"] == 1
+
+
+def test_chat_send_401_refresh_returns_empty_does_not_retry():
+    # The grant is dead (refresh yields ""): do NOT retry, fail-safe to False.
+    t, calls = _seq_transport([(401, b"x")])
+    c = ChatSendClient("cid", get_token=lambda: "tok", transport=t,
+                       on_unauthorized=lambda: "")
+    assert c.send("B1", "U1", "x") is False
+    assert calls["n"] == 1
+
+
 def test_chat_send_transport_raise_is_false():
     def boom(*a):
         raise RuntimeError("dns")

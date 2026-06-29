@@ -720,8 +720,37 @@ def build_service_state() -> _ServiceState:
             "KENNING_TWITCH_BOT_TOKEN_PATH", "~/.kenning/twitch_bot.json")
         if bot_id and _load_access_token(bot_token_path):
             from kenning.twitch.clients.chat_send import ChatSendClient
+            # (1) Proactively rotate the BOT token at startup too (the call at
+            # build_service_state's top only refreshes the BROADCASTER token), so
+            # the first send after a long downtime uses a live token.
+            _proactive_token_refresh(bot_token_path, client_id)
+
+            # (2) Reactive refresh-on-401: the bot user token lapses ~every 4h.
+            # Without this, every chat-send 401s until the sidecar is restarted
+            # (~1.5h of dead chat was observed in the live logs). On a 401 we
+            # FORCE a refresh via the bot's own refresh_token (a 401 is
+            # authoritative -- the stored expiry may be wrong) and retry once.
+            def _refresh_bot_token() -> str:
+                try:
+                    from kenning.twitch.auth import TokenStore, TwitchAuth
+                    store = TokenStore(bot_token_path)
+                    toks = store.load() or {}
+                    rt = toks.get("refresh_token")
+                    if not rt:
+                        logger.warning("chat-send: no bot refresh token to rotate")
+                        return ""
+                    new = TwitchAuth(client_id, store).refresh(str(rt))
+                    return str((new or {}).get("access_token") or "")
+                except Exception as exc:  # noqa: BLE001 — never raise into the send handler
+                    logger.warning(
+                        "chat-send bot-token refresh failed (%s)", type(exc).__name__)
+                    return ""
+
             sender = ChatSendClient(
-                client_id, get_token=lambda: _load_access_token(bot_token_path))
+                client_id,
+                get_token=lambda: _load_access_token(bot_token_path),
+                on_unauthorized=_refresh_bot_token,
+            )
             _bid, _sid = broadcaster_id, bot_id
             state.chat_send = lambda text: sender.send(_bid, _sid, text)
             logger.info("write sidecar: chat-send ready (bot sender_id=%s)", bot_id)

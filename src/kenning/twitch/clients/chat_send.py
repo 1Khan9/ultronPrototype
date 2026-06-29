@@ -75,6 +75,7 @@ class ChatSendClient:
         base_url: str = HELIX_BASE,
         transport: Optional[Transport] = None,
         timeout: float = _DEFAULT_TIMEOUT,
+        on_unauthorized: Optional[Callable[[], Optional[str]]] = None,
     ) -> None:
         if not client_id or not isinstance(client_id, str):
             raise ValueError("client_id is required")
@@ -84,6 +85,12 @@ class ChatSendClient:
         self._get_token = get_token
         self._base = (base_url or HELIX_BASE).rstrip("/")
         self._transport: Transport = transport or _default_transport(float(timeout))
+        # Reactive refresh-on-401: the bot user token lapses ~every 4h. When set,
+        # a 401 from a send triggers ONE refresh (this callback returns a fresh
+        # access token, or "" / None when the grant is dead) and ONE retry, so a
+        # long-running sidecar self-heals instead of 401ing until restart. When
+        # None (the default) send() is byte-identical to before.
+        self._on_unauthorized = on_unauthorized if callable(on_unauthorized) else None
 
     def send(self, broadcaster_id: str, sender_id: str, message: str) -> bool:
         """POST one chat message (``sender_id`` is the bot). ``True`` iff Twitch
@@ -100,21 +107,41 @@ class ChatSendClient:
         if not token:
             logger.warning("chat-send: no bot access token")
             return False
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Client-Id": self._client_id,
-            "Content-Type": "application/json",
-        }
         body = json.dumps({
             "broadcaster_id": str(broadcaster_id),
             "sender_id": str(sender_id),
             "message": text,
         }).encode("utf-8")
+
+        def _post(tok: str) -> Tuple[int, bytes]:
+            headers = {
+                "Authorization": f"Bearer {tok}",
+                "Client-Id": self._client_id,
+                "Content-Type": "application/json",
+            }
+            return self._transport("POST", f"{self._base}/chat/messages", headers, body)
+
         try:
-            status, raw = self._transport("POST", f"{self._base}/chat/messages", headers, body)
+            status, raw = _post(token)
         except Exception as exc:  # noqa: BLE001 — fail-safe
             logger.warning("chat-send transport failed: %s", type(exc).__name__)
             return False
+        # A 401 means the bot user token lapsed mid-session. Refresh ONCE and
+        # retry ONCE so chat output self-heals (without this it 401s on every
+        # send until the sidecar is restarted -- ~1.5h of dead chat was observed).
+        if status == 401 and self._on_unauthorized is not None:
+            try:
+                fresh = self._on_unauthorized() or ""
+            except Exception as exc:  # noqa: BLE001 — never raise into the handler
+                logger.warning("chat-send token refresh raised: %s", type(exc).__name__)
+                fresh = ""
+            if fresh and fresh != token:
+                logger.info("chat-send 401 -> refreshed bot token, retrying once")
+                try:
+                    status, raw = _post(fresh)
+                except Exception as exc:  # noqa: BLE001 — fail-safe
+                    logger.warning("chat-send transport failed on retry: %s", type(exc).__name__)
+                    return False
         if not (200 <= status < 300):
             logger.warning("chat-send non-2xx status=%s body=%s", status, _preview(raw))
             return False

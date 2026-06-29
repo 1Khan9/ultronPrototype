@@ -312,8 +312,10 @@
 > `ModerationRemote.chat_settings` + orchestrator `_maybe_handle_twitch_chat_settings` (CHEAP local parse gate so
 > ordinary speech never round-trips; wired into BOTH voice dispatch sites). NEW
 > `src/kenning/twitch/clients/chat_send.py` — `ChatSendClient` (Helix `POST /chat/messages`, bot token,
-> `user:write:chat`, 500-char clamp, injected transport, fail-safe) + write-sidecar `POST /say` + bot-token load
-> in `build_service_state` + `KENNING_TWITCH_BOT_TOKEN_PATH`. NEW `src/kenning/twitch/panel.py`
+> `user:write:chat`, 500-char clamp, injected transport, fail-safe; **2026-06-28 `on_unauthorized` hook =
+> refresh-on-401 + retry-once so a long-running sidecar self-heals when the bot token lapses ~4h**) +
+> write-sidecar `POST /say` + bot-token load in `build_service_state` (now also proactively refreshes the
+> BOT token at boot + wires `on_unauthorized`→`TwitchAuth.refresh`) + `KENNING_TWITCH_BOT_TOKEN_PATH`. NEW `src/kenning/twitch/panel.py`
 > (`build_commands_panel_text`) + an orchestrator daemon thread (`twitch-commands-panel`, default-OFF
 > `twitch.chat.commands_panel_enabled`) that loopback-POSTs the barebones command list to the write sidecar `/say`
 > every `commands_panel_interval_minutes` (15), ending with `commands_panel_doc_url`; first post waits one
@@ -1153,7 +1155,9 @@
 > persona** (Tony Stark venom in `orchestrator.ULTRON_GAMING_PERSONA` + Marvel routing even
 > with a mangled asker via `_match_reported_question`; identity brevity — were-you / streaming /
 > "don't sound like Ultron" → short curated pools; `DEFAULT_PROMO_LINES` = a TTS-phonetic
-> twitch.tv/1v9 Khan plug). **F — routing** (`_COMPLIMENT_RE`+`DEFAULT_COMPLIMENT_LINES`;
+> twitch.tv/1v9 Khan plug — **2026-06-28 the `_PROMO_RE` matcher is CLOSED OFF by default behind
+> `KENNING_PROMO_RELAY` (`promo_relay_enabled()`/`set_promo_relay_enabled`); it misfired to the team on
+> any passing stream mention while talking to chat. Regex/pool/registry kept = reversible**). **F — routing** (`_COMPLIMENT_RE`+`DEFAULT_COMPLIMENT_LINES`;
 > `_TEAM_ARGUING_RE`→clinical calm; `_FF_REQUEST_RE`→mic rally; `_NAMED_INFO_TOKEN_RE` so a
 > short named info-relay echoes instead of being hallucinated). **G — STT repairs**
 > (`_stt_correct` phrase fixes: black widow, play off, "<agent> walled", my Sova, flame Jett,
@@ -1864,6 +1868,13 @@
 > must STAY there -- moving any GPU-resident model (Kokoro weights, LLM
 > layers, Whisper) to CPU would cost latency, so none were moved (the
 > user's zero-latency-impact constraint). +6 reclaim tests.
+> **2026-06-28 device-wide VRAM telemetry:** `_reclaim_idle_vram` now ALSO
+> logs `torch.cuda.mem_get_info()` (a `cudaMemGetInfo` call → device-wide
+> free/total, the ONLY view that includes llama.cpp's raw CUDA VRAM — the
+> in-process LLM, any spec-decode draft, the GPU guard — which the torch
+> allocator counters CANNOT see) every idle, so a per-stream VRAM creep
+> (the likely "breaks down after a while" OOM trigger) is finally visible.
+> `empty_cache` reclaim unchanged (still gated on torch slack).
 > THEN: startup Docker autostart for SearxNG (NEW
 > `lifecycle/docker_startup.py`): SearxNG is the default first search
 > provider but runs in a Docker container — if Docker is down at boot
@@ -7307,7 +7318,10 @@ Production infra for never leaking child processes (the embedder sidecar + any s
   `reap_stray_sidecars(hints=None, keep_pid=None)` (cmdline reaper across roles; `reap_stray_embedders` now
   delegates), `reclaim_port(host, port)` (kill the LISTEN holder so a restart reclaims the port; never self),
   `guard_singleton(host, port, role)` (pre-bind: reap strays + reclaim port), per-role pidfiles
-  (`role_pidfile`/`write_role`/`clear_role`). **2026-06-23 venvlauncher SELF-REAP FIX:** `.venv\Scripts\
+  (`role_pidfile`/`write_role`/`clear_role`). **2026-06-28 `diagnose_port_holder(host, port)`** — a CONNECT
+  probe (+`_listener_pid`) returning a short holder string when a port is still HELD by an unkillable
+  (stale/ELEVATED) orphan, else None; the orchestrator boot health-canary uses it to print a kill-by-port
+  remedy instead of a silent "twitch won't come back on restart". Fail-open, stdlib socket. **2026-06-23 venvlauncher SELF-REAP FIX:** `.venv\Scripts\
   python.exe` is a launcher that spawns the base python as a CHILD, so every `Popen([sys.executable, X])`
   is a launcher+child pair both carrying `X` in cmdline. A sidecar child's `guard_singleton`→
   `reap_stray_sidecars` cmdline-matched its OWN launcher parent and `kill_process_tree`d it — killing

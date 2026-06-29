@@ -3415,16 +3415,32 @@ class Orchestrator:
                 return
             reserved = torch.cuda.memory_reserved()
             allocated = torch.cuda.memory_allocated()
+            # DEVICE-WIDE used VRAM via cudaMemGetInfo -- the ONLY view that
+            # includes llama.cpp's raw CUDA allocations (the 8B + the spec-decode
+            # draft + the GPU guard), which torch's allocator counters CANNOT see.
+            # The per-stream VRAM creep the user observes lives HERE, not in torch's
+            # reserved slack (which this method already reclaims, and whose
+            # `allocated` stays flat). Logged EVERY idle so a session captures the
+            # real device-wide curve; an OOM against the ~10GB cap is the likely
+            # "breaks down after a while" trigger. Fail-open to -1 if unavailable.
+            try:
+                _free_b, _total_b = torch.cuda.mem_get_info()
+                dev_used_mb = (_total_b - _free_b) / 1e6
+                dev_total_mb = _total_b / 1e6
+            except Exception:                                        # noqa: BLE001
+                dev_used_mb = dev_total_mb = -1.0
             slack_mb = (reserved - allocated) / 1e6
             threshold_mb = float(getattr(cfg, "min_slack_mb", 192.0))
-            if slack_mb < threshold_mb:
-                return
-            torch.cuda.empty_cache()
-            logger.info(
-                "idle VRAM reclaim: released ~%.0fMB reserved slack "
-                "(reserved=%.0fMB allocated=%.0fMB)",
-                slack_mb, reserved / 1e6, allocated / 1e6,
-            )
+            did_reclaim = slack_mb >= threshold_mb
+            if did_reclaim:
+                torch.cuda.empty_cache()                 # reclaims torch slack only
+            msg = ("VRAM idle: device-used=%.0f/%.0fMB (incl. llama.cpp) | "
+                   "torch reserved=%.0fMB allocated=%.0fMB")
+            args = [dev_used_mb, dev_total_mb, reserved / 1e6, allocated / 1e6]
+            if did_reclaim:
+                msg += "; reclaimed ~%.0fMB torch slack"
+                args.append(slack_mb)
+            logger.info(msg, *args)
         except Exception as e:                                       # noqa: BLE001
             logger.debug("idle VRAM reclaim skipped: %s", e)
 
@@ -7655,10 +7671,39 @@ class Orchestrator:
                     for role, port, ok in results)
                 dead = [f"{role}:{port}" for role, port, ok in results if not ok]
                 if dead:
-                    logger.error(
-                        "twitch sidecar health canary DEGRADED after %.0fs -- %s "
-                        "(DEAD: %s). See logs/twitch_sidecars/<role>.log.",
-                        delay, summary, ", ".join(dead))
+                    # Distinguish "the sidecar never started" from "its port is
+                    # still HELD by a stale/ELEVATED orphan the reaper couldn't
+                    # kill" -- the latter is the user's "twitch won't come back on
+                    # restart". Surface the actionable kill-by-port remedy.
+                    from kenning.subprocess import sidecar_lock as _sl
+                    held = []
+                    for role, port, ok in results:
+                        if ok:
+                            continue
+                        try:
+                            who = _sl.diagnose_port_holder("127.0.0.1", port)
+                        except Exception:                        # noqa: BLE001
+                            who = None
+                        if who:
+                            held.append(f"{role}:{port} ({who})")
+                    if held:
+                        ports = ",".join(
+                            str(port) for role, port, ok in results if not ok)
+                        logger.error(
+                            "twitch sidecar health canary DEGRADED after %.0fs -- %s "
+                            "(DEAD: %s). Port(s) still HELD by a non-responsive process: "
+                            "%s -- a STALE/ELEVATED sidecar from a prior run that the "
+                            "reaper could not kill. Reap by port from an ELEVATED "
+                            "PowerShell: Get-NetTCPConnection -State Listen -LocalPort "
+                            "%s | ForEach-Object { Stop-Process -Id $_.OwningProcess "
+                            "-Force }; then relaunch Ultron NON-elevated. See "
+                            "logs/twitch_sidecars/<role>.log.",
+                            delay, summary, ", ".join(dead), "; ".join(held), ports)
+                    else:
+                        logger.error(
+                            "twitch sidecar health canary DEGRADED after %.0fs -- %s "
+                            "(DEAD: %s). See logs/twitch_sidecars/<role>.log.",
+                            delay, summary, ", ".join(dead))
                 else:
                     logger.info(
                         "twitch sidecar health canary OK after %.0fs -- %s",

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 
 from kenning.twitch.addressing import (
@@ -307,6 +308,51 @@ def test_residual_embedder_returns_empty_fails_closed():
 def test_residual_embedder_returns_nan_fails_closed():
     ev = _event("would you answer my question please")
     v = _classify(ev, embed_fn=lambda _t: [float("nan"), 1.0])
+    assert v.address == ChatAddress.IGNORE
+
+
+# --------------------------------------------------------------------------- #
+# 10b. residual with a NUMPY ndarray embed_fn — the PRODUCTION shape
+#      (regression for the 2026-06-28 live break: the orchestrator injects
+#      ``embed_fn = lambda t: (_eb.embed([t]) or [None])[0]`` which returns a
+#      numpy ndarray of np.float32. ``if not vec`` raised "truth value of an
+#      array is ambiguous" -> classify_chat failed CLOSED to IGNORE on EVERY
+#      chat message, 343x/session. The Python-list mocks above never caught it.)
+# --------------------------------------------------------------------------- #
+def _numpy_direction_embed_fn():
+    """``_direction_embed_fn`` but returns a numpy ndarray of ``np.float32`` --
+    EXACTLY what the orchestrator's real embed_fn yields per text."""
+    base = _direction_embed_fn()
+
+    def embed(text: str):
+        return np.asarray(base(text), dtype=np.float32)
+
+    return embed
+
+
+def test_residual_numpy_embed_fn_to_ultron_does_not_crash():
+    # A to-Ultron-leaning line with a NUMPY embed_fn must run the residual path
+    # (reason mentions 'residual') and resolve TO_ULTRON -- NOT raise the
+    # array-truthiness ValueError and fall to the 'classify error' fail-closed.
+    ev = _event("do you actually understand what we say and would you respond")
+    v = _classify(ev, embed_fn=_numpy_direction_embed_fn())
+    assert v.address == ChatAddress.TO_ULTRON
+    assert "residual" in v.reason
+
+
+def test_residual_numpy_embed_fn_banter_ignores_via_residual():
+    # Banter with a numpy embed_fn must IGNORE through the residual BELOW-MARGIN
+    # branch ('residual' in reason), proving the path ran rather than crashed.
+    ev = _event("gg that clutch was insane lol same poggers")
+    v = _classify(ev, embed_fn=_numpy_direction_embed_fn())
+    assert v.address == ChatAddress.IGNORE
+    assert "residual" in v.reason
+
+
+def test_residual_numpy_embed_fn_with_nan_fails_closed():
+    # A numpy vector carrying a NaN must still fail closed (not crash).
+    ev = _event("would you answer my question please")
+    v = _classify(ev, embed_fn=lambda _t: np.asarray([float("nan"), 1.0], dtype=np.float32))
     assert v.address == ChatAddress.IGNORE
 
 

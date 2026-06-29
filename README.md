@@ -83,8 +83,12 @@ the anticheat-pinned main process never imports a network or automation library 
   moderation panel"`) with a button per mod action (+ a username box) and a fuzzy-match confirm popup, and a dev
   **test panel** (`"show me the test panel"`) that fires any redeem / chat game / raid / speak locally so you can
   rehearse without real viewers — in-process tkinter (a click is the app's own window message, not input monitoring).
-- 📋 **Chat helpers** — `!ultron` posts the command list on demand; an auto commands-panel (15 min) and a
-  "talk to Ultron" hint (10 min) both link a one-page viewer guide, plus an auto-trivia round every 8 min.
+- 📋 **Chat helpers** — `!ultron` posts the command list on demand; an auto commands-panel and a
+  "talk to Ultron" hint both link a one-page viewer guide, plus periodic auto-trivia rounds.
+- ♻️ **Long-session self-healing** — the bot chat-send refreshes its OAuth token on a 401 and retries (chat no
+  longer goes silent when the ~4-hour token lapses mid-stream); the in-character chat addressing is numpy-safe
+  (a vector-truthiness bug had been failing every classification closed); and on restart, a port still held by a
+  stale/elevated sidecar is reported with the exact kill-by-port remedy instead of failing silently.
 
 Built, unit-tested offline (full `tests/twitch` green), and live on-stream. Go-live runbook:
 [`docs/twitch_integration/FIRST_STREAM_CHECKLIST.md`](docs/twitch_integration/FIRST_STREAM_CHECKLIST.md).

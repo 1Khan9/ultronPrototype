@@ -258,6 +258,30 @@ def reclaim_port(host: str, port: int) -> int:
     return 0
 
 
+def diagnose_port_holder(host: str, port: int) -> Optional[str]:
+    """Best-effort diagnosis when a fresh sidecar could not come up on ``port``.
+
+    Returns a short human string when SOMETHING is still HOLDING the port -- a
+    stale or ELEVATED orphan from a prior run that the reaper could not kill (a
+    non-elevated boot cannot kill an Admin-launched process, and :func:`_listener_pid`
+    reads its pid as ``None`` under AccessDenied) -- else ``None`` (the port is
+    free, so the sidecar failed to come up for a DIFFERENT reason). A CONNECT
+    probe is used, not a bind-probe: a bind can false-positive on a lingering
+    TIME_WAIT socket, whereas a successful connect means a process is actively
+    LISTENING. Fail-open: never raises."""
+    try:
+        import socket as _socket
+        try:
+            with _socket.create_connection((host or "127.0.0.1", int(port)), timeout=1.0):
+                pass
+        except OSError:
+            return None                       # nothing listening -> the port is free
+        lp = _listener_pid(int(port))
+        return f"pid={lp}" if lp else "owner pid unreadable (likely an ELEVATED process)"
+    except Exception:                                            # noqa: BLE001
+        return None
+
+
 def guard_singleton(host: str, port: int, role: str) -> int:
     """Pre-bind guard for a loopback sidecar: reap same-role strays by cmdline
     AND reclaim the port, so that binding it with an EXCLUSIVE
