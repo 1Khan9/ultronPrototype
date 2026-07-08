@@ -273,6 +273,107 @@ class SpotifyClient:
         who = f" by {artists}" if artists else ""
         return f"Queued {hit.get('name', query)}{who}."
 
+    # -- structured search+queue (Twitch !song / !album requests) -------
+    #
+    # The chat-request path needs STRUCTURED results (exact name/artists for
+    # the chat confirmation, the overlay card, and the spoken line are three
+    # different renderings), so these return dicts instead of spoken strings.
+    # The voice path above (queue_query, spoken-string contract) is untouched.
+
+    def _search_smart(self, query: str, kind: str) -> Optional[dict]:
+        """Search ``kind`` by free text, with a precision pass for "X by Y".
+
+        Viewers type every variant: "Dance Dance by cage the elephant",
+        "Dance Dance cage the elephant", bare "Dance Dance". When the text
+        contains " by ", try a FIELD-FILTERED query first (name filter +
+        artist filter, split on the LAST " by " since the artist tail comes
+        last) -- then always fall back to the raw text so titles that
+        legitimately contain "by" ("Stand By Me") still match."""
+        q = (query or "").strip()
+        if not q:
+            return None
+        lowered = q.lower()
+        if " by " in lowered:
+            cut = lowered.rfind(" by ")
+            name, artist = q[:cut].strip(), q[cut + 4:].strip()
+            if name and artist:
+                field = "track" if kind == "track" else "album"
+                hit = self.search_first(
+                    f'{field}:"{name}" artist:"{artist}"', kind)
+                if hit is not None:
+                    return hit
+        return self.search_first(q, kind)
+
+    def _queue_uri(self, uri: str) -> None:
+        self._call("POST", "/me/player/queue", params={"uri": uri})
+
+    def search_and_queue_track(self, query: str) -> Optional[dict]:
+        """Search ``query`` and queue the best matching TRACK.
+
+        Returns ``{"kind": "track", "name", "artists", "album"}`` on success,
+        None when nothing matched. API/device errors raise
+        :class:`SpotifyAPIError` (the caller refunds on those)."""
+        hit = self._search_smart(query, "track")
+        if hit is None or not hit.get("uri"):
+            return None
+        self.ensure_device()
+        self._queue_uri(hit["uri"])
+        return {
+            "kind": "track",
+            "name": hit.get("name", query),
+            "artists": ", ".join(
+                a.get("name", "") for a in hit.get("artists", []) if a),
+            "album": (hit.get("album") or {}).get("name", ""),
+        }
+
+    def search_and_queue_album(
+        self, query: str, *, max_tracks: int = 30,
+    ) -> Optional[dict]:
+        """Search ``query`` for an ALBUM and queue its tracks in order.
+
+        Spotify's queue endpoint takes ONE uri per call, so the album is
+        queued track-by-track (capped at ``max_tracks`` to bound the HTTP
+        fan-out; a standard album fits comfortably). Returns
+        ``{"kind": "album", "name", "artists", "track_count"}`` on success,
+        None when no album matched or it had no tracks. API/device errors
+        raise :class:`SpotifyAPIError` mid-way; the caller treats the whole
+        request as failed (partial queueing is harmless -- extra songs, no
+        replay risk)."""
+        hit = self._search_smart(query, "album")
+        if hit is None or not hit.get("id"):
+            return None
+        album_id = hit["id"]
+        uris: list[str] = []
+        params: Optional[dict] = {"limit": 50}
+        path = f"/albums/{album_id}/tracks"
+        while path and len(uris) < max_tracks:
+            data = self._call("GET", path, params=params) or {}
+            for t in data.get("items") or []:
+                if t and t.get("uri"):
+                    uris.append(t["uri"])
+                    if len(uris) >= max_tracks:
+                        break
+            nxt = data.get("next")
+            if nxt and len(uris) < max_tracks:
+                # 'next' is a full URL; keep only the path+query via the API
+                # base split so _call re-attaches auth cleanly.
+                path = nxt.split(API, 1)[-1] if API in nxt else None
+                params = None
+            else:
+                path = None
+        if not uris:
+            return None
+        self.ensure_device()
+        for uri in uris:
+            self._queue_uri(uri)
+        return {
+            "kind": "album",
+            "name": hit.get("name", query),
+            "artists": ", ".join(
+                a.get("name", "") for a in hit.get("artists", []) if a),
+            "track_count": len(uris),
+        }
+
     # -- seek + library ------------------------------------------------
 
     def seek(self, position_ms: int = 0) -> None:

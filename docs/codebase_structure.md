@@ -27,6 +27,31 @@
 > - Full runbook: **`docs/ultron_0_1_baseline.md`**. Post-0.1 roadmap:
 >   **`docs/latency_optimizations_V1.md`**.
 >
+> **S14 — PAID SPOTIFY QUEUE REQUESTS (!song/!album) + CHAT PERSONA ENRICHMENT + LIVE-TEST FIXES (2026-07-08 wave 2)**
+>
+> **!song <query> (1000 Credits) / !album <query> (5000)** — viewers pay StreamElements Credits to queue a
+> track / whole album on the streamer's Spotify. NEW `spotify/client.py` `_search_smart` ("X by Y" ->
+> field-filtered `track:"X" artist:"Y"` first, raw-text fallback so "Stand By Me" matches) +
+> `search_and_queue_track(query)` / `search_and_queue_album(query, max_tracks=30)` (structured dict | None |
+> raises SpotifyAPIError; album paginates GET /albums/{id}/tracks then queues each URI). `commands.py`:
+> CommandKind.SONG/ALBUM + `_args_query` (control-stripped <=200-char free text — goes ONLY to the Spotify
+> search API, never a model). `chat_games.py` `_cmd_song_request`: debit-FIRST (`song:{mid}:cost`), Spotify
+> work on the `_defer` worker, REFUND on not-found/error (`:refund`), success -> `_emit_then_reply` card
+> (game="song"/"album", same compact card as slots/wheel/heist; overlay `ALLOWED_CHAT_GAMES`+icons+roll text)
+> + chat confirmation naming requester + EXACT track/album + NEW `speak_text` param spoken through the NEW
+> injected `speak_fn` (orchestrator wires `_result_speak`; `song_request_fn` -> `_twitch_song_request` ->
+> `_get_spotify_client`). Config: economy `song_requests_enabled/song_request_cost/album_request_cost/
+> album_queue_max_tracks`; chat `song_hint_enabled/interval(15m)/text` -> NEW third poster (90s stagger) +
+> test-panel "Song/album hint" button; `panel._BASE` + `!help` + `!ultron` list the commands.
+> **Chat persona enrichment (ADDITIVE):** `twitch/reply.py` `_CHAT_ENRICHMENT` layered inside
+> `TWITCH_CHAT_SYSTEM` between the unchanged persona paragraph and the DATA/safety framing (safety stays
+> LAST). **Relay-off now FULLY SILENT + wake-gated** (live-test): the offline notice removed (silent consume,
+> log-only) and the follow-up `wake_or_relay_override` consults `team_relay_enabled()` live. **Points-backend
+> outages LOUD** (live-test root cause: stale SE JWT 401s): all six debit-failure paths + `!leaderboard`
+> reply "the Credits system isn't responding -- nothing was charged" via `_ledger_down_reply`;
+> `StreamElementsLedger.rebuild_balances` RAISES instead of swallowing into `{}`. Tests:
+> `tests/twitch/economy/test_song_requests.py` (22) + `test_ledger_down_loud.py` (9).
+>
 > **TWITCH CHAT OVER-ADDRESSING FIXED — residual semantic tier CLOSED OFF by default (2026-07-08)**
 >
 > On the 2026-07-07 stream Ultron replied to chat lines NOT addressed to him ("Sery_Bot is here

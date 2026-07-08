@@ -189,6 +189,8 @@ class ChatGameRouter:
         twitch_cfg: object | None = None,
         defer_fn: Callable[[float, Callable[[], None]], object] | None = None,
         announce_results_enabled_fn: Callable[[], bool] | None = None,
+        song_request_fn: Callable[[str, str], Optional[dict]] | None = None,
+        speak_fn: Callable[[str], object] | None = None,
     ) -> None:
         self._drain = drain_fn
         # 2026-06-26: dev TEST PANEL injection buffer. inject() appends a synthetic
@@ -230,6 +232,17 @@ class ChatGameRouter:
         # non-result replies (!points/!help/errors/"joined the heist") are NEVER
         # suppressed. None -> always announce (byte-identical to pre-toggle).
         self._announce_results_enabled_fn = announce_results_enabled_fn
+        # Paid Spotify queue requests (S14, 2026-07-08). ``song_request_fn(kind,
+        # query)`` -- kind is "track"|"album" -- is the orchestrator-injected
+        # bridge to the Spotify client: returns a result dict ({"name","artists",
+        # ...}) on success, None when nothing matched, and RAISES on an API/
+        # device error (the handler refunds on both non-success outcomes). None
+        # (not wired / spotify disabled) => the commands answer with a polite
+        # unavailable notice and never charge. ``speak_fn(text)`` speaks a
+        # confirmation aloud on the result-TTS path (OBS + HEAR-RESULTS-gated
+        # local speakers); None => chat-post only, byte-identical elsewhere.
+        self._song_request_fn = song_request_fn
+        self._speak_fn = speak_fn
         self._now = now_fn
         self._epoch = epoch_fn
         self._slots = Slots(DEFAULT_SLOT_SYMBOLS, reels=3, rng=self._rng)
@@ -425,6 +438,10 @@ class ChatGameRouter:
             return self._cmd_give(ev, cmd)
         if k is CommandKind.WHEEL:
             return self._cmd_wheel(ev, cmd)
+        if k is CommandKind.SONG:
+            return self._cmd_song_request(ev, cmd, "track")
+        if k is CommandKind.ALBUM:
+            return self._cmd_song_request(ev, cmd, "album")
         # UNKNOWN
         self._reply(f"@{cmd.user_login} unknown command. Try !help.")
         return False
@@ -440,7 +457,12 @@ class ChatGameRouter:
         try:
             balances = self._ledger.rebuild_balances()
         except Exception as exc:  # noqa: BLE001
-            logger.debug("leaderboard rebuild failed: %s", exc)
+            # 2026-07-08 live incident: a stale SE JWT was swallowed into "{}"
+            # -> "No one has any Credits yet" (wrong and misleading). The SE
+            # ledger now RAISES on a backend failure and this path answers
+            # LOUDLY, distinct from a genuinely empty board.
+            logger.warning("leaderboard rebuild failed: %s", exc)
+            self._ledger_down_reply(cmd.user_login or "viewer")
             return False
         top = sorted(balances.items(), key=lambda kv: kv[1], reverse=True)[:5]
         if not top:
@@ -460,10 +482,13 @@ class ChatGameRouter:
         # Only advertise !points/!gamble as Ultron commands when Ultron actually
         # handles them; otherwise StreamElements' bot owns those two.
         head = "Commands: " if deferred else "Commands: !points, !gamble <amount|all>, "
+        song_cost = _as_int(getattr(self._cfg, "song_request_cost", 1000), 1000)
+        album_cost = _as_int(getattr(self._cfg, "album_request_cost", 5000), 5000)
         self._reply(
             head + "!slots <amount|all>, "
             "!wheel (free spin), !heist <amount>, !duel @user <amount> + !accept, "
-            "!raffle, !give @user <amount>, !trivia (mods), !leaderboard. Earn "
+            "!raffle, !give @user <amount>, !trivia (mods), !leaderboard, "
+            f"!song <name> ({song_cost}), !album <name> ({album_cost}). Earn "
             + self._currency() + " by watching."
         )
         return True
@@ -566,6 +591,7 @@ class ChatGameRouter:
             return False
         except Exception as exc:  # noqa: BLE001
             logger.warning("give debit failed for %s: %s", uid, exc)
+            self._ledger_down_reply(login)
             return False
         try:
             self._ledger.credit(target_uid, amt, "gift", f"give:{mid}:to")
@@ -659,6 +685,7 @@ class ChatGameRouter:
             if opened and not h["participants"]:
                 self._heist = None
             logger.warning("heist debit failed for %s: %s", uid, exc)
+            self._ledger_down_reply(login)
             return False
         self._mark_cooldown(uid)
         h["participants"][uid] = (login, int(stake))
@@ -765,6 +792,7 @@ class ChatGameRouter:
             return False
         except Exception as exc:  # noqa: BLE001
             logger.warning("duel debit failed for %s: %s", uid, exc)
+            self._ledger_down_reply(login)
             return False
         self._mark_cooldown(uid)
         window = _as_float(getattr(self._cfg, "duel_window_seconds", 60)) or 60.0
@@ -809,6 +837,7 @@ class ChatGameRouter:
         except Exception as exc:  # noqa: BLE001
             logger.warning("duel accept debit failed for %s: %s", uid, exc)
             self._refund_duel(duel)
+            self._ledger_down_reply(login)
             return False
         challenger_login = duel["challenger_login"]
         rnd = self._rng.new_round()
@@ -1082,6 +1111,7 @@ class ChatGameRouter:
             return False
         except Exception as exc:  # noqa: BLE001
             logger.warning("%s debit failed for %s: %s", game, uid, exc)
+            self._ledger_down_reply(login)
             return False
 
         payout, detail = self._resolve_payout(game, stake, mid)
@@ -1121,6 +1151,134 @@ class ChatGameRouter:
             self._reply(line)
         return True
 
+    # -- paid Spotify queue requests (S14, 2026-07-08) --------------------- #
+    def _cmd_song_request(self, ev: ChatEvent, cmd: Command, kind: str) -> bool:
+        """``!song <query>`` (track) / ``!album <query>`` (album): debit the
+        configured cost, search Spotify, queue the match, confirm on-stream.
+
+        DEBIT-FIRST (the bet-game pattern) with per-leg idempotency keys so an
+        EventSub replay can never double-charge; the SPOTIFY work + the result
+        handling run on a DEFERRED worker (``_defer``) so an album's ~30 queue
+        calls never stall the tick loop. Any not-found / API failure REFUNDS
+        the full cost (its own idempotent leg). Success: overlay card first
+        (visual-leads-vocal, same size/style as slots/wheel/heist), then the
+        deferred chat confirmation naming the requester + the EXACT track/
+        album, spoken aloud on the result-TTS path."""
+        game = "song" if kind == "track" else "album"
+        uid = cmd.user_id or ""
+        login = cmd.user_login or "viewer"
+        if not uid:
+            return False
+        cd = _as_float(getattr(self._cfg, "command_cooldown_seconds", 5))
+        now = self._now()
+        if cd > 0 and (now - self._cooldown.get(uid, -1.0e9)) < cd:
+            return False
+
+        if (self._song_request_fn is None
+                or not bool(getattr(self._cfg, "song_requests_enabled", True))):
+            self._reply(f"@{login} song requests aren't available right now.")
+            return False
+
+        query = cmd.args.get("query")
+        if not query:
+            self._reply(f"@{login} {cmd.args.get('error', 'name a song')}.")
+            return False
+
+        cost = _as_int(getattr(
+            self._cfg,
+            "song_request_cost" if kind == "track" else "album_request_cost",
+            1000 if kind == "track" else 5000))
+        cur = self._currency()
+        bal = self._ledger.balance(uid)
+        if cost > 0 and bal < cost:
+            self._reply(
+                f"@{login} a {game} request costs {cost} {cur}; "
+                f"you have {bal}.")
+            return False
+
+        mid = self._event_key(ev)
+        self._cooldown[uid] = now
+        if cost > 0:
+            try:
+                self._ledger.debit(uid, cost, f"{game} request",
+                                   f"{game}:{mid}:cost")
+            except InsufficientFunds:
+                self._reply(
+                    f"@{login} you only have "
+                    f"{self._ledger.balance(uid)} {cur}.")
+                return False
+            except Exception as exc:  # noqa: BLE001 — never charge on a broken ledger
+                logger.warning("%s request debit failed for %s: %s",
+                               game, uid, exc)
+                self._ledger_down_reply(login)
+                return False
+
+        def _refund(why: str) -> None:
+            if cost <= 0:
+                return
+            try:
+                self._ledger.credit(uid, cost, f"{game} request refund ({why})",
+                                    f"{game}:{mid}:refund")
+            except Exception as exc:  # noqa: BLE001 — replay-safe; recovers on resume
+                logger.warning("%s request refund failed for %s: %s",
+                               game, uid, exc)
+
+        def _do_request() -> None:
+            # Runs OFF the tick loop (a deferred worker thread in production, an
+            # injected synchronous defer in tests). Everything here is fail-safe:
+            # any error refunds and replies; nothing raises out of the worker.
+            try:
+                result = self._song_request_fn(kind, query)
+            except Exception as exc:  # noqa: BLE001 — API/device error -> refund
+                logger.warning("%s request failed for %r: %s", game, query, exc)
+                _refund("spotify error")
+                self._reply(
+                    f"@{login} Spotify refused that request -- "
+                    f"your {cost} {cur} are refunded.")
+                return
+            if not result:
+                _refund("not found")
+                self._reply(
+                    f"@{login} I found no {'track' if kind == 'track' else 'album'} "
+                    f"matching \"{query}\" -- your {cost} {cur} are refunded.")
+                return
+            name = str(result.get("name") or query)
+            artists = str(result.get("artists") or "")
+            who = f" by {artists}" if artists else ""
+            if kind == "track":
+                queued = f"{name}{who}"
+                line = (f"@{login} queued: {name}{who}. "
+                        f"(-{cost} {cur})")
+                spoken = f"{login} queued {queued}. An adequate choice."
+                outcome = f"Queued: {name}" + (f" — {artists}" if artists else "")
+            else:
+                n = _as_int(result.get("track_count"), 0)
+                tracks = f", {n} tracks" if n else ""
+                queued = f"the album {name}{who}"
+                line = (f"@{login} queued the album: {name}{who}{tracks}. "
+                        f"(-{cost} {cur})")
+                spoken = (f"{login} queued the album {name}{who}. "
+                          f"The stream's soundtrack bends to their will.")
+                outcome = (f"Queued: {name}"
+                           + (f" — {artists}" if artists else "")
+                           + (f" ({n} tracks)" if n else ""))
+            self._emit_then_reply(
+                line,
+                game=game, viewer=login,
+                outcome=outcome,
+                title=("SONG REQUEST" if kind == "track" else "ALBUM REQUEST"),
+                won=True,
+                amount=cost,
+                detail={"query": query[:120]},
+                speak_text=spoken,
+            )
+
+        # Debit is committed; hand the (potentially slow) Spotify work to the
+        # deferred worker so the tick loop keeps draining chat. 0.001s -> a
+        # daemon timer in production; tests inject defer_fn and run it inline.
+        self._defer(0.001, _do_request)
+        return True
+
     # -- game payouts (EV == gamble_rtp) ---------------------------------- #
     def _resolve_payout(self, game: str, stake: int, mid: str) -> tuple[int, dict]:
         """Resolve a single-shot bet payout. Returns ``(payout, detail)`` where
@@ -1158,6 +1316,17 @@ class ChatGameRouter:
     def _currency(self) -> str:
         c = getattr(self._cfg, "currency_name", "") or "one taps"
         return str(c)
+
+    def _ledger_down_reply(self, login: str) -> None:
+        """One shared LOUD notice for a backend-ledger failure (2026-07-08 live
+        incident: a stale StreamElements JWT 401'd every debit and the games
+        went SILENT -- no reply, no card -- indistinguishable from Ultron
+        ignoring the viewer). Every generic debit/credit exception path replies
+        with this so a points-backend outage is visible in chat immediately;
+        the specific error stays in the log."""
+        self._reply(
+            f"@{login} the {self._currency()} system isn't responding right "
+            "now -- nothing was charged. Try again in a bit.")
 
     def _reply(self, text: str) -> None:
         if self._announce is None:
@@ -1205,13 +1374,17 @@ class ChatGameRouter:
         won: bool = False,
         amount: int = 0,
         detail: dict | None = None,
+        speak_text: str | None = None,
     ) -> None:
         """VISUAL-LEADS-VOCAL: emit the on-stream overlay card NOW, then DEFER the
         chat post / vocal announce by ``overlay_lead_seconds`` so the streamer sees
         the spin before the announcement. The overlay emit is immediate + fail-safe
         (``_emit_overlay`` swallows its own errors); the reply is scheduled
         non-blocking via :meth:`_defer`. With a 0 lead this is the exact legacy
-        order (overlay then immediate reply)."""
+        order (overlay then immediate reply). ``speak_text`` (S14 song requests):
+        an optional SPOKEN confirmation delivered through the injected
+        ``speak_fn`` alongside the deferred chat post, under the same master
+        announce gate; None (every pre-existing caller) is byte-identical."""
         self._emit_overlay(
             game, viewer,
             outcome=outcome, title=title, won=won, amount=amount, detail=detail,
@@ -1223,7 +1396,16 @@ class ChatGameRouter:
                     return
             except Exception as exc:  # noqa: BLE001 — a bad predicate never blocks the card
                 logger.debug("announce-results predicate failed (%s); announcing", exc)
-        self._defer(self._overlay_lead_s, lambda: self._reply(reply_text))
+
+        def _announce_deferred() -> None:
+            self._reply(reply_text)
+            if speak_text and self._speak_fn is not None:
+                try:
+                    self._speak_fn(speak_text)
+                except Exception as exc:  # noqa: BLE001 — dead TTS never breaks the post
+                    logger.debug("chat-game speak failed: %s", exc)
+
+        self._defer(self._overlay_lead_s, _announce_deferred)
 
     # -- overlay (on-stream chat-game card) -------------------------------- #
     def _emit_overlay(

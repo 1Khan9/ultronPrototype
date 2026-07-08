@@ -73,6 +73,7 @@ EXTRAS (optional convenience triggers)
   * ``"auto_trivia"``     (no params)  -- kick a timed auto-trivia round
   * ``"commands_panel"``  (no params)  -- post the condensed commands panel
   * ``"talk_hint"``       (no params)  -- post the "talk to Ultron" hint
+  * ``"song_hint"``       (no params)  -- post the !song/!album promo hint
 
 ``viewers`` / ``bet`` / ``amount`` are already-parsed ints (a blank / non-numeric
 box is a validated no-op -- ``on_test`` is NOT called and an inline status line
@@ -189,6 +190,7 @@ ACT_CHAT_REPLY = "chat_reply"
 ACT_AUTO_TRIVIA = "auto_trivia"
 ACT_COMMANDS_PANEL = "commands_panel"
 ACT_TALK_HINT = "talk_hint"
+ACT_SONG_HINT = "song_hint"
 
 
 class TestPanel:
@@ -579,6 +581,7 @@ class TestPanel:
             ACT_AUTO_TRIVIA: "Auto-trivia round",
             ACT_COMMANDS_PANEL: "Commands panel",
             ACT_TALK_HINT: "Talk-to-Ultron hint",
+            ACT_SONG_HINT: "Song/album hint",
         }.get(action, action)
 
     # -- var access (UI thread; tests stub the dict) ----------------------
@@ -855,6 +858,9 @@ class TestPanel:
         r = self._add_button_only_row(
             root, r, "Talk-to-Ultron hint", self._extra_color,
             lambda: self._emit_extra(ACT_TALK_HINT), tag="talk_hint")
+        r = self._add_button_only_row(
+            root, r, "Song/album hint", self._extra_color,
+            lambda: self._emit_extra(ACT_SONG_HINT), tag="song_hint")
 
         # --- status line (absorbs the remaining height) ---
         status = tk.Label(

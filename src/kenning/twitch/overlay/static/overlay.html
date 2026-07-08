@@ -483,7 +483,7 @@
   }
 
   // --- chat-game cards (bottom-left, game-accurate, auto-dismiss) ----------
-  var CG_ICON = { heist: "💰", duel: "⚔", trivia: "❓", raffle: "🎟", wheel: "◉", slots: "🎰" };
+  var CG_ICON = { heist: "💰", duel: "⚔", trivia: "❓", raffle: "🎟", wheel: "◉", slots: "🎰", song: "🎵", album: "💿" };
   var SLOT_GLYPH = {
     cherry: "🍒", lemon: "🍋", bell: "🔔",
     star: "⭐", seven: "7️⃣", skull: "💀"
@@ -704,6 +704,7 @@
     if (ev.game === "duel")   { return "trading shots…"; }
     if (ev.game === "raffle") { return (detail.phase === "open") ? "" : "drawing a winner…"; }
     if (ev.game === "trivia") { return (detail.phase === "open") ? "" : "checking the answer…"; }
+    if (ev.game === "song" || ev.game === "album") { return "searching Spotify…"; }
     return "resolving…";
   }
 

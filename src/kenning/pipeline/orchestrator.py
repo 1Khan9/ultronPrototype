@@ -3271,6 +3271,31 @@ class Orchestrator:
             self._spotify_client = client
         return client
 
+    def _twitch_song_request(self, kind: str, query: str):
+        """Chat-game bridge for the paid !song/!album requests (S14, 2026-07-08).
+
+        ``kind`` is ``"track"`` or ``"album"``; ``query`` is the parser's
+        control-stripped, length-capped search text. Returns the Spotify
+        client's structured result dict on success, None when nothing matched
+        (the handler refunds), and RAISES on any unavailability/API/device
+        error (the handler refunds those too, with a distinct message).
+        Runs on the chat-game deferred worker thread; the client is the same
+        cached authorized instance the voice path uses (requests is
+        thread-safe per call; a rare concurrent token refresh is benign --
+        both land the same rotated token)."""
+        client = self._get_spotify_client()
+        if client is None:
+            raise RuntimeError("spotify client unavailable (disabled or not authorized)")
+        if kind == "album":
+            try:
+                from kenning.config import get_config as _gc_song
+                _max = int(getattr(getattr(_gc_song().twitch, "economy", None),
+                                   "album_queue_max_tracks", 30) or 30)
+            except Exception:                                        # noqa: BLE001
+                _max = 30
+            return client.search_and_queue_album(query, max_tracks=_max)
+        return client.search_and_queue_track(query)
+
     def _maybe_handle_spotify(self, user_text: str) -> bool:
         """Spotify playback control. Strict matcher -> non-music
         utterances fall through. Once a command MATCHES the turn is
@@ -4128,23 +4153,21 @@ class Orchestrator:
                 return False
         # TEAM RELAY OFF (the STOP-window RELAY toggle, 2026-07-08): the relay
         # is fully disengaged -- a matched (or force-routed) relay command is
-        # acknowledged on the LOCAL speakers and consumed, NEVER transmitted
-        # and never role-played by the conversational LLM. Sits before any
-        # synth/ring/speculative work and after the matcher, so ordinary
-        # utterances still fall through and ALL relay entry points (main,
-        # lean, turbo backstop force=True, router force=True) are covered by
-        # this single choke point. Fail-open to ON.
+        # consumed SILENTLY (user direction from the live test: no spoken
+        # notice, no response at all), NEVER transmitted and never role-played
+        # by the conversational LLM. Sits before any synth/ring/speculative
+        # work and after the matcher, so ordinary utterances still fall
+        # through and ALL relay entry points (main, lean, turbo backstop
+        # force=True, router force=True) are covered by this single choke
+        # point. Fail-open to ON.
         try:
             from kenning.audio.relay_speech import team_relay_enabled
             _team_relay_on = bool(team_relay_enabled())
         except Exception:                                            # noqa: BLE001
             _team_relay_on = True
         if not _team_relay_on:
-            logger.info("relay: suppressed (team relay OFF) | text=%r",
+            logger.info("relay: suppressed silently (team relay OFF) | text=%r",
                         user_text[:80])
-            self._speak(
-                "Team relay is offline. My words are yours alone."
-            )
             return True
         # Session mute (streaming safety): a matched relay command while
         # muted is acknowledged -- never transmitted, never role-played.
@@ -6896,6 +6919,14 @@ class Orchestrator:
                         announce_results_enabled_fn=(
                             lambda: bool(getattr(
                                 self, "_announce_results_enabled", True))),
+                        # Paid Spotify queue requests (S14, 2026-07-08):
+                        # !song/!album bridge to the cached authorized Spotify
+                        # client (built lazily on first request; raises into the
+                        # handler's refund path when unavailable), plus the
+                        # result-TTS speak path (OBS + HEAR-RESULTS-gated local
+                        # speakers) for the spoken confirmation.
+                        song_request_fn=self._twitch_song_request,
+                        speak_fn=lambda t: self._result_speak(t),
                     )
                     self._twitch_chat_game_router = cgr
                     self._twitch_chat_stop = False
@@ -7037,6 +7068,62 @@ class Orchestrator:
                                 int(_hinterval_s // 60))
             except Exception as e:                                       # noqa: BLE001
                 logger.warning("twitch talk-hint init failed: %s", e)
+
+            # SONG/ALBUM hint poster (S14, 2026-07-08): a THIRD periodic chat
+            # post briefly explaining the paid Spotify queue commands
+            # (!song / !album). Same write-sidecar /say path; staggered with a
+            # 90s first-post offset so panel (full interval), talk hint (30s),
+            # and this one never land together. Fail-safe like its siblings.
+            self._twitch_song_hint_thread = None
+            try:
+                _schcfg = getattr(tcfg, "chat", None)
+                if getattr(_schcfg, "song_hint_enabled", False):
+                    _swrite_ep = str(getattr(tcfg, "write_sidecar_endpoint",
+                                             "http://127.0.0.1:8777")).rstrip("/")
+                    _sinterval_s = max(
+                        60.0,
+                        float(getattr(_schcfg, "song_hint_interval_minutes", 15)) * 60.0)
+                    _song_text = str(getattr(
+                        _schcfg, "song_hint_text",
+                        "🎵 !song <name> [by artist] (1000 Credits) queues a "
+                        "track on stream · 💿 !album <name> (5000 Credits) "
+                        "queues the whole album!") or "").strip()
+                    _soffset_s = min(90.0, _sinterval_s)
+                    from kenning.twitch.panel import run_interval_poster as _s_rip
+                    import json as _sjson
+                    import threading as _sth
+                    import time as _stime
+                    import urllib.request as _surl
+
+                    def _song_hint_post(text: str) -> None:
+                        _sbody = _sjson.dumps({"text": text}).encode("utf-8")
+                        _sreq = _surl.Request(
+                            f"{_swrite_ep}/say", data=_sbody, method="POST",
+                            headers={"Content-Type": "application/json"})
+                        with _surl.urlopen(_sreq, timeout=5) as _sr:  # nosec B310 - loopback
+                            _sr.read()
+
+                    def _song_hint_loop() -> None:
+                        if not _song_text:
+                            return   # nothing to post
+                        _s_rip(
+                            lambda: _song_text,
+                            _song_hint_post,
+                            interval_s=_sinterval_s,
+                            should_stop=lambda: getattr(self, "_twitch_chat_stop", False),
+                            sleep_fn=_stime.sleep,
+                            first_offset_s=_soffset_s,
+                        )
+
+                    self._twitch_chat_stop = False
+                    _st = _sth.Thread(target=_song_hint_loop, daemon=True,
+                                      name="twitch-song-hint")
+                    _st.start()
+                    self._twitch_song_hint_thread = _st
+                    logger.info("twitch song/album hint poster started (every %d min)",
+                                int(_sinterval_s // 60))
+            except Exception as e:                                       # noqa: BLE001
+                logger.warning("twitch song-hint init failed: %s", e)
 
             if getattr(self, "llm", None) is None:
                 logger.warning("twitch: no LLM engine loaded; chat-REPLY disabled "
@@ -7400,7 +7487,7 @@ class Orchestrator:
         if action == "auto_trivia":
             self._twitch_test_chat_command("trivia", bet=0, target="", amount=0)
             return
-        if action in ("commands_panel", "talk_hint"):
+        if action in ("commands_panel", "talk_hint", "song_hint"):
             self._twitch_test_post_panel(action)
             return
         logger.info("test panel: unhandled action %s", action)
@@ -7488,7 +7575,8 @@ class Orchestrator:
             logger.warning("test panel chat-reply inject failed: %s", e)
 
     def _twitch_test_post_panel(self, which: str) -> None:
-        """Post the commands panel / talk-to-Ultron hint to chat once (test trigger)."""
+        """Post the commands panel / talk-to-Ultron hint / song-album hint to
+        chat once (test trigger)."""
         post = getattr(self, "_twitch_chat_post", None)
         if post is None:
             return
@@ -7498,6 +7586,10 @@ class Orchestrator:
             if which == "commands_panel":
                 from kenning.twitch.panel import build_commands_panel_text
                 post(build_commands_panel_text(chcfg))
+            elif which == "song_hint":
+                hint = str(getattr(chcfg, "song_hint_text", "") or "").strip()
+                if hint:
+                    post(hint)
             else:
                 from kenning.twitch.panel import append_cooldown_hint
                 hint = str(getattr(chcfg, "talk_hint_text", "") or "").strip()
@@ -8426,7 +8518,22 @@ class Orchestrator:
                     # directly instead of risking a borderline zero-shot rejection
                     # (the stop-button command was dropped at conf 0.75 < 0.80 in
                     # the follow-up window despite the user saying the name).
-                    if self._is_relay_command(user_text) or _FOLLOWUP_WAKE_RE.match(user_text):
+                    # TEAM RELAY OFF (2026-07-08 live test): with the relay
+                    # disengaged a relay-shaped line is NOT for Kenning -- he is
+                    # off comms and the user is talking to the stream. The
+                    # override must NOT engage without the wake word (observed
+                    # live: "Tell my team Silva hit 84" engaged via this branch
+                    # while relay was off). Read live, fail-open to today.
+                    _relay_override = False
+                    try:
+                        from kenning.audio.relay_speech import (
+                            team_relay_enabled as _tre_fu,
+                        )
+                        _relay_override = (_tre_fu()
+                                           and self._is_relay_command(user_text))
+                    except Exception:                                # noqa: BLE001
+                        _relay_override = self._is_relay_command(user_text)
+                    if _relay_override or _FOLLOWUP_WAKE_RE.match(user_text):
                         print(f"  (follow-up, addressed) you: {user_text}")
                         trace.tlog(
                             logger, "addressing:wake_or_relay_override",

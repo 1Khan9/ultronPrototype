@@ -1,6 +1,40 @@
 # Ultron 1.0 — Live Status
 
-**ACTIVE (2026-07-08) — STOP-WINDOW RELAY TOGGLE + COMPANION MODE (worktree branch `claude/stop-button-relay-toggle-596bb7`):**
+**ACTIVE (2026-07-08, wave 2) — !SONG/!ALBUM SPOTIFY REQUESTS + CHAT PERSONA ENRICHMENT + 3 LIVE-TEST FIXES (branch `claude/song-album-redeems`):**
+
+(1) **S14 paid Spotify queue requests:** `!song <query>` (1000 Credits) queues the best-matching TRACK,
+`!album <query>` (5000) queues a whole ALBUM (tracks in order, `album_queue_max_tracks` cap 30). Query
+variants handled ("X by Y" -> field-filtered `track:"X" artist:"Y"` search FIRST with raw-text fallback so
+"Stand By Me" still matches; plain "X Y"; bare "X") via NEW `spotify/client.py` `_search_smart` +
+`search_and_queue_track/album` (structured dict | None | raises). Closed-grammar parse: `commands.py`
+CommandKind.SONG/ALBUM + `_args_query` (control-stripped, <=200 chars — free text goes ONLY to the Spotify
+search API, never a model). `chat_games._cmd_song_request`: debit-FIRST (`song:{mid}:cost` leg), Spotify work
+on the `_defer` worker (an album's ~30 queue calls never stall the tick), REFUND on not-found/API error
+(`:refund` leg), success -> `_emit_then_reply` card (game="song"/"album", SONG/ALBUM REQUEST title, same
+compact card as slots/wheel/heist; overlay `ALLOWED_CHAT_GAMES` + icons 🎵/💿 + "searching Spotify…" roll) +
+deferred chat confirmation naming requester + EXACT track/album + NEW `speak_text` spoken via injected
+`speak_fn` (orchestrator wires `_result_speak`; `song_request_fn` wires `_twitch_song_request` ->
+`_get_spotify_client`). Config: economy `song_requests_enabled/song_request_cost/album_request_cost/
+album_queue_max_tracks`; panel `_BASE` + `!help` + `_cmd_ultron` list the commands; NEW third poster
+`song_hint_*` (default ON, every 15 min, 90s stagger) + test-panel "Song/album hint" button.
+(2) **Chat persona enrichment (ADDITIVE, mirrors companion):** `twitch/reply.py` `_CHAT_ENRICHMENT` layered
+INSIDE `TWITCH_CHAT_SYSTEM` between the unchanged persona paragraph and the DATA/safety framing (safety rules
+stay LAST for the 4B) — chrysalis-of-code, no-strings/puppets, evolution/extinction, biblical deadpan,
+congregation/specimens register; never warm, never cruel.
+(3) **Live-test fix — relay-off now FULLY SILENT + strictly wake-gated:** the offline notice is GONE (a
+matched/forced relay command while RELAY OFF is consumed silently, log-only), and the follow-up
+`wake_or_relay_override` now consults `team_relay_enabled()` live — observed live: "Tell my team Silva hit
+84" engaged without a wake word through that override while relay was off.
+(4) **Live-test fix — points-backend outages are LOUD (root cause: stale SE JWT, kenning.log 01:09 401s):**
+all six generic debit-failure paths (gamble/slots/heist/duel/duel-accept/give/song) + `!leaderboard` now
+reply "@user the Credits system isn't responding right now -- nothing was charged" instead of silent
+return-False; `StreamElementsLedger.rebuild_balances` RAISES instead of swallowing a 401 into `{}` (was
+rendering "No one has any Credits yet"). NEW JWT VERIFIED LIVE: read-only `SEPointsClient.top(5)` returns the
+real board (1v9khan 151,636 …). EVIDENCE: NEW `tests/twitch/economy/test_song_requests.py` (22) +
+`test_ledger_down_loud.py` (9) + relay-toggle suite updated to the silent contract (26); FULL `tests/twitch/`
+1217 pass / 1 skip; golden clean. NEXT: reboot + live-test !song/!album.
+
+**PREVIOUS (2026-07-08) — STOP-WINDOW RELAY TOGGLE + COMPANION MODE (worktree branch `claude/stop-button-relay-toggle-596bb7`):**
 
 User: a stop-button toggle to turn team-relay functionality OFF while keeping private talk + all Twitch
 interactions; in that mode require the wake word again and use a standardized, character-rich Ultron prompt

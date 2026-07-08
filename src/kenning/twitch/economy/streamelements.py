@@ -245,11 +245,14 @@ class StreamElementsLedger:
     def rebuild_balances(self) -> dict:
         """SE owns the balances; surface its leaderboard (login -> points) so the
         chat-game ``!leaderboard`` renders. Keyed by LOGIN (SE has no bulk per-uid
-        read); the leaderboard displays logins, so this is correct."""
-        try:
-            return {login: pts for login, pts in self._client.top(100)}
-        except Exception:  # noqa: BLE001 — leaderboard must never break the loop
-            return {}
+        read); the leaderboard displays logins, so this is correct.
+
+        RAISES on an SE API failure (2026-07-08 live incident: a stale JWT was
+        swallowed here into ``{}``, which the caller rendered as "No one has any
+        Credits yet" -- wrong and misleading). The caller (_cmd_leaderboard)
+        catches and answers with a LOUD backend-down notice, distinct from a
+        genuinely empty board."""
+        return {login: pts for login, pts in self._client.top(100)}
 
     def history(self, user_id: str, *, limit: int = 100) -> list:
         """No local event log (SE owns the points history)."""

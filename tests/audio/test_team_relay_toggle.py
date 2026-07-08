@@ -149,11 +149,12 @@ def _patch_config(monkeypatch: pytest.MonkeyPatch, cfg: SimpleNamespace) -> None
     )
 
 
-def test_relay_off_command_acknowledged_not_transmitted(
+def test_relay_off_command_consumed_silently_not_transmitted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A matched relay command while the RELAY toggle is OFF is consumed with
-    the offline notice on the LOCAL speakers and NEVER reaches the team bus."""
+    """A matched relay command while the RELAY toggle is OFF is consumed
+    SILENTLY (2026-07-08 live-test direction: no spoken notice, no response at
+    all) and NEVER reaches the team bus."""
     import kenning.audio.relay_speech as relay_mod
 
     o = _bare_orchestrator()
@@ -170,12 +171,12 @@ def test_relay_off_command_acknowledged_not_transmitted(
     monkeypatch.setattr(relay_mod, "play_to_device", must_not_play)
 
     assert o._maybe_handle_relay_speech("tell my team to rotate B") is True
-    assert "offline" in o._spoken[0]
+    assert o._spoken == []                       # fully silent
 
 
 def test_relay_off_covers_force_true(monkeypatch: pytest.MonkeyPatch) -> None:
     """force=True (the turbo backstop / semantic-router path) funnels through
-    the same choke point -- a forced callout is suppressed too."""
+    the same choke point -- a forced callout is suppressed silently too."""
     import kenning.audio.relay_speech as relay_mod
 
     o = _bare_orchestrator()
@@ -192,7 +193,18 @@ def test_relay_off_covers_force_true(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(relay_mod, "play_to_device", must_not_play)
 
     assert o._maybe_handle_relay_speech("sova hit 84", force=True) is True
-    assert "offline" in o._spoken[0]
+    assert o._spoken == []                       # fully silent
+
+
+def test_followup_relay_override_stands_down_when_relay_off():
+    """2026-07-08 live test: 'Tell my team Silva hit 84' engaged WITHOUT a wake
+    word through the follow-up relay override while relay was OFF. The override
+    must consult the live flag so relay-off means wake-word-required, period."""
+    src = inspect.getsource(Orchestrator.run)
+    seg = src.split("wake_or_relay_override", 1)[0]
+    gate = seg.rsplit("came_from_follow_up", 1)[1]
+    assert "team_relay_enabled" in gate
+    assert "_relay_override" in gate
 
 
 def test_relay_off_ordinary_utterance_still_falls_through(

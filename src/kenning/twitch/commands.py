@@ -87,6 +87,8 @@ class CommandKind(Enum):
     LEADERBOARD = "leaderboard"
     HELP = "help"
     ULTRON = "ultron"        # post the condensed commands panel on demand (no args)
+    SONG = "song"            # paid Spotify TRACK queue request (free-text query)
+    ALBUM = "album"          # paid Spotify ALBUM queue request (free-text query)
     UNKNOWN = "unknown"
 
 
@@ -99,6 +101,8 @@ class Command:
         on a bad amount, ``amount`` is ABSENT and ``error`` describes why.
       * DUEL: ``target`` -> login ``str``, ``amount`` -> ``int`` / sentinel.
       * GIVE: ``target`` -> login ``str``, ``amount`` -> ``int`` (no 'all').
+      * SONG / ALBUM: ``query`` -> control-stripped, <=200-char search text; on
+        an empty query, ``query`` is ABSENT and ``error`` carries the usage.
       * POINTS / WHEEL / TRIVIA / ACCEPT / RAFFLE / LEADERBOARD / HELP / UNKNOWN:
         no required args.
     ``raw`` is the original message text (untrusted; for audit/log only).
@@ -222,6 +226,30 @@ def _args_give(rest: list[str]) -> dict:
     return {"target": target, "amount": value}
 
 
+# Free-text query cap for the paid Spotify requests. Long enough for any real
+# "track by artist" phrasing; short enough that a paste-bomb can't ride along.
+_QUERY_MAX_CHARS = 200
+# C0/C1 control characters (incl. NUL/escape) stripped from a query so nothing
+# unprintable reaches logs, the chat reply, or the Spotify API parameter.
+_QUERY_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def _args_query(rest: list[str], *, usage: str) -> dict:
+    """Grammar for the paid Spotify requests (``!song`` / ``!album``).
+
+    The remainder of the line is a SEARCH QUERY ("Dance Dance by cage the
+    elephant" / "Dance Dance cage the elephant" / "Dance Dance"). This is the
+    one deliberate free-text argument in the closed grammar: it is passed ONLY
+    to the Spotify search API as a query parameter -- never to a model, never
+    executed, never stored -- and it is control-stripped + length-capped here
+    so a downstream consumer can never see a poisoned value."""
+    q = " ".join(rest).strip()
+    q = _QUERY_CONTROL_RE.sub("", q).strip()[:_QUERY_MAX_CHARS].strip()
+    if not q:
+        return {"error": usage}
+    return {"query": q}
+
+
 # command-word -> (CommandKind, arg-builder). The arg-builder takes the tokens
 # AFTER the command word and returns a validated ``args`` dict. A None builder
 # means the command takes no arguments.
@@ -245,6 +273,12 @@ _COMMAND_TABLE = {
     "help": (CommandKind.HELP, _NO_ARGS),
     "commands": (CommandKind.HELP, _NO_ARGS),     # common alias
     "ultron": (CommandKind.ULTRON, _NO_ARGS),     # post the condensed commands panel on demand
+    # Paid Spotify queue requests (S14, 2026-07-08): the rest of the line is a
+    # length-capped, control-stripped SEARCH QUERY (see _args_query).
+    "song": (CommandKind.SONG,
+             lambda r: _args_query(r, usage="usage: !song <song name> [by artist]")),
+    "album": (CommandKind.ALBUM,
+              lambda r: _args_query(r, usage="usage: !album <album name> [by artist]")),
 }
 
 

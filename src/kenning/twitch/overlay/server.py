@@ -81,8 +81,10 @@ ALLOWED_EVENT_TYPES: frozenset[str] = frozenset(
 # The closed set of game discriminators a ``chat_game`` event may carry. The
 # overlay renders a tailored, game-accurate card per value; an unknown game is
 # rejected at validate_event() time so a typo never reaches a client.
+# ``song``/``album`` (S14, 2026-07-08) are the paid Spotify queue requests --
+# the same compact card as the games (green won-accent, SONG/ALBUM REQUEST title).
 ALLOWED_CHAT_GAMES: frozenset[str] = frozenset(
-    {"slots", "wheel", "heist", "duel", "trivia", "raffle"}
+    {"slots", "wheel", "heist", "duel", "trivia", "raffle", "song", "album"}
 )
 
 # Where a unified game/speech card originated. Drives a small CHAT/REDEEM tag on

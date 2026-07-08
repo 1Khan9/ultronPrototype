@@ -4317,6 +4317,17 @@ class TwitchEconomyConfig(_Strict):
     raffle_window_seconds: int = 60          # mod-opened "!raffle" entry window
     raffle_prize: int = 500                  # house-funded prize credited to the drawn winner
     wheel_free_per_stream: int = 1           # free "!wheel" spins per viewer per stream (0 = command disabled)
+    # Paid Spotify queue requests (S14, 2026-07-08): "!song <query>" queues the
+    # best-matching TRACK, "!album <query>" queues a whole ALBUM (all tracks, in
+    # order, capped). Debit-first with per-leg idempotency; any not-found /
+    # Spotify failure refunds the full cost. Costs are in the channel currency
+    # (StreamElements Credits when the SE ledger is live).
+    song_requests_enabled: bool = True
+    song_request_cost: int = Field(default=1000, ge=0)
+    album_request_cost: int = Field(default=5000, ge=0)
+    # Hard cap on tracks queued per album request (bounds the Spotify HTTP
+    # fan-out; the queue endpoint takes one uri per call).
+    album_queue_max_tracks: int = Field(default=30, ge=1, le=100)
 
 
 class TwitchOverlayConfig(_Strict):
@@ -4360,6 +4371,15 @@ class TwitchChatConfig(_Strict):
     talk_hint_enabled: bool = True
     talk_hint_interval_minutes: int = Field(default=10, ge=1, le=720)
     talk_hint_text: str = "💬 Just type \"Ultron\" followed by a statement or question and he will talk to you!"
+    # THIRD periodic poster (S14, 2026-07-08): a brief every-N-minutes nudge
+    # about the paid Spotify queue commands. Same write-sidecar /say path as
+    # the panel + talk hint, staggered so the three never post together.
+    song_hint_enabled: bool = True
+    song_hint_interval_minutes: int = Field(default=15, ge=1, le=720)
+    song_hint_text: str = (
+        "🎵 !song <name> [by artist] (1000 Credits) queues a track on stream · "
+        "💿 !album <name> (5000 Credits) queues the whole album!"
+    )
 
 
 class TwitchSpeakToTeamConfig(_Strict):

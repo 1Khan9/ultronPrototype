@@ -27,8 +27,9 @@ MAX_CHAT_CHARS = 500
 # linked at the end when commands_panel_doc_url is set.
 _BASE = (
     "🤖 Ultron games: !slots <amt> · !wheel (free) · !heist <amt> · "
-    "!leaderboard · !help. Redeem channel points for games + Make Ultron "
-    "Speak. Earn Credits by watching!"
+    "!leaderboard · !help · 🎵 !song <name> (1000) · 💿 !album <name> (5000). "
+    "Redeem channel points for games + Make Ultron Speak. Earn Credits by "
+    "watching!"
 )
 
 
