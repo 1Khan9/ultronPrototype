@@ -61,6 +61,9 @@ __all__ = [
     "resolve_relay_device",
     "resolve_speaker_device",
     "play_to_device",
+    "set_team_relay_enabled",
+    "team_relay_enabled",
+    "cap_stream_sentences",
 ]
 
 # Maximum characters of the final spoken relay line (a voice-chat line
@@ -1438,6 +1441,39 @@ def set_turbo_mode_enabled(enabled: bool) -> None:
 
 def turbo_mode_enabled() -> bool:
     return _turbo_mode_enabled
+
+
+# ---------------------------------------------------------------------------
+# TEAM-RELAY MASTER MODE (2026-07-08): the STOP-window RELAY toggle. ON (the
+# DEFAULT -- today's behaviour, byte-identical) = relay commands reach the team
+# mic as always. OFF = Ultron DISENGAGES from team comms entirely and becomes a
+# private companion: no relay command is transmitted (a matched one is answered
+# with a short offline notice on the LOCAL speakers), always-listening/turbo
+# capture stands down so the WAKE WORD is required again, and conversational
+# turns switch to the lean ULTRON_COMPANION_PERSONA capped at two sentences.
+# Twitch chat replies / games / redeems are UNTOUCHED (they never traverse the
+# relay path). DISTINCT from the narrower voice session mute
+# (orchestrator._relay_runtime_enabled, "mute the relay"), which only blocks
+# transmission and leaves addressing/persona alone. Process-global; resets to
+# the env default (KENNING_TEAM_RELAY, default ON) on restart. Anticheat-clean
+# (os/stdlib only here).
+_team_relay_enabled: bool = _os_flavor.getenv(
+    "KENNING_TEAM_RELAY", "1").strip().lower() not in (
+    "0", "false", "no", "off", "")
+
+
+def set_team_relay_enabled(enabled: bool) -> None:
+    """Enable/disable the team-relay MODE at runtime (default ON).
+
+    OFF = full disengage: no team transmission, wake word required, companion
+    persona + 2-sentence cap on conversation. Flipped by the STOP-window RELAY
+    toggle (orchestrator._set_team_relay_enabled)."""
+    global _team_relay_enabled
+    _team_relay_enabled = bool(enabled)
+
+
+def team_relay_enabled() -> bool:
+    return _team_relay_enabled
 
 
 # Turbo SENSITIVITY: balanced (default) vs aggressive. BALANCED relays only lines
@@ -6117,6 +6153,58 @@ def _cap_sentences(line: str, max_sentences: int = 3) -> str:
     if len(parts) <= max_sentences:
         return line
     return " ".join(parts[:max_sentences]).strip()
+
+
+def cap_stream_sentences(
+    tokens: Iterable[str], max_sentences: int = 2,
+) -> Iterable[str]:
+    """Yield from a token stream, stopping cleanly after ``max_sentences``.
+
+    The companion-mode (team relay OFF) conversational path streams LLM tokens
+    straight into TTS with no post-processing, so the two-sentence cap must be
+    enforced ON THE STREAM: prompt prose alone does not hold the small model to
+    two sentences. Sentence boundaries mirror :func:`_cap_sentences` -- an
+    ender [.!?] followed by whitespace + a capital/quote/dash -- so decimals
+    ("13.8 billion") and "--" asides never count as a boundary. When the cap
+    is reached mid-token, the token is CUT at the boundary (whole sentences
+    only, never a mid-word tail) and the underlying stream is closed so an
+    in-flight generator never leaks. A stream that ends under the cap passes
+    through byte-identical."""
+    boundary = re.compile(r'(?<=[.!?])\s+(?=[A-Z"—])')
+    buf = ""
+    try:
+        for tok in tokens:
+            if not tok:
+                continue
+            buf += tok
+            # Count COMPLETE sentences seen so far (boundaries in the whole
+            # accumulated text, scanned once per token -- these lines are two
+            # sentences long, not documents, so the rescan is trivial).
+            cut_at = None
+            count = 0
+            for m in boundary.finditer(buf):
+                count += 1
+                if count >= max_sentences:
+                    # The match starts AT the whitespace after the ender, so
+                    # buf[:m.start()] already ends with the sentence ender.
+                    cut_at = m.start()
+                    break
+            if cut_at is not None:
+                # The cap boundary sits inside text already emitted plus this
+                # token: emit only the part of THIS token up to the boundary.
+                emitted_before = len(buf) - len(tok)
+                keep = cut_at - emitted_before
+                if keep > 0:
+                    yield tok[:keep]
+                return
+            yield tok
+    finally:
+        close = getattr(tokens, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:  # noqa: BLE001 -- never let cleanup break TTS
+                pass
 
 
 #: Leading vocatives that are spurious on a TEAM-wide line (no specific

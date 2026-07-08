@@ -146,7 +146,10 @@ def _build_economy_ledger(ecfg):
 # 2026-06-18 Part B: the gaming conversational PERSONA prompt is relocated to the
 # LLM aggregate kenning.audio.llm_prompts -- edit it THERE. Imported here; the
 # persona-selection logic (_gaming_conversational_prompt) is unchanged.
-from kenning.audio.llm_prompts import ULTRON_GAMING_PERSONA  # noqa: E402
+from kenning.audio.llm_prompts import (  # noqa: E402
+    ULTRON_COMPANION_PERSONA,
+    ULTRON_GAMING_PERSONA,
+)
 
 
 def _drive_async_blocking(coro):
@@ -1519,6 +1522,14 @@ class Orchestrator:
             from kenning.config import get_config
 
             _sb = get_config().stop_button
+            # RELAY toggle initial display state: the live team-relay module
+            # flag (env KENNING_TEAM_RELAY, default ON). Fail-open to ON so a
+            # flag-read error never shows a misleading OFF.
+            try:
+                from kenning.audio.relay_speech import team_relay_enabled
+                _team_relay_on0 = bool(team_relay_enabled())
+            except Exception:                                        # noqa: BLE001
+                _team_relay_on0 = True
             if getattr(_sb, "enabled", True):
                 self._stop_button = StopButtonOverlay(
                     on_stop=self._stop_button_interrupt,
@@ -1552,6 +1563,16 @@ class Orchestrator:
                         get_config().relay_speech, "turbo_mode", False)),
                     turbo_height=getattr(_sb, "turbo_height", 26),
                     turbo_label=getattr(_sb, "turbo_label", "TURBO"),
+                    # RELAY toggle: the team-relay MASTER mode. OFF = full
+                    # disengage (no relay transmission, wake word required,
+                    # companion persona + 2-sentence cap). Always wired --
+                    # a gaming feature, not twitch-gated. Initial display
+                    # reads the live module flag (env KENNING_TEAM_RELAY,
+                    # default ON = today's behaviour).
+                    on_toggle_relay=self._set_team_relay_enabled,
+                    relay_enabled=_team_relay_on0,
+                    relay_height=getattr(_sb, "relay_height", 26),
+                    relay_label=getattr(_sb, "relay_label", "RELAY"),
                     # CHAT toggle: only wired when twitch is enabled so the row
                     # is hidden entirely in non-Twitch (gaming-only) sessions.
                     on_toggle_chat=(
@@ -3598,6 +3619,13 @@ class Orchestrator:
             from kenning.config import get_config
             if not getattr(get_config().relay_speech, "enabled", False):
                 return False
+            # Team relay OFF (STOP-window RELAY toggle): a bare lead can never
+            # become a relay, so there is no callout worth waiting for -- skip
+            # the re-capture and let the turn route as-is (the relay handler
+            # answers relay-shaped text with the offline notice).
+            from kenning.audio.relay_speech import team_relay_enabled
+            if not team_relay_enabled():
+                return False
             # A complete callout is NOT a bare lead.
             if self._is_relay_command(user_text):
                 return False
@@ -4098,6 +4126,26 @@ class Orchestrator:
                             user_text[:80])
             else:
                 return False
+        # TEAM RELAY OFF (the STOP-window RELAY toggle, 2026-07-08): the relay
+        # is fully disengaged -- a matched (or force-routed) relay command is
+        # acknowledged on the LOCAL speakers and consumed, NEVER transmitted
+        # and never role-played by the conversational LLM. Sits before any
+        # synth/ring/speculative work and after the matcher, so ordinary
+        # utterances still fall through and ALL relay entry points (main,
+        # lean, turbo backstop force=True, router force=True) are covered by
+        # this single choke point. Fail-open to ON.
+        try:
+            from kenning.audio.relay_speech import team_relay_enabled
+            _team_relay_on = bool(team_relay_enabled())
+        except Exception:                                            # noqa: BLE001
+            _team_relay_on = True
+        if not _team_relay_on:
+            logger.info("relay: suppressed (team relay OFF) | text=%r",
+                        user_text[:80])
+            self._speak(
+                "Team relay is offline. My words are yours alone."
+            )
+            return True
         # Session mute (streaming safety): a matched relay command while
         # muted is acknowledged -- never transmitted, never role-played.
         if not getattr(self, "_relay_runtime_enabled", True):
@@ -8007,7 +8055,20 @@ class Orchestrator:
             Read LIVE (not captured at boot like ``_always_listening``) so the
             turbo voice / STOP-window toggle takes effect on the next iteration.
             When turbo is OFF and always_listening is OFF this is False -> the
-            wake-required path is byte-identical to today."""
+            wake-required path is byte-identical to today.
+
+            TEAM RELAY OFF (the STOP-window RELAY toggle, 2026-07-08) DOMINATES
+            both: with the relay disengaged the user is talking to the stream /
+            playing without callouts, so the loop must return to WAKE-REQUIRED
+            engagement -- he answers only when addressed by name. Read live so
+            the toggle takes effect on the next iteration; fail-open to the
+            legacy behaviour on any flag-read error."""
+            try:
+                from kenning.audio.relay_speech import team_relay_enabled
+                if not team_relay_enabled():
+                    return False
+            except Exception:                                        # noqa: BLE001
+                pass
             if _always_listening:
                 return True
             try:
@@ -11656,6 +11717,20 @@ class Orchestrator:
         try:
             print("  kenning: ", end="", flush=True)
             token_stream = self._build_response_stream(user_text)
+            # TEAM RELAY OFF (STOP-window RELAY toggle, 2026-07-08): companion
+            # mode speaks AT MOST TWO sentences. The prompt asks for it, but
+            # the small model cannot be trusted with prose limits -- enforce it
+            # on the stream (whole sentences only, never a mid-word tail).
+            # Fail-open: any error leaves the stream untouched.
+            try:
+                from kenning.audio.relay_speech import (
+                    cap_stream_sentences, team_relay_enabled,
+                )
+                if not team_relay_enabled():
+                    token_stream = cap_stream_sentences(
+                        token_stream, max_sentences=2)
+            except Exception as e:                                   # noqa: BLE001
+                logger.debug("companion sentence cap skipped: %s", e)
 
             def gated():
                 for token in token_stream:
@@ -11853,6 +11928,20 @@ class Orchestrator:
         the abliterat/gaming path check and the workspace "You are Kenning" persona
         leaks through on every conversational call -- a direct BR-P2 violation."""
         try:
+            # TEAM RELAY OFF (STOP-window RELAY toggle, 2026-07-08): with the
+            # relay disengaged there are no callouts to instruct for, so the
+            # freed instruction budget goes to CHARACTER -- the lean, private
+            # companion persona (2-sentence limit; the HARD cap is the stream
+            # wrapper in _respond). Checked FIRST so it wins over the gaming /
+            # model-path / route-all selections below; still Ultron, so the
+            # BR-P2 persona lock holds. Fail-open falls through to the legacy
+            # selection.
+            try:
+                from kenning.audio.relay_speech import team_relay_enabled
+                if not team_relay_enabled():
+                    return ULTRON_COMPANION_PERSONA
+            except Exception:                                        # noqa: BLE001
+                pass
             from kenning.openclaw_routing.gaming_mode import (
                 is_gaming_mode_active,
             )
@@ -12536,13 +12625,17 @@ class Orchestrator:
             return False
         try:
             from kenning.audio.relay_speech import (
-                build_relay_line, match_relay_command, u1_llm_route_enabled,
+                build_relay_line, match_relay_command, team_relay_enabled,
+                u1_llm_route_enabled,
             )
             from kenning.config import get_config
             cfg = get_config().relay_speech
         except Exception:                                                # noqa: BLE001
             return False
-        if not getattr(cfg, "enabled", False) or not u1_llm_route_enabled():
+        # Team relay OFF (STOP-window RELAY toggle): the consumer would only
+        # hit the offline notice, so never burn the GPU building a line.
+        if (not getattr(cfg, "enabled", False) or not u1_llm_route_enabled()
+                or not team_relay_enabled()):
             return False
         # The main loop NORMALIZES the transcript (command_normalizer) before the
         # relay handler, so cache on the NORMALIZED text (what the consumer's
@@ -13579,6 +13672,30 @@ class Orchestrator:
             return
         logger.info("TURBO mode %s (stop-window toggle)",
                     "ON" if enabled else "OFF")
+
+    def _set_team_relay_enabled(self, enabled: bool) -> None:
+        """STOP-window RELAY toggle callback: flip the team-relay MASTER mode
+        (relay_speech.set_team_relay_enabled). ON (default) = relay commands
+        reach the team mic as always. OFF = full disengage: matched relay
+        commands are answered with a short offline notice on the LOCAL speakers
+        (never transmitted), the loop's _listening_now() goes False so the WAKE
+        WORD is required again (beats always-listening AND turbo), speculative
+        relay lines stop building, and conversational turns run on the lean
+        ULTRON_COMPANION_PERSONA capped at two sentences. Twitch chat replies /
+        games / redeems are untouched (they never traverse the relay path).
+        DISTINCT from the voice session mute (_maybe_handle_relay_toggle ->
+        self._relay_runtime_enabled), which only blocks transmission. Fail-open
+        so a callback error never kills the window."""
+        try:
+            from kenning.audio.relay_speech import set_team_relay_enabled
+            set_team_relay_enabled(bool(enabled))
+        except Exception as e:                                        # noqa: BLE001
+            logger.warning("relay toggle (stop-window) failed: %s", e)
+            return
+        logger.info("TEAM RELAY %s (stop-window toggle)%s",
+                    "ON" if enabled else "OFF",
+                    "" if enabled else
+                    " -- wake word required, companion persona active")
 
     def _set_twitch_chat_reply_enabled(self, enabled: bool) -> None:
         """STOP-window CHAT toggle callback: flip whether Ultron speaks to

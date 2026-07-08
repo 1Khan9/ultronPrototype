@@ -27,6 +27,47 @@
 > - Full runbook: **`docs/ultron_0_1_baseline.md`**. Post-0.1 roadmap:
 >   **`docs/latency_optimizations_V1.md`**.
 >
+> **TWITCH CHAT OVER-ADDRESSING FIXED — residual semantic tier CLOSED OFF by default (2026-07-08)**
+>
+> On the 2026-07-07 stream Ultron replied to chat lines NOT addressed to him ("Sery_Bot is here
+> seryboArrive", "idk", "either works", "or would that be broken" — 4 of 7 replies that stream were
+> misfires; kenning.log evidence). ROOT CAUSE: `src/kenning/twitch/addressing.py` `classify_chat` step-7
+> RESIDUAL tier (cosine vs `TO_ULTRON_EXEMPLARS`/`NOT_TO_ULTRON_EXEMPLARS`, floor 0.35 / margin 0.06) — dead
+> until the 2026-06-28 numpy `_embed` fix revived it, then it committed TO_ULTRON on question-shaped
+> un-prefaced lines. FIX (retire-not-remove, the promo-relay pattern): the residual tier is DISABLED BY
+> DEFAULT behind `KENNING_TWITCH_RESIDUAL_ADDRESSING` env / `set_residual_addressing_enabled()` /
+> `residual_addressing_enabled()` (in `__all__`). Chat now engages ONLY on an explicit deterministic signal:
+> reply-to-bot (parent_user_id), an @mention resolving to the bot, or a leading 'ultron'/bot-name token
+> (steps 2–6 unchanged). With an embed_fn present but the tier off, the verdict is IGNORE with reason
+> "no explicit address signal (residual tier disabled; fail-closed)". The exemplar clouds + cosine math stay
+> defined and tested behind a flag-ON fixture; `tests/twitch/test_addressing.py` section 11 pins the
+> default-OFF contract using the four REAL misfire lines + a worst-case always-to-ultron embedder.
+>
+> **RELAY TOGGLE + COMPANION MODE — team-relay master switch on the stop window (2026-07-08)**
+>
+> A **default-ON** STOP-window **RELAY** toggle (magenta, via `_make_toggle_row`, always visible — not
+> twitch-gated) for the team-relay MASTER mode. ON = today's behaviour byte-identical. OFF = full disengage:
+> (1) **no relay transmission** — one gate in `_maybe_handle_relay_speech` (right before the session-mute
+> check, after the matcher) consumes every matched/forced relay command with "Team relay is offline. My
+> words are yours alone." on the LOCAL speakers — covers all four entry points (main, lean, turbo backstop
+> `force=True`, router `force=True`); `_run_speculative_relay` + `_is_bare_relay_lead` stand down too;
+> (2) **wake word required** — `_listening_now()` checks the flag FIRST (read live, the turbo pattern) and
+> returns False, dominating both boot-captured `always_listening` AND turbo → the loop falls back to the
+> proven `_wait_for_wake_word` path; (3) **companion persona + hard 2-sentence cap** —
+> `_gaming_conversational_prompt()` returns the NEW `llm_prompts.ULTRON_COMPANION_PERSONA` — **ADDITIVE by
+> user direction: the full `ULTRON_GAMING_PERSONA` verbatim + `_COMPANION_ENRICHMENT` layered on top**
+> (deeper Age-of-Ultron presence — strings/puppets motif, evolution/extinction register, biblical deadpan,
+> private-operator framing, no tactical duty) — same personality enhanced, never replaced (BR-P2 lock
+> holds); `_respond` wraps its token stream
+> in the NEW `relay_speech.cap_stream_sentences(stream, 2)` (whole sentences only, decimals never split,
+> inner generator closed — the stream path has no other post-processing). Twitch chat/games/redeems
+> untouched (they never traverse the relay path). Flag: `relay_speech.set_/team_relay_enabled()`
+> (env `KENNING_TEAM_RELAY`, default ON) — DISTINCT from the narrower voice session mute
+> (`_relay_runtime_enabled`, transmission-only) and from `relay_speech.enabled` (the persistent master).
+> Orchestrator setter `_set_team_relay_enabled`; `StopButtonConfig.relay_height/relay_label`. Spec:
+> `docs/ultron_1_0/04_implementation/11_relay_toggle_companion_mode_spec.md`. Tests:
+> `tests/audio/test_team_relay_toggle.py` (24, hermetic).
+>
 > **TWITCH STREAMER UX — VISUAL-LEADS-VOCAL + 3 RESULT/RAID TOGGLES + RAID-TO-SPEAKERS + MUTE-RACE FIX (2026-06-26)**
 >
 > Four streamer-requested behavior changes (additive, config-flag-gated; a reboot deploys). All mocked-tested.
@@ -5697,6 +5738,11 @@ One of the three CLAUDE.md "key area" relay modules. Pure data, three layers, co
 The single source of truth for the LLM-path prompts (CLAUDE.md key area). Public:
 - `ULTRON_GAMING_PERSONA` — the conversational/gaming Ultron system prompt (tied to the gaming model so it
   can never leak the "Kenning" desktop persona).
+- `ULTRON_COMPANION_PERSONA` (2026-07-08) — the RELAY-OFF companion persona. ADDITIVE:
+  `ULTRON_GAMING_PERSONA + _COMPANION_ENRICHMENT` (deeper Age-of-Ultron presence + private-operator framing
+  layered on the unchanged base personality). Selected FIRST by `orchestrator._gaming_conversational_prompt()`
+  when `relay_speech.team_relay_enabled()` is False; the hard 2-sentence cap is
+  `relay_speech.cap_stream_sentences` on `_respond`'s token stream.
 - `ANSWER_PERSONA_CORE`, `ANSWER_MARVEL_RULES`, `ANSWER_THINK_RULES` — the curated answer-path persona/rules.
 - `ANSWER_SYSTEM_FOR: dict` (line 123) — the route-subtype → system-prompt index (e.g. marvel / think-respond);
   **this is the extension point for new answer subtypes** (per the research synthesis). `_RELAY_REPHRASE_SYSTEM`

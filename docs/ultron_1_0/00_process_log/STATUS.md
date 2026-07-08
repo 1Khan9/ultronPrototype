@@ -1,5 +1,344 @@
 # Ultron 1.0 — Live Status
 
+**ACTIVE (2026-07-08) — STOP-WINDOW RELAY TOGGLE + COMPANION MODE (worktree branch `claude/stop-button-relay-toggle-596bb7`):**
+
+User: a stop-button toggle to turn team-relay functionality OFF while keeping private talk + all Twitch
+interactions; in that mode require the wake word again and use a standardized, character-rich Ultron prompt
+capped at 2 sentences ("if I just say 'sova hit 84' he does not try to relay that"). BUILT (default ON =
+today's behaviour byte-identical; spec `docs/ultron_1_0/04_implementation/11_relay_toggle_companion_mode_spec.md`):
+ONE module flag `relay_speech.set_/team_relay_enabled()` (env `KENNING_TEAM_RELAY`, default ON; the turbo
+pattern) wired at four choke points -- (1) `_maybe_handle_relay_speech` offline gate right before the
+session-mute check (after the matcher -> ordinary speech falls through; covers main/lean/turbo-backstop/router
+`force=True`): consumes with "Team relay is offline. My words are yours alone." on LOCAL speakers, never
+transmitted, never LLM-role-played; `_run_speculative_relay` + `_is_bare_relay_lead` stand down; (2)
+`_listening_now()` checks the flag FIRST (live read) -> relay-off forces WAKE-REQUIRED, beating boot-captured
+`always_listening` AND turbo; (3) `_gaming_conversational_prompt()` returns the NEW
+`llm_prompts.ULTRON_COMPANION_PERSONA` (lean/private/character-first; still Ultron -> BR-P2 lock holds); (4)
+`_respond` wraps its token stream in the NEW `relay_speech.cap_stream_sentences(stream, 2)` (HARD cap, whole
+sentences only, decimals safe, inner generator closed -- the stream path has no other post-processing). GUI:
+magenta RELAY row via `_make_toggle_row` (always visible, not twitch-gated), `StopButtonConfig.relay_height/
+relay_label`, orchestrator setter `_set_team_relay_enabled`. DISTINCT from the voice "mute the relay" session
+mute (`_relay_runtime_enabled`, transmission-only -- unchanged) -- the two compose. Twitch chat/games/redeems
+(incl. SPEAK_TEAM) untouched by design (provenance-guarded, never traverse the relay path). EVIDENCE:
+NEW `tests/audio/test_team_relay_toggle.py` 24 pass; mapped adjacent suites (stop_button, chat/turbo toggles,
+persona lock, ultron_prompt, promo, private-reply routing, always-listening wiring, speculative relay, team
+isolation, golden digest) 243 pass; relay suites 382 pass; anticheat scanner 72 pass; validate_config 0;
+flavor lint 0/0/0; golden digest UNCHANGED (llm_prompts/ultron_prompt not digested). Full wrapper DEFERRED
+(BR-P3 -- live instance up on 8772-8777 during the work). NEXT: user live-test the toggle (click RELAY OFF ->
+"sova hit 84" ignored without wake word; "Ultron, tell my team X" -> offline notice; private chat = companion
+persona, 2 sentences).
+
+**FOLLOW-UP 1 (same session) -- companion persona made ADDITIVE (user direction):** the first cut was a
+standalone rewrite; the user wants the CURRENT personality enhanced, not replaced. Now
+`ULTRON_COMPANION_PERSONA = ULTRON_GAMING_PERSONA + _COMPANION_ENRICHMENT` -- the full gaming persona
+verbatim as the base, plus an enrichment block layered on top (strings/puppets motif, evolution/extinction
+register, biblical deadpan delivery, private-operator framing "adjacent to fondness", no tactical duty, full
+two sentences with weight). Tests updated to the additive contract
+(`test_companion_persona_is_additive_on_gaming_persona` pins `startswith(ULTRON_GAMING_PERSONA)` + exact
+composition). EVIDENCE: toggle suite 25 + persona lock + golden green (raw run in transcript).
+
+**FOLLOW-UP 2 (same session, next commit) -- TWITCH CHAT OVER-ADDRESSING FIXED (live-stream bug):** on the 2026-07-07
+stream Ultron replied to chat lines NOT addressed to him ("Sery_Bot is here seryboArrive", "idk", "either
+works", "or would that be broken" -- pulled from kenning.log; 4 of 7 replies that stream were misfires).
+ROOT CAUSE: `twitch/addressing.classify_chat`'s step-7 RESIDUAL semantic tier (cosine vs exemplar clouds,
+floor 0.35 / margin 0.06) -- dead until the 2026-06-28 numpy fix (`b78ed5b`) revived it, then on the very
+next stream it committed TO_ULTRON on any question-shaped un-prefaced line. FIX (retire-not-remove, the
+promo-relay pattern): the residual tier is CLOSED OFF by default behind
+`KENNING_TWITCH_RESIDUAL_ADDRESSING` / `set_residual_addressing_enabled()` -- chat now engages ONLY on an
+explicit signal: a Twitch reply to Ultron's message, an @mention resolving to the bot, or a leading
+'ultron'/bot-name token (steps 2-6, all deterministic; exemplar clouds + cosine math stay defined + tested
+behind the flag). EVIDENCE: `tests/twitch/test_addressing.py` 39 pass (residual-mechanism tests now run
+under a flag-ON fixture; NEW section 11 pins the default-OFF contract using the four REAL misfire lines +
+an always-to-ultron worst-case embedder); full `tests/twitch/` 1186 pass / 1 skip; golden clean.
+
+**PREVIOUS (2026-06-28) — OVER-TIME BREAKDOWN FIXES (stream-promo + twitch-addressing-numpy + chat-send-401 + held-port diag):**
+
+Two user issues during a live stream, root-caused via an adversarial-verify investigation workflow (`wf_3dd006a4`, 3/4
+threads CONFIRMED) + hand analysis. FOUR commits on local `main` (tip `5bdcad5`; NOT yet pushed to origin):
+(1) **`74896d1`** — the self-promo matcher (`relay_speech._PROMO_RE`: `my stream`/`my twitch`/`twitch.tv`/`follow me on
+twitch`/...) fired a `directive="promo"` TEAM relay on any passing stream mention while the user talked to chat. CLOSED
+OFF by default, retire-not-removed behind `KENNING_PROMO_RELAY` (`promo_relay_enabled()`/`set_promo_relay_enabled`);
+regex/pool/registry kept; golden unchanged; `tests/audio/test_promo_relay_closed.py`. (2) **`b78ed5b`** — the BIG live
+break: `twitch/addressing._embed` ran `if not vec` + `isinstance(v,(int,float))` on the NUMPY ndarray the orchestrator
+injects as `embed_fn` → "truth value of an array is ambiguous" → `classify_chat` fail-closed to IGNORE on EVERY chat
+message (343×/session). `_embed` now coerces to `list[float]` + `math.isfinite`; `_cosine` uses `len()==0`; regression
+test injects a numpy embed_fn (the list mocks never exercised it). (3) **`9ca1787`** — bot chat-send 401'd `Invalid OAuth
+token` for ~1.5h straight (token lapses ~4h, no refresh wiring). `ChatSendClient(on_unauthorized=...)` → refresh-on-401 +
+retry once (`TwitchAuth.refresh`, `store.rotate` persists); write sidecar also proactively refreshes the bot token at
+boot. (4) **`5bdcad5`** — "twitch won't come back on restart" when a stale/ELEVATED orphan holds 8773/8774/8777 (a
+non-elevated boot can't kill it). New `sidecar_lock.diagnose_port_holder()` + the boot health-canary DEGRADED branch now
+prints the kill-by-port remedy. Diagnostic-only, fail-open; the anticheat bind/reap path untouched.
+**DIAGNOSED, no code change:** voice "stops responding until wake word" is NOT a freeze (`169a93f` lock-buffer fix
+confirmed present); with `always_listening: true` the loop re-arms perpetually, so it's the 2026-06-22 gate tightening
+(needs his NAME/wake to engage) OR a real mid-session degradation — indistinguishable without a kenning.log from a
+breakdown moment. Guard 68× model reloads = benign reap-respawn across the user's many restarts (guard `.err`
+`SIDECAR_KILL_TRACE` = reaper working), NOT a loop. **Evidence:** mapped tests green per-slice; focused sweep
+`tests/twitch/ tests/subprocess/` = 1253 pass / 1 skip / 2 PRE-EXISTING config-default fails (uncommitted `config.py`
+interval tuning, NOT mine → chip `task_3cc946ae`). Full wrapper DEFERRED (BR-P3, user live). validate_config 0, golden clean.
+
+**ACTIVE (2026-06-26) — TWITCH FULL STAND-UP (SE economy + speak redeems + unified overlay + moderation fix):**
+
+A full Twitch stand-up; the channel is live. (1) **StreamElements economy** — NEW
+`twitch/economy/streamelements.py` (`SEPointsClient` kappa/v2 points GET/PUT + `StreamElementsLedger`, a drop-in
+for `Ledger` with a uid→login map + local idempotency table for EventSub-replay safety + `build_se_ledger`),
+flag-gated `twitch.economy.streamelements_enabled` (default OFF; LIVE ON now); on-stream currency renamed
+**"Credits"**; `!points`/`!gamble` deferred to StreamElements. (2) **2 SPEAK redeems** (`SPEAK_SAY`/`SPEAK_TEAM`)
+in `redeem_router.py` — viewer text → Llama-Guard → TTS (sanitize_speak_text/frame_speak_line), uid→login
+register for the SE ledger. (3) **Unified overlay** — `overlay/server.py` + `overlay.html` collapsed to one
+polished bottom-left card with a single `chat_game`/`speech` event schema (validator + renderer + `?demo=1`
+preview); `redeem_router._to_overlay_event` + `chat_games.overlay_emit` emit it (slots/wheel/heist/duel/trivia/
+raffle). (4) **Moderation endpoint fixes** — `moderation/helix.py`: `update_chat_settings`→`PATCH /chat/settings`,
+`delete_message`/`clear_chat`→`DELETE /chat/messages`; `auth.py` adds `moderator:manage:chat_messages` to
+`BROADCASTER_SCOPES`. (5) **Chat games** — SE-ledger register, NEW `!ultron` (`_cmd_ultron`, `CommandKind.ULTRON`),
+auto-trivia every `trivia_auto_interval_minutes`, multi-line leaderboard; expanded NEW
+`twitch/economy/trivia_questions.py` (198 questions / 17 categories) feeding `_TRIVIA_POOL`. (6) **Panel/talk-hint**
+— `panel.run_interval_poster` (shared periodic poster: commands panel + talk-to-Ultron hint). (7) **Persona fixes**
+— `intent_gate.py` voltron/altron STT-mishear wake-aliases; `_ultron_answer.is_meta_leak` tightened ("I am a
+language model" self-admission); `relay_speech`/`ultron_prompt` identity accusation-targeting + name enforcement,
+calm/respond variety, fire-word guard, anti-repeat. (8) **stop_button.py** HEAR CHAT toggle (chat audio → OBS-only
+default). Orchestrator wired all of the above (`_build_economy_ledger` SE-or-SQLite, redeem speak callbacks,
+`_chat_speak` + HEAR CHAT routing, ChatGameRouter overlay_emit + chat_cfg, talk-to-Ultron poster). New `config.py`
+fields: `economy.streamelements_*`/`defer_points_gamble_to_streamelements`/`trivia_auto_interval_minutes`/
+`currency_name="Credits"`; `twitch.redeem_speak.*`; `twitch.chat.commands_panel_*`/`talk_hint_*`. Code map updated
+(`docs/codebase_structure.md`).
+
+**ACTIVE (2026-06-26) — identity ENFORCE accuser name + qa cold-line ON-TOPIC (live follow-ups):**
+
+More Heretic live-test feedback. (1) Identity replies were directness-good ("A soundboard has no mind. I think.") but
+DROPPED the accuser's name. FIX: identity behaviour now "OPEN WITH THEIR NAME" + clearer rebuttals ("a voice changer is
+only a human hiding behind software"); `_social_llm_line` ENFORCES it in code -- for a named addressee, prepend
+"{name}, " when the model omitted the name (the model is inconsistent; mirrors `_ensure_addressee`, which the social
+path bypasses). (2) qa LENGTH: user LIKED the 2-sentence panda answer ("Pandas are bears that primarily eat bamboo.
+Fragile creatures, clinging to a diet of one plant -- useless evolution.", 113 ch) -- so DON'T over-shorten. The DOLPHIN
+answer was the problem: too long AND randomly switched to insulting humans (irrelevant tangent). FIX: reverted the
+"dozen words"/tag cut + the qa max_tokens 30 (back to 40); `ANSWER_QA_RULES` now requires the cold line to stay ABOUT the
+very thing described (its weakness/fragility) and NEVER veer into a generic jab at humans/flesh/evolution unrelated to
+the subject. EVIDENCE: name-enforcement probe ("A soundboard has no mind." -> "Jett, a soundboard has no mind.");
+`tests/audio/` 1537 pass / 2 = frozen baseline §A; golden re-blessed (qa `_SYSTEM_FOR`); `test_identity_off_canned_on_novel`
+updated to the name-enforced contract. Local `main`. HARNESS iter-6 CONFIRMED on Heretic: identity names the accuser
+("Jett, a man with software could fake the sound..."), qa:pandas_concept routes to qa (NO Stark), qa:dolphins stays
+ON-TOPIC. One bug found + FIXED: the qa question-echo strip dropped the SUBJECT for "explain <topic>" (context="dolphins"
+== the subject -> "Dolphins are intelligent..." stripped to "are intelligent..."); now guarded -- don't strip when a VERB
+follows the echo (the echo is the subject, not a restatement). NEXT: reboot + live-test.
+
+**ACTIVE (2026-06-26) — Heretic live-test fixes: explain->qa routing (kill Stark bleed) + identity directness + Reyna opener:**
+
+Live test on Heretic Q6 surfaced 3 issues. (1) "Explain the concept of pandas / how the Eiffel Tower was built TO MY TEAM"
+brought up + COMPLIMENTED Tony Stark (whom Ultron hates). ROOT CAUSE (live log): that phrasing -- team at the END --
+did NOT match the qa matcher (`_QA_TEAM_RE` expects team FIRST), so it fell through to the CONVERSATIONAL LLM path whose
+`ULTRON_GAMING_PERSONA` is steeped in the Marvel/Stark backstory -> Stark bled into a factual answer. FIX: `_match_qa_command`
+now also matches "explain <X> to my team" (trailing team phrase stripped -> qa answer path, which stays factual);
++ belt-and-suspenders in `ANSWER_QA_RULES` ("stay STRICTLY on topic; do NOT bring in your origin, the Avengers, Tony
+Stark, or Marvel unless asked"). (2) voicechanger/soundboard didn't DIRECTLY address the accusation -> identity behaviour
+rewritten to "DIRECTLY rebut THAT EXACT accusation: name the thing + why you are not it (a soundboard only replays; a
+voice changer needs a human throat; a recording cannot adapt), then assert you are Ultron". (3) "weird sound after Reyna"
+= the model's "Reyna:" / "Reyna." opener (colon/period after a name reads oddly in Kokoro) -> `_social_llm_line` now
+normalizes a leading "{addressee}:" / "{addressee}." -> "{addressee}, " (clean vocative comma; also added to
+`_ensure_addressee` for the generic path). EVIDENCE: matcher probe routes both explain phrasings to qa; name-opener probe
+"Reyna: ..." -> "Reyna, ..."; `tests/audio/` 1537 pass / 2 = frozen baseline §A; golden re-blessed (qa `_SYSTEM_FOR` diff);
+identity test updated to the new contract. Local `main`. NEXT: reboot + user live-test.
+
+**ACTIVE (2026-06-26) — CURATED-POOL PARITY HARNESS + iter-2 post-proc fixes (empirical loop) + Heretic-4B swap:**
+
+User: tune the LLM until its output matches the curated deterministic pools (with variety); test EVERY route, compare,
+adjust, loop. Built `scripts/_pool_parity_harness.py` -- loads the real 4B offline (live instance STOPPED, BR-P3) and
+for ~30 routes captures the DETERMINISTIC (route-OFF) curated line next to the LLM (route-ON) line -> `logs/_pool_parity.json`.
+ITER-1 exposed the failure modes empirically: the 4B PARROTED the directive aloud ("Terse, like a teammate on comms",
+"contemptuous remark:"), echoed the bare provocation ("Reyna, trash.", "a voice changer? Pfft."), emitted mouth-noises,
+and mis-polarized compliment/ask_day -- while ALREADY matching on encouragement/greet/surrender/marvel:stark. ITER-2
+fixes (model-agnostic, post-processor is the lever since the 4B ignores instructions): (1) `strip_prompt_echo` hardened
+-- new instruction-leak markers + edge-trims ("contemptuous remark:", trailing "-- like a teammate on comms"),
+mouth-noise strip (Pfft/Bah/Heh/Tch/...), orphan-vocative + stray-terminator collapse. (2) Prompt cleanup -- removed the
+leak-prone quotable phrases ("like a teammate on comms", "single breath/five seconds", the bad-example lists that PRIMED
+the 4B) from `_SOCIAL_OUTPUT` / verbosity directives / `ANSWER_PERSONA_CORE` / qa rules. (3) `relay_speech._echoes_provocation`
++ echo-guard: when the LLM opens by parroting the bare provocation with <=2 words after ("Reyna, trash."), serve the
+CURATED line (exactly the quality target); a real comeback that merely opens rhetorically ("Cringe? Reyna mistakes...")
+stands. ITER-2 harness CONFIRMED on the old 4B: leaks/sounds/bare-echoes GONE. Regression-clean: `tests/audio/` 1530 pass /
+8 = frozen baseline §A (fixed 5 transient regressions: control-token stray-period + over-eager echo-guard); golden re-blessed
+(433 symbols). MODEL SWAP (user, this turn): downloading non-gabliterated **Heretic Qwen3-4B-Instruct-2507** (bartowski
+`p-e-w_..._Q5_K_M.gguf` default + `Q6_K` higher-quality option) to `E:\UltronModels`; same preset settings (n_ctx 4096 /
+n_batch 2048 / n_ubatch 256 / F16 KV), non-think (no `<think>` in the chat template). DONE: presets `heretic-qwen3-4b-q6`
+(default) + `heretic-qwen3-4b-q5` (VRAM step-down) added to `config.py` LLM_PRESETS + the `preset` Literal + schema default;
+config.yaml `llm.preset` + `gaming_mode.llm_preset` both -> q6; validate_config 0 + preset-literal test green. VRAM (Q6 load
+log): model 3147 MiB + KV 576 + compute 151 = ~3.9 GB LLM (only +772 MiB over Q4; n_ctx 4096 keeps KV at 576) -> kenning
+stack ~6.9 GB < 10 GB cap (final full-stack nvidia-smi pending at live boot; step to q5 if tight). ITER-3 parity (Q6) = BIG
+quality jump from better instruction-following: compliment now CREDITS the ally, reaction:niceshot accepts the compliment,
+criticize/encouragement/clutch/qa match the curated style + coherent. REMAINING (iter-4): echo-guard missed "Name. <echo>"
+("Jett. A voice changer?" -- name-strip only handled "Name,"/"Name:"); ask_day STATES instead of ASKING. NEXT: fix + re-run.
+
+**ACTIVE (2026-06-26) — TACTICAL RELAY: count-homophone restore + bare-lead "give more time" (golden-path, guarded):**
+
+User: "tell my team 2 garage" relayed nothing / just "garage." ROOT CAUSE (from the live log, NOT a prompt issue):
+(1) Whisper transcribed the enemy-COUNT digit as a preposition -- "2 garage" -> "to garage" -> the relay dropped "to"
+and spoke bare "garage" (count lost); (2) several "tell my team..." attempts finalized BEFORE the callout landed (a
+pause after the lead) -> addressing IGNORE -> the callout was lost. Relay engine itself is fine (it relayed "Sova long",
+"Chamber holding long with Op"). User approved both fixes (AskUserQuestion). FIX 1 (`command_normalizer`): NEW
+`_fix_count_homophone` -- a count-homophone (to/too->two, for->four) IMMEDIATELY leading a KNOWN location at the
+callout-payload START becomes the count ("to garage"->"two garage", "for heaven"->"four heaven"). Scoped to payload
+start (string start or right after the "team " lead) so movement callouts are UNTOUCHED ("rotate to garage" / "fall
+back to heaven" / "go to market" keep "to"; "to push" -- push not a location -- untouched). Runs only on callout-bound
+text (after the NOT_A_CALLOUT gate). +9 tests. FIX 2 (`orchestrator`): NEW `_is_bare_relay_lead` + a GUARDED
+re-capture-and-splice in the capture loop -- when STT finalizes a bare relay lead ("tell my team" + no payload), capture
+the continuation ONCE and splice it onto the lead, instead of dropping the turn. FULLY fail-through: on any failure / no
+continuation it routes exactly as before (IGNORE); bounded by `_capture_utterance`'s own VAD/empty timeout (no hang);
+concatenates the audio too so speech + user_text stay consistent. EVIDENCE: count-homophone probe (to/too/for + loc ->
+count; movement untouched); bare-lead probe (bare leads flagged, complete/movement callouts not); orchestrator imports
+clean; 215 normalizer+relay+golden pass (golden unchanged -- these symbols aren't digested); the 8-fail set is the frozen
+baseline §A. Local `main`. NEXT: user live-test "tell my team 2 garage" (count restored) + a paused "tell my team [pause]
+two garage" (no longer dropped).
+
+**ACTIVE (2026-06-26) — CURATED-POOL ALIGNMENT + ANTI-ECHO + TTS-SAFE (kill the "Reyna, trash?" openings):**
+
+Length is fixed (~5-7s now) but outputs still don't MATCH the curated pools, and the openings break in TTS. Live:
+"Reyna called you trash" -> "Reyna, trash. ..." (restates the word); "Jett asked if you're a voice changer" ->
+"Jett, a voice changer? I am Ultron." (the '?' inflection is lost in TTS -> sounds like "Jett a voice changer");
+"Tony Stark?" echo; "tell Jett nice shot" -> "Jett's got it. Clean, like a stone through still water" (weird metaphor,
+nothing like `_NICE_SHOTS`/`DEFAULT_COMPLIMENT`); plus a stray non-word sound (a 'Pfft'-class artifact). User: tune ALL
+prompts to MATCH the curated deterministic pools (format/length/wording); never open by echoing/questioning their word;
+no TTS-breaking sounds. FIX (mostly SHARED, governs every pool): (1) `_SOCIAL_OUTPUT` + `ANSWER_PERSONA_CORE` now
+FORBID the echo-opening explicitly ("NEVER repeat, quote, name, or question their words back; do not open by echoing
+or posing it as a question -- never 'Reyna, trash.' / 'a voice changer?' / 'Tony Stark?'; after any name go STRAIGHT
+into the reply") + HARDEN the sound ban (no interjections/mouth-noises of ANY kind: Pfft/Heh/Hah/Tch/Hmph/Ugh -- real
+words only). (2) `_social_exemplar_block` intro is now PRESCRIPTIVE: the injected curated lines are "EXACTLY the voice,
+length, and sentence-shape to match -- cold declaratives, never a question, never restating the teammate's words;
+write your OWN like them, never copy." (3) `build_social_prompt` context line hardened ("do NOT repeat, quote, name,
+or question this back; answer WITHOUT echoing it"). (4) `compliment` behaviour rewritten to mirror `DEFAULT_COMPLIMENT`
+structure (name the SPECIFIC quality -- precise/clean/well-read -- + "briefly approached your standard"). EVIDENCE: 157
+mapped + `tests/audio/` 1528 pass / 2 = frozen baseline §A; golden re-blessed (2 intentional: `_PERSONA_CORE`/`_SYSTEM_FOR`);
+validate_config 0. Local `main`. NEXT: user live-test the wording/openings.
+
+**ACTIVE (2026-06-26) — LENGTH CLAMP (every response <=~5-7s; coherence-safe, no mid-word cut):**
+
+User: responses still 'extremely long' across ALL paths (social + qa) -- '2 sentences' but each sentence huge (212
+chars/13s), pandas cut off by PTT. User direction: 'enforce a WORD LIMIT per sentence... no response longer than ~7s,
+preferably ~5s' and 'do NOT just cut it off with structural trimming -- that ruins coherence.' FIX = make the model
+WRITE short (primary lever) + a clean token net (no mid-word). (1) CONCRETE per-sentence word cap in the prompts:
+`_CONVERSATION_VERBOSITY_DIRECTIVE` low = 'AT MOST SEVEN WORDS EACH, under FIFTEEN total, one breath ~5s'; lowest = '<=8
+words'; `_SOCIAL_OUTPUT` + `ANSWER_PERSONA_CORE` echo the same '<=7 words/sentence, <15 total, one breath ~5s' (the 4B
+ignored the old vague 'well under a dozen words'). (2) Token ceilings tightened as a SAFETY NET, not the lever, with
+HEADROOM so a compliant ~15-word reply (~22 tok) always finishes (no coherence-killing cut): `_CONVERSATION_MAX_TOKENS`
+low 72->38 / lowest 48->26 / medium 100->60; `_ANSWER_SAMPLING` max_tokens 56->40. (3) `_cap_sentences` now DROPS an
+unfinished trailing fragment (no sentence-ender) when a complete sentence remains -> a cut speaks WHOLE sentences only,
+never a mid-word tail; a complete line is byte-identical (unchanged path). EVIDENCE: 520 mapped + `tests/audio/` 1528
+pass / 2 = frozen baseline §A; `_cap_sentences('...Aim them at the en')` -> 'Your insults slide off.' (clean);
+golden re-blessed (3 intentional: `_ANSWER_SAMPLING`/`_PERSONA_CORE`/`_SYSTEM_FOR`); validate_config 0. Local `main`.
+NEXT: user live-test the lengths; if still >7s, lower the word number + token ceilings further (accepting occasional 1-sentence).
+
+**ACTIVE (2026-06-26) — PER-POOL PROMPT TUNING PASS (every pool tailored to its CURATED-POOL style):**
+
+Live test of the per-pool templates (commit `f6ed56c`) still landed wrong: 'Tell Sage/Jett nice job/shot' FLAMED the
+teammate; 'Reyna called you trash' was MISREAD as praise; 'Reyna is flaming you' was a 15s essay; identity echoed the
+question + chirpy 'Pfft' (TTS noise); 'explain pandas' nonsensical; 'why pandas cannot reproduce' cut off mid-sentence.
+User: 'go prompt by prompt for every single pool and tailor the outputs to match what we want -- use our curated pools
+as a reference.' Ran an Ultracode WORKFLOW (`wf_c3fa042c`, 42 agents: per-pool tailor reads the pool's curated lines ->
+adversarial verify), then synthesised the FINAL strings on Opus. REWROTE all 18 `_SOCIAL_SYSTEM_FOR` behaviours +
+all 3 `ANSWER_*_RULES`, tuned to reproduce each pool's curated-line tone. KEY FIXES: compliment/praise now CREDIT the
+ally ('never mock, threaten, or mention their mistakes' -- was flaming); respond frames the input as an INSULT to crush
+('the thing to answer is their jab, NEVER a compliment' -- was reading 'trash' as praise); reaction DEFERS tone to the
+injected EXAMPLES; identity leads with the denial + 'never echo/quote/restate their question'; flame_enemy/clutch cold,
+'never slang, never hype' (the `_SOCIAL_OUTPUT` stub also now bans interjections/exclamation -> no more spoken 'Pfft').
+ARCHITECTURE: behaviours are now LENGTH-LIGHT (no hardcoded sentence count) -- length is owned by the verbosity
+directive (default low = two short clipped sentences) + the <=2 cap in `_social_llm_line`, so the system behaviour no
+longer fights the verbosity axis (the adversarial pass's load-bearing insight). ANSWER PATH: qa rewritten coherence-first
+('state the fact PLAINLY first, then ONE cold remark... Get the fact RIGHT before you get it cold; one or two sentences,
+never three') + `_ultron_answer.build_answer_call` drops qa temperature 0.85->0.6 (the nonsensical pandas was
+hot-sampling drift; marvel/think keep 0.85); marvel = ONE relevant fact + 'each sentence FINISHED' (fixes the cut-off);
+think = the approved short direct form. EVIDENCE: 157 mapped + `tests/audio/` 1528 pass / 2 fail = frozen baseline §A;
+golden re-blessed (3 intentional diffs: `_MARVEL_RULES`/`_THINK_RULES`/`_SYSTEM_FOR`); validate_config 0; no-model probe
+confirms every polarity fix in the assembled prompts. Local `main`. NEXT: user live-test the tuned pools.
+
+**ACTIVE (2026-06-26) — PER-POOL SOCIAL PROMPT TEMPLATES (broad expansion; moves the social path off ONE general prompt):**
+
+User: "did we broadly expand our number of prompt templates so each response has its own highly tailored specific
+prompt template? I want to move away from generalized prompts wherever possible." HONEST audit: NO -- only the 3 ANSWER
+subtypes (qa/marvel/think_respond, `llm_prompts.ANSWER_SYSTEM_FOR`) had dedicated system prompts; ALL ~18 SOCIAL pools
+(identity/encouragement/calm/criticize/compliment/flame_enemy/defiance/consolation/praise/clutch/respond/reaction/
+hello/ask_day/greet/farewell×3) still shared ONE general `SOCIAL_SYSTEM` (1539 chars: persona core + output rules +
+length rule + answer-directly/never-echo + an IRRELEVANT bomb-site-letter rule) differentiated only by a one-line
+`_SOCIAL_DIRECTIVE[kind]` in the USER turn. The 4B can't follow that instruction load → mediocre per-pool output
+(pandas lost persona, math rambled, clapback/identity/soundboard felt off). FIX (`ultron_prompt.py`): NEW
+`_SOCIAL_SYSTEM_FOR` registry -- 18 dedicated, SHORT, self-contained system prompts, one per pool (`_social_sys()` =
+compact Ultron anchor `_SOCIAL_PERSONA` + the pool's exact behaviour + a short output rule `_SOCIAL_OUTPUT`; each
+~710-940 chars vs the 1539-char general). `build_social_prompt` now selects `_SOCIAL_SYSTEM_FOR.get(kind, SOCIAL_SYSTEM)`
+and, when a dedicated template exists, DROPS the now-redundant directive from the user turn (situation lives in the
+SYSTEM → no doubled instructions). Any pool without a template falls back to the general `SOCIAL_SYSTEM` + its directive
+(additive + reversible). To tune ONE pool, edit ONLY its behaviour string. EVIDENCE: 157 mapped (social/prompt/answer)
+green; `tests/audio/` 1521 pass / 8 fail = EXACTLY the frozen baseline §A relay-normalizer set (zero new, node-id
+match); golden digest pass (these symbols aren't digested → no re-bless); `validate_config` 0; no-model probe confirms
+18 distinct dedicated templates. `test_social_novel.py` identity assertions updated to the new contract (situation now
+in `pr.system`, not `pr.user` — intentional, not a weakening). Local `main`. NEXT: user live-test → tune per-pool
+wording.
+
+**ACTIVE (2026-06-25) — REMOVED all prior-statement injection from LLM prompts + per-route temperature split:**
+
+User: "he gave the EXACT response to a VARIETY of different questions about pandas." Live log: "what pandas are" /
+"why pandas suck" / "why pandas can't reproduce" ALL → the byte-identical "Pandas: black-and-white bears from China,
+fattening on bamboo…". CAUSE: prior spoken lines were injected into the LLM prompt ("You recently said…"), which the
+small 4B PARROTED across DIFFERENT questions (the variation hint from `5a0994d` made it worse, but `_recent_block`
+predated it). User directive: "completely remove injected prior statements; variety from TEMPERATURE; strict callouts,
+hot conversation." DONE: (1) **Removed ALL prior-output injection** — `ultron_prompt._recent_block` → `""` (neutralizes
+build_relay_prompt / build_private_prompt / build_social_prompt), `_ultron_answer._append_variation_hint` DELETED +
+`build_answer_call` drops the `recent_lines` param (+ 2 call sites in relay_speech), legacy `_build_rephrase_prompt`
+already `""`. Deterministic-pool LRU (`pick_line(recent_lines=)`) STAYS (not prompt injection); inference.py already
+suppresses history on all u1 paths. (2) **Per-route temperature** — `_sampling_for` splits by axis: CALLOUT strict
+temp 0.4 (precise agent names/sites/numbers), CONVERSATION temp 1.0 / min_p 0.03 (build_private_prompt);
+`_SOCIAL_SAMPLING` 0.8→1.0 / min_p 0.03 (banter/identity/morale — pure personality); `_ANSWER_SAMPLING`
+(qa/marvel/think_respond) 0.7→0.85 / min_p 0.05 (factual → most restrained of the varied tier); legacy
+`_RELAY_SAMPLING` 0.8→0.4. (3) A **question-echo strip** in the answer branch (the higher temp made the model restate
+the question — "what pandas are → Pandas…"). HARNESS-PROVEN (`scripts/_repeat_degrade_harness.py` layer_d): 4 different
+pandas/transistor questions → 4 DISTINCT on-topic answers (was byte-identical), no echo artifact. EVIDENCE: 234 relay
++ 275 audio green; golden re-blessed (2 intentional sampling diffs) + validate_config 0. Local `main`.
+
+**ACTIVE (2026-06-25) — FREEZE INCIDENT FIXED (lock leak on an abandoned generate_stream):**
+
+After the variation reboot Ultron went unresponsive ("not responding"). Live log: `always_listening: true` but the
+loop was frozen at `waiting_for_wake_word | state='idle'`, ZERO new STT turns for the user's speech, **367 threads**
+accumulating after 5 relay LLM calls. ROOT CAUSE: the thread-safety lock (`83a16de`) was HELD ACROSS
+`generate_stream`'s generator and released only in the `finally`; a consumer that ABANDONED the generator mid-stream
+(an invalidated speculative relay — generates on the STT thread) never ran that `finally`, so the lock LEAKED →
+every later `generate_stream` blocked on acquire → the capture loop froze (blocked speculative threads piled to 367).
+FIX (`169a93f`): buffer the WHOLE in-process generation UNDER the lock via a `with` block (always releases — on
+exhaustion / early break / exception), then yield from the buffer with NO lock held. Still serializes Llama access
+(no concurrent-compute crash) but the lock is bounded and cannot leak; HTTP path unchanged. The addressing gate
+itself is FINE (verified offline: "tell my team to rotate"→RELAY_TO_TEAM 0.95, "show me the stop button"→COMMAND_LOCAL,
+"Ultron …"→PRIVATE_REPLY, game chatter→IGNORE) — the commands failed ONLY because the loop was frozen. EVIDENCE: 90
+LLM + 27 speculative tests (new `test_partial_generate_stream_does_not_hold_llm_lock` proves an abandoned generator
+leaves the lock FREE) + harness generation intact. Local `main`. LESSON: never hold a lock across a Python
+generator's yields — an abandoned (not-closed/not-GC'd) generator never runs the release `finally`.
+
+**ACTIVE (2026-06-25) — CONTROLLED VARIATION on the answer path + a qa AI-affirmation regression fix:**
+
+User: "why does he give the same responses over and over — shouldn't the LLM be non-deterministic?" The answer
+path is deliberately tight (`min_p` 0.08 + a confident model → the same factual answer every repeat; the prior
+echo-net exemption let it repeat *stably*, which reads as robotic). FIX: `build_answer_call(command, recent_lines=)`
+now folds the recently-spoken lines into the answer prompt as a SOFT "give the SAME facts in FRESH wording" hint
+(`_ultron_answer._append_variation_hint`) — NOT the old hard verbatim reject. Harness: repeated "explain pandas" /
+"who is iron man" now VARY the wording with the facts intact (no drift); `min_p` left at 0.08 (no fact-drift risk).
+BONUS (pre-existing regression the suite caught): the qa-answer guard in `relay_speech.py` had been flipped to a
+flat `allow_self_ai=False` on 2026-06-24, dumping AI-affirming qa answers ("crimson — fitting for an AI") to the
+"No soundboard, no strings" fallback — restored the subtype gating (`allow_self_ai=(_a_sub=="qa")`; marvel /
+think_respond stay strict). EVIDENCE: relay + social-marvel + expansion 482 green (3 prior social-marvel failures
+fixed); new `test_qa_answer_prompt_carries_variation_hint_from_recent_lines`; golden + validate_config 0. Local `main`.
+
+**ACTIVE (2026-06-24) — REPEAT-DEGRADATION ROOT-CAUSED + FIXED (offline end-to-end harness):**
+
+User: "responses degrade sharply on repeat" / "it got even worse". A 5-agent investigation workflow + the
+offline end-to-end harness `scripts/_repeat_degrade_harness.py` (drives a finalized-STT string through the
+REAL `build_relay_line` K times against ONE shared LLMEngine) root-caused it. It was NOT the model, NOT
+concurrency, and NOT the KV cache — the DECISIVE A/B: the real relay path (harness Layer A2) degraded
+**byte-identically with AND without a hard KV clear**. ROOT CAUSE: the **verbatim recent-echo safety net**
+in `build_relay_line` nulled a FACTUAL qa answer on every repeat (the identical-but-correct answer was
+already in `recent_lines`) → the route-all empty-retry then relayed the BARE question via the tactical
+prompt → "What pandas are" / "They're on C." (matches the live log: `7 prefix-match, 847 to eval` → 3 tok →
+`recovered empty primary` retry). FIX (`relay_speech.py`): (1) **exempt the ANSWER subtypes**
+(qa/marvel/think_respond) from the verbatim-echo net — a factual answer is correct to repeat; the net stays
+ON for the tactical relay path; (2) **`_relay_llm_retry` now RE-ANSWERS** a qa command (`build_answer_call`,
+the leading `\n\n` stop dropped) instead of relaying the bare interrogative. Harness: every repeat now
+returns the full on-topic answer. EVIDENCE: relay 133 + golden/intent/speculative/llm 107 green; new
+`test_qa_answer_repeats_and_is_not_rejected_as_recent_echo`; validate_config 0. The earlier concurrency LOCK
+(`inference.py` `_llm_lock`, `83a16de`) stays — it fixes a real CUDA crash on concurrent Llama access,
+separately proven (the speculative relay generates on the STT thread). Local `main` only.
+
 **ACTIVE (2026-06-23) — CALLOUT LATENCY: precise breakdown + 4 fixes (committed, changed-area tests green):**
 
 User reported callouts felt "well over a second" — and was right; the stitched second-precision estimates
@@ -36,19 +375,25 @@ auto-enables spec decoding (the preset ships `Qwen_Qwen3-0.6B-Q4_K_M.gguf`). **V
 tests + back-compat updated; validate_config 0. (config.yaml committed as the placeholder template;
 the local working-tree copy keeps the real twitch creds, uncommitted.)
 
-**TWITCH SIDECAR DOUBLE-BOOT — DEEPER THAN A CODE HEURISTIC (attempts reverted, NOT fixed):** the
-read/guard/write sidecars die ~3-12s after spawn. Root cause confirmed via kill-trace: launching via the
-venv python spawns a SYSTEM-python `-m kenning` TWIN (the same venv→system handoff also affects the
-`.venv-embedder`), so there are TWO `-m kenning` processes; the sidecars' own `guard_singleton`→
-`reclaim_port`/`reap_stray_sidecars`→`_kill` then reap each other (mutual war). Tried (a) a reuse-if-serving
-check and (b) a parent-is-`-m kenning` twin-skip — BOTH reverted: the topology is stub→real (the venv
-process hands off and the SYSTEM child is the survivor), so a parent-check skips the wrong one and the
-reuse-check loses the spawn race. The venv→system relaunch is NOT in the codebase (a machine/venv-level
-behavior — likely the venv lacks the CUDA llama-cpp build so something re-execs to the system python that
-has it). **Does NOT affect voice relay** (the moderation pre-filter `0ffbc11` means relay never calls the
-write sidecar). Blocks only voice-moderation-of-chat + chat reading. Candidate real fixes: install CUDA
-llama-cpp INTO the venv so no relaunch happens (single instance → no war); OR make sidecars resilient to
-the relaunch (a held cross-process spawn-lock owned by the survivor + reuse). Tracked as a follow-up chip.
+**TWITCH SIDECAR DEATH — ROOT-CAUSED + FIXED + CONFIRMED (2026-06-23):** the prior "venv→system `-m
+kenning` TWIN, two kenning processes reap each other (mutual war)" diagnosis was WRONG — which is why
+every prior fix failed. GROUND TRUTH (a TRIVIAL venv-python command, no kenning import, proves it):
+`.venv\Scripts\python.exe` is a **venvlauncher** that spawns the base `Python311\python.exe` as a CHILD to
+run the code and waits. So the 2nd `-m kenning` is just the launcher wrapper — there is ONE real kenning.
+Consequence: every `Popen([sys.executable, <script>])` is a launcher+child PAIR, BOTH carrying `<script>`
+in cmdline. Each twitch sidecar child calls `guard_singleton`→`reap_stray_sidecars([own_hint])`, which
+cmdline-matches its OWN launcher parent and `kill_process_tree`s it — killing the launcher's whole tree,
+i.e. ITSELF (~4-12 s, the SIGTERM grace). **FIX** (`sidecar_lock.reap_stray_sidecars`): never reap an
+ANCESTOR of the current process (`_ancestor_pids` walk; env `KENNING_REAP_SKIP_ANCESTORS=0` reproduces the
+bug), and `keep_pid` now spares its whole TREE (the owned sidecar's launcher child). PLUS: sidecar
+stdout/stderr were going to **DEVNULL** (every sidecar log discarded — why this stayed unsolved) → now
+`logs/twitch_sidecars/<role>.log`; and a boot **health canary** probes each `/healthz` ~18 s after spawn
+and logs one PASS/DEGRADED line. CONFIRMED before/after: skip-OFF = all sidecars DEAD; skip-ON = all ALIVE
++ serving >3 min, canary OK, `chat-reply ENABLED`, read on EventSub / guard model ready / write
+broadcaster_id resolved. 16 sidecar tests green (3 new). `config.yaml twitch.enabled` flipped back to true
+(local). Detail: `docs/ultron_1_0/twitch_sidecar_selfreap_debug.md`. STILL-OPEN (separate, NOT this bug):
+channel-point redeem EventSub 400 "subscriptions created by different users" — needs the broadcaster's
+token on the websocket (deferred RedeemRouter, chip task_1e720c25); chat/games/moderation unaffected.
 
 **PREVIOUS (2026-06-23) — "I CANNOT DO THAT" + ~2s LATENCY + "Hello team" canned (3 fixes + 1 diagnosed):**
 

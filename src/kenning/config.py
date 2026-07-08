@@ -4026,6 +4026,15 @@ class StopButtonConfig(_Strict):
     # on/off" voice command flips). Default OFF at boot. 0 hides the row.
     turbo_height: int = Field(default=26, ge=0, le=200)
     turbo_label: str = "TURBO"
+    # RELAY toggle row (2026-07-08): a magenta ON (default) / grey OFF button --
+    # the team-relay MASTER mode (relay_speech.set_team_relay_enabled). OFF =
+    # Ultron disengages from team comms: no relay command is transmitted, the
+    # wake word is required again (always-listening/turbo capture stands down),
+    # and conversation runs on the lean companion persona capped at 2 sentences.
+    # Twitch chat/games/redeems are untouched. Always visible (not twitch-gated).
+    # 0 hides the row.
+    relay_height: int = Field(default=26, ge=0, le=200)
+    relay_label: str = "RELAY"
     # CHAT toggle row (2026-06-23): a purple ON / grey OFF button that flips
     # twitch.chat.reply_enabled at runtime — lets Ultron speak to chat or go
     # silent without restarting. Only visible when twitch.enabled is True.

@@ -235,7 +235,19 @@ def test_spoofed_chatter_name_does_not_self_address():
 
 # --------------------------------------------------------------------------- #
 # 9. residual embed path — both directions (margin honored)
+#
+#    The residual tier is CLOSED OFF by default since 2026-07-08 (it replied to
+#    un-prefaced chat on the live stream) — these tests exercise the MECHANISM
+#    behind its flag, so they enable it and restore the default afterwards.
 # --------------------------------------------------------------------------- #
+@pytest.fixture()
+def residual_tier_on():
+    from kenning.twitch.addressing import set_residual_addressing_enabled
+    set_residual_addressing_enabled(True)
+    yield
+    set_residual_addressing_enabled(False)
+
+
 def _direction_embed_fn():
     """A deterministic mock embedder.
 
@@ -264,14 +276,14 @@ def _direction_embed_fn():
     return embed
 
 
-def test_residual_to_ultron_direction():
+def test_residual_to_ultron_direction(residual_tier_on):
     ev = _event("do you actually understand what we say and would you respond")
     v = _classify(ev, embed_fn=_direction_embed_fn())
     assert v.address == ChatAddress.TO_ULTRON
     assert "residual" in v.reason
 
 
-def test_residual_not_to_ultron_direction_ignores():
+def test_residual_not_to_ultron_direction_ignores(residual_tier_on):
     ev = _event("gg that clutch was insane lol same poggers")
     v = _classify(ev, embed_fn=_direction_embed_fn())
     assert v.address == ChatAddress.IGNORE
@@ -289,7 +301,7 @@ def test_residual_without_embedder_ignores():
 # --------------------------------------------------------------------------- #
 # 10. fail-closed robustness — embedder raising / returning garbage
 # --------------------------------------------------------------------------- #
-def test_residual_embedder_raises_fails_closed():
+def test_residual_embedder_raises_fails_closed(residual_tier_on):
     def boom(_text):
         raise RuntimeError("embedder sidecar down")
 
@@ -299,13 +311,13 @@ def test_residual_embedder_raises_fails_closed():
     assert "fail-closed" in v.reason
 
 
-def test_residual_embedder_returns_empty_fails_closed():
+def test_residual_embedder_returns_empty_fails_closed(residual_tier_on):
     ev = _event("would you answer my question please")
     v = _classify(ev, embed_fn=lambda _t: [])
     assert v.address == ChatAddress.IGNORE
 
 
-def test_residual_embedder_returns_nan_fails_closed():
+def test_residual_embedder_returns_nan_fails_closed(residual_tier_on):
     ev = _event("would you answer my question please")
     v = _classify(ev, embed_fn=lambda _t: [float("nan"), 1.0])
     assert v.address == ChatAddress.IGNORE
@@ -330,7 +342,7 @@ def _numpy_direction_embed_fn():
     return embed
 
 
-def test_residual_numpy_embed_fn_to_ultron_does_not_crash():
+def test_residual_numpy_embed_fn_to_ultron_does_not_crash(residual_tier_on):
     # A to-Ultron-leaning line with a NUMPY embed_fn must run the residual path
     # (reason mentions 'residual') and resolve TO_ULTRON -- NOT raise the
     # array-truthiness ValueError and fall to the 'classify error' fail-closed.
@@ -340,7 +352,7 @@ def test_residual_numpy_embed_fn_to_ultron_does_not_crash():
     assert "residual" in v.reason
 
 
-def test_residual_numpy_embed_fn_banter_ignores_via_residual():
+def test_residual_numpy_embed_fn_banter_ignores_via_residual(residual_tier_on):
     # Banter with a numpy embed_fn must IGNORE through the residual BELOW-MARGIN
     # branch ('residual' in reason), proving the path ran rather than crashed.
     ev = _event("gg that clutch was insane lol same poggers")
@@ -349,11 +361,79 @@ def test_residual_numpy_embed_fn_banter_ignores_via_residual():
     assert "residual" in v.reason
 
 
-def test_residual_numpy_embed_fn_with_nan_fails_closed():
+def test_residual_numpy_embed_fn_with_nan_fails_closed(residual_tier_on):
     # A numpy vector carrying a NaN must still fail closed (not crash).
     ev = _event("would you answer my question please")
     v = _classify(ev, embed_fn=lambda _t: np.asarray([float("nan"), 1.0], dtype=np.float32))
     assert v.address == ChatAddress.IGNORE
+
+
+# --------------------------------------------------------------------------- #
+# 11. residual tier DISABLED BY DEFAULT (2026-07-08) — the live-stream misfires
+#     (2026-07-07 kenning.log: these un-prefaced lines each drew a public reply
+#     through the residual tier the day after the numpy fix revived it). With
+#     the tier at its default-OFF, an EXPLICIT signal (reply / @mention /
+#     leading name) is required; the guessing tier never engages, even with an
+#     embedder that would score maximum to-Ultron similarity.
+# --------------------------------------------------------------------------- #
+def _always_to_ultron_embed_fn():
+    """Worst-case embedder: EVERYTHING lands exactly on the to-Ultron cloud.
+
+    Queries and to-Ultron exemplars embed identically ([1,0]) while the
+    not-to-Ultron cloud lands orthogonal ([0,1]) -- so if the residual tier ran,
+    every line would clear the floor and margin and commit TO_ULTRON. Proves the
+    default-OFF gate blocks even a maximally confident residual."""
+    from kenning.twitch.addressing import NOT_TO_ULTRON_EXEMPLARS
+
+    def embed(text: str):
+        if text in NOT_TO_ULTRON_EXEMPLARS:
+            return [0.0, 1.0]
+        return [1.0, 0.0]
+
+    return embed
+
+
+def test_residual_tier_default_off():
+    from kenning.twitch.addressing import residual_addressing_enabled
+    assert residual_addressing_enabled() is False
+
+
+@pytest.mark.parametrize("live_misfire_text", [
+    "Sery_Bot is here seryboArrive",
+    "idk",
+    "either works",
+    "or would that be broken",
+])
+def test_live_misfire_lines_ignore_by_default(live_misfire_text):
+    ev = _event(live_misfire_text)
+    v = _classify(ev, embed_fn=_always_to_ultron_embed_fn())
+    assert v.address == ChatAddress.IGNORE
+    assert "residual tier disabled" in v.reason
+
+
+def test_explicit_signals_still_win_with_tier_off():
+    # The deterministic tiers are untouched: leading name, reply-parent, and
+    # @mention all still resolve TO_ULTRON with the residual tier off, even
+    # with an embedder supplied.
+    emb = _always_to_ultron_embed_fn()
+    assert _classify(_event("ultron what do you think"), embed_fn=emb).address \
+        == ChatAddress.TO_ULTRON
+    assert _classify(_event("either works", reply_parent_user_id=BOT_UID),
+                     embed_fn=emb).address == ChatAddress.TO_ULTRON
+    frag = _mention_fragment(user_id=BOT_UID, user_login=BOT_LOGIN)
+    assert _classify(_event(f"@{BOT_LOGIN} idk", fragments=[frag]),
+                     embed_fn=emb).address == ChatAddress.TO_ULTRON
+
+
+def test_residual_tier_setter_round_trip(residual_tier_on):
+    # With the tier explicitly enabled, the same misfire line DOES reach the
+    # residual path (the fixture restores the OFF default afterwards).
+    from kenning.twitch.addressing import residual_addressing_enabled
+    assert residual_addressing_enabled() is True
+    ev = _event("Sery_Bot is here seryboArrive")
+    v = _classify(ev, embed_fn=_always_to_ultron_embed_fn())
+    assert v.address == ChatAddress.TO_ULTRON
+    assert "residual" in v.reason
 
 
 # --------------------------------------------------------------------------- #

@@ -18,8 +18,12 @@ Cascade (deterministic-first; trust the IMMUTABLE ``user_id``, NEVER the spoofab
 4. an @mention of the streamer                           -> TO_STREAMER
 5. an @mention of another (non-bot, non-streamer) user   -> TO_OTHER
 6. a leading 'ultron'/bot-name/bot-login token           -> TO_ULTRON
-7. RESIDUAL (no @mention, no name token): cosine-vs-exemplar-clouds if an
-   ``embed_fn`` is supplied (with a margin), else                 -> IGNORE
+7. RESIDUAL (no @mention, no name token): DISABLED BY DEFAULT (2026-07-08 —
+   it replied to un-prefaced chat live; ``KENNING_TWITCH_RESIDUAL_ADDRESSING``
+   / ``set_residual_addressing_enabled`` restores it). When enabled:
+   cosine-vs-exemplar-clouds if an ``embed_fn`` is supplied (with a margin),
+   else -> IGNORE. When disabled (default): an explicit address signal
+   (steps 2-6) is REQUIRED; everything else                       -> IGNORE
 
 Mentions are resolved from BOTH the typed ``event.fragments`` (a ``mention``
 fragment carries the immutable ``user_id`` — authoritative) AND raw ``@name``
@@ -35,6 +39,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -48,6 +53,8 @@ __all__ = [
     "classify_chat",
     "TO_ULTRON_EXEMPLARS",
     "NOT_TO_ULTRON_EXEMPLARS",
+    "set_residual_addressing_enabled",
+    "residual_addressing_enabled",
 ]
 
 
@@ -106,6 +113,33 @@ _RESIDUAL_MARGIN = 0.06
 # And it must clear an absolute floor so a line dissimilar to BOTH clouds (random
 # banter) cannot squeak through on a razor-thin relative edge.
 _RESIDUAL_MIN_SIM = 0.35
+
+# --- residual semantic addressing: CLOSED OFF by default (2026-07-08) ------------
+# The residual path was dead until the 2026-06-28 numpy fix (`b78ed5b`) revived it
+# — and on the very next stream it committed TO_ULTRON on un-prefaced chat lines
+# ("Sery_Bot is here seryboArrive", "idk", "either works", "or would that be
+# broken" all drew public replies; live log 2026-07-07). The streamer's direction:
+# chat must address Ultron EXPLICITLY — a Twitch reply to his message, an
+# @mention, or a leading 'ultron' — so the guessing tier is RETIRED-not-removed
+# behind this flag. The exemplar clouds, cosine math, and thresholds all remain
+# defined and tested; set KENNING_TWITCH_RESIDUAL_ADDRESSING=1 (or call the
+# setter) to restore the old behaviour. Anticheat-clean (os/stdlib only).
+_residual_addressing_enabled: bool = os.getenv(
+    "KENNING_TWITCH_RESIDUAL_ADDRESSING", "0").strip().lower() not in (
+    "0", "false", "no", "off", "")
+
+
+def set_residual_addressing_enabled(enabled: bool) -> None:
+    """Enable/disable the residual semantic chat-addressing tier (default OFF).
+
+    OFF = an un-prefaced, non-reply, non-mention chat line always IGNOREs —
+    Ultron never guesses that chat is talking to him."""
+    global _residual_addressing_enabled
+    _residual_addressing_enabled = bool(enabled)
+
+
+def residual_addressing_enabled() -> bool:
+    return _residual_addressing_enabled
 
 
 # --------------------------------------------------------------------------- #
@@ -388,10 +422,18 @@ def classify_chat(
         if _leading_name_token(text, bot_login=bot_login_n, bot_name=bot_name):
             return AddressVerdict(ChatAddress.TO_ULTRON, 0.88, "leading bot-name token")
 
-        # 7) RESIDUAL (no @mention, no leading name): semantic tie-break if we have
-        #    an embedder; else FAIL-CLOSED to IGNORE.
+        # 7) RESIDUAL (no @mention, no leading name): semantic tie-break — but
+        #    ONLY when the residual tier is explicitly enabled (default OFF,
+        #    2026-07-08: it replied to un-prefaced chat on the live stream).
+        #    Without it, an explicit address signal (reply / @mention / leading
+        #    name, steps 2-6) is REQUIRED; everything else FAILS CLOSED.
         if embed_fn is not None:
-            return _residual_verdict(stripped, embed_fn)
+            if residual_addressing_enabled():
+                return _residual_verdict(stripped, embed_fn)
+            return AddressVerdict(
+                ChatAddress.IGNORE, 0.60,
+                "no explicit address signal (residual tier disabled; fail-closed)",
+            )
         return AddressVerdict(ChatAddress.IGNORE, 0.55, "no addressing signal (fail-closed)")
 
     except Exception as exc:  # noqa: BLE001 — never raise into the sidecar receive loop
