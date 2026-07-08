@@ -106,6 +106,27 @@ def test_healthz_reports_state() -> None:
     assert body["source"] == "fake"
     # poll loop not started in this fixture -> running False
     assert body["running"] is False
+    # 2026-07-08: a source WITHOUT subscription state (FakeSource) reports
+    # subscribed + clean so tests/flag-off boots never read as degraded.
+    assert body["chat_subscribed"] is True
+    assert body["subscribe_error"] == ""
+
+
+def test_healthz_surfaces_dead_chat_subscription() -> None:
+    """2026-07-08 revoked-bot-token incident: healthz said ok=true while the
+    chat subscription was dead. The subscription state must be visible so the
+    boot canary can print the re-mint remedy."""
+    src = sidecar.FakeSource()
+    src._subscribed = False
+    src.last_subscribe_error = (
+        "helix id resolution failed (broadcaster=False bot=False) -- bot "
+        "token invalid/expired/revoked? re-mint via scripts/twitch_setup.py "
+        "--identity bot")
+    with _Served(src) as s:
+        body = _get(f"{s.base}/healthz")
+    assert body["ok"] is True                      # the HTTP server IS up
+    assert body["chat_subscribed"] is False        # ...but chat is dead
+    assert "re-mint" in body["subscribe_error"]
 
 
 def test_buffer_drain_returns_injected_events_and_advances_cursor() -> None:

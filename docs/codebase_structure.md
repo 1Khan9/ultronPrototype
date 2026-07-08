@@ -27,6 +27,26 @@
 > - Full runbook: **`docs/ultron_0_1_baseline.md`**. Post-0.1 roadmap:
 >   **`docs/latency_optimizations_V1.md`**.
 >
+> **TRIVIA EXPANSION + LRU ROTATION + RELAY-AWARE COOLDOWN + AUTO TOKEN RE-AUTH (2026-07-08 wave 3)**
+>
+> **Trivia:** `config.py trivia_auto_interval_minutes` 8→15; `trivia_questions.py` DOUBLED to 396 unique prompts;
+> `games.Trivia` gains an LRU rotation -- `_last_used_seq`/`_draw_seq` + `mark_used(idx)`; `draw_question` now draws
+> provably-fairly ONLY among the indices tied for the minimum `_last_used_seq` (longest-unused), so no question repeats
+> in a stream until the pool cycles (fresh pool = whole set = old behaviour; the fair-draw stays a pure function of
+> (seed,client,nonce) because state mutates in `mark_used`, called by `chat_games._start_trivia`, NOT in the draw).
+> **Relay-aware chat cooldown:** `twitch/pipeline.ChatReplyPipeline` gains `cooldown_fn` (a live per-check override,
+> evaluated in `_cooldown_remaining` + at stamp time); `integration.build_chat_runtime` wires `cooldown_now()` = 30s
+> while `relay_speech.team_relay_enabled()` is False, `reply_cooldown_seconds` (120) while True -- so flipping the
+> RELAY toggle re-times open windows instantly; the orchestrator talk-hint poster recomputes its "(N cooldown)" suffix
+> per post the same way. New `TwitchChatConfig.relay_off_reply_cooldown_seconds=30`. **Automatic bot-token re-auth:**
+> a REVOKED grant needs a human to approve a device code AS the bot (Twitch requirement), so `scripts/twitch_write_sidecar.py`
+> on `RevokedError` runs `_start_auto_remint` -> `_auto_remint_once` (singleton worker): starts the device flow,
+> surfaces `remint_user_code`/`remint_uri` on `/healthz`, polls, VERIFIES `validate()`'s login == the expected bot
+> login (a wrong-account approval is rolled back via `store.save(prior)`), stores it, chat heals live. Orchestrator
+> `_start_twitch_sidecars` adds a `twitch-token-watch` thread that logs each new code on the main console + speaks a
+> pointer. **Token visibility:** read `/healthz` gains `chat_subscribed`/`subscribe_error`, write `/healthz` gains
+> `chat_send_error`; the boot canary reads all three and prints the re-mint remedy instead of a false "OK".
+>
 > **S14 — PAID SPOTIFY QUEUE REQUESTS (!song/!album) + CHAT PERSONA ENRICHMENT + LIVE-TEST FIXES (2026-07-08 wave 2)**
 >
 > **!song <query> (1000 Credits) / !album <query> (5000)** — viewers pay StreamElements Credits to queue a

@@ -101,6 +101,114 @@ _PROPOSAL_TTL_S = 120.0
 _ROSTER_CAP = 500
 # Bound on an accepted request body (defense against a hostile/oversized POST).
 _MAX_BODY_BYTES = 1 << 20  # 1 MiB
+
+# CHAT-SEND health surfaced via /healthz (2026-07-08 incident: a REVOKED bot
+# token made every send 401 while healthz said ready=true -- the boot canary
+# read it as healthy and the bot went silently mute). "" = healthy; set on a
+# failed send / failed token refresh, cleared on the next successful send. A
+# plain module dict: one sidecar process, handler + send wrapper both see it.
+CHAT_SEND_HEALTH: dict = {"error": ""}
+
+# SELF-SERVICE RE-AUTH (2026-07-08, streamer request "have the token
+# automatically re-mint"): a REVOKED grant cannot be re-minted silently --
+# Twitch's Device Code Grant requires a human to approve the code while logged
+# in AS the bot account (that is the security property; the alternative is
+# storing the bot's password, which we will never do). What IS automated: on a
+# RevokedError this sidecar STARTS the device flow itself, surfaces the
+# user_code + URL here (loopback /healthz -> the orchestrator watcher logs it
+# on the main console + speaks a pointer line), long-polls for approval, and
+# on approval VERIFIES the minted token belongs to the expected bot login
+# (a viewer racing the public code must never become the bot -- a mismatched
+# approval is discarded and the flow restarts) then stores it. Every consumer
+# re-reads the token file per attempt, so chat heals live with no restart.
+REMINT_STATE: dict = {"user_code": "", "verification_uri": "", "active": False}
+_REMINT_LOCK = threading.Lock()
+_REMINT_RUNNING = {"v": False}
+
+
+def _auto_remint_once(auth: Any, store: Any, expected_login: str, *,
+                      state: dict = REMINT_STATE,
+                      health: dict = CHAT_SEND_HEALTH,
+                      timeout: float = 840.0) -> bool:
+    """ONE device-flow pass. True only when a VERIFIED bot token was stored.
+
+    ``poll_device_token`` persists tokens BEFORE identity can be checked, so a
+    wrong-account approval is rolled back by restoring the prior token dict.
+    Raises DeviceFlowExpiredError (unused code) / transport errors to the
+    caller's retry loop; ``state`` is always cleared on the way out."""
+    prior = store.load() or {}
+    device = auth.start_device_flow()
+    state["user_code"] = str(device.user_code or "")
+    state["verification_uri"] = str(device.verification_uri or "")
+    state["active"] = True
+    logger.error(
+        "BOT TOKEN REVOKED -- self-service re-auth started: open %s and enter "
+        "code %s while logged in AS %s (expires in %ss; chat heals on approval, "
+        "no restart needed)",
+        device.verification_uri, device.user_code, expected_login,
+        device.expires_in)
+    try:
+        tokens = auth.poll_device_token(
+            device.device_code, interval=device.interval, timeout=timeout)
+    finally:
+        state["user_code"] = ""
+        state["verification_uri"] = ""
+        state["active"] = False
+    info = auth.validate(str((tokens or {}).get("access_token") or "")) or {}
+    login = str(info.get("login") or "").strip().lower()
+    if login != (expected_login or "").strip().lower():
+        store.save(prior)   # roll the store back -- never keep a wrong identity
+        logger.error(
+            "re-auth was approved by the WRONG account (%r, expected %r); "
+            "token DISCARDED -- issuing a fresh code", login, expected_login)
+        return False
+    health["error"] = ""
+    logger.info("bot token re-minted + identity-verified for %s; chat resumes "
+                "live", login)
+    return True
+
+
+def _start_auto_remint(client_id: str, bot_token_path: str,
+                       expected_login: str) -> None:
+    """Kick the SINGLETON background re-auth worker (no-op while one runs, or
+    when the client id / bot login is unknown). Fail-open: any error just
+    leaves the manual scripts/twitch_setup.py path as the remedy."""
+    if not client_id or not expected_login:
+        return
+    with _REMINT_LOCK:
+        if _REMINT_RUNNING["v"]:
+            return
+        _REMINT_RUNNING["v"] = True
+
+    def _loop() -> None:
+        try:
+            from kenning.twitch.auth import (
+                BOT_SCOPES, DeviceFlowExpiredError, TokenStore, TwitchAuth,
+            )
+            store = TokenStore(bot_token_path)
+            while True:
+                if not CHAT_SEND_HEALTH.get("error"):
+                    return   # healed by other means (e.g. a manual re-mint)
+                auth = TwitchAuth(client_id, store, scopes=BOT_SCOPES)
+                try:
+                    if _auto_remint_once(auth, store, expected_login):
+                        return
+                except DeviceFlowExpiredError:
+                    logger.warning(
+                        "re-auth code expired unused; issuing a fresh one")
+                except Exception as exc:  # noqa: BLE001 — transport hiccup etc.
+                    logger.warning(
+                        "auto re-auth attempt failed (%s); retrying in 60s",
+                        type(exc).__name__)
+                    time.sleep(60.0)
+        except Exception as exc:  # noqa: BLE001 — the worker must never crash the sidecar
+            logger.warning("auto re-auth worker stopped (%s)", type(exc).__name__)
+        finally:
+            with _REMINT_LOCK:
+                _REMINT_RUNNING["v"] = False
+
+    threading.Thread(target=_loop, daemon=True,
+                     name="twitch-bot-remint").start()
 _ROSTER_FETCH_TIMEOUT_S = 2.0
 
 
@@ -319,7 +427,18 @@ def make_handler(service: Any, store: ProposalStore, *, ready_fn: Callable[[], b
                 except Exception as exc:  # noqa: BLE001 — healthz never raises
                     logger.debug("healthz state read failed: %s", exc)
                     ready, bid = False, ""
-                self._send(200, {"ok": True, "ready": ready, "broadcaster_id": bid})
+                self._send(200, {
+                    "ok": True, "ready": ready, "broadcaster_id": bid,
+                    # 2026-07-08: live chat-send health (revoked-token incident);
+                    # "" = healthy. Read by the orchestrator boot canary.
+                    "chat_send_error": str(CHAT_SEND_HEALTH.get("error", "") or ""),
+                    # Self-service re-auth in flight: the device-flow code the
+                    # streamer must approve (loopback-only surface; the
+                    # orchestrator watcher logs it on the main console).
+                    "remint_user_code": str(REMINT_STATE.get("user_code", "") or ""),
+                    "remint_uri": str(
+                        REMINT_STATE.get("verification_uri", "") or ""),
+                })
                 return
             self._send(404, {"ok": False, "error": "not found"})
 
@@ -744,6 +863,21 @@ def build_service_state() -> _ServiceState:
                 except Exception as exc:  # noqa: BLE001 — never raise into the send handler
                     logger.warning(
                         "chat-send bot-token refresh failed (%s)", type(exc).__name__)
+                    CHAT_SEND_HEALTH["error"] = (
+                        f"bot-token refresh failed ({type(exc).__name__}) -- "
+                        "re-mint via scripts/twitch_setup.py --identity bot "
+                        "--path ~/.kenning/twitch_bot.json (picked up live, "
+                        "no restart needed)")
+                    # REVOKED grant -> a refresh can never succeed again: start
+                    # the SELF-SERVICE device flow so the streamer only has to
+                    # approve a code (2026-07-08 streamer request). Fail-open.
+                    try:
+                        from kenning.twitch.auth import RevokedError
+                        if isinstance(exc, RevokedError):
+                            _start_auto_remint(
+                                client_id, bot_token_path, bot_login)
+                    except Exception:  # noqa: BLE001
+                        pass
                     return ""
 
             sender = ChatSendClient(
@@ -752,7 +886,23 @@ def build_service_state() -> _ServiceState:
                 on_unauthorized=_refresh_bot_token,
             )
             _bid, _sid = broadcaster_id, bot_id
-            state.chat_send = lambda text: sender.send(_bid, _sid, text)
+
+            def _tracked_send(text: str) -> bool:
+                # Wraps the real send so /healthz reflects the LIVE send state
+                # (see CHAT_SEND_HEALTH). Success clears any prior error.
+                ok = False
+                try:
+                    ok = bool(sender.send(_bid, _sid, text))
+                finally:
+                    if ok:
+                        CHAT_SEND_HEALTH["error"] = ""
+                    elif not CHAT_SEND_HEALTH["error"]:
+                        CHAT_SEND_HEALTH["error"] = (
+                            "chat-send failing (bot token invalid/expired? "
+                            "see twitch_write.log)")
+                return ok
+
+            state.chat_send = _tracked_send
             logger.info("write sidecar: chat-send ready (bot sender_id=%s)", bot_id)
     except Exception as exc:  # noqa: BLE001 — chat-send is optional
         logger.warning("write sidecar: chat-send wiring failed (%s)", type(exc).__name__)

@@ -239,6 +239,11 @@ class EventSubChatSource:
         # True once subscriptions are created for the CURRENT session; reset on
         # every (re)connect so a reconnect re-subscribes against the new session.
         self._subscribed = False
+        # WHY the chat subscription is missing, surfaced via /healthz so the boot
+        # canary can print the remedy (2026-07-08 incident: a REVOKED bot token
+        # 401'd every subscribe attempt while healthz said ok=true -- chat looked
+        # alive and was completely dead). "" once subscribed.
+        self.last_subscribe_error: str = ""
         self._lock = threading.Lock()
 
         # Redeems + raids run on a SEPARATE EventSub session. Twitch REJECTS a
@@ -377,11 +382,19 @@ class EventSubChatSource:
             return
         bot_token = self._load_token(self._bot_token_path)
         if not bot_token:
+            self.last_subscribe_error = "no bot access token on disk"
             logger.warning("eventsub subscribe skipped: no bot access token")
             return
         broadcaster_id = helix.get_user_id(self._broadcaster_login, token=bot_token)
         bot_id = helix.get_user_id(self._bot_login, token=bot_token)
         if not broadcaster_id or not bot_id:
+            # A 401 on BOTH resolutions is the dead/revoked-bot-token shape
+            # (2026-07-08 incident) -- name it so the canary remedy is exact.
+            self.last_subscribe_error = (
+                "helix id resolution failed (broadcaster="
+                f"{bool(broadcaster_id)} bot={bool(bot_id)}) -- bot token "
+                "invalid/expired/revoked? re-mint via scripts/twitch_setup.py "
+                "--identity bot")
             logger.warning(
                 "eventsub subscribe skipped: unresolved ids broadcaster=%s bot=%s",
                 bool(broadcaster_id), bool(bot_id),
@@ -394,10 +407,12 @@ class EventSubChatSource:
             token=bot_token,
         )
         if not ok:
+            self.last_subscribe_error = "chat subscription create failed"
             logger.warning("eventsub chat subscription create failed; will retry next poll")
             return
         # Mark subscribed only after the (required) chat subscription succeeded.
         self._subscribed = True
+        self.last_subscribe_error = ""
         logger.info("eventsub chat subscription established for session=%s", session_id)
 
     # ---- redeem connection (SEPARATE session, broadcaster token) -------- #
@@ -1039,6 +1054,12 @@ def make_handler(buffer: RollingBuffer, poll_loop: Optional[PollLoop], source_na
             if path == "/healthz":
                 stats = buffer.stats()
                 running = bool(poll_loop.running) if poll_loop is not None else False
+                # Surface the CHAT-subscription state (2026-07-08): ok=true only
+                # says the HTTP server is up; a revoked bot token leaves the
+                # subscription dead while everything else looks healthy. The
+                # boot canary reads these to print the re-mint remedy. A source
+                # without the attrs (FakeSource/tests) reports subscribed+clean.
+                _src = getattr(poll_loop, "_source", None)
                 self._send(200, {
                     "ok": True,
                     "buffered": stats["buffered"],
@@ -1046,6 +1067,9 @@ def make_handler(buffer: RollingBuffer, poll_loop: Optional[PollLoop], source_na
                     "dropped": stats["dropped"],
                     "running": running,
                     "source": source_name,
+                    "chat_subscribed": bool(getattr(_src, "_subscribed", True)),
+                    "subscribe_error": str(
+                        getattr(_src, "last_subscribe_error", "") or ""),
                 })
                 return
             if path == "/buffer":

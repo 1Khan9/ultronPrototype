@@ -334,6 +334,48 @@ class TestTrivia:
             seen.add(idx)
         assert seen == set(range(len(t.pool)))
 
+    def test_mark_used_narrows_to_the_one_remaining_index(self, rng):
+        """Once every other index has been marked used, EVERY draw (across many
+        different nonces) must return the one remaining untouched index."""
+        pool = [TriviaQuestion(f"q{i}?", str(i)) for i in range(5)]
+        t = Trivia(rng=rng, pool=pool)
+        for i in (0, 1, 2, 4):    # mark all but index 3
+            t.mark_used(i)
+        for nonce in range(50):
+            _, idx, _ = t.draw_question(FIXED_SEED, "client", nonce)
+            assert idx == 3
+
+    def test_draw_question_purity_preserved_after_mark_used(self, rng):
+        """draw_question must still be a pure function of (seed, client, nonce)
+        even after mark_used has narrowed the eligible set -- nothing else may
+        happen between the two calls, and they must agree byte-for-byte."""
+        pool = [TriviaQuestion(f"q{i}?", str(i)) for i in range(5)]
+        t = Trivia(rng=rng, pool=pool)
+        t.mark_used(0)
+        t.mark_used(1)
+        q1, i1, _ = t.draw_question(FIXED_SEED, "client", 7)
+        q2, i2, _ = t.draw_question(FIXED_SEED, "client", 7)
+        assert q1 == q2
+        assert i1 == i2
+
+    def test_full_pool_round_robin_no_repeats_then_wraps_to_first(self, rng):
+        """Drawing+marking across exactly len(pool) rounds must touch every
+        index exactly once (a full pass, zero repeats); one round beyond that
+        must deterministically wrap back to the FIRST index ever used."""
+        pool = [TriviaQuestion(f"q{i}?", str(i)) for i in range(6)]
+        t = Trivia(rng=rng, pool=pool)
+        picked = []
+        for nonce in range(len(pool)):
+            _, idx, _ = t.draw_question(FIXED_SEED, "client", nonce)
+            t.mark_used(idx)
+            picked.append(idx)
+        assert sorted(picked) == list(range(len(pool)))
+        assert len(set(picked)) == len(pool)   # zero repeats across the full pass
+        # One more round: every index now shares the "oldest" round again except
+        # picked[0], which is the STRICT oldest (marked first) -> must repeat it.
+        _, wrap_idx, _ = t.draw_question(FIXED_SEED, "client", len(pool))
+        assert wrap_idx == picked[0]
+
 
 # ===========================================================================
 # RAFFLE

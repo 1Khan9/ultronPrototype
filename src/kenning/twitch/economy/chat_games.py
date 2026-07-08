@@ -995,10 +995,13 @@ class ChatGameRouter:
 
     def _start_trivia(self) -> None:
         """Draw a provably-fair question, open the window, and announce it. Shared
-        by the mod ``!trivia`` command and the periodic auto-trivia trigger."""
+        by the mod ``!trivia`` command and the periodic auto-trivia trigger. The
+        draw excludes recently-asked questions (LRU rotation, see
+        ``Trivia.mark_used``) so nothing repeats until the whole pool cycles."""
         rnd = self._rng.new_round()
         self._nonce += 1
         question, _idx, _prov = self._trivia_game.draw_question(rnd.server_seed, nonce=self._nonce)
+        self._trivia_game.mark_used(_idx)
         window = _as_float(getattr(self._cfg, "trivia_window_seconds", 30)) or 30.0
         prize = max(0, _as_int(getattr(self._cfg, "trivia_prize", 100)))
         self._trivia = {"question": question, "deadline": self._now() + window, "prize": prize}

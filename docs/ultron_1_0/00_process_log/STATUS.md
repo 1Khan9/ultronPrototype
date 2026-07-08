@@ -1,6 +1,32 @@
 # Ultron 1.0 — Live Status
 
-**ACTIVE (2026-07-08, wave 2) — !SONG/!ALBUM SPOTIFY REQUESTS + CHAT PERSONA ENRICHMENT + 3 LIVE-TEST FIXES (branch `claude/song-album-redeems`):**
+**ACTIVE (2026-07-08, wave 3) — TRIVIA EXPANSION + LRU + RELAY-AWARE COOLDOWN + AUTO TOKEN RE-AUTH (branch `claude/trivia-expansion-lru`):**
+
+(1) **Trivia every 15 min** (`config.py trivia_auto_interval_minutes` 8→15; live config.yaml updated at merge). (2)
+**Pool DOUBLED 198→396** (`trivia_questions.py`, zero duplicate prompts, 17 categories, factually verified;
+`test_no_duplicate_trivia_questions` + `test_expanded_trivia_bank_is_large_and_structurally_valid` green). (3) **LRU
+no-repeat selection**: `games.Trivia` gains `_last_used_seq`/`_draw_seq` + `mark_used(idx)`; `draw_question` draws
+provably-fairly ONLY among the questions tied for longest-unused (whole pool when fresh -> identical to old behaviour;
+purity of the fair draw preserved -- state mutates in `mark_used`, not the draw); `chat_games._start_trivia` calls
+`mark_used(_idx)`. No question repeats in a stream until the pool cycles, then wraps oldest-first. (4) **Relay-aware
+chat cooldown**: `ChatReplyPipeline` gains `cooldown_fn` (live per-check override); `integration.build_chat_runtime`
+wires it to 30s while the RELAY toggle is OFF (companion mode, chat is the audience) / `reply_cooldown_seconds` (120)
+while ON -- applied at CHECK time so a toggle flip re-times open windows instantly; the talk-hint poster recomputes its
+"(30 second cooldown)" / "(2 minute cooldown)" suffix per post from the live flag. New `TwitchChatConfig.
+relay_off_reply_cooldown_seconds=30`. (5) **AUTOMATIC bot-token re-auth (streamer request "have it re-mint itself"):**
+a REVOKED grant cannot be re-minted silently (Twitch device-grant needs a human to approve the code AS the bot
+account -- we will never store the bot password). What IS automated: on `RevokedError` the write sidecar STARTS the
+device flow itself (`_auto_remint_once`/`_start_auto_remint`, singleton worker), surfaces the code via `/healthz`
+(`remint_user_code`/`remint_uri`), long-polls for approval, VERIFIES the minted token's login == the expected bot
+(a viewer racing the public code is discarded + rolled back), stores it, and chat heals LIVE (every consumer re-reads
+the token file). The orchestrator adds a `twitch-token-watch` thread that logs each new code on the MAIN console +
+speaks one pointer line. (6) **Token-degraded visibility** (from the 02:41 incident): read healthz gains
+`chat_subscribed`/`subscribe_error`, write healthz gains `chat_send_error`; the boot canary reads them and prints the
+exact remedy instead of a false "OK". EVIDENCE: full `tests/twitch/` 1207 pass / 1 skip (NEW: pipeline relay-cooldown
+5, read/write healthz + re-auth-worker 7, trivia LRU + 396 pool); golden clean; validate_config 0; anticheat 72 pass.
+NEXT: user re-mints the bot token once (revoked now), reboots -> future revocations self-heal.
+
+**PREVIOUS (2026-07-08, wave 2) — !SONG/!ALBUM SPOTIFY REQUESTS + CHAT PERSONA ENRICHMENT + 3 LIVE-TEST FIXES (branch `claude/song-album-redeems`):**
 
 (1) **S14 paid Spotify queue requests:** `!song <query>` (1000 Credits) queues the best-matching TRACK,
 `!album <query>` (5000) queues a whole ALBUM (tracks in order, `album_queue_max_tracks` cap 30). Query

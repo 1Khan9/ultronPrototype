@@ -651,7 +651,10 @@ class Trivia:
     """Ultron asks a question drawn from the curated pool; first correct answer wins.
 
     Answer matching uses casefold+strip (no fuzzy — answers are short keywords).
-    The question is selected via a provably-fair draw from the pool.
+    The question is selected via a provably-fair draw, narrowed to the subset of
+    the pool that has gone LONGEST without being asked (a session-scoped LRU
+    rotation — see ``mark_used``), so nothing repeats until every other question
+    has had a turn.
     """
 
     def __init__(
@@ -668,6 +671,12 @@ class Trivia:
                 raise GameError(f"pool[{i}] must be a TriviaQuestion")
         self._pool = loaded
         self._rng = rng or ProvablyFairRNG()
+        # LRU-rotation bookkeeping (session-scoped, in-memory only). -1 means
+        # "never used" so an untouched pool sorts as tied-for-longest-unused,
+        # i.e. the eligible set is the WHOLE pool -- byte-identical to the old
+        # unrestricted draw until ``mark_used`` is ever called.
+        self._last_used_seq: list[int] = [-1] * len(loaded)
+        self._draw_seq: int = 0
 
     @property
     def pool(self) -> tuple[TriviaQuestion, ...]:
@@ -679,9 +688,24 @@ class Trivia:
         client_seed: Optional[str] = None,
         nonce: int = 0,
     ) -> tuple[TriviaQuestion, int, GameResult]:
-        """Select a question provably-fairly. Returns (question, index, provenance)."""
+        """Select a question provably-fairly. Returns (question, index, provenance).
+
+        The RNG draw is restricted to the ELIGIBLE subset of the pool -- the
+        index/indices tied for the oldest ``mark_used`` timestamp (or the whole
+        pool, if ``mark_used`` has never narrowed it). This is still a PURE
+        function of ``(server_seed, client_seed, nonce)`` given the current LRU
+        state: nothing here mutates that state, so calling this twice back to
+        back with identical arguments and nothing else happening in between
+        still returns the identical result (the provably-fair invariant a
+        viewer must be able to recompute from a revealed seed+nonce). State
+        only advances via the separate ``mark_used`` call once a question is
+        actually committed to being asked.
+        """
         cseed = client_seed if client_seed is not None else self._rng.default_client_seed
-        idx = self._rng.outcome(server_seed, cseed, nonce, len(self._pool))
+        min_seq = min(self._last_used_seq)
+        eligible = [i for i, s in enumerate(self._last_used_seq) if s == min_seq]
+        pick = self._rng.outcome(server_seed, cseed, nonce, len(eligible))
+        idx = eligible[pick]
         prov = GameResult(
             game="trivia",
             server_seed=server_seed,
@@ -690,6 +714,15 @@ class Trivia:
             commit=self._rng.commit_for(server_seed),
         )
         return self._pool[idx], idx, prov
+
+    def mark_used(self, index: int) -> None:
+        """Record that ``pool[index]`` was just asked, so it becomes the LEAST
+        eligible pick until every other question has been used at least as
+        recently -- true round-robin, no repeats until the pool cycles.
+        Fail-safe: an out-of-range index is a silent no-op."""
+        if 0 <= index < len(self._last_used_seq):
+            self._last_used_seq[index] = self._draw_seq
+            self._draw_seq += 1
 
     def check_answer(self, question: TriviaQuestion, answer: str) -> bool:
         """True iff ``answer`` matches the canonical answer OR any accepted alias

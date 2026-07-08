@@ -189,6 +189,88 @@ def test_after_cooldown_elapses_reply_speaks_again() -> None:
     assert r.spoke == "@Omen Two." and len(calls) == 2
 
 
+# --------------------------------------------------------------------------- #
+# 2026-07-08: relay-aware LIVE cooldown (cooldown_fn) — 30s while the RELAY
+# toggle is off, the configured value while on; applied at CHECK time.
+# --------------------------------------------------------------------------- #
+def _relay_pipe(speak, *, clock, relay_state, cooldown=120.0, relay_off=30.0):
+    """Pipeline whose cooldown_fn mirrors the integration wiring: the relay
+    flag (a mutable dict here) selects 30s (off) vs the static 120s (on)."""
+    v = build_chat_validator(audit_path=None)
+    return ChatReplyPipeline(
+        validator=v, speak_fn=speak, cooldown_seconds=cooldown, clock=clock,
+        cooldown_fn=lambda: (cooldown if relay_state["on"] else relay_off),
+    )
+
+
+def test_relay_off_cooldown_is_30s_not_120() -> None:
+    now = {"t": 0.0}
+    relay = {"on": False}
+    calls, speak = _spy()
+    p = _relay_pipe(speak, clock=lambda: now["t"], relay_state=relay)
+    ev = [Ev("hi", chatter_user_id="u7", chatter_name="Viper")]
+    p.process_batch(ev, is_reply_target=ALL, select_fn=IDENT, reply_fn=lambda s: "One.")
+    now["t"] += 31.0    # past 30s (relay-off window) but well inside 120s
+    r = p.process_batch(ev, is_reply_target=ALL, select_fn=IDENT, reply_fn=lambda s: "Two.")
+    assert r.spoke == "@Viper Two." and len(calls) == 2
+
+
+def test_relay_on_keeps_the_full_cooldown() -> None:
+    now = {"t": 0.0}
+    relay = {"on": True}
+    calls, speak = _spy()
+    p = _relay_pipe(speak, clock=lambda: now["t"], relay_state=relay)
+    ev = [Ev("hi", chatter_user_id="u8", chatter_name="Cypher")]
+    p.process_batch(ev, is_reply_target=ALL, select_fn=IDENT, reply_fn=lambda s: "One.")
+    now["t"] += 31.0    # inside the 120s relay-on window
+    r = p.process_batch(ev, is_reply_target=ALL, select_fn=IDENT,
+                        reply_fn=lambda s: "should not speak")
+    assert r.spoke is None and r.reason == "on cooldown" and len(calls) == 1
+
+
+def test_toggle_flip_retimes_an_open_window_instantly() -> None:
+    # Armed under relay-ON (120s), then the toggle flips OFF: the SAME window is
+    # re-judged at 30s on the next check — the viewer is free at t+40.
+    now = {"t": 0.0}
+    relay = {"on": True}
+    calls, speak = _spy()
+    p = _relay_pipe(speak, clock=lambda: now["t"], relay_state=relay)
+    ev = [Ev("hi", chatter_user_id="u9", chatter_name="Brim")]
+    p.process_batch(ev, is_reply_target=ALL, select_fn=IDENT, reply_fn=lambda s: "One.")
+    relay["on"] = False
+    now["t"] += 40.0
+    r = p.process_batch(ev, is_reply_target=ALL, select_fn=IDENT, reply_fn=lambda s: "Two.")
+    assert r.spoke == "@Brim Two." and len(calls) == 2
+
+
+def test_cooldown_fn_error_falls_back_to_static() -> None:
+    def boom() -> float:
+        raise RuntimeError("flag read failed")
+
+    now = {"t": 0.0}
+    calls, speak = _spy()
+    v = build_chat_validator(audit_path=None)
+    p = ChatReplyPipeline(validator=v, speak_fn=speak, cooldown_seconds=120.0,
+                          clock=lambda: now["t"], cooldown_fn=boom)
+    ev = [Ev("hi", chatter_user_id="u10", chatter_name="Skye")]
+    p.process_batch(ev, is_reply_target=ALL, select_fn=IDENT, reply_fn=lambda s: "One.")
+    now["t"] += 31.0
+    r = p.process_batch(ev, is_reply_target=ALL, select_fn=IDENT,
+                        reply_fn=lambda s: "no")
+    assert r.reason == "on cooldown" and len(calls) == 1   # static 120s held
+
+
+def test_hint_suffix_reads_30_seconds() -> None:
+    from kenning.twitch.panel import append_cooldown_hint
+    assert append_cooldown_hint("Talk to Ultron!", 30).endswith("(30 second cooldown)")
+    assert append_cooldown_hint("Talk to Ultron!", 120).endswith("(2 minute cooldown)")
+
+
+def test_config_default_relay_off_cooldown() -> None:
+    from kenning.config import TwitchChatConfig
+    assert TwitchChatConfig().relay_off_reply_cooldown_seconds == 30
+
+
 def test_cooldown_disabled_never_throttles() -> None:
     now = {"t": 0.0}
     calls, speak = _spy()

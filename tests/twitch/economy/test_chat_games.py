@@ -670,6 +670,48 @@ def test_trivia_already_running():
     assert any("already running" in x for x in replies)
 
 
+def test_trivia_lru_rotation_end_to_end_no_repeats_then_wraps():
+    """Production wiring end-to-end: drive the REAL router (mod !trivia ->
+    _start_trivia -> Trivia.draw_question + Trivia.mark_used -> timeout ->
+    repeat) through a full cycle of a small pool and confirm no question
+    repeats until every question has been asked, then the round AFTER a full
+    pass deterministically wraps back to the very first question announced."""
+    from kenning.twitch.economy.games import Trivia, TriviaQuestion
+
+    led = Ledger(":memory:")
+    small_pool = [TriviaQuestion(f"q{i}?", str(i)) for i in range(4)]
+    clock = {"t": 0.0}
+    r, batch, replies = _trivia_router(led, window=10.0, clock=clock)
+    # Inject a small custom-pool Trivia instance (the router builds its own
+    # Trivia(rng=self._rng) internally with no constructor param for this, so
+    # swapping the attribute post-construction is the supported test seam).
+    r._trivia_game = Trivia(rng=r._rng, pool=small_pool)
+
+    def _last_announced_question() -> str:
+        line = next(x for x in reversed(replies) if "first correct answer wins:" in x)
+        return line.split("first correct answer wins:", 1)[1].strip()
+
+    announced = []
+    for i in range(len(small_pool)):
+        batch[:] = [_ev("!trivia", login="modder", mod=True, mid=f"start{i}")]
+        r.tick()
+        assert r._trivia is not None
+        announced.append(_last_announced_question())
+        clock["t"] += 20.0     # past the 10s window -> expire on the next tick
+        batch[:] = []
+        r.tick()
+        assert r._trivia is None and any("timed out" in x for x in replies[-1:])
+
+    # A full pass over the pool: every announced question is distinct.
+    assert len(set(announced)) == len(small_pool), announced
+
+    # One more round beyond the full pass must deterministically repeat the
+    # FIRST question ever asked (strict oldest-first rotation).
+    batch[:] = [_ev("!trivia", login="modder", mod=True, mid="wrap")]
+    r.tick()
+    assert _last_announced_question() == announced[0]
+
+
 def test_orchestrator_wires_chat_games_gated_and_closes_ledger():
     import inspect
     from kenning.pipeline.orchestrator import Orchestrator
@@ -791,7 +833,8 @@ def test_config_defaults_defer_and_auto_trivia():
     from kenning.config import TwitchEconomyConfig
     c = TwitchEconomyConfig()
     assert c.defer_points_gamble_to_streamelements is True
-    assert c.trivia_auto_interval_minutes == 8
+    # 2026-07-08 streamer request: one auto round about every 15 minutes.
+    assert c.trivia_auto_interval_minutes == 15
 
 
 # --------------------------------------------------------------------------- #

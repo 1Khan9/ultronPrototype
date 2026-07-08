@@ -7014,21 +7014,40 @@ class Orchestrator:
                     _hinterval_s = max(
                         60.0,
                         float(getattr(_hchcfg, "talk_hint_interval_minutes", 10)) * 60.0)
-                    _hint_text = str(getattr(
+                    _hint_base = str(getattr(
                         _hchcfg, "talk_hint_text",
                         '💬 Just type "Ultron" followed by a statement or '
                         "question and he will talk to you!") or "").strip()
                     # Advertise the per-user reply cooldown in the hint, derived
                     # from twitch.chat.reply_cooldown_seconds (2026-06-26). A
                     # non-positive cooldown leaves the hint unchanged.
-                    try:
-                        from kenning.twitch.panel import append_cooldown_hint
-                        _hint_text = append_cooldown_hint(
-                            _hint_text,
-                            float(getattr(_hchcfg, "reply_cooldown_seconds", 120) or 0),
-                        )
-                    except Exception as _che:                        # noqa: BLE001
-                        logger.debug("talk-hint cooldown suffix skipped: %s", _che)
+                    # 2026-07-08 relay-aware: computed PER POST from the live
+                    # RELAY toggle -- relay OFF advertises the short
+                    # relay_off_reply_cooldown_seconds (default 30s, matching
+                    # the pipeline's live throttle), relay ON the normal value.
+                    _h_cd_normal = float(
+                        getattr(_hchcfg, "reply_cooldown_seconds", 120) or 0)
+                    _h_cd_relay_off = float(getattr(
+                        _hchcfg, "relay_off_reply_cooldown_seconds", 30) or 0)
+
+                    def _hint_text_now() -> str:
+                        cd = _h_cd_normal
+                        try:
+                            from kenning.audio.relay_speech import (
+                                team_relay_enabled as _tre_hint,
+                            )
+                            if not _tre_hint():
+                                cd = _h_cd_relay_off
+                        except Exception:                            # noqa: BLE001
+                            pass
+                        try:
+                            from kenning.twitch.panel import append_cooldown_hint
+                            return append_cooldown_hint(_hint_base, cd)
+                        except Exception as _che:                    # noqa: BLE001
+                            logger.debug("talk-hint cooldown suffix skipped: %s", _che)
+                            return _hint_base
+
+                    _hint_text = _hint_text_now()   # non-empty gate below
                     # Offset the FIRST post by 30s so it never lands on the same
                     # instant as the commands panel (whose first post waits a full
                     # interval). Capped below the interval so the offset is harmless.
@@ -7050,8 +7069,10 @@ class Orchestrator:
                     def _talk_hint_loop() -> None:
                         if not _hint_text:
                             return   # nothing to post
+                        # _hint_text_now recomputes PER POST so the advertised
+                        # cooldown follows the live RELAY toggle.
                         run_interval_poster(
-                            lambda: _hint_text,
+                            _hint_text_now,
                             _hint_post,
                             interval_s=_hinterval_s,
                             should_stop=lambda: getattr(self, "_twitch_chat_stop", False),
@@ -7593,8 +7614,16 @@ class Orchestrator:
             else:
                 from kenning.twitch.panel import append_cooldown_hint
                 hint = str(getattr(chcfg, "talk_hint_text", "") or "").strip()
-                post(append_cooldown_hint(
-                    hint, float(getattr(chcfg, "reply_cooldown_seconds", 120) or 0)))
+                # Relay-aware suffix (2026-07-08): mirror the live poster.
+                cd = float(getattr(chcfg, "reply_cooldown_seconds", 120) or 0)
+                try:
+                    from kenning.audio.relay_speech import team_relay_enabled
+                    if not team_relay_enabled():
+                        cd = float(getattr(
+                            chcfg, "relay_off_reply_cooldown_seconds", 30) or 0)
+                except Exception:                                    # noqa: BLE001
+                    pass
+                post(append_cooldown_hint(hint, cd))
         except Exception as e:                                       # noqa: BLE001
             logger.warning("test panel post-panel %s failed: %s", which, e)
 
@@ -7792,20 +7821,51 @@ class Orchestrator:
                                if getattr(s, "port", None)]
 
             def _twitch_sidecar_canary(targets, delay=18.0):
+                import json as _cj
                 import time as _t
                 import urllib.request as _u
                 _t.sleep(delay)
                 results = []
+                token_faults = []     # 2026-07-08: dead-token states behind ok=200
                 for role, port in targets:
                     ok = False
+                    body = {}
                     try:
                         with _u.urlopen(
                             f"http://127.0.0.1:{port}/healthz", timeout=2.5,
                         ) as r:
                             ok = (r.status == 200)
+                            try:
+                                body = _cj.loads(r.read() or b"{}") or {}
+                            except Exception:                        # noqa: BLE001
+                                body = {}
                     except Exception:                                # noqa: BLE001
                         ok = False
                     results.append((role, port, ok))
+                    # A 200 healthz can still hide a DEAD chat path (2026-07-08
+                    # revoked-bot-token incident): the read sidecar serves fine
+                    # with no chat subscription, the write sidecar reports
+                    # ready=true while every send 401s. Surface both.
+                    if ok and body.get("chat_subscribed") is False:
+                        token_faults.append(
+                            f"{role}:{port} chat NOT subscribed"
+                            + (f" ({body.get('subscribe_error')})"
+                               if body.get("subscribe_error") else ""))
+                    if ok and body.get("chat_send_error"):
+                        token_faults.append(
+                            f"{role}:{port} chat-send failing "
+                            f"({body.get('chat_send_error')})")
+                if token_faults:
+                    logger.error(
+                        "twitch sidecar canary: BOT TOKEN/CHAT DEGRADED -- %s. "
+                        "If the grant was REVOKED, the write sidecar starts a "
+                        "self-service re-auth automatically -- watch this "
+                        "console for the code (or re-mint manually: "
+                        ".venv\\Scripts\\python.exe scripts\\twitch_setup.py "
+                        "--client-id <twitch.auth.client_id from config.yaml> "
+                        "--identity bot --path ~/.kenning/twitch_bot.json). "
+                        "Tokens are re-read live; no restart needed.",
+                        "; ".join(token_faults))
                 summary = " ".join(
                     f"{role}:{port}={'OK' if ok else 'DEAD'}"
                     for role, port, ok in results)
@@ -7856,6 +7916,59 @@ class Orchestrator:
                 ).start()
             except Exception as e:                                   # noqa: BLE001
                 logger.debug("twitch sidecar canary thread skipped (%s)", e)
+
+            # TOKEN RE-AUTH WATCHER (2026-07-08): when the write sidecar starts
+            # a self-service device flow for a REVOKED bot token, its /healthz
+            # carries the code the streamer must approve. This loop surfaces
+            # each NEW code on the MAIN console (the sidecar's own log file is
+            # not on screen) and speaks ONE pointer line per code so the
+            # streamer notices mid-game. 45s cadence; stops with the chat loop.
+            def _twitch_token_watch(write_port: int) -> None:
+                import json as _wj
+                import time as _wt
+                import urllib.request as _wu
+                last_code = ""
+                while not getattr(self, "_twitch_chat_stop", False):
+                    _wt.sleep(45.0)
+                    try:
+                        with _wu.urlopen(
+                            f"http://127.0.0.1:{write_port}/healthz",
+                            timeout=2.5,
+                        ) as r:
+                            body = _wj.loads(r.read() or b"{}") or {}
+                    except Exception:                                # noqa: BLE001
+                        continue
+                    code = str(body.get("remint_user_code", "") or "")
+                    if not code:
+                        last_code = ""
+                        continue
+                    if code == last_code:
+                        continue
+                    last_code = code
+                    uri = str(body.get("remint_uri", "") or
+                              "https://www.twitch.tv/activate")
+                    logger.error(
+                        "TWITCH RE-AUTH REQUIRED: open %s and enter code %s "
+                        "while logged in AS the bot account. Chat heals "
+                        "automatically on approval -- no restart.", uri, code)
+                    try:
+                        self._speak(
+                            "My chat credentials were revoked. A re-authorization "
+                            "code is waiting on my console.")
+                    except Exception:                                # noqa: BLE001
+                        pass
+
+            try:
+                _watch_port = next(
+                    (port for role, port in _canary_targets
+                     if role == "twitch_write"), None)
+                if _watch_port:
+                    threading.Thread(
+                        target=_twitch_token_watch, args=(_watch_port,),
+                        daemon=True, name="twitch-token-watch",
+                    ).start()
+            except Exception as e:                                   # noqa: BLE001
+                logger.debug("twitch token watch thread skipped (%s)", e)
 
     def _kill_twitch_sidecars(self) -> None:
         """Reap every spawned Twitch sidecar process TREE on shutdown. UNREGISTERS

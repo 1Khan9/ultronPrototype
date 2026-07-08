@@ -170,7 +170,12 @@ def test_healthz_ready_true() -> None:
     with _Served(svc, ready=True, broadcaster_id="12345") as s:
         status, body = _get(f"{s.base}/healthz")
     assert status == 200
-    assert body == {"ok": True, "ready": True, "broadcaster_id": "12345"}
+    # chat_send_error + remint_* (2026-07-08): "" = healthy; set live when
+    # sends fail / a self-service re-auth is pending, so the boot canary and
+    # the token watcher can surface a dead/revoked bot token.
+    assert body == {"ok": True, "ready": True, "broadcaster_id": "12345",
+                    "chat_send_error": "",
+                    "remint_user_code": "", "remint_uri": ""}
 
 
 def test_healthz_not_ready_when_no_service() -> None:
@@ -490,3 +495,118 @@ def test_chat_settings_non_command_is_not_a_command() -> None:
     with _Served(FakeService(), ready=True, broadcaster_id="B") as s:
         status, body = _post(f"{s.base}/chat_settings", {"text": "rush B now"})
     assert status == 200 and body.get("not_a_command") is True
+
+
+# --------------------------------------------------------------------------- #
+# 2026-07-08 — self-service re-auth for a REVOKED bot token
+# --------------------------------------------------------------------------- #
+class _FakeDevice:
+    user_code = "ABCD-1234"
+    verification_uri = "https://www.twitch.tv/activate"
+    device_code = "devcode"
+    interval = 1
+    expires_in = 900
+
+
+class _FakeStore:
+    def __init__(self, prior=None):
+        self._tokens = dict(prior or {"access_token": "dead", "refresh_token": "dead"})
+        self.saves: list = []
+
+    def load(self):
+        return dict(self._tokens)
+
+    def save(self, tokens):
+        self.saves.append(dict(tokens))
+        self._tokens = dict(tokens)
+
+
+class _FakeAuth:
+    """start_device_flow -> code; poll -> minted tokens; validate -> a login."""
+
+    def __init__(self, minted_login: str):
+        self._login = minted_login
+
+    def start_device_flow(self):
+        return _FakeDevice()
+
+    def poll_device_token(self, device_code, *, interval=1, timeout=0.0):
+        # The REAL poll persists via the store before identity can be checked;
+        # the worker under test rolls back on mismatch, so persistence details
+        # here don't matter — return the minted dict like the real one does.
+        return {"access_token": "newtok", "refresh_token": "newref"}
+
+    def validate(self, access_token):
+        return {"login": self._login}
+
+
+def test_auto_remint_accepts_the_right_bot_identity() -> None:
+    state = {"user_code": "", "verification_uri": "", "active": False}
+    health = {"error": "bot-token refresh failed (RevokedError)"}
+    store = _FakeStore()
+    ok = sidecar._auto_remint_once(
+        _FakeAuth("ultron_kenning"), store, "Ultron_Kenning",
+        state=state, health=health, timeout=1.0)
+    assert ok is True
+    assert health["error"] == ""                    # healed
+    assert state["user_code"] == "" and state["active"] is False
+    assert store.saves == []                        # no rollback happened
+
+
+def test_auto_remint_discards_a_wrong_account_approval() -> None:
+    """A viewer racing the public code must never become the bot: the minted
+    token is validated against the expected login and rolled back on mismatch."""
+    state = {"user_code": "", "verification_uri": "", "active": False}
+    health = {"error": "bot-token refresh failed (RevokedError)"}
+    prior = {"access_token": "dead", "refresh_token": "dead"}
+    store = _FakeStore(prior)
+    ok = sidecar._auto_remint_once(
+        _FakeAuth("some_viewer"), store, "ultron_kenning",
+        state=state, health=health, timeout=1.0)
+    assert ok is False
+    assert health["error"]                          # still degraded
+    assert store.saves and store.saves[-1] == prior  # rolled back to the prior dict
+
+
+def test_auto_remint_publishes_the_code_while_polling() -> None:
+    seen = {}
+
+    class _WatchingAuth(_FakeAuth):
+        def __init__(self, state):
+            super().__init__("ultron_kenning")
+            self._state = state
+
+        def poll_device_token(self, device_code, *, interval=1, timeout=0.0):
+            seen.update(self._state)                # snapshot mid-poll
+            return {"access_token": "newtok"}
+
+    state = {"user_code": "", "verification_uri": "", "active": False}
+    sidecar._auto_remint_once(
+        _WatchingAuth(state), _FakeStore(), "ultron_kenning",
+        state=state, health={"error": "x"}, timeout=1.0)
+    assert seen["user_code"] == "ABCD-1234"         # surfaced during the poll
+    assert seen["active"] is True
+    assert state["user_code"] == ""                 # cleared after
+
+
+def test_healthz_surfaces_remint_code() -> None:
+    sidecar.REMINT_STATE["user_code"] = "WXYZ-9876"
+    sidecar.REMINT_STATE["verification_uri"] = "https://www.twitch.tv/activate"
+    try:
+        with _Served(FakeService(), ready=True, broadcaster_id="B") as s:
+            status, body = _get(f"{s.base}/healthz")
+    finally:
+        sidecar.REMINT_STATE["user_code"] = ""
+        sidecar.REMINT_STATE["verification_uri"] = ""
+    assert status == 200
+    assert body["remint_user_code"] == "WXYZ-9876"
+    assert body["remint_uri"].endswith("/activate")
+
+
+def test_orchestrator_token_watch_is_wired() -> None:
+    from kenning.pipeline.orchestrator import Orchestrator
+    import inspect
+    src = inspect.getsource(Orchestrator._start_twitch_sidecars)
+    assert "remint_user_code" in src
+    assert "TWITCH RE-AUTH REQUIRED" in src
+    assert "twitch-token-watch" in src

@@ -75,6 +75,7 @@ class ChatReplyPipeline:
         cooldown_seconds: float = 0.0,
         chat_post_fn: Optional[Callable[[str], Any]] = None,
         clock: Callable[[], float] = time.monotonic,
+        cooldown_fn: Optional[Callable[[], float]] = None,
     ) -> None:
         self._validator = validator
         self._speak = speak_fn
@@ -85,10 +86,28 @@ class ChatReplyPipeline:
         # note to chat (no TTS); None -> the reply is simply suppressed silently.
         # ``clock`` is injected so the cooldown is deterministically unit-testable.
         self._cooldown_s = max(0.0, float(cooldown_seconds))
+        # 2026-07-08 relay-aware cooldown: an optional LIVE override consulted on
+        # every check (the orchestrator wires it to "30s while the RELAY toggle
+        # is off, the configured value while on"). Evaluated at CHECK time, so
+        # flipping the toggle re-times existing windows instantly. None / an
+        # erroring fn -> the static ``cooldown_seconds`` (byte-identical legacy).
+        self._cooldown_fn = cooldown_fn
         self._chat_post = chat_post_fn
         self._clock = clock
         # user_id (fallback login) -> monotonic timestamp of the last reply to them.
         self._last_reply_at: dict[str, float] = {}
+
+    def _effective_cooldown(self) -> float:
+        """The cooldown to apply RIGHT NOW: the live ``cooldown_fn`` value when
+        wired (>=0), else the static ctor value. Fail-open to static."""
+        if self._cooldown_fn is not None:
+            try:
+                v = float(self._cooldown_fn())
+                if v >= 0.0:
+                    return v
+            except Exception:  # noqa: BLE001 — a bad override never kills the throttle
+                pass
+        return self._cooldown_s
 
     # -- helpers ---------------------------------------------------------------
     @staticmethod
@@ -113,12 +132,13 @@ class ChatReplyPipeline:
 
     def _cooldown_remaining(self, key: str) -> float:
         """Seconds left on ``key``'s cooldown (0.0 when free / disabled)."""
-        if self._cooldown_s <= 0.0 or not key:
+        cd = self._effective_cooldown()
+        if cd <= 0.0 or not key:
             return 0.0
         last = self._last_reply_at.get(key)
         if last is None:
             return 0.0
-        remaining = self._cooldown_s - (self._clock() - last)
+        remaining = cd - (self._clock() - last)
         return remaining if remaining > 0.0 else 0.0
 
     @staticmethod
@@ -293,8 +313,10 @@ class ChatReplyPipeline:
             return result
 
         # Mark the cooldown for the answered viewer AFTER a successful speak so a
-        # failed/empty reply does not lock them out.
-        if self._cooldown_s > 0.0 and cd_key:
+        # failed/empty reply does not lock them out. Stamped whenever ANY throttle
+        # is configured (static or live) -- the effective window length is applied
+        # at CHECK time, so a toggle flip re-times it instantly.
+        if (self._effective_cooldown() > 0.0 or self._cooldown_s > 0.0) and cd_key:
             self._last_reply_at[cd_key] = self._clock()
 
         result.spoke = spoken

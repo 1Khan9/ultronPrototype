@@ -4306,7 +4306,10 @@ class TwitchEconomyConfig(_Strict):
     # N minutes with NO mod command (using the same tick()/epoch clock that accrues
     # watch-time earnings), so the stream always has a game running. 0 disables it;
     # a round is never auto-started while one is already active.
-    trivia_auto_interval_minutes: int = 8
+    # 2026-07-08: streamer request -- one auto round about every 15 minutes.
+    # NOTE the live config.yaml also sets this key and SHADOWS this default;
+    # keep the two in sync when tuning.
+    trivia_auto_interval_minutes: int = 15
     # Multi-viewer state-machine games (gap-c next pass, 2026-06-24): each opens a
     # timed window over the chat drain, resolves provably-fairly, and applies
     # keyed-leg ledger idempotency so an EventSub replay never double-pays.
@@ -4371,6 +4374,12 @@ class TwitchChatConfig(_Strict):
     talk_hint_enabled: bool = True
     talk_hint_interval_minutes: int = Field(default=10, ge=1, le=720)
     talk_hint_text: str = "💬 Just type \"Ultron\" followed by a statement or question and he will talk to you!"
+    # Relay-aware chat-reply cooldown (2026-07-08): while the STOP-window RELAY
+    # toggle is OFF (companion mode -- Ultron is off team comms and chat is his
+    # main audience) the per-user reply cooldown drops to THIS value; while
+    # relay is ON the normal ``reply_cooldown_seconds`` applies. The talk-hint
+    # poster's "(N cooldown)" suffix follows the live toggle the same way.
+    relay_off_reply_cooldown_seconds: int = Field(default=30, ge=0)
     # THIRD periodic poster (S14, 2026-07-08): a brief every-N-minutes nudge
     # about the paid Spotify queue commands. Same write-sidecar /say path as
     # the panel + talk hint, staggered so the three never post together.

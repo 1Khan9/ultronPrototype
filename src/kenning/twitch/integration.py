@@ -69,7 +69,23 @@ def build_chat_mode_runtime(
     max_msgs = int(getattr(chat_cfg, "batch_max_messages", 40) or 40)
     max_chars = int(getattr(chat_cfg, "reply_max_chars", 240) or 240)
     cooldown_s = float(getattr(chat_cfg, "reply_cooldown_seconds", 120) or 0)
+    relay_off_cooldown_s = float(
+        getattr(chat_cfg, "relay_off_reply_cooldown_seconds", 30) or 0)
     guard_required = bool(getattr(safety_cfg, "guard_required", True))
+
+    def cooldown_now() -> float:
+        """LIVE per-check cooldown (2026-07-08): while the STOP-window RELAY
+        toggle is OFF (companion mode) chat is Ultron's main audience, so the
+        throttle drops to ``relay_off_reply_cooldown_seconds`` (default 30s);
+        relay ON keeps the configured ``reply_cooldown_seconds``. Fail-open to
+        the normal value on any flag-read error."""
+        try:
+            from kenning.audio.relay_speech import team_relay_enabled
+            if not team_relay_enabled():
+                return relay_off_cooldown_s
+        except Exception:  # noqa: BLE001
+            pass
+        return cooldown_s
 
     def is_reply_target(ev: Any) -> bool:
         v = classify_chat(
@@ -89,6 +105,7 @@ def build_chat_mode_runtime(
     pipeline = ChatReplyPipeline(
         validator=validator, speak_fn=speak_fn, max_reply_chars=max_chars,
         cooldown_seconds=cooldown_s, chat_post_fn=chat_post_fn,
+        cooldown_fn=cooldown_now,
     )
     return ChatModeRuntime(
         pipeline=pipeline, drain_fn=drain_fn,
