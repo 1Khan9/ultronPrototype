@@ -269,6 +269,7 @@ class ChatGameRouter:
         self._last_msg: "OrderedDict[str, str]" = OrderedDict()  # login_lower -> message_id
         self._net_loss: dict[str, int] = {}                  # user_id -> net loss this session
         self._cooldown: dict[str, float] = {}                # user_id -> last command monotonic
+        self._song_cd: dict[str, float] = {}                 # user_id -> last ACCEPTED !song/!album (5-min cooldown)
         self._last_earn_minute: Optional[int] = None
         self._last_auto_trivia_epoch: Optional[float] = None   # arms on first tick
         self._nonce = 0
@@ -1187,6 +1188,20 @@ class ChatGameRouter:
             self._reply(f"@{login} {cmd.args.get('error', 'name a song')}.")
             return False
 
+        # Per-viewer 5-min cooldown between ACCEPTED requests (2026-07-08): a
+        # viewer who tries again within the window is told the remaining time
+        # and is NOT charged. Checked BEFORE the debit; the timestamp is set
+        # only on a successful debit below and cleared on a refund (a miss must
+        # never burn the cooldown). Shared across !song and !album.
+        song_cd = _as_float(getattr(self._cfg, "song_request_cooldown_seconds", 300))
+        if song_cd > 0:
+            since = now - self._song_cd.get(uid, -1.0e9)
+            if since < song_cd:
+                self._reply(
+                    f"@{login} you can request another {game} in "
+                    f"{_fmt_cooldown(song_cd - since)}.")
+                return False
+
         cost = _as_int(getattr(
             self._cfg,
             "song_request_cost" if kind == "track" else "album_request_cost",
@@ -1216,7 +1231,12 @@ class ChatGameRouter:
                 self._ledger_down_reply(login)
                 return False
 
+        # Request ACCEPTED (debited): arm the per-viewer cooldown now. A refund
+        # in the deferred worker clears it so a miss never counts against them.
+        self._song_cd[uid] = now
+
         def _refund(why: str) -> None:
+            self._song_cd.pop(uid, None)   # a miss must not burn the cooldown
             if cost <= 0:
                 return
             try:
@@ -1448,6 +1468,17 @@ class ChatGameRouter:
             sink(event)
         except Exception as exc:  # noqa: BLE001 — overlay down never breaks a game/tick
             logger.debug("chat-game overlay emit failed (game=%s): %s", game, exc)
+
+
+def _fmt_cooldown(seconds: float) -> str:
+    """Human-readable remaining-cooldown phrase: '4m 12s' / '3m' / '18s'."""
+    s = max(0, int(round(seconds)))
+    m, sec = divmod(s, 60)
+    if m and sec:
+        return f"{m}m {sec}s"
+    if m:
+        return f"{m}m"
+    return f"{sec}s"
 
 
 def _as_int(value: object, default: int = 0) -> int:

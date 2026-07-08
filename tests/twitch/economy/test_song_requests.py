@@ -33,23 +33,26 @@ def _ev(text, *, uid="u1", login="alice", mid=None):
 
 
 def _cfg(**over):
+    # song_request_cooldown_seconds defaults to 0 HERE so the single-request
+    # tests aren't throttled; the dedicated cooldown tests pass it explicitly.
     base = dict(earn_per_minute=0, gamble_rtp=0.90, per_stream_loss_cap=0,
                 currency_name="Credits", command_cooldown_seconds=0,
                 min_bet=1, max_bet=10000,
                 defer_points_gamble_to_streamelements=False,
                 trivia_auto_interval_minutes=0,
-                song_requests_enabled=True,
+                song_requests_enabled=True, song_request_cooldown_seconds=0,
                 song_request_cost=1000, album_request_cost=5000)
     base.update(over)
     return types.SimpleNamespace(**base)
 
 
-def _router(events, *, cfg=None, song_fn=None, ledger=None):
+def _router(events, *, cfg=None, song_fn=None, ledger=None, now=None):
     """Router with song support: synchronous defer, captured replies/overlay/speech."""
     ledger = ledger or Ledger(":memory:")
     replies: list[str] = []
     cards: list[dict] = []
     spoken: list[str] = []
+    kw = {"now_fn": now} if now is not None else {}
     r = ChatGameRouter(
         lambda: list(events), ledger=ledger, cfg=cfg or _cfg(),
         announce_fn=replies.append,
@@ -57,6 +60,7 @@ def _router(events, *, cfg=None, song_fn=None, ledger=None):
         defer_fn=lambda _delay, fn: fn(),          # run deferred work inline
         song_request_fn=song_fn,
         speak_fn=spoken.append,
+        **kw,
     )
     return r, ledger, replies, cards, spoken
 
@@ -377,8 +381,95 @@ def test_config_defaults_for_song_requests_and_hint():
     e = TwitchEconomyConfig()
     assert e.song_requests_enabled is True
     assert e.song_request_cost == 1000 and e.album_request_cost == 5000
-    assert e.album_queue_max_tracks == 30
+    # 2026-07-08: albums queue only the first 5 tracks; 5-min request cooldown.
+    assert e.album_queue_max_tracks == 5
+    assert e.song_request_cooldown_seconds == 300
     c = TwitchChatConfig()
     assert c.song_hint_enabled is True
     assert c.song_hint_interval_minutes == 15
     assert "!song" in c.song_hint_text and "!album" in c.song_hint_text
+
+
+# --------------------------------------------------------------------------- #
+# 9. per-viewer 5-minute request cooldown (2026-07-08)
+# --------------------------------------------------------------------------- #
+def test_second_request_within_cooldown_is_blocked_with_remaining():
+    clock = {"t": 1000.0}
+    r, ledger, replies, cards, _spoken = _router(
+        [_ev("!song dance dance", login="alice")],
+        cfg=_cfg(song_request_cooldown_seconds=300),
+        song_fn=_track_result, now=lambda: clock["t"])
+    _seed(ledger)
+    r.tick()
+    assert ledger.balance("u1") == 9_000            # first one charged
+    assert len(replies) == 1
+
+    # 120s later, a second request: blocked, told the remaining time, NOT charged.
+    clock["t"] += 120.0
+    r._drain = lambda: [_ev("!song another", login="alice", mid="m2")]
+    r.tick()
+    assert ledger.balance("u1") == 9_000            # no second charge
+    assert "you can request another song in" in replies[-1]
+    assert "3m" in replies[-1]                       # 300 - 120 = 180s = 3m
+    assert len(cards) == 1                           # no second card
+
+
+def test_request_allowed_after_cooldown_elapses():
+    clock = {"t": 0.0}
+    r, ledger, replies, _c, _s = _router(
+        [_ev("!song one", login="bob", uid="u2")],
+        cfg=_cfg(song_request_cooldown_seconds=300),
+        song_fn=_track_result, now=lambda: clock["t"])
+    _seed(ledger, uid="u2")
+    r.tick()
+    clock["t"] += 301.0                              # past the window
+    r._drain = lambda: [_ev("!song two", login="bob", uid="u2", mid="m2")]
+    r.tick()
+    assert ledger.balance("u2") == 8_000            # both charged (2 x 1000)
+
+
+def test_missed_request_does_not_burn_the_cooldown():
+    # A not-found request is refunded AND clears the cooldown, so the viewer can
+    # immediately try again without waiting.
+    clock = {"t": 500.0}
+    r, ledger, replies, _c, _s = _router(
+        [_ev("!song gibberish", login="cara", uid="u3")],
+        cfg=_cfg(song_request_cooldown_seconds=300),
+        song_fn=lambda _k, _q: None, now=lambda: clock["t"])
+    _seed(ledger, uid="u3")
+    r.tick()
+    assert ledger.balance("u3") == 10_000           # refunded
+    assert "refunded" in replies[-1]
+    # immediately retry (5s later) -> allowed (cooldown was cleared by the miss).
+    clock["t"] += 5.0
+    r._drain = lambda: [_ev("!song real one", login="cara", uid="u3", mid="m2")]
+    r.tick()
+    assert ledger.balance("u3") == 10_000           # miss #2 also refunded, no block
+    assert "you can request another" not in " ".join(replies)
+
+
+def test_album_cooldown_shares_the_song_window():
+    # !album and !song share ONE per-viewer cooldown.
+    clock = {"t": 0.0}
+
+    def album_fn(_k, _q):
+        return {"kind": "album", "name": "X", "artists": "Y", "track_count": 5}
+
+    r, ledger, replies, _c, _s = _router(
+        [_ev("!album x", login="dan", uid="u4")],
+        cfg=_cfg(song_request_cooldown_seconds=300),
+        song_fn=album_fn, now=lambda: clock["t"])
+    _seed(ledger, uid="u4", amount=20_000)
+    r.tick()
+    clock["t"] += 10.0
+    r._drain = lambda: [_ev("!song y", login="dan", uid="u4", mid="m2")]
+    r.tick()
+    assert "you can request another song in" in replies[-1]
+
+
+def test_fmt_cooldown_phrasing():
+    from kenning.twitch.economy.chat_games import _fmt_cooldown
+    assert _fmt_cooldown(300) == "5m"
+    assert _fmt_cooldown(214) == "3m 34s"
+    assert _fmt_cooldown(45) == "45s"
+    assert _fmt_cooldown(0) == "0s"

@@ -7928,8 +7928,14 @@ class Orchestrator:
                 import time as _wt
                 import urllib.request as _wu
                 last_code = ""
+                # First check SOON after boot (the write sidecar's startup token
+                # test may have already started a device flow for a revoked
+                # token, 2026-07-08), then settle to the slow cadence. This puts
+                # a boot-time re-auth code on the console within ~12s.
+                _first = True
                 while not getattr(self, "_twitch_chat_stop", False):
-                    _wt.sleep(45.0)
+                    _wt.sleep(12.0 if _first else 45.0)
+                    _first = False
                     try:
                         with _wu.urlopen(
                             f"http://127.0.0.1:{write_port}/healthz",

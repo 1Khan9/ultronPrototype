@@ -1088,7 +1088,36 @@
     step();
   }
 
+  // --- HiDPI density fit (2026-07-08) -------------------------------------
+  // The whole overlay is authored against a 1920-wide DESIGN space. In an OBS
+  // Browser Source the page renders at devicePixelRatio 1, so a source set to
+  // 2x the canvas (e.g. 3840x2160) captured more pixels but the CONTENT was
+  // still laid out at 1x density inside that big buffer -- OBS then soft-scaled
+  // it. Fix: layout-level ``zoom`` = sourceWidth / 1920, so a 3840 source lays
+  // the SAME 1920 design out at 2x density (text re-rasterized crisp, not a
+  // transform that upscales a 1x raster). Every length is proportional to the
+  // source width, so the on-screen size/layout is IDENTICAL after OBS fits the
+  // source to the canvas -- only the clarity changes. zoom===1 at a 1920 source
+  // (byte-identical to before). Clamped so an odd source size can't explode GPU
+  // cost or shrink the UI to nothing. ``zoom`` is a Chromium-native layout
+  // scale (OBS is always CEF/Chromium), applied as a style-property write
+  // (CSP-safe: no markup sink). Recomputed on resize so a source-size change is
+  // picked up on a plain OBS refresh.
+  var DESIGN_WIDTH = 1920;
+  function fitDensity() {
+    try {
+      var w = window.innerWidth || DESIGN_WIDTH;
+      var z = w / DESIGN_WIDTH;
+      if (!isFinite(z) || z <= 0) { z = 1; }
+      z = Math.max(0.5, Math.min(4, z));
+      // 1.0 -> clear the property entirely so a 1920 source is byte-identical.
+      document.documentElement.style.zoom = (z === 1) ? "" : String(z);
+    } catch (err) { /* zoom unsupported -> leave 1x, never break the overlay */ }
+  }
+
   function init() {
+    fitDensity();
+    window.addEventListener("resize", fitDensity);
     var params = new URLSearchParams(window.location.search);
     if (params.get("demo") === "1") {
       startDemo();   // standalone preview: no SSE, just cycle the sample deck

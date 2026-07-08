@@ -610,3 +610,112 @@ def test_orchestrator_token_watch_is_wired() -> None:
     assert "remint_user_code" in src
     assert "TWITCH RE-AUTH REQUIRED" in src
     assert "twitch-token-watch" in src
+
+
+# --------------------------------------------------------------------------- #
+# 2026-07-08 — STARTUP bot-token test that auto-starts the device flow
+# --------------------------------------------------------------------------- #
+def _boot_env(monkeypatch, *, tokens, validate, refresh):
+    """Patch the auth module's TokenStore + TwitchAuth for _boot_check_bot_token,
+    and spy on _start_auto_remint. Returns the spy's call list."""
+    import kenning.twitch.auth as auth_mod
+
+    class _Store:
+        def __init__(self, _path):
+            self._t = dict(tokens)
+
+        def load(self):
+            return dict(self._t)
+
+        def save(self, t):
+            self._t = dict(t)
+
+    class _Auth:
+        def __init__(self, *a, **k):
+            pass
+
+        def validate(self, _access):
+            return validate
+
+        def refresh(self, _rt):
+            return refresh() if callable(refresh) else refresh
+
+    monkeypatch.setattr(auth_mod, "TokenStore", _Store)
+    monkeypatch.setattr(auth_mod, "TwitchAuth", _Auth)
+    calls: list = []
+    monkeypatch.setattr(sidecar, "_start_auto_remint",
+                        lambda *a, **k: calls.append(a))
+    sidecar.CHAT_SEND_HEALTH["error"] = ""
+    return calls
+
+
+def test_boot_check_valid_token_does_nothing(monkeypatch) -> None:
+    calls = _boot_env(
+        monkeypatch,
+        tokens={"access_token": "live", "refresh_token": "r"},
+        validate={"login": "ultron_kenning"},   # valid
+        refresh=AssertionError("must not refresh a valid token"))
+    ok = sidecar._boot_check_bot_token("p", "cid", "ultron_kenning")
+    assert ok is True
+    assert calls == []
+    assert sidecar.CHAT_SEND_HEALTH["error"] == ""
+
+
+def test_boot_check_revoked_token_starts_device_flow(monkeypatch) -> None:
+    from kenning.twitch.auth import RevokedError
+
+    def _refresh():
+        raise RevokedError("revoked")
+
+    calls = _boot_env(
+        monkeypatch,
+        tokens={"access_token": "dead", "refresh_token": "r"},
+        validate=None,          # invalid -> probe the refresh
+        refresh=_refresh)       # revoked
+    ok = sidecar._boot_check_bot_token("p", "cid", "ultron_kenning")
+    assert ok is False
+    assert calls and calls[0] == ("cid", "p", "ultron_kenning")
+    assert "revoked" in sidecar.CHAT_SEND_HEALTH["error"]
+    sidecar.CHAT_SEND_HEALTH["error"] = ""
+
+
+def test_boot_check_transient_fault_does_not_false_trigger(monkeypatch) -> None:
+    def _refresh():
+        raise RuntimeError("network down")   # NOT a RevokedError
+
+    calls = _boot_env(
+        monkeypatch,
+        tokens={"access_token": "x", "refresh_token": "r"},
+        validate=None,          # invalid (maybe just a validate hiccup)
+        refresh=_refresh)       # transient
+    ok = sidecar._boot_check_bot_token("p", "cid", "ultron_kenning")
+    assert ok is True           # left alone
+    assert calls == []          # NO device flow
+    assert sidecar.CHAT_SEND_HEALTH["error"] == ""
+
+
+def test_boot_check_no_refresh_token_starts_device_flow(monkeypatch) -> None:
+    calls = _boot_env(
+        monkeypatch,
+        tokens={"access_token": "dead"},   # no refresh_token at all
+        validate=None,
+        refresh=AssertionError("no refresh token to use"))
+    ok = sidecar._boot_check_bot_token("p", "cid", "ultron_kenning")
+    assert ok is False
+    assert calls and calls[0] == ("cid", "p", "ultron_kenning")
+    sidecar.CHAT_SEND_HEALTH["error"] = ""
+
+
+def test_boot_check_is_wired_into_chat_send_startup() -> None:
+    import inspect
+    src = inspect.getsource(sidecar.build_service_state)
+    assert "_boot_check_bot_token(bot_token_path, client_id, bot_login)" in src
+
+
+def test_token_watch_first_check_is_prompt() -> None:
+    from kenning.pipeline.orchestrator import Orchestrator
+    import inspect
+    src = inspect.getsource(Orchestrator._start_twitch_sidecars)
+    # The watcher checks soon after boot (not only every 45s) so a boot-time
+    # re-auth code reaches the console quickly.
+    assert "12.0 if _first else 45.0" in src

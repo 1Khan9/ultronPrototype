@@ -671,6 +671,68 @@ def _proactive_token_refresh(token_path: str, client_id: str) -> None:
         logger.warning("proactive token refresh skipped (%s)", type(exc).__name__)
 
 
+def _boot_check_bot_token(token_path: str, client_id: str,
+                          bot_login: str) -> bool:
+    """AT STARTUP, test the bot token; if it is REVOKED, kick off the
+    self-service device flow immediately (2026-07-08 streamer request) so the
+    authorization link appears in the terminal without waiting for the first
+    chat-send to 401.
+
+    Returns True when the token is live (or the check couldn't run), False when
+    a re-auth was started. A REVOKED grant is distinguished from a transient
+    network hiccup by keying on :class:`RevokedError` from an explicit refresh
+    probe -- a validate/refresh that fails for any OTHER reason is left alone
+    (no false device-flow trigger). Runs AFTER ``_proactive_token_refresh``, so
+    a merely-expired-but-refreshable token has already been rotated and this
+    validates clean. Fail-open: any unexpected error just logs + returns True."""
+    if not client_id:
+        return True
+    try:
+        from kenning.twitch.auth import RevokedError, TokenStore, TwitchAuth
+        store = TokenStore(token_path)
+        toks = store.load() or {}
+        access = str(toks.get("access_token") or "")
+        auth = TwitchAuth(client_id, store)
+        # Fast path: a currently-valid access token needs nothing.
+        try:
+            if access and auth.validate(access):
+                return True
+        except Exception:  # noqa: BLE001 — a validate hiccup falls to the probe
+            pass
+        # The token did not validate. Probe a refresh to DISAMBIGUATE revoked
+        # (device flow needed) from a transient fault (leave it alone).
+        rt = str(toks.get("refresh_token") or "")
+        trigger = False
+        if not rt:
+            trigger = True   # nothing to refresh with -> must re-auth
+        else:
+            try:
+                new = auth.refresh(rt)
+                trigger = not str((new or {}).get("access_token") or "")
+            except RevokedError:
+                trigger = True
+            except Exception as exc:  # noqa: BLE001 — transient: do NOT false-trigger
+                logger.warning(
+                    "boot bot-token refresh probe failed (%s); leaving token "
+                    "as-is (will retry reactively)", type(exc).__name__)
+                return True
+        if not trigger:
+            return True   # the probe rotated a live token; all good
+        CHAT_SEND_HEALTH["error"] = (
+            "bot token invalid/revoked at startup -- self-service re-auth "
+            "started; approve the code shown on the console")
+        logger.error(
+            "BOT TOKEN INVALID AT STARTUP -- starting self-service re-auth. "
+            "Watch this console / logs/twitch_sidecars/twitch_write.log for the "
+            "authorization code, then approve it while logged in AS %s.",
+            bot_login or "the bot account")
+        _start_auto_remint(client_id, token_path, bot_login)
+        return False
+    except Exception as exc:  # noqa: BLE001 — the boot check never blocks startup
+        logger.warning("boot bot-token check skipped (%s)", type(exc).__name__)
+        return True
+
+
 def _make_message_id_lookup(read_endpoint: str) -> Callable[[str], Optional[str]]:
     """A ``login -> last message_id`` resolver backed by the read sidecar's
     ``GET /last_message`` route (the cross-process delete plumb). Fail-safe: an
@@ -843,6 +905,11 @@ def build_service_state() -> _ServiceState:
             # build_service_state's top only refreshes the BROADCASTER token), so
             # the first send after a long downtime uses a live token.
             _proactive_token_refresh(bot_token_path, client_id)
+            # (1b) STARTUP token test (2026-07-08 streamer request): if the bot
+            # grant is REVOKED, start the self-service device flow NOW so the
+            # authorization link is in the terminal at boot -- the streamer just
+            # approves it, instead of waiting for the first send to 401.
+            _boot_check_bot_token(bot_token_path, client_id, bot_login)
 
             # (2) Reactive refresh-on-401: the bot user token lapses ~every 4h.
             # Without this, every chat-send 401s until the sidecar is restarted

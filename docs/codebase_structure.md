@@ -27,6 +27,28 @@
 > - Full runbook: **`docs/ultron_0_1_baseline.md`**. Post-0.1 roadmap:
 >   **`docs/latency_optimizations_V1.md`**.
 >
+> **SONG-REQUEST 5-MIN COOLDOWN + ALBUMS = FIRST 5 TRACKS (2026-07-08 wave 5)**
+>
+> `chat_games._cmd_song_request`: a per-viewer cooldown between accepted `!song`/`!album` requests
+> (`economy.song_request_cooldown_seconds`, default 300) — a viewer who retries within the window is told the
+> remaining time (`_fmt_cooldown` → "3m 34s") and is NOT charged; the timestamp arms on a successful debit and
+> is CLEARED on a refund (a not-found/error miss never burns the cooldown). Shared `self._song_cd` table across
+> both commands. Albums now queue only the FIRST 5 tracks (`economy.album_queue_max_tracks` default 30 → 5).
+>
+> **OVERLAY HI-DPI DENSITY FIT + STARTUP TOKEN TEST (2026-07-08 wave 4)**
+>
+> **Overlay clarity** (`overlay/static/overlay.html`): blurry OBS tiles were the Browser Source rendering the
+> 1920-design at devicePixelRatio 1 inside a larger (e.g. 3840) buffer, then OBS soft-downscaling. NEW
+> `fitDensity()` sets a layout-level `document.documentElement.style.zoom = innerWidth / 1920` (clamped
+> [0.5, 4]; **cleared at 1920 → byte-identical to before**), recomputed on resize. `zoom` is a Chromium-native
+> LAYOUT scale (text re-rasterized at the higher density, unlike `transform: scale` which upscales a 1× raster),
+> so at a 3840 source the same design lays out at 2× density and every length stays proportional to the source
+> width → identical on-screen size/layout once the source is fit to the canvas, only sharper. CSP-safe (a style
+> property write). To use: OBS Browser Source Width/Height = 2× the canvas, Fit-to-screen, Scale Filtering =
+> Lanczos. **Startup bot-token test** (`scripts/twitch_write_sidecar._boot_check_bot_token`): at boot, if the
+> bot grant is revoked, immediately start the self-service device flow (link in the terminal) instead of
+> waiting for the first send to 401; the orchestrator token-watch first-checks ~12s after boot.
+>
 > **TRIVIA EXPANSION + LRU ROTATION + RELAY-AWARE COOLDOWN + AUTO TOKEN RE-AUTH (2026-07-08 wave 3)**
 >
 > **Trivia:** `config.py trivia_auto_interval_minutes` 8→15; `trivia_questions.py` DOUBLED to 396 unique prompts;

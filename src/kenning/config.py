@@ -4328,9 +4328,16 @@ class TwitchEconomyConfig(_Strict):
     song_requests_enabled: bool = True
     song_request_cost: int = Field(default=1000, ge=0)
     album_request_cost: int = Field(default=5000, ge=0)
-    # Hard cap on tracks queued per album request (bounds the Spotify HTTP
-    # fan-out; the queue endpoint takes one uri per call).
-    album_queue_max_tracks: int = Field(default=30, ge=1, le=100)
+    # Tracks queued per !album request (2026-07-08, streamer request: only the
+    # FIRST 5 songs of the album, not the whole thing). Also bounds the Spotify
+    # HTTP fan-out (the queue endpoint takes one uri per call).
+    album_queue_max_tracks: int = Field(default=5, ge=1, le=100)
+    # Per-viewer cooldown between paid !song/!album requests (2026-07-08, streamer
+    # request): a viewer who tries again within the window is told how much time
+    # remains and is NOT charged. Shared across !song and !album. A miss (not
+    # found / Spotify error, fully refunded) clears the cooldown so it never
+    # burns on a request that was not served. 0 disables the cooldown.
+    song_request_cooldown_seconds: int = Field(default=300, ge=0)
 
 
 class TwitchOverlayConfig(_Strict):
