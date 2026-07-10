@@ -379,7 +379,8 @@ def make_handler(service: Any, store: ProposalStore, *, ready_fn: Callable[[], b
                  chat_send_fn: "Optional[Callable[[str], bool]]" = None,
                  shoutout_fn: "Optional[Callable[[str], bool]]" = None,
                  pin_fn: "Optional[Callable[[str], dict]]" = None,
-                 pin_state_fn: "Optional[Callable[[], dict]]" = None):
+                 pin_state_fn: "Optional[Callable[[], dict]]" = None,
+                 chatters_fn: "Optional[Callable[[], dict]]" = None):
     """Build a ``BaseHTTPRequestHandler`` subclass bound to this sidecar's state.
 
     A factory (not module globals) so a test can stand up an isolated server with
@@ -460,6 +461,21 @@ def make_handler(service: Any, store: ProposalStore, *, ready_fn: Callable[[], b
                 except Exception as exc:  # noqa: BLE001 — never raise out
                     logger.warning("pin-state read failed: %s", exc)
                     self._send(500, {"ok": False, "error": "pin_state_failed"})
+                return
+            if path == "/chatters":
+                # PRESENCE list (Get Chatters, lurkers included) for the
+                # voice→chat tell roster (2026-07-10). Fail-open.
+                if chatters_fn is None:
+                    self._send(200, {"ok": False,
+                                     "error": "chatters_unavailable",
+                                     "chatters": []})
+                    return
+                try:
+                    self._send(200, chatters_fn())
+                except Exception as exc:  # noqa: BLE001 — never raise out
+                    logger.warning("chatters read failed: %s", exc)
+                    self._send(500, {"ok": False, "error": "chatters_failed",
+                                     "chatters": []})
                 return
             self._send(404, {"ok": False, "error": "not found"})
 
@@ -673,6 +689,9 @@ class _ServiceState:
         # so the orchestrator keeper re-pins only when NO pin is active.
         self.pin_message: Optional[Callable[[str], dict]] = None
         self.pin_state: Optional[Callable[[], dict]] = None
+        # Presence source (2026-07-10): GET /chatters — the current viewer list
+        # (Get Chatters, lurkers included) for tell-roster seeding.
+        self.chatters: Optional[Callable[[], dict]] = None
 
     @property
     def ready(self) -> bool:
@@ -941,6 +960,30 @@ def build_service_state() -> _ServiceState:
 
         state.shoutout = _do_shoutout
         logger.info("write sidecar: shoutout ready (from_broadcaster_id=%s)", _bid)
+
+        # PRESENCE roster source (2026-07-10): GET /chat/chatters — the CURRENT
+        # viewer list, LURKERS included. Seeds the voice→chat tell roster so
+        # "tell <lurker> in chat X" works even if they never typed (an
+        # observed-only roster couldn't find them). Same HelixClient; needs
+        # moderator:read:chatters on the broadcaster token — until the token is
+        # re-minted with the new scope this fails open ({"ok": False}).
+        def _get_chatters() -> dict:
+            try:
+                res = helix.get_chatters(_bid, _mid)
+                rows = (res.data or {}).get("data") if isinstance(
+                    res.data, dict) else None
+                out = [
+                    {"login": str(r.get("user_login") or ""),
+                     "display": str(r.get("user_name") or "")}
+                    for r in (rows or [])
+                    if isinstance(r, dict) and r.get("user_login")
+                ]
+                return {"ok": True, "chatters": out}
+            except Exception as exc:  # noqa: BLE001 — fail-open, never raise
+                return {"ok": False, "error": str(exc)[:200], "chatters": []}
+
+        state.chatters = _get_chatters
+        logger.info("write sidecar: chatters presence source ready")
     except Exception as exc:  # noqa: BLE001 — shoutout is optional
         logger.warning("write sidecar: shoutout wiring failed (%s)", type(exc).__name__)
     # Bot chat-SEND (Helix POST /chat/messages, user:write:chat) for the periodic
@@ -1092,7 +1135,8 @@ def build_server(service: Any, *, port: int = 0, ready: Optional[bool] = None,
                  chat_send: "Optional[Callable[[str], bool]]" = None,
                  shoutout: "Optional[Callable[[str], bool]]" = None,
                  pin: "Optional[Callable[[str], dict]]" = None,
-                 pin_state: "Optional[Callable[[], dict]]" = None):
+                 pin_state: "Optional[Callable[[], dict]]" = None,
+                 chatters: "Optional[Callable[[], dict]]" = None):
     """Assemble a write-sidecar server bound to 127.0.0.1 ONLY.
 
     ``port=0`` binds an ephemeral port (read it back from ``server.server_address``
@@ -1113,6 +1157,7 @@ def build_server(service: Any, *, port: int = 0, ready: Optional[bool] = None,
         shoutout_fn=shoutout,
         pin_fn=pin,
         pin_state_fn=pin_state,
+        chatters_fn=chatters,
     )
     from kenning.subprocess.sidecar_server import SingletonThreadingHTTPServer
 
@@ -1217,6 +1262,7 @@ def main() -> None:
         state.service, port=port, ready=state.ready, broadcaster_id=state.broadcaster_id,
         chat_send=state.chat_send, shoutout=state.shoutout,
         pin=state.pin_message, pin_state=state.pin_state,
+        chatters=state.chatters,
     )
     sidecar_lock.write_role("twitch_write", os.getpid(), port)
     atexit.register(sidecar_lock.clear_role, "twitch_write")

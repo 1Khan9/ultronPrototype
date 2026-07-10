@@ -3883,6 +3883,25 @@ class Orchestrator:
                             if roster is not None else (None, 0.0))
             floor = float(getattr(chcfg, "tell_chat_match_floor", 60) or 0)
             if login is None or score < floor:
+                # ON-MISS PRESENCE REFRESH (2026-07-10): the roster only
+                # knows TALKERS — a lurker in the viewer list was unfindable
+                # ("no roster match for 'saltwaterbottle'"). Fold the CURRENT
+                # chatter list (Get Chatters, lurkers included) in once and
+                # re-match before giving up. One loopback+Helix round trip
+                # (~200-400 ms) only on a miss; fail-open.
+                refresh = getattr(self, "_twitch_chatters_refresh", None)
+                if refresh is not None and roster is not None:
+                    try:
+                        seeded = int(refresh() or 0)
+                    except Exception as e:                       # noqa: BLE001
+                        logger.debug("tell-chat presence refresh failed: %s", e)
+                        seeded = 0
+                    if seeded:
+                        login, score = roster.best(cmd.name)
+                        logger.info("tell-chat: presence refresh folded %d "
+                                    "viewers; re-match %r -> %r (%.0f)",
+                                    seeded, cmd.name, login, score)
+            if login is None or score < floor:
                 logger.info("tell-chat: no roster match for %r "
                             "(best=%r score=%.0f floor=%.0f)",
                             cmd.name, login, score, floor)
@@ -7029,6 +7048,83 @@ class Orchestrator:
                     except Exception as _re:                         # noqa: BLE001
                         logger.warning("tell-chat roster init failed: %s", _re)
                         self._twitch_user_roster = None
+                    # PRESENCE seeding (2026-07-10): the roster above is
+                    # observed-only (talkers), so a LURKER was unfindable by
+                    # the voice tell ("no roster match for 'saltwaterbottle'").
+                    # This closure folds the write sidecar's GET /chatters
+                    # (Helix Get Chatters — everyone PRESENT) into the roster;
+                    # called every N minutes below AND once on a tell-chat
+                    # roster miss. Fail-open: returns the count seeded (0 on
+                    # any failure, e.g. the scope not yet granted).
+                    self._twitch_chatters_refresh = None
+                    if self._twitch_user_roster is not None:
+                        _cr_roster = self._twitch_user_roster
+
+                        def _chatters_refresh() -> int:
+                            try:
+                                import json as _crj
+                                import urllib.request as _cru
+                                with _cru.urlopen(
+                                    f"{_twitch_write_ep}/chatters",
+                                    timeout=5,
+                                ) as _crr:  # nosec B310 - loopback
+                                    body = _crj.loads(_crr.read() or b"{}") or {}
+                            except Exception as _cre:            # noqa: BLE001
+                                logger.debug("chatters refresh failed: %s", _cre)
+                                return 0
+                            rows = body.get("chatters") or []
+                            n = 0
+                            for r in rows:
+                                try:
+                                    _cr_roster.observe(
+                                        r.get("login") or "",
+                                        r.get("display") or "")
+                                    n += 1
+                                except Exception:                # noqa: BLE001
+                                    continue
+                            if not body.get("ok") and body.get("error"):
+                                logger.debug("chatters presence unavailable: %s",
+                                             body.get("error"))
+                            return n
+
+                        self._twitch_chatters_refresh = _chatters_refresh
+                        _seed_min = int(getattr(
+                            getattr(tcfg, "chat", None),
+                            "chatters_presence_seed_minutes", 5) or 0)
+                        if _seed_min > 0:
+                            import threading as _crth
+                            import time as _crtime
+
+                            def _chatters_seed_loop() -> None:
+                                first = True
+                                while not getattr(self, "_twitch_chat_stop",
+                                                  False):
+                                    target = 15.0 if first else _seed_min * 60.0
+                                    first = False
+                                    waited = 0.0
+                                    while waited < target:
+                                        if getattr(self, "_twitch_chat_stop",
+                                                   False):
+                                            return
+                                        _crtime.sleep(1.0)
+                                        waited += 1.0
+                                    try:
+                                        n = _chatters_refresh()
+                                        if n:
+                                            logger.debug(
+                                                "chatters presence seed: %d "
+                                                "viewers folded into the tell "
+                                                "roster", n)
+                                    except Exception:            # noqa: BLE001
+                                        pass
+
+                            self._twitch_chat_stop = False
+                            _crth.Thread(
+                                target=_chatters_seed_loop, daemon=True,
+                                name="twitch-chatters-seed").start()
+                            logger.info(
+                                "twitch chatters presence seed started "
+                                "(every %d min)", _seed_min)
                     try:
                         _chcfg = getattr(tcfg, "chat", None)
                         if bool(getattr(_chcfg, "first_time_welcome_enabled",

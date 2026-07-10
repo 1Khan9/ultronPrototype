@@ -27,6 +27,17 @@
 > - Full runbook: **`docs/ultron_0_1_baseline.md`**. Post-0.1 roadmap:
 >   **`docs/latency_optimizations_V1.md`**.
 >
+> **PRESENCE ROSTER — Get Chatters + on-miss refresh (2026-07-10)**
+>
+> The tell roster was observed-only (talkers), so a LURKER in the viewer list was unfindable ("no roster match
+> for 'saltwaterbottle'"). NEW `HelixClient.get_chatters` (GET /chat/chatters, first=1000 single page; scope
+> `moderator:read:chatters` ADDED to BROADCASTER_SCOPES → the broadcaster token needs ONE re-mint; 401s fail
+> open to observed-only until then) → write sidecar `GET /chatters` ({login,display} rows, fail-open) →
+> orchestrator `_twitch_chatters_refresh` folds the live viewer list into the shared UserRoster: a
+> `twitch-chatters-seed` loop every `twitch.chat.chatters_presence_seed_minutes` (5; 0 disables) + an ON-MISS
+> refresh in `_maybe_handle_tell_chat` (one loopback+Helix round trip only when the fuzzy match misses, then
+> one re-match before "No one in chat matches").
+>
 > **PINBOARD — ONE PINNED COMMANDS MESSAGE ENDS THE CHAT FLOOD (2026-07-09, wave 4)**
 >
 > Streamer: periodic reminders flooded chat (3 interval posters whose stagger only applied to the FIRST post →

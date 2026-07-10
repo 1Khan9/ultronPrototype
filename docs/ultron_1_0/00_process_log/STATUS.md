@@ -1,5 +1,24 @@
 # Ultron 1.0 — Live Status
 
+**ACTIVE (2026-07-10) — PRESENCE ROSTER: Get Chatters + on-miss refresh (branch `claude/chatters-presence`):**
+
+Live: "tell saltwaterbottle in chat hi" -> "no roster match (best='ultron_kenning' score=34)" — the viewer WAS
+in the chat user list but had never TYPED this boot, and the tell roster is observed-only (fed from chat
+messages). FIX = match against PRESENCE, not just talkers: (1) `HelixClient.get_chatters` (GET /chat/chatters,
+long-GA; single page first=1000; scope **`moderator:read:chatters` ADDED to BROADCASTER_SCOPES — the
+broadcaster token must be RE-MINTED once**; until then the call 401s and everything fails open to today's
+observed-only behaviour). (2) Write sidecar `GET /chatters` -> `{"ok",chatters:[{login,display}]}` (fail-open).
+(3) Orchestrator: `_twitch_chatters_refresh` closure folds the live viewer list into the shared UserRoster;
+a `twitch-chatters-seed` loop runs it every `twitch.chat.chatters_presence_seed_minutes` (default 5, 0
+disables; first seed ~15s after boot); AND `_maybe_handle_tell_chat` does an ON-MISS refresh — one
+loopback+Helix round trip (~200-400ms) only when the fuzzy match falls below the floor, then re-matches
+before speaking "No one in chat matches". EVIDENCE: helix chatters 2 + /chatters route 3 + handler
+on-miss/wiring/config/scope 6 new tests; FULL `tests/twitch/` + handler + anticheat 1390 pass / 1 skip;
+validate_config 0. NEXT: user re-mints the BROADCASTER token (adds the scope):
+`.venv\Scripts\python.exe scripts\twitch_setup.py --client-id <id> --identity broadcaster --path ~/.kenning/twitch.json`,
+then restarts + re-tests "tell saltwaterbottle in chat hi" (lurker now findable).
+
+
 **ACTIVE (2026-07-09, wave 4) — PINBOARD: ONE PINNED COMMANDS MESSAGE ENDS THE CHAT FLOOD (branch `claude/welcome-persist-vram`):**
 
 Streamer: periodic reminders flooded chat. Inventory proved it: THREE interval posters (commands panel 15m LIVE-ON,

@@ -627,6 +627,44 @@ class HelixClient:
             status=resp.status, body=resp.body,
         )
 
+    def get_chatters(
+        self, broadcaster_id: str, moderator_id: str = "", *, first: int = 1000,
+    ) -> HelixResult:
+        """GET /chat/chatters -> viewers PRESENT in chat, lurkers included.
+
+        The presence source for the voice→chat tell roster (live 2026-07-10:
+        a lurker who never typed was unfindable by the observed-only roster).
+        Scope ``moderator:read:chatters`` on the broadcaster token (the
+        broadcaster moderates their own channel). Single page, ``first``
+        clamped to Twitch's 1000 max — far above this channel's size;
+        pagination is deliberately omitted (a >1000-viewer channel would only
+        lose tail entries of the SEED; the observed-only path still works).
+        A READ: no idempotency cache; non-200 raises :class:`HelixError`.
+        """
+        if not broadcaster_id:
+            raise ValueError("broadcaster_id is required")
+        resp = self._request(
+            "GET", "/chat/chatters",
+            query={
+                "broadcaster_id": str(broadcaster_id),
+                "moderator_id": str(moderator_id or broadcaster_id),
+                "first": str(min(max(int(first), 1), 1000)),
+            },
+        )
+        if resp.status == 200:
+            return HelixResult(
+                action="get_chatters", ok=True, status=200,
+                idempotent=False, data=resp.json(),
+                key=("get_chatters", "", ""),
+            )
+        msg = self._extract_error_message(resp.body)
+        logger.warning("helix get_chatters failed: status=%d msg=%s",
+                       resp.status, msg)
+        raise HelixError(
+            f"helix get_chatters failed: {msg}",
+            status=resp.status, body=resp.body,
+        )
+
     def unban_user(
         self,
         broadcaster_id: str,

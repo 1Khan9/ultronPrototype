@@ -784,3 +784,36 @@ def test_pin_state_unavailable_when_not_wired() -> None:
         status, body = _get(f"{s.base}/pin")
     assert status == 200
     assert body == {"ok": False, "error": "pin_unavailable"}
+
+
+# --------------------------------------------------------------------------- #
+# /chatters — presence list for the tell roster (2026-07-10)
+# --------------------------------------------------------------------------- #
+def test_chatters_route_returns_presence_rows() -> None:
+    rows = {"ok": True, "chatters": [
+        {"login": "saltwaterbottle", "display": "Saltwaterbottle"}]}
+    with _Served(FakeService(), ready=True, chatters=lambda: rows) as s:
+        status, body = _get(f"{s.base}/chatters")
+    assert status == 200
+    assert body == rows
+
+
+def test_chatters_route_unavailable_when_not_wired() -> None:
+    with _Served(FakeService(), ready=True) as s:
+        status, body = _get(f"{s.base}/chatters")
+    assert status == 200
+    assert body == {"ok": False, "error": "chatters_unavailable", "chatters": []}
+
+
+def test_chatters_route_error_becomes_500() -> None:
+    def boom() -> dict:
+        raise RuntimeError("helix down")
+
+    with _Served(FakeService(), ready=True, chatters=boom) as s:
+        # a 500 makes bare urlopen raise HTTPError — read the body from it
+        try:
+            status, body = _get(f"{s.base}/chatters")
+        except HTTPError as exc:
+            status, body = exc.code, json.loads(exc.read().decode("utf-8"))
+    assert status == 500
+    assert body["ok"] is False

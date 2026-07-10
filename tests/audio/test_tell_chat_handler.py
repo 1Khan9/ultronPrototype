@@ -162,3 +162,67 @@ def test_set_stream_delay_rejects_garbage() -> None:
     o._stream_delay_seconds = 40
     o._set_stream_delay_seconds("not a number")
     assert o._stream_delay_seconds == 40       # unchanged, no raise
+
+
+# ---------------------------------------------- on-miss presence refresh
+def test_roster_miss_triggers_presence_refresh_and_retries(monkeypatch) -> None:
+    """Live 2026-07-10: 'tell saltwaterbottle in chat hi' failed because the
+    observed-only roster had no lurkers. On a miss, the handler folds the
+    CURRENT viewer list in once and re-matches before giving up."""
+    roster = UserRoster()
+    roster.observe("ultron_kenning")          # only a talker; target is lurking
+    o = _mk(monkeypatch, roster=roster)
+
+    def fake_refresh() -> int:
+        roster.observe("saltwaterbottle", "Saltwaterbottle")
+        return 5
+
+    o._twitch_chatters_refresh = fake_refresh
+    assert o._maybe_handle_tell_chat(
+        "tell saltwaterbottle in chat hi") is True
+    assert o._posted == ["@Saltwaterbottle 🎙️ [live]: hi"]
+    assert o._spoken == []                     # success stays silent
+
+
+def test_roster_miss_refresh_finds_nothing_speaks_no_match(monkeypatch) -> None:
+    roster = UserRoster()
+    roster.observe("ultron_kenning")
+    o = _mk(monkeypatch, roster=roster)
+    o._twitch_chatters_refresh = lambda: 0     # scope missing / sidecar down
+    assert o._maybe_handle_tell_chat("tell saltwaterbottle in chat hi") is True
+    assert o._posted == []
+    assert o._spoken == ["No one in chat matches saltwaterbottle."]
+
+
+def test_roster_miss_refresh_raising_is_owned(monkeypatch) -> None:
+    roster = UserRoster()
+    o = _mk(monkeypatch, roster=roster)
+
+    def boom() -> int:
+        raise RuntimeError("sidecar down")
+
+    o._twitch_chatters_refresh = boom
+    assert o._maybe_handle_tell_chat("tell bob in chat hi") is True
+    assert o._spoken == ["No one in chat matches bob."]
+
+
+def test_orchestrator_wires_presence_seeding() -> None:
+    import inspect
+
+    src = inspect.getsource(Orchestrator._start_twitch_chat_mode)
+    assert "_chatters_seed_loop" in src
+    assert "twitch-chatters-seed" in src
+    assert "chatters_presence_seed_minutes" in src
+    assert "_twitch_chatters_refresh" in src
+    tell = inspect.getsource(Orchestrator._maybe_handle_tell_chat)
+    assert "_twitch_chatters_refresh" in tell   # the on-miss retry
+
+
+def test_config_presence_seed_default() -> None:
+    from kenning.config import TwitchChatConfig
+    assert TwitchChatConfig().chatters_presence_seed_minutes == 5
+
+
+def test_broadcaster_scope_includes_read_chatters() -> None:
+    from kenning.twitch.auth import BROADCASTER_SCOPES
+    assert "moderator:read:chatters" in BROADCASTER_SCOPES

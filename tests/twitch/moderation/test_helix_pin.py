@@ -147,3 +147,37 @@ def test_get_pinned_message_cannot_read_raises():
         make_client(tr).get_pinned_message("B1")
     with pytest.raises(ValueError):
         make_client(ScriptedTransport()).get_pinned_message("")
+
+
+# ------------------------------------------------- presence read (chatters)
+def test_get_chatters_parses_rows_and_query():
+    tr = ScriptedTransport().queue(TransportResponse(
+        status=200,
+        body=json.dumps({"data": [
+            {"user_id": "9", "user_login": "saltwaterbottle",
+             "user_name": "Saltwaterbottle"},
+            {"user_id": "10", "user_login": "sery_bot", "user_name": "Sery_bot"},
+        ], "total": 2})))
+    res = make_client(tr).get_chatters("B1")
+    assert res.ok is True
+    assert [r["user_login"] for r in res.data["data"]] == [
+        "saltwaterbottle", "sery_bot"]
+    call = tr.calls[0]
+    assert call["method"] == "GET" and "/chat/chatters" in call["url"]
+    assert "broadcaster_id=B1" in call["url"]
+    assert "moderator_id=B1" in call["url"]      # defaults to the broadcaster
+    assert "first=1000" in call["url"]
+
+
+def test_get_chatters_first_clamped_and_failure_raises():
+    tr = ScriptedTransport().queue(
+        TransportResponse(status=200, body=json.dumps({"data": []})))
+    make_client(tr).get_chatters("B1", "M1", first=99999)
+    assert "first=1000" in tr.calls[0]["url"]
+    tr2 = ScriptedTransport().queue(
+        TransportResponse(status=401, body='{"message":"Missing scope: moderator:read:chatters"}'))
+    with pytest.raises(HelixError) as ei:
+        make_client(tr2).get_chatters("B1")
+    assert ei.value.status == 401
+    with pytest.raises(ValueError):
+        make_client(ScriptedTransport()).get_chatters("")

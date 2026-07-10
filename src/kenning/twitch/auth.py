@@ -89,6 +89,9 @@ BROADCASTER_SCOPES = (
     "moderator:read:chat_settings",
     "moderator:manage:chat_settings",
     "moderator:manage:chat_messages",
+    # 2026-07-10: Get Chatters (GET /chat/chatters) — presence-based roster
+    # seeding so the voice→chat tell can find LURKERS who haven't typed yet.
+    "moderator:read:chatters",
     "moderator:manage:shield_mode",
     "moderator:manage:banned_users",
     "moderator:manage:shoutouts",

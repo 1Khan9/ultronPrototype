@@ -4435,6 +4435,14 @@ class TwitchChatConfig(_Strict):
     tell_chat_template: str = "@{name} 🎙️ [streamer, live]: {message}"
     tell_chat_broadcast_template: str = "🎙️ [streamer, live]: {message}"
     tell_chat_match_floor: int = Field(default=60, ge=0, le=100)
+    # Presence-based roster seeding (2026-07-10): every N minutes — and once
+    # on a tell-chat roster MISS — the CURRENT viewer list (Helix Get
+    # Chatters; lurkers included) is folded into the tell roster, so
+    # "tell <lurker> in chat X" works even if they never typed (live: a
+    # present-but-silent viewer was unfindable). Requires the broadcaster
+    # token re-minted with moderator:read:chatters; fails open until then.
+    # 0 disables the periodic seed (the on-miss refresh stays).
+    chatters_presence_seed_minutes: int = Field(default=5, ge=0, le=120)
     # First-time-chatter welcome (spec 12, 2026-07-09): the first time a login
     # chats this run, Ultron posts one welcome naming them and stating the LIVE
     # stream delay (set via the stop-button DELAY field, seeded from
