@@ -87,6 +87,39 @@ def test_name_split_lands_on_first_in_chat() -> None:
     assert cmd == TellChatCommand(name="bob", message="see you in chat tomorrow")
 
 
+# ------------------------------------------- delimiter STT-mishear tolerance
+# Live 2026-07-10: Whisper rendered "tell 1v9khan IN CHAT hi" as
+# "Tell 1v9con and chat hi." -> the strict "in chat" delimiter missed and the
+# command fell through to the LLM (no chat post). The delimiter now absorbs
+# the observed mishear family; the fuzzy roster match handles the name.
+@pytest.mark.parametrize(
+    "text,name,msg",
+    [
+        ("Tell 1v9con and chat hi.", "1v9con", "hi."),      # the EXACT live line
+        ("tell bob an chat hello", "bob", "hello"),
+        ("tell bob en chat one sec", "bob", "one sec"),
+        ("tell bob into chat see you", "bob", "see you"),
+        ("tell bob in chad hi", "bob", "hi"),               # "chat" mis-heard
+        ("say hi to bob and chat", "bob", "hi"),
+        ("greet bob and chat", "bob", "hi"),
+    ],
+)
+def test_delimiter_mishears_still_match(text, name, msg) -> None:
+    assert match_tell_chat(text) == TellChatCommand(name=name, message=msg)
+
+
+def test_delimiter_mishears_broadcast_and_disjointness() -> None:
+    # broadcast group form tolerates the delimiter mishear too
+    assert match_tell_chat("tell everyone and chat gg") == TellChatCommand(
+        name=None, message="gg")
+    # the broadcast HEAD stays strict: "tell chad hi" is a person, not chat
+    assert match_tell_chat("tell chad hi") is None
+    # group names still reject through the widened delimiter
+    assert match_tell_chat("tell my team and chat the plan") is None
+    # no chat word at all -> never matches
+    assert match_tell_chat("tell bob and jane the plan") is None
+
+
 # ------------------------------------------------- greeting-before-name forms
 # Review 2026-07-09: the natural inverse phrasing ("say hi to <name> in chat")
 # puts the greeting BEFORE the name — the streamer's reported failing case.

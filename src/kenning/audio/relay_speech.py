@@ -1742,7 +1742,14 @@ _TELL_CHAT_WAKE = (
     r")?"
 )
 _TELL_CHAT_VERB = r"(?:tell|message|inform|notify|say\s+to|write\s+to|reply\s+to)"
-_TELL_CHAT_CHANNEL = r"(?:in|on)\s+(?:the\s+)?(?:twitch\s+)?chat"
+# The "in chat" delimiter with STT-mishear tolerance (live 2026-07-10: Whisper
+# rendered "tell 1v9khan IN CHAT hi" as "Tell 1v9con AND CHAT hi" -> the strict
+# delimiter missed and the command fell to the LLM). "and/an/en/into" are the
+# observed/adjacent mishears of "in"; "chad" is the mishear of "chat". These
+# widen ONLY the delimiter position — the broadcast head ("tell chat ...")
+# stays strict so "tell chad hi" still falls through to the teammate-social
+# path (Chad may be a real name).
+_TELL_CHAT_CHANNEL = r"(?:in|on|and|an|en|into)\s+(?:the\s+)?(?:twitch\s+)?(?:chat|chad)"
 _TELL_CHAT_BROADCAST_RE = re.compile(
     rf"^{_TELL_CHAT_WAKE}(?:"
     rf"(?:{_TELL_CHAT_VERB}\s+(?:the\s+)?(?:twitch\s+)?chat)"
@@ -1785,7 +1792,7 @@ _TELL_CHAT_GREET_VERB_RE = re.compile(
     rf"^{_TELL_CHAT_WAKE}(?P<verb>greet|welcome)\s+"
     rf"(?P<name>{_TELL_CHAT_NAME})"
     rf"(?:\s+(?:back|again|aboard))?"
-    rf"\s+(?:to|in)\s+(?:the\s+)?(?:twitch\s+)?chat"
+    rf"\s+(?:to|in|on|and|an|en|into)\s+(?:the\s+)?(?:twitch\s+)?(?:chat|chad)"
     rf"\s*[,:.!]?\s*$",
     re.IGNORECASE,
 )
