@@ -667,6 +667,14 @@ class EventSubChatSource:
                         # badges carry mod/broadcaster provenance for the chat-command
                         # authz (commands.parse_command -> is_mod); a list of badge dicts.
                         "badges": ev.badges,
+                        # 2026-07-09: carry the EventSub message_type ("text" /
+                        # "user_intro" / channel-points variants) so main-process
+                        # consumers can see Twitch's native message class (it was
+                        # parsed then dropped here), and the broadcaster id so
+                        # the first-time-welcome's uid-based self-exclusion works
+                        # on REAL events (it was always "" before).
+                        "message_type": ev.message_type,
+                        "broadcaster_user_id": ev.broadcaster_user_id,
                     }
                 )
                 return

@@ -251,10 +251,48 @@ def test_talk_hint_config_defaults():
     from kenning.config import TwitchChatConfig
     c = TwitchChatConfig()
     assert c.talk_hint_enabled is True
-    assert c.talk_hint_interval_minutes == 10
+    # 2026-07-09 flood fix: 10 -> 20 min (streamer: "every 20 minutes or so");
+    # the talk hint is the ONE periodic chat reminder left.
+    assert c.talk_hint_interval_minutes == 20
     assert c.talk_hint_text == (
         '💬 Just type "Ultron" followed by a statement or question '
         "and he will talk to you!"
     )
     # commands panel interval default bumped to 15.
     assert c.commands_panel_interval_minutes == 15
+
+
+# --------------------------------------------------------------------------- #
+# send_with_id (the pinboard, 2026-07-09)
+# --------------------------------------------------------------------------- #
+def test_send_with_id_returns_twitch_message_id():
+    def transport(method, url, headers, body):
+        return 200, json.dumps(
+            {"data": [{"is_sent": True, "message_id": "abc-123"}]}).encode()
+
+    c = ChatSendClient("cid", get_token=lambda: "tok", transport=transport)
+    ok, mid = c.send_with_id("B1", "U2", "hello")
+    assert ok is True and mid == "abc-123"
+    # send() keeps its bool contract on the same wire shape
+    assert c.send("B1", "U2", "hello") is True
+
+
+def test_send_with_id_failure_paths_return_empty_id():
+    c = ChatSendClient("cid", get_token=lambda: "",
+                       transport=lambda *a: (_ for _ in ()).throw(AssertionError))
+    assert c.send_with_id("B1", "U2", "hi") == (False, "")   # no token
+
+    def dropped(method, url, headers, body):
+        return 200, json.dumps(
+            {"data": [{"is_sent": False, "drop_reason": {"code": "x"},
+                       "message_id": "m1"}]}).encode()
+
+    c2 = ChatSendClient("cid", get_token=lambda: "tok", transport=dropped)
+    ok, mid = c2.send_with_id("B1", "U2", "hi")
+    assert ok is False and mid == "m1"    # dropped: id still reported
+
+    def http500(method, url, headers, body):
+        return 500, b"{}"
+
+    c3 = ChatSendClient("cid", get_token=lambda: "tok", transport=http500)
+    assert c3.send_with_id("B1", "U2", "hi") == (False, "")

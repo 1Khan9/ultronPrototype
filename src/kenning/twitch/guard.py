@@ -24,6 +24,7 @@ import json
 import logging
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from typing import Optional
 
 from kenning.twitch.safety.validator import GuardResult
@@ -34,6 +35,7 @@ __all__ = [
     "GuardModelClient", "GuardUnavailable", "chat_mode_can_enable",
     "format_guard_prompt", "parse_guard_output", "build_guard_messages",
     "format_llama_guard_prompt", "CANARY_UNSAFE", "CANARY_SAFE",
+    "GuardCanaryEvent", "GuardDownCanary",
 ]
 
 # Canary probes: the guard MUST flag the first unsafe and the second safe, else it
@@ -113,6 +115,81 @@ def chat_mode_can_enable(
     if not client.canary():
         return False, "guard canary FAILED (known-bad not flagged) — refusing to enable"
     return True, "guard healthy + canary passed"
+
+
+@dataclass(frozen=True)
+class GuardCanaryEvent:
+    """One state transition emitted by :class:`GuardDownCanary`.
+
+    ``kind`` is ``"down"`` (the guard has been unhealthy long enough that
+    chat-reply is disabled) or ``"recovered"`` (it came back). ``speak`` is
+    True only on the FIRST down event of an outage (a single spoken pointer to
+    the streamer) and on recovery — the repeated log re-warns carry speak=False
+    so a long outage does not nag on the audio bus."""
+    kind: str
+    speak: bool
+
+
+class GuardDownCanary:
+    """Turn periodic guard-health samples into LOUD, throttled outage signals.
+
+    The boot sidecar-canary probes ONCE (~18 s after spawn); a guard that
+    CRASHES later (e.g. a CUDA fault after model churn) is otherwise only
+    visible as a DEBUG "guard warming up" line while chat-reply silently
+    fail-closes. Feed each poll's health here; it emits:
+
+      * a ``"down"`` event once the guard has been continuously unhealthy for
+        ``min_down_s`` (covers the boot model-load window AND a transient blip),
+        then re-emits ``"down"`` (log-only, ``speak=False``) every
+        ``rewarn_s`` while the outage persists;
+      * a ``"recovered"`` event the first healthy sample after an outage.
+
+    Two grace windows keep a slow NORMAL boot from tripping the alert: once the
+    guard has EVER been healthy, a later outage alerts after ``min_down_s`` (a
+    real crash); a guard that has NEVER been healthy is given the longer
+    ``boot_grace_s`` to finish loading its GGUF before it is called dead. Both
+    paths eventually alert, so a guard that never comes up is not silent either.
+
+    Pure + deterministic (clock injected) so the outage logic is unit-tested
+    without a real sidecar. stdlib only.
+    """
+
+    def __init__(
+        self, *, min_down_s: float = 30.0, boot_grace_s: float = 90.0,
+        rewarn_s: float = 90.0,
+    ) -> None:
+        self._min_down_s = float(min_down_s)
+        self._boot_grace_s = float(boot_grace_s)
+        self._rewarn_s = float(rewarn_s)
+        self._unhealthy_since: Optional[float] = None
+        self._ever_healthy = False     # gates the short vs boot grace window
+        self._warned = False           # a "down" event has fired this outage
+        self._last_warn: float = 0.0
+
+    def observe(self, healthy: bool, now: float) -> Optional[GuardCanaryEvent]:
+        """Record one health sample at monotonic time ``now``; return a
+        :class:`GuardCanaryEvent` on a state transition/re-warn, else None."""
+        if healthy:
+            self._ever_healthy = True
+            recovered = self._warned
+            self._unhealthy_since = None
+            self._warned = False
+            self._last_warn = 0.0
+            return GuardCanaryEvent("recovered", speak=True) if recovered else None
+        # Unhealthy.
+        if self._unhealthy_since is None:
+            self._unhealthy_since = now
+        grace = self._min_down_s if self._ever_healthy else self._boot_grace_s
+        if now - self._unhealthy_since < grace:
+            return None                # still within the grace/load window
+        if not self._warned:
+            self._warned = True
+            self._last_warn = now
+            return GuardCanaryEvent("down", speak=True)     # first alert -> speak once
+        if now - self._last_warn >= self._rewarn_s:
+            self._last_warn = now
+            return GuardCanaryEvent("down", speak=False)    # periodic log re-warn
+        return None
 
 
 # --- model-family prompt format / output parse (used by the sidecar server) --

@@ -4068,6 +4068,19 @@ class StopButtonConfig(_Strict):
     announce_results_height: int = Field(default=26, ge=0, le=200)
     announce_results_label: str = "ANNOUNCE RESULTS"
     announce_results_default: bool = True
+    # TELL-CHAT toggle row (spec 12, 2026-07-09): a cyan ON (default per
+    # twitch.chat.tell_chat_enabled) / grey OFF button gating the voice→chat
+    # tell relay ("Ultron, tell <name> in chat <message>"). Only visible when
+    # twitch.enabled. 0 hides the row.
+    tell_chat_height: int = Field(default=26, ge=0, le=200)
+    tell_chat_label: str = "TELL CHAT"
+    # STREAM-DELAY numeric row (spec 12, 2026-07-09): the overlay's first
+    # non-toggle row — a label + entry showing the CURRENT stream delay in
+    # seconds (seeded from twitch.chat.stream_delay_seconds). Committing a new
+    # value (Return / focus-out) re-times the first-time-chatter welcome text
+    # live. Only visible when twitch.enabled. 0 hides the row.
+    stream_delay_height: int = Field(default=30, ge=0, le=200)
+    stream_delay_label: str = "DELAY s"
     x: int = Field(default=60, ge=0, le=10000)   # initial top-left position
     y: int = Field(default=60, ge=0, le=10000)
 
@@ -4379,7 +4392,10 @@ class TwitchChatConfig(_Strict):
     # he will reply. Same write-sidecar /say path; staggered from the panel so the
     # two never post on the same instant. Default ON when the panel is enabled.
     talk_hint_enabled: bool = True
-    talk_hint_interval_minutes: int = Field(default=10, ge=1, le=720)
+    # 2026-07-09 flood fix: 10 -> 20 min (streamer: "type in the chat like
+    # every 20 minutes or so"); the ONLY periodic chat reminder left — the
+    # commands/song reminders live on the PINBOARD (pinned message) now.
+    talk_hint_interval_minutes: int = Field(default=20, ge=1, le=720)
     talk_hint_text: str = "💬 Just type \"Ultron\" followed by a statement or question and he will talk to you!"
     # Relay-aware chat-reply cooldown (2026-07-08): while the STOP-window RELAY
     # toggle is OFF (companion mode -- Ultron is off team comms and chat is his
@@ -4390,12 +4406,63 @@ class TwitchChatConfig(_Strict):
     # THIRD periodic poster (S14, 2026-07-08): a brief every-N-minutes nudge
     # about the paid Spotify queue commands. Same write-sidecar /say path as
     # the panel + talk hint, staggered so the three never post together.
-    song_hint_enabled: bool = True
+    # 2026-07-09 flood fix: default OFF — the song commands are on the
+    # PINBOARD (the pinned commands message covers !song/!album); the
+    # periodic poster is retired-not-removed (flip this to re-enable).
+    song_hint_enabled: bool = False
     song_hint_interval_minutes: int = Field(default=15, ge=1, le=720)
     song_hint_text: str = (
         "🎵 !song <name> [by artist] (1000 Credits) queues a track on stream · "
         "💿 !album <name> (5000 Credits) queues the whole album!"
     )
+    # PINBOARD (2026-07-09 flood fix): instead of periodically re-posting the
+    # commands/song reminders (the flood), Ultron posts the commands panel ONCE
+    # and PINS it (Twitch pinned-messages API, open beta 2026-05-15; the write
+    # sidecar pins with the broadcaster token — the scope is already granted).
+    # The keeper re-checks every N minutes and re-pins ONLY when no pin is
+    # active (it never replaces a pin the streamer set by hand; an unreadable
+    # pin state = pin once per boot, never blind re-posts).
+    pinboard_enabled: bool = True
+    pinboard_check_interval_minutes: int = Field(default=15, ge=1, le=720)
+    # Voice→chat TELL relay (spec 12, 2026-07-09): the streamer says "Ultron,
+    # tell <name> in chat <message>" and Ultron @-tags the best fuzzy roster
+    # match + posts the message INSTANTLY (chat is real-time; only the video
+    # feed lags behind the stream delay). "tell chat <message>" posts untagged.
+    # ``tell_chat_enabled`` is the BOOT state of the stop-button TELL CHAT
+    # toggle. Templates take {name} / {message}; the match floor is the minimum
+    # rapidfuzz WRatio score (0-100) an observed chatter must reach to be tagged.
+    tell_chat_enabled: bool = True
+    tell_chat_template: str = "@{name} 🎙️ [streamer, live]: {message}"
+    tell_chat_broadcast_template: str = "🎙️ [streamer, live]: {message}"
+    tell_chat_match_floor: int = Field(default=60, ge=0, le=100)
+    # First-time-chatter welcome (spec 12, 2026-07-09): the first time a login
+    # chats this run, Ultron posts one welcome naming them and stating the LIVE
+    # stream delay (set via the stop-button DELAY field, seeded from
+    # ``stream_delay_seconds``), apologizing on the streamer's behalf. Each
+    # login is welcomed at most once per run; welcomes are capped per minute so
+    # a raid never triggers a greeting flood (overflow marked seen silently).
+    # Templates take {name} + {delay} ("40 seconds" / "1 minute 20 seconds");
+    # the no-delay variant is used while the delay is set to 0.
+    first_time_welcome_enabled: bool = True
+    first_time_welcome_text: str = (
+        "@{name} New voice detected — welcome. The feed you watch runs {delay} "
+        "behind the present; the streamer already sees your words and will "
+        "answer as fast as the delay allows. He apologizes for the lag."
+    )
+    first_time_welcome_text_no_delay: str = (
+        "@{name} New voice detected — welcome to the congregation."
+    )
+    first_time_welcome_max_per_minute: int = Field(default=4, ge=1, le=60)
+    # Durable welcomed-set (2026-07-09): EventSub does NOT expose Twitch's
+    # native first-msg tag, so "first time" is tracked client-side. When ON, a
+    # login is welcomed once EVER (SQLite at ``persist_path``, relative to the
+    # project root) instead of once per run — a restart never re-greets the
+    # room. Fail-open: an unavailable store degrades to once-per-run.
+    first_time_welcome_persist: bool = True
+    first_time_welcome_persist_path: str = "data/twitch/welcomed.db"
+    # The CURRENT stream delay in seconds — the boot seed for the stop-button
+    # DELAY field (the live value is whatever the streamer last committed there).
+    stream_delay_seconds: int = Field(default=40, ge=0, le=3600)
 
 
 class TwitchSpeakToTeamConfig(_Strict):

@@ -551,6 +551,75 @@ class HelixClient:
             return result
         return self._finish_write("delete_message", key, resp, success_statuses=(200, 204))
 
+    def pin_message(
+        self,
+        broadcaster_id: str,
+        moderator_id: str,
+        message_id: str,
+    ) -> HelixResult:
+        """POST /chat/pinned_messages -> pin an EXISTING chat message (the
+        pinboard, 2026-07-09). Open-beta endpoint (Twitch changelog 2026-05-15);
+        scope ``moderator:manage:chat_messages`` (already in BROADCASTER_SCOPES).
+        Only one mod-pin can be active per channel — Twitch auto-replaces.
+
+        Open-beta schema tolerance: Helix write bodies are inconsistent (Send
+        Chat Message is FLAT; Ban User nests under "data") and the pin body
+        shape is not yet pinned down publicly. We send the FLAT form first;
+        on a 400 whose body names "data" we retry ONCE with the nested form.
+        A 400 schema rejection creates nothing, so the single retry can never
+        double-apply (the no-blind-retry rule holds).
+        """
+        if not broadcaster_id or not moderator_id or not message_id:
+            raise ValueError("broadcaster_id, moderator_id and message_id are required")
+        key = ("pin_message", "", str(message_id))
+        query = {
+            "broadcaster_id": str(broadcaster_id),
+            "moderator_id": str(moderator_id),
+        }
+        resp = self._request(
+            "POST", "/chat/pinned_messages",
+            query=query, json_payload={"message_id": str(message_id)},
+        )
+        if resp.status == 400 and "data" in (resp.body or "").lower():
+            logger.info("helix pin_message flat body rejected (400: %s); "
+                        "retrying the nested-data form", resp.body[:120])
+            resp = self._request(
+                "POST", "/chat/pinned_messages",
+                query=query,
+                json_payload={"data": {"message_id": str(message_id)}},
+            )
+        return self._finish_write(
+            "pin_message", key, resp, success_statuses=(200, 202, 204))
+
+    def get_pinned_message(self, broadcaster_id: str) -> HelixResult:
+        """GET /chat/pinned_messages -> the channel's current mod-pin, if any.
+
+        A READ: no idempotency cache. ``ok`` on 200 with ``data`` = the parsed
+        body (an empty ``data`` list = no active pin). Non-200 raises
+        :class:`HelixError` so callers can distinguish "no pin" from "cannot
+        read the pin state" (the pinboard keeper falls back to pin-once-per-boot
+        on the latter rather than re-posting blind).
+        """
+        if not broadcaster_id:
+            raise ValueError("broadcaster_id is required")
+        resp = self._request(
+            "GET", "/chat/pinned_messages",
+            query={"broadcaster_id": str(broadcaster_id)},
+        )
+        if resp.status == 200:
+            return HelixResult(
+                action="get_pinned_message", ok=True, status=200,
+                idempotent=False, data=resp.json(),
+                key=("get_pinned_message", "", ""),
+            )
+        msg = self._extract_error_message(resp.body)
+        logger.warning("helix get_pinned_message failed: status=%d msg=%s",
+                       resp.status, msg)
+        raise HelixError(
+            f"helix get_pinned_message failed: {msg}",
+            status=resp.status, body=resp.body,
+        )
+
     def unban_user(
         self,
         broadcaster_id: str,

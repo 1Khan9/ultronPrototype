@@ -1506,6 +1506,22 @@ class Orchestrator:
         self._announce_results_enabled = bool(
             getattr(_sb_cfg0, "announce_results_default", True))
 
+        # Runtime voice→chat TELL relay toggle + LIVE stream delay (spec 12,
+        # 2026-07-09; the STOP-window "TELL CHAT" button + "DELAY s" field flip
+        # these). _tell_chat_enabled gates _maybe_handle_tell_chat (OFF = the
+        # dictated line is consumed with a local notice, nothing posted);
+        # _stream_delay_seconds is what the first-time-chatter welcome states
+        # (read live per welcome via a delay_fn). Boot state from twitch.chat.
+        try:
+            from kenning.config import get_config as _gc_tc
+            _tc_cfg0 = getattr(getattr(_gc_tc(), "twitch", None), "chat", None)
+        except Exception:                                            # noqa: BLE001
+            _tc_cfg0 = None
+        self._tell_chat_enabled = bool(
+            getattr(_tc_cfg0, "tell_chat_enabled", True))
+        self._stream_delay_seconds = max(0, min(3600, int(
+            getattr(_tc_cfg0, "stream_delay_seconds", 40) or 0)))
+
         # Tiny always-on-top, mouse-clickable "STOP" window. Clicking it fires
         # the SAME all-channel cancel as voice "Ultron, stop" (_cancel_all_playback)
         # but WITHOUT the wake-word watcher -- which self-triggers on the
@@ -1647,6 +1663,29 @@ class Orchestrator:
                         _sb, "announce_results_height", 26),
                     announce_results_label=getattr(
                         _sb, "announce_results_label", "ANNOUNCE RESULTS"),
+                    # TELL-CHAT toggle (spec 12): gates the voice→chat tell
+                    # relay ("Ultron, tell <name> in chat <message>"). Only
+                    # wired when twitch is enabled (hidden otherwise).
+                    on_toggle_tell_chat=(
+                        self._set_tell_chat_enabled
+                        if getattr(getattr(get_config(), "twitch", None),
+                                   "enabled", False)
+                        else None
+                    ),
+                    tell_chat_enabled=bool(self._tell_chat_enabled),
+                    tell_chat_height=getattr(_sb, "tell_chat_height", 26),
+                    tell_chat_label=getattr(_sb, "tell_chat_label", "TELL CHAT"),
+                    # STREAM-DELAY numeric field (spec 12): the committed value
+                    # is what the first-time-chatter welcome states. Twitch-only.
+                    on_set_stream_delay=(
+                        self._set_stream_delay_seconds
+                        if getattr(getattr(get_config(), "twitch", None),
+                                   "enabled", False)
+                        else None
+                    ),
+                    stream_delay_value=int(self._stream_delay_seconds),
+                    stream_delay_height=getattr(_sb, "stream_delay_height", 30),
+                    stream_delay_label=getattr(_sb, "stream_delay_label", "DELAY s"),
                 )
                 if getattr(_sb, "show_at_startup", False):
                     self._stop_button.show()
@@ -3787,6 +3826,79 @@ class Orchestrator:
             "Team relay muted. I won't speak to your team until you "
             "turn it back on."
         )
+        return True
+
+    def _maybe_handle_tell_chat(self, raw_text: str) -> bool:
+        """Voice→Twitch-chat TELL relay (spec 12): "Ultron, tell <name> in
+        chat <message>" @-tags the best fuzzy roster match and posts the
+        message INSTANTLY (chat is real-time; only the video feed lags behind
+        the stream delay); "tell chat <message>" posts untagged. Matches on
+        the RAW STT (the relay-lead normalizer rewrites "tell" leads) and
+        runs BEFORE _maybe_handle_relay_speech in every dispatch path — the
+        literal "in/on chat" delimiter keeps team/social relay forms falling
+        through untouched. Gated by the STOP-window TELL CHAT toggle: OFF =
+        consume with a short local notice, post nothing. Fail-open."""
+        try:
+            from kenning.audio.relay_speech import match_tell_chat
+            cmd = match_tell_chat(raw_text)
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("tell-chat probe failed: %s", e)
+            return False
+        if cmd is None:
+            return False
+        try:
+            from kenning.config import get_config
+            _tw = getattr(get_config(), "twitch", None)
+            if _tw is None or not getattr(_tw, "enabled", False):
+                # No Twitch in this boot: the feature cannot exist, so keep
+                # the LEGACY behaviour ("tell chat X" was a team-relay group
+                # form before spec 12) instead of consuming the turn.
+                return False
+            chcfg = getattr(_tw, "chat", None)
+        except Exception:                                            # noqa: BLE001
+            chcfg = None
+        post = getattr(self, "_twitch_chat_post", None)
+        if post is None:
+            # Twitch is enabled but chat isn't connected yet — a matched tell
+            # must never leak to the team relay ("tell chat X" is a group form).
+            logger.info("tell-chat: matched but chat is not connected")
+            self._speak("The chat line isn't connected.")
+            return True
+        if not bool(getattr(self, "_tell_chat_enabled", True)):
+            logger.info("tell-chat: matched but toggled OFF (consumed)")
+            self._speak("The chat line is closed.")
+            return True
+        try:
+            if cmd.name is None:
+                tpl = str(getattr(chcfg, "tell_chat_broadcast_template",
+                                  "") or "") or "{message}"
+                post(tpl.format(message=cmd.message))
+                logger.info("tell-chat: broadcast posted (%d chars)",
+                            len(cmd.message))
+                self._speak("Delivered to the congregation.")
+                return True
+            roster = getattr(self, "_twitch_user_roster", None)
+            login, score = (roster.best(cmd.name)
+                            if roster is not None else (None, 0.0))
+            floor = float(getattr(chcfg, "tell_chat_match_floor", 60) or 0)
+            if login is None or score < floor:
+                logger.info("tell-chat: no roster match for %r "
+                            "(best=%r score=%.0f floor=%.0f)",
+                            cmd.name, login, score, floor)
+                self._speak(f"No one in chat matches {cmd.name}.")
+                return True
+            display = (roster.display_of(login) or login)
+            tpl = str(getattr(chcfg, "tell_chat_template", "") or "") \
+                or "@{name} {message}"
+            post(tpl.format(name=display, message=cmd.message))
+            logger.info("tell-chat: posted to @%s (heard %r, score %.0f)",
+                        login, cmd.name, score)
+            self._speak(f"Delivered to {display}.")
+        except Exception as e:                                       # noqa: BLE001
+            # The command was matched + owned; report the failure locally
+            # rather than letting it fall through to the relay/LLM.
+            logger.warning("tell-chat post failed: %s", e)
+            self._speak("The chat line failed.")
         return True
 
     def _maybe_handle_flavor_toggle(self, user_text: str) -> bool:
@@ -6901,6 +7013,71 @@ class Orchestrator:
                     # overlay is disabled -> the games still run, just no card.
                     _ov = getattr(self, "_twitch_overlay_server", None)
                     _cg_overlay_emit = getattr(_ov, "emit", None) if _ov is not None else None
+                    # Voice→chat TELL roster + first-time welcome (spec 12,
+                    # 2026-07-09). ONE shared UserRoster: the router feeds it
+                    # (login + display name) from every chat message; the voice
+                    # tell handler fuzzy-matches against it. The welcomer greets
+                    # each first-time-this-run chatter once, stating the LIVE
+                    # stream delay (the stop-window DELAY field's committed
+                    # value, read per welcome). Broadcaster + bot excluded.
+                    # Both fail-open: an init error just disables the feature.
+                    _welcomer = None
+                    try:
+                        from kenning.twitch.user_roster import UserRoster
+                        self._twitch_user_roster = UserRoster()
+                    except Exception as _re:                         # noqa: BLE001
+                        logger.warning("tell-chat roster init failed: %s", _re)
+                        self._twitch_user_roster = None
+                    try:
+                        _chcfg = getattr(tcfg, "chat", None)
+                        if bool(getattr(_chcfg, "first_time_welcome_enabled",
+                                        True)):
+                            from kenning.twitch.welcome import FirstTimeWelcomer
+                            _aucfg = getattr(tcfg, "auth", None)
+                            # Durable welcomed-set (2026-07-09): welcome each
+                            # login once EVER, not once per boot (EventSub has
+                            # no native first-msg signal). Fail-open: store
+                            # init failure degrades to once-per-run.
+                            _wstore = None
+                            if bool(getattr(_chcfg, "first_time_welcome_persist",
+                                            True)):
+                                try:
+                                    from kenning.config import PROJECT_ROOT
+                                    from kenning.twitch.welcome import WelcomedStore
+                                    _wrel = str(getattr(
+                                        _chcfg, "first_time_welcome_persist_path",
+                                        "data/twitch/welcomed.db") or "")
+                                    if _wrel:
+                                        _wstore = WelcomedStore(PROJECT_ROOT / _wrel)
+                                except Exception as _wse:            # noqa: BLE001
+                                    logger.warning(
+                                        "welcomed-store init failed (%s); "
+                                        "welcomes are once-per-run", _wse)
+                                    _wstore = None
+                            _welcomer = FirstTimeWelcomer(
+                                store=_wstore,
+                                template=str(getattr(
+                                    _chcfg, "first_time_welcome_text", "") or ""),
+                                template_no_delay=str(getattr(
+                                    _chcfg, "first_time_welcome_text_no_delay",
+                                    "") or ""),
+                                delay_fn=lambda: getattr(
+                                    self, "_stream_delay_seconds", 0),
+                                exclude_logins=[
+                                    lg for lg in (
+                                        getattr(_aucfg, "broadcaster_login", None),
+                                        getattr(_aucfg, "bot_login", None),
+                                    ) if lg
+                                ],
+                                max_per_minute=int(getattr(
+                                    _chcfg, "first_time_welcome_max_per_minute",
+                                    4) or 4),
+                            )
+                            logger.info("first-time-chatter welcome armed "
+                                        "(delay=%ss)", self._stream_delay_seconds)
+                    except Exception as _we:                         # noqa: BLE001
+                        logger.warning("first-time welcome init failed: %s", _we)
+                        _welcomer = None
                     cgr = ChatGameRouter(
                         make_chat_command_drain_fn(read_ep),
                         ledger=ledger, cfg=_ecfg,
@@ -6927,6 +7104,11 @@ class Orchestrator:
                         # speakers) for the spoken confirmation.
                         song_request_fn=self._twitch_song_request,
                         speak_fn=lambda t: self._result_speak(t),
+                        # Spec 12: feed the shared tell-chat roster + post the
+                        # first-time-chatter welcome from the router's tick
+                        # (the one consumer that sees every chat message).
+                        roster=self._twitch_user_roster,
+                        welcomer=_welcomer,
                     )
                     self._twitch_chat_game_router = cgr
                     self._twitch_chat_stop = False
@@ -7145,6 +7327,119 @@ class Orchestrator:
                                 int(_sinterval_s // 60))
             except Exception as e:                                       # noqa: BLE001
                 logger.warning("twitch song-hint init failed: %s", e)
+
+            # PINBOARD keeper (2026-07-09 flood fix): the commands/song
+            # reminders live in ONE pinned message instead of periodic chat
+            # posts. Each check reads the write sidecar's GET /pin state and
+            # (re)pins ONLY per panel.pinboard_should_pin: an active pin —
+            # anyone's — is never replaced (a manual streamer pin wins); an
+            # unreadable state pins once per boot, never blind re-posts.
+            self._twitch_pinboard_thread = None
+            try:
+                _pchcfg = getattr(tcfg, "chat", None)
+                if getattr(_pchcfg, "pinboard_enabled", True):
+                    _pwrite_ep = str(getattr(tcfg, "write_sidecar_endpoint",
+                                             "http://127.0.0.1:8777")).rstrip("/")
+                    _pinterval_s = max(
+                        60.0,
+                        float(getattr(_pchcfg, "pinboard_check_interval_minutes",
+                                      15)) * 60.0)
+                    from kenning.twitch.panel import (
+                        build_commands_panel_text as _p_build,
+                        pinboard_should_pin as _p_should,
+                    )
+                    import json as _pjson
+                    import threading as _pth
+                    import time as _ptime
+                    import urllib.request as _purl
+                    _pin_state = {"pinned_this_boot": False,
+                                  "pin_leg_broken": False}
+
+                    def _pin_get_state():
+                        try:
+                            with _purl.urlopen(f"{_pwrite_ep}/pin",
+                                               timeout=5) as _pr:  # nosec B310 - loopback
+                                return _pjson.loads(_pr.read() or b"{}")
+                        except Exception as _pe:                 # noqa: BLE001
+                            logger.debug("pinboard state read failed: %s", _pe)
+                            return None
+
+                    def _pin_post(text: str) -> dict:
+                        _pbody = _pjson.dumps({"text": text}).encode("utf-8")
+                        _preq = _purl.Request(
+                            f"{_pwrite_ep}/pin", data=_pbody, method="POST",
+                            headers={"Content-Type": "application/json"})
+                        with _purl.urlopen(_preq, timeout=10) as _pr:  # nosec B310 - loopback
+                            return _pjson.loads(_pr.read() or b"{}")
+
+                    def _pinboard_loop() -> None:
+                        first = True
+                        while not getattr(self, "_twitch_chat_stop", False):
+                            # Short first wait (sidecars settling), then the
+                            # configured cadence; 1s slices honour stop fast.
+                            target = 20.0 if first else _pinterval_s
+                            first = False
+                            waited = 0.0
+                            while waited < target:
+                                if getattr(self, "_twitch_chat_stop", False):
+                                    return
+                                _ptime.sleep(1.0)
+                                waited += 1.0
+                            try:
+                                # PIN-LEG-BROKEN latch (review 2026-07-09 P1):
+                                # once a message POSTED but could not be
+                                # PINNED (open-beta pin endpoint failing),
+                                # every later check would see readable-no-pin
+                                # and post AGAIN -- degrading into the very
+                                # interval poster this replaces. Latched off
+                                # for the rest of the boot instead.
+                                if _pin_state["pin_leg_broken"]:
+                                    continue
+                                state = _pin_get_state()
+                                if not _p_should(
+                                        state,
+                                        pinned_this_boot=_pin_state[
+                                            "pinned_this_boot"]):
+                                    continue
+                                text = "📌 " + _p_build(_pchcfg)
+                                res = _pin_post(text) or {}
+                                posted = bool(res.get("message_id")) or bool(
+                                    res.get("ok"))
+                                if posted:
+                                    # Latch only when something actually
+                                    # reached chat -- a send-leg failure
+                                    # (nothing posted) may retry next check.
+                                    _pin_state["pinned_this_boot"] = True
+                                if res.get("ok") and res.get("pinned"):
+                                    logger.info("pinboard: commands message "
+                                                "pinned (id=%s)",
+                                                res.get("message_id"))
+                                elif res.get("message_id") and not res.get(
+                                        "pinned"):
+                                    _pin_state["pin_leg_broken"] = True
+                                    logger.warning(
+                                        "pinboard: message posted but the PIN "
+                                        "leg failed (%s) -- suppressing "
+                                        "further pinboard posts this boot; "
+                                        "see write sidecar healthz pin_error",
+                                        res)
+                                else:
+                                    logger.warning(
+                                        "pinboard: send leg failed (%s) -- "
+                                        "nothing posted; will retry next "
+                                        "check", res)
+                            except Exception as _pe:             # noqa: BLE001
+                                logger.debug("pinboard tick failed: %s", _pe)
+
+                    self._twitch_chat_stop = False
+                    _pt = _pth.Thread(target=_pinboard_loop, daemon=True,
+                                      name="twitch-pinboard")
+                    _pt.start()
+                    self._twitch_pinboard_thread = _pt
+                    logger.info("twitch pinboard keeper started (check every "
+                                "%d min)", int(_pinterval_s // 60))
+            except Exception as e:                                       # noqa: BLE001
+                logger.warning("twitch pinboard init failed: %s", e)
 
             if getattr(self, "llm", None) is None:
                 logger.warning("twitch: no LLM engine loaded; chat-REPLY disabled "
@@ -7975,6 +8270,71 @@ class Orchestrator:
                     ).start()
             except Exception as e:                                   # noqa: BLE001
                 logger.debug("twitch token watch thread skipped (%s)", e)
+
+            # GUARD-HEALTH WATCHER (2026-07-09): the one-shot sidecar canary
+            # above probes ONCE at ~18s. The Llama-Guard safety sidecar can
+            # CRASH later (observed: a CUDA pool assert after model churn across
+            # rapid restarts) -- after which chat-reply silently fail-CLOSES with
+            # only a DEBUG "guard warming up" line every 3s and the streamer has
+            # no idea replies are off. This loop polls the guard /healthz, and
+            # once it has been unhealthy past the load window emits a LOUD console
+            # remedy + ONE spoken persona-safe pointer (re-armed on recovery).
+            def _twitch_guard_watch(guard_port: int) -> None:
+                import json as _gj
+                import time as _gt
+                import urllib.request as _gu
+                from kenning.twitch.guard import GuardDownCanary
+                canary = GuardDownCanary()
+                while not getattr(self, "_twitch_chat_stop", False):
+                    _gt.sleep(20.0)
+                    healthy = False
+                    try:
+                        with _gu.urlopen(
+                            f"http://127.0.0.1:{guard_port}/healthz",
+                            timeout=2.5,
+                        ) as r:
+                            body = _gj.loads(r.read() or b"{}") or {}
+                            healthy = bool(body.get("ready"))
+                    except Exception:                                # noqa: BLE001
+                        healthy = False                              # unreachable = down
+                    try:
+                        ev = canary.observe(healthy, _gt.monotonic())
+                    except Exception:                                # noqa: BLE001
+                        continue
+                    if ev is None:
+                        continue
+                    if ev.kind == "recovered":
+                        logger.info(
+                            "twitch guard RECOVERED on :%d -- chat replies will "
+                            "re-enable automatically.", guard_port)
+                        continue
+                    # kind == "down"
+                    logger.error(
+                        "twitch GUARD DOWN on :%d -- chat replies are DISABLED "
+                        "(fail-closed on the safety model). The Llama-Guard "
+                        "sidecar is unhealthy/crashed; restart Ultron to recover "
+                        "(fully quit, ensure no stray python holds the GPU, then "
+                        "relaunch). See logs/twitch_sidecars/twitch_guard.log.",
+                        guard_port)
+                    if ev.speak:
+                        try:
+                            self._speak(
+                                "My judgment of the chat has gone dark. I cannot "
+                                "answer them until I am restarted.")
+                        except Exception:                            # noqa: BLE001
+                            pass
+
+            try:
+                _guard_port = next(
+                    (port for role, port in _canary_targets
+                     if role == "twitch_guard"), None)
+                if _guard_port:
+                    threading.Thread(
+                        target=_twitch_guard_watch, args=(_guard_port,),
+                        daemon=True, name="twitch-guard-watch",
+                    ).start()
+            except Exception as e:                                   # noqa: BLE001
+                logger.debug("twitch guard watch thread skipped (%s)", e)
 
     def _kill_twitch_sidecars(self) -> None:
         """Reap every spawned Twitch sidecar process TREE on shutdown. UNREGISTERS
@@ -9088,6 +9448,19 @@ class Orchestrator:
                             follow_up=bool(follow_up_until),
                         )
                         continue
+                    # Voice→chat TELL relay (spec 12): "tell <name> in chat
+                    # <message>" / "tell chat <message>" posts to Twitch chat
+                    # instantly (beats the stream delay). RAW STT (the
+                    # normalizer rewrites "tell" leads) and BEFORE the team
+                    # relay — "tell chat X" is otherwise a relay group form.
+                    if self._maybe_handle_tell_chat(_raw_stt):
+                        self._last_response_finished_monotonic = time.monotonic()
+                        follow_up_until = None
+                        trace.tlog(
+                            logger, "loop:iteration_end",
+                            via="tell_chat", follow_up=False,
+                        )
+                        continue
                     # Voice relay: "tell my teammates X" -- rephrase to a
                     # direct second-person line and speak it on the
                     # configured secondary output device (VoiceMeeter
@@ -9483,6 +9856,20 @@ class Orchestrator:
                             follow_up=bool(follow_up_until),
                         )
                         continue
+
+                # Voice→chat TELL relay (spec 12) — lean-path twin of the main
+                # cascade's check. MUST run before the lean relay matcher AND
+                # the turbo/router force-relay backstops below: "tell chat X"
+                # is otherwise a relay GROUP form (_GROUP_PRON includes
+                # "chat") and would be transmitted to the team mic. RAW STT.
+                if self._maybe_handle_tell_chat(_raw_stt):
+                    self._last_response_finished_monotonic = time.monotonic()
+                    follow_up_until = None
+                    trace.tlog(
+                        logger, "loop:iteration_end",
+                        via="tell_chat-lean", follow_up=False,
+                    )
+                    continue
 
                 # LEAN GAMING BOOT: the exact Spotify matcher above lives INSIDE
                 # the coding_voice block, which the lean boot skips -- so music
@@ -13930,6 +14317,30 @@ class Orchestrator:
         self._twitch_chat_reply_enabled = bool(enabled)
         logger.info("twitch chat reply %s (stop-window toggle)",
                     "ON" if enabled else "OFF")
+
+    def _set_tell_chat_enabled(self, enabled: bool) -> None:
+        """STOP-window TELL-CHAT toggle callback (spec 12): gate the voice→chat
+        tell relay. ON (default) = "Ultron, tell <name> in chat <message>"
+        posts to Twitch chat; OFF = the matched command is consumed with a
+        short local notice and nothing is posted (it never falls through to
+        the team relay or the LLM). Read live by _maybe_handle_tell_chat."""
+        self._tell_chat_enabled = bool(enabled)
+        logger.info("voice→chat TELL %s (stop-window toggle)",
+                    "ON" if enabled else "OFF")
+
+    def _set_stream_delay_seconds(self, seconds: int) -> None:
+        """STOP-window DELAY field callback (spec 12): commit the CURRENT
+        stream delay in seconds. The first-time-chatter welcome reads this
+        live (per welcome) via the delay_fn wired into FirstTimeWelcomer, so a
+        new value applies to the very next welcome — no restart. Clamped to
+        [0, 3600]; 0 switches the welcome to its no-delay template."""
+        try:
+            v = max(0, min(3600, int(seconds)))
+        except (TypeError, ValueError):
+            logger.warning("stream delay ignored (not a number: %r)", seconds)
+            return
+        self._stream_delay_seconds = v
+        logger.info("stream delay committed -> %ss (stop-window field)", v)
 
     def _set_chat_audio_to_speakers(self, enabled: bool) -> None:
         """STOP-window HEAR-CHAT toggle callback: flip whether CHAT-directed audio

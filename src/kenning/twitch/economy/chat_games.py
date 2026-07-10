@@ -191,8 +191,18 @@ class ChatGameRouter:
         announce_results_enabled_fn: Callable[[], bool] | None = None,
         song_request_fn: Callable[[str, str], Optional[dict]] | None = None,
         speak_fn: Callable[[str], object] | None = None,
+        roster: object | None = None,
+        welcomer: object | None = None,
     ) -> None:
         self._drain = drain_fn
+        # Spec 12 (2026-07-09): optional live-chat side channels fed from THIS
+        # tick loop (the one consumer that sees every chat message). ``roster``
+        # is the shared UserRoster the voice tell-command fuzzy-matches against
+        # (observe side lives here, match side in the orchestrator); ``welcomer``
+        # is the FirstTimeWelcomer whose returned text is posted via _reply.
+        # Both default None => byte-identical behaviour for existing callers.
+        self._roster = roster
+        self._welcomer = welcomer
         # 2026-06-26: dev TEST PANEL injection buffer. inject() appends a synthetic
         # FLAT chat dict; the next tick() drains it ALONGSIDE the live drain so a
         # test command flows through the EXACT same parse/dedup/dispatch path as a
@@ -325,6 +335,7 @@ class ChatGameRouter:
         for ev in events:
             try:
                 self._observe(ev)
+                self._maybe_welcome(ev)
                 cmd = parse_command(ev)
                 if cmd is None:
                     # An ordinary (non-command) message — the only thing it can
@@ -355,6 +366,15 @@ class ChatGameRouter:
     def _observe(self, ev: ChatEvent) -> None:
         uid = getattr(ev, "chatter_user_id", "") or ""
         login = (getattr(ev, "chatter_login", "") or "").strip().lower()
+        # Spec 12: feed the shared voice-tell roster (login + real display
+        # name) from the SAME per-event bookkeeping pass. Fail-safe: a roster
+        # error must never break chat ingest.
+        if self._roster is not None and login:
+            try:
+                self._roster.observe(login, getattr(ev, "chatter_name", "") or "")
+            except Exception as exc:  # noqa: BLE001 — must never break ingest
+                logger.debug("tell-chat roster observe failed for %s: %s",
+                             login, exc)
         if uid:
             self._presence[uid] = (login, self._now())
             if login:
@@ -375,6 +395,31 @@ class ChatGameRouter:
                 self._last_msg.move_to_end(login)
                 while len(self._last_msg) > _MSG_INDEX_MAX:
                     self._last_msg.popitem(last=False)
+
+    def _maybe_welcome(self, ev: ChatEvent) -> None:
+        """Spec 12: post the first-time-this-run welcome for a new chatter.
+        Delegates the entire decision (seen-set, exclusions, burst guard, live
+        delay render) to the injected FirstTimeWelcomer; posts its returned
+        text via the normal reply channel. Fail-safe: never breaks the tick."""
+        if self._welcomer is None:
+            return
+        try:
+            text = self._welcomer.observe(
+                (getattr(ev, "chatter_login", "") or "").strip().lower(),
+                display_name=getattr(ev, "chatter_name", "") or "",
+                chatter_uid=getattr(ev, "chatter_user_id", "") or "",
+                broadcaster_uid=getattr(ev, "broadcaster_user_id", "") or "",
+            )
+        except Exception as exc:  # noqa: BLE001 — a welcome must never break ingest
+            logger.debug("first-time welcome check failed: %s", exc)
+            return
+        if text:
+            if self._announce is None:
+                # A welcome is once-per-run: losing it deserves a LOUD log
+                # (the login is already marked seen and will not retry).
+                logger.warning("first-time welcome dropped -- no chat "
+                               "announce channel: %s", text)
+            self._reply(text)
 
     def _accrue_earnings(self) -> None:
         per_min = _as_int(getattr(self._cfg, "earn_per_minute", 0))

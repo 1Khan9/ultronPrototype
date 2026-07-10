@@ -484,3 +484,72 @@ def test_result_speak_hear_off_mutes_local_speakers(monkeypatch) -> None:
     # After the only clip, the prior override (None) is restored + depth back to 0.
     assert ke._live_speaker_mute is None
     assert ke.chat_speaker_mute_depth() == 0
+
+
+# ---------------------------------------------------------------------------
+# TELL-CHAT toggle + STREAM-DELAY numeric row (spec 12, 2026-07-09)
+# ---------------------------------------------------------------------------
+
+def test_overlay_accepts_tell_chat_toggle() -> None:
+    hits = []
+    ov = StopButtonOverlay(on_stop=lambda: None,
+                           on_toggle_tell_chat=lambda v: hits.append(v),
+                           tell_chat_enabled=True,
+                           tell_chat_height=30, tell_chat_label="TELL")
+    assert ov._on_toggle_tell_chat is not None
+    assert ov._tell_chat_enabled is True
+    assert ov._tell_chat_h == 30
+    assert ov._tell_chat_label == "TELL"
+    ov._on_toggle_tell_chat(False)
+    assert hits == [False]
+
+
+def test_overlay_tell_chat_defaults_and_clamp() -> None:
+    ov = StopButtonOverlay(on_stop=lambda: None)
+    assert ov._on_toggle_tell_chat is None      # absent by default
+    assert ov._tell_chat_enabled is True        # default ON
+    assert ov._tell_chat_h == 26
+    assert ov._tell_chat_label == "TELL CHAT"
+    ov2 = StopButtonOverlay(on_stop=lambda: None,
+                            tell_chat_height=-5, tell_chat_label="")
+    assert ov2._tell_chat_h == 0
+    assert ov2._tell_chat_label == "TELL CHAT"
+
+
+def test_overlay_accepts_stream_delay_field() -> None:
+    hits = []
+    ov = StopButtonOverlay(on_stop=lambda: None,
+                           on_set_stream_delay=lambda v: hits.append(v),
+                           stream_delay_value=40,
+                           stream_delay_height=32, stream_delay_label="LAG")
+    assert ov._on_set_stream_delay is not None
+    assert ov._stream_delay_value == 40
+    assert ov._stream_delay_h == 32
+    assert ov._stream_delay_label == "LAG"
+    ov._on_set_stream_delay(95)
+    assert hits == [95]
+
+
+def test_overlay_stream_delay_defaults_and_clamp() -> None:
+    ov = StopButtonOverlay(on_stop=lambda: None)
+    assert ov._on_set_stream_delay is None      # absent by default
+    assert ov._stream_delay_value == 40
+    assert ov._stream_delay_h == 30
+    assert ov._stream_delay_label == "DELAY s"
+    ov2 = StopButtonOverlay(on_stop=lambda: None,
+                            stream_delay_value=99999, stream_delay_height=-5,
+                            stream_delay_label="")
+    assert ov2._stream_delay_value == 3600      # clamped to [0, 3600]
+    assert ov2._stream_delay_h == 0
+    assert ov2._stream_delay_label == "DELAY s"
+    ov3 = StopButtonOverlay(on_stop=lambda: None, stream_delay_value=-7)
+    assert ov3._stream_delay_value == 0
+
+
+def test_config_tell_chat_and_stream_delay_defaults() -> None:
+    from kenning.config import StopButtonConfig
+    c = StopButtonConfig()
+    assert c.tell_chat_height == 26
+    assert c.tell_chat_label == "TELL CHAT"
+    assert c.stream_delay_height == 30
+    assert c.stream_delay_label == "DELAY s"

@@ -479,7 +479,8 @@ def test_eventsub_source_subscribes_and_maps_chat(monkeypatch) -> None:
         helix_factory=lambda: helix,
     )
     out = src.poll()
-    # The chat notification mapped to the unchanged consumer shape.
+    # The chat notification mapped to the consumer shape (2026-07-09: extended
+    # with message_type + broadcaster_user_id — previously parsed then dropped).
     chats = [e for e in out if e["type"] == "chat"]
     assert chats == [
         {
@@ -492,6 +493,8 @@ def test_eventsub_source_subscribes_and_maps_chat(monkeypatch) -> None:
             # badges carry mod/broadcaster provenance for chat-command authz
             # (empty here -- the source event has no badges).
             "badges": [],
+            "message_type": "text",
+            "broadcaster_user_id": "B-100",
         }
     ]
     # The chat subscription was created with the RESOLVED ids + the session id.
@@ -689,3 +692,25 @@ def test_eventsub_source_poll_never_raises(monkeypatch) -> None:
     )
     assert src.poll() == []  # swallowed
     assert exploding.closed is True  # reset for next poll
+
+
+def test_eventsub_source_carries_native_message_type(monkeypatch) -> None:
+    """2026-07-09: the EventSub message_type survives the flat-dict boundary —
+    a user_intro (Twitch's native introduce-yourself class) is visible to
+    main-process consumers instead of being dropped at the sidecar."""
+    _patch_tokens(monkeypatch)
+    notif = _chat_notification("c2", "newbie", "hi everyone")
+    notif["payload"]["event"]["message"]["message_type"] = "user_intro"
+    ws = _FakeWSClient([_welcome("sess-1"), notif])
+    src = sidecar.EventSubChatSource(
+        url="wss://test/ws",
+        client_id="cid",
+        broadcaster_login="streamer",
+        bot_login="ultronbot",
+        connect_factory=lambda url: ws,
+        helix_factory=lambda: _FakeHelix(),
+    )
+    chats = [e for e in src.poll() if e["type"] == "chat"]
+    assert len(chats) == 1
+    assert chats[0]["message_type"] == "user_intro"
+    assert chats[0]["broadcaster_user_id"] == "B-100"

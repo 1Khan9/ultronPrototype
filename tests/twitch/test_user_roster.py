@@ -348,3 +348,67 @@ def test_concurrency_match_during_eviction_churn():
 
     assert errors == [], f"concurrent access raised: {errors!r}"
     assert len(r) <= 50
+
+
+# ---------------------------------------------------------------------------
+# Display-name retention (spec 12, 2026-07-09) — observe() optionally keeps the
+# chatter's cased Twitch display name for @tag rendering.
+# ---------------------------------------------------------------------------
+
+def test_display_name_stored_and_returned():
+    r = UserRoster()
+    r.observe("xx_sniper_xx", "xX_Sniper_Xx")
+    assert r.display_of("xx_sniper_xx") == "xX_Sniper_Xx"
+    # lookup is canonicalized like observe (case/whitespace-insensitive)
+    assert r.display_of("  XX_SNIPER_XX ") == "xX_Sniper_Xx"
+
+
+def test_display_name_optional_and_never_erased_by_omission():
+    r = UserRoster()
+    r.observe("bob")                      # legacy single-arg call still works
+    assert r.display_of("bob") is None
+    r.observe("bob", "BobTheGreat")
+    r.observe("bob")                      # re-observe WITHOUT display
+    assert r.display_of("bob") == "BobTheGreat", "omitted display must not erase"
+
+
+def test_display_name_updates_on_reobserve():
+    r = UserRoster()
+    r.observe("bob", "OldBob")
+    r.observe("bob", "NewBob")
+    assert r.display_of("bob") == "NewBob"
+
+
+def test_display_name_blank_and_nonstring_ignored():
+    r = UserRoster()
+    r.observe("bob", "   ")
+    assert r.display_of("bob") is None
+    r.observe("bob", 42)  # type: ignore[arg-type]
+    assert r.display_of("bob") is None
+
+
+def test_display_of_unknown_or_invalid_login():
+    r = UserRoster()
+    assert r.display_of("ghost") is None
+    assert r.display_of("") is None
+    assert r.display_of(None) is None  # type: ignore[arg-type]
+
+
+def test_display_evicted_in_lockstep_with_login():
+    r = UserRoster(max_size=2)
+    r.observe("a", "DispA")
+    r.observe("b", "DispB")
+    r.observe("c", "DispC")              # evicts "a"
+    assert "a" not in r
+    assert r.display_of("a") is None, "evicted login must drop its display too"
+    assert r.display_of("b") == "DispB"
+    assert r.display_of("c") == "DispC"
+    # the internal display map never grows past the seen map (bounded memory)
+    assert len(r._display) <= len(r._seen)
+
+
+def test_clear_drops_display_names():
+    r = UserRoster()
+    r.observe("bob", "Bob")
+    r.clear()
+    assert r.display_of("bob") is None

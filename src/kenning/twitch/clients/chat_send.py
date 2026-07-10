@@ -95,18 +95,27 @@ class ChatSendClient:
     def send(self, broadcaster_id: str, sender_id: str, message: str) -> bool:
         """POST one chat message (``sender_id`` is the bot). ``True`` iff Twitch
         confirms ``is_sent``. Fail-safe — never raises."""
+        ok, _mid = self.send_with_id(broadcaster_id, sender_id, message)
+        return ok
+
+    def send_with_id(
+        self, broadcaster_id: str, sender_id: str, message: str,
+    ) -> Tuple[bool, str]:
+        """Like :meth:`send` but also returns Twitch's ``message_id`` for the
+        sent message (``""`` on failure/absent) — the pinboard needs the id to
+        pin the message right after posting it. Fail-safe — never raises."""
         if not broadcaster_id or not sender_id:
             logger.warning("chat-send: missing broadcaster/sender id")
-            return False
+            return False, ""
         text = (message or "").strip()
         if not text:
-            return False
+            return False, ""
         if len(text) > MAX_MESSAGE_CHARS:
             text = text[:MAX_MESSAGE_CHARS]
         token = self._get_token() or ""
         if not token:
             logger.warning("chat-send: no bot access token")
-            return False
+            return False, ""
         body = json.dumps({
             "broadcaster_id": str(broadcaster_id),
             "sender_id": str(sender_id),
@@ -125,7 +134,7 @@ class ChatSendClient:
             status, raw = _post(token)
         except Exception as exc:  # noqa: BLE001 — fail-safe
             logger.warning("chat-send transport failed: %s", type(exc).__name__)
-            return False
+            return False, ""
         # A 401 means the bot user token lapsed mid-session. Refresh ONCE and
         # retry ONCE so chat output self-heals (without this it 401s on every
         # send until the sidecar is restarted -- ~1.5h of dead chat was observed).
@@ -141,11 +150,11 @@ class ChatSendClient:
                     status, raw = _post(fresh)
                 except Exception as exc:  # noqa: BLE001 — fail-safe
                     logger.warning("chat-send transport failed on retry: %s", type(exc).__name__)
-                    return False
+                    return False, ""
         if not (200 <= status < 300):
             logger.warning("chat-send non-2xx status=%s body=%s", status, _preview(raw))
-            return False
-        # Twitch returns data[0].is_sent (+ drop_reason when dropped).
+            return False, ""
+        # Twitch returns data[0].is_sent (+ message_id, + drop_reason when dropped).
         try:
             data = json.loads(raw.decode("utf-8", "replace")) if raw else {}
             row = (data.get("data") or [{}])[0] if isinstance(data, dict) else {}
@@ -154,7 +163,7 @@ class ChatSendClient:
         is_sent = bool(row.get("is_sent", True))  # absent -> assume sent (2xx)
         if not is_sent:
             logger.warning("chat-send dropped by Twitch: %s", row.get("drop_reason"))
-        return is_sent
+        return is_sent, str(row.get("message_id") or "")
 
 
 def _preview(raw: bytes, limit: int = 200) -> str:

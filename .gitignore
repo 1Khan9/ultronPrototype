@@ -191,6 +191,13 @@ data/projects/
 data/qdrant/
 data/observations.jsonl
 data/sandbox/
+# 2026-07-09 (review P1): the Twitch runtime state dir — the welcomed-store
+# (viewer logins + timestamps) and any future per-viewer runtime data must
+# never reach the public origin.
+data/twitch/
+data/events/
+data/gui_action.jsonl
+data/config_reload.signal
 # 2026-05-29 production-hardening campaign working artefacts (triage,
 # findings JSON, implementation plans). Internal scratch -- never committed.
 data/campaign/

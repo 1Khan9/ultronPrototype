@@ -27,6 +27,87 @@
 > - Full runbook: **`docs/ultron_0_1_baseline.md`**. Post-0.1 roadmap:
 >   **`docs/latency_optimizations_V1.md`**.
 >
+> **PINBOARD — ONE PINNED COMMANDS MESSAGE ENDS THE CHAT FLOOD (2026-07-09, wave 4)**
+>
+> Streamer: periodic reminders flooded chat (3 interval posters whose stagger only applied to the FIRST post →
+> drifting near-simultaneous clusters). Twitch's pinned-messages API went OPEN BETA 2026-05-15
+> (`helix/chat/pinned_messages`; scope `moderator:manage:chat_messages` — already in BROADCASTER_SCOPES, no
+> re-auth). NEW `moderation/helix.HelixClient.pin_message` (flat body first; ONE nested-`data` retry on a 400
+> naming "data" — open-beta schema tolerance, a schema 400 creates nothing) + `get_pinned_message` (200+empty
+> = no pin; non-200 RAISES so "no pin" ≠ "cannot read"). `clients/chat_send.ChatSendClient.send_with_id`
+> returns Twitch's message_id (send() keeps its bool contract). Write sidecar: `POST /pin` = send-as-bot →
+> pin-as-broadcaster (same sender + HelixClient as say/shoutout), `GET /pin` = state
+> (active true/false/None-unreadable), healthz `pin_error`. Orchestrator `_pinboard_loop` keeper posts
+> "📌 " + `build_commands_panel_text` and re-checks every `pinboard_check_interval_minutes` (15); NEW
+> `panel.pinboard_should_pin` (pure): an ACTIVE pin — anyone's — is NEVER replaced (a manual streamer pin
+> wins); readable+no-pin → re-pin; UNREADABLE → pin once per boot, never blind re-posts. Consolidation:
+> `talk_hint_interval_minutes` 10→20 (the ONE periodic chat message left), `song_hint_enabled` default OFF
+> (retired-not-removed; its info is on the pinboard + `!ultron` on demand); live config.yaml panel poster OFF.
+>
+> **DURABLE WELCOMED-STORE + message_type PLUMBING + GUARD→CPU (2026-07-09, wave 3)**
+>
+> **Welcome survives restarts:** the per-run seen-set re-greeted every known chatter each reboot. EventSub does
+> NOT expose Twitch's native first-msg tag (verified vs the live 2026 `channel.chat.message` schema + dev-forum
+> guidance), so NEW `twitch/welcome.WelcomedStore` (stdlib SQLite at `data/twitch/welcomed.db`, login-keyed,
+> fail-open in every direction) makes "first time" = first time EVER: `FirstTimeWelcomer(store=)` checks it
+> after the per-run set (one SQLite hit per login per run) and BEFORE the burst guard; ONLY a rendered welcome
+> is durably marked (overflow/excluded stay per-run). Config `first_time_welcome_persist`(ON)/`persist_path`.
+> **Sidecar boundary:** `_map_notification` now forwards `message_type` ("text"/"user_intro"/channel-points
+> variants) + `broadcaster_user_id` (was parsed-then-dropped; the welcome's uid self-exclusion compared "" on
+> real events); `ChatEvent.from_buffer` maps `message_type` (default "text" for older buffered dicts). All
+> flat-dict consumers read by key (verified sweep) — only the strict test pin needed extending.
+> **VRAM (user-approved):** live config.yaml `twitch.safety.guard_gpu_layers` -1 → 0 — the guard sidecar's own
+> design default (CPU; "chat moderation is latency-tolerant"); frees ~2-2.5 GB (1B model + the separate
+> process's own CUDA context) and removes the guard CUDA-crash class (it GGML_ASSERT-crashed on GPU after
+> restart churn 2026-07-09). Audit verdict: every other GPU resident (4B F16-KV, Whisper int8_fp16, Kokoro) is
+> a measured latency/quality choice; RVC is config-echo only (never constructed under Kokoro).
+>
+> **SPEC 12 — VOICE→CHAT TELL RELAY + FIRST-TIME-CHATTER WELCOME (2026-07-09)**
+>
+> Beat the ~40 s stream delay: the streamer dictates a chat line — "Ultron, tell <name> in chat <message>"
+> @-tags the best fuzzy match among chatters actually seen this run; "tell chat <message>" posts untagged.
+> NEW `audio/relay_speech.match_tell_chat` + `TellChatCommand` (stdlib-re; the literal "in/on [the] chat"
+> delimiter keeps the grammar DISJOINT from the team relay + teammate-social relay; group words/pronouns in
+> the name slot reject/broadcast; message cleaned + 400-char cap). `twitch/user_roster.UserRoster` (previously
+> tested-but-unwired) now RETAINS the real Twitch display name per login (`observe(login, display_name)`,
+> `display_of`, evicted/cleared in lockstep) and is FED LIVE from `ChatGameRouter._observe` (the one consumer
+> that sees every chat message); the voice handler fuzzy-matches against it (rapidfuzz WRatio,
+> `twitch.chat.tell_chat_match_floor` default 60). NEW `twitch/welcome.py` `FirstTimeWelcomer` + `format_delay`:
+> the first time a login chats this run, ONE welcome is posted naming them + stating the LIVE stream delay
+> (`delay_fn` read per welcome — the stop-button DELAY field's committed value; `{delay}` renders "1 minute
+> 20 seconds"; delay 0 → a no-delay template), apologizing on the streamer's behalf; broadcaster/bot excluded;
+> rolling-minute burst guard (default 4/min — a raid never floods greetings; overflow marked seen silently);
+> fail-open on bad templates; `ChatGameRouter.tick` calls `_maybe_welcome` per event and posts via `_reply`.
+> Config: `TwitchChatConfig.tell_chat_enabled/tell_chat_template/tell_chat_broadcast_template/
+> tell_chat_match_floor/first_time_welcome_enabled/first_time_welcome_text[_no_delay]/
+> first_time_welcome_max_per_minute/stream_delay_seconds` + `StopButtonConfig.tell_chat_height/label` +
+> `stream_delay_height/label` (the GUI TELL CHAT toggle + the overlay's first numeric DELAY row). Spec:
+> `docs/ultron_1_0/04_implementation/12_chat_tell_first_time_welcome_spec.md`.
+> **HARDENING (2026-07-09, follow-up to the live-test):** (a) **Guard-down loud canary** — the boot sidecar
+> canary probes ONCE at ~18s, so a guard sidecar that CRASHES later (observed: a CUDA pool assert after model
+> churn across rapid restarts) left chat-reply silently fail-closed with only a DEBUG "guard warming up" line.
+> NEW `twitch/guard.GuardDownCanary` (pure, clock-injected: `observe(healthy, now)` → `GuardCanaryEvent(kind
+> down|recovered, speak)`, `min_down_s=30` grace + `rewarn_s=90` throttle, speak-once-per-outage) + orchestrator
+> `_twitch_guard_watch` thread (mirrors `_twitch_token_watch`; polls the guard `/healthz`, LOUD console remedy +
+> ONE persona-safe spoken pointer on sustained down, recovery log). (b) **Tell grammar broadened** — the streamer
+> said "say hi to <someone> in chat", which the tagged form (message AFTER "in chat") can't parse; NEW greeting
+> forms in `match_tell_chat`: `_TELL_CHAT_GREET_TO_RE` ("say <greeting> to <name> in chat", bounded greeting
+> vocab) + `_TELL_CHAT_GREET_VERB_RE` ("greet/welcome <name> [aboard] in/to chat" → synthesized "hi"/"welcome");
+> "everyone/all/chat" targets broadcast untagged (`_TELL_CHAT_BROADCAST_NAMES`).
+>
+> **Wiring (orchestrator.py):** NEW `_maybe_handle_tell_chat(raw_stt)` — matches on RAW STT and runs BEFORE
+> `_maybe_handle_relay_speech` in BOTH dispatch cascades (`via="tell_chat"` / `"tell_chat-lean"`; critical:
+> "tell chat X" is otherwise a relay GROUP form, `_GROUP_PRON` includes "chat") — resolves the spoken name via
+> the shared `self._twitch_user_roster` (`best()` + `display_of()` vs the floor), posts through the config
+> templates via `self._twitch_chat_post`, speaks a local confirm ("Delivered to <name>." / "No one in chat
+> matches <name>." / toggle-off "The chat line is closed."); owned failures never fall through to the relay.
+> Boot state `_tell_chat_enabled`/`_stream_delay_seconds` (twitch.chat), stop-window setters
+> `_set_tell_chat_enabled`/`_set_stream_delay_seconds` (clamped), StopButtonOverlay kwargs (twitch-gated
+> rows). `stop_button.py`: TELL-CHAT via `_make_toggle_row` (cyan) + the STREAM-DELAY Frame+Label+Entry row
+> (commit on Return/FocusOut, int-clamped [0,3600], revert on garbage). Roster + welcomer built in
+> `_start_twitch_chat_mode` (welcomer excludes broadcaster_login/bot_login; `delay_fn` reads
+> `_stream_delay_seconds` live) and passed to `ChatGameRouter(roster=, welcomer=)`.
+>
 > **SONG-REQUEST 5-MIN COOLDOWN + ALBUMS = FIRST 5 TRACKS (2026-07-08 wave 5)**
 >
 > `chat_games._cmd_song_request`: a per-viewer cooldown between accepted `!song`/`!album` requests

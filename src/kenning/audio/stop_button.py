@@ -174,6 +174,14 @@ class StopButtonOverlay:
         announce_results_enabled: bool = True,
         announce_results_height: int = 26,
         announce_results_label: str = "ANNOUNCE RESULTS",
+        on_toggle_tell_chat: Optional[Callable[[bool], None]] = None,
+        tell_chat_enabled: bool = True,
+        tell_chat_height: int = 26,
+        tell_chat_label: str = "TELL CHAT",
+        on_set_stream_delay: Optional[Callable[[int], None]] = None,
+        stream_delay_value: int = 40,
+        stream_delay_height: int = 30,
+        stream_delay_label: str = "DELAY s",
         on_restart: Optional[Callable[[], None]] = None,
         on_exit: Optional[Callable[[], None]] = None,
         restart_height: int = 28,
@@ -270,6 +278,25 @@ class StopButtonOverlay:
         self._announce_results_enabled = bool(announce_results_enabled)
         self._announce_results_h = max(0, int(announce_results_height))
         self._announce_results_label = announce_results_label or "ANNOUNCE RESULTS"
+        # Optional TELL-CHAT toggle row (spec 12, 2026-07-09): gates the voice→
+        # Twitch-chat tell relay ("Ultron, tell <name> in chat <message>"). ON
+        # (default) = the dictated line is posted to chat; OFF = the command is
+        # consumed with a short local notice and nothing is posted.
+        # ``_tell_chat_enabled`` tracks the displayed state across rebuilds.
+        self._on_toggle_tell_chat = on_toggle_tell_chat
+        self._tell_chat_enabled = bool(tell_chat_enabled)
+        self._tell_chat_h = max(0, int(tell_chat_height))
+        self._tell_chat_label = tell_chat_label or "TELL CHAT"
+        # Optional STREAM-DELAY numeric row (spec 12, 2026-07-09): the overlay's
+        # first non-toggle row — a label + Entry holding the CURRENT stream delay
+        # in seconds. Committing (Return / focus-out) clamps to [0, 3600] and
+        # fires the orchestrator setter; the first-time-chatter welcome reads the
+        # committed value live. ``_stream_delay_value`` tracks the last committed
+        # value across show/hide rebuilds.
+        self._on_set_stream_delay = on_set_stream_delay
+        self._stream_delay_value = max(0, min(3600, int(stream_delay_value)))
+        self._stream_delay_h = max(0, int(stream_delay_height))
+        self._stream_delay_label = stream_delay_label or "DELAY s"
         # Optional RESTART + EXIT action buttons (orchestrator-wired). Restart =
         # full cleanup then relaunch the same build; Exit = full cleanup then quit.
         self._on_restart = on_restart
@@ -371,6 +398,12 @@ class StopButtonOverlay:
                                      and self._announce_results_h > 0)
             announce_results_h = (self._announce_results_h
                                   if _has_announce_results else 0)
+            _has_tell_chat = (self._on_toggle_tell_chat is not None
+                              and self._tell_chat_h > 0)
+            tell_chat_h = self._tell_chat_h if _has_tell_chat else 0
+            _has_stream_delay = (self._on_set_stream_delay is not None
+                                 and self._stream_delay_h > 0)
+            stream_delay_h = self._stream_delay_h if _has_stream_delay else 0
             _has_restart = self._on_restart is not None and self._restart_h > 0
             _has_exit = self._on_exit is not None and self._exit_h > 0
             _has_flag = self._on_flag is not None and self._flag_h > 0
@@ -379,7 +412,8 @@ class StopButtonOverlay:
             flag_h = self._flag_h if _has_flag else 0
             height = (bar_h + btn_h + restart_h + exit_h + flag_h + ptt_h
                       + turbo_h + relay_h + chat_h + chat_audio_h + say_name_h
-                      + hear_raid_h + hear_results_h + announce_results_h)
+                      + hear_raid_h + hear_results_h + announce_results_h
+                      + tell_chat_h + stream_delay_h)
             root = tk.Tk()
             root.title("ULTRON // STOP")
             root.geometry(f"{w}x{height}+{self._x}+{self._y}")
@@ -721,6 +755,67 @@ class StopButtonOverlay:
                     lambda: self._announce_results_enabled,
                     "_announce_results_enabled",
                     self._on_toggle_announce_results, "#3ddc84", "#0c1f13")
+
+            # TELL-CHAT toggle (spec 12) -- cyan "TELL CHAT ON" (default) = the
+            # voice→chat tell relay posts dictated lines to Twitch chat; grey
+            # OFF = the command is consumed with a local notice, nothing posted.
+            if _has_tell_chat:
+                _make_toggle_row(
+                    self._tell_chat_label,
+                    lambda: self._tell_chat_enabled, "_tell_chat_enabled",
+                    self._on_toggle_tell_chat, "#5bd0ff", "#0a1a23")
+
+            # STREAM-DELAY numeric row (spec 12) -- the overlay's first
+            # non-toggle row: "<label> [ 40 ]". Committing (Return / focus-out)
+            # clamps to [0, 3600] s, updates the tracked value, and fires the
+            # orchestrator setter (which the first-time welcome reads live).
+            # Invalid input reverts to the last committed value. Fail-open.
+            if _has_stream_delay:
+                _d_fg, _d_fill = "#c9d1d9", "#101418"
+                drow = tk.Frame(root, bg=self._bg, height=stream_delay_h,
+                                width=w)
+                dlab = tk.Label(
+                    drow, text=self._stream_delay_label, bg=self._bg,
+                    fg=_d_fg, font=("Segoe UI Semibold", 9))
+                dvar = tk.StringVar(value=str(self._stream_delay_value))
+                dent = tk.Entry(
+                    drow, textvariable=dvar, width=5, bg=_d_fill,
+                    fg="#5bd0ff", insertbackground="#5bd0ff", relief="flat",
+                    justify="center", font=("Segoe UI Semibold", 9),
+                    highlightthickness=1, highlightbackground=_d_fg,
+                    highlightcolor="#5bd0ff")
+
+                def _commit_delay(_e=None, _var=dvar):
+                    # Whole body guarded: a <FocusOut> firing during window
+                    # teardown raises TclError from the StringVar — swallow
+                    # (the orchestrator-side setter is independently clamped).
+                    try:
+                        raw = (_var.get() or "").strip()
+                        try:
+                            v = max(0, min(3600, int(raw)))
+                        except (TypeError, ValueError):
+                            _var.set(str(self._stream_delay_value))  # revert
+                            return
+                        _var.set(str(v))                          # show the clamp
+                        if v == self._stream_delay_value:
+                            return
+                        self._stream_delay_value = v
+                        try:
+                            if self._on_set_stream_delay is not None:
+                                self._on_set_stream_delay(v)
+                        except Exception as e:  # noqa: BLE001
+                            logger.warning("stream-delay callback failed: %s", e)
+                        logger.info("stream delay committed -> %ss", v)
+                    except Exception as e:  # noqa: BLE001 — Tk teardown race
+                        logger.debug("stream-delay commit skipped: %s", e)
+
+                dent.bind("<Return>", _commit_delay)
+                dent.bind("<FocusOut>", _commit_delay)
+                dlab.pack(side="left", padx=(6, 2))
+                dent.pack(side="left", fill="x", expand=True, padx=(0, 6))
+                drow.pack(fill="x", side="bottom")
+                drow.pack_propagate(False)
+                drow.bind("<Button-3>", lambda _e: self.hide())
 
             # RESTART + EXIT action buttons -- packed at the bottom (above PTT,
             # below STOP). Each runs Ultron's full cleanup; Restart then relaunches

@@ -19,6 +19,7 @@ __all__ = [
     "run_interval_poster",
     "cooldown_hint_suffix",
     "append_cooldown_hint",
+    "pinboard_should_pin",
 ]
 
 MAX_CHAT_CHARS = 500
@@ -116,3 +117,27 @@ def run_interval_poster(
                 post_fn(text)
         except Exception as exc:  # noqa: BLE001 — never crash the poster loop
             logger.debug("interval poster post failed: %s", exc)
+
+
+def pinboard_should_pin(state, *, pinned_this_boot: bool) -> bool:
+    """Decide whether the pinboard keeper should (re)pin on this check.
+
+    ``state`` is the write sidecar's ``GET /pin`` body (a dict), or ``None``
+    when the request itself failed. The three rules that keep the pinboard
+    flood-proof and polite:
+
+      * an ACTIVE pin (anyone's — Twitch allows one mod-pin per channel)
+        -> NEVER pin: replacing it would fight a pin the streamer/mod set
+        by hand;
+      * readable + no active pin -> pin (boot, expiry, or a manual unpin);
+      * UNREADABLE state (``active`` is None / request failed — the
+        open-beta GET may be missing) -> pin ONCE per boot and never again:
+        blind re-posting would re-create the very reminder flood the
+        pinboard exists to end.
+    """
+    if not isinstance(state, dict):
+        return not pinned_this_boot
+    active = state.get("active")
+    if active is None:
+        return not pinned_this_boot
+    return active is False

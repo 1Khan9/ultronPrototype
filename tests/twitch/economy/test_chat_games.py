@@ -1306,3 +1306,12 @@ def test_non_result_replies_never_suppressed_by_master_gate():
         announce_results_enabled_fn=lambda: False)
     r.tick()
     assert any("250" in x for x in replies)   # balance reply still posted
+
+
+def test_chat_event_from_buffer_maps_message_type():
+    """2026-07-09: the flat dict's message_type is mapped; an older buffered
+    dict without the key keeps the 'text' default (rolling-buffer compat)."""
+    ev = chat_event_from_buffer({**_flat("hi"), "message_type": "user_intro"})
+    assert ev is not None and ev.message_type == "user_intro"
+    ev2 = chat_event_from_buffer(_flat("hi there"))
+    assert ev2 is not None and ev2.message_type == "text"

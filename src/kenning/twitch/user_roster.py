@@ -169,24 +169,35 @@ class UserRoster:
         # key is the oldest, so eviction pops the front. Re-observing moves the
         # key to the end (most-recent), so it survives eviction longer.
         self._seen: OrderedDict[str, float] = OrderedDict()
+        # login -> the real Twitch DISPLAY name (spec 12, 2026-07-09) — kept so
+        # a posted @tag can use the chatter's cased/localized handle instead of
+        # the lowercase login. Populated only when observe() is given one;
+        # evicted in lockstep with ``_seen`` (never grows past it).
+        self._display: dict[str, str] = {}
 
     # ----------------------------------------------------------------- ingest
-    def observe(self, username: str) -> None:
+    def observe(self, username: str, display_name: str | None = None) -> None:
         """Record one seen ``username``, refreshing its recency.
 
         Non-string, ``None``, or blank input is ignored (defensive — chat events
         are external, untrusted data). The stored key is the login lowercased and
-        stripped; recency uses :func:`time.monotonic`.
+        stripped; recency uses :func:`time.monotonic`. An optional
+        ``display_name`` (the chatter's cased Twitch handle) is retained for
+        :meth:`display_of`; blank/non-string display input is ignored, and an
+        omitted display never erases a previously stored one.
         """
         login = self._canonical(username)
         if login is None:
             return
         ts = time.monotonic()
+        disp = display_name.strip() if isinstance(display_name, str) else ""
         with self._lock:
             # move-to-end on re-observe so recency reflects the latest sighting.
             if login in self._seen:
                 self._seen.move_to_end(login)
             self._seen[login] = ts
+            if disp:
+                self._display[login] = disp
             self._evict_locked()
 
     def observe_many(self, usernames: Iterable[str]) -> None:
@@ -278,10 +289,20 @@ class UserRoster:
         with self._lock:
             return list(self._seen.keys())
 
+    def display_of(self, login: str) -> str | None:
+        """Return the stored Twitch display name for ``login``, or None when the
+        login is unknown / was never observed with a display name."""
+        key = self._canonical(login)
+        if key is None:
+            return None
+        with self._lock:
+            return self._display.get(key)
+
     def clear(self) -> None:
         """Drop every observed login."""
         with self._lock:
             self._seen.clear()
+            self._display.clear()
 
     # ----------------------------------------------------------------- helpers
     @staticmethod
@@ -298,4 +319,5 @@ class UserRoster:
         """Evict oldest entries until size <= max_size. Caller holds the lock."""
         while len(self._seen) > self._max_size:
             # popitem(last=False) removes the front = oldest-observed key.
-            self._seen.popitem(last=False)
+            evicted, _ts = self._seen.popitem(last=False)
+            self._display.pop(evicted, None)

@@ -109,6 +109,10 @@ _MAX_BODY_BYTES = 1 << 20  # 1 MiB
 # plain module dict: one sidecar process, handler + send wrapper both see it.
 CHAT_SEND_HEALTH: dict = {"error": ""}
 
+# Pinboard health (2026-07-09): "" = healthy / never used. Set on a failed
+# POST /pin (send or pin leg) so /healthz + the boot canary can surface it.
+PIN_HEALTH: dict = {"error": ""}
+
 # SELF-SERVICE RE-AUTH (2026-07-08, streamer request "have the token
 # automatically re-mint"): a REVOKED grant cannot be re-minted silently --
 # Twitch's Device Code Grant requires a human to approve the code while logged
@@ -373,7 +377,9 @@ class RosterCache:
 def make_handler(service: Any, store: ProposalStore, *, ready_fn: Callable[[], bool],
                  broadcaster_id_fn: Callable[[], str],
                  chat_send_fn: "Optional[Callable[[str], bool]]" = None,
-                 shoutout_fn: "Optional[Callable[[str], bool]]" = None):
+                 shoutout_fn: "Optional[Callable[[str], bool]]" = None,
+                 pin_fn: "Optional[Callable[[str], dict]]" = None,
+                 pin_state_fn: "Optional[Callable[[], dict]]" = None):
     """Build a ``BaseHTTPRequestHandler`` subclass bound to this sidecar's state.
 
     A factory (not module globals) so a test can stand up an isolated server with
@@ -438,7 +444,22 @@ def make_handler(service: Any, store: ProposalStore, *, ready_fn: Callable[[], b
                     "remint_user_code": str(REMINT_STATE.get("user_code", "") or ""),
                     "remint_uri": str(
                         REMINT_STATE.get("verification_uri", "") or ""),
+                    # Pinboard health (2026-07-09): "" = healthy/never used.
+                    "pin_error": str(PIN_HEALTH.get("error", "") or ""),
                 })
+                return
+            if path == "/pin":
+                # Pin state for the orchestrator keeper. active=None (with
+                # readable=false) = state unreadable -> the keeper falls back
+                # to pin-once-per-boot instead of re-posting blind.
+                if pin_state_fn is None:
+                    self._send(200, {"ok": False, "error": "pin_unavailable"})
+                    return
+                try:
+                    self._send(200, pin_state_fn())
+                except Exception as exc:  # noqa: BLE001 — never raise out
+                    logger.warning("pin-state read failed: %s", exc)
+                    self._send(500, {"ok": False, "error": "pin_state_failed"})
                 return
             self._send(404, {"ok": False, "error": "not found"})
 
@@ -456,6 +477,9 @@ def make_handler(service: Any, store: ProposalStore, *, ready_fn: Callable[[], b
                 return
             if path == "/say":
                 self._handle_say()
+                return
+            if path == "/pin":
+                self._handle_pin()
                 return
             if path == "/chat_settings":
                 self._handle_chat_settings()
@@ -534,6 +558,26 @@ def make_handler(service: Any, store: ProposalStore, *, ready_fn: Callable[[], b
                 self._send(500, {"ok": False, "error": "send_failed"})
                 return
             self._send(200, {"ok": sent})
+
+        def _handle_pin(self) -> None:
+            """Post ``{"text": ...}`` AS THE BOT and pin it (broadcaster token).
+            The pinboard: one pinned commands message instead of periodic
+            reminder posts. Loopback-only; fail-safe."""
+            payload = self._read_json_body()
+            if payload is None:
+                return
+            text = payload.get("text")
+            if not isinstance(text, str) or not text.strip():
+                self._send(400, {"ok": False, "error": "text must be a non-empty string"})
+                return
+            if pin_fn is None:
+                self._send(200, {"ok": False, "error": "pin_unavailable"})
+                return
+            try:
+                self._send(200, pin_fn(text))
+            except Exception as exc:  # noqa: BLE001 — fail-safe
+                logger.warning("pin failed unexpectedly: %s", exc)
+                self._send(500, {"ok": False, "error": "pin_failed"})
 
         def _handle_prepare(self) -> None:
             payload = self._read_json_body()
@@ -623,6 +667,12 @@ class _ServiceState:
         # SAME HelixClient + broadcaster id the moderation service uses. Used by the
         # raid handler via POST /shoutout. Needs moderator:manage:shoutouts scope.
         self.shoutout: Optional[Callable[[str], bool]] = None
+        # Pinboard (2026-07-09): POST /pin sends text AS THE BOT then pins the
+        # sent message with the BROADCASTER token (moderator:manage:chat_messages,
+        # already in BROADCASTER_SCOPES). GET /pin reads the channel's pin state
+        # so the orchestrator keeper re-pins only when NO pin is active.
+        self.pin_message: Optional[Callable[[str], dict]] = None
+        self.pin_state: Optional[Callable[[], dict]] = None
 
     @property
     def ready(self) -> bool:
@@ -971,6 +1021,64 @@ def build_service_state() -> _ServiceState:
 
             state.chat_send = _tracked_send
             logger.info("write sidecar: chat-send ready (bot sender_id=%s)", bot_id)
+
+            # Pinboard (2026-07-09): send-as-bot then pin-as-broadcaster. Reuses
+            # the SAME sender (attribution: the message is the bot's) and the
+            # SAME HelixClient/broadcaster id the moderation + shoutout paths
+            # use (the broadcaster moderates their own channel). Fail-safe:
+            # errors become {"ok": False, "error": ...}, never raise into the
+            # HTTP handler; PIN_HEALTH mirrors the last outcome for /healthz.
+            def _pin_message(text: str) -> dict:
+                ok, mid = sender.send_with_id(_bid, _sid, text)
+                if not ok:
+                    PIN_HEALTH["error"] = (
+                        "pin send-leg failed (message not posted; "
+                        "chat-send failing?)")
+                    return {"ok": False, "error": "send_failed"}
+                if not mid:
+                    # The message DID post (2xx/is_sent) but Twitch returned
+                    # no id to pin -- report accurately (review 2026-07-09).
+                    PIN_HEALTH["error"] = (
+                        "pin send-leg posted but returned no message_id")
+                    return {"ok": False, "message_id": "",
+                            "error": "no_message_id"}
+                try:
+                    res = helix.pin_message(_bid, _bid, mid)
+                    PIN_HEALTH["error"] = ""
+                    return {"ok": True, "message_id": mid,
+                            "pinned": bool(res.ok)}
+                except Exception as exc:  # noqa: BLE001 — surface, don't raise
+                    PIN_HEALTH["error"] = f"pin failed: {str(exc)[:160]}"
+                    logger.warning("pinboard pin-leg failed: %s", exc)
+                    # The text DID post to chat (unpinned) — report both facts
+                    # so the keeper won't re-post the same text in a loop.
+                    return {"ok": False, "message_id": mid,
+                            "error": str(exc)[:200]}
+
+            def _pin_state() -> dict:
+                """Read the channel's current pin. active=None means the state
+                could NOT be read (open-beta endpoint/permissions) — the keeper
+                must treat that as 'do not re-post blind', NOT as 'no pin'."""
+                try:
+                    res = helix.get_pinned_message(_bid)
+                    data = (res.data or {}).get("data") if isinstance(
+                        res.data, dict) else None
+                    if not isinstance(data, list):
+                        # Open-beta GET returned an unexpected envelope: treat
+                        # as UNREADABLE, never as "no pin" -- a mis-read here
+                        # would make the keeper replace an ACTIVE pin every
+                        # check (review 2026-07-09).
+                        return {"ok": True, "active": None, "readable": False,
+                                "error": "unexpected envelope"}
+                    return {"ok": True, "active": bool(data), "readable": True}
+                except Exception as exc:  # noqa: BLE001
+                    return {"ok": True, "active": None, "readable": False,
+                            "error": str(exc)[:200]}
+
+            state.pin_message = _pin_message
+            state.pin_state = _pin_state
+            logger.info("write sidecar: pinboard ready (pin as broadcaster %s)",
+                        _bid)
     except Exception as exc:  # noqa: BLE001 — chat-send is optional
         logger.warning("write sidecar: chat-send wiring failed (%s)", type(exc).__name__)
     return state
@@ -982,7 +1090,9 @@ def build_service_state() -> _ServiceState:
 def build_server(service: Any, *, port: int = 0, ready: Optional[bool] = None,
                  broadcaster_id: str = "",
                  chat_send: "Optional[Callable[[str], bool]]" = None,
-                 shoutout: "Optional[Callable[[str], bool]]" = None):
+                 shoutout: "Optional[Callable[[str], bool]]" = None,
+                 pin: "Optional[Callable[[str], dict]]" = None,
+                 pin_state: "Optional[Callable[[], dict]]" = None):
     """Assemble a write-sidecar server bound to 127.0.0.1 ONLY.
 
     ``port=0`` binds an ephemeral port (read it back from ``server.server_address``
@@ -1001,6 +1111,8 @@ def build_server(service: Any, *, port: int = 0, ready: Optional[bool] = None,
         broadcaster_id_fn=lambda: broadcaster_id,
         chat_send_fn=chat_send,
         shoutout_fn=shoutout,
+        pin_fn=pin,
+        pin_state_fn=pin_state,
     )
     from kenning.subprocess.sidecar_server import SingletonThreadingHTTPServer
 
@@ -1104,6 +1216,7 @@ def main() -> None:
     server, _store = build_server(
         state.service, port=port, ready=state.ready, broadcaster_id=state.broadcaster_id,
         chat_send=state.chat_send, shoutout=state.shoutout,
+        pin=state.pin_message, pin_state=state.pin_state,
     )
     sidecar_lock.write_role("twitch_write", os.getpid(), port)
     atexit.register(sidecar_lock.clear_role, "twitch_write")

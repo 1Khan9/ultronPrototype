@@ -385,7 +385,10 @@ def test_config_defaults_for_song_requests_and_hint():
     assert e.album_queue_max_tracks == 5
     assert e.song_request_cooldown_seconds == 300
     c = TwitchChatConfig()
-    assert c.song_hint_enabled is True
+    # 2026-07-09 flood fix: the periodic song hint is OFF by default — the
+    # !song/!album info lives on the PINBOARD (pinned commands message);
+    # the poster is retired-not-removed (text/interval stay for a re-enable).
+    assert c.song_hint_enabled is False
     assert c.song_hint_interval_minutes == 15
     assert "!song" in c.song_hint_text and "!album" in c.song_hint_text
 

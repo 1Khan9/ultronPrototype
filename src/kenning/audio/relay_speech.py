@@ -51,6 +51,8 @@ __all__ = [
     "match_relay_toggle",
     "match_turbo_toggle",
     "match_turbo_sensitivity",
+    "TellChatCommand",
+    "match_tell_chat",
     "is_complete_tactical_callout",
     "build_relay_line",
     "relay_route_info",
@@ -1708,6 +1710,165 @@ def match_turbo_sensitivity(text: str) -> Optional[bool]:
         return True
     if _TURBO_BAL_RE.match(cleaned):
         return False
+    return None
+
+
+# Voice→Twitch-chat TELL relay (spec 12, 2026-07-09). The streamer beats the
+# stream delay by dictating a chat line: "tell <name> in chat <message>" tags
+# the best fuzzy roster match; "tell chat <message>" posts untagged. The literal
+# "in/on [the] chat" delimiter is what keeps this grammar DISJOINT from the
+# team relay ("tell my team X") and the teammate-social relay ("tell Jett nice
+# shot") — a named form without it falls through to those matchers untouched.
+# Callers pass the RAW transcript (the relay-lead normalizer would rewrite the
+# "tell" lead before user_text reaches the cascade). stdlib-re only (BR-P1).
+# The wake/politeness ladder MIRRORS command_normalizer's _WAKE_HOMOPHONES +
+# _SAY_DIRECTIVE scaffolds (review 2026-07-09 P1): a mis-heard wake ("Altron,
+# tell chat brb") or a politeness lead ("could you tell chat brb") must match
+# HERE on the raw text — otherwise the normalizer strips/reframes the lead and
+# the leftover "tell chat X" group form is transmitted to the TEAM mic.
+_TELL_CHAT_HOMOPHONES = (
+    r"ultron|ulltron|ultronn|ultran|ultram|altron|voltron|ultra|ultro|"
+    r"ultr|oltron|ultraun|tron|ron|run|rons"
+)
+_TELL_CHAT_WAKE = (
+    r"(?:(?:hey|ok|okay)[\s,]+)?"
+    rf"(?:(?:{_TELL_CHAT_HOMOPHONES})[\s,]+)?"
+    r"(?:please\s+)?"
+    r"(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?"
+    r"|i\s+(?:want|need)\s+you\s+to\s+"
+    r"|go\s+ahead\s+and\s+"
+    r"|make\s+sure\s+(?:to|you)\s+"
+    r"|do\s+me\s+a\s+favor\s+and\s+"
+    r")?"
+)
+_TELL_CHAT_VERB = r"(?:tell|message|inform|notify|say\s+to|write\s+to|reply\s+to)"
+_TELL_CHAT_CHANNEL = r"(?:in|on)\s+(?:the\s+)?(?:twitch\s+)?chat"
+_TELL_CHAT_BROADCAST_RE = re.compile(
+    rf"^{_TELL_CHAT_WAKE}(?:"
+    rf"(?:{_TELL_CHAT_VERB}\s+(?:the\s+)?(?:twitch\s+)?chat)"
+    rf"|(?:tell\s+(?:every(?:one|body)|them|'?em)\s+{_TELL_CHAT_CHANNEL})"
+    rf"|(?:(?:post|put)\s+{_TELL_CHAT_CHANNEL})"
+    rf")\s*[,:]?\s+(?P<msg>.+)$",
+    re.IGNORECASE,
+)
+# The name is 1-5 word tokens, LAZY so the split lands on the FIRST "in chat"
+# (a message may itself contain the words "in chat" later).
+_TELL_CHAT_NAME = r"(?:[\w'][\w'-]*\s+){0,4}?[\w'][\w'-]*"
+_TELL_CHAT_TAGGED_RE = re.compile(
+    rf"^{_TELL_CHAT_WAKE}{_TELL_CHAT_VERB}\s+"
+    rf"(?P<name>{_TELL_CHAT_NAME})\s+"
+    rf"{_TELL_CHAT_CHANNEL}\s*[,:]?\s+(?P<msg>.+)$",
+    re.IGNORECASE,
+)
+# GREETING forms (review 2026-07-09): the natural inverse phrasing puts the
+# greeting BEFORE the name — "say hi to <name> in chat" (the streamer's
+# reported case) — which the tagged form above can't parse (it expects the
+# message AFTER "in chat"). Bounded to a known greeting vocabulary so the
+# "say X to <name>" shape can't over-capture arbitrary sentences into a tag.
+_TELL_CHAT_GREETING = (
+    r"hi|hello|hey|yo|sup|hiya|howdy|greetings|welcome|"
+    r"what'?s\s+up|hi\s+there|hey\s+there"
+)
+# "say hi to <name> in chat[, <extra>]" -> name=<name>, message=<greeting>[ +extra]
+_TELL_CHAT_GREET_TO_RE = re.compile(
+    rf"^{_TELL_CHAT_WAKE}(?:say|tell)\s+"
+    rf"(?P<greet>{_TELL_CHAT_GREETING})\s+to\s+"
+    rf"(?P<name>{_TELL_CHAT_NAME})\s+{_TELL_CHAT_CHANNEL}"
+    rf"(?:\s*[,:]?\s+(?P<extra>.+))?$",
+    re.IGNORECASE,
+)
+# "greet <name> in chat" / "welcome <name> [aboard] to [the] chat" -> synthesized
+# greeting. An optional aboard/back/again modifier may sit between the name and
+# the channel ("welcome bob aboard in chat") — absorbed so it never leaks into
+# the tagged name.
+_TELL_CHAT_GREET_VERB_RE = re.compile(
+    rf"^{_TELL_CHAT_WAKE}(?P<verb>greet|welcome)\s+"
+    rf"(?P<name>{_TELL_CHAT_NAME})"
+    rf"(?:\s+(?:back|again|aboard))?"
+    rf"\s+(?:to|in)\s+(?:the\s+)?(?:twitch\s+)?chat"
+    rf"\s*[,:.!]?\s*$",
+    re.IGNORECASE,
+)
+# Names that are really GROUP/team references or bare pronouns — never a
+# chatter handle. A hit rejects the tagged match so the utterance falls
+# through untouched (group pronouns like "them" broadcast via the regex above).
+_TELL_CHAT_NAME_REJECT_RE = re.compile(
+    rf"(?:^(?:my|our)\b)|(?:\b{_GROUP_WORDS}\b)"
+    r"|(?:^(?:him|her|me|us|you|it)$)",
+    re.IGNORECASE,
+)
+# A greeting whose "name" is really the whole audience — post it UNTAGGED
+# (broadcast) rather than fuzzy-matching a viewer literally named "everyone".
+_TELL_CHAT_BROADCAST_NAMES = frozenset({
+    "everyone", "everybody", "all", "y'all", "yall", "chat", "the chat",
+    "the whole chat", "the channel", "the room", "the stream",
+})
+# Cap the posted message well under Helix's 500-char limit, leaving room for
+# the @tag + the config template's framing text.
+_TELL_CHAT_MAX_MESSAGE_CHARS = 400
+
+
+@dataclass(frozen=True)
+class TellChatCommand:
+    """A parsed voice→chat tell. ``name`` is the SPOKEN target as transcribed
+    (pre-fuzzy-match; the handler resolves it against the live roster) or None
+    for the untagged broadcast form. ``message`` is the cleaned free text."""
+    name: Optional[str]
+    message: str
+
+
+def _tell_chat_clean_message(raw: str) -> str:
+    """Normalize the dictated message: drop a leading reported-speech "that"
+    ("that I saw it" -> "I saw it") but KEEP a demonstrative one ("that was
+    insane"), strip control chars, collapse whitespace, cap the length."""
+    msg = re.sub(r"^that\s+(?!(?:was|is|are|were|one|will|would)\b)", "",
+                 (raw or "").strip(), flags=re.IGNORECASE)
+    msg = "".join(ch for ch in msg if ch >= " " or ch == "\t")
+    msg = re.sub(r"\s+", " ", msg).strip()
+    return msg[:_TELL_CHAT_MAX_MESSAGE_CHARS].strip()
+
+
+def match_tell_chat(text: str) -> Optional[TellChatCommand]:
+    """Match the voice→Twitch-chat tell grammar. Returns a
+    :class:`TellChatCommand` (``name=None`` for the broadcast form) or None so
+    ordinary speech — including every team-relay form — falls through. Strict +
+    anchored; callers pass the RAW transcript."""
+    if not text:
+        return None
+    cleaned = text.strip()
+    m = _TELL_CHAT_BROADCAST_RE.match(cleaned)
+    if m:
+        msg = _tell_chat_clean_message(m.group("msg"))
+        return TellChatCommand(name=None, message=msg) if msg else None
+    # Greeting-before-name forms, checked before the tagged form (their "say
+    # <greeting> to" / "greet <name>" leads are disjoint from "tell <name> in
+    # chat <msg>"). Each still rejects group/pronoun names.
+    m = _TELL_CHAT_GREET_TO_RE.match(cleaned)
+    if m:
+        name = re.sub(r"\s+", " ", m.group("name").strip())
+        greet = m.group("greet").strip()
+        extra = (m.group("extra") or "").strip()
+        msg = _tell_chat_clean_message(f"{greet} {extra}".strip())
+        if msg:
+            if name.lower() in _TELL_CHAT_BROADCAST_NAMES:
+                return TellChatCommand(name=None, message=msg)      # whole audience
+            if not _TELL_CHAT_NAME_REJECT_RE.search(name):
+                return TellChatCommand(name=name, message=msg)
+    m = _TELL_CHAT_GREET_VERB_RE.match(cleaned)
+    if m:
+        name = re.sub(r"\s+", " ", m.group("name").strip())
+        greet = "welcome" if m.group("verb").lower() == "welcome" else "hi"
+        if name.lower() in _TELL_CHAT_BROADCAST_NAMES:
+            return TellChatCommand(name=None, message=greet)
+        if not _TELL_CHAT_NAME_REJECT_RE.search(name):
+            return TellChatCommand(name=name, message=greet)
+    m = _TELL_CHAT_TAGGED_RE.match(cleaned)
+    if m:
+        name = re.sub(r"\s+", " ", m.group("name").strip())
+        if _TELL_CHAT_NAME_REJECT_RE.search(name):
+            return None                      # a team reference, not a chatter
+        msg = _tell_chat_clean_message(m.group("msg"))
+        return TellChatCommand(name=name, message=msg) if msg else None
     return None
 
 

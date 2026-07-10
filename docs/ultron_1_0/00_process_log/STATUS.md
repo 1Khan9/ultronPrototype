@@ -1,6 +1,102 @@
 # Ultron 1.0 — Live Status
 
-**ACTIVE (2026-07-08, wave 3) — TRIVIA EXPANSION + LRU + RELAY-AWARE COOLDOWN + AUTO TOKEN RE-AUTH (branch `claude/trivia-expansion-lru`):**
+**ACTIVE (2026-07-09, wave 4) — PINBOARD: ONE PINNED COMMANDS MESSAGE ENDS THE CHAT FLOOD (branch `claude/welcome-persist-vram`):**
+
+Streamer: periodic reminders flooded chat. Inventory proved it: THREE interval posters (commands panel 15m LIVE-ON,
+talk hint 10m, song hint 15m) + auto-trivia, with stagger only on the FIRST post -> drifting near-simultaneous
+clusters (~20+ unprompted posts/hour). Twitch's pinned-messages API is OPEN BETA since 2026-05-15 (verified live:
+`helix/chat/pinned_messages` GET/POST/PATCH/unpin; scope `moderator:manage:chat_messages` = already granted on the
+broadcaster token -- NO re-auth). BUILT: (1) `HelixClient.pin_message` (flat body -> ONE nested-`data` retry on a
+400 naming "data"; a schema 400 creates nothing so no-blind-retry holds) + `get_pinned_message` (200+empty = no
+pin; non-200 RAISES -- "no pin" is never conflated with "cannot read"). (2) `ChatSendClient.send_with_id` (Twitch
+message_id back; send() bool contract preserved). (3) Write sidecar `POST /pin` = send-as-bot -> pin-as-broadcaster
+(attribution stays the bot's; same sender+HelixClient as say/shoutout), `GET /pin` state, healthz `pin_error`.
+(4) Orchestrator `_pinboard_loop` keeper: "📌 " + the commands panel, checked every 15 min via NEW pure
+`panel.pinboard_should_pin` -- an ACTIVE pin (anyone's) is NEVER replaced (a manual streamer pin wins);
+readable+no-pin -> re-pin (boot/expiry/unpin); UNREADABLE -> pin ONCE per boot, never blind re-posts (that would
+re-create the flood). (5) Consolidation: talk hint = the ONE periodic chat message, 10 -> 20 min (streamer:
+"every 20 minutes or so"); song_hint default OFF (retired-not-removed; pinboard + !ultron cover it); LIVE
+config.yaml: commands_panel_enabled false, talk_hint 20 (valid under BOTH schemas -> a pre-merge restart already
+de-floods; the pinboard activates on the post-merge restart). Trivia untouched (a game, user-tuned to 15m).
+EVIDENCE: helix pin 10 + /pin routes 6 + send_with_id 2 + pinboard decision/defaults/wiring 5; two stale
+default-pins updated to the new contract (song_hint OFF, talk 20 -- intentional defaults, commented); FULL
+`tests/twitch/` 1359 pass / 1 skip + anticheat 73; validate_config 0 on the live config under both schemas.
+NEXT: user restarts -> expect ONE "📌 Ultron games..." pinned message + talk hint every 20 min; verify healthz
+pin_error stays "" (open-beta endpoint: if the pin leg 400s, the message posts unpinned ONCE and the remedy is
+in twitch_write.log).
+
+**PREVIOUS (2026-07-09, wave 3) — DURABLE WELCOMED-STORE + message_type PLUMBING + GUARD→CPU (branch `claude/welcome-persist-vram`):**
+
+(1) **Welcome survives restarts** (user: "he rewelcomes people every time he restarts"): EventSub does NOT expose
+Twitch's native first-msg tag (verified against the live 2026 `channel.chat.message` schema — no first-time field
+— + the dev-forum guidance to track client-side; `user_intro` = only the explicit introduce-yourself class). The
+faithful equivalent of Twitch's "first message EVER" semantics: NEW `twitch/welcome.WelcomedStore` (stdlib SQLite
+at `data/twitch/welcomed.db`, login-keyed, fail-open in EVERY direction — broken store -> once-per-run
+degradation, read errors fail toward welcoming). `FirstTimeWelcomer(store=)`: durable check AFTER the per-run
+seen-set (one SQLite hit per login per run) and BEFORE the burst guard; ONLY a rendered welcome is durably
+marked (burst-overflow/excluded stay per-run so a later stream can greet them). Config
+`first_time_welcome_persist` (ON) + `persist_path`; orchestrator builds the store fail-open. (2) **Sidecar
+boundary fixed:** `_map_notification` now forwards `message_type` + `broadcaster_user_id` (both were
+parsed-then-DROPPED; the welcome's uid-based self-exclusion compared "" on real events — login-exclusion covered
+it); `ChatEvent.from_buffer` maps `message_type` (default "text" = rolling-buffer upgrade compat). Every
+flat-dict consumer reads by key (verified) — only the strict sidecar test pin needed extending. (3) **VRAM
+(user-approved):** live config.yaml `twitch.safety.guard_gpu_layers` -1 -> 0 (the guard script's OWN design
+default; its 06-24 GPU note carried the exact revert clause). Frees ~2-2.5 GB (1B model + the separate process's
+own CUDA context ~1-1.5 GB) + removes the guard CUDA-crash class (GGML_ASSERT pool crash on GPU, 2026-07-09).
+Audit: every other GPU resident (4B F16-KV / Whisper int8_fp16 / Kokoro-330MB) is a measured latency/quality
+choice; RVC never constructed under Kokoro (0 VRAM); everything else CPU/skipped. Idle telemetry was 7.2-7.5 GB
+device-wide -> expect ~5 GB after reboot. EVIDENCE: welcome suite 23 (restart-simulation, overflow-not-durable,
+store fail-open) + read-sidecar/chat-games/service/router 115; FULL `tests/twitch/` 1338 pass / 1 skip +
+anticheat 73; validate_config 0 (live config incl. the guard flip). NEXT: user restarts -> welcomed.db seeds
+from this stream forward; verify guard loads on CPU ("[guard] loaded ... n_gpu_layers=0") + VRAM drop.
+
+**PREVIOUS (2026-07-09, wave 2) — GUARD-DOWN LOUD CANARY + TELL GRAMMAR BROADENED (branch `claude/guard-canary-tell-grammar`):**
+
+Live-test of spec 12 surfaced TWO issues, root-caused from logs/healthz (NOT the spec-12 code, which initialized
+fine -- "welcome armed" in the log). (1) **"Chat not responding at all"** = the **Llama-Guard safety sidecar
+(8774) CUDA-crashed** (`GGML_ASSERT ... pool` + `CUDA error` after ~20 model reloads across the day's rapid
+restarts) and never recovered; chat-reply fail-CLOSES on the guard, so every reply was refused -- visible only as
+a DEBUG "guard warming up" line every 3s. Tokens + read/write sidecars were HEALTHY (`chat_subscribed: true`,
+`chat_send_error: ""`). FIX: the boot sidecar-canary only probes ONCE (~18s), so a LATER guard crash was invisible
+-- NEW `twitch/guard.GuardDownCanary` (pure, clock-injected; `min_down_s=30` grace, `rewarn_s=90` throttle,
+speak-once-per-outage) + orchestrator `_twitch_guard_watch` thread polling the guard `/healthz`: LOUD console
+remedy ("GUARD DOWN ... chat replies DISABLED ... restart Ultron to recover") + ONE persona-safe spoken pointer,
+recovery log. Operational recovery = clean restart (fully quit, kill stray python so VRAM releases, relaunch).
+(2) **"Say hi to someone in chat" didn't post** = a grammar gap: the streamer's natural phrasing puts the greeting
+BEFORE the name, which the tagged form (message AFTER "in chat") can't parse. FIX: NEW greeting forms in
+`match_tell_chat` -- `_TELL_CHAT_GREET_TO_RE` ("say <greeting> to <name> in chat", bounded greeting vocab so it
+can't over-capture arbitrary sentences) + `_TELL_CHAT_GREET_VERB_RE` ("greet/welcome <name> [aboard] in/to chat" ->
+synthesized "hi"/"welcome"); "everyone/all/chat" targets broadcast untagged. EVIDENCE: NEW GuardDownCanary 8 +
+greeting-form matcher tests (matcher now 75, handler 18); FULL `tests/twitch/` 1405 pass / 1 skip; mapped
+audio/relay 274; normalizer/golden/anticheat clean; validate_config 0. NEXT: user clean-restarts (recovers the
+guard -> chat replies) + live-tests "say hi to <name> in chat".
+
+**PREVIOUS (2026-07-09) — SPEC 12: VOICE→CHAT TELL RELAY + FIRST-TIME-CHATTER WELCOME (branch `claude/chat-tell-welcome`):**
+
+User problem: a ~40 s stream delay makes chat interaction painful. (1) **TELL relay:** "Ultron, tell <name> in
+chat <message>" fuzzy-matches the transcribed name against chatters actually seen this run, @-tags the best
+match, posts INSTANTLY (chat is real-time; only video lags); "tell chat <message>" posts untagged. NEW
+`relay_speech.match_tell_chat` (the literal "in/on [the] chat" delimiter keeps it DISJOINT from the team relay
++ teammate-social relay; group/pronoun names reject/broadcast). CRITICAL: matched on RAW STT and checked
+BEFORE `_maybe_handle_relay_speech` in BOTH cascades -- "tell chat X" is otherwise a relay GROUP form
+(`_GROUP_PRON` includes "chat") and would hit the team mic. Roster = the previously tested-but-unwired
+`twitch/user_roster.UserRoster`, now display-name-retaining and FED LIVE from `ChatGameRouter._observe`;
+handler resolves via `best()` vs `tell_chat_match_floor` (60), posts through config templates, speaks a local
+confirm; toggle OFF (stop-window "TELL CHAT", boot `tell_chat_enabled=true`) = consume with "The chat line is
+closed.", never posts, never falls through. (2) **First-time welcome:** NEW `twitch/welcome.py`
+`FirstTimeWelcomer` -- once per login per run, posts a welcome naming the chatter + the LIVE stream delay
+("{delay}" -> "1 minute 20 seconds"), apologizing on the streamer's behalf; broadcaster/bot excluded; 4/min
+rolling burst guard (a raid never floods; overflow marked seen silently); delay<=0 -> no-delay template;
+fail-open templates. The delay is committed on the stop-window's FIRST NUMERIC ROW ("DELAY s", Entry, clamped
+[0,3600], seeded from `twitch.chat.stream_delay_seconds=40`) -> `_set_stream_delay_seconds` -> read live per
+welcome (no restart). EVIDENCE: NEW tests matcher 46 + handler/setters/cascade-pins 17 + welcomer 14 + router
+hooks 6 + roster display 7 + stop-button rows 5; mapped audio suites 300 pass; FULL `tests/twitch/` 1244 pass
+/ 1 skip; validate_config 0; golden + anticheat 73 pass; flavor lint 0/0/0. Spec:
+`docs/ultron_1_0/04_implementation/12_chat_tell_first_time_welcome_spec.md`. NEXT: reboot + live-test
+("Ultron, tell <someone> in chat hello" -> tagged post; a fresh account's first message -> welcome with the
+delay; DELAY field edit -> next welcome states the new value).
+
+**PREVIOUS (2026-07-08, wave 3) — TRIVIA EXPANSION + LRU + RELAY-AWARE COOLDOWN + AUTO TOKEN RE-AUTH (branch `claude/trivia-expansion-lru`):**
 
 (1) **Trivia every 15 min** (`config.py trivia_auto_interval_minutes` 8→15; live config.yaml updated at merge). (2)
 **Pool DOUBLED 198→396** (`trivia_questions.py`, zero duplicate prompts, 17 categories, factually verified;

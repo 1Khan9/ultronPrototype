@@ -111,6 +111,33 @@ a reason to prefer Qwen3 over Qwen3.5).
 - Cheaper alternative to try first: just shrink the ~924-token persona prompt (it's
   re-prefilled every turn, so trimming it is a per-turn win, not one-time).
 
+## PORTED TO THE 2507g (2026-06-24 pm) — the 3.5 was reverted (SSM contamination)
+
+The Qwen3.5 was pulled from production (its Gated-DeltaNet recurrent state is not reset
+between turns in llama-cpp-python 0.3.22 → accumulates → repeated/garbage output; see
+`project_4b_ab_per_model`). The user asked to keep the **2507g** (standard-attention
+Qwen3-4B-Instruct-2507) but with (a) the SAME no-think guards and (b) latency **no higher
+than the 3.5**. Both delivered:
+
+- **No-think for the 2507g — its NATIVE path, NOT the prefill (corrected 2026-06-24 pm).**
+  A first pass generalized `_ident_uses_nothink_prefill` to also match `2507` (raw
+  `<think></think>` prefill + Jinja override). That REGRESSED behaviour: the raw ChatML +
+  closed-`<think>` prefill BYPASSES the 2507g's native chat template, so at the relay
+  sampling (temp 0.8) it stopped obeying the "crisp callout, no flavor" directive and PADDED
+  callouts with commentary ("Rotate to B. Just like that, no frills…") — "the 2507g did not
+  have this issue before." FIX: `_ident_uses_nothink_prefill` is back to `qwen3.5`/`qwen35`
+  ONLY. The 2507g uses `create_chat_completion` + the native `/no_think` marker
+  (`_apply_no_think_marker`) — which it RESPECTS — and does not reason by default (proven),
+  so that IS its no-think guard, with instruction-following intact. (The 3.5 still needs the
+  prefill because it IGNORES `/no_think`.) The F16-KV/n_ubatch latency win below is retained.
+- **Latency settings ported** to the `josiefied-qwen3-4b-2507g` preset: `kv_cache_type: 1`
+  (F16, avoids the PR #23907 q8_0+flash decode collapse) + `n_ubatch: 256`.
+- **PROVEN** (`scripts/_2507g_nothink_latency_proof.py`, Ultron-stopped): every guarded
+  row `<think>=False` (and `reasoned=False` even unguarded), DISTINCT on-topic answers
+  (Tony Stark / pandas / Reyna all unique — no repetition), and **66–71 tok/s @ 15–31 ms
+  TTFT** warm — FASTER than the 3.5's ~44 t/s. Live boot confirmed `kv_cache_type=1` +
+  `no-think chat handler wired` + VRAM 10574/1421 free (F16 KV fits beside Kokoro + guard).
+
 ## Stability heads-up
 llama.cpp's `qwen35` path is bug-prone right now: prompt-cache SAVE crash
 (`ggml_backend_cuda_synchronize`, CUDA illegal access — `--cache-ram 0` half-helps),

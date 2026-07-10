@@ -761,6 +761,10 @@ class ChatEvent:
             text=cls._coerce_str(event.get("text")),
             badges=badges if isinstance(badges, list) else [],
             message_id=cls._coerce_str(event.get("message_id")),
+            # 2026-07-09: the sidecar now forwards the EventSub message_type
+            # ("text" / "user_intro" / channel-points variants); an older
+            # buffered dict without the key keeps the dataclass default.
+            message_type=cls._coerce_str(event.get("message_type")) or "text",
         )
 
     # -- helpers -------------------------------------------------------- #

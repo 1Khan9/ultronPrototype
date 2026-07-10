@@ -175,7 +175,9 @@ def test_healthz_ready_true() -> None:
     # the token watcher can surface a dead/revoked bot token.
     assert body == {"ok": True, "ready": True, "broadcaster_id": "12345",
                     "chat_send_error": "",
-                    "remint_user_code": "", "remint_uri": ""}
+                    "remint_user_code": "", "remint_uri": "",
+                    # pinboard health (2026-07-09): "" = healthy/never used
+                    "pin_error": ""}
 
 
 def test_healthz_not_ready_when_no_service() -> None:
@@ -719,3 +721,66 @@ def test_token_watch_first_check_is_prompt() -> None:
     # The watcher checks soon after boot (not only every 45s) so a boot-time
     # re-auth code reaches the console quickly.
     assert "12.0 if _first else 45.0" in src
+
+
+# --------------------------------------------------------------------------- #
+# /pin — the pinboard (2026-07-09): send-as-bot + pin-as-broadcaster
+# --------------------------------------------------------------------------- #
+def test_pin_posts_and_pins() -> None:
+    calls: list[str] = []
+
+    def fake_pin(text: str) -> dict:
+        calls.append(text)
+        return {"ok": True, "message_id": "m77", "pinned": True}
+
+    with _Served(FakeService(), ready=True, pin=fake_pin) as s:
+        status, body = _post(f"{s.base}/pin", {"text": "📌 commands"})
+    assert status == 200
+    assert body == {"ok": True, "message_id": "m77", "pinned": True}
+    assert calls == ["📌 commands"]
+
+
+def test_pin_rejects_empty_text() -> None:
+    with _Served(FakeService(), ready=True, pin=lambda t: {"ok": True}) as s:
+        status, body = _post(f"{s.base}/pin", {"text": "   "})
+    assert status == 400
+    assert body["ok"] is False
+
+
+def test_pin_unavailable_when_not_wired() -> None:
+    with _Served(FakeService(), ready=True) as s:
+        status, body = _post(f"{s.base}/pin", {"text": "hi"})
+    assert status == 200
+    assert body == {"ok": False, "error": "pin_unavailable"}
+
+
+def test_pin_fn_error_becomes_500_not_stack_trace() -> None:
+    def boom(_t: str) -> dict:
+        raise RuntimeError("helix down")
+
+    with _Served(FakeService(), ready=True, pin=boom) as s:
+        status, body = _post(f"{s.base}/pin", {"text": "hi"})
+    assert status == 500
+    assert body == {"ok": False, "error": "pin_failed"}
+
+
+def test_pin_state_get_active_and_unreadable() -> None:
+    with _Served(FakeService(), ready=True,
+                 pin_state=lambda: {"ok": True, "active": True,
+                                    "readable": True}) as s:
+        status, body = _get(f"{s.base}/pin")
+    assert status == 200 and body["active"] is True
+    # unreadable state (open-beta endpoint failed): active=None survives JSON
+    with _Served(FakeService(), ready=True,
+                 pin_state=lambda: {"ok": True, "active": None,
+                                    "readable": False}) as s:
+        status, body = _get(f"{s.base}/pin")
+    assert status == 200
+    assert body["active"] is None and body["readable"] is False
+
+
+def test_pin_state_unavailable_when_not_wired() -> None:
+    with _Served(FakeService(), ready=True) as s:
+        status, body = _get(f"{s.base}/pin")
+    assert status == 200
+    assert body == {"ok": False, "error": "pin_unavailable"}
