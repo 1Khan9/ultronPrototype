@@ -99,8 +99,9 @@
 > `_maybe_handle_relay_speech` in BOTH dispatch cascades (`via="tell_chat"` / `"tell_chat-lean"`; critical:
 > "tell chat X" is otherwise a relay GROUP form, `_GROUP_PRON` includes "chat") — resolves the spoken name via
 > the shared `self._twitch_user_roster` (`best()` + `display_of()` vs the floor), posts through the config
-> templates via `self._twitch_chat_post`, speaks a local confirm ("Delivered to <name>." / "No one in chat
-> matches <name>." / toggle-off "The chat line is closed."); owned failures never fall through to the relay.
+> templates via `self._twitch_chat_post`; success is SILENT (streamer 2026-07-10: "just send it") — only
+> FAILURES speak ("No one in chat matches <name>." / toggle-off "The chat line is closed." / "The chat line
+> failed."), so a miss is never mistaken for a send; owned failures never fall through to the relay.
 > Boot state `_tell_chat_enabled`/`_stream_delay_seconds` (twitch.chat), stop-window setters
 > `_set_tell_chat_enabled`/`_set_stream_delay_seconds` (clamped), StopButtonOverlay kwargs (twitch-gated
 > rows). `stop_button.py`: TELL-CHAT via `_make_toggle_row` (cyan) + the STREAM-DELAY Frame+Label+Entry row

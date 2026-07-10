@@ -3873,9 +3873,10 @@ class Orchestrator:
                 tpl = str(getattr(chcfg, "tell_chat_broadcast_template",
                                   "") or "") or "{message}"
                 post(tpl.format(message=cmd.message))
+                # SILENT on success (streamer 2026-07-10: "just send it") —
+                # only failures speak, so a miss is never mistaken for a send.
                 logger.info("tell-chat: broadcast posted (%d chars)",
                             len(cmd.message))
-                self._speak("Delivered to the congregation.")
                 return True
             roster = getattr(self, "_twitch_user_roster", None)
             login, score = (roster.best(cmd.name)
@@ -3891,9 +3892,9 @@ class Orchestrator:
             tpl = str(getattr(chcfg, "tell_chat_template", "") or "") \
                 or "@{name} {message}"
             post(tpl.format(name=display, message=cmd.message))
+            # SILENT on success (streamer 2026-07-10: "just send it").
             logger.info("tell-chat: posted to @%s (heard %r, score %.0f)",
                         login, cmd.name, score)
-            self._speak(f"Delivered to {display}.")
         except Exception as e:                                       # noqa: BLE001
             # The command was matched + owned; report the failure locally
             # rather than letting it fall through to the relay/LLM.

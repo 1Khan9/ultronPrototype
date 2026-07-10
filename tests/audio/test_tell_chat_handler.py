@@ -50,11 +50,13 @@ def test_non_match_falls_through(monkeypatch) -> None:
     assert o._spoken == [] and o._posted == []
 
 
-def test_broadcast_posts_and_confirms(monkeypatch) -> None:
+def test_broadcast_posts_silently(monkeypatch) -> None:
+    """Success is SILENT (streamer 2026-07-10: 'just send it') — only
+    failures speak, so a miss is never mistaken for a send."""
     o = _mk(monkeypatch)
     assert o._maybe_handle_tell_chat("tell chat be right back") is True
     assert o._posted == ["🎙️ [live]: be right back"]
-    assert o._spoken == ["Delivered to the congregation."]
+    assert o._spoken == []
 
 
 def test_tagged_fuzzy_matches_and_tags_display_name(monkeypatch) -> None:
@@ -65,7 +67,7 @@ def test_tagged_fuzzy_matches_and_tags_display_name(monkeypatch) -> None:
     assert o._maybe_handle_tell_chat(
         "tell dragon slayer in chat nice sub") is True
     assert o._posted == ["@DragonSlayer99 🎙️ [live]: nice sub"]
-    assert o._spoken == ["Delivered to DragonSlayer99."]
+    assert o._spoken == []          # success is silent (2026-07-10)
 
 
 def test_tagged_display_falls_back_to_login(monkeypatch) -> None:
