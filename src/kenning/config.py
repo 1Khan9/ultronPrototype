@@ -4461,6 +4461,12 @@ class TwitchChatConfig(_Strict):
         "@{name} New voice detected — welcome to the congregation."
     )
     first_time_welcome_max_per_minute: int = Field(default=4, ge=1, le=60)
+    # Ban guard (2026-07-10): the welcome POST is deferred this many seconds
+    # and re-checked at fire time — if a mod bot (Sery_bot) banned/timed-out
+    # the chatter in the window (channel.chat.clear_user_messages), the
+    # welcome is silently skipped (no more welcoming advertising bots that
+    # are banned within seconds). 0 = post immediately (still ban-checked).
+    first_time_welcome_delay_seconds: int = Field(default=4, ge=0, le=60)
     # Durable welcomed-set (2026-07-09): EventSub does NOT expose Twitch's
     # native first-msg tag, so "first time" is tracked client-side. When ON, a
     # login is welcomed once EVER (SQLite at ``persist_path``, relative to the

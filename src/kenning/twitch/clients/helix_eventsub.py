@@ -281,6 +281,38 @@ class HelixEventSubClient:
         }
         return self._create_subscription(body, token=token, what="chat-subscription")
 
+    def create_chat_clear_subscription(
+        self,
+        *,
+        broadcaster_id: str,
+        bot_user_id: str,
+        session_id: str,
+        token: str,
+    ) -> bool:
+        """Create the ``channel.chat.clear_user_messages`` v1 subscription
+        (2026-07-10): fires when a mod/bot clears a USER's messages — i.e. a
+        ban or timeout (the EventSub face of IRC's CLEARCHAT-with-target).
+        Rides the SAME bot session + ``user:read:chat`` scope as the chat
+        subscription (no new grant). Used to suppress the first-time welcome
+        for advertising bots that Sery_bot bans within seconds."""
+        if not broadcaster_id or not bot_user_id or not session_id:
+            logger.warning(
+                "helix chat-clear-sub: missing id(s) broadcaster=%r bot=%r session=%r",
+                bool(broadcaster_id), bool(bot_user_id), bool(session_id),
+            )
+            return False
+        body = {
+            "type": "channel.chat.clear_user_messages",
+            "version": _SUBSCRIPTION_VERSION,
+            "condition": {
+                "broadcaster_user_id": str(broadcaster_id),
+                "user_id": str(bot_user_id),
+            },
+            "transport": {"method": "websocket", "session_id": str(session_id)},
+        }
+        return self._create_subscription(
+            body, token=token, what="chat-clear-subscription")
+
     def create_redeem_subscription(
         self,
         *,

@@ -414,6 +414,25 @@ class EventSubChatSource:
         self._subscribed = True
         self.last_subscribe_error = ""
         logger.info("eventsub chat subscription established for session=%s", session_id)
+        # OPTIONAL second sub on the SAME session/token (2026-07-10): ban/
+        # timeout signals (channel.chat.clear_user_messages, user:read:chat —
+        # already granted). Feeds the first-time-welcome ban guard so Ultron
+        # never welcomes an advertising bot Sery_bot just banned. Fail-quiet:
+        # a failure only degrades the welcome guard to delay-only.
+        try:
+            ok_clear = helix.create_chat_clear_subscription(
+                broadcaster_id=broadcaster_id,
+                bot_user_id=bot_id,
+                session_id=session_id,
+                token=bot_token,
+            )
+            if ok_clear:
+                logger.info("eventsub chat-clear subscription established")
+            else:
+                logger.warning("eventsub chat-clear subscription failed "
+                               "(welcome ban-guard degrades to delay-only)")
+        except Exception as e:  # noqa: BLE001 — never break the chat sub
+            logger.warning("eventsub chat-clear subscription error: %s", e)
 
     # ---- redeem connection (SEPARATE session, broadcaster token) -------- #
     def _ensure_redeem_client(self) -> bool:
@@ -679,6 +698,23 @@ class EventSubChatSource:
                 )
                 return
             # Not a chat message under an unknown sub_type -> fall through to redeem.
+
+        if sub_type == "channel.chat.clear_user_messages":
+            # Ban/timeout signal (2026-07-10): a mod/bot cleared a USER's
+            # messages. Buffered flat so the main process can suppress the
+            # first-time welcome for a just-banned advertising bot. Parsed
+            # defensively; a shape drift yields no event (fail-safe).
+            event = self._locate_event(msg)
+            if isinstance(event, dict):
+                tlogin = str(event.get("target_user_login")
+                             or event.get("target_user_name") or "").strip().lower()
+                if tlogin:
+                    out.append({
+                        "type": "chat_clear_user",
+                        "target_login": tlogin,
+                        "target_user_id": str(event.get("target_user_id") or ""),
+                    })
+            return
 
         if sub_type == "channel.channel_points_custom_reward_redemption.add":
             self._map_redeem(msg, out)

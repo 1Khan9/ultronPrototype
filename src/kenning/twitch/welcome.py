@@ -199,6 +199,11 @@ class FirstTimeWelcomer:
         self._lock = threading.Lock()
         self._seen: set[str] = set()
         self._recent: deque[float] = deque()
+        # Recently banned/timed-out logins (2026-07-10): fed from EventSub
+        # channel.chat.clear_user_messages so a DELAYED welcome can be
+        # suppressed when a mod bot (Sery_bot) bans an advertising bot within
+        # the delay window. Bounded by _MAX_SEEN like the seen-set.
+        self._banned: set[str] = set()
 
     # ------------------------------------------------------------------ core
     def observe(
@@ -267,6 +272,32 @@ class FirstTimeWelcomer:
         """How many distinct logins have chatted this run (introspection)."""
         with self._lock:
             return len(self._seen)
+
+    # -------------------------------------------------------------- ban guard
+    def mark_banned(self, login: str) -> None:
+        """Record a ban/timeout signal (channel.chat.clear_user_messages) so a
+        pending DELAYED welcome for this login is suppressed at fire time.
+        Fail-quiet; bounded; never raises (called from the drain hot path)."""
+        try:
+            key = (login or "").strip().lower() if isinstance(login, str) else ""
+            if not key:
+                return
+            with self._lock:
+                if len(self._banned) < _MAX_SEEN:
+                    self._banned.add(key)
+        except Exception:  # noqa: BLE001 — must never break chat ingest
+            pass
+
+    def is_banned(self, login: str) -> bool:
+        """True iff a ban/timeout signal was seen for ``login`` this run."""
+        try:
+            key = (login or "").strip().lower() if isinstance(login, str) else ""
+            if not key:
+                return False
+            with self._lock:
+                return key in self._banned
+        except Exception:  # noqa: BLE001
+            return False
 
     # ----------------------------------------------------------------- helpers
     def _render(self, display_name: str, login: str) -> Optional[str]:

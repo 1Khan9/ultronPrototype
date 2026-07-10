@@ -27,6 +27,17 @@
 > - Full runbook: **`docs/ultron_0_1_baseline.md`**. Post-0.1 roadmap:
 >   **`docs/latency_optimizations_V1.md`**.
 >
+> **WELCOME BAN-GUARD — delay + clear_user_messages suppression (2026-07-10, wave 2)**
+>
+> Ultron welcomed advertising bots Sery_bot bans within seconds. NEW second EventSub sub on the SAME bot
+> session (`helix_eventsub.create_chat_clear_subscription`, `channel.chat.clear_user_messages`,
+> `user:read:chat` already granted — NO new scope) → read sidecar maps ban/timeout signals to flat
+> `{"type":"chat_clear_user","target_login"}` events → `make_chat_command_drain_fn(on_clear=)` invokes
+> `FirstTimeWelcomer.mark_banned` inline (bounded set + lock; `is_banned`). `_maybe_welcome` DEFERS the post
+> by `first_time_welcome_delay_seconds` (default 4s; 0 = immediate) via the router `_defer` and re-checks
+> `is_banned` at fire time — banned in the window → silently skipped (the durable store already marked them,
+> so no later welcome either). Fail-quiet everywhere: a failed clear-sub degrades to delay-only.
+>
 > **PRESENCE ROSTER — Get Chatters + on-miss refresh (2026-07-10)**
 >
 > The tell roster was observed-only (talkers), so a LURKER in the viewer list was unfindable ("no roster match

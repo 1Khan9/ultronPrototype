@@ -1,5 +1,23 @@
 # Ultron 1.0 — Live Status
 
+**ACTIVE (2026-07-10, wave 2) — WELCOME BAN-GUARD: delay + clear_user_messages suppression (branch `claude/chatters-presence`):**
+
+Live: Ultron welcomed advertising bots that Sery_bot bans within seconds (the welcome fired instantly on the
+bot's first message). FIX = defer + verify: (1) the read sidecar adds a SECOND subscription on the SAME bot
+session — `channel.chat.clear_user_messages` (ban/timeout signals; `user:read:chat` already granted, NO new
+scope) — mapped to a flat `{"type":"chat_clear_user","target_login",...}` buffer event (fail-quiet; a create
+failure only degrades the guard to delay-only). (2) `make_chat_command_drain_fn` gains `on_clear` — invoked
+inline with each ban target — wired to NEW `FirstTimeWelcomer.mark_banned` (bounded set + lock;
+`is_banned`). (3) `_maybe_welcome` now DEFERS the post by `first_time_welcome_delay_seconds` (default 4s —
+past typical mod-bot ban latency; the streamer suggested 500ms, 4s chosen for margin; 0 = immediate) via the
+router's existing `_defer`, and re-checks `is_banned` at FIRE time — banned in the window -> silently
+skipped (the durable welcomed-store already marked them, so a banned bot never gets a later welcome either).
+EVIDENCE: sidecar clear-sub + mapping 2, welcomer ban-set 1 + config default 1, router deferred/banned/zero-
+delay 3 + drain on_clear 2; FULL `tests/twitch/` + anticheat 1375 pass / 1 skip; validate_config 0. NEXT:
+restart + observe: an ad-bot ban within ~4s of its first message -> "first-time welcome for <login>
+suppressed (banned/timed out within the delay window)" in kenning.log, no welcome in chat.
+
+
 **ACTIVE (2026-07-10) — PRESENCE ROSTER: Get Chatters + on-miss refresh (branch `claude/chatters-presence`):**
 
 Live: "tell saltwaterbottle in chat hi" -> "no roster match (best='ultron_kenning' score=34)" — the viewer WAS

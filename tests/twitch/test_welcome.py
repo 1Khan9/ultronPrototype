@@ -228,3 +228,23 @@ def test_config_persist_defaults():
     cfg = TwitchChatConfig()
     assert cfg.first_time_welcome_persist is True
     assert cfg.first_time_welcome_persist_path == "data/twitch/welcomed.db"
+
+
+# ---------------------------------------------------------------------------
+# Ban guard (2026-07-10) — clear_user_messages suppression of delayed welcomes
+# ---------------------------------------------------------------------------
+
+def test_mark_banned_and_is_banned():
+    w = _mk()
+    assert w.is_banned("adbot") is False
+    w.mark_banned("AdBot ")                    # canonicalized
+    assert w.is_banned("adbot") is True
+    assert w.is_banned("ADBOT") is True
+    w.mark_banned("")                          # blank ignored, no raise
+    w.mark_banned(None)                        # type: ignore[arg-type]
+    assert w.is_banned("") is False
+
+
+def test_config_welcome_delay_default():
+    from kenning.config import TwitchChatConfig
+    assert TwitchChatConfig().first_time_welcome_delay_seconds == 4

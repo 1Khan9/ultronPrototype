@@ -7176,7 +7176,13 @@ class Orchestrator:
                         logger.warning("first-time welcome init failed: %s", _we)
                         _welcomer = None
                     cgr = ChatGameRouter(
-                        make_chat_command_drain_fn(read_ep),
+                        make_chat_command_drain_fn(
+                            read_ep,
+                            # Ban/timeout signals (chat_clear_user events)
+                            # feed the welcome ban-guard (2026-07-10).
+                            on_clear=(_welcomer.mark_banned
+                                      if _welcomer is not None else None),
+                        ),
                         ledger=ledger, cfg=_ecfg,
                         announce_fn=_twitch_chat_post,   # chat commands: in-chat response ONLY (no TTS)
                         overlay_emit=_cg_overlay_emit,

@@ -391,6 +391,7 @@ class _FakeHelix:
     def __init__(self, id_map=None):
         self._ids = id_map or {"streamer": "B-100", "ultronbot": "U-200"}
         self.chat_subs = []
+        self.clear_subs = []
         self.redeem_subs = []
 
     def get_user_id(self, login, *, token):
@@ -398,6 +399,11 @@ class _FakeHelix:
 
     def create_chat_subscription(self, *, broadcaster_id, bot_user_id, session_id, token):
         self.chat_subs.append((broadcaster_id, bot_user_id, session_id, token))
+        return True
+
+    def create_chat_clear_subscription(self, *, broadcaster_id, bot_user_id, session_id, token):
+        # Ban/timeout signals for the welcome ban-guard (2026-07-10).
+        self.clear_subs.append((broadcaster_id, bot_user_id, session_id, token))
         return True
 
     def create_redeem_subscription(self, *, broadcaster_id, session_id, token):
@@ -714,3 +720,53 @@ def test_eventsub_source_carries_native_message_type(monkeypatch) -> None:
     assert len(chats) == 1
     assert chats[0]["message_type"] == "user_intro"
     assert chats[0]["broadcaster_user_id"] == "B-100"
+
+
+def _clear_notification(target_login: str = "spambot", target_id: str = "S-666") -> dict:
+    return {
+        "metadata": {"message_type": "notification",
+                     "subscription_type": "channel.chat.clear_user_messages"},
+        "payload": {
+            "subscription": {"type": "channel.chat.clear_user_messages"},
+            "event": {
+                "broadcaster_user_id": "B-100",
+                "target_user_id": target_id,
+                "target_user_login": target_login,
+                "target_user_name": target_login.title(),
+            },
+        },
+    }
+
+
+def test_eventsub_source_subscribes_chat_clear(monkeypatch) -> None:
+    """2026-07-10: the ban-signal sub (channel.chat.clear_user_messages) rides
+    the SAME bot session/token as the chat sub — no new scope."""
+    _patch_tokens(monkeypatch)
+    helix = _FakeHelix()
+    ws = _FakeWSClient([_welcome("sess-1")])
+    src = sidecar.EventSubChatSource(
+        url="wss://test/ws", client_id="cid",
+        broadcaster_login="streamer", bot_login="ultronbot",
+        connect_factory=lambda url: ws, helix_factory=lambda: helix,
+    )
+    src.poll()
+    assert helix.clear_subs == [
+        ("B-100", "U-200", "sess-1", "tok-~/.kenning/twitch_bot.json")]
+
+
+def test_eventsub_maps_chat_clear_user(monkeypatch) -> None:
+    """A clear-user notification becomes a flat ban signal the main process
+    can consume (the welcome ban-guard)."""
+    _patch_tokens(monkeypatch)
+    ws = _FakeWSClient([_welcome("sess-1"),
+                        _clear_notification("AdBot9000", "S-1")])
+    src = sidecar.EventSubChatSource(
+        url="wss://test/ws", client_id="cid",
+        broadcaster_login="streamer", bot_login="ultronbot",
+        connect_factory=lambda url: ws, helix_factory=lambda: _FakeHelix(),
+    )
+    out = src.poll()
+    clears = [e for e in out if e["type"] == "chat_clear_user"]
+    assert clears == [{"type": "chat_clear_user",
+                       "target_login": "adbot9000",   # canonicalized lower
+                       "target_user_id": "S-1"}]

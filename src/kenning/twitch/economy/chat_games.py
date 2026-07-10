@@ -100,6 +100,7 @@ def make_chat_command_drain_fn(
     *,
     timeout: float = 1.0,
     http_get: Callable[[str, float], bytes] | None = None,
+    on_clear: Callable[[str], object] | None = None,
 ) -> Callable[[], list[ChatEvent]]:
     """Own-cursor drain returning EVERY chat ``ChatEvent`` from the read sidecar.
 
@@ -108,6 +109,11 @@ def make_chat_command_drain_fn(
     since=<own cursor>`` and NEVER POSTs ``/ack`` (so this third consumer never
     steals events from the chat-reply or redeem drains). Fail-safe: any error
     (sidecar down / bad body) returns ``[]`` so the caller skips the tick.
+
+    ``on_clear`` (2026-07-10): invoked inline with the TARGET LOGIN of every
+    buffered ``chat_clear_user`` event (a mod/bot banned or timed out that
+    user) — the welcome ban-guard. Fail-quiet; a callback error never breaks
+    the drain.
     """
     base = read_endpoint.rstrip("/")
     cursor = {"v": 0}
@@ -138,7 +144,17 @@ def make_chat_command_drain_fn(
                 if not isinstance(wrapped, dict):
                     continue
                 event = wrapped.get("event")
-                if not isinstance(event, dict) or event.get("type") != "chat":
+                if not isinstance(event, dict):
+                    continue
+                if event.get("type") == "chat_clear_user":
+                    # Ban/timeout signal -> the welcome ban-guard (fail-quiet).
+                    if on_clear is not None:
+                        try:
+                            on_clear(str(event.get("target_login") or ""))
+                        except Exception:  # noqa: BLE001 — never break the drain
+                            pass
+                    continue
+                if event.get("type") != "chat":
                     continue
                 ce = chat_event_from_buffer(event)
                 if ce is not None:
@@ -400,12 +416,21 @@ class ChatGameRouter:
         """Spec 12: post the first-time-this-run welcome for a new chatter.
         Delegates the entire decision (seen-set, exclusions, burst guard, live
         delay render) to the injected FirstTimeWelcomer; posts its returned
-        text via the normal reply channel. Fail-safe: never breaks the tick."""
+        text via the normal reply channel. Fail-safe: never breaks the tick.
+
+        BAN GUARD (2026-07-10): the post is DEFERRED by
+        ``first_time_welcome_delay_seconds`` (default 4s) and re-checked at
+        fire time — if a mod bot (Sery_bot) banned/timed-out the chatter in
+        the window (channel.chat.clear_user_messages -> welcomer.mark_banned),
+        the welcome is silently skipped. Advertising bots are banned within
+        seconds; welcoming one right before/after the ban read as endorsement.
+        """
         if self._welcomer is None:
             return
+        login = (getattr(ev, "chatter_login", "") or "").strip().lower()
         try:
             text = self._welcomer.observe(
-                (getattr(ev, "chatter_login", "") or "").strip().lower(),
+                login,
                 display_name=getattr(ev, "chatter_name", "") or "",
                 chatter_uid=getattr(ev, "chatter_user_id", "") or "",
                 broadcaster_uid=getattr(ev, "broadcaster_user_id", "") or "",
@@ -413,13 +438,35 @@ class ChatGameRouter:
         except Exception as exc:  # noqa: BLE001 — a welcome must never break ingest
             logger.debug("first-time welcome check failed: %s", exc)
             return
-        if text:
-            if self._announce is None:
-                # A welcome is once-per-run: losing it deserves a LOUD log
-                # (the login is already marked seen and will not retry).
-                logger.warning("first-time welcome dropped -- no chat "
-                               "announce channel: %s", text)
+        if not text:
+            return
+        if self._announce is None:
+            # A welcome is once-per-run: losing it deserves a LOUD log
+            # (the login is already marked seen and will not retry).
+            logger.warning("first-time welcome dropped -- no chat "
+                           "announce channel: %s", text)
             self._reply(text)
+            return
+
+        def _fire(_text=text, _login=login) -> None:
+            try:
+                banned = bool(getattr(self._welcomer, "is_banned",
+                                      lambda _l: False)(_login))
+            except Exception:  # noqa: BLE001 — fail toward welcoming
+                banned = False
+            if banned:
+                logger.info("first-time welcome for %s suppressed "
+                            "(banned/timed out within the delay window)",
+                            _login)
+                return
+            self._reply(_text)
+
+        delay = _as_float(getattr(self._chat_cfg,
+                                  "first_time_welcome_delay_seconds", 4), 4.0)
+        if delay > 0:
+            self._defer(delay, _fire)
+        else:
+            _fire()
 
     def _accrue_earnings(self) -> None:
         per_min = _as_int(getattr(self._cfg, "earn_per_minute", 0))

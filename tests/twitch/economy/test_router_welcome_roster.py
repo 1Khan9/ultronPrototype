@@ -35,11 +35,15 @@ def _cfg():
         trivia_auto_interval_minutes=0)
 
 
-def _router(events, *, roster=None, welcomer=None):
+def _router(events, *, roster=None, welcomer=None, defer=None, chat_cfg=None):
+    """Router with a SYNCHRONOUS defer by default (the ban-guard defers the
+    welcome post; tests fire it inline unless a capturing ``defer`` is given)."""
     replies: list[str] = []
     r = ChatGameRouter(
         lambda: list(events), ledger=Ledger(":memory:"), cfg=_cfg(),
         announce_fn=replies.append,
+        defer_fn=defer or (lambda _delay, fn: fn()),
+        chat_cfg=chat_cfg,
         roster=roster, welcomer=welcomer)
     return r, replies
 
@@ -115,3 +119,91 @@ def test_hooks_default_none_is_legacy_behaviour():
     handled = r.tick()
     assert handled == 0
     assert replies == []
+
+
+# ------------------------------------------------------- ban guard (2026-07-10)
+def test_welcome_suppressed_when_banned_within_delay_window():
+    """The live complaint: Sery_bot bans an advertising bot within seconds but
+    Ultron had already welcomed it. The post is now DEFERRED and re-checked —
+    a ban signal arriving in the window kills the welcome."""
+    pending: list = []
+    w = _welcomer()
+    r, replies = _router(
+        [_ev("buy followers at spam.example", uid="u9", login="adbot9000",
+             name="AdBot9000")],
+        welcomer=w, defer=lambda _delay, fn: pending.append(fn))
+    r.tick()
+    assert replies == []                      # deferred, nothing posted yet
+    assert len(pending) == 1
+    w.mark_banned("adbot9000")                # Sery_bot bans within the window
+    pending[0]()                              # the delay elapses
+    assert replies == []                      # welcome suppressed
+
+
+def test_welcome_fires_after_delay_when_not_banned():
+    pending: list = []
+    w = _welcomer()
+    r, replies = _router(
+        [_ev("hi all", uid="u2", login="newbie", name="Newbie")],
+        welcomer=w, defer=lambda _delay, fn: pending.append(fn))
+    r.tick()
+    assert replies == []
+    pending[0]()                              # window passes, no ban
+    assert replies == ["@Newbie welcome — delay 40 seconds."]
+
+
+def test_zero_delay_posts_immediately_but_still_ban_checked():
+    import types as _t
+
+    w = _welcomer()
+    w.mark_banned("adbot9000")                # banned BEFORE their first msg
+    r, replies = _router(
+        [_ev("spam", uid="u9", login="adbot9000", name="AdBot9000"),
+         _ev("hi", uid="u2", login="newbie", name="Newbie")],
+        welcomer=w,
+        chat_cfg=_t.SimpleNamespace(first_time_welcome_delay_seconds=0))
+    r.tick()
+    assert replies == ["@Newbie welcome — delay 40 seconds."]
+
+
+def test_drain_on_clear_callback_and_no_chatevent_emitted():
+    import json as _json
+
+    from kenning.twitch.economy.chat_games import make_chat_command_drain_fn
+
+    payload = {"cursor": 2, "events": [
+        {"seq": 1, "ts": 0.0,
+         "event": {"type": "chat_clear_user", "target_login": "adbot9000",
+                   "target_user_id": "9"}},
+        {"seq": 2, "ts": 0.0, "event": _flat("hello", login="alice")},
+    ]}
+    calls: list[str] = []
+    drain = make_chat_command_drain_fn(
+        "http://127.0.0.1:1",
+        http_get=lambda _url, _to: _json.dumps(payload).encode("utf-8"),
+        on_clear=calls.append)
+    out = drain()
+    assert calls == ["adbot9000"]             # ban signal delivered
+    assert [e.chatter_login for e in out] == ["alice"]   # clear emitted no event
+
+
+def test_drain_on_clear_error_never_breaks_drain():
+    import json as _json
+
+    from kenning.twitch.economy.chat_games import make_chat_command_drain_fn
+
+    payload = {"cursor": 1, "events": [
+        {"seq": 1, "ts": 0.0,
+         "event": {"type": "chat_clear_user", "target_login": "x"}},
+        {"seq": 2, "ts": 0.0, "event": _flat("hi", login="bob")},
+    ]}
+
+    def boom(_login: str) -> None:
+        raise RuntimeError("welcomer gone")
+
+    drain = make_chat_command_drain_fn(
+        "http://127.0.0.1:1",
+        http_get=lambda _url, _to: _json.dumps(payload).encode("utf-8"),
+        on_clear=boom)
+    out = drain()                             # no raise
+    assert [e.chatter_login for e in out] == ["bob"]
