@@ -7349,12 +7349,42 @@ class Orchestrator:
                         build_commands_panel_text as _p_build,
                         pinboard_should_pin as _p_should,
                     )
+                    import hashlib as _phash
                     import json as _pjson
                     import threading as _pth
                     import time as _ptime
                     import urllib.request as _purl
+                    from kenning.config import PROJECT_ROOT as _proot
                     _pin_state = {"pinned_this_boot": False,
                                   "pin_leg_broken": False}
+                    # DURABLE posted-latch (live 2026-07-10: the pin endpoint
+                    # 404'd, so every reboot pasted the panel once — the very
+                    # flood the pinboard exists to end). Text-hash keyed: a
+                    # panel text that failed to PIN is posted once EVER; a
+                    # changed panel (new commands) gets one fresh post.
+                    _pin_marker = _proot / "data" / "twitch" / "pinboard_state.json"
+
+                    def _pin_posted_ever(sha: str) -> bool:
+                        try:
+                            with open(_pin_marker, encoding="utf-8") as _pf:
+                                return sha in (_pjson.load(_pf) or {})
+                        except Exception:                        # noqa: BLE001
+                            return False                         # no marker yet
+
+                    def _pin_mark_posted(sha: str) -> None:
+                        try:
+                            data = {}
+                            try:
+                                with open(_pin_marker, encoding="utf-8") as _pf:
+                                    data = _pjson.load(_pf) or {}
+                            except Exception:                    # noqa: BLE001
+                                data = {}
+                            data[sha] = _ptime.time()
+                            _pin_marker.parent.mkdir(parents=True, exist_ok=True)
+                            with open(_pin_marker, "w", encoding="utf-8") as _pf:
+                                _pjson.dump(data, _pf)
+                        except Exception as _pe:                 # noqa: BLE001
+                            logger.debug("pinboard marker write failed: %s", _pe)
 
                     def _pin_get_state():
                         try:
@@ -7396,13 +7426,16 @@ class Orchestrator:
                                 # for the rest of the boot instead.
                                 if _pin_state["pin_leg_broken"]:
                                     continue
+                                text = "📌 " + _p_build(_pchcfg)
+                                sha = _phash.sha256(
+                                    text.encode("utf-8")).hexdigest()
                                 state = _pin_get_state()
                                 if not _p_should(
                                         state,
                                         pinned_this_boot=_pin_state[
-                                            "pinned_this_boot"]):
+                                            "pinned_this_boot"],
+                                        posted_ever=_pin_posted_ever(sha)):
                                     continue
-                                text = "📌 " + _p_build(_pchcfg)
                                 res = _pin_post(text) or {}
                                 posted = bool(res.get("message_id")) or bool(
                                     res.get("ok"))
@@ -7418,12 +7451,18 @@ class Orchestrator:
                                 elif res.get("message_id") and not res.get(
                                         "pinned"):
                                     _pin_state["pin_leg_broken"] = True
+                                    # Durable: this text never re-posts on any
+                                    # later boot either — the streamer pins
+                                    # the posted message by hand once.
+                                    _pin_mark_posted(sha)
                                     logger.warning(
                                         "pinboard: message posted but the PIN "
                                         "leg failed (%s) -- suppressing "
-                                        "further pinboard posts this boot; "
-                                        "see write sidecar healthz pin_error",
-                                        res)
+                                        "further pinboard posts (this boot + "
+                                        "durably for this text). PIN THE "
+                                        "POSTED MESSAGE BY HAND (hover it in "
+                                        "chat -> Pin); see write sidecar "
+                                        "healthz pin_error", res)
                                 else:
                                     logger.warning(
                                         "pinboard: send leg failed (%s) -- "

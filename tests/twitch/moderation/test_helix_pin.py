@@ -61,6 +61,11 @@ def make_client(transport, clock=None) -> HelixClient:
 
 
 # ----------------------------------------------------------------- pin write
+# Endpoint verified 2026-07-10: POST /chat/pins with ALL fields in the JSON
+# body (the docs-summary path /chat/pinned_messages 404'd live).
+_PIN_BODY = {"broadcaster_id": "B1", "moderator_id": "B1", "message_id": "m1"}
+
+
 def test_pin_message_flat_body_success():
     tr = ScriptedTransport().queue(
         TransportResponse(status=200, body=json.dumps({"data": [{"message_id": "m1"}]})))
@@ -69,9 +74,9 @@ def test_pin_message_flat_body_success():
     assert len(tr.calls) == 1
     call = tr.calls[0]
     assert call["method"] == "POST"
-    assert "/chat/pinned_messages" in call["url"]
-    assert "broadcaster_id=B1" in call["url"] and "moderator_id=B1" in call["url"]
-    assert call["body"] == {"message_id": "m1"}          # FLAT first
+    assert "/chat/pins" in call["url"]
+    assert "pinned_messages" not in call["url"]          # the 404 path is gone
+    assert call["body"] == _PIN_BODY                     # ALL fields in body
 
 
 def test_pin_message_retries_nested_once_on_schema_400():
@@ -82,8 +87,8 @@ def test_pin_message_retries_nested_once_on_schema_400():
     res = make_client(tr).pin_message("B1", "B1", "m1")
     assert res.ok is True
     assert len(tr.calls) == 2
-    assert tr.calls[0]["body"] == {"message_id": "m1"}
-    assert tr.calls[1]["body"] == {"data": {"message_id": "m1"}}   # nested retry
+    assert tr.calls[0]["body"] == _PIN_BODY
+    assert tr.calls[1]["body"] == {"data": _PIN_BODY}    # nested retry
 
 
 def test_pin_message_400_without_data_hint_fails_loud_no_retry():
@@ -119,6 +124,10 @@ def test_get_pinned_message_active_pin():
     assert res.data["data"][0]["message_id"] == "m9"
     assert tr.calls[0]["method"] == "GET"
     assert tr.calls[0]["body"] is None
+    assert "/chat/pins" in tr.calls[0]["url"]
+    # moderator_id is REQUIRED on the GET (defaults to the broadcaster)
+    assert "broadcaster_id=B1" in tr.calls[0]["url"]
+    assert "moderator_id=B1" in tr.calls[0]["url"]
 
 
 def test_get_pinned_message_no_pin_is_ok_with_empty_data():

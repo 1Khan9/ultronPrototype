@@ -35,6 +35,24 @@ def test_unreadable_state_pins_once_per_boot_only():
         assert pinboard_should_pin(state, pinned_this_boot=True) is False
 
 
+def test_unreadable_state_with_durable_latch_never_reposts_across_boots():
+    """Live 2026-07-10: the pin endpoint 404'd, so EVERY REBOOT pasted the
+    panel once. posted_ever (the durable text-hash latch) must suppress the
+    post even on a fresh boot (pinned_this_boot=False)."""
+    for state in ({"ok": True, "active": None, "readable": False}, None):
+        assert pinboard_should_pin(
+            state, pinned_this_boot=False, posted_ever=True) is False
+
+
+def test_healthy_no_pin_ignores_durable_latch():
+    """When the pin API WORKS and reports no active pin, re-pinning needs a
+    fresh message — posted_ever must not block the healthy path (expiry or a
+    manual unpin should get a new pinned message)."""
+    state = {"ok": True, "active": False, "readable": True}
+    assert pinboard_should_pin(
+        state, pinned_this_boot=False, posted_ever=True) is True
+
+
 # ------------------------------------------------------------ config defaults
 def test_flood_fix_config_defaults():
     from kenning.config import TwitchChatConfig
@@ -65,3 +83,9 @@ def test_orchestrator_wires_the_pinboard_keeper():
     assert "pin_leg_broken" in src
     assert src.count("pin_leg_broken") >= 3       # init + check + set
     assert "posted = bool(res.get(" in src
+    # live 2026-07-10: the DURABLE text-hash latch — a pin-leg failure marks
+    # the text posted-forever so no REBOOT re-pastes it either.
+    assert "_pin_posted_ever" in src
+    assert "_pin_mark_posted" in src
+    assert "pinboard_state.json" in src
+    assert "posted_ever=" in src

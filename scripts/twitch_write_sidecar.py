@@ -1060,7 +1060,7 @@ def build_service_state() -> _ServiceState:
                 could NOT be read (open-beta endpoint/permissions) — the keeper
                 must treat that as 'do not re-post blind', NOT as 'no pin'."""
                 try:
-                    res = helix.get_pinned_message(_bid)
+                    res = helix.get_pinned_message(_bid, _bid)
                     data = (res.data or {}).get("data") if isinstance(
                         res.data, dict) else None
                     if not isinstance(data, list):

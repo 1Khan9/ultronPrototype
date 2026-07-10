@@ -562,49 +562,56 @@ class HelixClient:
         scope ``moderator:manage:chat_messages`` (already in BROADCASTER_SCOPES).
         Only one mod-pin can be active per channel — Twitch auto-replaces.
 
-        Open-beta schema tolerance: Helix write bodies are inconsistent (Send
-        Chat Message is FLAT; Ban User nests under "data") and the pin body
-        shape is not yet pinned down publicly. We send the FLAT form first;
-        on a 400 whose body names "data" we retry ONCE with the nested form.
-        A 400 schema rejection creates nothing, so the single retry can never
-        double-apply (the no-blind-retry rule holds).
+        Endpoint verified 2026-07-10 (live 404 on the docs-summary path
+        ``/chat/pinned_messages``; the REAL path per third-party
+        implementations is ``/chat/pins``): POST ``/chat/pins`` with ALL
+        fields in the JSON body — broadcaster_id, moderator_id, message_id;
+        ``duration_seconds`` (30-1800) is optional and OMITTED here so the
+        pin lasts until the stream ends (the pinboard's intent). One
+        nested-"data" retry is kept as open-beta belt-and-braces: a 400
+        schema rejection creates nothing, so it can never double-apply.
         """
         if not broadcaster_id or not moderator_id or not message_id:
             raise ValueError("broadcaster_id, moderator_id and message_id are required")
         key = ("pin_message", "", str(message_id))
-        query = {
+        body = {
             "broadcaster_id": str(broadcaster_id),
             "moderator_id": str(moderator_id),
+            "message_id": str(message_id),
         }
         resp = self._request(
-            "POST", "/chat/pinned_messages",
-            query=query, json_payload={"message_id": str(message_id)},
+            "POST", "/chat/pins", query={}, json_payload=body,
         )
         if resp.status == 400 and "data" in (resp.body or "").lower():
             logger.info("helix pin_message flat body rejected (400: %s); "
                         "retrying the nested-data form", resp.body[:120])
             resp = self._request(
-                "POST", "/chat/pinned_messages",
-                query=query,
-                json_payload={"data": {"message_id": str(message_id)}},
+                "POST", "/chat/pins", query={},
+                json_payload={"data": body},
             )
         return self._finish_write(
             "pin_message", key, resp, success_statuses=(200, 202, 204))
 
-    def get_pinned_message(self, broadcaster_id: str) -> HelixResult:
-        """GET /chat/pinned_messages -> the channel's current mod-pin, if any.
+    def get_pinned_message(
+        self, broadcaster_id: str, moderator_id: str = "",
+    ) -> HelixResult:
+        """GET /chat/pins -> the channel's current mod-pin, if any.
 
-        A READ: no idempotency cache. ``ok`` on 200 with ``data`` = the parsed
-        body (an empty ``data`` list = no active pin). Non-200 raises
-        :class:`HelixError` so callers can distinguish "no pin" from "cannot
-        read the pin state" (the pinboard keeper falls back to pin-once-per-boot
-        on the latter rather than re-posting blind).
+        Path + required ``moderator_id`` verified 2026-07-10 (the docs-summary
+        path 404'd live). A READ: no idempotency cache. ``ok`` on 200 with
+        ``data`` = the parsed body (an empty ``data`` list = no active pin).
+        Non-200 raises :class:`HelixError` so callers can distinguish "no pin"
+        from "cannot read the pin state" (the pinboard keeper falls back to
+        post-once on the latter rather than re-posting blind).
         """
         if not broadcaster_id:
             raise ValueError("broadcaster_id is required")
         resp = self._request(
-            "GET", "/chat/pinned_messages",
-            query={"broadcaster_id": str(broadcaster_id)},
+            "GET", "/chat/pins",
+            query={
+                "broadcaster_id": str(broadcaster_id),
+                "moderator_id": str(moderator_id or broadcaster_id),
+            },
         )
         if resp.status == 200:
             return HelixResult(

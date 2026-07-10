@@ -119,25 +119,32 @@ def run_interval_poster(
             logger.debug("interval poster post failed: %s", exc)
 
 
-def pinboard_should_pin(state, *, pinned_this_boot: bool) -> bool:
+def pinboard_should_pin(
+    state, *, pinned_this_boot: bool, posted_ever: bool = False,
+) -> bool:
     """Decide whether the pinboard keeper should (re)pin on this check.
 
     ``state`` is the write sidecar's ``GET /pin`` body (a dict), or ``None``
-    when the request itself failed. The three rules that keep the pinboard
-    flood-proof and polite:
+    when the request itself failed. ``posted_ever`` is the DURABLE latch: this
+    exact panel text was already posted on some earlier boot while the pin
+    API was broken (live 2026-07-10: the pin leg 404'd, so every reboot
+    pasted the panel once — the very flood the pinboard exists to end). The
+    rules:
 
       * an ACTIVE pin (anyone's — Twitch allows one mod-pin per channel)
         -> NEVER pin: replacing it would fight a pin the streamer/mod set
         by hand;
-      * readable + no active pin -> pin (boot, expiry, or a manual unpin);
-      * UNREADABLE state (``active`` is None / request failed — the
-        open-beta GET may be missing) -> pin ONCE per boot and never again:
-        blind re-posting would re-create the very reminder flood the
-        pinboard exists to end.
+      * readable + no active pin -> pin (boot, expiry, or a manual unpin;
+        the healthy path ignores ``posted_ever`` — a fresh message is needed
+        to pin);
+      * UNREADABLE state (``active`` is None / request failed) -> pin ONCE
+        EVER for this text (not once per boot): the streamer pins the posted
+        message by hand and no reboot ever re-pastes it. A changed panel
+        text (new commands) resets the latch naturally via its new hash.
     """
     if not isinstance(state, dict):
-        return not pinned_this_boot
+        return not pinned_this_boot and not posted_ever
     active = state.get("active")
     if active is None:
-        return not pinned_this_boot
+        return not pinned_this_boot and not posted_ever
     return active is False
