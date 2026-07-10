@@ -207,7 +207,10 @@ def test_generate_reply_clamps_overlong_output():
         return long + "CHATTER_1"
 
     out = generate_reply([_ev("Alice", "hi")], _fn)
-    assert len(out) <= 320
+    # 2026-07-10: inner clamp raised 320 -> 480 for the one-to-three-sentence
+    # reply format (still under Twitch's 500 after the @tag; the pipeline
+    # re-caps at reply_max_chars=400 downstream).
+    assert len(out) <= 480
 
 
 def test_unmapped_hallucinated_token_is_neutralized():
@@ -293,3 +296,41 @@ def test_non_chatevent_items_are_skipped():
 def test_blank_marker_falls_back_to_default():
     _, user, _ = build_chat_prompt([_ev("Alice", "push long")], marker="   ")
     assert f"push {DEFAULT_MARKER} long" in user
+
+
+# ---------------------------------------------------------------------------
+# Reply variety + direct-address + 3-sentence format (2026-07-10)
+# ---------------------------------------------------------------------------
+def test_system_prompt_demands_direct_address_and_variety():
+    """Streamer 2026-07-10: replies were 'highly similar' and sometimes did
+    not address what the viewer said. The output rules now demand engaging
+    the viewer's actual content FIRST, varied phrasing, and allow one to
+    three sentences (was 'ONE short line')."""
+    low = TWITCH_CHAT_SYSTEM.lower()
+    assert "one to three" in low
+    assert "answer the content" in low
+    assert "vary your phrasing" in low
+    assert "never open two replies the same way" in low
+    # the safety sentence stays LAST-adjacent (last-position dominates the 4B)
+    assert low.rindex("never produce slurs") > low.index("vary your phrasing")
+
+
+def test_chat_reply_sampling_mirrors_variety_lesson():
+    """The chat-reply _llm_fn must carry the voice path's variety sampling
+    (temp 0.9 + min_p + repeat_penalty; 2026-06-25 lesson) and headroom for
+    three sentences — bare temp 0.7 was the repetition driver."""
+    import inspect
+
+    from kenning.pipeline.orchestrator import Orchestrator
+
+    src = inspect.getsource(Orchestrator._start_twitch_chat_mode)
+    assert '"temperature": 0.9' in src
+    assert '"min_p": 0.05' in src
+    assert '"repeat_penalty": 1.15' in src
+    assert '"max_tokens": 220' in src
+    assert '"temperature": 0.7' not in src      # the old flat sampling is gone
+
+
+def test_reply_max_chars_default_is_400():
+    from kenning.config import TwitchChatConfig
+    assert TwitchChatConfig().reply_max_chars == 400

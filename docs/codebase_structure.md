@@ -27,6 +27,16 @@
 > - Full runbook: **`docs/ultron_0_1_baseline.md`**. Post-0.1 roadmap:
 >   **`docs/latency_optimizations_V1.md`**.
 >
+> **CHAT-REPLY VARIETY + DIRECT ADDRESS + 3 SENTENCES (2026-07-10, wave 4)**
+>
+> Replies were repetitive (bare `temp 0.7`, no min_p/repeat_penalty — the 2026-06-25 voice lesson applied:
+> variety from SAMPLING) and often ignored the viewer's actual words ("ONE short line" was the only output
+> instruction). `orchestrator._llm_fn` (chat-reply) → `temp 0.9, top_p 0.92, min_p 0.05, repeat_penalty 1.15,
+> max_tokens 220`; `reply.TWITCH_CHAT_SYSTEM` output rules → "ONE to THREE short sentences" + ANSWER-THE-
+> CONTENT-first + vary-your-phrasing (safety sentence stays LAST); datamarking KEPT (anti-injection).
+> Caps: `reply_max_chars` 240→400, `_MAX_REPLY_CHARS` 320→480. Pins: prompt contract + sampling source pin +
+> config default + clamp 480 (tests/twitch/test_reply.py).
+>
 > **WELCOME BAN-GUARD — delay + clear_user_messages suppression (2026-07-10, wave 2)**
 >
 > Ultron welcomed advertising bots Sery_bot bans within seconds. NEW second EventSub sub on the SAME bot

@@ -1,5 +1,24 @@
 # Ultron 1.0 — Live Status
 
+**ACTIVE (2026-07-10, wave 4) — CHAT-REPLY VARIETY + DIRECT ADDRESS + 3-SENTENCE FORMAT (branch `claude/chat-reply-variety`):**
+
+Streamer: chat replies "all highly similar" + sometimes don't address what the viewer said; raise max length
+to 3 sentences. ROOT CAUSES (mapped): the chat-reply `_llm_fn` ran bare `temp 0.7` with NO min_p/repeat_penalty
+(the voice path fixed this exact repetition mode 2026-06-25: "variety from SAMPLING"), and the only output
+instruction was "ONE short line... Keep it brief" — nothing anchored the 4B on the viewer's actual words.
+FIXES: (1) sampling -> `temp 0.9, top_p 0.92, min_p 0.05, repeat_penalty 1.15, max_tokens 220` (mirrors
+`_sampling_for(conversation)`/`_SOCIAL_SAMPLING`; per-call fresh seed already present; NO prior-reply
+injection — the 4B parrots injected context). (2) `TWITCH_CHAT_SYSTEM` output rules rewritten: "ONE to THREE
+short sentences" + "ANSWER THE CONTENT: the viewer's exact point/question/claim comes FIRST... a reply that
+ignores their words is a failure" + "Vary your phrasing: never open two replies the same way"; the safety
+sentence stays LAST (last-position dominates the 4B). Datamarking KEPT (anti-injection layer — not traded for
+quality). (3) length: `reply_max_chars` 240 -> 400 (incl. @tag, < Twitch 500), inner `_MAX_REPLY_CHARS`
+320 -> 480. EVIDENCE: reply/pipeline/integration 51 pass (new pins: prompt contract incl. safety-last ordering,
+sampling source pin incl. temp-0.7-gone, config default 400; clamp pin -> 480); FULL `tests/twitch/` +
+anticheat 1378 pass / 1 skip; validate_config 0. NEXT: reboot + live-test several chat replies for variety +
+on-point answers; if still samey, next lever = per-reply style-hint rotation (deterministic, no context injection).
+
+
 **ACTIVE (2026-07-10, wave 3) — TELL GRAMMAR: verb mishears + verbless form + sentence punctuation (branch `claude/tell-verbless`):**
 
 Live round 2: of three tells to saltwaterbottle only one posted. Log: (a) "Saltwater bottle in chat, hello,

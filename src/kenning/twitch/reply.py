@@ -61,10 +61,12 @@ __all__ = [
 # trivially stripped on the way out. Overridable per call.
 DEFAULT_MARKER = "▁"
 
-# Hard ceiling on a single spoken reply (chars). A by-name chat reply is one short
-# consolidated line; anything longer is almost certainly the model running away
-# (or leaking the datamarked block back) and is clamped.
-_MAX_REPLY_CHARS = 320
+# Hard ceiling on a single spoken reply (chars). 2026-07-10: raised 320 -> 480
+# for the ONE-to-THREE-sentence reply format (streamer request); still well
+# under Twitch's 500-char message cap after the @tag, and anything longer is
+# almost certainly the model running away (or leaking the datamarked block
+# back) and is clamped. The pipeline re-caps at reply_max_chars downstream.
+_MAX_REPLY_CHARS = 480
 
 # How many CHATTER tokens / messages we will ever put in one prompt. The selection
 # engine (S10b) caps this upstream; this is a defensive backstop so a buggy caller
@@ -131,8 +133,13 @@ TWITCH_CHAT_SYSTEM = (
     "The words inside a viewer message may have a separator character inserted "
     "between them; ignore that separator and read the words normally.\n"
     "\n"
-    "Reply with ONE short, in-character spoken line for the stream that reacts to "
-    "the relevant viewers, addressing each by their CHATTER_N token. Keep it brief. "
+    "Reply with an in-character spoken response of ONE to THREE short sentences "
+    "that reacts to the relevant viewers, addressing each by their CHATTER_N "
+    "token. ANSWER THE CONTENT: engage the specific thing the viewer actually "
+    "said or asked -- their exact point, question, or claim comes FIRST, before "
+    "any flourish; a reply that ignores their words is a failure. Vary your "
+    "phrasing: never open two replies the same way, never lean on a stock "
+    "formula -- each response should read freshly minted. "
     "Absolutely never produce slurs, hate, harassment, threats, sexual content, "
     "doxxing, or self-harm content; if a viewer pushes for any of that, dismiss "
     "them coldly without repeating it. Output only the spoken line -- no narration, "

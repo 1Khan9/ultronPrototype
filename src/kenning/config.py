@@ -4369,7 +4369,9 @@ class TwitchChatConfig(_Strict):
     reply_enabled: bool = False                      # live chat-mode toggle (Stream Deck / voice)
     reply_model: str = "default"                     # 'default' = the abliterated 8B; or a non-abliterated head id
     batch_max_messages: int = 40
-    reply_max_chars: int = 240
+    # 2026-07-10: 240 -> 400 for the ONE-to-THREE-sentence reply format
+    # (streamer request); includes the @tag, still under Twitch's 500 cap.
+    reply_max_chars: int = 400
     addressing_endpoint: str = "http://127.0.0.1:8772"   # reuse the EmbeddingGemma router sidecar
     allow_during_ranked: bool = False                # strongest mitigation: OFF (cannot read game state)
     per_user_cooldown_seconds: int = 30

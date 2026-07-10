@@ -7605,9 +7605,17 @@ class Orchestrator:
             from kenning.twitch.service import ChatModeService
 
             def _llm_fn(system: str, user: str) -> str:
+                # Chat-reply sampling (2026-07-10, streamer: "responses are all
+                # highly similar"): mirror the voice conversation path's
+                # variety-from-SAMPLING lesson (2026-06-25) — hot temperature +
+                # loose min_p + repeat_penalty; NO prior-reply injection (the
+                # 4B parrots injected context). max_tokens sized for the new
+                # one-to-three-sentence reply format.
                 return "".join(self.llm.generate_stream(
                     user, system_prompt=system,
-                    sampling={"max_tokens": 160, "temperature": 0.7},
+                    sampling={"max_tokens": 220, "temperature": 0.9,
+                              "top_p": 0.92, "min_p": 0.05,
+                              "repeat_penalty": 1.15},
                     enable_thinking=False, suppress_memory_context=True,
                     record_history=False,
                 ))
