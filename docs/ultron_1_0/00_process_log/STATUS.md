@@ -1,5 +1,20 @@
 # Ultron 1.0 — Live Status
 
+**ACTIVE (2026-07-10, wave 3) — TELL GRAMMAR: verb mishears + verbless form + sentence punctuation (branch `claude/tell-verbless`):**
+
+Live round 2: of three tells to saltwaterbottle only one posted. Log: (a) "Saltwater bottle in chat, hello,
+welcome..." — the wake strip swallowed the VERB entirely; (b) "I'll saltwater bottle in the chat. Hi,
+welcome..." — Whisper heard "tell" as "I'll" AND put a PERIOD after "chat" (the delimiter only accepted
+comma/colon). FIXES: verb ladder gains till|til|i'?ll; the delimiter→message separator is now any
+punctuation/whitespace mix (`_TELL_CHAT_SEP`); NEW VERBLESS tagged form ("<name> in chat <msg>") with a
+CONFIDENCE GATE — `TellChatCommand.verbless=True` and the handler posts ONLY on a confident roster match,
+otherwise FALLS THROUGH to conversation (never consumes): "I posted in chat earlier" matches verbless by
+design but reaches the LLM because no roster name scores. Verbless also rejects audience/group/pronoun names
+(everyone/chat/my team/them — commentary, not commands; them|they added to the pronoun reject). Both live
+lines pinned verbatim as tests. EVIDENCE: matcher 88 + handler 23 + relay/toggle suites = 274 pass; FULL
+`tests/twitch/` + anticheat 1375 pass / 1 skip; validate 0. NEXT: restart + retry the same phrasings.
+
+
 **ACTIVE (2026-07-10, wave 2) — WELCOME BAN-GUARD: delay + clear_user_messages suppression (branch `claude/chatters-presence`):**
 
 Live: Ultron welcomed advertising bots that Sery_bot bans within seconds (the welcome fired instantly on the

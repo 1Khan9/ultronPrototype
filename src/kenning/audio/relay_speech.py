@@ -1741,7 +1741,16 @@ _TELL_CHAT_WAKE = (
     r"|do\s+me\s+a\s+favor\s+and\s+"
     r")?"
 )
-_TELL_CHAT_VERB = r"(?:tell|message|inform|notify|say\s+to|write\s+to|reply\s+to)"
+# Verb ladder incl. STT mishears of "tell" (live 2026-07-10: "Ultron tell"
+# was transcribed "I'll" — the downstream "in chat" delimiter keeps these
+# loose alternates from ever matching ordinary speech).
+_TELL_CHAT_VERB = (
+    r"(?:tell|till|til|i'?ll|message|inform|notify|say\s+to|write\s+to|reply\s+to)"
+)
+# Separator between the "in chat" delimiter and the message: STT freely emits
+# sentence punctuation there ("in the chat. Hi, welcome...") — accept any mix
+# of punctuation/whitespace as long as SOMETHING separates them.
+_TELL_CHAT_SEP = r"[\s,:;.!?]+"
 # The "in chat" delimiter with STT-mishear tolerance (live 2026-07-10: Whisper
 # rendered "tell 1v9khan IN CHAT hi" as "Tell 1v9con AND CHAT hi" -> the strict
 # delimiter missed and the command fell to the LLM). "and/an/en/into" are the
@@ -1755,7 +1764,7 @@ _TELL_CHAT_BROADCAST_RE = re.compile(
     rf"(?:{_TELL_CHAT_VERB}\s+(?:the\s+)?(?:twitch\s+)?chat)"
     rf"|(?:tell\s+(?:every(?:one|body)|them|'?em)\s+{_TELL_CHAT_CHANNEL})"
     rf"|(?:(?:post|put)\s+{_TELL_CHAT_CHANNEL})"
-    rf")\s*[,:]?\s+(?P<msg>.+)$",
+    rf"){_TELL_CHAT_SEP}(?P<msg>.+)$",
     re.IGNORECASE,
 )
 # The name is 1-5 word tokens, LAZY so the split lands on the FIRST "in chat"
@@ -1764,7 +1773,19 @@ _TELL_CHAT_NAME = r"(?:[\w'][\w'-]*\s+){0,4}?[\w'][\w'-]*"
 _TELL_CHAT_TAGGED_RE = re.compile(
     rf"^{_TELL_CHAT_WAKE}{_TELL_CHAT_VERB}\s+"
     rf"(?P<name>{_TELL_CHAT_NAME})\s+"
-    rf"{_TELL_CHAT_CHANNEL}\s*[,:]?\s+(?P<msg>.+)$",
+    rf"{_TELL_CHAT_CHANNEL}{_TELL_CHAT_SEP}(?P<msg>.+)$",
+    re.IGNORECASE,
+)
+# VERBLESS tagged form (live 2026-07-10: the wake-word strip swallowed the
+# verb — "Saltwater bottle in chat, hello, welcome..." reached the matcher
+# with NO verb at all). "<name> in chat <msg>" from an ADDRESSED turn is
+# unambiguous enough in practice; the accepted trade-off is that a
+# conversational "X in chat <said something>" could post — a stray chat line
+# is cheaper than the tell silently failing (streamer-reported). Group words
+# and pronouns still reject via _TELL_CHAT_NAME_REJECT_RE.
+_TELL_CHAT_VERBLESS_RE = re.compile(
+    rf"^{_TELL_CHAT_WAKE}(?P<name>{_TELL_CHAT_NAME})\s+"
+    rf"{_TELL_CHAT_CHANNEL}{_TELL_CHAT_SEP}(?P<msg>.+)$",
     re.IGNORECASE,
 )
 # GREETING forms (review 2026-07-09): the natural inverse phrasing puts the
@@ -1801,7 +1822,7 @@ _TELL_CHAT_GREET_VERB_RE = re.compile(
 # through untouched (group pronouns like "them" broadcast via the regex above).
 _TELL_CHAT_NAME_REJECT_RE = re.compile(
     rf"(?:^(?:my|our)\b)|(?:\b{_GROUP_WORDS}\b)"
-    r"|(?:^(?:him|her|me|us|you|it)$)",
+    r"|(?:^(?:him|her|me|us|you|it|them|they)$)",
     re.IGNORECASE,
 )
 # A greeting whose "name" is really the whole audience — post it UNTAGGED
@@ -1819,9 +1840,14 @@ _TELL_CHAT_MAX_MESSAGE_CHARS = 400
 class TellChatCommand:
     """A parsed voice→chat tell. ``name`` is the SPOKEN target as transcribed
     (pre-fuzzy-match; the handler resolves it against the live roster) or None
-    for the untagged broadcast form. ``message`` is the cleaned free text."""
+    for the untagged broadcast form. ``message`` is the cleaned free text.
+    ``verbless`` marks the low-confidence no-verb form ("<name> in chat
+    <msg>", 2026-07-10 — the wake strip can swallow the verb): the handler
+    posts ONLY on a confident roster match and otherwise falls through to
+    conversation instead of consuming the turn."""
     name: Optional[str]
     message: str
+    verbless: bool = False
 
 
 def _tell_chat_clean_message(raw: str) -> str:
@@ -1876,6 +1902,18 @@ def match_tell_chat(text: str) -> Optional[TellChatCommand]:
             return None                      # a team reference, not a chatter
         msg = _tell_chat_clean_message(m.group("msg"))
         return TellChatCommand(name=name, message=msg) if msg else None
+    # VERBLESS last (most permissive). Group words, pronouns AND broadcast
+    # audience words all reject here — a verbless "everyone in chat is nice"
+    # is commentary, not a broadcast command.
+    m = _TELL_CHAT_VERBLESS_RE.match(cleaned)
+    if m:
+        name = re.sub(r"\s+", " ", m.group("name").strip())
+        if (name.lower() in _TELL_CHAT_BROADCAST_NAMES
+                or _TELL_CHAT_NAME_REJECT_RE.search(name)):
+            return None
+        msg = _tell_chat_clean_message(m.group("msg"))
+        if msg:
+            return TellChatCommand(name=name, message=msg, verbless=True)
     return None
 
 

@@ -217,12 +217,59 @@ def test_control_characters_are_stripped() -> None:
         "we should chat in a bit",
         "tell me about pandas",
         "what did chat say",
-        "I posted in chat earlier",
         "",
     ],
 )
 def test_falls_through(text: str) -> None:
     assert match_tell_chat(text) is None
+
+
+# --------------------------------------------- verbless + STT verb mishears
+# Live 2026-07-10 (second round): the wake strip swallowed the VERB entirely
+# ("Saltwater bottle in chat, hello...") and Whisper heard "tell" as "I'll"
+# with a sentence break after "chat". Both exact lines pinned.
+def test_live_line_verbless_no_verb() -> None:
+    cmd = match_tell_chat(
+        "Saltwater bottle in chat, hello, welcome to the stream, sorry for the delay.")
+    assert cmd == TellChatCommand(
+        name="Saltwater bottle",
+        message="hello, welcome to the stream, sorry for the delay.",
+        verbless=True)
+
+
+def test_live_line_ill_verb_and_sentence_break() -> None:
+    cmd = match_tell_chat(
+        "I'll saltwater bottle in the chat. Hi, welcome to the stream. "
+        "Sorry for the delay.")
+    assert cmd == TellChatCommand(
+        name="saltwater bottle",
+        message="Hi, welcome to the stream. Sorry for the delay.",
+        verbless=False)                        # "I'll" counts as the verb
+
+
+def test_verb_mishears_till_and_sentence_punct_broadcast() -> None:
+    assert match_tell_chat("till bob in chat hi") == TellChatCommand(
+        name="bob", message="hi")
+    assert match_tell_chat("tell chat. hello there") == TellChatCommand(
+        name=None, message="hello there")
+
+
+def test_verbless_rejects_audience_group_and_pronoun_names() -> None:
+    # commentary about the audience must NOT broadcast or tag
+    assert match_tell_chat("everyone in chat is nice") is None
+    assert match_tell_chat("chat in chat gg") is None
+    assert match_tell_chat("my team in chat hello") is None
+    assert match_tell_chat("them in chat gg") is None
+
+
+def test_verbless_conversational_shape_matches_low_confidence() -> None:
+    """'I posted in chat earlier' MATCHES the verbless form by design — the
+    HANDLER's confidence gate (verbless + no roster match -> fall through to
+    conversation) is what keeps it out of chat. Pinned here so the contract
+    is explicit."""
+    cmd = match_tell_chat("I posted in chat earlier")
+    assert cmd is not None and cmd.verbless is True
+    assert cmd.name == "I posted"
 
 
 def test_none_input_is_safe() -> None:

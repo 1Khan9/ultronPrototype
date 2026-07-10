@@ -3857,14 +3857,21 @@ class Orchestrator:
             chcfg = getattr(_tw, "chat", None)
         except Exception:                                            # noqa: BLE001
             chcfg = None
+        _verbless = bool(getattr(cmd, "verbless", False))
         post = getattr(self, "_twitch_chat_post", None)
         if post is None:
             # Twitch is enabled but chat isn't connected yet — a matched tell
             # must never leak to the team relay ("tell chat X" is a group form).
+            # A VERBLESS match is low-confidence: fall through to conversation
+            # instead of consuming (2026-07-10).
+            if _verbless:
+                return False
             logger.info("tell-chat: matched but chat is not connected")
             self._speak("The chat line isn't connected.")
             return True
         if not bool(getattr(self, "_tell_chat_enabled", True)):
+            if _verbless:
+                return False
             logger.info("tell-chat: matched but toggled OFF (consumed)")
             self._speak("The chat line is closed.")
             return True
@@ -3902,6 +3909,14 @@ class Orchestrator:
                                     "viewers; re-match %r -> %r (%.0f)",
                                     seeded, cmd.name, login, score)
             if login is None or score < floor:
+                if _verbless:
+                    # Low-confidence verbless form + no confident roster
+                    # match = probably conversation ("people in chat are
+                    # asking..."), NOT a tell — fall through to the LLM.
+                    logger.info("tell-chat: verbless miss for %r "
+                                "(best=%r score=%.0f) -> conversation",
+                                cmd.name, login, score)
+                    return False
                 logger.info("tell-chat: no roster match for %r "
                             "(best=%r score=%.0f floor=%.0f)",
                             cmd.name, login, score, floor)

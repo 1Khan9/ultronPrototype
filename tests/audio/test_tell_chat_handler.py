@@ -226,3 +226,36 @@ def test_config_presence_seed_default() -> None:
 def test_broadcaster_scope_includes_read_chatters() -> None:
     from kenning.twitch.auth import BROADCASTER_SCOPES
     assert "moderator:read:chatters" in BROADCASTER_SCOPES
+
+
+# ------------------------------------------------ verbless confidence gate
+def test_verbless_confident_match_posts(monkeypatch) -> None:
+    """The live fix: the wake strip swallowed the verb — a verbless tell with
+    a confident roster match still posts (silently)."""
+    roster = UserRoster()
+    roster.observe("saltwaterbottle", "Saltwaterbottle")
+    o = _mk(monkeypatch, roster=roster)
+    assert o._maybe_handle_tell_chat(
+        "Saltwater bottle in chat, hello, welcome to the stream.") is True
+    assert o._posted == [
+        "@Saltwaterbottle 🎙️ [live]: hello, welcome to the stream."]
+    assert o._spoken == []
+
+
+def test_verbless_no_match_falls_through_to_conversation(monkeypatch) -> None:
+    """'I posted in chat earlier' matches verbless but finds no roster name —
+    it must reach the LLM as conversation, NOT consume the turn."""
+    roster = UserRoster()
+    roster.observe("saltwaterbottle")
+    o = _mk(monkeypatch, roster=roster)
+    assert o._maybe_handle_tell_chat("I posted in chat earlier") is False
+    assert o._posted == [] and o._spoken == []
+
+
+def test_verbless_toggle_off_and_disconnected_fall_through(monkeypatch) -> None:
+    o = _mk(monkeypatch, enabled=False)
+    assert o._maybe_handle_tell_chat("bob in chat hello there") is False
+    assert o._spoken == []                     # no 'chat line is closed'
+    o2 = _mk(monkeypatch, post="absent")
+    assert o2._maybe_handle_tell_chat("bob in chat hello there") is False
+    assert o2._spoken == []
