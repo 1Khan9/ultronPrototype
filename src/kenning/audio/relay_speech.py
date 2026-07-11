@@ -65,6 +65,9 @@ __all__ = [
     "play_to_device",
     "set_team_relay_enabled",
     "team_relay_enabled",
+    "set_wake_relay_enabled",
+    "wake_relay_enabled",
+    "utterance_leads_with_wake",
     "cap_stream_sentences",
 ]
 
@@ -1476,6 +1479,68 @@ def set_team_relay_enabled(enabled: bool) -> None:
 
 def team_relay_enabled() -> bool:
     return _team_relay_enabled
+
+
+# ---------------------------------------------------------------------------
+# WAKE RELAY (2026-07-11): the STOP-window "WAKE RELAY" toggle. When ON (the
+# DEFAULT) a team relay requires the WAKE WORD -- "Ultron, tell my team push" /
+# "Ultron, explain to my team ..." -- so an un-prefixed callout ("push B"), a
+# bare turbo callout ("sova hit 84"), or a plain "tell my team X" is NOT
+# transmitted. When OFF, today's behaviour: normal relay ("tell my team X") and
+# turbo (bare callouts) reach the team without the wake word. This is a
+# TRANSMIT gate only -- it never changes WHEN the loop listens. It composes with
+# the RELAY master toggle (team_relay_enabled(), full disengage) which is
+# checked FIRST and dominates. Enforced at the single relay choke point
+# (orchestrator._maybe_handle_relay_speech) via a per-turn ``wake_confirmed``
+# signal. Process-global; resets to the env/config default (KENNING_WAKE_RELAY /
+# relay_speech.wake_relay, default ON) on restart. Anticheat-clean (os/re/stdlib).
+_wake_relay_enabled: bool = _os_flavor.getenv(
+    "KENNING_WAKE_RELAY", "1").strip().lower() not in (
+    "0", "false", "no", "off", "")
+
+
+def set_wake_relay_enabled(enabled: bool) -> None:
+    """Enable/disable WAKE RELAY (require the wake word before a team relay) at
+    runtime (default ON). Flipped by the STOP-window WAKE RELAY toggle
+    (orchestrator._set_wake_relay_enabled)."""
+    global _wake_relay_enabled
+    _wake_relay_enabled = bool(enabled)
+
+
+def wake_relay_enabled() -> bool:
+    return _wake_relay_enabled
+
+
+# The wake vocabulary for the WAKE-RELAY gate: the real wake words + their CLEAR
+# STT mishears, but NOT the ultra-loose homophones (run/ron/tron/rons) that the
+# tell-chat matcher tolerates -- tell-chat is protected by a downstream "in chat"
+# delimiter, this leading check is NOT, so "run it down mid" must never count as
+# a wake. Leading-anchored (optional hey/ok/okay lead) so a wake-ish token buried
+# mid-callout ("rotate to ultra") never satisfies it. stdlib-re only (BR-P1).
+_WAKE_RELAY_HOMOPHONES = (
+    r"ultron|ulltron|ultronn|ultran|ultram|altron|voltron|ultra|ultro|"
+    r"ultr|oltron|ultraun|kenning"
+)
+_WAKE_RELAY_LEAD_RE = re.compile(
+    r"^\s*(?:(?:hey|ok|okay)[\s,]+)?"
+    rf"(?:{_WAKE_RELAY_HOMOPHONES})\b",
+    re.IGNORECASE,
+)
+
+
+def utterance_leads_with_wake(text: str) -> bool:
+    """True when ``text`` OPENS with the wake word (or a clear STT mishear of
+    it), e.g. "Ultron, tell my team push" / "hey Ultron explain to my team ...".
+
+    Used by the WAKE-RELAY gate to decide whether an inline-waked relay may
+    transmit on a continuous/turbo capture. Callers pass the RAW transcript
+    (``_raw_stt``): the command normalizer strips a leading wake word before the
+    routed text, so the wake word survives only on the raw copy. Leading-anchored
+    so a callout that merely CONTAINS a wake-ish token mid-line never counts.
+    stdlib-re only (BR-P1)."""
+    if not text:
+        return False
+    return _WAKE_RELAY_LEAD_RE.match(text) is not None
 
 
 # Turbo SENSITIVITY: balanced (default) vs aggressive. BALANCED relays only lines

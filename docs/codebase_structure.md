@@ -249,6 +249,24 @@
 > `docs/ultron_1_0/04_implementation/11_relay_toggle_companion_mode_spec.md`. Tests:
 > `tests/audio/test_team_relay_toggle.py` (24, hermetic).
 >
+> **WAKE RELAY — require the wake word before a team relay (2026-07-11, spec 13)**
+> A THIRD stop-window relay mode (default ON) alongside normal + turbo: a team relay TRANSMITS only when
+> the wake word is present ("Ultron, tell my team push"). NEW `relay_speech.set_/wake_relay_enabled()`
+> (env `KENNING_WAKE_RELAY`, default ON) + pure `utterance_leads_with_wake(text)` (`_WAKE_RELAY_LEAD_RE`:
+> leading wake word + clear STT mishears; EXCLUDES the ultra-loose run/ron/tron the tell-chat matcher
+> tolerates). The run loop computes `_wake_confirmed = (not came_from_follow_up) or
+> utterance_leads_with_wake(_raw_stt)` once/turn (a fresh acoustic wake OR the wake word leading the RAW
+> transcript — the normalizer strips a leading wake word before user_text) and passes it to all 4 relay
+> call sites. Gate lives at the single choke point `_maybe_handle_relay_speech(..., wake_confirmed=True)`,
+> right AFTER the `team_relay_enabled()` master gate (which dominates): WAKE RELAY ON + `wake_confirmed`
+> False -> matched relay consumed SILENTLY (never transmitted). Default True preserves ~30 existing
+> direct-call relay tests + non-loop callers. GUI: violet WAKE RELAY row (`stop_button` params/geometry/
+> `_make_toggle_row`); config `relay_speech.wake_relay=True` + `StopButtonConfig.wake_relay_height/label`;
+> orchestrator `_set_wake_relay_enabled` setter + config boot-apply (mirrors turbo). Twitch/redeems
+> untouched (provenance-guarded). Spec:
+> `docs/ultron_1_0/04_implementation/13_wake_relay_toggle_spec.md`. Tests:
+> `tests/audio/test_wake_relay.py` (34, hermetic).
+>
 > **TWITCH STREAMER UX — VISUAL-LEADS-VOCAL + 3 RESULT/RAID TOGGLES + RAID-TO-SPEAKERS + MUTE-RACE FIX (2026-06-26)**
 >
 > Four streamer-requested behavior changes (additive, config-flag-gated; a reboot deploys). All mocked-tested.

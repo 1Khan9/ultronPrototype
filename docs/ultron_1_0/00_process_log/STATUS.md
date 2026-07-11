@@ -1,6 +1,40 @@
 # Ultron 1.0 — Live Status
 
-**ACTIVE (2026-07-10, wave 4) — CHAT-REPLY VARIETY + DIRECT ADDRESS + 3-SENTENCE FORMAT (branch `claude/chat-reply-variety`):**
+**ACTIVE (2026-07-11) — WAKE RELAY toggle: require the wake word before a team relay (branch `claude/wake-relay-toggle`, spec 13):**
+
+Streamer wants a THIRD relay mode alongside normal ("tell my team sova hit 84") and turbo (bare "sova
+hit 84"): a default-ON stop-window toggle **WAKE RELAY** that gates team transmission on the WAKE WORD
+("Ultron, tell my team sova hit 84" / "Ultron, explain to my team what the meaning of life is"). DESIGN
+(spec `docs/ultron_1_0/04_implementation/13_wake_relay_toggle_spec.md`): a TRANSMIT gate at the single
+relay choke point `_maybe_handle_relay_speech` (every voice team path — tell/explain/ask compose, roast,
+turbo/router `force=True` — funnels through it, exactly where the `team_relay_enabled()` master gate
+already lives). NEW `relay_speech.set_/wake_relay_enabled()` (env `KENNING_WAKE_RELAY`, default ON) +
+pure `utterance_leads_with_wake(text)` (leading wake word + clear STT mishears ultron/altron/voltron/
+ultra/…/kenning, but NOT the ultra-loose run/ron/tron the tell-chat matcher tolerates — no downstream
+delimiter here). The run loop computes `_wake_confirmed = (not came_from_follow_up) or
+utterance_leads_with_wake(_raw_stt)` ONCE per turn — a fresh ACOUSTIC wake satisfies it, a continuous/
+follow-up capture (always-listening/turbo/warm window) must carry the wake word INLINE on the RAW
+transcript (the normalizer strips a leading wake word before user_text) — and passes it to all 4 relay
+call sites (main + lean + turbo backstop + router). `_maybe_handle_relay_speech(..., wake_confirmed=True)`:
+when WAKE RELAY is ON and `wake_confirmed` is False the matched relay is consumed SILENTLY (never
+transmitted, never role-played), mirroring the team-relay-off path; default True so ~30 existing
+direct-call relay tests + non-loop callers are unaffected. Composes UNDER the RELAY master toggle
+(team_relay checked FIRST, dominates). GUI: violet WAKE RELAY row (`stop_button` params + geometry +
+`_make_toggle_row`), config `relay_speech.wake_relay=True` + `StopButtonConfig.wake_relay_height/label`,
+orchestrator `_set_wake_relay_enabled` setter + config boot-apply (mirrors turbo). Twitch chat/games/
+redeems (incl. SPEAK_TEAM) untouched (provenance-guarded, never traverse the relay path). WORKTREE-HAZARD
+recovery mid-slice: edits first landed in the MAIN checkout (shared-cwd drift); moved the 4 fully-mine
+files to the worktree + `git checkout` in main; config.py held the streamer's WIP (4 Twitch hunks) so its
+2 wake-relay hunks were reverse-edited out of main + re-applied in the worktree (WIP preserved, verified).
+EVIDENCE: NEW `tests/audio/test_wake_relay.py` 34 pass (flag, helper positives/negatives incl. leading-only,
+gate matrix incl. force=True + team-relay precedence + default-param preservation, config, GUI, source
+pins); mapped team_relay/turbo/stop_button/relay_speech×2 + anticheat + golden = 664 pass; validate_config
+0; py_compile clean. Full wrapper DEFERRED (BR-P3 — a live instance is up on 8772-8777). NEXT: user
+restarts -> WAKE RELAY ON by default; "tell my team X" alone no longer relays, "Ultron, tell my team X"
+does; toggle OFF restores normal/turbo relay without the wake word.
+
+
+**PREVIOUS (2026-07-10, wave 4) — CHAT-REPLY VARIETY + DIRECT ADDRESS + 3-SENTENCE FORMAT (branch `claude/chat-reply-variety`):**
 
 Streamer: chat replies "all highly similar" + sometimes don't address what the viewer said; raise max length
 to 3 sentences. ROOT CAUSES (mapped): the chat-reply `_llm_fn` ran bare `temp 0.7` with NO min_p/repeat_penalty

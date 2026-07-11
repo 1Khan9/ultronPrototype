@@ -1589,6 +1589,18 @@ class Orchestrator:
                     relay_enabled=_team_relay_on0,
                     relay_height=getattr(_sb, "relay_height", 26),
                     relay_label=getattr(_sb, "relay_label", "RELAY"),
+                    # WAKE RELAY toggle (spec 13): require the wake word before a
+                    # team relay ("Ultron, tell my team X"). ON = wake-gated; OFF =
+                    # normal/turbo relay without the wake word. Always wired (a
+                    # gaming feature, not twitch-gated). Initial display reads the
+                    # config default (relay_speech.wake_relay), which the boot-apply
+                    # also uses to set the live module flag.
+                    on_toggle_wake_relay=self._set_wake_relay_enabled,
+                    wake_relay_enabled=bool(getattr(
+                        get_config().relay_speech, "wake_relay", True)),
+                    wake_relay_height=getattr(_sb, "wake_relay_height", 26),
+                    wake_relay_label=getattr(
+                        _sb, "wake_relay_label", "WAKE RELAY"),
                     # CHAT toggle: only wired when twitch is enabled so the row
                     # is hidden entirely in non-Twitch (gaming-only) sessions.
                     on_toggle_chat=(
@@ -1753,6 +1765,25 @@ class Orchestrator:
                 "aggressive" if _turbo_aggr else "balanced")
         except Exception as e:                                       # noqa: BLE001
             logger.debug("u1.0 turbo boot-apply skipped: %s", e)
+
+        # WAKE RELAY (spec 13): apply the default-ON wake-relay flag from config
+        # (relay_speech.wake_relay) to the runtime flag, so a team relay requires
+        # the wake word by default and config.yaml can turn it off. The
+        # relay_speech module default (env KENNING_WAKE_RELAY, default ON) stays
+        # test-friendly; this boot-apply makes config authoritative at boot. The
+        # STOP-window WAKE RELAY button flips the SAME flag live. Fail-open ->
+        # leaves the module default.
+        try:
+            from kenning.audio.relay_speech import set_wake_relay_enabled
+            from kenning.config import get_config as _gc_wr
+            _wr_on = bool(getattr(_gc_wr().relay_speech, "wake_relay", True))
+            set_wake_relay_enabled(_wr_on)
+            logger.info(
+                "WAKE RELAY: %s",
+                "ON (team relay requires the wake word)" if _wr_on
+                else "OFF (normal + turbo relay without the wake word)")
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("wake-relay boot-apply skipped: %s", e)
 
         # Voice-summoned LOG VIEWER ("show me the logs") -- a scrollable, copyable
         # window tailing logs/kenning.log so the user can read + copy runtime logs
@@ -4208,6 +4239,7 @@ class Orchestrator:
 
     def _maybe_handle_relay_speech(
         self, user_text: str, *, force: bool = False, provenance: object = None,
+        wake_confirmed: bool = True,
     ) -> bool:
         """Voice relay -- "tell my teammates X" speaks a rephrased line on
         the configured secondary output device (a VoiceMeeter virtual
@@ -4228,7 +4260,14 @@ class Orchestrator:
         own mic -- may key the team bus. Existing callers pass nothing -> defaults
         to LOCAL_VOICE -> behavior unchanged. A chat/redeem-sourced call (or a
         future bug) is REFUSED here, belt-and-suspenders over the static
-        import-graph wall that keeps kenning.twitch from referencing this path."""
+        import-graph wall that keeps kenning.twitch from referencing this path.
+
+        ``wake_confirmed`` (WAKE RELAY, spec 13): whether the wake word was present
+        for this turn -- a fresh acoustic wake OR the wake word leading the raw
+        transcript. The run loop computes it (default True here so existing
+        direct-call tests + non-loop callers are unaffected); when WAKE RELAY is ON
+        and this is False, a matched relay is consumed SILENTLY (the streamer is
+        talking without invoking Ultron by name)."""
         try:
             from kenning.audio.provenance import Provenance, is_team_eligible
             _prov = provenance if provenance is not None else Provenance.LOCAL_VOICE
@@ -4316,6 +4355,28 @@ class Orchestrator:
             logger.info("relay: suppressed silently (team relay OFF) | text=%r",
                         user_text[:80])
             return True
+        # WAKE RELAY (STOP-window toggle, spec 13, default ON): a team relay
+        # requires the WAKE WORD. ``wake_confirmed`` is True when the streamer woke
+        # Ultron acoustically for THIS capture (a fresh wake, not a continuous /
+        # follow-up utterance) OR the raw transcript itself opens with the wake
+        # word ("Ultron, tell my team push") -- both computed by the run loop.
+        # When the toggle is ON and neither holds, the matched relay is consumed
+        # SILENTLY (never transmitted, never role-played), exactly like the
+        # team-relay-off path above: the streamer is talking without invoking
+        # Ultron by name. Sits at this single choke point so ALL entry points
+        # (main, lean, turbo backstop force=True, router force=True) are covered.
+        # Fail-open: a flag-read error leaves the legacy behaviour (no extra gate).
+        if not wake_confirmed:
+            try:
+                from kenning.audio.relay_speech import wake_relay_enabled
+                _wake_relay_on = bool(wake_relay_enabled())
+            except Exception:                                        # noqa: BLE001
+                _wake_relay_on = False
+            if _wake_relay_on:
+                logger.info(
+                    "relay: suppressed silently (WAKE RELAY on, no wake word) | "
+                    "text=%r", user_text[:80])
+                return True
         # Session mute (streaming safety): a matched relay command while
         # muted is acknowledged -- never transmitted, never role-played.
         if not getattr(self, "_relay_runtime_enabled", True):
@@ -9284,6 +9345,25 @@ class Orchestrator:
                 # mistranscription against a normalization mangle.
                 self._current_raw_stt = _raw_stt
                 self._current_raw_stt_monotonic = time.monotonic()  # FLAG button: "last heard" time
+                # WAKE RELAY (spec 13, default ON): a team relay requires the wake
+                # word. A fresh acoustic wake (this capture was itself wake-gated ->
+                # not came_from_follow_up) satisfies it; a continuous / follow-up
+                # capture (always-listening / turbo / warm window) must carry the
+                # wake word INLINE on the RAW transcript ("Ultron, tell my team
+                # push") -- checked on _raw_stt because the normalizer strips a
+                # leading wake word before user_text. Computed ONCE here (in scope
+                # for both the main + lean cascades) and passed to every
+                # _maybe_handle_relay_speech call; the gate there suppresses an
+                # un-waked relay only when the toggle is ON. Fail-open -> True
+                # (legacy: no extra gate) on any error.
+                try:
+                    from kenning.audio.relay_speech import (
+                        utterance_leads_with_wake as _ulw,
+                    )
+                    _wake_confirmed = (not came_from_follow_up) or bool(
+                        _ulw(_raw_stt))
+                except Exception:                                    # noqa: BLE001
+                    _wake_confirmed = True
                 try:
                     from kenning.audio.command_normalizer import normalize_command
                     _normed = normalize_command(user_text)
@@ -9632,7 +9712,8 @@ class Orchestrator:
                     # strip -> mic bus) so the game voice chat hears
                     # Kenning. Strict matcher -> "tell me ..." and normal
                     # utterances fall through.
-                    if self._maybe_handle_relay_speech(user_text):
+                    if self._maybe_handle_relay_speech(
+                            user_text, wake_confirmed=_wake_confirmed):
                         self._last_response_finished_monotonic = time.monotonic()
                         if _addr_cfg.follow_up_enabled:
                             # Relay turns hold the window open LONGER
@@ -10079,7 +10160,8 @@ class Orchestrator:
                 # relay path imports only kenning.audio.* + config -- no
                 # coding/openclaw/heavy -- so it is anticheat-safe in lean boot.
                 if self.coding_voice is None:
-                    if self._maybe_handle_relay_speech(user_text):
+                    if self._maybe_handle_relay_speech(
+                            user_text, wake_confirmed=_wake_confirmed):
                         self._last_response_finished_monotonic = time.monotonic()
                         if _addr_cfg.follow_up_enabled:
                             follow_up_until = (
@@ -10111,7 +10193,9 @@ class Orchestrator:
                     from kenning.audio.intent_gate import Scenario as _Scen_bs
                     if (_tme_bs()
                             and getattr(self, "_last_scenario", None) is _Scen_bs.RELAY_TO_TEAM
-                            and self._maybe_handle_relay_speech(user_text, force=True)):
+                            and self._maybe_handle_relay_speech(
+                                user_text, force=True,
+                                wake_confirmed=_wake_confirmed)):
                         self._last_response_finished_monotonic = time.monotonic()
                         follow_up_until = (
                             self._last_response_finished_monotonic
@@ -10152,7 +10236,8 @@ class Orchestrator:
                         )
                         if not _rd.abstained and _rd.family == "team_callout":
                             _router_consumed = self._maybe_handle_relay_speech(
-                                user_text, force=True)
+                                user_text, force=True,
+                                wake_confirmed=_wake_confirmed)
                         elif not _rd.abstained and _rd.family == "identity":
                             # 2026-06-15 routing-isolation: a BARE identity probe
                             # ("who are you", "are you a bot") is the user talking
@@ -14474,6 +14559,27 @@ class Orchestrator:
                     "ON" if enabled else "OFF",
                     "" if enabled else
                     " -- wake word required, companion persona active")
+
+    def _set_wake_relay_enabled(self, enabled: bool) -> None:
+        """STOP-window WAKE RELAY toggle callback: flip the wake-relay gate
+        (relay_speech.set_wake_relay_enabled). ON (default) = a team relay
+        requires the wake word ("Ultron, tell my team push" / "Ultron, explain
+        to my team ..."); an un-waked callout ("tell my team X", bare "sova hit
+        84") is consumed silently at the relay choke point, never transmitted.
+        OFF = today's behaviour (normal + turbo relay without the wake word).
+        A TRANSMIT gate only -- it does not change when the loop listens, and it
+        composes under the RELAY master toggle (which dominates when OFF). Twitch
+        chat / games / redeems are untouched (they never traverse the relay
+        path). Fail-open so a callback error never kills the window."""
+        try:
+            from kenning.audio.relay_speech import set_wake_relay_enabled
+            set_wake_relay_enabled(bool(enabled))
+        except Exception as e:                                        # noqa: BLE001
+            logger.warning("wake-relay toggle (stop-window) failed: %s", e)
+            return
+        logger.info("WAKE RELAY %s (stop-window toggle)%s",
+                    "ON" if enabled else "OFF",
+                    "" if enabled else " -- relays no longer need the wake word")
 
     def _set_twitch_chat_reply_enabled(self, enabled: bool) -> None:
         """STOP-window CHAT toggle callback: flip whether Ultron speaks to

@@ -3937,6 +3937,15 @@ class RelaySpeechConfig(_Strict):
     # the runtime flags at orchestrator boot; the trade-off is some false relays.
     turbo_mode: bool = False
     turbo_aggressive: bool = False
+    # WAKE RELAY (spec 13, 2026-07-11): require the WAKE WORD before a team relay.
+    # Default ON -> "Ultron, tell my team push" / "Ultron, explain to my team ..."
+    # transmit; a bare "tell my team X", a turbo callout ("sova hit 84"), or any
+    # un-waked relay is consumed silently at the relay choke point. OFF = today's
+    # behaviour (normal + turbo relay without the wake word). A TRANSMIT gate only
+    # (it never changes when the loop listens) applied to the runtime flag at
+    # orchestrator boot; the STOP-window WAKE RELAY button + env KENNING_WAKE_RELAY
+    # flip the same flag. Composes UNDER the RELAY master (team_relay) toggle.
+    wake_relay: bool = True
     # Named addressees for per-person callouts ("ask Clove to smoke
     # window", "tell Sova to drone sewers"). Empty -> the built-in
     # Valorant agent roster
@@ -4035,6 +4044,12 @@ class StopButtonConfig(_Strict):
     # 0 hides the row.
     relay_height: int = Field(default=26, ge=0, le=200)
     relay_label: str = "RELAY"
+    # WAKE RELAY toggle row (spec 13, 2026-07-11): a violet ON (default) / grey
+    # OFF button that flips relay_speech.wake_relay at runtime -- ON requires the
+    # wake word before a team relay ("Ultron, tell my team X"), OFF relays as
+    # today. Always shown (a gaming feature, not twitch-gated). 0 hides the row.
+    wake_relay_height: int = Field(default=26, ge=0, le=200)
+    wake_relay_label: str = "WAKE RELAY"
     # CHAT toggle row (2026-06-23): a purple ON / grey OFF button that flips
     # twitch.chat.reply_enabled at runtime — lets Ultron speak to chat or go
     # silent without restarting. Only visible when twitch.enabled is True.

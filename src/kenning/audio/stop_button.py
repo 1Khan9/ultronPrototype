@@ -150,6 +150,10 @@ class StopButtonOverlay:
         relay_enabled: bool = True,
         relay_height: int = 26,
         relay_label: str = "RELAY",
+        on_toggle_wake_relay: Optional[Callable[[bool], None]] = None,
+        wake_relay_enabled: bool = True,
+        wake_relay_height: int = 26,
+        wake_relay_label: str = "WAKE RELAY",
         on_toggle_chat: Optional[Callable[[bool], None]] = None,
         chat_enabled: bool = False,
         chat_height: int = 26,
@@ -230,6 +234,16 @@ class StopButtonOverlay:
         self._relay_enabled = bool(relay_enabled)
         self._relay_h = max(0, int(relay_height))
         self._relay_label = relay_label or "RELAY"
+        # Optional WAKE RELAY toggle row (spec 13): require the wake word before a
+        # team relay ("Ultron, tell my team X"). ON (default) = wake-gated; OFF =
+        # normal/turbo relay without the wake word. A TRANSMIT gate only (it never
+        # changes when the loop listens); composes UNDER the RELAY master toggle.
+        # Flips relay_speech.set_wake_relay_enabled via the orchestrator callback.
+        # ``_wake_relay_enabled`` tracks the displayed state across show/hide rebuilds.
+        self._on_toggle_wake_relay = on_toggle_wake_relay
+        self._wake_relay_enabled = bool(wake_relay_enabled)
+        self._wake_relay_h = max(0, int(wake_relay_height))
+        self._wake_relay_label = wake_relay_label or "WAKE RELAY"
         # Optional CHAT toggle row: flips twitch.chat.reply_enabled at runtime
         # (Ultron speaks to or goes silent in Twitch chat without restarting).
         self._on_toggle_chat = on_toggle_chat
@@ -380,6 +394,9 @@ class StopButtonOverlay:
             turbo_h = self._turbo_h if _has_turbo else 0
             _has_relay = self._on_toggle_relay is not None and self._relay_h > 0
             relay_h = self._relay_h if _has_relay else 0
+            _has_wake_relay = (self._on_toggle_wake_relay is not None
+                               and self._wake_relay_h > 0)
+            wake_relay_h = self._wake_relay_h if _has_wake_relay else 0
             _has_chat = self._on_toggle_chat is not None and self._chat_h > 0
             chat_h = self._chat_h if _has_chat else 0
             _has_chat_audio = (self._on_toggle_chat_audio is not None
@@ -411,9 +428,9 @@ class StopButtonOverlay:
             exit_h = self._exit_h if _has_exit else 0
             flag_h = self._flag_h if _has_flag else 0
             height = (bar_h + btn_h + restart_h + exit_h + flag_h + ptt_h
-                      + turbo_h + relay_h + chat_h + chat_audio_h + say_name_h
-                      + hear_raid_h + hear_results_h + announce_results_h
-                      + tell_chat_h + stream_delay_h)
+                      + turbo_h + relay_h + wake_relay_h + chat_h + chat_audio_h
+                      + say_name_h + hear_raid_h + hear_results_h
+                      + announce_results_h + tell_chat_h + stream_delay_h)
             root = tk.Tk()
             root.title("ULTRON // STOP")
             root.geometry(f"{w}x{height}+{self._x}+{self._y}")
@@ -729,6 +746,16 @@ class StopButtonOverlay:
                     self._relay_label,
                     lambda: self._relay_enabled, "_relay_enabled",
                     self._on_toggle_relay, "#ff5bd6", "#231021")
+
+            # WAKE RELAY toggle -- violet "WAKE RELAY ON" (default) = a team relay
+            # needs the wake word ("Ultron, tell my team X"); grey OFF = normal +
+            # turbo relay transmit without it. Sits under the magenta RELAY master
+            # (which fully disengages when OFF); this only gates on the wake word.
+            if _has_wake_relay:
+                _make_toggle_row(
+                    self._wake_relay_label,
+                    lambda: self._wake_relay_enabled, "_wake_relay_enabled",
+                    self._on_toggle_wake_relay, "#b07dff", "#170f26")
 
             # HEAR-RAID toggle -- orange "HEAR RAID ON" (default) = the incoming-raid
             # welcome plays on your LOCAL speakers; grey OFF = OBS/stream bus only.
