@@ -130,11 +130,16 @@ def test_both_cascades_check_tell_before_relay() -> None:
     assert src.count("_maybe_handle_tell_chat(_raw_stt)") == 2
     assert 'via="tell_chat"' in src
     assert 'via="tell_chat-lean"' in src
-    # every tell check precedes the next relay-speech dispatch after it
+    # every tell check precedes the next relay-speech dispatch after it. The
+    # main + lean non-force relay dispatches are the WAKE-RELAY-gated calls
+    # `_maybe_handle_relay_speech(user_text, wake_confirmed=_wake_confirmed)`
+    # (spec 13); the force=True backstop/router calls are separate.
+    _relay_call = "user_text, wake_confirmed=_wake_confirmed):"
+    assert src.count(_relay_call) == 2
     tell_1 = src.index("_maybe_handle_tell_chat(_raw_stt)")
-    relay_1 = src.index("_maybe_handle_relay_speech(user_text)", tell_1)
+    relay_1 = src.index(_relay_call, tell_1)
     tell_2 = src.index("_maybe_handle_tell_chat(_raw_stt)", tell_1 + 1)
-    relay_2 = src.index("_maybe_handle_relay_speech(user_text)", tell_2)
+    relay_2 = src.index(_relay_call, tell_2)
     assert tell_1 < relay_1 < tell_2 < relay_2
 
 
@@ -150,18 +155,56 @@ def test_set_tell_chat_enabled_flips_attr() -> None:
 
 @pytest.mark.parametrize("raw,expect", [(40, 40), (0, 0), (-5, 0),
                                         (99999, 3600), ("55", 55)])
-def test_set_stream_delay_clamps(raw, expect) -> None:
+def test_set_stream_delay_clamps(raw, expect, tmp_path, monkeypatch) -> None:
     o = Orchestrator.__new__(Orchestrator)
+    # Isolate the durable persist side-effect to a tmp file (the setter now
+    # writes data/twitch/stream_delay.json so the value survives restarts).
+    monkeypatch.setattr(o, "_stream_delay_state_path",
+                        lambda: tmp_path / "stream_delay.json")
     o._stream_delay_seconds = 40
     o._set_stream_delay_seconds(raw)
     assert o._stream_delay_seconds == expect
 
 
-def test_set_stream_delay_rejects_garbage() -> None:
+def test_set_stream_delay_rejects_garbage(tmp_path, monkeypatch) -> None:
     o = Orchestrator.__new__(Orchestrator)
+    monkeypatch.setattr(o, "_stream_delay_state_path",
+                        lambda: tmp_path / "stream_delay.json")
     o._stream_delay_seconds = 40
     o._set_stream_delay_seconds("not a number")
     assert o._stream_delay_seconds == 40       # unchanged, no raise
+
+
+def test_stream_delay_persists_and_reloads(tmp_path, monkeypatch) -> None:
+    """A committed delay is written durably and read back -> it survives a
+    restart instead of reverting to the config default 40 (the 'always 40s'
+    welcome bug)."""
+    o = Orchestrator.__new__(Orchestrator)
+    monkeypatch.setattr(o, "_stream_delay_state_path",
+                        lambda: tmp_path / "stream_delay.json")
+    o._stream_delay_seconds = 40
+    o._set_stream_delay_seconds(20)
+    assert o._load_persisted_stream_delay() == 20
+    # A fresh instance (simulating a restart) reads the persisted value.
+    o2 = Orchestrator.__new__(Orchestrator)
+    monkeypatch.setattr(o2, "_stream_delay_state_path",
+                        lambda: tmp_path / "stream_delay.json")
+    assert o2._load_persisted_stream_delay() == 20
+
+
+def test_load_persisted_stream_delay_absent_is_none(tmp_path, monkeypatch) -> None:
+    o = Orchestrator.__new__(Orchestrator)
+    monkeypatch.setattr(o, "_stream_delay_state_path",
+                        lambda: tmp_path / "nope.json")
+    assert o._load_persisted_stream_delay() is None  # -> boot keeps the config seed
+
+
+def test_persisted_stream_delay_clamped_on_load(tmp_path, monkeypatch) -> None:
+    o = Orchestrator.__new__(Orchestrator)
+    monkeypatch.setattr(o, "_stream_delay_state_path",
+                        lambda: tmp_path / "stream_delay.json")
+    (tmp_path / "stream_delay.json").write_text('{"stream_delay_seconds": 999999}')
+    assert o._load_persisted_stream_delay() == 3600
 
 
 # ---------------------------------------------- on-miss presence refresh

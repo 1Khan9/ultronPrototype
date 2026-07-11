@@ -765,6 +765,16 @@ class ChatEvent:
             # ("text" / "user_intro" / channel-points variants); an older
             # buffered dict without the key keeps the dataclass default.
             message_type=cls._coerce_str(event.get("message_type")) or "text",
+            # 2026-07-11: the sidecar now also forwards the reply relationship
+            # + typed mention fragments (both parsed by from_eventsub then
+            # dropped at this flat boundary -> the reply-to-Ultron / reply-to-
+            # other / immutable-mention signals were dead in production). An
+            # older buffered dict without the keys keeps the dataclass defaults
+            # (None / []), i.e. today's behaviour.
+            reply_parent_user_id=(
+                cls._coerce_str(event.get("reply_parent_user_id")) or None),
+            fragments=(event.get("fragments")
+                       if isinstance(event.get("fragments"), list) else []),
         )
 
     # -- helpers -------------------------------------------------------- #

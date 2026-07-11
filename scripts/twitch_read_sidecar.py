@@ -694,6 +694,16 @@ class EventSubChatSource:
                         # on REAL events (it was always "" before).
                         "message_type": ev.message_type,
                         "broadcaster_user_id": ev.broadcaster_user_id,
+                        # 2026-07-11: forward the reply relationship + typed
+                        # mention fragments (from_eventsub parses both) so the
+                        # addressing classifier can (a) recognise a reply to
+                        # Ultron, (b) pin a reply to ANOTHER chatter TO_OTHER
+                        # instead of leaking it to the residual guesser, and
+                        # (c) resolve @mentions by immutable user_id (anti-spoof).
+                        # Both were parsed then DROPPED here -> the reply/fragment
+                        # signals were dead in production.
+                        "reply_parent_user_id": ev.reply_parent_user_id,
+                        "fragments": ev.fragments,
                     }
                 )
                 return

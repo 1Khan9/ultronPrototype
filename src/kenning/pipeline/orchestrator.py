@@ -1521,6 +1521,14 @@ class Orchestrator:
             getattr(_tc_cfg0, "tell_chat_enabled", True))
         self._stream_delay_seconds = max(0, min(3600, int(
             getattr(_tc_cfg0, "stream_delay_seconds", 40) or 0)))
+        # DURABLE restore (2026-07-11): a stop-window DELAY edit persists to
+        # data/twitch/stream_delay.json; prefer it over the config default so the
+        # value the streamer last entered survives restarts (else every boot
+        # reverts to 40 and the welcome "always says 40s"). Fail-open -> keep the
+        # config seed when no state file / unreadable.
+        _persisted_delay = self._load_persisted_stream_delay()
+        if _persisted_delay is not None:
+            self._stream_delay_seconds = _persisted_delay
 
         # Tiny always-on-top, mouse-clickable "STOP" window. Clicking it fires
         # the SAME all-channel cancel as voice "Ultron, stop" (_cancel_all_playback)
@@ -14611,7 +14619,45 @@ class Orchestrator:
             logger.warning("stream delay ignored (not a number: %r)", seconds)
             return
         self._stream_delay_seconds = v
+        # DURABLE persist (2026-07-11): the welcome reads _stream_delay_seconds
+        # LIVE, so this value applies to the next welcome immediately -- but the
+        # setter only mutated the in-memory attr, so every RESTART re-seeded the
+        # config default (40) and the edit was lost ("always says 40s"). Persist
+        # it so boot re-seeds the last committed value. Fail-open: a write error
+        # only loses cross-restart persistence, never the live in-session value.
+        self._persist_stream_delay(v)
         logger.info("stream delay committed -> %ss (stop-window field)", v)
+
+    def _stream_delay_state_path(self):
+        """Path to the durable stream-delay state file (data/twitch/stream_delay.json)."""
+        from kenning.config import PROJECT_ROOT
+        return PROJECT_ROOT / "data" / "twitch" / "stream_delay.json"
+
+    def _persist_stream_delay(self, v: int) -> None:
+        """Write the committed stream delay to the durable state file so it
+        survives a restart. Fail-open (best-effort; never raises)."""
+        try:
+            import json as _sdjson
+            p = self._stream_delay_state_path()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "w", encoding="utf-8") as fh:
+                _sdjson.dump({"stream_delay_seconds": int(v)}, fh)
+        except Exception as e:                                        # noqa: BLE001
+            logger.debug("stream delay persist skipped: %s", e)
+
+    def _load_persisted_stream_delay(self):
+        """Return the durably-persisted stream delay (clamped [0,3600]) or None
+        if absent/unreadable. Fail-open -> None (caller keeps the config seed)."""
+        try:
+            import json as _sdjson
+            p = self._stream_delay_state_path()
+            with open(p, encoding="utf-8") as fh:
+                raw = (_sdjson.load(fh) or {}).get("stream_delay_seconds")
+            if raw is None:
+                return None
+            return max(0, min(3600, int(raw)))
+        except Exception:                                            # noqa: BLE001
+            return None
 
     def _set_chat_audio_to_speakers(self, enabled: bool) -> None:
         """STOP-window HEAR-CHAT toggle callback: flip whether CHAT-directed audio

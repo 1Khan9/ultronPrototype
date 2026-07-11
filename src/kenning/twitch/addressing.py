@@ -368,7 +368,16 @@ def classify_chat(
             text = ""
         stripped = text.strip()
         fragments = getattr(event, "fragments", None) or []
-        bot_name = getattr(event, "chatter_name", "")  # only used as a login-equivalent token below
+        # The bot's OWN display-name token for the leading-name check (step 6).
+        # MUST NOT be the CHATTER's name: reading event.chatter_name here made any
+        # message that LEADS WITH THE SENDER'S OWN NAME classify TO_ULTRON (live:
+        # "Sery_Bot is here ..." from Sery_Bot, and any "<name> ..." opener), so
+        # Ultron replied to self-announcing bots and name-leading lines. The bot's
+        # login already covers the normal token case (bot_login below); a distinct
+        # bot DISPLAY name is not threaded into this classifier, so leave it empty
+        # rather than borrow the chatter's. (bot login + the 'ultron' variants in
+        # _LEADING_NAME_RE remain the leading-address signals.)
+        bot_name = ""
 
         # 0) Empty / whitespace -> IGNORE.
         if not stripped:
@@ -421,6 +430,20 @@ def classify_chat(
         # 6) Leading 'ultron'/bot-name/bot-login token (no @mention) -> TO_ULTRON.
         if _leading_name_token(text, bot_login=bot_login_n, bot_name=bot_name):
             return AddressVerdict(ChatAddress.TO_ULTRON, 0.88, "leading bot-name token")
+
+        # 6b) REPLY to ANOTHER user (immutable parent_user_id, not the bot) -> TO_OTHER.
+        #     Placed AFTER every explicit bot-address signal (steps 2-6) so a
+        #     quote-reply to someone else that STILL calls Ultron -- "@ultron ..."
+        #     or "ultron ..." inside the reply -- already resolved TO_ULTRON above.
+        #     What remains here is a reply directed at a NON-bot with no bot
+        #     address, so it is NOT for Ultron: pin it TO_OTHER so it can never
+        #     fall through to the residual guesser and get answered "regardless of
+        #     whether they addressed Ultron" (the live over-addressing report).
+        #     Requires the sidecar to forward reply_parent_user_id (fixed 2026-07-11).
+        if (isinstance(reply_parent, str) and reply_parent.strip()
+                and reply_parent.strip() != bot_uid):
+            return AddressVerdict(
+                ChatAddress.TO_OTHER, 0.93, "reply to another user (parent_user_id)")
 
         # 7) RESIDUAL (no @mention, no leading name): semantic tie-break — but
         #    ONLY when the residual tier is explicitly enabled (default OFF,

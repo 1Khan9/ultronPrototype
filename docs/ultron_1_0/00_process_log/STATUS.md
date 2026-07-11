@@ -1,6 +1,37 @@
 # Ultron 1.0 — Live Status
 
-**ACTIVE (2026-07-11) — WAKE RELAY toggle: require the wake word before a team relay (branch `claude/wake-relay-toggle`, spec 13):**
+**ACTIVE (2026-07-11, wave 2) — TWITCH CHAT: self-name over-address + reply awareness + welcome-delay persistence (branch `claude/twitch-addressing-delay`):**
+
+Two live-stream bugs (root-caused via an adversarial-verify workflow `wf_82124eaf`, both proposed fixes had their
+own flaws CAUGHT by the verifier). (1) **Over-addressing** ("Ultron responds to quoted replies regardless of
+whether they address him"): the DEFINITIVE cause (reproduced against `classify_chat`) was `addressing.py`
+`bot_name = getattr(event, "chatter_name", "")` — the leading-name check (step 6) used the CHATTER'S OWN name as the
+bot-name token, so ANY message LEADING WITH THE SENDER'S OWN NAME classified TO_ULTRON. Live repro: "Sery_Bot is
+here seryboArrive" (posted BY Sery_Bot) was answered 3× across sessions; kenning.log confirms it (residual is OFF —
+default — so this was NOT the residual guesser). FIX A: `bot_name = ""` (the bot login + the 'ultron' variants remain
+the leading-address signals; the chatter's name is never borrowed). (2) **Reply awareness** (the user's stated
+"quoted reply" concern): the reply relationship + typed mention fragments were PARSED by `ChatEvent.from_eventsub`
+then DROPPED at the sidecar→`from_buffer` flat boundary (`twitch_read_sidecar._map_notification` + `eventsub.from_buffer`
+omitted `reply_parent_user_id` + `fragments`), so classify's reply-to-Ultron step + the immutable-user_id mention
+resolver were DEAD in production (a reply-to-Ultron without a text '@bot' prefix was MISSED). FIX B: forward both
+fields end-to-end + NEW addressing step 6b — a reply whose parent is a NON-bot user pins TO_OTHER, placed AFTER every
+explicit bot-address signal (steps 2-6) so a quote-reply to someone else that STILL says "@ultron"/"ultron ..."
+resolves TO_ULTRON (verifier's ordering correction; the naive "pin right after step 2" would have dropped that
+legit address). (3) **Welcome "always says 40s delay"**: the welcome ALREADY reads the live delay within a session
+(`delay_fn` getter) — the real defect was `_set_stream_delay_seconds` never PERSISTED, so every restart re-seeded the
+config default 40 (the proposed `save_config()` fix was REFUTED — no such function exists). FIX C: durable
+`data/twitch/stream_delay.json` (setter writes it, boot seeds from it, fallback config default) — mirrors the
+pinboard-state pattern, fail-open, avoids touching the streamer's config.yaml WIP. ALSO fixed a LATENT regression from
+the wake-relay slice: `test_both_cascades_check_tell_before_relay` source-pinned the old `_maybe_handle_relay_speech(
+user_text)` literal (now `..., wake_confirmed=_wake_confirmed)`) — updated (missed earlier: that file wasn't in the
+wake-relay mapped set). EVIDENCE: new/updated tests — addressing self-name + reply-pin + ordering (44), from_buffer
+reply/fragments (2), sidecar forwarding (1 + 1 exact-dict updated), delay persist round-trip/boot-seed (4); FULL
+`tests/twitch/` 1386 pass / 1 skip + anticheat clean; validate_config 0. NEXT: user restarts -> Ultron no longer
+answers self-name-leading messages (Sery_Bot etc.); a quote-reply to another chatter is never answered; the DELAY
+field value survives restarts.
+
+
+**PREVIOUS (2026-07-11) — WAKE RELAY toggle: require the wake word before a team relay (branch `claude/wake-relay-toggle`, spec 13):**
 
 Streamer wants a THIRD relay mode alongside normal ("tell my team sova hit 84") and turbo (bare "sova
 hit 84"): a default-ON stop-window toggle **WAKE RELAY** that gates team transmission on the WAKE WORD

@@ -81,10 +81,61 @@ def test_reply_to_bot_is_to_ultron():
 
 
 def test_reply_to_someone_else_is_not_to_ultron_via_reply():
-    # Reply to another user, no @bot, bare banter -> not TO_ULTRON by the reply rule.
+    # Reply to another user, no @bot, bare banter -> NOT TO_ULTRON. Since the
+    # 2026-07-11 reply-signal restoration + pin, a reply whose parent is a
+    # non-bot user is classified TO_OTHER precisely (was IGNORE before, when the
+    # reply relationship was invisible) -- so it can never leak to the residual
+    # guesser and get answered "regardless of whether they addressed Ultron".
     ev = _event("lol yeah", reply_parent_user_id=OTHER_UID)
     v = _classify(ev)
+    assert v.address == ChatAddress.TO_OTHER
+    assert v.address != ChatAddress.TO_ULTRON
+    assert "reply" in v.reason
+
+
+def test_reply_to_other_stays_to_other_even_with_residual_on(residual_tier_on):
+    # The reply-to-other pin sits BEFORE the residual tier: even with the
+    # semantic guesser enabled + a worst-case always-TO_ULTRON embedder, a bare
+    # reply to another chatter is pinned TO_OTHER and never reaches the guesser.
+    ev = _event("is that even true", reply_parent_user_id=OTHER_UID)
+    v = _classify(ev, embed_fn=_always_to_ultron_embed_fn())
+    assert v.address == ChatAddress.TO_OTHER
+
+
+def test_reply_to_other_but_at_ultron_is_to_ultron():
+    # A quote-reply to someone else that STILL explicitly @mentions the bot is a
+    # real address to Ultron -- the pin must NOT short-circuit it (verifier).
+    frag = _mention_fragment(user_id=BOT_UID, user_login=BOT_LOGIN)
+    ev = _event(f"@{BOT_LOGIN} what do you think",
+                reply_parent_user_id=OTHER_UID, fragments=[frag])
+    v = _classify(ev)
+    assert v.address == ChatAddress.TO_ULTRON
+
+
+def test_reply_to_other_but_leading_ultron_is_to_ultron():
+    # A quote-reply to someone else that LEADS with 'ultron' is a real address.
+    ev = _event("ultron settle this", reply_parent_user_id=OTHER_UID)
+    v = _classify(ev)
+    assert v.address == ChatAddress.TO_ULTRON
+
+
+def test_message_leading_with_chatters_own_name_is_not_to_ultron():
+    # Regression (live 2026-07-11 over-addressing): the leading-name check used
+    # the CHATTER's own display name as the bot-name token, so any message that
+    # LED WITH THE SENDER'S OWN NAME classified TO_ULTRON. "Sery_Bot is here ..."
+    # (posted BY Sery_Bot) is the canonical repro -> it must NOT be TO_ULTRON.
+    ev = _event("Sery_Bot is here seryboArrive",
+                chatter_login="sery_bot", chatter_name="Sery_Bot")
+    v = _classify(ev)
+    assert v.address != ChatAddress.TO_ULTRON
     assert v.address == ChatAddress.IGNORE
+
+
+def test_selfname_lead_not_to_ultron_generic():
+    # Any sender leading with their own name (not just bots).
+    ev = _event("Replier1 here we go", chatter_login="replier1",
+                chatter_name="Replier1")
+    assert _classify(ev).address != ChatAddress.TO_ULTRON
 
 
 # --------------------------------------------------------------------------- #

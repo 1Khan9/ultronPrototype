@@ -447,6 +447,36 @@ def test_from_eventsub_no_reply_no_cheer_defaults():
     assert ev.fragments == []
 
 
+def test_from_buffer_carries_reply_parent_and_fragments():
+    # 2026-07-11: the sidecar now forwards reply_parent_user_id + fragments in
+    # the flat buffered dict; from_buffer must populate them (they were dropped
+    # -> the reply-to-Ultron / reply-to-other / typed-mention signals were dead).
+    frag = {"type": "mention", "text": "@ultron_kenning",
+            "mention": {"user_id": "555", "user_login": "ultron_kenning"}}
+    ev = ChatEvent.from_buffer({
+        "type": "chat", "message_id": "m", "chatter_login": "viewer",
+        "chatter_name": "Viewer", "chatter_user_id": "111",
+        "text": "@ultron_kenning hi", "badges": [], "message_type": "text",
+        "broadcaster_user_id": "999",
+        "reply_parent_user_id": "222", "fragments": [frag],
+    })
+    assert ev is not None
+    assert ev.reply_parent_user_id == "222"
+    assert ev.fragments == [frag]
+
+
+def test_from_buffer_reply_fragments_default_when_absent():
+    # Back-compat: an older buffered dict (pre-2026-07-11) without the keys keeps
+    # the dataclass defaults (None / []), i.e. today's behaviour.
+    ev = ChatEvent.from_buffer({
+        "type": "chat", "message_id": "m", "chatter_login": "viewer",
+        "chatter_name": "Viewer", "chatter_user_id": "111", "text": "hi",
+    })
+    assert ev is not None
+    assert ev.reply_parent_user_id is None
+    assert ev.fragments == []
+
+
 def test_from_eventsub_rejects_wrong_subscription_type():
     env = _realistic_chat_notification()
     env["metadata"]["subscription_type"] = "automod.message.hold"

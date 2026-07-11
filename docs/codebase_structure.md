@@ -224,6 +224,28 @@
 > defined and tested behind a flag-ON fixture; `tests/twitch/test_addressing.py` section 11 pins the
 > default-OFF contract using the four REAL misfire lines + a worst-case always-to-ultron embedder.
 >
+> **CHAT ADDRESSING FIXES — self-name over-address + reply awareness (2026-07-11)**
+> The 2026-07-07 residual-OFF fix did NOT fully stop "Sery_Bot is here seryboArrive" being answered: that line
+> ALSO tripped an independent bug — `classify_chat` set `bot_name = event.chatter_name`, so step 6's
+> `_leading_name_token` matched ANY message LEADING WITH THE SENDER'S OWN NAME (reproduced against the real
+> classifier; residual OFF). FIX: `bot_name = ""` (bot login + 'ultron' variants remain the only leading-address
+> tokens). SEPARATELY, the reply relationship + typed mention fragments were parsed by `ChatEvent.from_eventsub`
+> then DROPPED at the sidecar→`from_buffer` flat boundary (`scripts/twitch_read_sidecar._map_notification` +
+> `eventsub.ChatEvent.from_buffer` omitted `reply_parent_user_id` + `fragments`) — so the reply-to-bot step + the
+> immutable-user_id mention resolver were DEAD in production. FIX: forward both end-to-end; NEW addressing step 6b
+> pins a reply-to-a-NON-bot TO_OTHER (0.93) AFTER steps 2-6 so a quote-reply to someone else that still
+> "@ultron"/"ultron ..."s resolves TO_ULTRON, while a bare reply-to-other can never reach the residual guesser.
+> Tests: `test_addressing.py` (self-name regression + reply-pin + ordering), `test_eventsub.py`
+> (`from_buffer` reply/fragments), `test_read_sidecar.py` (flat-dict forwarding).
+>
+> **STREAM-DELAY PERSISTENCE — welcome no longer reverts to 40s on restart (2026-07-11)**
+> The first-time-welcome reads the stop-window DELAY value LIVE (`FirstTimeWelcomer(delay_fn=lambda: self.
+> _stream_delay_seconds)`), but `_set_stream_delay_seconds` only mutated the in-memory attr, so every restart
+> re-seeded the config default 40 ("always says 40s"). FIX: durable `data/twitch/stream_delay.json` (orchestrator
+> `_persist_stream_delay` / `_load_persisted_stream_delay` / `_stream_delay_state_path`; setter writes it, boot
+> prefers it over the config seed). Fail-open, gitignored, does not touch config.yaml. Tests in
+> `tests/audio/test_tell_chat_handler.py`.
+>
 > **RELAY TOGGLE + COMPANION MODE — team-relay master switch on the stop window (2026-07-08)**
 >
 > A **default-ON** STOP-window **RELAY** toggle (magenta, via `_make_toggle_row`, always visible — not

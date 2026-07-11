@@ -501,6 +501,10 @@ def test_eventsub_source_subscribes_and_maps_chat(monkeypatch) -> None:
             "badges": [],
             "message_type": "text",
             "broadcaster_user_id": "B-100",
+            # 2026-07-11: reply relationship + typed fragments now forwarded
+            # (None / [] for a plain non-reply message).
+            "reply_parent_user_id": None,
+            "fragments": [],
         }
     ]
     # The chat subscription was created with the RESOLVED ids + the session id.
@@ -720,6 +724,33 @@ def test_eventsub_source_carries_native_message_type(monkeypatch) -> None:
     assert len(chats) == 1
     assert chats[0]["message_type"] == "user_intro"
     assert chats[0]["broadcaster_user_id"] == "B-100"
+
+
+def test_eventsub_source_forwards_reply_parent_and_fragments(monkeypatch) -> None:
+    """2026-07-11: the reply relationship + typed mention fragments survive the
+    flat-dict boundary (both were parsed by from_eventsub then DROPPED here, so
+    the addressing classifier could not tell a reply-to-Ultron from a reply-to-
+    another-chatter -> the live over-addressing on quoted replies)."""
+    _patch_tokens(monkeypatch)
+    notif = _chat_notification("c3", "replier", "is that even true")
+    notif["payload"]["event"]["reply"] = {"parent_user_id": "P-42"}
+    notif["payload"]["event"]["message"]["fragments"] = [
+        {"type": "mention", "text": "@ultronbot",
+         "mention": {"user_id": "U-200", "user_login": "ultronbot"}},
+    ]
+    ws = _FakeWSClient([_welcome("sess-1"), notif])
+    src = sidecar.EventSubChatSource(
+        url="wss://test/ws",
+        client_id="cid",
+        broadcaster_login="streamer",
+        bot_login="ultronbot",
+        connect_factory=lambda url: ws,
+        helix_factory=lambda: _FakeHelix(),
+    )
+    chats = [e for e in src.poll() if e["type"] == "chat"]
+    assert len(chats) == 1
+    assert chats[0]["reply_parent_user_id"] == "P-42"
+    assert chats[0]["fragments"] and chats[0]["fragments"][0]["type"] == "mention"
 
 
 def _clear_notification(target_login: str = "spambot", target_id: str = "S-666") -> dict:
