@@ -246,6 +246,25 @@
 > prefers it over the config seed). Fail-open, gitignored, does not touch config.yaml. Tests in
 > `tests/audio/test_tell_chat_handler.py`.
 >
+> **NEW-MESSAGE SOUND ALERT — ping the speakers when a REAL viewer types (2026-07-11)**
+> `src/kenning/twitch/chat_alert.py` `ChatAlertPlayer` (PURE gate logic, stdlib only — the audio playback is an
+> injected ``play_fn`` so `kenning.twitch` never imports the audio path): `observe(login)` skips excluded logins,
+> throttles to one ping per `cooldown_seconds` (default 20 s), and on an eligible message DEFERS `defer_seconds`
+> (default 0.5 s) then re-checks `is_banned` before playing — via a SHARED ban-guard (`welcome.BanTracker`, the
+> `channel.chat.clear_user_messages` -> `is_banned` set extracted from `FirstTimeWelcomer`; the welcomer IS the
+> tracker when the welcome is enabled, else a standalone `BanTracker`, so the ad-bot filter works even with the
+> welcome OFF — `on_clear` + the alert both read it), so an ad-bot banned in the grace window is skipped and never
+> arms the cooldown; one grace defer in flight at a time; all state lock-guarded.
+> `chat_games.ChatGameRouter(alert_fn=...)` -> `_maybe_alert(ev)` in the tick after `_maybe_welcome` (fail-safe).
+> Orchestrator `_build_chat_alert(welcomer, tcfg)` decodes the sound file ONCE via `soundfile` (WAV/FLAC/OGG/MP3
+> -> mono float32, cached), resolves the device (`audio.devices.resolve_device`; the exact "Speakers (Realtek(R)
+> Audio)" name — "Realtek" alone hits the S/PDIF "Realtek Digital Output"), and plays the cached PCM * the LIVE
+> gain on a daemon thread (`relay_speech.play_to_device(..., shape_for_team=False)`). Stop-window PING-VOL slider
+> (`tk.Scale`; `command` -> `_set_alert_volume`, realtime) with volume persisted to `data/twitch/chat_alert.json`
+> (`_persist_alert_volume`/`_load_persisted_alert_volume`). Config `twitch.chat.chat_alert_*` (OFF until a
+> readable `chat_alert_sound_path` is set) + `StopButtonConfig.alert_volume_{height,label}`. Tests:
+> `tests/twitch/test_chat_alert.py`.
+>
 > **RELAY TOGGLE + COMPANION MODE — team-relay master switch on the stop window (2026-07-08)**
 >
 > A **default-ON** STOP-window **RELAY** toggle (magenta, via `_make_toggle_row`, always visible — not

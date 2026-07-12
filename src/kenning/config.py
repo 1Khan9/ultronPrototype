@@ -4096,6 +4096,12 @@ class StopButtonConfig(_Strict):
     # live. Only visible when twitch.enabled. 0 hides the row.
     stream_delay_height: int = Field(default=30, ge=0, le=200)
     stream_delay_label: str = "DELAY s"
+    # CHAT-ALERT VOLUME slider (2026-07-11): a horizontal tk.Scale (0-100) that
+    # sets the new-message alert sound's volume LIVE as it moves (the command
+    # updates a gain float — zero ongoing cost). Only visible when twitch.enabled
+    # and a sound file is configured. 0 hides the row.
+    alert_volume_height: int = Field(default=42, ge=0, le=200)
+    alert_volume_label: str = "PING VOL"
     x: int = Field(default=60, ge=0, le=10000)   # initial top-left position
     y: int = Field(default=60, ge=0, le=10000)
 
@@ -4494,6 +4500,38 @@ class TwitchChatConfig(_Strict):
     # The CURRENT stream delay in seconds — the boot seed for the stop-button
     # DELAY field (the live value is whatever the streamer last committed there).
     stream_delay_seconds: int = Field(default=40, ge=0, le=3600)
+    # ------------------------------------------------------------------ #
+    # NEW-MESSAGE SOUND ALERT (2026-07-11): ping the streamer's speakers when a
+    # REAL viewer types, so they can glance at chat. Decode-once-at-boot + play
+    # the cached PCM (no per-message file I/O); a stop-window slider sets the
+    # volume live. Filtered to actual users: excluded logins never ping, a
+    # cooldown throttles fast chat, and a ban-grace defer + re-check drops the
+    # advertising bots Sery_bot auto-bans. Disabled unless a readable sound file
+    # is configured (chat_alert_sound_path). Wired in orchestrator._build_chat_alert.
+    chat_alert_enabled: bool = True
+    # Path to the alert sound (WAV/FLAC/OGG/MP3 — decoded via soundfile). EMPTY =
+    # feature OFF (no default sound shipped; the streamer sets their own file).
+    chat_alert_sound_path: str = ""
+    # Output device NAME substring for the ping (resolved via audio.devices).
+    # EMPTY = the system default output. NB "Realtek" alone can match the S/PDIF
+    # "Realtek Digital Output"; use the exact "Speakers (Realtek(R) Audio)" for
+    # the analog speakers.
+    chat_alert_device: str = ""
+    # Boot seed for the stop-window VOLUME slider, 0.0-1.0 (the live value is
+    # whatever the slider last committed; persisted across restarts). 0 = muted.
+    chat_alert_volume: float = Field(default=0.5, ge=0.0, le=1.0)
+    # Min seconds between pings — one ping per window even in a fast chat.
+    chat_alert_cooldown_seconds: float = Field(default=20.0, ge=0.0, le=3600.0)
+    # Ban-grace: wait this long, then confirm the sender was NOT banned/timed-out
+    # (Sery_bot bans ad-bots within ~this window) before pinging. 0 = immediate.
+    chat_alert_ban_delay_seconds: float = Field(default=0.5, ge=0.0, le=30.0)
+    # Logins that never ping (besides the bot + broadcaster, added at runtime).
+    # Lowercased at use. Common chat bots that are "not a real user to look over".
+    chat_alert_exclude_logins: List[str] = Field(
+        default_factory=lambda: [
+            "streamelements", "sery_bot", "serybot", "nightbot",
+            "streamlabs", "moobot", "wizebot", "fossabot",
+        ])
 
 
 class TwitchSpeakToTeamConfig(_Strict):

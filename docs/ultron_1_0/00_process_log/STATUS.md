@@ -1,6 +1,42 @@
 # Ultron 1.0 — Live Status
 
-**ACTIVE (2026-07-11, wave 2) — TWITCH CHAT: self-name over-address + reply awareness + welcome-delay persistence (branch `claude/twitch-addressing-delay`):**
+**ACTIVE (2026-07-11, wave 3) — NEW-MESSAGE SOUND ALERT: ping the speakers when a REAL viewer types (branch `claude/twitch-addressing-delay`):**
+
+Streamer wants a speaker ping (their sound file, on the Realtek speakers) whenever a REAL viewer types, so
+they can glance at chat — with a stop-window volume slider, a 20 s cooldown, and NO ping for the bot /
+StreamElements / Sery_bot / the ad-spam bots Sery_bot auto-bans. BUILT (all fail-open, anticheat-clean):
+(1) NEW `twitch/chat_alert.py` `ChatAlertPlayer` — PURE gate logic (stdlib only; the audio playback is an
+injected `play_fn`, so `kenning.twitch` never imports the audio path): `observe(login)` excludes configured
+logins, throttles to one ping per `cooldown_seconds` (20), and on an eligible message DEFERS `defer_seconds`
+(0.5) then RE-CHECKS `is_banned` before playing — via a SHARED ban-guard (NEW `welcome.BanTracker`, the
+`channel.chat.clear_user_messages` -> `is_banned` set extracted from `FirstTimeWelcomer` so it works even
+when the welcome is DISABLED; the welcomer IS the tracker when welcome is on, else a standalone `BanTracker`,
+and `on_clear` + the alert both read it — adversarial-review P2 fix, else the ad-bot filter was silently
+inert with welcome off), so an ad-bot banned in the grace window is skipped AND never consumes the cooldown
+(a real user right after still pings). One grace defer in flight at a
+time (pending-dedup); all state lock-guarded. (2) `chat_games.ChatGameRouter` gains `alert_fn` + `_maybe_alert(ev)`
+in the tick (right after `_maybe_welcome`, fail-safe). (3) Orchestrator `_build_chat_alert(welcomer, tcfg)`
+decodes the sound file ONCE at boot via `soundfile` (WAV/FLAC/OGG/MP3), downmixes to mono float32, caches it,
+resolves the output device (`audio.devices.resolve_device` — NB "Realtek" alone hits the S/PDIF "Realtek
+Digital Output"; the exact "Speakers (Realtek(R) Audio)" is the analog endpoint), and builds a play_fn that
+plays the CACHED PCM * the LIVE gain on a daemon thread (`play_to_device(..., shape_for_team=False)`) — no
+per-message file I/O. Takes `tcfg` (not welcome-local vars) so it's independent of the welcome being enabled.
+(4) Stop-window PING-VOL slider (`tk.Scale` 0-100; `command` fires per move -> `_set_alert_volume` updates the
+gain float immediately — realtime; the disk persist is DEBOUNCED to one write after the slider settles, so a
+drag doesn't hammer disk — review nit fix) wired only when twitch is on AND a sound file is set; volume
+PERSISTS across restarts (`data/twitch/chat_alert.json`, mirrors the delay persist). (5) Config
+`twitch.chat.chat_alert_{enabled,sound_path,device,volume,cooldown_seconds,ban_delay_seconds,exclude_logins}`
+(exclude defaults: streamelements/sery_bot/nightbot/streamlabs/moobot/… + bot + broadcaster at runtime) +
+`StopButtonConfig.alert_volume_{height,label}`. Feature is OFF until a readable `chat_alert_sound_path` is
+set. EVIDENCE: NEW `tests/twitch/test_chat_alert.py` 20 (gate matrix: exclusion/cooldown/ban-recheck/pending-
+dedup/fail-safe + config + persistence + GUI/tick pins); FULL `tests/twitch/` 1513 pass / 1 skip + anticheat
+(incl. the twitch-imports-no-forbidden-libs invariant) clean; validate_config 0; build+play path verified
+with `play_to_device` FAKED (no real audio on the live speakers). NEXT: set `chat_alert_sound_path` +
+`chat_alert_device` in the live config.yaml, restart -> a ping for real viewers, PING-VOL slider on the stop
+window; verify no ping for the excluded bots + banned ad-bots.
+
+
+**PREVIOUS (2026-07-11, wave 2) — TWITCH CHAT: self-name over-address + reply awareness + welcome-delay persistence (branch `claude/twitch-addressing-delay`):**
 
 Two live-stream bugs (root-caused via an adversarial-verify workflow `wf_82124eaf`, both proposed fixes had their
 own flaws CAUGHT by the verifier). (1) **Over-addressing** ("Ultron responds to quoted replies regardless of

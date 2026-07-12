@@ -186,6 +186,10 @@ class StopButtonOverlay:
         stream_delay_value: int = 40,
         stream_delay_height: int = 30,
         stream_delay_label: str = "DELAY s",
+        on_set_alert_volume: Optional[Callable[[int], None]] = None,
+        alert_volume_value: int = 50,
+        alert_volume_height: int = 42,
+        alert_volume_label: str = "PING VOL",
         on_restart: Optional[Callable[[], None]] = None,
         on_exit: Optional[Callable[[], None]] = None,
         restart_height: int = 28,
@@ -311,6 +315,14 @@ class StopButtonOverlay:
         self._stream_delay_value = max(0, min(3600, int(stream_delay_value)))
         self._stream_delay_h = max(0, int(stream_delay_height))
         self._stream_delay_label = stream_delay_label or "DELAY s"
+        # Optional CHAT-ALERT VOLUME slider (2026-07-11): a horizontal tk.Scale
+        # (0-100) whose ``command`` fires on every move -> the orchestrator setter
+        # updates the live ping-sound gain (realtime, zero ongoing cost).
+        # ``_alert_volume_value`` tracks the last value across show/hide rebuilds.
+        self._on_set_alert_volume = on_set_alert_volume
+        self._alert_volume_value = max(0, min(100, int(alert_volume_value)))
+        self._alert_volume_h = max(0, int(alert_volume_height))
+        self._alert_volume_label = alert_volume_label or "PING VOL"
         # Optional RESTART + EXIT action buttons (orchestrator-wired). Restart =
         # full cleanup then relaunch the same build; Exit = full cleanup then quit.
         self._on_restart = on_restart
@@ -421,6 +433,9 @@ class StopButtonOverlay:
             _has_stream_delay = (self._on_set_stream_delay is not None
                                  and self._stream_delay_h > 0)
             stream_delay_h = self._stream_delay_h if _has_stream_delay else 0
+            _has_alert_volume = (self._on_set_alert_volume is not None
+                                 and self._alert_volume_h > 0)
+            alert_volume_h = self._alert_volume_h if _has_alert_volume else 0
             _has_restart = self._on_restart is not None and self._restart_h > 0
             _has_exit = self._on_exit is not None and self._exit_h > 0
             _has_flag = self._on_flag is not None and self._flag_h > 0
@@ -430,7 +445,8 @@ class StopButtonOverlay:
             height = (bar_h + btn_h + restart_h + exit_h + flag_h + ptt_h
                       + turbo_h + relay_h + wake_relay_h + chat_h + chat_audio_h
                       + say_name_h + hear_raid_h + hear_results_h
-                      + announce_results_h + tell_chat_h + stream_delay_h)
+                      + announce_results_h + tell_chat_h + stream_delay_h
+                      + alert_volume_h)
             root = tk.Tk()
             root.title("ULTRON // STOP")
             root.geometry(f"{w}x{height}+{self._x}+{self._y}")
@@ -843,6 +859,49 @@ class StopButtonOverlay:
                 drow.pack(fill="x", side="bottom")
                 drow.pack_propagate(False)
                 drow.bind("<Button-3>", lambda _e: self.hide())
+
+            # CHAT-ALERT VOLUME slider (2026-07-11) -- a horizontal tk.Scale (0-100)
+            # that sets the new-message ping sound's volume LIVE as it moves. The
+            # ``command`` fires on every drag step and only updates a gain float via
+            # the orchestrator setter (no polling, no re-decode -> zero ongoing cost).
+            if _has_alert_volume:
+                _av_fg = "#c9d1d9"
+                avrow = tk.Frame(root, bg=self._bg, height=alert_volume_h, width=w)
+                avlab = tk.Label(
+                    avrow, text=self._alert_volume_label, bg=self._bg,
+                    fg=_av_fg, font=("Segoe UI Semibold", 8))
+                avscale = tk.Scale(
+                    avrow, from_=0, to=100, orient="horizontal",
+                    bg=self._bg, fg="#5bd0ff", troughcolor="#101418",
+                    activebackground="#5bd0ff", highlightthickness=0, bd=0,
+                    sliderrelief="flat", showvalue=True, length=max(60, w - 70),
+                    font=("Segoe UI Semibold", 7))
+                avscale.set(self._alert_volume_value)
+
+                def _on_alert_vol(val):
+                    # Fires on every slider move; guarded against the Tk teardown
+                    # race. The orchestrator setter is independently clamped.
+                    try:
+                        v = max(0, min(100, int(float(val))))
+                    except (TypeError, ValueError):
+                        return
+                    if v == self._alert_volume_value:
+                        return
+                    self._alert_volume_value = v
+                    try:
+                        if self._on_set_alert_volume is not None:
+                            self._on_set_alert_volume(v)
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning("alert-volume callback failed: %s", e)
+
+                # Bind AFTER the initial .set() so construction doesn't fire the
+                # callback with the seed value before the orchestrator is ready.
+                avscale.configure(command=_on_alert_vol)
+                avlab.pack(side="left", padx=(6, 2))
+                avscale.pack(side="left", fill="x", expand=True, padx=(0, 6))
+                avrow.pack(fill="x", side="bottom")
+                avrow.pack_propagate(False)
+                avrow.bind("<Button-3>", lambda _e: self.hide())
 
             # RESTART + EXIT action buttons -- packed at the bottom (above PTT,
             # below STOP). Each runs Ultron's full cleanup; Restart then relaunches

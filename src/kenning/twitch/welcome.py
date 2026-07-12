@@ -49,7 +49,7 @@ from typing import Optional, Union
 
 logger = logging.getLogger("kenning.twitch.welcome")
 
-__all__ = ["FirstTimeWelcomer", "WelcomedStore", "format_delay"]
+__all__ = ["BanTracker", "FirstTimeWelcomer", "WelcomedStore", "format_delay"]
 
 # Hard bound on the per-run seen-set: far above any real stream's unique-chatter
 # count; only bounds memory against a pathological flood of fresh logins. When
@@ -146,6 +146,40 @@ class WelcomedStore:
             return int(row[0]) if row else 0
         except Exception:  # noqa: BLE001
             return 0
+
+
+class BanTracker:
+    """Standalone recently-banned/timed-out login set, fed from EventSub
+    ``channel.chat.clear_user_messages``. Extracted so the ban-grace guard can be
+    SHARED by consumers that need it independently of the first-time welcome —
+    e.g. the new-message sound alert must suppress ad-spam bots even when the
+    welcome feature is disabled (the welcomer is then never built). Bounded,
+    lock-guarded, fail-quiet (called from the chat drain hot path)."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._banned: set[str] = set()
+
+    def mark_banned(self, login: str) -> None:
+        try:
+            key = (login or "").strip().lower() if isinstance(login, str) else ""
+            if not key:
+                return
+            with self._lock:
+                if len(self._banned) < _MAX_SEEN:
+                    self._banned.add(key)
+        except Exception:  # noqa: BLE001 — must never break chat ingest
+            pass
+
+    def is_banned(self, login: str) -> bool:
+        try:
+            key = (login or "").strip().lower() if isinstance(login, str) else ""
+            if not key:
+                return False
+            with self._lock:
+                return key in self._banned
+        except Exception:  # noqa: BLE001
+            return False
 
 
 class FirstTimeWelcomer:

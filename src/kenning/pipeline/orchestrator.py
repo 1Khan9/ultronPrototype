@@ -1529,6 +1529,18 @@ class Orchestrator:
         _persisted_delay = self._load_persisted_stream_delay()
         if _persisted_delay is not None:
             self._stream_delay_seconds = _persisted_delay
+        # NEW-MESSAGE SOUND ALERT (2026-07-11): live gain (0.0-1.0) for the chat
+        # ping, seeded from the durable slider state (data/twitch/chat_alert.json)
+        # then the config default. The decoded PCM + resolved device are built
+        # later in _build_chat_alert (twitch chat-mode start); default them here so
+        # the play_fn's guards hold even if the feature never arms.
+        _cfg_alert_vol = float(getattr(_tc_cfg0, "chat_alert_volume", 0.5) or 0.0)
+        _pv = self._load_persisted_alert_volume()
+        self._alert_volume = (_pv if _pv is not None
+                              else max(0.0, min(1.0, _cfg_alert_vol)))
+        self._alert_pcm = None
+        self._alert_sr = 0
+        self._alert_device = None
 
         # Tiny always-on-top, mouse-clickable "STOP" window. Clicking it fires
         # the SAME all-channel cancel as voice "Ultron, stop" (_cancel_all_playback)
@@ -1706,6 +1718,24 @@ class Orchestrator:
                     stream_delay_value=int(self._stream_delay_seconds),
                     stream_delay_height=getattr(_sb, "stream_delay_height", 30),
                     stream_delay_label=getattr(_sb, "stream_delay_label", "DELAY s"),
+                    # CHAT-ALERT VOLUME slider (2026-07-11): live ping-sound gain.
+                    # Wired only when twitch is enabled AND a sound file is
+                    # configured, so the row is hidden when the feature is off.
+                    on_set_alert_volume=(
+                        self._set_alert_volume
+                        if (getattr(getattr(get_config(), "twitch", None),
+                                    "enabled", False)
+                            and str(getattr(
+                                getattr(getattr(get_config(), "twitch", None),
+                                        "chat", None),
+                                "chat_alert_sound_path", "") or "").strip())
+                        else None
+                    ),
+                    alert_volume_value=int(round(
+                        getattr(self, "_alert_volume", 0.5) * 100)),
+                    alert_volume_height=getattr(_sb, "alert_volume_height", 42),
+                    alert_volume_label=getattr(
+                        _sb, "alert_volume_label", "PING VOL"),
                 )
                 if getattr(_sb, "show_at_startup", False):
                     self._stop_button.show()
@@ -7259,13 +7289,39 @@ class Orchestrator:
                     except Exception as _we:                         # noqa: BLE001
                         logger.warning("first-time welcome init failed: %s", _we)
                         _welcomer = None
+                    # SHARED ban-guard (2026-07-11): the welcomer IS the ban
+                    # tracker when the welcome is enabled; otherwise a standalone
+                    # BanTracker, so the sound-alert's ad-bot suppression works
+                    # even with the welcome DISABLED (else is_banned would be None
+                    # and a banned ad-bot would still ping). on_clear feeds it and
+                    # the alert reads it.
+                    if _welcomer is not None and hasattr(_welcomer, "is_banned"):
+                        _ban_tracker = _welcomer
+                    else:
+                        try:
+                            from kenning.twitch.welcome import BanTracker
+                            _ban_tracker = BanTracker()
+                        except Exception:                            # noqa: BLE001
+                            _ban_tracker = None
+                    # NEW-MESSAGE SOUND ALERT (2026-07-11): a speaker ping when a
+                    # REAL viewer types (SHARES the ban-guard above for the ad-bot
+                    # filter). None when disabled / no sound file / decode fails ->
+                    # the router's alert_fn stays None (byte-identical).
+                    try:
+                        _alert_player = self._build_chat_alert(
+                            (_ban_tracker.is_banned
+                             if _ban_tracker is not None else None), tcfg)
+                    except Exception as _ae:                         # noqa: BLE001
+                        logger.debug("chat alert build failed: %s", _ae)
+                        _alert_player = None
                     cgr = ChatGameRouter(
                         make_chat_command_drain_fn(
                             read_ep,
-                            # Ban/timeout signals (chat_clear_user events)
-                            # feed the welcome ban-guard (2026-07-10).
-                            on_clear=(_welcomer.mark_banned
-                                      if _welcomer is not None else None),
+                            # Ban/timeout signals (chat_clear_user events) feed the
+                            # SHARED ban-guard (2026-07-10 welcome + 2026-07-11
+                            # sound alert) so both suppress bots banned in-window.
+                            on_clear=(_ban_tracker.mark_banned
+                                      if _ban_tracker is not None else None),
                         ),
                         ledger=ledger, cfg=_ecfg,
                         announce_fn=_twitch_chat_post,   # chat commands: in-chat response ONLY (no TTS)
@@ -7296,6 +7352,9 @@ class Orchestrator:
                         # (the one consumer that sees every chat message).
                         roster=self._twitch_user_roster,
                         welcomer=_welcomer,
+                        # New-message speaker ping for real viewers (2026-07-11).
+                        alert_fn=(_alert_player.observe
+                                  if _alert_player is not None else None),
                     )
                     self._twitch_chat_game_router = cgr
                     self._twitch_chat_stop = False
@@ -14658,6 +14717,173 @@ class Orchestrator:
             return max(0, min(3600, int(raw)))
         except Exception:                                            # noqa: BLE001
             return None
+
+    # ---- NEW-MESSAGE SOUND ALERT (2026-07-11) --------------------------------
+    def _set_alert_volume(self, v: int) -> None:
+        """STOP-window PING-VOL slider callback: set the chat-alert sound volume
+        LIVE (0-100 -> gain 0.0-1.0). Read by the alert play_fn on the next ping,
+        so a slider move applies immediately (no restart). The in-memory gain
+        update is instant; the DISK persist is DEBOUNCED (coalesced to one write
+        after the slider settles) so dragging the slider does not hammer disk.
+        Fail-open so a callback error never kills the window."""
+        try:
+            vi = max(0, min(100, int(v)))
+        except (TypeError, ValueError):
+            logger.warning("alert volume ignored (not a number: %r)", v)
+            return
+        self._alert_volume = vi / 100.0           # live gain — immediate
+        self._debounce_persist_alert_volume(vi)
+
+    def _debounce_persist_alert_volume(self, vi: int) -> None:
+        """Coalesce slider-drag persistence: cancel + reschedule a short daemon
+        timer so only the LAST committed value hits disk (one write per drag,
+        not ~one per pixel). Fail-open -> persist inline on any scheduler error."""
+        try:
+            import threading as _th
+            self._alert_volume_persist_pending = int(vi)
+            _t = getattr(self, "_alert_volume_persist_timer", None)
+            if _t is not None:
+                try:
+                    _t.cancel()
+                except Exception:                    # noqa: BLE001
+                    pass
+
+            def _flush() -> None:
+                self._persist_alert_volume(
+                    getattr(self, "_alert_volume_persist_pending", vi))
+
+            nt = _th.Timer(0.6, _flush)
+            nt.daemon = True
+            self._alert_volume_persist_timer = nt
+            nt.start()
+        except Exception as e:                       # noqa: BLE001
+            logger.debug("alert volume debounce failed (%s); inline persist", e)
+            self._persist_alert_volume(vi)
+
+    def _alert_volume_state_path(self):
+        """Path to the durable chat-alert state file (data/twitch/chat_alert.json)."""
+        from kenning.config import PROJECT_ROOT
+        return PROJECT_ROOT / "data" / "twitch" / "chat_alert.json"
+
+    def _persist_alert_volume(self, vi: int) -> None:
+        """Write the committed ping volume (0-100) durably. Fail-open."""
+        try:
+            import json as _avjson
+            p = self._alert_volume_state_path()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "w", encoding="utf-8") as fh:
+                _avjson.dump({"volume": int(vi)}, fh)
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("alert volume persist skipped: %s", e)
+
+    def _load_persisted_alert_volume(self):
+        """Return the persisted ping gain (0.0-1.0) or None if absent/unreadable.
+        Fail-open -> None (caller keeps the config seed)."""
+        try:
+            import json as _avjson
+            p = self._alert_volume_state_path()
+            with open(p, encoding="utf-8") as fh:
+                raw = (_avjson.load(fh) or {}).get("volume")
+            if raw is None:
+                return None
+            return max(0.0, min(1.0, int(raw) / 100.0))
+        except Exception:                                            # noqa: BLE001
+            return None
+
+    def _build_chat_alert(self, is_banned_fn, tcfg):
+        """Build the new-message SOUND ALERT player, or None if disabled.
+
+        Decodes the configured sound file ONCE (soundfile: WAV/FLAC/OGG/MP3),
+        downmixes to mono float32, caches it, resolves the output device, and
+        returns a ChatAlertPlayer whose injected play_fn plays the cached PCM at
+        the LIVE slider gain (self._alert_volume) on a daemon thread. The player
+        owns the exclusion / cooldown / ban-grace logic (stdlib only, anticheat-
+        clean). Fail-open at every step -> None (the feature is silently off).
+
+        ``is_banned_fn`` is the SHARED ban-guard read (a BanTracker/welcomer
+        ``is_banned``) so the ad-spam-bot suppression works even when the
+        first-time welcome is disabled. Takes the whole ``tcfg`` and derives
+        auth/chat itself so it never depends on loop-local welcome vars."""
+        aucfg = getattr(tcfg, "auth", None)
+        chcfg = getattr(tcfg, "chat", None)
+        try:
+            from kenning.twitch.chat_alert import ChatAlertPlayer
+        except Exception as e:                                       # noqa: BLE001
+            logger.debug("chat alert unavailable: %s", e)
+            return None
+        if not bool(getattr(chcfg, "chat_alert_enabled", True)):
+            return None
+        path = str(getattr(chcfg, "chat_alert_sound_path", "") or "").strip()
+        if not path:
+            logger.info("chat alert: no sound file configured -> disabled")
+            return None
+        try:
+            import numpy as _np
+            import soundfile as _sf
+            data, sr = _sf.read(path, dtype="float32", always_2d=True)
+            pcm = data.mean(axis=1).astype(_np.float32)   # downmix to mono
+            if pcm.size == 0:
+                raise ValueError("empty audio")
+            self._alert_pcm = pcm
+            self._alert_sr = int(sr)
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("chat alert: could not decode %r (%s) -> disabled",
+                           path, e)
+            return None
+        dev_name = str(getattr(chcfg, "chat_alert_device", "") or "").strip()
+        try:
+            from kenning.audio.devices import resolve_device
+            self._alert_device = resolve_device(dev_name or None, "output")
+        except Exception as e:                                       # noqa: BLE001
+            logger.warning("chat alert: device %r not resolved (%s); trying "
+                           "system default output", dev_name, e)
+            try:
+                from kenning.audio.devices import resolve_device
+                self._alert_device = resolve_device(None, "output")
+            except Exception:                                        # noqa: BLE001
+                self._alert_device = None
+
+        def _play() -> None:
+            gain = float(getattr(self, "_alert_volume", 0.0) or 0.0)
+            pcm = getattr(self, "_alert_pcm", None)
+            dev = getattr(self, "_alert_device", None)
+            if gain <= 0.0 or pcm is None or dev is None:
+                return   # muted / no clip / no device -> nothing to play
+
+            def _run() -> None:
+                try:
+                    import numpy as _np2
+                    from kenning.audio.relay_speech import play_to_device
+                    play_to_device(
+                        (_np2.asarray(pcm) * gain).astype(_np2.float32),
+                        int(self._alert_sr), int(dev), shape_for_team=False)
+                except Exception as e:                               # noqa: BLE001
+                    logger.debug("chat alert playback failed: %s", e)
+
+            import threading as _th
+            _th.Thread(target=_run, daemon=True, name="chat-alert-play").start()
+
+        exclude = [lg for lg in (
+            getattr(aucfg, "broadcaster_login", None),
+            getattr(aucfg, "bot_login", None),
+        ) if lg]
+        exclude += list(getattr(chcfg, "chat_alert_exclude_logins", None) or [])
+        player = ChatAlertPlayer(
+            play_fn=_play,
+            is_banned_fn=is_banned_fn,
+            exclude_logins=exclude,
+            cooldown_seconds=float(getattr(
+                chcfg, "chat_alert_cooldown_seconds", 20.0) or 0.0),
+            defer_seconds=float(getattr(
+                chcfg, "chat_alert_ban_delay_seconds", 0.5) or 0.0),
+        )
+        logger.info("chat new-message alert armed (device=%s, vol=%.0f%%, "
+                    "cooldown=%ss, ban-grace=%sms)", self._alert_device,
+                    self._alert_volume * 100.0,
+                    getattr(chcfg, "chat_alert_cooldown_seconds", 20.0),
+                    int(float(getattr(chcfg, "chat_alert_ban_delay_seconds",
+                                      0.5) or 0.0) * 1000))
+        return player
 
     def _set_chat_audio_to_speakers(self, enabled: bool) -> None:
         """STOP-window HEAR-CHAT toggle callback: flip whether CHAT-directed audio

@@ -209,6 +209,7 @@ class ChatGameRouter:
         speak_fn: Callable[[str], object] | None = None,
         roster: object | None = None,
         welcomer: object | None = None,
+        alert_fn: Callable[[str], object] | None = None,
     ) -> None:
         self._drain = drain_fn
         # Spec 12 (2026-07-09): optional live-chat side channels fed from THIS
@@ -219,6 +220,11 @@ class ChatGameRouter:
         # Both default None => byte-identical behaviour for existing callers.
         self._roster = roster
         self._welcomer = welcomer
+        # New-message SOUND ALERT (2026-07-11): called with the chatter login on
+        # EVERY chat message so the orchestrator's ChatAlertPlayer can ping the
+        # streamer's speakers for real viewers (exclusion + cooldown + ban-grace
+        # live in the player). None => no alert (byte-identical for existing callers).
+        self._alert_fn = alert_fn
         # 2026-06-26: dev TEST PANEL injection buffer. inject() appends a synthetic
         # FLAT chat dict; the next tick() drains it ALONGSIDE the live drain so a
         # test command flows through the EXACT same parse/dedup/dispatch path as a
@@ -352,6 +358,7 @@ class ChatGameRouter:
             try:
                 self._observe(ev)
                 self._maybe_welcome(ev)
+                self._maybe_alert(ev)
                 cmd = parse_command(ev)
                 if cmd is None:
                     # An ordinary (non-command) message — the only thing it can
@@ -467,6 +474,20 @@ class ChatGameRouter:
             self._defer(delay, _fire)
         else:
             _fire()
+
+    def _maybe_alert(self, ev: ChatEvent) -> None:
+        """Feed the chatter login to the new-message SOUND ALERT (2026-07-11).
+        The ChatAlertPlayer owns the whole decision (exclusion / 20 s cooldown /
+        ban-grace defer + re-check); this just hands it the login. Fail-safe:
+        an alert must NEVER break chat ingest."""
+        if self._alert_fn is None:
+            return
+        try:
+            login = (getattr(ev, "chatter_login", "") or "").strip().lower()
+            if login:
+                self._alert_fn(login)
+        except Exception as exc:  # noqa: BLE001 — never break the tick
+            logger.debug("chat alert hook failed: %s", exc)
 
     def _accrue_earnings(self) -> None:
         per_min = _as_int(getattr(self._cfg, "earn_per_minute", 0))
