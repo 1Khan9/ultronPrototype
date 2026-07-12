@@ -3946,6 +3946,14 @@ class RelaySpeechConfig(_Strict):
     # orchestrator boot; the STOP-window WAKE RELAY button + env KENNING_WAKE_RELAY
     # flip the same flag. Composes UNDER the RELAY master (team_relay) toggle.
     wake_relay: bool = True
+    # TEAM BUS toggle (2026-07-12): the ALT (B2) output device the STOP-window
+    # TEAM BUS toggle switches the team relay to — a VoiceMeeter virtual-input
+    # strip the streamer has routed to B2 (their game-mic bus) so Ultron shares
+    # their mic bus. EMPTY = toggle DISABLED / row hidden (relay stays on the
+    # primary output_device = B1). Anticheat-clean: only changes which output
+    # DEVICE the relay plays into (no VoiceMeeter control API). Default OFF at
+    # boot (B1) so a fresh start never silently mixes into the game mic.
+    team_bus_alt_device: str = ""
     # Named addressees for per-person callouts ("ask Clove to smoke
     # window", "tell Sova to drone sewers"). Empty -> the built-in
     # Valorant agent roster
@@ -4050,6 +4058,12 @@ class StopButtonConfig(_Strict):
     # today. Always shown (a gaming feature, not twitch-gated). 0 hides the row.
     wake_relay_height: int = Field(default=26, ge=0, le=200)
     wake_relay_label: str = "WAKE RELAY"
+    # TEAM BUS row (2026-07-12): a two-state button showing which VoiceMeeter bus
+    # the team relay is on — "TEAM: B1" (grey, separate) / "TEAM: B2" (green, same
+    # bus as your mic). Only shown when relay_speech.team_bus_alt_device is set.
+    # 0 hides the row.
+    team_bus_height: int = Field(default=26, ge=0, le=200)
+    team_bus_label: str = "TEAM"
     # CHAT toggle row (2026-06-23): a purple ON / grey OFF button that flips
     # twitch.chat.reply_enabled at runtime — lets Ultron speak to chat or go
     # silent without restarting. Only visible when twitch.enabled is True.

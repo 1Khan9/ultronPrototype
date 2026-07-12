@@ -308,6 +308,17 @@
 > `docs/ultron_1_0/04_implementation/13_wake_relay_toggle_spec.md`. Tests:
 > `tests/audio/test_wake_relay.py` (34, hermetic).
 >
+> **TEAM BUS toggle — switch the team relay between VoiceMeeter B1/B2 (2026-07-12)**
+> A stop-window click that moves the team-relay OUTPUT between the primary strip (B1, separate) and an ALT strip
+> (B2, the streamer's own mic bus). B1/B2 are VoiceMeeter STRIP bus-assignments, not devices — so this is the
+> DEVICE-SWAP approach (anticheat-clean: only changes which output device the relay plays into; NO VoiceMeeter
+> control API). NEW `relay_speech.set_/team_bus_alt_enabled()` (env `KENNING_TEAM_BUS_ALT`, default OFF=B1) + pure
+> `active_relay_output_device(cfg)` -> `cfg.team_bus_alt_device` (B2) when ON+configured else `cfg.output_device`
+> (B1), read LIVE per callout. Both team-output sites resolve through it (`_maybe_handle_relay_speech` + the
+> SPEAK_TEAM redeem). Config `relay_speech.team_bus_alt_device` (EMPTY = disabled/row hidden); orchestrator
+> `_set_team_bus_alt`; stop-window custom row "TEAM: B1"(grey)/"TEAM: B2"(teal) + `StopButtonConfig.team_bus_*`.
+> Default OFF at boot so a restart never silently mixes into the game mic. Tests: `tests/audio/test_team_bus.py`.
+>
 > **TWITCH STREAMER UX — VISUAL-LEADS-VOCAL + 3 RESULT/RAID TOGGLES + RAID-TO-SPEAKERS + MUTE-RACE FIX (2026-06-26)**
 >
 > Four streamer-requested behavior changes (additive, config-flag-gated; a reboot deploys). All mocked-tested.

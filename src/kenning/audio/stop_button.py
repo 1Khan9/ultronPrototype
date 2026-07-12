@@ -154,6 +154,10 @@ class StopButtonOverlay:
         wake_relay_enabled: bool = True,
         wake_relay_height: int = 26,
         wake_relay_label: str = "WAKE RELAY",
+        on_toggle_team_bus: Optional[Callable[[bool], None]] = None,
+        team_bus_enabled: bool = False,
+        team_bus_height: int = 26,
+        team_bus_label: str = "TEAM",
         on_toggle_chat: Optional[Callable[[bool], None]] = None,
         chat_enabled: bool = False,
         chat_height: int = 26,
@@ -248,6 +252,15 @@ class StopButtonOverlay:
         self._wake_relay_enabled = bool(wake_relay_enabled)
         self._wake_relay_h = max(0, int(wake_relay_height))
         self._wake_relay_label = wake_relay_label or "WAKE RELAY"
+        # Optional TEAM BUS row (2026-07-12): a two-state button showing which
+        # VoiceMeeter bus the team relay is on -- "<label>: B1" (grey, separate)
+        # / "<label>: B2" (green, shares your mic bus). Flips
+        # relay_speech.set_team_bus_alt_enabled via the orchestrator callback.
+        # ``_team_bus_enabled`` = True means B2 (alt). Tracked across rebuilds.
+        self._on_toggle_team_bus = on_toggle_team_bus
+        self._team_bus_enabled = bool(team_bus_enabled)
+        self._team_bus_h = max(0, int(team_bus_height))
+        self._team_bus_label = team_bus_label or "TEAM"
         # Optional CHAT toggle row: flips twitch.chat.reply_enabled at runtime
         # (Ultron speaks to or goes silent in Twitch chat without restarting).
         self._on_toggle_chat = on_toggle_chat
@@ -409,6 +422,9 @@ class StopButtonOverlay:
             _has_wake_relay = (self._on_toggle_wake_relay is not None
                                and self._wake_relay_h > 0)
             wake_relay_h = self._wake_relay_h if _has_wake_relay else 0
+            _has_team_bus = (self._on_toggle_team_bus is not None
+                             and self._team_bus_h > 0)
+            team_bus_h = self._team_bus_h if _has_team_bus else 0
             _has_chat = self._on_toggle_chat is not None and self._chat_h > 0
             chat_h = self._chat_h if _has_chat else 0
             _has_chat_audio = (self._on_toggle_chat_audio is not None
@@ -443,8 +459,8 @@ class StopButtonOverlay:
             exit_h = self._exit_h if _has_exit else 0
             flag_h = self._flag_h if _has_flag else 0
             height = (bar_h + btn_h + restart_h + exit_h + flag_h + ptt_h
-                      + turbo_h + relay_h + wake_relay_h + chat_h + chat_audio_h
-                      + say_name_h + hear_raid_h + hear_results_h
+                      + turbo_h + relay_h + wake_relay_h + team_bus_h + chat_h
+                      + chat_audio_h + say_name_h + hear_raid_h + hear_results_h
                       + announce_results_h + tell_chat_h + stream_delay_h
                       + alert_volume_h)
             root = tk.Tk()
@@ -772,6 +788,52 @@ class StopButtonOverlay:
                     self._wake_relay_label,
                     lambda: self._wake_relay_enabled, "_wake_relay_enabled",
                     self._on_toggle_wake_relay, "#b07dff", "#170f26")
+
+            # TEAM BUS row (2026-07-12) -- a two-state button showing WHICH
+            # VoiceMeeter bus the team relay outputs to: grey "TEAM: B1"
+            # (separate, default) / teal "TEAM: B2" (shares your mic bus). Custom
+            # (not _make_toggle_row) so it reads B1/B2 rather than ON/OFF. Only
+            # present when relay_speech.team_bus_alt_device is configured.
+            if _has_team_bus:
+                _tb_on_fg, _tb_on_fill = "#33d6c7", "#0a1f1d"    # teal = B2 (alt)
+                _tb_off_fg, _tb_off_fill = "#8a8f98", "#141414"  # grey = B1
+
+                def _tb_colors():
+                    return ((_tb_on_fg, _tb_on_fill) if self._team_bus_enabled
+                            else (_tb_off_fg, _tb_off_fill))
+
+                def _tb_text():
+                    return (f"{self._team_bus_label}: "
+                            f"{'B2' if self._team_bus_enabled else 'B1'}")
+
+                _tbfg0, _tbfill0 = _tb_colors()
+                tbbtn = tk.Button(
+                    root, text=_tb_text(), bg=_tbfill0, fg=_tbfg0,
+                    activebackground=_tbfill0, activeforeground="#ffffff",
+                    relief="flat", bd=0, highlightthickness=1,
+                    highlightbackground=_tbfg0, highlightcolor=_tbfg0,
+                    font=("Segoe UI Semibold", 9), cursor="hand2")
+
+                def _tb_toggle(_btn=tbbtn):
+                    self._team_bus_enabled = not self._team_bus_enabled
+                    fg, fill = _tb_colors()
+                    try:
+                        _btn.configure(text=_tb_text(), bg=fill, fg=fg,
+                                       activebackground=fill,
+                                       highlightbackground=fg, highlightcolor=fg)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    try:
+                        if self._on_toggle_team_bus is not None:
+                            self._on_toggle_team_bus(self._team_bus_enabled)
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning("TEAM BUS toggle callback failed: %s", e)
+                    logger.info("TEAM BUS -> %s",
+                                "B2" if self._team_bus_enabled else "B1")
+
+                tbbtn.configure(command=_tb_toggle)
+                tbbtn.pack(fill="x", side="bottom")
+                tbbtn.bind("<Button-3>", lambda _e: self.hide())
 
             # HEAR-RAID toggle -- orange "HEAR RAID ON" (default) = the incoming-raid
             # welcome plays on your LOCAL speakers; grey OFF = OBS/stream bus only.

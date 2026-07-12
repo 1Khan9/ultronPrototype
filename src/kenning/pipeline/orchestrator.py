@@ -1566,6 +1566,15 @@ class Orchestrator:
                 _team_relay_on0 = bool(team_relay_enabled())
             except Exception:                                        # noqa: BLE001
                 _team_relay_on0 = True
+            # TEAM BUS initial display: seed from the LIVE flag (env
+            # KENNING_TEAM_BUS_ALT, default OFF=B1) so the button never
+            # misreports the actual bus (e.g. env=1 -> audio on B2 but the row
+            # would otherwise render B1). Fail-open to OFF (B1, the safe default).
+            try:
+                from kenning.audio.relay_speech import team_bus_alt_enabled
+                _team_bus_on0 = bool(team_bus_alt_enabled())
+            except Exception:                                        # noqa: BLE001
+                _team_bus_on0 = False
             if getattr(_sb, "enabled", True):
                 self._stop_button = StopButtonOverlay(
                     on_stop=self._stop_button_interrupt,
@@ -1621,6 +1630,18 @@ class Orchestrator:
                     wake_relay_height=getattr(_sb, "wake_relay_height", 26),
                     wake_relay_label=getattr(
                         _sb, "wake_relay_label", "WAKE RELAY"),
+                    # TEAM BUS toggle (2026-07-12): B1 (separate) / B2 (shares your
+                    # mic bus). Wired only when relay_speech.team_bus_alt_device is
+                    # set (else the row is hidden). Defaults OFF (B1) at boot.
+                    on_toggle_team_bus=(
+                        self._set_team_bus_alt
+                        if str(getattr(get_config().relay_speech,
+                                       "team_bus_alt_device", "") or "").strip()
+                        else None
+                    ),
+                    team_bus_enabled=_team_bus_on0,   # live flag (B1 default)
+                    team_bus_height=getattr(_sb, "team_bus_height", 26),
+                    team_bus_label=getattr(_sb, "team_bus_label", "TEAM"),
                     # CHAT toggle: only wired when twitch is enabled so the row
                     # is hidden entirely in non-Twitch (gaming-only) sessions.
                     on_toggle_chat=(
@@ -4322,6 +4343,7 @@ class Orchestrator:
             logger.debug("relay provenance guard skipped (%s)", e)
         try:
             from kenning.audio.relay_speech import (
+                active_relay_output_device,
                 build_relay_line,
                 match_relay_command,
                 play_to_device,
@@ -4510,7 +4532,10 @@ class Orchestrator:
         if synthesize is None:
             self._speak("I can't reach the voice channel right now.")
             return True
-        device = resolve_relay_device(getattr(cfg, "output_device", None))
+        # TEAM BUS toggle (2026-07-12): resolve the ACTIVE output device (the ALT
+        # B2 strip when the toggle is ON + configured, else the primary B1) so a
+        # STOP-window flip applies to THIS callout with no restart.
+        device = resolve_relay_device(active_relay_output_device(cfg))
         if device is None:
             self._speak(
                 "I couldn't find the relay audio device, so I can't talk "
@@ -11633,8 +11658,8 @@ class Orchestrator:
                 pass
         try:
             from kenning.audio.relay_speech import (
-                play_to_device, relay_tts_text, resolve_relay_device,
-                resolve_speaker_device,
+                active_relay_output_device, play_to_device, relay_tts_text,
+                resolve_relay_device, resolve_speaker_device,
             )
             from kenning.config import get_config
             cfg = get_config().relay_speech
@@ -11645,7 +11670,9 @@ class Orchestrator:
         if synthesize is None:
             logger.warning("redeem team-speak: no TTS synth seam")
             return
-        device = resolve_relay_device(getattr(cfg, "output_device", None))
+        # TEAM BUS toggle: the SPEAK_TEAM redeem shares the same team output, so
+        # it follows the B1/B2 choice too (active device, not the raw primary).
+        device = resolve_relay_device(active_relay_output_device(cfg))
         if device is None:
             logger.warning("redeem team-speak: relay device unresolved")
             return
@@ -14647,6 +14674,22 @@ class Orchestrator:
         logger.info("WAKE RELAY %s (stop-window toggle)%s",
                     "ON" if enabled else "OFF",
                     "" if enabled else " -- relays no longer need the wake word")
+
+    def _set_team_bus_alt(self, enabled: bool) -> None:
+        """STOP-window TEAM BUS toggle callback: route the team relay to the ALT
+        (B2) VoiceMeeter strip (True) or the primary (B1, default). Read live per
+        callout via relay_speech.active_relay_output_device, so the flip applies
+        to the next callout with no restart. ON = Ultron shares the streamer's
+        mic bus (B2); OFF = separate (B1). Fail-open so a callback error never
+        kills the window."""
+        try:
+            from kenning.audio.relay_speech import set_team_bus_alt_enabled
+            set_team_bus_alt_enabled(bool(enabled))
+        except Exception as e:                                        # noqa: BLE001
+            logger.warning("team-bus toggle (stop-window) failed: %s", e)
+            return
+        logger.info("TEAM BUS -> %s (stop-window toggle)",
+                    "B2 (shares your mic bus)" if enabled else "B1 (separate)")
 
     def _set_twitch_chat_reply_enabled(self, enabled: bool) -> None:
         """STOP-window CHAT toggle callback: flip whether Ultron speaks to

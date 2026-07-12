@@ -68,6 +68,9 @@ __all__ = [
     "set_wake_relay_enabled",
     "wake_relay_enabled",
     "utterance_leads_with_wake",
+    "set_team_bus_alt_enabled",
+    "team_bus_alt_enabled",
+    "active_relay_output_device",
     "cap_stream_sentences",
 ]
 
@@ -1509,6 +1512,52 @@ def set_wake_relay_enabled(enabled: bool) -> None:
 
 def wake_relay_enabled() -> bool:
     return _wake_relay_enabled
+
+
+# ---------------------------------------------------------------------------
+# TEAM BUS toggle (2026-07-12): switch the team-relay OUTPUT between the primary
+# VoiceMeeter strip (B1, "separate") and an ALT strip (B2, "same bus as the
+# streamer's own mic"). Anticheat-clean by construction: it only changes WHICH
+# output DEVICE the relay plays into (the same play_to_device path) -- NO
+# VoiceMeeter control API / DLL. The ALT device (relay_speech.team_bus_alt_device
+# in config) is a virtual-input strip the streamer has routed to B2 in
+# VoiceMeeter. Default OFF (B1 = today's behaviour, byte-identical). Process-
+# global; resets to the env/config default (KENNING_TEAM_BUS_ALT, default OFF)
+# on restart so a fresh boot never silently dumps into the game-mic bus.
+# os/stdlib only here (BR-P1).
+_team_bus_alt_enabled: bool = _os_flavor.getenv(
+    "KENNING_TEAM_BUS_ALT", "0").strip().lower() not in (
+    "0", "false", "no", "off", "")
+
+
+def set_team_bus_alt_enabled(enabled: bool) -> None:
+    """Route the team relay to the ALT (B2) strip (True) or the primary (B1,
+    default). Flipped by the STOP-window TEAM BUS toggle
+    (orchestrator._set_team_bus_alt)."""
+    global _team_bus_alt_enabled
+    _team_bus_alt_enabled = bool(enabled)
+
+
+def team_bus_alt_enabled() -> bool:
+    return _team_bus_alt_enabled
+
+
+def active_relay_output_device(cfg: object) -> "Optional[str | int]":
+    """The team-relay output device HONORING the TEAM BUS toggle: the ALT (B2)
+    device (``cfg.team_bus_alt_device``) when the toggle is ON and an alt is
+    configured, else the primary ``cfg.output_device`` (B1). Read live per
+    callout so a toggle applies to the next callout with no restart. Fail-safe:
+    any error -> the primary device (never strands the relay)."""
+    try:
+        primary = getattr(cfg, "output_device", None)
+        if not _team_bus_alt_enabled:
+            return primary
+        alt = getattr(cfg, "team_bus_alt_device", None)
+        if isinstance(alt, str):
+            alt = alt.strip()
+        return alt or primary
+    except Exception:                                                # noqa: BLE001
+        return getattr(cfg, "output_device", None)
 
 
 # The wake vocabulary for the WAKE-RELAY gate: the real wake words + their CLEAR

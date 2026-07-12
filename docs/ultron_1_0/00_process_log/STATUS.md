@@ -1,6 +1,30 @@
 # Ultron 1.0 — Live Status
 
-**ACTIVE (2026-07-11, wave 3) — NEW-MESSAGE SOUND ALERT: ping the speakers when a REAL viewer types (branch `claude/twitch-addressing-delay`):**
+**ACTIVE (2026-07-12) — TEAM BUS toggle: switch the team relay between VoiceMeeter B1/B2 (branch `claude/team-bus-toggle`):**
+
+Streamer wants a stop-window CLICK to move Ultron's team-relay output between B1 (separate, normal) and B2 (the
+same VoiceMeeter bus as their own mic). KEY REALITY: B1/B2 are STRIP BUS-ASSIGNMENTS in VoiceMeeter, not
+play-target devices — Ultron plays INTO a virtual-input strip and the strip's B1/B2 buttons pick the bus. Two
+ways to give the click: (A) device-swap — play into a DIFFERENT strip pre-routed to B2 (anticheat-clean, just a
+device change), or (B) the VoiceMeeter Remote API (loads VoiceMeeter's DLL — deviates from the relay-path
+import-minimalism). Streamer chose (A). BUILT: NEW `relay_speech.set_/team_bus_alt_enabled()` (env
+`KENNING_TEAM_BUS_ALT`, default OFF=B1) + pure `active_relay_output_device(cfg)` returning `cfg.team_bus_alt_device`
+(B2) when the toggle is ON + configured, else `cfg.output_device` (B1) — read LIVE per callout so a flip applies
+to the next callout, no restart. Both team-output sites now resolve through it: the voice relay
+(`_maybe_handle_relay_speech`, `orchestrator:4513`) AND the SPEAK_TEAM redeem (`:11648`). Config
+`relay_speech.team_bus_alt_device` (EMPTY = toggle disabled/row hidden; anticheat-clean — only changes which
+output DEVICE the relay plays into, NO VoiceMeeter control API). Default OFF at boot (B1) so a fresh start never
+silently dumps into the game-mic bus. Stop-window custom row "TEAM: B1" (grey) / "TEAM: B2" (teal), wired only
+when `team_bus_alt_device` is set; `_set_team_bus_alt` setter + `StopButtonConfig.team_bus_height/label`. Live
+config.yaml → `team_bus_alt_device: 'Voicemeeter VAIO3 Input'` (the streamer's free strip; they route VAIO3 → B2
+in VoiceMeeter once). Device names verified: Voicemeeter Input (idx59, B1) / Voicemeeter VAIO3 Input (idx56, B2)
+resolve distinctly. EVIDENCE: NEW `tests/audio/test_team_bus.py` 14 (flag, active-device matrix incl. fallback/
+fail-safe, setter, both-paths source pin, config, GUI); mapped relay/wake_relay/team_relay/turbo/stop_button/
+relay_speech + anticheat + golden = 430 pass; validate_config 0. NEXT: streamer routes VAIO3 → B2 in VoiceMeeter,
+restarts → "TEAM: B1/B2" button on the stop window; B2 mixes Ultron into their mic bus, B1 keeps it separate.
+
+
+**PREVIOUS (2026-07-11, wave 3) — NEW-MESSAGE SOUND ALERT: ping the speakers when a REAL viewer types (branch `claude/twitch-addressing-delay`):**
 
 Streamer wants a speaker ping (their sound file, on the Realtek speakers) whenever a REAL viewer types, so
 they can glance at chat — with a stop-window volume slider, a 20 s cooldown, and NO ping for the bot /
