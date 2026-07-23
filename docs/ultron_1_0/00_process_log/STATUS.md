@@ -53,8 +53,12 @@ idx 91), the strip they monitor; its A-bus buttons then pick the speakers. NB A1
 ASSIGNMENTS, not devices an app can open — the same reality that shaped the TEAM BUS work, so "output to A2" always
 means "play into a strip routed to A2". Two further live fixes: the OBS overlay 403 was the scene collection
 carrying the OLD PC's token (`~/.kenning/overlay_token` is persisted PER MACHINE — re-paste once after a move), and
-the chat-alert ping was dead because its sound file moved (now decodes: 44.1 kHz stereo 2.31 s; device
-`Speakers (Realtek HD Audio output)` idx 145 — a real analog endpoint, not another virtual cable).
+the chat-alert ping was dead because its sound file moved (now decodes: 44.1 kHz stereo 2.31 s). The ping then
+followed the voice onto the SAME strip at the streamer's request — `chat_alert_device` = `"Voicemeeter In 2"`,
+resolving to the identical idx 91 as `audio.output_device`, so one A-bus assignment governs both (keep the two
+keys in sync if either moves; the per-ping level stays independent on the stop-window PING VOL slider). NB both
+`chat_alert_*` keys live in the LOCAL-ONLY twitch creds block — the committed config.yaml ships a placeholder
+template, so these values are deliberately never pushed and must be re-set by hand after any machine move.
 CORRECTION worth remembering: the "graphics are too small" fix is NOT the Browser Source resolution —
 `fitDensity()` normalises to a 1920 design, so 1920 and 3840 render identically; use the NEW `&scale=` URL param.
 ALSO STILL TRUE: the always-listening loop prints "(follow-up window closed; waiting for wake word)" +
