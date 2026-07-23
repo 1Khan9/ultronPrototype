@@ -43,6 +43,20 @@ artifact of the move), and ~97 wrapper failures trace to the streamer's own unco
 edits whose paired tests still assert the old values (e.g. `commands_panel_interval_minutes` 15 -> 30).
 NEXT: re-paste the overlay URL in OBS, restart from the repo dir, run `scripts/ptt_agent.py` on the game PC.
 
+**REMOTE PTT IS LIVE ON THE WIRE (2026-07-23):** the agent ran on the game PC (`10.0.0.52:8778`, dongle open,
+peer pinned to `10.0.0.3`) and received NOTHING — no `bad authentication tag`, no `dropped datagram from unlisted
+peer`, i.e. the Ultron PC never sent at all. Cause: `push_to_talk` was still at defaults (`enabled: false`,
+`backend: "rawhid"`, empty `network_host`), so the controller looked for a LOCAL dongle that is not on this
+machine and never opened a socket. Set `enabled: true` + `backend: "network"` + `network_host: "10.0.0.52"`.
+NB `"auto"` is NOT a substitute — the design deliberately never auto-selects the remote hop, so it must be the
+literal string `"network"`. VERIFIED by a live PING/PONG from this box to the agent (`available=True`), which
+proves socket + LAN route + firewall + shared token + agent auth end-to-end; the only unproven inch left is a
+real callout driving the dongle in-game. `network_token` stays EMPTY in config on purpose: the token lives in the
+**User-scope** env var `KENNING_PTT_NETWORK_TOKEN` and the controller reads env BEFORE config, so the secret can
+never leak into a commit. GOTCHA: User-scope env vars are inherited only by processes started AFTER they are set
+— relaunching Ultron from an already-open shell yields an empty token, the backend refuses to arm, and you get
+`PTT INERT` with every other setting correct. Always relaunch from a FRESH shell.
+
 **FOLLOW-UP (2026-07-23, same session) — "Ultron is not responding" was an OUTPUT-ROUTING fault, not a hang:**
 The streamer reported Ultron hung / ignored everything. The log disproved both: wake word fired (score 0.90-0.95),
 capture + Whisper + LLM + TTS all ran, and `relay:spoken | device=81 | line='Hello.'` at 907 ms end-to-end. He WAS

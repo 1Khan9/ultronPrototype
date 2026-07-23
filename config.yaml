@@ -178,8 +178,13 @@ audio:
 # anticheat-clean design). DEFAULT OFF + fail-safe: with no device / disabled it
 # is completely inert. To arm: flash the firmware, set enabled + serial_port.
 push_to_talk:
-  enabled: false             # master switch. Env: KENNING_PTT_ENABLED
-  backend: "rawhid"          # "rawhid" (HID-only hardened device; NO serial fallback) | "auto" | "serial". 2026-06-17 audit: pinned to rawhid so PTT can ONLY use the masked HID keyboard (VID 0x1209, no COM port) and NEVER auto-falls-back to the legacy-CDC serial path that scans for the Arduino VID 0x2341. If the hardened device is absent, PTT is inert (NullPttBackend) rather than opening a COM port.
+  enabled: true              # master switch. Env: KENNING_PTT_ENABLED. 2026-07-23: ON for the two-PC remote hop.
+  # 2026-07-23 machine move: "network" -- the HID dongle is on the GAME PC, so the
+  # D/U/H protocol is forwarded to scripts/ptt_agent.py there (see network_* below).
+  # "auto" would NOT work: the design deliberately never auto-selects the remote hop,
+  # so this must be the explicit string "network". Revert to "rawhid" the day the
+  # dongle is plugged into THIS machine again.
+  backend: "network"         # "network" (remote agent) | "rawhid" (local HID-only device) | "auto" | "serial". 2026-06-17 audit: rawhid pins PTT to the masked HID keyboard (VID 0x1209, no COM port) and NEVER auto-falls-back to the legacy-CDC serial path that scans for the Arduino VID 0x2341. If the device is absent, PTT is inert (NullPttBackend) rather than opening a COM port.
   hid_vid: 0x1209            # HID-only device USB VID (pid.codes open hardware)
   hid_usage_page: 0xFFC0     # vendor Raw-HID command collection (matches firmware/leonardo_ptt_hid)
   serial_port: "auto"        # legacy serial device: "auto" -> detect by USB id; or "COM5". Env: KENNING_PTT_SERIAL_PORT
@@ -199,7 +204,7 @@ push_to_talk:
   # The game PC's peripheral still generates the keypress (anticheat boundary
   # unchanged); the agent can only assert the ONE key compiled into the firmware.
   # EMPTY network_host = the remote hop is OFF (backend "rawhid" behaves as before).
-  network_host: ""           # e.g. "192.168.1.42" -- the GAME PC's LAN address
+  network_host: "10.0.0.52"  # the GAME PC's LAN address (this box is 10.0.0.3, pinned via the agent's --allow-peer)
   network_port: 8778
   # Prefer the env var KENNING_PTT_NETWORK_TOKEN over putting the secret here;
   # an empty token refuses to arm rather than sending unauthenticated frames.
