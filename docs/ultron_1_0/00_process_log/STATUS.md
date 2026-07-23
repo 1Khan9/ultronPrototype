@@ -1,6 +1,50 @@
 # Ultron 1.0 — Live Status
 
-**ACTIVE (2026-07-12) — TEAM BUS toggle: switch the team relay between VoiceMeeter B1/B2 (branch `claude/team-bus-toggle`):**
+**ACTIVE (2026-07-23) — MACHINE MOVE repair + REMOTE PTT over the LAN (two-PC layout):**
+
+Ultron moved to a new PC; the streamer reported three symptoms. All three root-caused from the boot log,
+plus two more breakages they had not noticed yet. (1) **Mic dead** — `config.yaml audio.input_device` was
+`"Voicemeeter Out A3"` (a 07-21 move edit); A3 is a PHYSICAL-OUTPUT bus, so no mic signal ever reached it.
+Fixed to `"Voicemeeter Out B1"` (the virtual output an app records FROM; resolves to MME idx 11, verified it
+opens for capture). (2) **Twitch sidecars never spawned** — ROOT CAUSE: launched from a shell whose cwd was
+`C:\WINDOWS\system32` (proved by the stray `C:\WINDOWS\system32\data\observations.jsonl` the live process
+created), and `orchestrator.py` resolved `scripts/twitch_*_sidecar.py` with `os.path.abspath()` = CWD-relative
+-> "script missing" -> NO read/guard/write sidecar -> every redeem/chat-game/chat-reply drain timed out and the
+guard stayed DOWN (chat replies fail-closed OFF, so Ultron was absent from chat entirely). Windows makes this
+easy to hit: `.venv\Scripts\python.exe` is a REDIRECTOR that re-execs the base `Python311\python.exe`, which
+inherits the launching shell's cwd (also why `sys.executable` escapes the venv). FIXED by anchoring all three
+cwd dependencies (script path, per-role log dir, child cwd) on `PROJECT_ROOT` — the same portability fix
+already applied to the embedder sidecar. (3) **"Boot takes forever"** — NOT a hang: measured 2 min 03 s from
+first log to ready (wake-word 8 s, 23 s silent, Whisper 5.5 s, 27 s silent, LLM 7.3 s, Kokoro warmup 46.6 s);
+the silent stretches are model loads emitting no INFO. Ruled OUT by measurement: imports (2.3 s to import the
+orchestrator) and HF Hub round-trips (0.39 s, all models already cached in `models/.hf-cache/hub`). (4) **OBS
+overlay blank** — the scene collection came from the OLD PC carrying its token; `~/.kenning/overlay_token` is
+persisted PER MACHINE, so the URL must be re-pasted once after a move. (5) **Chat ping dead** —
+`chat_alert_sound_path` points at a `C:\Users\alecf\Music\twitch sounds\` that does not exist here.
+
+**REMOTE PTT (NEW):** the PTT dongle stayed on the GAME PC (Valorant + Vanguard there; Ultron here; relay audio
+already crossing via VBAN), so the key assertion needed a network hop. BUILT: `ptt/netproto.py` (30-byte
+authenticated frame, HMAC-SHA256 + strictly-increasing counter -> no replay), `NetworkPttBackend`
+(`backend: "network"`, same fail-safe contract as the HID backend, boot PING/PONG probe so a typo'd host logs
+PTT INERT rather than silently never keying), and `scripts/ptt_agent.py` for the game PC. **UDP is deliberate:**
+the firmware recovers a lost DOWN on the next 50 ms heartbeat and a lost UP via the 200 ms deadman, so a
+partition mid-hold FAILS SAFE (mic closes) — reliable delivery would only add latency + reconnect state.
+ANTICHEAT (BR-P1, the streamer's explicit ask): the agent runs beside Vanguard and does strictly LESS than the
+full Ultron that used to run there — audited `sys.modules` shows stdlib-only imports (torch/`kenning` never
+loaded; `hidapi` lazy), and a grep proves zero OpenProcess/ReadProcessMemory/CreateRemoteThread/
+SetWindowsHookEx/SendInput/ctypes/win32/psutil/subprocess. The dongle remains the boundary: Vanguard cannot
+distinguish "told to press over USB" from "told to press over Ethernet" because the keystroke reaching the game
+is identical. Only the ONE firmware-compiled key can ever be asserted.
+EVIDENCE: NEW `tests/ptt/test_network_ptt.py` 38 + `tests/test_subprocess_lifecycle_wiring.py` regression test
+(red-green proved: with the old cwd line restored it fails with the exact production symptom); ptt + anticheat +
+sidecar suites 133 pass; `validate_config` 0; flavor lint 0. PRE-EXISTING (NOT from this work, verified in a
+clean HEAD worktree): the golden digest diverges on `_stt_correct._PHONETIC_INDEX` (a dependency-version
+artifact of the move), and ~97 wrapper failures trace to the streamer's own uncommitted `config.py` default
+edits whose paired tests still assert the old values (e.g. `commands_panel_interval_minutes` 15 -> 30).
+NEXT: re-paste the overlay URL in OBS, restart from the repo dir, run `scripts/ptt_agent.py` on the game PC.
+
+
+**PREVIOUS (2026-07-12) — TEAM BUS toggle: switch the team relay between VoiceMeeter B1/B2 (branch `claude/team-bus-toggle`):**
 
 Streamer wants a stop-window CLICK to move Ultron's team-relay output between B1 (separate, normal) and B2 (the
 same VoiceMeeter bus as their own mic). KEY REALITY: B1/B2 are STRIP BUS-ASSIGNMENTS in VoiceMeeter, not

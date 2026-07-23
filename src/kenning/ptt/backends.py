@@ -313,3 +313,160 @@ class RawHidPttBackend(PttBackend):
                 dev.close()
             except Exception:  # noqa: BLE001
                 pass
+
+
+class NetworkPttBackend(PttBackend):
+    """Forwards the one-byte protocol to a PTT agent on ANOTHER PC over UDP.
+
+    For the two-PC layout: Ultron on the AI/stream box, Valorant + the USB-HID
+    device on the game box (relay audio already crosses via VBAN). The agent
+    (``scripts/ptt_agent.py``) holds the real :class:`RawHidPttBackend`, so the
+    anticheat boundary is unchanged -- this side only writes an authenticated
+    datagram to a socket, and the peripheral still generates the keypress.
+
+    Loss tolerance comes from the firmware, not from the transport: a dropped
+    ``D`` is recovered by the next heartbeat and a dropped ``U`` by the 200 ms
+    deadman, so a partition mid-hold releases the mic instead of jamming it
+    open. See :mod:`kenning.ptt.netproto`.
+
+    Same fail-safe contract as the local backends: any socket error disables
+    the backend, and nothing here ever raises into the caller or falls back to
+    synthetic input.
+    """
+
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        token: str,
+        *,
+        probe_timeout: float = 0.5,
+        probe: bool = True,
+        open_socket: Optional[Callable[[], object]] = None,
+    ) -> None:
+        self._addr = (host, int(port))
+        self._token = token
+        self._lock = threading.Lock()
+        self._counter = 0
+        self._sock = None
+        self._ok = False
+        if not token:
+            logger.warning(
+                "push-to-talk network backend has no token -- refusing to arm "
+                "(set push_to_talk.network_token or KENNING_PTT_NETWORK_TOKEN)"
+            )
+            return
+        try:
+            if open_socket is not None:
+                # Test seam: inject a fake socket without touching the network.
+                self._sock = open_socket()
+            else:
+                import socket  # noqa: PLC0415
+
+                self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                self._sock.settimeout(probe_timeout)
+            self._ok = self._sock is not None
+        except Exception as e:  # noqa: BLE001 - fail-safe: unavailable, never raise
+            logger.warning(
+                "push-to-talk network socket open failed (%s:%d): %s -- PTT will "
+                "not fire", self._addr[0], self._addr[1], e,
+            )
+            self._sock = None
+            self._ok = False
+            return
+        # Confirm the agent is actually reachable. Without this a typo'd host
+        # looks "enabled" at boot and silently never keys the mic -- the exact
+        # failure mode a remote hop makes invisible.
+        if probe and not self._probe():
+            self._ok = False
+
+    def _probe(self) -> bool:
+        """Round-trip a PING. True only on a valid, authenticated PONG."""
+        from kenning.ptt import netproto  # noqa: PLC0415
+
+        try:
+            sent = self._send_frame(netproto.CMD_PING)
+            if not sent:
+                return False
+            reply = self._sock.recv(netproto.FRAME_LEN)  # type: ignore[union-attr]
+            _, cmd = netproto.parse_frame(reply, self._token)
+            if cmd != netproto.CMD_PONG:
+                raise netproto.ProtocolError(f"unexpected reply {cmd!r}")
+        except Exception as e:  # noqa: BLE001 - unreachable agent is not fatal
+            logger.warning(
+                "push-to-talk agent did not answer at %s:%d (%s) -- PTT INERT "
+                "until it is running (start scripts/ptt_agent.py on the game PC)",
+                self._addr[0], self._addr[1], e,
+            )
+            return False
+        logger.info(
+            "push-to-talk: remote agent reachable at %s:%d (relay will key the "
+            "game PC's PTT device)", self._addr[0], self._addr[1],
+        )
+        return True
+
+    @property
+    def available(self) -> bool:  # type: ignore[override]
+        return self._ok
+
+    def press(self) -> None:
+        from kenning.ptt import netproto  # noqa: PLC0415
+
+        self._send_frame(netproto.CMD_DOWN)
+
+    def release(self) -> None:
+        from kenning.ptt import netproto  # noqa: PLC0415
+
+        self._send_frame(netproto.CMD_UP)
+
+    def heartbeat(self) -> None:
+        from kenning.ptt import netproto  # noqa: PLC0415
+
+        self._send_frame(netproto.CMD_HEARTBEAT)
+
+    def _next_counter(self) -> int:
+        """Strictly-increasing counter (replay guard on the agent side).
+
+        Seeded from the wall clock so it keeps climbing across restarts of this
+        process -- a counter that reset to 0 would be rejected as a replay by an
+        agent that had already seen higher values.
+        """
+        import time  # noqa: PLC0415
+
+        nxt = max(time.time_ns(), self._counter + 1)
+        self._counter = nxt
+        return nxt
+
+    def _send_frame(self, cmd: bytes) -> bool:
+        from kenning.ptt import netproto  # noqa: PLC0415
+
+        with self._lock:
+            if not self._ok or self._sock is None:
+                return False
+            try:
+                frame = netproto.build_frame(self._next_counter(), cmd, self._token)
+                self._sock.sendto(frame, self._addr)  # type: ignore[union-attr]
+                return True
+            except Exception as e:  # noqa: BLE001 - fail-safe: disable, don't raise
+                logger.warning(
+                    "push-to-talk network send failed (%s) -- disabling PTT", e,
+                )
+                self._ok = False
+                return False
+
+    def close(self) -> None:
+        # Best-effort release BEFORE tearing the socket down, mirroring the HID
+        # backend: never leave the far-side mic held open on shutdown. (The
+        # firmware deadman would catch it in 200 ms regardless.)
+        from kenning.ptt import netproto  # noqa: PLC0415
+
+        self._send_frame(netproto.CMD_UP)
+        with self._lock:
+            sock = self._sock
+            self._sock = None
+            self._ok = False
+        if sock is not None:
+            try:
+                sock.close()  # type: ignore[union-attr]
+            except Exception:  # noqa: BLE001
+                pass

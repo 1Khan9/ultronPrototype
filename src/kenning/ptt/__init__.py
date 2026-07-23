@@ -21,6 +21,7 @@ See :mod:`kenning.ptt.backends` (the serial/null backends) and
 :mod:`kenning.ptt.controller` (the press/heartbeat/release state machine).
 """
 from kenning.ptt.backends import (
+    NetworkPttBackend,
     NullPttBackend,
     PttBackend,
     RawHidPttBackend,
@@ -35,6 +36,7 @@ __all__ = [
     "NullPttBackend",
     "SerialHidPttBackend",
     "RawHidPttBackend",
+    "NetworkPttBackend",
     "find_arduino_port",
     "find_hid_ptt_device",
     "PttController",

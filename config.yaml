@@ -181,6 +181,21 @@ push_to_talk:
   release_jitter_ms: 60      # 2026-06-17 audit: random 0..60ms EXTRA on the release tail so the HID key-hold duration is never machine-precise (behavioral-fingerprint reducer). Only extends the mic window (never clips); async (zero latency). 0 disables.
   heartbeat_ms: 50           # keep-alive cadence refreshing the firmware hardware deadman
   max_hold_seconds: 8.0      # host watchdog: force-release if a single hold runs longer than this
+  # -- REMOTE PTT (two-PC layout), 2026-07-23 machine move --
+  # Valorant + the HID dongle live on the OTHER PC; Ultron runs here and the
+  # relay audio already crosses via VBAN. Set backend: "network" above and point
+  # network_host at the GAME PC's LAN IP, then run on the game PC:
+  #   $env:KENNING_PTT_NETWORK_TOKEN = "<secret>"
+  #   python scripts\ptt_agent.py --allow-peer <THIS PC's LAN IP>
+  # The game PC's peripheral still generates the keypress (anticheat boundary
+  # unchanged); the agent can only assert the ONE key compiled into the firmware.
+  # EMPTY network_host = the remote hop is OFF (backend "rawhid" behaves as before).
+  network_host: ""           # e.g. "192.168.1.42" -- the GAME PC's LAN address
+  network_port: 8778
+  # Prefer the env var KENNING_PTT_NETWORK_TOKEN over putting the secret here;
+  # an empty token refuses to arm rather than sending unauthenticated frames.
+  network_token: ""
+  network_probe_timeout: 0.5  # seconds to wait for the agent's PONG at boot
 
 # ---------------------------------------------------------------------------
 # Voice Activity Detection

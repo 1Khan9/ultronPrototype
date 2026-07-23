@@ -22,6 +22,7 @@ Robustness:
 from __future__ import annotations
 
 import logging
+import os
 import random
 import threading
 import time
@@ -30,6 +31,7 @@ from typing import Optional
 from kenning.ptt.backends import (
     HID_PTT_USAGE_PAGE,
     HID_PTT_VID,
+    NetworkPttBackend,
     NullPttBackend,
     PttBackend,
     RawHidPttBackend,
@@ -219,6 +221,45 @@ def build_ptt_controller(config=None, *, enabled=None, serial_port=None) -> PttC
         return _mk(NullPttBackend())
 
     backend_kind = str((getattr(ptt, "backend", "auto") if ptt else "auto") or "auto").strip().lower()
+
+    # NETWORK path (two-PC layout): the HID device is on the GAME PC and Ultron
+    # runs on the AI/stream box. Forwards the same D/U/H protocol to the agent
+    # over the LAN; the peripheral there still generates the keypress, so the
+    # anticheat boundary is unchanged. Never reached under "auto" -- a remote
+    # hop is an explicit topology choice, never a silent fallback.
+    if backend_kind == "network":
+        host = str(getattr(ptt, "network_host", "") if ptt else "").strip()
+        # Env wins over config.yaml for the secret (settings.py convention);
+        # keeps the token out of a file that gets shared/committed by accident.
+        token = (
+            os.environ.get("KENNING_PTT_NETWORK_TOKEN", "").strip()
+            or str(getattr(ptt, "network_token", "") if ptt else "").strip()
+        )
+        if not host:
+            logger.warning(
+                "push-to-talk ENABLED (network) but push_to_talk.network_host is "
+                "empty -- PTT INERT. Set it to the GAME PC's LAN address.",
+            )
+            return _mk(NullPttBackend())
+        port_n = int(getattr(ptt, "network_port", 8778)) if ptt else 8778
+        timeout = float(getattr(ptt, "network_probe_timeout", 0.5)) if ptt else 0.5
+        net_backend = NetworkPttBackend(host, port_n, token, probe_timeout=timeout)
+        if net_backend.available:
+            logger.info(
+                "push-to-talk ARMED via REMOTE agent %s:%d -- host writes "
+                "authenticated datagrams ONLY; the game PC's peripheral presses "
+                "the key (no synthetic input on either machine)", host, port_n,
+            )
+            return _mk(net_backend)
+        try:
+            net_backend.close()
+        except Exception:  # noqa: BLE001
+            pass
+        logger.warning(
+            "push-to-talk ENABLED (network) but the agent at %s:%d is not "
+            "answering -- PTT INERT (no synthetic-input fallback).", host, port_n,
+        )
+        return _mk(NullPttBackend())
 
     # RAW HID path (the HARDENED HID-only device -- no COM port). Tried first
     # under "auto" since that device has no serial port to find.

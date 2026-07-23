@@ -4230,6 +4230,25 @@ class PushToTalkConfig(_Strict):
     # Host-side watchdog: force-release if a single continuous hold ever exceeds
     # this (a second line of defense above the hardware deadman).
     max_hold_seconds: float = Field(default=8.0, ge=0.5, le=30.0)
+    # -- REMOTE device (two-PC layout, backend "network") --
+    # 2026-07-23: when Valorant + the HID device live on a SECOND PC (Ultron on
+    # the AI/stream box, relay audio already crossing via VBAN), backend
+    # "network" forwards the same D/U/H protocol to ``scripts/ptt_agent.py`` on
+    # the game PC, which holds the real RawHidPttBackend. The anticheat boundary
+    # is unchanged -- the peripheral still generates the keypress, and the agent
+    # can only assert the ONE key compiled into the firmware.
+    # EMPTY host (the default) => the network backend is unconfigured and the
+    # controller stays inert, so this is a no-op until deliberately pointed at
+    # a game PC.
+    network_host: str = ""
+    network_port: int = Field(default=8778, ge=1, le=65535)
+    # Shared secret authenticating each datagram (HMAC-SHA256, replay-guarded).
+    # Prefer the env var KENNING_PTT_NETWORK_TOKEN over a value in config.yaml;
+    # an empty token REFUSES to arm rather than sending unauthenticated frames.
+    network_token: str = ""
+    # Boot-time reachability probe (PING/PONG). Keeps a typo'd host from looking
+    # "enabled" while silently never keying the mic. Seconds to wait for a PONG.
+    network_probe_timeout: float = Field(default=0.5, ge=0.05, le=5.0)
 
 
 # ---------------------------------------------------------------------------
