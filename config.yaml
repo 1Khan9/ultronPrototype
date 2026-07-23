@@ -100,7 +100,10 @@ audio:
   # Substring match against device name; "Focusrite" picks up the
   # USB interface (Analogue 1 + 2). Set KENNING_AUDIO_DEVICE env var
   # to override (e.g. "Voicemeeter Out B2" to revert).
-  input_device: "Focusrite"
+  # 2026-07-23 machine move: capture the mic through the Voicemeeter B1 bus
+  # (the virtual output an app records FROM). The prior physical-interface
+  # name does not exist on this machine, so no mic signal reached Ultron.
+  input_device: "Voicemeeter Out B1"
   output_device: null         # null = system default; or set KENNING_AUDIO_OUTPUT_DEVICE env
   # EVERYTHING output: mirrors EVERY line Kenning speaks -- normal chat AND
   # team relay -- to a separate, OBS-capturable device for stream viewers.

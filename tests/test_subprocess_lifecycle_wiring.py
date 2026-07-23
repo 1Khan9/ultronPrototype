@@ -256,6 +256,57 @@ def test_twitch_sidecars_registered_persistent(monkeypatch):
     assert guard.hard_timeout_s is None
 
 
+def test_twitch_sidecar_paths_anchor_to_project_root_not_cwd(monkeypatch, tmp_path):
+    """A launch from a FOREIGN cwd must still find ``scripts/twitch_*.py``.
+
+    2026-07-23 machine move: the venv ``python.exe`` re-execs the base
+    interpreter, which inherits the LAUNCHING SHELL's cwd. Started from an
+    admin PowerShell (cwd ``C:\\WINDOWS\\system32``), the old
+    ``os.path.abspath(spec.script)`` resolved to ``<cwd>/scripts/...`` -> every
+    sidecar logged "script missing" and NONE spawned, so all redeem/chat-game/
+    chat-reply drains timed out and the guard stayed DOWN (chat replies
+    fail-closed OFF). Pin script path, log dir and child cwd to PROJECT_ROOT.
+    """
+    import kenning.pipeline.orchestrator as orch_mod
+    from kenning.config import PROJECT_ROOT
+    from kenning.twitch.sidecar_launch import SidecarSpec
+
+    orch = _bare_orchestrator()
+
+    specs = [SidecarSpec(role="twitch_read",
+                         script="scripts/twitch_read_sidecar.py",
+                         port=8773, env={})]
+    import kenning.twitch.sidecar_launch as sl_mod
+    monkeypatch.setattr(sl_mod, "plan_sidecars", lambda _tcfg: specs)
+    monkeypatch.setattr(orch_mod, "plan_sidecars", lambda _tcfg: specs,
+                        raising=False)
+
+    # Simulate the foreign launch cwd. The real script must still be found, so
+    # NO os.path.exists stub here -- that is exactly what the bug defeated.
+    monkeypatch.chdir(tmp_path)
+
+    seen: dict = {}
+
+    class _FakeProc:
+        def __init__(self, argv, *_a, **kw):
+            seen["argv"] = argv
+            seen["cwd"] = kw.get("cwd")
+            self.pid = 41010
+
+    import subprocess as _sp
+    monkeypatch.setattr(_sp, "Popen", _FakeProc)
+
+    orch._start_twitch_sidecars(tcfg=object())
+
+    expected = str((PROJECT_ROOT / "scripts/twitch_read_sidecar.py").resolve())
+    assert seen.get("argv"), "sidecar never spawned -- script path lost to cwd"
+    assert seen["argv"][1] == expected
+    # The child must not inherit the foreign cwd either.
+    assert seen["cwd"] == str(PROJECT_ROOT)
+    # ...and the per-role log lands in the repo, not <foreign cwd>/logs.
+    assert not (tmp_path / "logs" / "twitch_sidecars").exists()
+
+
 def test_persistent_sidecar_survives_staleness_sweep_past_one_hour():
     """The exact bug condition: a sidecar that lived past the old 3600s cap is
     NOT killed by the staleness sweep when registered persistent."""

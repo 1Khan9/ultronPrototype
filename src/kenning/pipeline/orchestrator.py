@@ -8366,8 +8366,17 @@ class Orchestrator:
         _src_dir = os.path.normpath(
             os.path.join(os.path.dirname(os.path.abspath(__file__)), "../.."))
         _src_dir = _src_dir if os.path.isdir(_src_dir) else None
+        # Resolve every sidecar path against PROJECT_ROOT, never the cwd. The
+        # venv->system-python handoff above inherits the LAUNCHING SHELL's cwd,
+        # so starting Ultron from anywhere but the repo (an admin PowerShell
+        # opens in C:\WINDOWS\system32) made `scripts/twitch_*_sidecar.py`
+        # resolve to <cwd>/scripts/... -> "script missing" -> NO twitch sidecar
+        # ever spawned -> every redeem/chat-game/chat-reply drain timed out and
+        # the guard stayed DOWN (chat replies fail-closed OFF).
+        from kenning.config import PROJECT_ROOT
         for spec in specs:
-            script_path = os.path.abspath(spec.script)
+            script_path = (spec.script if os.path.isabs(spec.script)
+                           else str((PROJECT_ROOT / spec.script).resolve()))
             if not os.path.exists(script_path):
                 logger.warning("twitch %s sidecar script missing: %s", spec.role, script_path)
                 continue
@@ -8382,7 +8391,7 @@ class Orchestrator:
             # can't close it mid-run, and close them all in _kill_twitch_sidecars.
             _log_target = subprocess.DEVNULL
             try:
-                _ld = os.path.join(os.getcwd(), "logs", "twitch_sidecars")
+                _ld = os.path.join(str(PROJECT_ROOT), "logs", "twitch_sidecars")
                 os.makedirs(_ld, exist_ok=True)
                 _log_target = open(                              # noqa: SIM115
                     os.path.join(_ld, f"{spec.role}.log"),
@@ -8399,7 +8408,7 @@ class Orchestrator:
                     stderr=(subprocess.STDOUT
                             if _log_target is not subprocess.DEVNULL
                             else subprocess.DEVNULL),
-                    cwd=os.getcwd(),
+                    cwd=str(PROJECT_ROOT),
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
             except Exception as e:                                   # noqa: BLE001
