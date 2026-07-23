@@ -43,6 +43,19 @@ artifact of the move), and ~97 wrapper failures trace to the streamer's own unco
 edits whose paired tests still assert the old values (e.g. `commands_panel_interval_minutes` 15 -> 30).
 NEXT: re-paste the overlay URL in OBS, restart from the repo dir, run `scripts/ptt_agent.py` on the game PC.
 
+**STT PRECISION (2026-07-23):** `stt.compute_type` `int8_float16` -> `float16`. The old comment justifying int8
+was written for `small.en`; the model actually running is `deepdml/faster-whisper-large-v3-turbo-ct2`, which is
+NOT a smaller model — turbo keeps large-v3's full 32-layer ENCODER (only the decoder is distilled 32->4 layers,
+which is the whole ~8x speed win), so the acoustic understanding is already large-v3-tier and int8 quantization
+error lands exactly on the proper nouns / agent names / callout terms we care about. float16 costs ~+0.6 GB VRAM
+at ~zero latency (fp16 tensor-core throughput has headroom on this card; int8 was chosen purely for VRAM relief
+before the machine move freed the GPU from Valorant). Deliberately NOT taking the "bigger model" option: full
+large-v3 would add ~1 GB AND ~8x decoder latency (~1-1.5 s/clip) for a marginal English gain — a regression on a
+path tuned to 370-620 ms callouts. If several GB are genuinely free, the real answer to proper nouns is the
+already-wired Parakeet TDT 0.6B (`engine: "parakeet"`, ~5 GB — the config's "~700 MB" note is STALE and
+contradicts its own measured-live ~5.1 GB). GOTCHA: `KENNING_WHISPER_COMPUTE_TYPE` was set to `int8_float16` in
+the launch env and OVERRIDES config.yaml — unset/update it or this edit is inert.
+
 **REMOTE PTT IS LIVE ON THE WIRE (2026-07-23):** the agent ran on the game PC (`10.0.0.52:8778`, dongle open,
 peer pinned to `10.0.0.3`) and received NOTHING — no `bad authentication tag`, no `dropped datagram from unlisted
 peer`, i.e. the Ultron PC never sent at all. Cause: `push_to_talk` was still at defaults (`enabled: false`,

@@ -459,16 +459,17 @@ stt:
   # CPU. Swap back to a smaller repo above if VRAM ever gets tight.
   model: "deepdml/faster-whisper-large-v3-turbo-ct2"
   device: "cuda"
-  # 2026-05-14 VRAM-relief pass: float16 -> int8_float16. int8_float16
-  # uses 8-bit weights + fp16 activations -- saves ~250 MB VRAM on the
-  # small.en model vs pure float16 (proportional savings on base.en).
-  # WER impact is negligible at this quant level (~0.1-0.3 percentage
-  # points on LibriSpeech-test-clean per CTranslate2 benchmarks); we
-  # already measured 2.9% WER on the 5-clip prototype set with float16
-  # so the int8_float16 worst-case
-  # is well within acceptable. The 4070 Ti has plenty of int8 throughput
-  # so latency is unchanged.
-  compute_type: "int8_float16"
+  # 2026-07-23 machine move: int8_float16 -> float16. The prior int8_float16
+  # rationale below was written for small.en; the model actually running is
+  # deepdml/faster-whisper-large-v3-turbo-ct2, whose full 32-layer encoder (only
+  # the decoder is distilled 32->4 layers) is where int8 quantization error costs
+  # accuracy on proper nouns / agent names / callout terms. float16 costs ~+0.6 GB
+  # VRAM and, per CTranslate2, is compute-bound the same as int8_float16 on this
+  # card class -- fp16 tensor-core throughput has headroom, so latency is
+  # unaffected; this buys back quantization error for free rather than trading
+  # for a materially larger model. Revert to int8_float16 if VRAM gets tight
+  # again (was the choice before the machine move freed the GPU from Valorant).
+  compute_type: "float16"
   # 2026-05-15 latency: 5 -> 1 (greedy). Bench on the 4070 Ti with
   # small.en int8_float16 showed beam=1 trims ~80 ms median STT
   # latency on 5s audio (78 ms vs 157 ms). WER impact is negligible
