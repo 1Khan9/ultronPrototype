@@ -104,7 +104,16 @@ audio:
   # (the virtual output an app records FROM). The prior physical-interface
   # name does not exist on this machine, so no mic signal reached Ultron.
   input_device: "Voicemeeter Out B1"
-  output_device: null         # null = system default; or set KENNING_AUDIO_OUTPUT_DEVICE env
+  # 2026-07-23: YOUR monitor feed -> the "Stereo Input 2" VoiceMeeter strip, which is
+  # fed by the "Voicemeeter In 2" playback device. NB A1/A2/A3 are hardware-out BUS
+  # ASSIGNMENTS in VoiceMeeter, not devices an app can open -- so Ultron plays into this
+  # STRIP and the strip's A-bus buttons decide which speakers it reaches. Kept OFF the
+  # relay strip ("Voicemeeter Input" -> B1 -> VBAN -> game PC) and the broadcast strip
+  # ("Voicemeeter AUX Input" -> OBS) so your monitor level is independent of what
+  # teammates and viewers hear. Was null = Windows default, which on this box resolved
+  # to the VIRTUAL "Speakers (VB-Audio Matrix VAIO)" (device 20) and went nowhere
+  # audible -- that is why Ultron seemed unresponsive. Env: KENNING_AUDIO_OUTPUT_DEVICE.
+  output_device: "Voicemeeter In 2"
   # EVERYTHING output: mirrors EVERY line Kenning speaks -- normal chat AND
   # team relay -- to a separate, OBS-capturable device for stream viewers.
   # "" / null = off. Never replaces output_device (you still hear Kenning on

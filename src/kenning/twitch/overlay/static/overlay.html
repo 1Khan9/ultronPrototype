@@ -87,8 +87,11 @@
     --val-red-dim: #d63a47;
     --win: #43e0a0;
     --loss: #ff4655;
-    --card-bg: rgba(13, 16, 28, 0.82);
-    --card-bg-2: rgba(18, 22, 38, 0.72);
+    /* 2026-07-23: nudged up slightly (0.82/0.72 -> 0.88/0.80) so the tiles read
+       a touch more solid over busy gameplay without going opaque -- these two
+       vars drive the .cg-card gradient, so every card type moves as a set. */
+    --card-bg: rgba(13, 16, 28, 0.88);
+    --card-bg-2: rgba(18, 22, 38, 0.80);
     --hairline: rgba(255, 255, 255, 0.10);
     --ink: #eef1ff;
     --ink-dim: #9aa3c4;
@@ -1104,10 +1107,27 @@
   // (CSP-safe: no markup sink). Recomputed on resize so a source-size change is
   // picked up on a plain OBS refresh.
   var DESIGN_WIDTH = 1920;
+  // Optional operator zoom on TOP of the density fit: append &scale=1.5 to the
+  // overlay URL in OBS to size the graphics to taste without touching config or
+  // restarting -- the browser source re-fetches "/" on refresh and the server
+  // re-reads this file from disk. DESIGN_WIDTH normalisation already makes a
+  // 1920 and a 3840 source render at the SAME relative size, so changing the
+  // source resolution alone can never make the cards bigger; this is the knob
+  // that can. Ignored unless it parses to a finite positive number.
+  function userScale() {
+    try {
+      var raw = new URLSearchParams(window.location.search).get("scale");
+      if (!raw) { return 1; }
+      var s = parseFloat(raw);
+      if (!isFinite(s) || s <= 0) { return 1; }
+      return Math.max(0.25, Math.min(4, s));
+    } catch (err) { return 1; }
+  }
+
   function fitDensity() {
     try {
       var w = window.innerWidth || DESIGN_WIDTH;
-      var z = w / DESIGN_WIDTH;
+      var z = (w / DESIGN_WIDTH) * userScale();
       if (!isFinite(z) || z <= 0) { z = 1; }
       z = Math.max(0.5, Math.min(4, z));
       // 1.0 -> clear the property entirely so a 1920 source is byte-identical.

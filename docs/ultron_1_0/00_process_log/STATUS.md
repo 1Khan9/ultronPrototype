@@ -43,6 +43,24 @@ artifact of the move), and ~97 wrapper failures trace to the streamer's own unco
 edits whose paired tests still assert the old values (e.g. `commands_panel_interval_minutes` 15 -> 30).
 NEXT: re-paste the overlay URL in OBS, restart from the repo dir, run `scripts/ptt_agent.py` on the game PC.
 
+**FOLLOW-UP (2026-07-23, same session) — "Ultron is not responding" was an OUTPUT-ROUTING fault, not a hang:**
+The streamer reported Ultron hung / ignored everything. The log disproved both: wake word fired (score 0.90-0.95),
+capture + Whisper + LLM + TTS all ran, and `relay:spoken | device=81 | line='Hello.'` at 907 ms end-to-end. He WAS
+answering — into `Voicemeeter Input` (the TEAM relay strip, B1 -> VBAN -> game PC) while the monitor mirror pointed
+at device 20, the VIRTUAL `Speakers (VB-Audio Matrix VAIO)`. Every output path landed on a virtual device, so the
+streamer heard nothing. ROOT FIX: `audio.output_device` null (= Windows default) -> `"Voicemeeter In 2"` (resolves
+idx 91), the strip they monitor; its A-bus buttons then pick the speakers. NB A1/A2/A3 are hardware-out BUS
+ASSIGNMENTS, not devices an app can open — the same reality that shaped the TEAM BUS work, so "output to A2" always
+means "play into a strip routed to A2". Two further live fixes: the OBS overlay 403 was the scene collection
+carrying the OLD PC's token (`~/.kenning/overlay_token` is persisted PER MACHINE — re-paste once after a move), and
+the chat-alert ping was dead because its sound file moved (now decodes: 44.1 kHz stereo 2.31 s; device
+`Speakers (Realtek HD Audio output)` idx 145 — a real analog endpoint, not another virtual cable).
+CORRECTION worth remembering: the "graphics are too small" fix is NOT the Browser Source resolution —
+`fitDensity()` normalises to a 1920 design, so 1920 and 3840 render identically; use the NEW `&scale=` URL param.
+ALSO STILL TRUE: the always-listening loop prints "(follow-up window closed; waiting for wake word)" +
+`next_state='IDLE'` every 30 s when NEITHER is true (it re-arms at `orchestrator.py:9141`) — that misleading log is
+what made a healthy loop look hung, and it is still unfixed.
+
 
 **PREVIOUS (2026-07-12) — TEAM BUS toggle: switch the team relay between VoiceMeeter B1/B2 (branch `claude/team-bus-toggle`):**
 

@@ -157,7 +157,15 @@
 > [0.5, 4]; **cleared at 1920 → byte-identical to before**), recomputed on resize. `zoom` is a Chromium-native
 > LAYOUT scale (text re-rasterized at the higher density, unlike `transform: scale` which upscales a 1× raster),
 > so at a 3840 source the same design lays out at 2× density and every length stays proportional to the source
-> width → identical on-screen size/layout once the source is fit to the canvas, only sharper. CSP-safe (a style
+> width → identical on-screen size/layout once the source is fit to the canvas, only sharper. **2026-07-23 corollary
+> (streamer-reported "graphics are too small"):** because `fitDensity()` NORMALISES to the 1920 design, a 1920 and a
+> 3840 Browser Source render at the SAME relative size — so changing the source resolution can never make the tiles
+> bigger, and chasing that is a dead end. The knob is NEW optional `&scale=<n>` on the overlay URL (`userScale()`,
+> clamped [0.25, 4], multiplied INTO the density fit; absent/​unparseable → 1 → unchanged), letting the operator size
+> the graphics live from OBS with no config edit and no restart — the server re-reads `overlay.html` from disk per
+> request, so a Browser Source refresh is enough. Tile backgrounds also nudged more solid the same day
+> (`--card-bg` 0.82 → 0.88, `--card-bg-2` 0.72 → 0.80; the two vars drive the `.cg-card` gradient, so every card
+> type moves as a matched set). CSP-safe (a style
 > property write). To use: OBS Browser Source Width/Height = 2× the canvas, Fit-to-screen, Scale Filtering =
 > Lanczos. **Startup bot-token test** (`scripts/twitch_write_sidecar._boot_check_bot_token`): at boot, if the
 > bot grant is revoked, immediately start the self-service device flow (link in the terminal) instead of
